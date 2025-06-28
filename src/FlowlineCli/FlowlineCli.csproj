@@ -1,0 +1,49 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net9.0</TargetFramework>
+        <PackAsTool>true</PackAsTool>
+        <ToolCommandName>flowline</ToolCommandName>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+<!--        <PublishAot>true</PublishAot>-->
+        <InvariantGlobalization>true</InvariantGlobalization>
+        <AssemblyName>Flowline</AssemblyName>
+    </PropertyGroup>
+
+    <PropertyGroup Label="PackageProperties">
+      <PackageId>Flowline</PackageId>
+      <Description>Flowline is the lightweight deployment CLI for unmanaged Power Platform solutions.</Description>
+      <Copyright>Copyright (c) Remy van Duijkeren 2025</Copyright>
+      <Authors>Remy van Duijkeren (@RemyDuijkeren)</Authors>
+      <PackageProjectUrl>https://github.com/RemyDuijkeren/Flowline</PackageProjectUrl>
+      <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+      <PackageIcon>Flowline-icon.png</PackageIcon>
+      <PackageReadmeFile>README.md</PackageReadmeFile>
+      <RepositoryUrl>https://github.com/RemyDuijkeren/Flowline.git</RepositoryUrl>
+      <RepositoryType>git</RepositoryType>
+      <PackageTags>Dataverse Dynamics PowerApps PowerPlatform Pipeline Deploy CLI</PackageTags>
+      <IncludeSymbols>true</IncludeSymbols>
+      <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    </PropertyGroup>
+
+    <PropertyGroup Label="SourceLinkProperties">
+      <PublishRepositoryUrl>true</PublishRepositoryUrl>
+      <EmbedUntrackedSources>true</EmbedUntrackedSources>
+      <ContinuousIntegrationBuild Condition="'$(Deterministic)'=='true'">true</ContinuousIntegrationBuild>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="CliWrap" Version="3.9.0" />
+      <PackageReference Include="Spectre.Console.Cli" Version="0.50.0" />
+      <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All"/>
+      <PackageReference Include="MinVer" Version="6.0.0" PrivateAssets="All"/>
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Include="../../docs/Flowline-icon.png" Pack="true" PackagePath="\" Visible="false"/>
+      <None Include="../../README.md" Pack="true" PackagePath="\" Visible="false"/>
+    </ItemGroup>
+
+</Project>

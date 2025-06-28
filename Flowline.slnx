@@ -1,0 +1,6 @@
+﻿<Solution>
+  <Folder Name="/Solution Items/" />
+  <Folder Name="/src/">
+    <Project Path="src\FlowlineCli\FlowlineCli.csproj" />
+  </Folder>
+</Solution>

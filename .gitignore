@@ -1,0 +1,20 @@
+# User-specific files or directories
+*.suo
+*.user
+.vs
+.vscode
+
+# Build results
+[Bb]in/
+[Oo]bj/
+[Aa]rtifacts/
+
+# ReSharper is a .NET coding add-in
+_ReSharper*/
+/_ReSharper.Caches/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# JetBrains Rider IDE
+.idea/
+riderModule.iml
