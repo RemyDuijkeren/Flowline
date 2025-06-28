@@ -43,13 +43,13 @@ jobs:
         env:
           DATAVERSE_CONNECTION_OPTIONS: ${{secrets.DATAVERSE_CONNECTION_OPTIONS}}
 
-      - name: 📋 Test reporter
-        uses: dorny/test-reporter@v1
-        if: always() && steps.test.outcome != 'skipped'
-        with:
-          name: unittests
-          path: ./artifacts/*.trx
-          reporter: dotnet-trx
+#      - name: 📋 Test reporter
+#        uses: dorny/test-reporter@v1
+#        if: always() && steps.test.outcome != 'skipped'
+#        with:
+#          name: unittests
+#          path: ./artifacts/*.trx
+#          reporter: dotnet-trx
 
       - name: 📦 Pack
         run: dotnet pack -c Release -o ./artifacts/ --no-build
