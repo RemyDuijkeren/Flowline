@@ -5,6 +5,9 @@
         <TargetFramework>net9.0</TargetFramework>
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>flowline</ToolCommandName>
+        <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+        <RestoreLockedMode Condition="'$(ContinuousIntegrationBuild)' == 'true'">true</RestoreLockedMode>
+        <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
 <!--        <PublishAot>true</PublishAot>-->
