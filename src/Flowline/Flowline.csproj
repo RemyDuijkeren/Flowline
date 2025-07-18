@@ -13,10 +13,10 @@
         <InvariantGlobalization>true</InvariantGlobalization>
 
         <!-- Single file publishing options -->
-        <!-- Option 1: PublishSingleFile - bundles the app with the runtime into a single file -->
-        <PublishSingleFile>true</PublishSingleFile>
-        <SelfContained>true</SelfContained>
-        <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+        <!-- Option 1: PublishSingleFile - bundles the app with the runtime into a single file (does not work with pack) -->
+<!--        <PublishSingleFile>true</PublishSingleFile>-->
+<!--        <SelfContained>true</SelfContained>-->
+<!--        <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>-->
 
         <!-- Option 2: Native AOT - uncomment to use Native AOT instead of PublishSingleFile -->
         <!-- <PublishAot>true</PublishAot> -->
