@@ -40,6 +40,8 @@ jobs:
 
       - name: ⚙️ Build
         run: dotnet build -c Release --no-restore
+        env:
+          MINVERBUILDMETADATA: build.${{github.run_id}}.${{github.run_attempt}}
 
       - name: 🚦 Test
         id: test

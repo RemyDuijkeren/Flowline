@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 using CliWrap;
 using CliWrap.Buffered;
 
-namespace FlowLineCli;
+namespace Flowline;
 
 public static class PacUtils
 {
@@ -12,7 +12,8 @@ public static class PacUtils
         try
         {
             await Cli.Wrap("pac")
-                .ExecuteBufferedAsync();
+                     //.WithStandardOutputPipe(PipeTarget.ToDelegate(Console.WriteLine))
+                     .ExecuteBufferedAsync();
         }
         catch (Exception)
         {
@@ -31,7 +32,7 @@ public static class PacUtils
         }
         catch (Exception)
         {
-            Console.Error.WriteLine("🦑 GIT NOT FOUND! Your commit powers are weak, young padawan. Please install Git from https://git-scm.com/ before you can join the commit side.");
+            Console.Error.WriteLine("Git (git) is not installed or not in PATH. Please install: https://git-scm.com/");
             Environment.Exit(1);
         }
     }
@@ -97,10 +98,13 @@ public static class PacUtils
 
 public class EnvironmentInfo
 {
+    public Guid EnvironmentId { get; set; }
     public string? EnvironmentUrl { get; set; }
-    public string? Type { get; set; }
+    public Guid OrganizationId { get; set; }
     public string? DisplayName { get; set; }
-    // Add other properties as needed
+    public string? Type { get; set; }
+    public string? DomainName { get; set; }
+    public string? Version { get; set; }
 }
 
 public class EnvironmentParts

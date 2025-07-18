@@ -10,14 +10,22 @@
         <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-<!--        <PublishAot>true</PublishAot>-->
         <InvariantGlobalization>true</InvariantGlobalization>
-        <AssemblyName>Flowline</AssemblyName>
+
+        <!-- Single file publishing options -->
+        <!-- Option 1: PublishSingleFile - bundles the app with the runtime into a single file -->
+        <PublishSingleFile>true</PublishSingleFile>
+        <SelfContained>true</SelfContained>
+        <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+
+        <!-- Option 2: Native AOT - uncomment to use Native AOT instead of PublishSingleFile -->
+        <!-- <PublishAot>true</PublishAot> -->
+      <IsAotCompatible>true</IsAotCompatible>
     </PropertyGroup>
 
     <PropertyGroup Label="PackageProperties">
       <PackageId>Flowline</PackageId>
-      <Description>Flowline is the lightweight deployment CLI for unmanaged Power Platform solutions.</Description>
+      <Description>Flowline is your lightweight, flexible alternative to rigid Power Platform Pipelines.</Description>
       <Copyright>Copyright (c) Remy van Duijkeren 2025</Copyright>
       <Authors>Remy van Duijkeren (@RemyDuijkeren)</Authors>
       <PackageProjectUrl>https://github.com/RemyDuijkeren/Flowline</PackageProjectUrl>

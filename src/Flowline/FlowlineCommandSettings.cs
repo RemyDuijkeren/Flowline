@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using Spectre.Console.Cli;
 
-namespace FlowLineCli;
+namespace Flowline;
 
 public class FlowlineCommandSettings : CommandSettings
 {

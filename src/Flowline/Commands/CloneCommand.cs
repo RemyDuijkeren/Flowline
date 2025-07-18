@@ -3,7 +3,7 @@ using CliWrap;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
-namespace FlowLineCli.Commands;
+namespace Flowline.Commands;
 
 public class CloneCommandSettings : FlowlineCommandSettings
 {
@@ -60,9 +60,9 @@ public class CloneCommand : AsyncCommand<CloneCommandSettings>
         {
             AnsiConsole.MarkupLine($"Creating environment {targetUrl}...");
 
-            // await Cli.Wrap("pac")
-            //     .WithArguments($"admin create --name \"{targetName} (cloning)\" --domain {targetEnvDomain} --region {urlParts.Region} --type Sandbox")
-            //     .ExecuteAsync();
+            await Cli.Wrap("pac")
+                .WithArguments($"admin create --name \"{targetName} (cloning)\" --domain {targetEnvDomain} --region {urlParts.Region} --type Sandbox")
+                .ExecuteAsync();
         }
 
         environments = await PacUtils.GetEnvironmentsAsync();

@@ -1,7 +1,7 @@
 ﻿using Spectre.Console;
 using Spectre.Console.Cli;
 
-namespace FlowLineCli.Commands;
+namespace Flowline.Commands;
 
 public class PushToTestCommand : AsyncCommand<FlowlineCommandSettings>
 {

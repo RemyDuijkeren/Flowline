@@ -1,16 +1,16 @@
-# Flowline CLI
+# Flowline
 
 ![CI](https://github.com/RemyDuijkeren/Flowline/workflows/CI/badge.svg)
-[![NuGet](https://img.shields.io/nuget/v/Flowline.svg)](https://www.nuget.org/packages/RemyDuijkeren.OpenTelemetry.Instrumentation.DataverseServiceClient)
+[![NuGet](https://img.shields.io/nuget/v/Flowline.svg)](https://www.nuget.org/packages/Flowline)
 [![NuGet](https://img.shields.io/nuget/dt/RemyDuijkeren.Flowline.svg)](https://www.nuget.org/packages/Flowline)
 
-**Flowline** is the lightweight deployment CLI for unmanaged Power Platform solutions.
-It helps you follow a GitHubFlow-style process to clone, sync, and deploy solutions — without the rigidity of Microsoft
-Power Platform Pipelines, and without forcing managed solutions.
+**Flowline** is a lightweight CLI tool that streamlines the deployment of Power Platform solutions while tracking all
+changes in git.
 
-Flowline is your lightweight, flexible alternative to rigid Power Platform Pipelines.
-While Microsoft’s pipelines move managed solutions across controlled environments, Flowline gives you freedom to move
-unmanaged solutions where and how you want — always in control, always in source.
+It follows a GitHubFlow-style process to clone, sync, and deploy solutions, offering a flexible alternative to
+Microsoft's rigid Power Platform Pipelines. Unlike Microsoft's approach of moving managed solutions across controlled
+environments, Flowline gives you the freedom to deploy unmanaged solutions where and how you want — keeping you in
+control while maintaining a complete source history in your git repository.
 
 ---
 
@@ -26,6 +26,14 @@ Flowline exists to give you a flexible, developer-friendly alternative:
 
 Flowline is inspired by real flowlines: focused, adaptable, and purpose-built to get your solution from *source* to
 *target* — without the unnecessary infrastructure.
+
+Flowline keeps it simple:
+
+- You own your environments.
+- You control your source.
+- You choose unmanaged.
+
+Flowline — _GitHubFlow pipelines for unmanaged Power Platform solutions._
 
 ---
 
@@ -57,12 +65,3 @@ flowline clone --name Dev123 --region europe
 flowline sync --solution MySolution
 flowline deploy --target prod --solution MySolution
 ```
-
-## 📌 Philosophy
-Flowline keeps it simple:
-
-- You own your environments.
-- You control your source.
-- You choose unmanaged.
-
-Flowline — _GitHubFlow pipelines for unmanaged Power Platform solutions._
