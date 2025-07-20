@@ -1,11 +1,19 @@
+using System.ComponentModel;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class MergeCommand : AsyncCommand<FlowlineCommandSettings>
+public class MergeCommandSettings : BaseCommandSettings
 {
-    public override async Task<int> ExecuteAsync(CommandContext context, FlowlineCommandSettings settings)
+    [CommandArgument(0, "<environment>")]
+    [Description("The Power Platform environment to clone")]
+    public string Environment { get; set; } = null!;
+}
+
+public class MergeCommand : AsyncCommand<MergeCommandSettings>
+{
+    public override async Task<int> ExecuteAsync(CommandContext context, MergeCommandSettings settings)
     {
         AnsiConsole.MarkupLine($"Running command [green]'merge'[/] for environment [green]'{settings.Environment}'[/]...");
 

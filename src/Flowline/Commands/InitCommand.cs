@@ -5,17 +5,24 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class InitCommandSettings : FlowlineCommandSettings
+public class InitCommandSettings : BaseCommandSettings
 {
+    [CommandArgument(0, "<environment>")]
+    [Description("The environment to run the command against")]
+    public string Environment { get; set; } = null!; // = "https://automatevalue-dev.crm4.dynamics.com/";
+
+    [CommandArgument(1, "<repo-url>")]
+    [Description("Git repository URL")]
+    public string GitRemoteUrl { get; set; } = "https://github.com/AutomateValue/Dataverse01.git";
+
     [CommandOption("-s|--solution")]
     [Description("The solution name to initialize")]
     [DefaultValue("Cr07982")]
     public string SolutionName { get; set; } = "Cr07982";
 
-    [CommandOption("-r|--repo")]
-    [Description("Git repository URL")]
-    [DefaultValue("https://github.com/AutomateValue/Dataverse01.git")]
-    public string GitRemoteUrl { get; set; } = "https://github.com/AutomateValue/Dataverse01.git";
+    [CommandOption("--managed")]
+    [Description("Use managed solution instead of unmanaged")]
+    public bool Managed { get; set; } = false;
 }
 
 public class InitCommand : AsyncCommand<InitCommandSettings>
@@ -40,7 +47,7 @@ public class InitCommand : AsyncCommand<InitCommandSettings>
 
             if (result.ExitCode != 0)
             {
-                AnsiConsole.MarkupLine("[red]Failed to clone the repository. Please check the URL and your network connection.[/]");
+                AnsiConsole.MarkupLine("[red]Failed to clone the repository. Please check the Git URL and your network connection.[/]");
                 return 1;
             }
         }
@@ -61,8 +68,14 @@ public class InitCommand : AsyncCommand<InitCommandSettings>
             }
 
             var result = await Cli.Wrap("pac")
-                .WithArguments($"solution clone --name {settings.SolutionName} --environment {settings.Environment} --packagetype Unmanaged --outputDirectory \"{Path.Combine(rootFolder, "src")}\"")
-                .ExecuteAsync();
+                   .WithArguments(args => args
+                       .Add("solution")
+                       .Add("clone")
+                       .Add("--name").Add(settings.SolutionName)
+                       .Add("--environment").Add(settings.Environment)
+                       .Add("--packagetype").Add(settings.Managed ? "Both" : "Unmanaged")
+                       .Add("--outputDirectory").Add($"{Path.Combine(rootFolder, "src")}"))
+                   .ExecuteAsync();
 
             if (result.ExitCode != 0)
             {

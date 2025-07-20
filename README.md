@@ -7,9 +7,9 @@
 **Flowline** is a lightweight CLI tool that streamlines the deployment of Power Platform solutions while tracking all
 changes in git.
 
-It follows a GitHubFlow-style process to clone, sync, and deploy solutions, offering a flexible alternative to
-Microsoft's rigid Power Platform Pipelines. Unlike Microsoft's approach of moving managed solutions across controlled
-environments, Flowline gives you the freedom to deploy unmanaged solutions where and how you want — keeping you in
+It follows a GitHubFlow-style process to clone, sync, and deploy solutions, offering a flexible alternative to 
+Microsoft's rigid Power Platform Pipelines. Unlike Microsoft's approach of moving managed solutions across controlled 
+environments, Flowline gives you the freedom to deploy unmanaged solutions where and how you want — keeping you in 
 control while maintaining a complete source history in your git repository.
 
 ---

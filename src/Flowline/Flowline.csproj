@@ -20,7 +20,7 @@
 
         <!-- Option 2: Native AOT - uncomment to use Native AOT instead of PublishSingleFile -->
         <!-- <PublishAot>true</PublishAot> -->
-      <IsAotCompatible>true</IsAotCompatible>
+<!--      <IsAotCompatible>true</IsAotCompatible>-->
     </PropertyGroup>
 
     <PropertyGroup Label="PackageProperties">

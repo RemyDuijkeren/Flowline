@@ -7,33 +7,54 @@ namespace Flowline;
 
 public static class PacUtils
 {
-    public static async Task AssertPacCliInstalledAsync()
+    public static async Task<string> AssertPacCliInstalledAsync()
     {
         try
         {
-            await Cli.Wrap("pac")
-                     //.WithStandardOutputPipe(PipeTarget.ToDelegate(Console.WriteLine))
-                     .ExecuteBufferedAsync();
+            var result = await Cli.Wrap("pac")
+                         .ExecuteBufferedAsync();
+
+            // Extract version from the output
+            var versionLine = result.StandardOutput.Split('\n')
+                .FirstOrDefault(line => line.Trim().StartsWith("Version:"));
+
+            if (versionLine != null)
+            {
+                return versionLine.Trim().Replace("Version: ", string.Empty);
+            }
+
+            return "Unknown";
         }
         catch (Exception)
         {
             Console.Error.WriteLine("The Power Platform CLI (pac) is not installed or not in PATH. Please install it: https://aka.ms/pac");
             Environment.Exit(1);
+            return string.Empty; // This line will never be reached due to Environment.Exit
         }
     }
 
-    public static async Task AssertGitInstalledAsync()
+    public static async Task<string> AssertGitInstalledAsync()
     {
         try
         {
-            await Cli.Wrap("git")
+            var result = await Cli.Wrap("git")
                 .WithArguments("--version")
                 .ExecuteBufferedAsync();
+
+            // Extract version from the output (format: "git version X.Y.Z")
+            var output = result.StandardOutput.Trim();
+            if (output.StartsWith("git version "))
+            {
+                return output.Substring("git version ".Length);
+            }
+
+            return "Unknown";
         }
         catch (Exception)
         {
             Console.Error.WriteLine("Git (git) is not installed or not in PATH. Please install: https://git-scm.com/");
             Environment.Exit(1);
+            return string.Empty; // This line will never be reached due to Environment.Exit
         }
     }
 

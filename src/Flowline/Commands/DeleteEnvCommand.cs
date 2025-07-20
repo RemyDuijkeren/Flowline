@@ -1,11 +1,19 @@
+using System.ComponentModel;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class DeleteEnvCommand : AsyncCommand<FlowlineCommandSettings>
+public class DeleteEnvCommandSettings : BaseCommandSettings
 {
-    public override async Task<int> ExecuteAsync(CommandContext context, FlowlineCommandSettings settings)
+    [CommandArgument(0, "<environment>")]
+    [Description("The Power Platform environment to clone")]
+    public string Environment { get; set; } = null!;
+}
+
+public class DeleteEnvCommand : AsyncCommand<DeleteEnvCommandSettings>
+{
+    public override async Task<int> ExecuteAsync(CommandContext context, DeleteEnvCommandSettings settings)
     {
         AnsiConsole.MarkupLine($"Running command [green]'delete-env'[/] for environment [green]'{settings.Environment}'[/]...");
 
