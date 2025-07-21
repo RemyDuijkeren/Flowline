@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using CliWrap;
 using CliWrap.Buffered;
+using Flowline.Config;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -8,9 +9,9 @@ namespace Flowline.Commands;
 
 public class SyncCommandSettings : BaseCommandSettings
 {
-    [CommandArgument(0, "<environment>")]
-    [Description("The environment to run the command against")]
-    public string Environment { get; set; }  = null!; //= "https://automatevalue-dev.crm4.dynamics.com/";
+    [CommandArgument(0, "[environment]")]
+    [Description("The environment to run the command against. If not specified, uses the environment from the project configuration.")]
+    public string? Environment { get; set; }
 
     [CommandOption("-s|--solution")]
     [Description("The solution name to sync")]
@@ -36,10 +37,25 @@ public class SyncCommand : AsyncCommand<SyncCommandSettings>
     {
         await PacUtils.AssertPacCliInstalledAsync();
 
-        var commitMessage = settings.CommitMessage ?? $"Commit changes to solution '{settings.SolutionName}' in environment '{settings.Environment}'";
+        // Load project configuration if needed
+        var config = ProjectConfig.Load();
+
+        // Use configuration values if not specified in command arguments
+        var environment = settings.Environment ?? config.GetCurrentEnvironment();
+        var solutionName = settings.SolutionName ?? config.SolutionName;
+        var useManagedSolution = settings.Managed || config.UseManagedSolution;
+
+        // Validate that we have an environment
+        if (string.IsNullOrEmpty(environment))
+        {
+            AnsiConsole.MarkupLine("[red]No environment specified. Please provide an environment or run 'init' first.[/]");
+            return 1;
+        }
+
+        var commitMessage = settings.CommitMessage ?? $"Commit changes to solution '{solutionName}' in environment '{environment}'";
         var rootFolder = Directory.GetCurrentDirectory();
-        var srcSolutionFolder = Path.Combine(rootFolder, "src", settings.SolutionName);
-        var cdsprojPath = Path.Combine(srcSolutionFolder, $"{settings.SolutionName}.cdsproj");
+        var srcSolutionFolder = Path.Combine(rootFolder, "src", solutionName);
+        var cdsprojPath = Path.Combine(srcSolutionFolder, $"{solutionName}.cdsproj");
 
         // Check if we're in an initialized environment
         if (!Directory.Exists(Path.Combine(rootFolder, ".git")))
@@ -50,14 +66,14 @@ public class SyncCommand : AsyncCommand<SyncCommandSettings>
 
         if (!File.Exists(cdsprojPath))
         {
-            AnsiConsole.MarkupLine($"[red]Solution '{settings.SolutionName}' not found. Please run 'init' first.[/]");
+            AnsiConsole.MarkupLine($"[red]Solution '{solutionName}' not found. Please run 'init' first.[/]");
             return 1;
         }
 
-        AnsiConsole.MarkupLine($"Validating [bold]'{settings.Environment}'[/]...");
+        AnsiConsole.MarkupLine($"Validating [bold]'{environment}'[/]...");
 
         var environments = await PacUtils.GetEnvironmentsAsync();
-        var sourceEnv = environments.FirstOrDefault(e => e.EnvironmentUrl?.Contains(settings.Environment) == true);
+        var sourceEnv = environments.FirstOrDefault(e => e.EnvironmentUrl?.Contains(environment) == true);
 
         if (sourceEnv == null)
         {
@@ -72,7 +88,7 @@ public class SyncCommand : AsyncCommand<SyncCommandSettings>
         }
 
         // Perform sync
-        AnsiConsole.MarkupLine($"Syncing solution '{settings.SolutionName}'...");
+        AnsiConsole.MarkupLine($"Syncing solution '{solutionName}'...");
 
         var result = await Cli.Wrap("pac")
                               .WithArguments(args => args
@@ -80,9 +96,9 @@ public class SyncCommand : AsyncCommand<SyncCommandSettings>
                                     .Add("sync")
                                     .Add("--solution-folder")
                                     .Add(srcSolutionFolder)
-                                    .Add("--environment").Add(settings.Environment)
-                                    .Add("--packagetype").Add(settings.Managed ? "Both" : "Unmanaged"))
-                              .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]{s}[/]")))
+                                    .Add("--environment").Add(environment)
+                                    .Add("--packagetype").Add(useManagedSolution ? "Both" : "Unmanaged"))
+                              .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
                               .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
                               .ExecuteAsync();
 
@@ -92,7 +108,7 @@ public class SyncCommand : AsyncCommand<SyncCommandSettings>
             return 1;
         }
 
-        AnsiConsole.MarkupLine($"Building Solution '{settings.SolutionName}'...");
+        AnsiConsole.MarkupLine($"Building Solution '{solutionName}'...");
 
         await Cli.Wrap("dotnet")
                  .WithArguments(args => args
@@ -100,7 +116,7 @@ public class SyncCommand : AsyncCommand<SyncCommandSettings>
                       .Add(srcSolutionFolder))
                       //.Add("--configuration").Add("Release")) // Release for Managed solution
                       //.Add("--output").Add(Path.Combine(rootFolder, "artifacts")))
-                 .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]{s}[/]")))
+                 .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]DOTNET: {s}[/]")))
                  .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
                  .ExecuteAsync();
 
@@ -115,7 +131,7 @@ public class SyncCommand : AsyncCommand<SyncCommandSettings>
         // Add all files to the git staging area
         await Cli.Wrap("git")
                  .WithArguments("add -A")
-                 .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]{s}[/]")))
+                 .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
                  .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
                  .ExecuteAsync();
 
@@ -136,7 +152,7 @@ public class SyncCommand : AsyncCommand<SyncCommandSettings>
                  .WithArguments(args => args
                       .Add("commit")
                       .Add("-m").Add(commitMessage))
-                 .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]{s}[/]")))
+                 .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
                  .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
                  .ExecuteAsync();
 
@@ -144,9 +160,26 @@ public class SyncCommand : AsyncCommand<SyncCommandSettings>
         AnsiConsole.MarkupLine("Pushing changes to remote repository...");
         await Cli.Wrap("git")
                  .WithArguments("push")
-                 .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]{s}[/]")))
+                 .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
                  .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
                  .ExecuteAsync();
+
+        // Save or update the project configuration with any changes
+        if (settings.Environment != null || settings.SolutionName != config.SolutionName || settings.Managed != config.UseManagedSolution)
+        {
+            // If the environment has changed, update it in config
+            if (settings.Environment != null)
+            {
+                // Determine if this is production or development
+                bool isProd = sourceEnv?.Type == "Production";
+                config.SetEnvironment(environment, isProd);
+            }
+
+            config.SolutionName = solutionName;
+            config.UseManagedSolution = useManagedSolution;
+            config.Save();
+            AnsiConsole.MarkupLine("[dim]Project configuration updated.[/]");
+        }
 
         AnsiConsole.MarkupLine("[green]All done![/]");
 

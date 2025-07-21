@@ -17,7 +17,13 @@ app.Configure(config =>
           .WithDescription("Show the version of Flowline and Power Platform CLI")
           .WithExample("info", "Displays the version of Flowline and Power Platform CLI");
 
-    config.AddCommand<CloneCommand>("clone")
+    config.AddCommand<EnvCommand>("env")
+          .WithDescription("Manage and switch between environments")
+          .WithExample("env", "Show current environment configuration")
+          .WithExample("env prod", "Switch to production environment")
+          .WithExample("env dev", "Switch to development environment");
+
+    config.AddCommand<BranchEnvCommand>("clone")
           .WithDescription("Clone a Power Platform environment (similar to Clone/pull and Branch)")
           .WithExample("clone", "https://automatevalue.crm4.dynamics.com/");
 

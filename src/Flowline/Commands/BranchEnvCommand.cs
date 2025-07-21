@@ -1,11 +1,12 @@
 using System.ComponentModel;
 using CliWrap;
+using Flowline.Config;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class CloneCommandSettings : BaseCommandSettings
+public class BranchEnvCommandSettings : BaseCommandSettings
 {
     [CommandArgument(0, "<environment>")]
     [Description("The Power Platform environment to clone")]
@@ -22,9 +23,9 @@ public class CloneCommandSettings : BaseCommandSettings
     public bool FullCopy { get; set; } = false;
 }
 
-public class CloneCommand : AsyncCommand<CloneCommandSettings>
+public class BranchEnvCommand : AsyncCommand<BranchEnvCommandSettings>
 {
-    public override async Task<int> ExecuteAsync(CommandContext context, CloneCommandSettings settings)
+    public override async Task<int> ExecuteAsync(CommandContext context, BranchEnvCommandSettings settings)
     {
         await PacUtils.AssertPacCliInstalledAsync();
 
@@ -76,7 +77,9 @@ public class CloneCommand : AsyncCommand<CloneCommandSettings>
                          .Add("--name").Add($"{targetName} (cloning)")
                          .Add("--domain").Add(targetEnvDomain)
                          .Add("--region").Add(urlParts.Region))
-                .ExecuteAsync();
+                     .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
+                     .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
+                     .ExecuteAsync();
         }
 
         environments = await PacUtils.GetEnvironmentsAsync();
@@ -97,9 +100,19 @@ public class CloneCommand : AsyncCommand<CloneCommandSettings>
                      .Add("--source-env").Add(sourceEnv.EnvironmentUrl!)
                      .Add("--target-env").Add(targetEnv.EnvironmentUrl!)
                      .Add("--type").Add(settings.FullCopy ? "FullCopy" : "MinimalCopy"))
-            .ExecuteAsync();
+                 .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
+                 .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
+                 .ExecuteAsync();
+
+        // Save both source (production) and target (development) environments to configuration
+        var config = ProjectConfig.Load();
+        config.ProdEnvironment = sourceEnv.EnvironmentUrl!;
+        config.DevEnvironment = targetEnv.EnvironmentUrl!;
+        config.ActiveEnvironment = targetEnv.EnvironmentUrl!; // Set development as active by default
+        config.Save();
 
         AnsiConsole.MarkupLine($"[green]All done! See [link]{targetEnv.EnvironmentUrl}[/][/]");
+        AnsiConsole.MarkupLine("[dim]Project configuration saved with target environment. You can now run 'init' and 'sync' commands.[/]");
 
         return 0;
     }
