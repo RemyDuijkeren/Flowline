@@ -13,6 +13,18 @@ app.Configure(config =>
     config.ValidateExamples();
 #endif
 
+    config.AddCommand<CloneCommand>("clone")
+          .WithDescription("Clone a local folder with a remote git repository and Dataverse solution")
+          .WithExample("clone", "https://github.com/AutomateValue/Dataverse01.git https://automatevalue-dev.crm4.dynamics.com");
+
+    config.AddCommand<BranchEnvCommand>("branch-env")
+          .WithDescription("Branch a Power Platform production environment by coping into a new environment and create a new branch in the git repository")
+          .WithExample("branch-env", "https://automatevalue.crm4.dynamics.com/");
+
+    config.AddCommand<SyncCommand>("sync")
+          .WithDescription("Sync a Power Platform solution to source control (similar to Git Commit and Push)")
+          .WithExample("sync", "https://automatevalue-dev.crm4.dynamics.com/");
+
     config.AddCommand<InfoCommand>("info")
           .WithDescription("Show the version of Flowline and Power Platform CLI")
           .WithExample("info", "Displays the version of Flowline and Power Platform CLI");
@@ -22,18 +34,6 @@ app.Configure(config =>
           .WithExample("env", "Show current environment configuration")
           .WithExample("env prod", "Switch to production environment")
           .WithExample("env dev", "Switch to development environment");
-
-    config.AddCommand<BranchEnvCommand>("clone")
-          .WithDescription("Clone a Power Platform environment (similar to Clone/pull and Branch)")
-          .WithExample("clone", "https://automatevalue.crm4.dynamics.com/");
-
-    config.AddCommand<InitCommand>("init")
-          .WithDescription("Initialize a local folder with git repository and Dataverse solution")
-          .WithExample("init", "https://automatevalue-dev.crm4.dynamics.com/");
-
-    config.AddCommand<SyncCommand>("sync")
-          .WithDescription("Sync a Power Platform solution to source control (similar to Git Commit and Push)")
-          .WithExample("sync", "https://automatevalue-dev.crm4.dynamics.com/");
 
     config.AddCommand<DeployCommand>("deploy")
           .WithDescription("Deploy changes to test environment (similar to PullRequest)");

@@ -5,29 +5,29 @@ namespace Flowline.Config;
 public class ProjectConfig
 {
     // Development environment URL
-    public string DevEnvironment { get; set; } = string.Empty;
+    public string SandboxEnvironment { get; set; } = string.Empty;
 
     // Production environment URL
-    public string ProdEnvironment { get; set; } = string.Empty;
+    public string ProductionEnvironment { get; set; } = string.Empty;
 
-    // The current active environment (defaults to development if available)
-    public string ActiveEnvironment { get; set; } = string.Empty;
+    // The current branch environment (defaults to development if available)
+    public string BranchEnvironment { get; set; } = string.Empty;
 
     public string SolutionName { get; set; } = string.Empty;
     public bool UseManagedSolution { get; set; } = false;
 
-    private static readonly string ConfigFileName = ".flowline";
+    internal static readonly string ConfigFileName = ".flowline";
 
     // Get the current environment to use (active, or fall back to dev, then prod)
     public string GetCurrentEnvironment()
     {
-        if (!string.IsNullOrEmpty(ActiveEnvironment))
-            return ActiveEnvironment;
+        if (!string.IsNullOrEmpty(BranchEnvironment))
+            return BranchEnvironment;
 
-        if (!string.IsNullOrEmpty(DevEnvironment))
-            return DevEnvironment;
+        if (!string.IsNullOrEmpty(SandboxEnvironment))
+            return SandboxEnvironment;
 
-        return ProdEnvironment;
+        return ProductionEnvironment;
     }
 
     // Set an environment as both the corresponding type and make it active
@@ -35,37 +35,38 @@ public class ProjectConfig
     {
         if (isProd)
         {
-            ProdEnvironment = url;
+            ProductionEnvironment = url;
         }
         else
         {
-            DevEnvironment = url;
+            SandboxEnvironment = url;
         }
 
         // Set as an active environment too
-        ActiveEnvironment = url;
+        BranchEnvironment = url;
     }
 
-    public static ProjectConfig Load(string? rootFolder = null)
+    public static ProjectConfig? Load(string? rootFolder = null)
     {
         rootFolder ??= Directory.GetCurrentDirectory();
         var configPath = Path.Combine(rootFolder, ConfigFileName);
 
         if (!File.Exists(configPath))
         {
-            return new ProjectConfig();
+            return null;
         }
 
         try
         {
             var json = File.ReadAllText(configPath);
-            var config = JsonSerializer.Deserialize<ProjectConfig>(json) ?? new ProjectConfig();
+            var config = JsonSerializer.Deserialize<ProjectConfig>(json);
             return config;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // If we can't read the config file, return a default config
-            return new ProjectConfig();
+            Console.Error.WriteLine($"Failed to read configuration: {ex.Message}");
+            // If we can't read the config file, return null
+            return null;
         }
     }
 

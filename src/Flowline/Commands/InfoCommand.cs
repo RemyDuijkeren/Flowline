@@ -20,7 +20,7 @@ public class InfoCommand : AsyncCommand<InfoCommandSettings>
             var pacVersion = await PacUtils.AssertPacCliInstalledAsync();
             AnsiConsole.MarkupLine($"[bold]Power Platform CLI[/] version: [green]{pacVersion}[/]");
 
-            var gitVersion = await PacUtils.AssertGitInstalledAsync();
+            var gitVersion = await GitUtils.AssertGitInstalledAsync();
             AnsiConsole.MarkupLine($"[bold]Git[/] version: [green]{gitVersion}[/]");
 
             if (settings.Verbose)

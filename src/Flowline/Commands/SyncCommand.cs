@@ -15,8 +15,7 @@ public class SyncCommandSettings : BaseCommandSettings
 
     [CommandOption("-s|--solution")]
     [Description("The solution name to sync")]
-    [DefaultValue("Cr07982")]
-    public string SolutionName { get; set; } = "Cr07982";
+    public string? SolutionName { get; set; }
 
     [CommandOption("-m|--message")]
     [Description("Commit message")]
@@ -41,14 +40,14 @@ public class SyncCommand : AsyncCommand<SyncCommandSettings>
         var config = ProjectConfig.Load();
 
         // Use configuration values if not specified in command arguments
-        var environment = settings.Environment ?? config.GetCurrentEnvironment();
-        var solutionName = settings.SolutionName ?? config.SolutionName;
+        var environment = settings.Environment ?? config?.GetCurrentEnvironment();
+        var solutionName = settings.SolutionName ?? config?.SolutionName;
         var useManagedSolution = settings.Managed || config.UseManagedSolution;
 
         // Validate that we have an environment
         if (string.IsNullOrEmpty(environment))
         {
-            AnsiConsole.MarkupLine("[red]No environment specified. Please provide an environment or run 'init' first.[/]");
+            AnsiConsole.MarkupLine("[red]No environment specified. Please provide an environment or run 'clone' first.[/]");
             return 1;
         }
 
@@ -60,13 +59,13 @@ public class SyncCommand : AsyncCommand<SyncCommandSettings>
         // Check if we're in an initialized environment
         if (!Directory.Exists(Path.Combine(rootFolder, ".git")))
         {
-            AnsiConsole.MarkupLine("[red]This directory is not a git repository. Please run 'init' first.[/]");
+            AnsiConsole.MarkupLine("[red]This directory is not a git repository. Please run 'clone' first.[/]");
             return 1;
         }
 
         if (!File.Exists(cdsprojPath))
         {
-            AnsiConsole.MarkupLine($"[red]Solution '{solutionName}' not found. Please run 'init' first.[/]");
+            AnsiConsole.MarkupLine($"[red]Solution '{solutionName}' not found. Please run 'clone' first.[/]");
             return 1;
         }
 
@@ -126,7 +125,7 @@ public class SyncCommand : AsyncCommand<SyncCommandSettings>
             return 0;
         }
 
-        await PacUtils.AssertGitInstalledAsync();
+        await GitUtils.AssertGitInstalledAsync();
 
         // Add all files to the git staging area
         await Cli.Wrap("git")

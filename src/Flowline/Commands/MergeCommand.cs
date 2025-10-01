@@ -18,7 +18,7 @@ public class MergeCommand : AsyncCommand<MergeCommandSettings>
         AnsiConsole.MarkupLine($"Running command [green]'merge'[/] for environment [green]'{settings.Environment}'[/]...");
 
         await PacUtils.AssertPacCliInstalledAsync();
-        await PacUtils.AssertGitInstalledAsync();
+        await GitUtils.AssertGitInstalledAsync();
 
         AnsiConsole.MarkupLine("Merge pull request into master...");
         // TODO: Implement the merge logic

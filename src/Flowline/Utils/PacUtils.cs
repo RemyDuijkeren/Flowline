@@ -33,31 +33,6 @@ public static class PacUtils
         }
     }
 
-    public static async Task<string> AssertGitInstalledAsync()
-    {
-        try
-        {
-            var result = await Cli.Wrap("git")
-                .WithArguments("--version")
-                .ExecuteBufferedAsync();
-
-            // Extract version from the output (format: "git version X.Y.Z")
-            var output = result.StandardOutput.Trim();
-            if (output.StartsWith("git version "))
-            {
-                return output.Substring("git version ".Length);
-            }
-
-            return "Unknown";
-        }
-        catch (Exception)
-        {
-            Console.Error.WriteLine("Git (git) is not installed or not in PATH. Please install: https://git-scm.com/");
-            Environment.Exit(1);
-            return string.Empty; // This line will never be reached due to Environment.Exit
-        }
-    }
-
     public static async Task<List<EnvironmentInfo>> GetEnvironmentsAsync()
     {
         var result = await Cli.Wrap("pac")
@@ -65,6 +40,12 @@ public static class PacUtils
             .ExecuteBufferedAsync();
 
         return JsonSerializer.Deserialize<List<EnvironmentInfo>>(result.StandardOutput) ?? new List<EnvironmentInfo>();
+    }
+
+    public static async Task<EnvironmentInfo?> GetEnvironmentByUrlAsync(string environmentUrl)
+    {
+        var environments = await GetEnvironmentsAsync();
+        return environments.FirstOrDefault(e => e.EnvironmentUrl?.Equals(environmentUrl, StringComparison.OrdinalIgnoreCase) == true);
     }
 
     public static EnvironmentParts GetPartsFromEnvUrl(string envUrl)

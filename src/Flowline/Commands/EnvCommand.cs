@@ -23,20 +23,20 @@ public class EnvCommand : Command<EnvCommandSettings>
         {
             AnsiConsole.MarkupLine("Current environment configuration:");
 
-            if (!string.IsNullOrEmpty(config.ProdEnvironment))
-                AnsiConsole.MarkupLine($"  Production: [blue]{config.ProdEnvironment}[/]");
+            if (!string.IsNullOrEmpty(config.ProductionEnvironment))
+                AnsiConsole.MarkupLine($"  Production: [blue]{config.ProductionEnvironment}[/]");
             else
                 AnsiConsole.MarkupLine("  Production: [gray]Not configured[/]");
 
-            if (!string.IsNullOrEmpty(config.DevEnvironment))
-                AnsiConsole.MarkupLine($"  Development: [blue]{config.DevEnvironment}[/]");
+            if (!string.IsNullOrEmpty(config.SandboxEnvironment))
+                AnsiConsole.MarkupLine($"  Development: [blue]{config.SandboxEnvironment}[/]");
             else
                 AnsiConsole.MarkupLine("  Development: [gray]Not configured[/]");
 
             var activeEnv = config.GetCurrentEnvironment();
             if (!string.IsNullOrEmpty(activeEnv))
             {
-                var isProd = activeEnv == config.ProdEnvironment;
+                var isProd = activeEnv == config.ProductionEnvironment;
                 AnsiConsole.MarkupLine($"  [green]Active: {activeEnv} ({(isProd ? "Production" : "Development")})[/]");
             }
             else
@@ -48,19 +48,19 @@ public class EnvCommand : Command<EnvCommandSettings>
         }
 
         // Try to match environment with existing configurations
-        if (config.ProdEnvironment.Contains(settings.Environment))
+        if (config.ProductionEnvironment.Contains(settings.Environment))
         {
-            config.ActiveEnvironment = config.ProdEnvironment;
+            config.BranchEnvironment = config.ProductionEnvironment;
             config.Save();
-            AnsiConsole.MarkupLine($"[green]Active environment set to Production: {config.ProdEnvironment}[/]");
+            AnsiConsole.MarkupLine($"[green]Active environment set to Production: {config.ProductionEnvironment}[/]");
             return 0;
         }
 
-        if (config.DevEnvironment.Contains(settings.Environment))
+        if (config.SandboxEnvironment.Contains(settings.Environment))
         {
-            config.ActiveEnvironment = config.DevEnvironment;
+            config.BranchEnvironment = config.SandboxEnvironment;
             config.Save();
-            AnsiConsole.MarkupLine($"[green]Active environment set to Development: {config.DevEnvironment}[/]");
+            AnsiConsole.MarkupLine($"[green]Active environment set to Development: {config.SandboxEnvironment}[/]");
             return 0;
         }
 
@@ -68,7 +68,7 @@ public class EnvCommand : Command<EnvCommandSettings>
         AnsiConsole.MarkupLine("[yellow]Warning: The specified environment does not match any configured environments.[/]");
         if (AnsiConsole.Confirm("Do you want to set it as the active environment anyway?"))
         {
-            config.ActiveEnvironment = settings.Environment;
+            config.BranchEnvironment = settings.Environment;
             config.Save();
             AnsiConsole.MarkupLine($"[green]Active environment set to: {settings.Environment}[/]");
             AnsiConsole.MarkupLine("[dim]Note: This environment is not identified as either Production or Development.[/]");

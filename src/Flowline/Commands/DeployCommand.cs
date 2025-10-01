@@ -24,7 +24,7 @@ public class DeployCommand : AsyncCommand<DeployCommandSettings>
         AnsiConsole.MarkupLine($"Running command [green]'deploy'[/] for environment [green]'{settings.Environment}'[/]...");
 
         await PacUtils.AssertPacCliInstalledAsync();
-        await PacUtils.AssertGitInstalledAsync();
+        await GitUtils.AssertGitInstalledAsync();
 
         AnsiConsole.MarkupLine("Pushing changes to test environment...");
         // TODO: Implement the deploy logic
