@@ -42,13 +42,13 @@ public static class PacUtils
         return JsonSerializer.Deserialize<List<EnvironmentInfo>>(result.StandardOutput) ?? new List<EnvironmentInfo>();
     }
 
-    public static async Task<EnvironmentInfo?> GetEnvironmentByUrlAsync(string environmentUrl)
+    public static async Task<EnvironmentInfo?> GetEnvironmentInfoByUrlAsync(string environmentUrl)
     {
         var environments = await GetEnvironmentsAsync();
         return environments.FirstOrDefault(e => e.EnvironmentUrl?.Equals(environmentUrl, StringComparison.OrdinalIgnoreCase) == true);
     }
 
-    public static EnvironmentParts GetPartsFromEnvUrl(string envUrl)
+    public static EnvironmentUrlParts GetPartsFromEnvUrl(string envUrl)
     {
         var regex = new Regex(@"^https://([^.]+)\.([^.]+\.[^.]+\.[a-z]+)(?:/|$)");
         var match = regex.Match(envUrl);
@@ -59,10 +59,10 @@ public static class PacUtils
             Environment.Exit(1);
         }
 
-        var envDomain = match.Groups[1].Value;
-        var regionDomain = match.Groups[2].Value;
+        var organization = match.Groups[1].Value;
+        var host = match.Groups[2].Value;
 
-        var regionDomainToRegion = new Dictionary<string, string>
+        var hostToRegion = new Dictionary<string, string>
         {
             { "crm.dynamics.com", "unitedstates" },
             { "crm3.dynamics.com", "canada" },
@@ -83,16 +83,16 @@ public static class PacUtils
             { "crm.appsplatform.us", "usgovhigh" }
         };
 
-        if (!regionDomainToRegion.TryGetValue(regionDomain, out var region))
+        if (!hostToRegion.TryGetValue(host, out var region))
         {
-            Console.Error.WriteLine($"Unknown region/domain: {regionDomain}");
+            Console.Error.WriteLine($"Unknown region/domain: {host}");
             Environment.Exit(1);
         }
 
-        return new EnvironmentParts
+        return new EnvironmentUrlParts
         {
-            EnvDomain = envDomain,
-            RegionDomain = regionDomain,
+            Organization = organization,
+            Host = host,
             Region = region
         };
     }
@@ -109,9 +109,9 @@ public class EnvironmentInfo
     public string? Version { get; set; }
 }
 
-public class EnvironmentParts
+public class EnvironmentUrlParts
 {
-    public string EnvDomain { get; set; } = null!;
-    public string RegionDomain { get; set; } = null!;
+    public string Organization { get; set; } = null!;
+    public string Host { get; set; } = null!;
     public string Region { get; set; } = null!;
 }

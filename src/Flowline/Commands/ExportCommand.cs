@@ -7,10 +7,10 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class SyncCommandSettings : BaseCommandSettings
+public class ExportCommandSettings : FlowlineSettings
 {
-    [CommandArgument(0, "[environment]")]
-    [Description("The environment to run the command against. If not specified, uses the environment from the project configuration.")]
+    [CommandOption("-e|--environment <URL>")]
+    [Description("The environment to run the command against")]
     public string? Environment { get; set; }
 
     [CommandOption("-s|--solution")]
@@ -30,9 +30,9 @@ public class SyncCommandSettings : BaseCommandSettings
     public bool Managed { get; set; } = false;
 }
 
-public class SyncCommand : AsyncCommand<SyncCommandSettings>
+public class ExportCommand : AsyncCommand<ExportCommandSettings>
 {
-    public override async Task<int> ExecuteAsync(CommandContext context, SyncCommandSettings settings)
+    public override async Task<int> ExecuteAsync(CommandContext context, ExportCommandSettings settings)
     {
         await PacUtils.AssertPacCliInstalledAsync();
 
@@ -40,32 +40,32 @@ public class SyncCommand : AsyncCommand<SyncCommandSettings>
         var config = ProjectConfig.Load();
 
         // Use configuration values if not specified in command arguments
-        var environment = settings.Environment ?? config?.GetCurrentEnvironment();
+        var environment = settings.Environment ?? config?.DevelopmentEnvironment;
         var solutionName = settings.SolutionName ?? config?.SolutionName;
         var useManagedSolution = settings.Managed || config.UseManagedSolution;
 
         // Validate that we have an environment
         if (string.IsNullOrEmpty(environment))
         {
-            AnsiConsole.MarkupLine("[red]No environment specified. Please provide an environment or run 'clone' first.[/]");
+            AnsiConsole.MarkupLine("[red]No environment specified. Please provide an environment or run 'init' first.[/]");
             return 1;
         }
 
         var commitMessage = settings.CommitMessage ?? $"Commit changes to solution '{solutionName}' in environment '{environment}'";
         var rootFolder = Directory.GetCurrentDirectory();
-        var srcSolutionFolder = Path.Combine(rootFolder, "src", solutionName);
+        var srcSolutionFolder = Path.Combine(rootFolder, "src", "solutions", solutionName);
         var cdsprojPath = Path.Combine(srcSolutionFolder, $"{solutionName}.cdsproj");
 
         // Check if we're in an initialized environment
         if (!Directory.Exists(Path.Combine(rootFolder, ".git")))
         {
-            AnsiConsole.MarkupLine("[red]This directory is not a git repository. Please run 'clone' first.[/]");
+            AnsiConsole.MarkupLine("[red]This directory is not a git repository. Please run 'init' first.[/]");
             return 1;
         }
 
         if (!File.Exists(cdsprojPath))
         {
-            AnsiConsole.MarkupLine($"[red]Solution '{solutionName}' not found. Please run 'clone' first.[/]");
+            AnsiConsole.MarkupLine($"[red]Solution '{solutionName}' not found. Please run 'init' first.[/]");
             return 1;
         }
 
@@ -93,8 +93,7 @@ public class SyncCommand : AsyncCommand<SyncCommandSettings>
                               .WithArguments(args => args
                                     .Add("solution")
                                     .Add("sync")
-                                    .Add("--solution-folder")
-                                    .Add(srcSolutionFolder)
+                                    .Add("--solution-folder").Add(srcSolutionFolder)
                                     .Add("--environment").Add(environment)
                                     .Add("--packagetype").Add(useManagedSolution ? "Both" : "Unmanaged"))
                               .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
@@ -171,7 +170,14 @@ public class SyncCommand : AsyncCommand<SyncCommandSettings>
             {
                 // Determine if this is production or development
                 bool isProd = sourceEnv?.Type == "Production";
-                config.SetEnvironment(environment, isProd);
+                if (isProd)
+                {
+                    config.ProductionEnvironment = environment;
+                }
+                else
+                {
+                    config.DevelopmentEnvironment = environment;
+                }
             }
 
             config.SolutionName = solutionName;

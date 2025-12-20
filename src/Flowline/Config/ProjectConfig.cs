@@ -1,50 +1,114 @@
 ﻿using System.Text.Json;
+using Spectre.Console;
 
 namespace Flowline.Config;
 
 public class ProjectConfig
 {
-    // Development environment URL
-    public string SandboxEnvironment { get; set; } = string.Empty;
+    public string? ProductionEnvironment
+    {
+        get;
+        set
+        {
+            if (!string.IsNullOrEmpty(field))
+            {
+                if (field == value) return;
 
-    // Production environment URL
-    public string ProductionEnvironment { get; set; } = string.Empty;
+                AnsiConsole.MarkupLine($"Production Environment found in config: {field}");
+                if (!AnsiConsole.Confirm("[yellow]Do you want to overwrite it?[/]", false))
+                {
+                    AnsiConsole.MarkupLine($"[green]Alright, we keep as-is! See [link]{field}[/][/]");
+                    return;
+                }
+                AnsiConsole.MarkupLine("[yellow]Overriding existing environment project configuration.[/]");
+            }
+            field = value;
+        }
+    }
 
-    // The current branch environment (defaults to development if available)
-    public string BranchEnvironment { get; set; } = string.Empty;
+    public string? StagingEnvironment
+    {
+        get;
+        set
+        {
+            if (!string.IsNullOrEmpty(field))
+            {
+                if (field == value) return;
 
-    public string SolutionName { get; set; } = string.Empty;
-    public bool UseManagedSolution { get; set; } = false;
+                AnsiConsole.MarkupLine($"Staging Environment found in config: {field}");
+                if (!AnsiConsole.Confirm("[yellow]Do you want to overwrite it?[/]", false))
+                {
+                    AnsiConsole.MarkupLine($"[green]Alright, we keep as-is! See [link]{field}[/][/]");
+                    return;
+                }
+                AnsiConsole.MarkupLine("[yellow]Overriding existing environment project configuration.[/]");
+            }
+            field = value;
+        }
+    }
+
+    public string? DevelopmentEnvironment
+    {
+        get;
+        set
+        {
+            if (!string.IsNullOrEmpty(field))
+            {
+                if (field == value) return;
+
+                AnsiConsole.MarkupLine($"Development Environment found in config: {field}");
+                if (!AnsiConsole.Confirm("[yellow]Do you want to overwrite it?[/]", false))
+                {
+                    AnsiConsole.MarkupLine($"[green]Alright, we keep as-is! See [link]{field}[/][/]");
+                    return;
+                }
+                AnsiConsole.MarkupLine("[yellow]Overriding existing environment project configuration.[/]");
+            }
+            field = value;
+        }
+    }
+
+    public string? SolutionName
+    {
+        get;
+        set
+        {
+            if (!string.IsNullOrEmpty(field))
+            {
+                if (field == value) return;
+
+                AnsiConsole.MarkupLine($"SolutionName in config: {field}");
+                if (!AnsiConsole.Confirm("[yellow]Do you want to overwrite it?[/]", false))
+                {
+                    AnsiConsole.MarkupLine($"[green]Alright, we keep as-is! See {field}[/]");
+                    return;
+                }
+                AnsiConsole.MarkupLine("[yellow]Overriding existing SolutionName in config.[/]");
+            }
+            field = value;
+        }
+    }
+
+    public bool UseManagedSolution
+    {
+        get;
+        set
+        {
+            if (field == value) return;
+
+            AnsiConsole.MarkupLine($"UseManagedSolution found in config: {field}");
+            if (!AnsiConsole.Confirm("[yellow]Do you want to overwrite it?[/]", false))
+            {
+                AnsiConsole.MarkupLine($"[green]Alright, we keep as-is! See {field}[/]");
+                return;
+            }
+
+            AnsiConsole.MarkupLine("[yellow]Overriding UseManagedSolution in config.[/]");
+            field = value;
+        }
+    } = false;
 
     internal static readonly string ConfigFileName = ".flowline";
-
-    // Get the current environment to use (active, or fall back to dev, then prod)
-    public string GetCurrentEnvironment()
-    {
-        if (!string.IsNullOrEmpty(BranchEnvironment))
-            return BranchEnvironment;
-
-        if (!string.IsNullOrEmpty(SandboxEnvironment))
-            return SandboxEnvironment;
-
-        return ProductionEnvironment;
-    }
-
-    // Set an environment as both the corresponding type and make it active
-    public void SetEnvironment(string url, bool isProd)
-    {
-        if (isProd)
-        {
-            ProductionEnvironment = url;
-        }
-        else
-        {
-            SandboxEnvironment = url;
-        }
-
-        // Set as an active environment too
-        BranchEnvironment = url;
-    }
 
     public static ProjectConfig? Load(string? rootFolder = null)
     {

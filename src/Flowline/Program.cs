@@ -13,36 +13,46 @@ app.Configure(config =>
     config.ValidateExamples();
 #endif
 
-    config.AddCommand<CloneCommand>("clone")
-          .WithDescription("Clone a local folder with a remote git repository and Dataverse solution")
-          .WithExample("clone", "https://github.com/AutomateValue/Dataverse01.git https://automatevalue-dev.crm4.dynamics.com");
+    config.AddCommand<InitCommand>("init") // init (new repo) or clone (existing repo)
+          .WithDescription("Init a local folder by cloning a remote git repository and Dataverse solution")
+          .WithExample("init", "https://github.com/contoso/Dataverse01.git --environment https://contoso.crm4.dynamics.com")
+          .WithExample("init", "https://github.com/contoso/Dataverse01.git --environment https://contoso.crm4.dynamics.com --solution ContosoCustomizations")
+          .WithExample("init", "https://github.com/contoso/Dataverse01.git --environment https://contoso.crm4.dynamics.com --solution ContosoCustomizations --managed");
 
-    config.AddCommand<BranchEnvCommand>("branch-env")
+    config.AddCommand<PrimeCommand>("prime") // prime from PROD, use also reset (https://learn.microsoft.com/en-us/power-platform/admin/reset-environment)?
           .WithDescription("Branch a Power Platform production environment by coping into a new environment and create a new branch in the git repository")
-          .WithExample("branch-env", "https://automatevalue.crm4.dynamics.com/");
+          .WithExample("prime")
+          .WithExample("prime", "dev")
+          .WithExample("prime", "dev --fullcopy")
+          .WithExample("prime", "dev --suffix mydev")
+          .WithExample("prime", "dev --environment https://contoso-dev.crm4.dynamics.com")
+          .WithExample("prime", "staging")
+          .WithExample("prime", "dev --source https://contoso.crm4.dynamics.com");
 
-    config.AddCommand<SyncCommand>("sync")
-          .WithDescription("Sync a Power Platform solution to source control (similar to Git Commit and Push)")
-          .WithExample("sync", "https://automatevalue-dev.crm4.dynamics.com/");
+    // push (upload and push assets to environment: plugins, webresources, pcf controls, etc.)
+    config.AddCommand<PushCommand>("push")
+        .WithDescription("Upload assets (webresources, plugins) to a Power Platform environment")
+        .WithExample("push")
+        .WithExample("push", "https://contoso-dev.crm4.dynamics.com/");
 
-    config.AddCommand<InfoCommand>("info")
-          .WithDescription("Show the version of Flowline and Power Platform CLI")
-          .WithExample("info", "Displays the version of Flowline and Power Platform CLI");
+    // export or snapshot
+    config.AddCommand<ExportCommand>("export")
+          .WithDescription("Export a Power Platform solution to source control)")
+          .WithExample("export")
+          .WithExample("export", "https://contoso-dev.crm4.dynamics.com/");
 
-    config.AddCommand<EnvCommand>("env")
-          .WithDescription("Manage and switch between environments")
-          .WithExample("env", "Show current environment configuration")
-          .WithExample("env prod", "Switch to production environment")
-          .WithExample("env dev", "Switch to development environment");
+    // sync = push and export
 
-    config.AddCommand<DeployCommand>("deploy")
-          .WithDescription("Deploy changes to test environment (similar to PullRequest)");
+    config.AddCommand<StageCommand>("stage")
+          .WithDescription("Deploy changes to staging environment (similar to PullRequest)");
 
-    config.AddCommand<MergeCommand>("merge")
-          .WithDescription("Merge pull request into master");
+    // Ship or Release
+    config.AddCommand<ReleaseCommand>("release")
+          .WithDescription("Release changes to production environment");
 
-    config.AddCommand<DeleteEnvCommand>("delete-env")
-          .WithDescription("Delete a Power Platform environment");
+    config.AddCommand<StatusCommand>("status")
+          .WithDescription("Show current environment and the version of Flowline and Power Platform CLI")
+          .WithExample("status");
 });
 
 return app.Run(args);

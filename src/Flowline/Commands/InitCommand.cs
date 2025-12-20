@@ -6,29 +6,29 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class CloneCommandSettings : BaseCommandSettings
+public class InitCommand : AsyncCommand<InitCommand.Settings>
 {
-    [CommandArgument(0, "<repo-url>")]
-    [Description("Git repository URL")]
-    public string GitRemoteUrl { get; set; } = null!; // = "https://github.com/AutomateValue/Dataverse01.git";
+    public sealed class Settings : FlowlineSettings
+    {
+        [CommandArgument(0, "[git-remote-url]")]
+        [Description("Git repository URL")]
+        public string GitRemoteUrl { get; set; } = null!; // = "https://github.com/AutomateValue/Dataverse01.git";
 
-    [CommandArgument(1, "[environment]")]
-    [Description("The environment to run the command against")]
-    public string? Environment { get; set; } // = "https://automatevalue-dev.crm4.dynamics.com/";
+        [CommandOption("-e|--environment <URL>")]
+        [Description("The environment to run the command against")]
+        public string? Environment { get; set; }
 
-    [CommandOption("-s|--solution")]
-    [Description("The solution name to initialize")]
-    [DefaultValue("Cr07982")]
-    public string? SolutionName { get; set; } = "Cr07982";
+        [CommandOption("-s|--solution")]
+        [Description("The solution name to initialize")]
+        [DefaultValue("Cr07982")]
+        public string? SolutionName { get; set; } = "Cr07982";
 
-    [CommandOption("--managed")]
-    [Description("Use managed solution instead of unmanaged")]
-    public bool Managed { get; set; } = false;
-}
+        [CommandOption("--managed")]
+        [Description("Use managed solution instead of unmanaged")]
+        public bool Managed { get; set; } = false;
+    }
 
-public class CloneCommand : AsyncCommand<CloneCommandSettings>
-{
-    public override async Task<int> ExecuteAsync(CommandContext context, CloneCommandSettings settings)
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
     {
         await GitUtils.AssertGitInstalledAsync();
         await PacUtils.AssertPacCliInstalledAsync();
@@ -57,6 +57,16 @@ public class CloneCommand : AsyncCommand<CloneCommandSettings>
         else
         {
             AnsiConsole.MarkupLine("[yellow]Git repository already initialized.[/]");
+
+            (string? remoteName, string? remoteUrl) = await GitUtils.GetRemoteUrlAsync();
+            if (!string.IsNullOrWhiteSpace(remoteUrl))
+            {
+                AnsiConsole.MarkupLineInterpolated($"  Remote URL: [link]{remoteUrl}[/] ({remoteName})");
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("[yellow]No remote configured for the current branch.[/]");
+            }
         }
 
         // Load project configuration if exists
@@ -66,47 +76,39 @@ public class CloneCommand : AsyncCommand<CloneCommandSettings>
             AnsiConsole.MarkupLine("[yellow]Project configuration already exists.[/]");
             if (string.IsNullOrEmpty(settings.Environment))
             {
-                settings.Environment = config.GetCurrentEnvironment();
-                if (string.IsNullOrEmpty(settings.Environment))
+                if (string.IsNullOrEmpty(config.ProductionEnvironment))
                 {
-                    AnsiConsole.MarkupLine(
-                        "[red]No environment configured. Please provide an environment URL using -e <environment> or --environment <environment>.[/]");
+                    AnsiConsole.MarkupLine("[red]No environment configured. Please provide an environment URL using -e <environment> or --environment <environment>.[/]");
                     return 1;
                 }
+
+                AnsiConsole.MarkupLine($"  Using configured production environment: [bold]{config.ProductionEnvironment}[/]");
             }
-            else if (config.GetCurrentEnvironment() != settings.Environment)
+            else
             {
-                AnsiConsole.MarkupLine("[yellow]Overriding existing environment project configuration.[/]");
-                var srcEnvironment = await PacUtils.GetEnvironmentByUrlAsync(settings.Environment);
+                var srcEnvironment = await PacUtils.GetEnvironmentInfoByUrlAsync(settings.Environment);
                 if (srcEnvironment == null)
                 {
                     AnsiConsole.MarkupLine("[red]Invalid environment URL. Please provide a valid Dataverse environment URL.[/]");
                     return 1;
                 }
-                else
+
+                if (srcEnvironment.Type != "Production")
                 {
-                    AnsiConsole.MarkupLine(
-                        $"Using environment: [bold]{srcEnvironment.DisplayName}[/] ({srcEnvironment.EnvironmentUrl}) - Type: {srcEnvironment.Type})");
-                    config.SetEnvironment(settings.Environment, srcEnvironment.Type == "Production");
+                    AnsiConsole.MarkupLine("[red]Environment must be of type 'Production'.[/]");
+                    return 1;
                 }
+
+                AnsiConsole.MarkupLine($"  Using environment: [bold]{srcEnvironment.DisplayName}[/] ({srcEnvironment.EnvironmentUrl}) - Type: {srcEnvironment.Type})");
+                config.ProductionEnvironment = settings.Environment;
             }
 
-            if (string.IsNullOrEmpty(settings.SolutionName))
+            if (!string.IsNullOrEmpty(settings.SolutionName))
             {
-                settings.SolutionName = config.SolutionName;
-                AnsiConsole.MarkupLine($"Using existing solution name: [bold]{settings.SolutionName}[/]");
-            }
-            else if (config.SolutionName != settings.SolutionName)
-            {
-                AnsiConsole.MarkupLine("[yellow]Overriding existing solution name in project configuration.[/]");
                 config.SolutionName = settings.SolutionName;
             }
 
-            if (config.UseManagedSolution != settings.Managed)
-            {
-                AnsiConsole.MarkupLine("[yellow]Overriding existing solution type in project configuration.[/]");
-                config.UseManagedSolution = settings.Managed;
-            }
+            config.UseManagedSolution = settings.Managed;
 
             config.Save();
         }
@@ -118,23 +120,25 @@ public class CloneCommand : AsyncCommand<CloneCommandSettings>
             // Environment exists?
             if (string.IsNullOrEmpty(settings.Environment))
             {
-                AnsiConsole.MarkupLine(
-                    "[red]Environment URL is required. Please provide a Dataverse environment URL using -e <environment> or --environment <environment>.[/]");
+                AnsiConsole.MarkupLine("[red]Environment URL is required. Please provide a Dataverse environment URL using -e <environment> or --environment <environment>.[/]");
                 return 1;
             }
 
-            var sourceEnvironment = await PacUtils.GetEnvironmentByUrlAsync(settings.Environment);
-            if (sourceEnvironment == null)
+            var srcEnvironment = await PacUtils.GetEnvironmentInfoByUrlAsync(settings.Environment);
+            if (srcEnvironment == null)
             {
                 AnsiConsole.MarkupLine("[red]Invalid environment URL. Please provide a valid Dataverse environment URL.[/]");
                 return 1;
             }
-            else
+
+            if (srcEnvironment.Type != "Production")
             {
-                AnsiConsole.MarkupLine(
-                    $"Using environment: [bold]{sourceEnvironment.DisplayName}[/] ({sourceEnvironment.EnvironmentUrl}) - Type: {sourceEnvironment.Type})");
-                config.SetEnvironment(settings.Environment, sourceEnvironment.Type == "Production");
+                AnsiConsole.MarkupLine("[red]Environment must be of type 'Production'.[/]");
+                return 1;
             }
+
+            AnsiConsole.MarkupLine($"  Using environment: [bold]{srcEnvironment.DisplayName}[/] ({srcEnvironment.EnvironmentUrl}) - Type: {srcEnvironment.Type})");
+            config.ProductionEnvironment = settings.Environment;
 
             // Validate solution name
             if (string.IsNullOrEmpty(settings.SolutionName))
@@ -152,11 +156,11 @@ public class CloneCommand : AsyncCommand<CloneCommandSettings>
         }
 
         // Clone solution from Dataverse if it doesn't exist locally
-        var srcSolutionFolder = Path.Combine(rootFolder, "src", settings.SolutionName);
-        var cdsprojPath = Path.Combine(srcSolutionFolder, $"{settings.SolutionName}.cdsproj");
+        var srcSolutionFolder = Path.Combine(rootFolder, "src", "solutions", config.SolutionName);
+        var cdsprojPath = Path.Combine(srcSolutionFolder, $"{config.SolutionName}.cdsproj");
         if (!File.Exists(cdsprojPath))
         {
-            AnsiConsole.MarkupLine($"No solution folder for '{settings.SolutionName}' found. Cloning from Dataverse...");
+            AnsiConsole.MarkupLine($"No solution folder for '{config.SolutionName}' found. Cloning from Dataverse...");
 
             if (Directory.Exists(srcSolutionFolder))
             {
@@ -168,10 +172,10 @@ public class CloneCommand : AsyncCommand<CloneCommandSettings>
                                   .WithArguments(args => args
                                                          .Add("solution")
                                                          .Add("clone")
-                                                         .Add("--name").Add(settings.SolutionName)
-                                                         .Add("--environment").Add(settings.Environment)
-                                                         .Add("--packagetype").Add(settings.Managed ? "Both" : "Unmanaged")
-                                                         .Add("--outputDirectory").Add($"{Path.Combine(rootFolder, "src")}"))
+                                                         .Add("--name").Add(config.SolutionName)
+                                                         .Add("--environment").Add(config.ProductionEnvironment)
+                                                         .Add("--packagetype").Add(config.UseManagedSolution ? "Both" : "Unmanaged")
+                                                         .Add("--outputDirectory").Add($"{Path.Combine(rootFolder, "src", "solutions")}"))
                                   .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
                                   .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
                                   .ExecuteAsync();
@@ -184,10 +188,10 @@ public class CloneCommand : AsyncCommand<CloneCommandSettings>
         }
         else
         {
-            AnsiConsole.MarkupLine($"[yellow]Found '{settings.SolutionName}.cdsproj'. Solution already cloned locally.[/]");
+            AnsiConsole.MarkupLine($"[yellow]Found '{config.SolutionName}.cdsproj'. Solution already cloned locally.[/]");
         }
 
-        AnsiConsole.MarkupLine("[green]Initialization complete! You can now use 'sync' to keep your solution up to date.[/]");
+        AnsiConsole.MarkupLine("[green]Initialization complete! You can now use 'push' and 'export' (or 'sync') to keep your solution up to date.[/]");
 
         return 0;
     }

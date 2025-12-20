@@ -5,11 +5,15 @@
     <File Path="CHANGELOG.md" />
     <File Path="LICENSE" />
     <File Path="README.md" />
+    <File Path="docs\IDEAS.md" />
+    <File Path="reinstall-flowline.ps1" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src\Flowline\Flowline.csproj" />
   </Folder>
-  <Folder Name="/tests/" />
+  <Folder Name="/tests/">
+    <Project Path="tests\Flowline.Tests\Flowline.Tests.csproj" Type="C#" />
+  </Folder>
   <Folder Name="/workflows/">
     <File Path=".github/workflows/ci.yml" />
     <File Path=".github/workflows/release.yml" />

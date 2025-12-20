@@ -7,9 +7,9 @@
 **Flowline** is a lightweight CLI tool that streamlines the deployment of Power Platform solutions while tracking all
 changes in git.
 
-It follows a GitHubFlow-style process to clone, sync, and deploy solutions, offering a flexible alternative to 
-Microsoft's rigid Power Platform Pipelines. Unlike Microsoft's approach of moving managed solutions across controlled 
-environments, Flowline gives you the freedom to deploy unmanaged solutions where and how you want — keeping you in 
+It follows a GitHubFlow-style process to clone, sync, and deploy solutions, offering a flexible alternative to
+Microsoft's rigid Power Platform Pipelines. Unlike Microsoft's approach of moving managed solutions across controlled
+environments, Flowline gives you the freedom to deploy unmanaged solutions where and how you want — keeping you in
 control while maintaining a complete source history in your git repository.
 
 ---
@@ -45,23 +45,38 @@ dotnet tool install --global Flowline
 
 ## 🛠️ Commands
 ```bash
-flowline clone
+flowline init
 ```
 ➡ Clone your Production environment to a new Dev environment (creates a fresh sandbox).
 
 ```bash
-flowline sync
+flowline prime
 ```
 ➡ Sync solutions: download from Dev, unpack, and commit into Git.
 
 ```bash
-flowline deploy --target prod
+flowline export --target prod
 ```
 ➡ Deploy your solution to Production (or another target like Test).
 
 🌟 Example usage
 ```bash
-flowline clone --name Dev123 --region europe
-flowline sync --solution MySolution
-flowline deploy --target prod --solution MySolution
+flowline prime --name Dev123 --region europe
+flowline export --solution MySolution
+flowline stage --solution MySolution
+flowline release --solution MySolution
+```
+## Development
+
+```bash
+dotnet pack
+dotnet tool uninstall -g Flowline
+dotnet tool install -g Flowline --add-source ./artifacts/nupkg --prerelease
+```
+
+## Dependencies
+
+```bash
+winget install Microsoft.PowerAppsCLI
+winget install Git.Git
 ```

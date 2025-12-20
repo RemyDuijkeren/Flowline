@@ -1,16 +1,23 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <OutputType>Exe</OutputType>
-        <TargetFramework>net9.0</TargetFramework>
-        <PackAsTool>true</PackAsTool>
-        <ToolCommandName>flowline</ToolCommandName>
-        <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-        <RestoreLockedMode Condition="'$(ContinuousIntegrationBuild)' == 'true'">true</RestoreLockedMode>
-        <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
-        <ImplicitUsings>enable</ImplicitUsings>
-        <Nullable>enable</Nullable>
-        <InvariantGlobalization>true</InvariantGlobalization>
+      <OutputType>Exe</OutputType>
+      <TargetFrameworks>net10.0;net9.0;</TargetFrameworks>
+      <LangVersion>preview</LangVersion>
+      <Nullable>enable</Nullable>
+      <ImplicitUsings>enable</ImplicitUsings>
+      <InvariantGlobalization>true</InvariantGlobalization>
+      
+      <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+      <RestoreLockedMode Condition="'$(ContinuousIntegrationBuild)' == 'true'">true</RestoreLockedMode>
+      <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+      
+      <PackAsTool>true</PackAsTool>
+      <ToolCommandName>flowline</ToolCommandName>
+      <PackageOutputPath>../../artifacts/nupkg</PackageOutputPath>
+
+
+        
 
         <!-- Single file publishing options -->
         <!-- Option 1: PublishSingleFile - bundles the app with the runtime into a single file (does not work with pack) -->
@@ -47,7 +54,7 @@
 
     <ItemGroup>
       <PackageReference Include="CliWrap" Version="3.9.0" />
-      <PackageReference Include="Spectre.Console.Cli" Version="0.50.0" />
+      <PackageReference Include="Spectre.Console.Cli" Version="0.51.1" />
       <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All"/>
       <PackageReference Include="MinVer" Version="6.0.0" PrivateAssets="All"/>
     </ItemGroup>

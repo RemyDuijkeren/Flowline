@@ -3,7 +3,7 @@ using Spectre.Console.Cli;
 
 namespace Flowline;
 
-public class BaseCommandSettings : CommandSettings
+public class FlowlineSettings : CommandSettings
 {
     [CommandOption("-v|--verbose")]
     [Description("Enable verbose output")]
