@@ -10,12 +10,12 @@ public class PushCommand : AsyncCommand<PushCommand.Settings>
     {
     }
 
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         //AnsiConsole.MarkupLine($"Running command [green]'merge'[/] for environment [green]'{settings.Environment}'[/]...");
 
-        await PacUtils.AssertPacCliInstalledAsync();
-        await GitUtils.AssertGitInstalledAsync();
+        await PacUtils.AssertPacCliInstalledAsync(cancellationToken);
+        await GitUtils.AssertGitInstalledAsync(cancellationToken);
 
         AnsiConsole.MarkupLine("Merge pull request into master...");
         // TODO: Implement the upload logic

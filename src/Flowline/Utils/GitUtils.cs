@@ -6,13 +6,13 @@ namespace Flowline;
 
 public static class GitUtils
 {
-    public static async Task<string> AssertGitInstalledAsync()
+    public static async Task<string> AssertGitInstalledAsync(CancellationToken cancellationToken = default)
     {
         try
         {
             var result = await Cli.Wrap("git")
                                   .WithArguments("--version")
-                                  .ExecuteBufferedAsync();
+                                  .ExecuteBufferedAsync(cancellationToken);
 
             // Extract the version from the output (format: "git version X.Y.Z")
             var output = result.StandardOutput.Trim();
@@ -31,7 +31,7 @@ public static class GitUtils
         }
     }
 
-    public static async Task<(string? remoteName, string? remoteUrl)> GetRemoteUrlAsync()
+    public static async Task<(string? remoteName, string? remoteUrl)> GetRemoteUrlAsync(CancellationToken cancellationToken = default)
     {
         // Retrieve remote of the current branch and show it
         string? remoteName = null;
@@ -43,7 +43,7 @@ public static class GitUtils
                                           .WithArguments("rev-parse --abbrev-ref --symbolic-full-name @{u}")
                                           .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
                                           .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
-                                          .ExecuteBufferedAsync();
+                                          .ExecuteBufferedAsync(cancellationToken);
 
             var upstream = upstreamResult.StandardOutput.Trim();
 
@@ -58,7 +58,7 @@ public static class GitUtils
                                                .WithArguments(args => args.Add("remote").Add("get-url").Add(remoteName))
                                                .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
                                                .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
-                                               .ExecuteBufferedAsync();
+                                               .ExecuteBufferedAsync(cancellationToken);
 
                 if (remoteUrlResult.ExitCode == 0)
                     remoteUrl = remoteUrlResult.StandardOutput.Trim();
@@ -71,7 +71,7 @@ public static class GitUtils
                                             .WithArguments("remote get-url origin")
                                             .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
                                             .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
-                                            .ExecuteBufferedAsync();
+                                            .ExecuteBufferedAsync(cancellationToken);
 
                 if (originResult.ExitCode == 0)
                     remoteUrl = originResult.StandardOutput.Trim();
@@ -84,7 +84,7 @@ public static class GitUtils
                                              .WithArguments("remote")
                                              .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
                                              .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
-                                             .ExecuteBufferedAsync();
+                                             .ExecuteBufferedAsync(cancellationToken);
 
                 var firstRemote = remotesResult.StandardOutput
                                                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
@@ -94,7 +94,7 @@ public static class GitUtils
                 {
                     var firstUrlResult = await Cli.Wrap("git")
                                                   .WithArguments(args => args.Add("remote").Add("get-url").Add(firstRemote))
-                                                  .ExecuteBufferedAsync();
+                                                  .ExecuteBufferedAsync(cancellationToken);
 
                     if (firstUrlResult.ExitCode == 0)
                         remoteUrl = firstUrlResult.StandardOutput.Trim();

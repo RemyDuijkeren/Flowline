@@ -34,10 +34,10 @@ public class PrimeCommand : AsyncCommand<PrimeCommand.Settings>
         public string? Source { get; set; }
     }
 
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        await GitUtils.AssertGitInstalledAsync();
-        await PacUtils.AssertPacCliInstalledAsync();
+        await GitUtils.AssertGitInstalledAsync(cancellationToken);
+        await PacUtils.AssertPacCliInstalledAsync(cancellationToken);
 
         AnsiConsole.MarkupLine($"Validating [bold]'{settings.Role}'[/]...");
 
@@ -51,7 +51,7 @@ public class PrimeCommand : AsyncCommand<PrimeCommand.Settings>
             return 1;
         }
 
-        var sourceEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(sourceUrl);
+        var sourceEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(sourceUrl, cancellationToken);
         if (sourceEnv == null)
         {
             AnsiConsole.MarkupLine("[red]Source Environment not found.[/]");
@@ -80,7 +80,7 @@ public class PrimeCommand : AsyncCommand<PrimeCommand.Settings>
             return 1;
         }
 
-        var targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl);
+        var targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, cancellationToken);
         if (targetEnv != null)
         {
             AnsiConsole.MarkupLine($"Target Environment already exists: {targetEnv.EnvironmentUrl}");
@@ -90,7 +90,7 @@ public class PrimeCommand : AsyncCommand<PrimeCommand.Settings>
                 return 1;
             }
 
-            if (!AnsiConsole.Confirm("[yellow]Do you want to overwrite it?[/]", false))
+            if (!await AnsiConsole.ConfirmAsync("[yellow]Do you want to overwrite it?[/]", false, cancellationToken))
             {
                 AnsiConsole.MarkupLine($"[green]Alright, we keep as-is! See [link]{targetEnv.EnvironmentUrl}[/][/]");
                 SaveConfig(config, sourceEnv, targetEnv);
@@ -112,9 +112,9 @@ public class PrimeCommand : AsyncCommand<PrimeCommand.Settings>
                                             .Add("--region").Add(urlParts.Region))
                      .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
                      .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
-                     .ExecuteAsync();
+                     .ExecuteAsync(cancellationToken);
 
-            targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl);
+            targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, cancellationToken);
             if (targetEnv == null)
             {
                 AnsiConsole.MarkupLine("[red]Target Environment not found after creating.[/]");
@@ -136,7 +136,7 @@ public class PrimeCommand : AsyncCommand<PrimeCommand.Settings>
                                         .Add("--type").Add(copyType))
                  .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
                  .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
-                 .ExecuteAsync();
+                 .ExecuteAsync(cancellationToken);
 
         SaveConfig(config, sourceEnv, targetEnv);
 

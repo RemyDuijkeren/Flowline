@@ -28,10 +28,10 @@ public class InitCommand : AsyncCommand<InitCommand.Settings>
         public bool Managed { get; set; } = false;
     }
 
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        await GitUtils.AssertGitInstalledAsync();
-        await PacUtils.AssertPacCliInstalledAsync();
+        await GitUtils.AssertGitInstalledAsync(cancellationToken);
+        await PacUtils.AssertPacCliInstalledAsync(cancellationToken);
 
         // Clone Git repo if not already a Git repo
         var rootFolder = Directory.GetCurrentDirectory();
@@ -46,7 +46,7 @@ public class InitCommand : AsyncCommand<InitCommand.Settings>
                                                          .Add(rootFolder))
                                   .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
                                   .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
-                                  .ExecuteAsync();
+                                  .ExecuteAsync(cancellationToken);
 
             if (result.ExitCode != 0)
             {
@@ -58,7 +58,7 @@ public class InitCommand : AsyncCommand<InitCommand.Settings>
         {
             AnsiConsole.MarkupLine("[yellow]Git repository already initialized.[/]");
 
-            (string? remoteName, string? remoteUrl) = await GitUtils.GetRemoteUrlAsync();
+            (string? remoteName, string? remoteUrl) = await GitUtils.GetRemoteUrlAsync(cancellationToken);
             if (!string.IsNullOrWhiteSpace(remoteUrl))
             {
                 AnsiConsole.MarkupLineInterpolated($"  Remote URL: [link]{remoteUrl}[/] ({remoteName})");
@@ -86,7 +86,7 @@ public class InitCommand : AsyncCommand<InitCommand.Settings>
             }
             else
             {
-                var srcEnvironment = await PacUtils.GetEnvironmentInfoByUrlAsync(settings.Environment);
+                var srcEnvironment = await PacUtils.GetEnvironmentInfoByUrlAsync(settings.Environment, cancellationToken);
                 if (srcEnvironment == null)
                 {
                     AnsiConsole.MarkupLine("[red]Invalid environment URL. Please provide a valid Dataverse environment URL.[/]");
@@ -124,7 +124,7 @@ public class InitCommand : AsyncCommand<InitCommand.Settings>
                 return 1;
             }
 
-            var srcEnvironment = await PacUtils.GetEnvironmentInfoByUrlAsync(settings.Environment);
+            var srcEnvironment = await PacUtils.GetEnvironmentInfoByUrlAsync(settings.Environment, cancellationToken);
             if (srcEnvironment == null)
             {
                 AnsiConsole.MarkupLine("[red]Invalid environment URL. Please provide a valid Dataverse environment URL.[/]");
@@ -156,7 +156,7 @@ public class InitCommand : AsyncCommand<InitCommand.Settings>
         }
 
         // Clone solution from Dataverse if it doesn't exist locally
-        var srcSolutionFolder = Path.Combine(rootFolder, "src", "solutions", config.SolutionName);
+        var srcSolutionFolder = Path.Combine(rootFolder, "solutions", config.SolutionName);
         var cdsprojPath = Path.Combine(srcSolutionFolder, $"{config.SolutionName}.cdsproj");
         if (!File.Exists(cdsprojPath))
         {
@@ -173,12 +173,13 @@ public class InitCommand : AsyncCommand<InitCommand.Settings>
                                                          .Add("solution")
                                                          .Add("clone")
                                                          .Add("--name").Add(config.SolutionName)
+                                                         .Add("--async")
                                                          .Add("--environment").Add(config.ProductionEnvironment)
                                                          .Add("--packagetype").Add(config.UseManagedSolution ? "Both" : "Unmanaged")
-                                                         .Add("--outputDirectory").Add($"{Path.Combine(rootFolder, "src", "solutions")}"))
+                                                         .Add("--outputDirectory").Add($"{Path.Combine(rootFolder, "solutions")}"))
                                   .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
                                   .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
-                                  .ExecuteAsync();
+                                  .ExecuteAsync(cancellationToken);
 
             if (result.ExitCode != 0)
             {

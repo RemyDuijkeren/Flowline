@@ -12,17 +12,17 @@ public class StatusCommand : AsyncCommand<StatusCommand.Settings>
     {
     }
 
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         AnsiConsole.MarkupLine(
             $"[bold]Flowline[/] version: [green]{Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version}[/]");
 
         try
         {
-            var pacVersion = await PacUtils.AssertPacCliInstalledAsync();
+            var pacVersion = await PacUtils.AssertPacCliInstalledAsync(cancellationToken);
             AnsiConsole.MarkupLine($"[bold]Power Platform CLI[/] version: [green]{pacVersion}[/]");
 
-            var gitVersion = await GitUtils.AssertGitInstalledAsync();
+            var gitVersion = await GitUtils.AssertGitInstalledAsync(cancellationToken);
             AnsiConsole.MarkupLine($"[bold]Git[/] version: [green]{gitVersion}[/]");
 
             if (settings.Verbose)

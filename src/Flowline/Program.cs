@@ -2,6 +2,19 @@
 using Spectre.Console.Cli;
 using System.Reflection;
 
+
+// Create a cancellation token source to handle Ctrl+C
+var cancellationTokenSource = new CancellationTokenSource();
+
+// Wire up Console.CancelKeyPress to trigger cancellation
+Console.CancelKeyPress += (_, e) =>
+{
+    e.Cancel = true; // Prevent immediate process termination
+    cancellationTokenSource.Cancel();
+    Console.WriteLine("Cancellation requested...");
+};
+
+// Configure and run the app
 var app = new CommandApp();
 
 app.Configure(config =>
@@ -19,6 +32,8 @@ app.Configure(config =>
           .WithExample("init", "https://github.com/contoso/Dataverse01.git --environment https://contoso.crm4.dynamics.com --solution ContosoCustomizations")
           .WithExample("init", "https://github.com/contoso/Dataverse01.git --environment https://contoso.crm4.dynamics.com --solution ContosoCustomizations --managed");
 
+    // copy  = Copy Source environment to destination environment
+    // clone = Clone solution from environment to local folder
     config.AddCommand<PrimeCommand>("prime") // prime from PROD, use also reset (https://learn.microsoft.com/en-us/power-platform/admin/reset-environment)?
           .WithDescription("Branch a Power Platform production environment by coping into a new environment and create a new branch in the git repository")
           .WithExample("prime")
@@ -55,4 +70,4 @@ app.Configure(config =>
           .WithExample("status");
 });
 
-return app.Run(args);
+return await app.RunAsync(args, cancellationTokenSource.Token);

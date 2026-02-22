@@ -2,8 +2,7 @@
 
     <PropertyGroup>
       <OutputType>Exe</OutputType>
-      <TargetFrameworks>net10.0;net9.0;</TargetFrameworks>
-      <LangVersion>preview</LangVersion>
+      <TargetFramework>net10.0</TargetFramework>
       <Nullable>enable</Nullable>
       <ImplicitUsings>enable</ImplicitUsings>
       <InvariantGlobalization>true</InvariantGlobalization>
@@ -15,10 +14,7 @@
       <PackAsTool>true</PackAsTool>
       <ToolCommandName>flowline</ToolCommandName>
       <PackageOutputPath>../../artifacts/nupkg</PackageOutputPath>
-
-
-        
-
+      
         <!-- Single file publishing options -->
         <!-- Option 1: PublishSingleFile - bundles the app with the runtime into a single file (does not work with pack) -->
 <!--        <PublishSingleFile>true</PublishSingleFile>-->
@@ -53,10 +49,10 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="CliWrap" Version="3.9.0" />
-      <PackageReference Include="Spectre.Console.Cli" Version="0.51.1" />
-      <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All"/>
-      <PackageReference Include="MinVer" Version="6.0.0" PrivateAssets="All"/>
+      <PackageReference Include="CliWrap" Version="3.10.0" />
+      <PackageReference Include="Spectre.Console.Cli" Version="0.53.1" />
+      <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.103" PrivateAssets="All" />
+      <PackageReference Include="MinVer" Version="7.0.0" PrivateAssets="All" />
     </ItemGroup>
 
     <ItemGroup>

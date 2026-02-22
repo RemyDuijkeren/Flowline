@@ -14,12 +14,12 @@ public class StageCommand : AsyncCommand<StageCommand.Settings>
         public string SolutionName { get; set; } = "Cr07982";
     }
 
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         //AnsiConsole.MarkupLine($"Running command [green]'deploy'[/] for environment [green]'{settings.Environment}'[/]...");
 
-        await PacUtils.AssertPacCliInstalledAsync();
-        await GitUtils.AssertGitInstalledAsync();
+        await PacUtils.AssertPacCliInstalledAsync(cancellationToken);
+        await GitUtils.AssertGitInstalledAsync(cancellationToken);
 
         AnsiConsole.MarkupLine("Pushing changes to test environment...");
         // TODO: Implement the deploy logic

@@ -7,12 +7,12 @@ namespace Flowline;
 
 public static class PacUtils
 {
-    public static async Task<string> AssertPacCliInstalledAsync()
+    public static async Task<string> AssertPacCliInstalledAsync(CancellationToken cancellationToken = default)
     {
         try
         {
             var result = await Cli.Wrap("pac")
-                         .ExecuteBufferedAsync();
+                         .ExecuteBufferedAsync(cancellationToken);
 
             // Extract version from the output
             var versionLine = result.StandardOutput.Split('\n')
@@ -33,18 +33,18 @@ public static class PacUtils
         }
     }
 
-    public static async Task<List<EnvironmentInfo>> GetEnvironmentsAsync()
+    public static async Task<List<EnvironmentInfo>> GetEnvironmentsAsync(CancellationToken cancellationToken = default)
     {
         var result = await Cli.Wrap("pac")
             .WithArguments("admin list --json")
-            .ExecuteBufferedAsync();
+            .ExecuteBufferedAsync(cancellationToken);
 
         return JsonSerializer.Deserialize<List<EnvironmentInfo>>(result.StandardOutput) ?? new List<EnvironmentInfo>();
     }
 
-    public static async Task<EnvironmentInfo?> GetEnvironmentInfoByUrlAsync(string environmentUrl)
+    public static async Task<EnvironmentInfo?> GetEnvironmentInfoByUrlAsync(string environmentUrl, CancellationToken cancellationToken = default)
     {
-        var environments = await GetEnvironmentsAsync();
+        var environments = await GetEnvironmentsAsync(cancellationToken);
         return environments.FirstOrDefault(e => e.EnvironmentUrl?.Equals(environmentUrl, StringComparison.OrdinalIgnoreCase) == true);
     }
 

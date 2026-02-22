@@ -32,9 +32,9 @@ public class ExportCommandSettings : FlowlineSettings
 
 public class ExportCommand : AsyncCommand<ExportCommandSettings>
 {
-    public override async Task<int> ExecuteAsync(CommandContext context, ExportCommandSettings settings)
+    public override async Task<int> ExecuteAsync(CommandContext context, ExportCommandSettings settings, CancellationToken cancellationToken)
     {
-        await PacUtils.AssertPacCliInstalledAsync();
+        await PacUtils.AssertPacCliInstalledAsync(cancellationToken);
 
         // Load project configuration if needed
         var config = ProjectConfig.Load();
@@ -53,7 +53,7 @@ public class ExportCommand : AsyncCommand<ExportCommandSettings>
 
         var commitMessage = settings.CommitMessage ?? $"Commit changes to solution '{solutionName}' in environment '{environment}'";
         var rootFolder = Directory.GetCurrentDirectory();
-        var srcSolutionFolder = Path.Combine(rootFolder, "src", "solutions", solutionName);
+        var srcSolutionFolder = Path.Combine(rootFolder, "solutions", solutionName);
         var cdsprojPath = Path.Combine(srcSolutionFolder, $"{solutionName}.cdsproj");
 
         // Check if we're in an initialized environment
@@ -71,7 +71,7 @@ public class ExportCommand : AsyncCommand<ExportCommandSettings>
 
         AnsiConsole.MarkupLine($"Validating [bold]'{environment}'[/]...");
 
-        var environments = await PacUtils.GetEnvironmentsAsync();
+        var environments = await PacUtils.GetEnvironmentsAsync(cancellationToken);
         var sourceEnv = environments.FirstOrDefault(e => e.EnvironmentUrl?.Contains(environment) == true);
 
         if (sourceEnv == null)
@@ -93,12 +93,13 @@ public class ExportCommand : AsyncCommand<ExportCommandSettings>
                               .WithArguments(args => args
                                     .Add("solution")
                                     .Add("sync")
+                                    .Add("--async")
                                     .Add("--solution-folder").Add(srcSolutionFolder)
                                     .Add("--environment").Add(environment)
                                     .Add("--packagetype").Add(useManagedSolution ? "Both" : "Unmanaged"))
                               .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
                               .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
-                              .ExecuteAsync();
+                              .ExecuteAsync(cancellationToken);
 
         if (result.ExitCode != 0)
         {
@@ -116,7 +117,7 @@ public class ExportCommand : AsyncCommand<ExportCommandSettings>
                       //.Add("--output").Add(Path.Combine(rootFolder, "artifacts")))
                  .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]DOTNET: {s}[/]")))
                  .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
-                 .ExecuteAsync();
+                 .ExecuteAsync(cancellationToken);
 
         if (settings.NoAutoCommit)
         {
@@ -124,19 +125,19 @@ public class ExportCommand : AsyncCommand<ExportCommandSettings>
             return 0;
         }
 
-        await GitUtils.AssertGitInstalledAsync();
+        await GitUtils.AssertGitInstalledAsync(cancellationToken);
 
         // Add all files to the git staging area
         await Cli.Wrap("git")
                  .WithArguments("add -A")
                  .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
                  .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
-                 .ExecuteAsync();
+                 .ExecuteAsync(cancellationToken);
 
         // Check if there are changes to commit
         var statusResult = await Cli.Wrap("git")
                              .WithArguments("status --porcelain")
-                             .ExecuteBufferedAsync();
+                             .ExecuteBufferedAsync(cancellationToken);
 
         if (string.IsNullOrWhiteSpace(statusResult.StandardOutput))
         {
@@ -152,7 +153,7 @@ public class ExportCommand : AsyncCommand<ExportCommandSettings>
                       .Add("-m").Add(commitMessage))
                  .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
                  .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
-                 .ExecuteAsync();
+                 .ExecuteAsync(cancellationToken);
 
         // Push the changes
         AnsiConsole.MarkupLine("Pushing changes to remote repository...");
@@ -160,7 +161,7 @@ public class ExportCommand : AsyncCommand<ExportCommandSettings>
                  .WithArguments("push")
                  .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
                  .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
-                 .ExecuteAsync();
+                 .ExecuteAsync(cancellationToken);
 
         // Save or update the project configuration with any changes
         if (settings.Environment != null || settings.SolutionName != config.SolutionName || settings.Managed != config.UseManagedSolution)
