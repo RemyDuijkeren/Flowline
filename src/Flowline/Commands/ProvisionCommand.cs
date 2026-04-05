@@ -145,6 +145,8 @@ public class ProvisionCommand : AsyncCommand<ProvisionCommand.Settings>
         }
 
         AnsiConsole.MarkupLine("Overwriting existing environment...");
+        // reset: empty env with factory settings (https://learn.microsoft.com/en-us/power-platform/admin/reset-environment)?
+        // after rest: deploy solution from prod?
 
         // Staging is always a FullCopy
         string copyType = (settings.Role == Role.Staging || settings.CopyType == CopyType.Full) ? "FullCopy" : "MinimalCopy";

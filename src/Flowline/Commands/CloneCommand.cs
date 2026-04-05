@@ -10,7 +10,7 @@ public class CloneCommand : AsyncCommand<CloneCommand.Settings>
 {
     public sealed class Settings : FlowlineSettings
     {
-        [CommandArgument(0, "[solution]")] //[CommandOption("--solution")]
+        [CommandArgument(0, "<solution>")]
         [Description("The solution to clone into the repo")]
         [DefaultValue("Cr07982")]
         public string? Solution { get; set; } = "Cr07982";

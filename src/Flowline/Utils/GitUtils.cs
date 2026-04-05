@@ -109,6 +109,31 @@ public static class GitUtils
         return (remoteName, remoteUrl);
     }
 
+    public static async Task<bool> IsRepoCleanAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var result = await Cli.Wrap("git")
+                                  .WithArguments("status --porcelain")
+                                  .ExecuteBufferedAsync(cancellationToken);
+
+            return string.IsNullOrWhiteSpace(result.StandardOutput);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    public static async Task AssertRepoCleanAsync(CancellationToken cancellationToken = default)
+    {
+        if (!await IsRepoCleanAsync(cancellationToken))
+        {
+            AnsiConsole.MarkupLine("[red]Uncommitted changes found in Git repository. Please commit or stash your changes before deploying.[/]");
+            Environment.Exit(1);
+        }
+    }
+
     public static async Task AssertGitRepoAsync(string rootFolder, CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(Path.Combine(rootFolder, ".git")))

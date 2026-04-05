@@ -348,7 +348,6 @@ It can:
 - overwrite an existing environment when explicitly allowed
 
 This replaces the earlier `prime`/`refresh` naming.
-
 `provision` is preferred because it communicates full environment setup, not a lightweight refresh.
 
 ### `deploy`
