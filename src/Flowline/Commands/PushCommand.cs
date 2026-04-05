@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -12,8 +11,6 @@ public class PushCommand : AsyncCommand<PushCommand.Settings>
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        //AnsiConsole.MarkupLine($"Running command [green]'merge'[/] for environment [green]'{settings.Environment}'[/]...");
-
         await PacUtils.AssertPacCliInstalledAsync(cancellationToken);
         await GitUtils.AssertGitInstalledAsync(cancellationToken);
 

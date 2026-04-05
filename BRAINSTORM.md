@@ -180,6 +180,31 @@ Flowline should focus on:
 - actionable diagnostics
 - machine-readable output for agents and CI
 
+## Tooling Strategy
+
+Flowline should likely be PAC-first for the main ALM mechanics:
+
+- clone
+- sync
+- solution packaging
+- solution import
+- environment provisioning
+
+However, PAC CLI does not appear to provide an equally strong direct inner-loop push story for all asset types.
+
+Because of that, Flowline may selectively use DAXIF where PAC is weak.
+
+Most likely candidates:
+
+- web resource push
+- plugin synchronization
+
+Practical direction:
+
+- use PAC as the primary foundation for solution and environment workflows
+- consider DAXIF as a targeted dependency for technical-consultant asset push workflows
+- avoid making DAXIF the foundation for the whole product unless it becomes clearly necessary
+
 ## Baseline Tracking
 
 Flowline should clearly mark what commit is currently represented in production and staging.

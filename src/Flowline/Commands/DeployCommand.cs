@@ -92,7 +92,7 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
             return 1;
         }
 
-        // Standard Dataverse solution build produces zip in bin/Debug or bin/Release
+        // Standard Dataverse solution build produces zip in bin/Debug for unmanaged or bin/Release for managed.
         // We assume Debug for simplicity, or we should check for built artifacts.
         // SyncCommand uses dotnet build <srcSolutionFolder> which defaults to Debug.
         var buildType = "Debug";
