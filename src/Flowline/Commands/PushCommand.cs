@@ -17,7 +17,7 @@ public class PushCommand : AsyncCommand<PushCommand.Settings>
         await PacUtils.AssertPacCliInstalledAsync(cancellationToken);
         await GitUtils.AssertGitInstalledAsync(cancellationToken);
 
-        AnsiConsole.MarkupLine("Merge pull request into master...");
+        AnsiConsole.MarkupLine("Push to dev environment...");
         // TODO: Implement the upload logic
 
         AnsiConsole.MarkupLine("[green]All done![/]");

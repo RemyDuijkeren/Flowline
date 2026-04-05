@@ -1,0 +1,160 @@
+using System.ComponentModel;
+using CliWrap;
+using CliWrap.Buffered;
+using Flowline.Config;
+using Spectre.Console;
+using Spectre.Console.Cli;
+
+namespace Flowline.Commands;
+
+public class SyncCommand : AsyncCommand<SyncCommand.Settings>
+{
+    public sealed class Settings : FlowlineSettings
+    {
+        [CommandArgument(0, "[solution]")]
+        [Description("optional solution override when multiple solutions exist")]
+        public string? Solution { get; set; }
+
+        [CommandOption("--dev <target url>")]
+        [Description("Override the configured development environment")]
+        public string? DevUrl { get; set; }
+
+        [CommandOption("--managed")]
+        [Description("Also sync managed artifacts in addition to unmanaged")]
+        public bool IncludeManaged { get; set; } = false;
+
+    }
+
+    public override async Task<int> ExecuteAsync(CommandContext context, SyncCommand.Settings settings, CancellationToken cancellationToken)
+    {
+        await GitUtils.AssertGitInstalledAsync(cancellationToken);
+        await PacUtils.AssertPacCliInstalledAsync(cancellationToken);
+
+        var rootFolder = Directory.GetCurrentDirectory();
+        await GitUtils.AssertGitRepoAsync(rootFolder, cancellationToken);
+
+        // Load or create the project configuration
+        var config = ProjectConfig.Load();
+        if (config != null)
+        {
+            AnsiConsole.MarkupLine("[yellow]Project configuration already exists.[/]");
+        }
+        else
+        {
+            AnsiConsole.MarkupLine("No project configuration found. Creating...");
+            config = new ProjectConfig();
+        }
+
+        // Solution name is required
+        var sln = config.GetOrUpdateSolution(settings.Solution, settings.IncludeManaged, settings);
+        if (sln == null)
+        {
+            AnsiConsole.MarkupLine("[red]Solution name is required. Please provide a solution name using 'sync <solutionName>'.[/]");
+            return 1;
+        }
+
+        // Dev URL is required
+        var devUrl = config.GetOrUpdateDevUrl(settings.DevUrl, settings);
+        if (string.IsNullOrEmpty(devUrl))
+        {
+            AnsiConsole.MarkupLine("[red]Dev URL is required. Please provide a dev URL using 'sync <solutionName> --dev <target url>'.[/]");
+            return 1;
+        }
+
+
+        // Validate Dev URL
+        AnsiConsole.MarkupLine($"Validating [bold]'{devUrl}'[/]...");
+        var devEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(devUrl, cancellationToken);
+        if (devEnv == null)
+        {
+            AnsiConsole.MarkupLine("[red]Invalid Dev environment. Please provide a valid Dataverse environment URL using --dev <environment-url>.[/]");
+            return 1;
+        }
+
+        if (devEnv.Type == "Production")
+        {
+            AnsiConsole.MarkupLine("[red]Dev environment must not be of type 'Production'.[/]");
+            return 1;
+        }
+
+        AnsiConsole.MarkupLine($"  Using Dev environment: [bold]{devEnv.DisplayName}[/] ({devEnv.EnvironmentUrl}) - Type: {devEnv.Type})");
+
+
+        // Validate that we have an initialized project
+        var srcSolutionFolder = Path.Combine(rootFolder, "solutions", sln.Name);
+        var cdsprojPath = Path.Combine(srcSolutionFolder, $"{sln.Name}.cdsproj");
+        if (!File.Exists(cdsprojPath))
+        {
+            AnsiConsole.MarkupLine($"[red]Solution project '{sln.Name}' not found in '{cdsprojPath}'. Please run 'clone' first.[/]");
+            return 1;
+        }
+
+        // Perform sync
+        AnsiConsole.MarkupLine($"Syncing solution '{sln.Name}' from environment '{devEnv.DisplayName}' ({devEnv.EnvironmentUrl})...");
+
+        var result = await Cli.Wrap("pac")
+                              .WithArguments(args => args
+                                    .Add("solution")
+                                    .Add("sync")
+                                    .Add("--async")
+                                    .Add("--solution-folder").Add(srcSolutionFolder)
+                                    .Add("--environment").Add(devEnv.EnvironmentUrl!)
+                                    .Add("--packagetype").Add(sln.IncludeManaged ? "Both" : "Unmanaged"))
+                              .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
+                              .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
+                              .ExecuteAsync(cancellationToken);
+
+        if (result.ExitCode != 0)
+        {
+            AnsiConsole.MarkupLine("[red]Failed to sync the solution. Please check the environment and solution name.[/]");
+            return 1;
+        }
+
+        AnsiConsole.MarkupLine($"Building Solution '{sln.Name}'...");
+
+        await Cli.Wrap("dotnet")
+                 .WithArguments(args => args
+                      .Add("build")
+                      .Add(srcSolutionFolder))
+                      //.Add("--configuration").Add("Release")) // Release for Managed solution
+                      //.Add("--output").Add(Path.Combine(rootFolder, "artifacts")))
+                 .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]DOTNET: {s}[/]")))
+                 .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
+                 .ExecuteAsync(cancellationToken);
+
+        AnsiConsole.MarkupLine("[green]All done! Use 'git add' and 'git commit' to create a checkpoint.[/]");
+
+        return 0;
+    }
+
+    static async Task GitCommitChanges(CancellationToken cancellationToken)
+    {
+        // Add all files to the git staging area
+        await Cli.Wrap("git")
+                 .WithArguments("add -A")
+                 .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
+                 .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
+                 .ExecuteAsync(cancellationToken);
+
+        // Check if there are changes to commit
+        var statusResult = await Cli.Wrap("git")
+                                    .WithArguments("status --porcelain")
+                                    .ExecuteBufferedAsync(cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(statusResult.StandardOutput))
+        {
+            AnsiConsole.MarkupLine("[yellow]No changes detected. Skipping commit.[/]");
+            return;
+        }
+
+        // Commit the changes
+        AnsiConsole.MarkupLine("Committing changes to local repository...");
+        await Cli.Wrap("git")
+                 .WithArguments(args => args
+                                        .Add("commit")
+                                        .Add("-m").Add("flowline: sync solution"))
+                 .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
+                 .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
+                 .ExecuteAsync(cancellationToken);
+    }
+}

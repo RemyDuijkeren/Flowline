@@ -108,4 +108,27 @@ public static class GitUtils
 
         return (remoteName, remoteUrl);
     }
+
+    public static async Task AssertGitRepoAsync(string rootFolder, CancellationToken cancellationToken = default)
+    {
+        if (!Directory.Exists(Path.Combine(rootFolder, ".git")))
+        {
+            AnsiConsole.MarkupLine("[red]No git repository found. Please run 'git init' or 'git clone' first.[/]");
+            Environment.Exit(1);
+            return;
+        }
+
+        AnsiConsole.MarkupLine("[green]Git repository found.[/]");
+
+        // Check if remote URL is configured
+        (string? remoteName, string? remoteUrl) = await GetRemoteUrlAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(remoteUrl))
+        {
+            AnsiConsole.MarkupLineInterpolated($"  Remote URL: [link]{remoteUrl}[/] ({remoteName})");
+        }
+        else
+        {
+            AnsiConsole.MarkupLine("[yellow]No remote configured for current Git repository. Please configure a remote URL using 'git remote add <name> <url>'.[/]");
+        }
+    }
 }

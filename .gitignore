@@ -3,6 +3,9 @@
 *.user
 .vs
 .vscode
+.env
+.junie
+.codex
 
 # Build results
 [Bb]in/

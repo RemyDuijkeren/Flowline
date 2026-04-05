@@ -1,0 +1,175 @@
+using System.ComponentModel;
+using CliWrap;
+using Flowline.Config;
+using Flowline.Utils;
+using Spectre.Console;
+using Spectre.Console.Cli;
+
+namespace Flowline.Commands;
+
+public enum Role { Dev, Staging }
+
+public enum CopyType { Minimal, Full }
+
+public class ProvisionCommand : AsyncCommand<ProvisionCommand.Settings>
+{
+    public sealed class Settings : FlowlineSettings
+    {
+        [CommandArgument(0, "[role]")]
+        [Description("Choose whether to provision `dev` or `staging` (default: dev)")]
+        public Role Role { get; set; } = Role.Dev; // dev|staging
+
+        [CommandOption("--prod <environment-url>")]
+        [Description("The production environment to provision the new environment from")]
+        public string? ProdUrl { get; set; }
+
+        [CommandOption("--copy <minimal|full>")]
+        [Description("Provision environment with data (full) or no data (minimal) from production environment (default: minimal for dev, full for staging)")]
+        public CopyType? CopyType { get; set; }
+
+        [CommandOption("--suffix <suffix>")]
+        [Description("Override the default suffix used to derive the target url (default: <role name>)")]
+        public string? Suffix { get; set; }
+
+        [CommandOption("--allow-overwrite")]
+        [Description("Allow overwriting existing environments (default: false)")]
+        public bool AllowOverwrite { get; set; } = false;
+    }
+
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
+    {
+        await GitUtils.AssertGitInstalledAsync(cancellationToken);
+        await PacUtils.AssertPacCliInstalledAsync(cancellationToken);
+
+        var rootFolder = Directory.GetCurrentDirectory();
+        await GitUtils.AssertGitRepoAsync(rootFolder, cancellationToken);
+
+        AnsiConsole.MarkupLine($"Validating [bold]'{settings.Role}'[/]...");
+
+        // Load or create the project configuration
+        var config = ProjectConfig.Load();
+        if (config == null)
+        {
+            AnsiConsole.MarkupLine("[yellow]No project configuration found. Creating...[/]");
+            config = new ProjectConfig();
+        }
+
+        // Production URL is required
+        var prodUrl = config.GetOrUpdateProdUrl(settings.ProdUrl, settings);
+        if (prodUrl == null)
+        {
+            AnsiConsole.MarkupLine("[red]Production environment is required. Please provide a Dataverse environment URL using --prod <environment-url>.[/]");
+            return 1;
+        }
+
+        // Validate Prod URL
+        var srcEnvironment = await PacUtils.GetEnvironmentInfoByUrlAsync(prodUrl, cancellationToken);
+        if (srcEnvironment == null)
+        {
+            AnsiConsole.MarkupLine("[red]Invalid Production environment. Please provide a valid Dataverse environment URL using --prod <environment-url> or run clone first.[/]");
+            return 1;
+        }
+
+        if (srcEnvironment.Type != "Production")
+        {
+            AnsiConsole.MarkupLine("[red]Production environment must be of type 'Production'.[/]");
+            return 1;
+        }
+
+        AnsiConsole.MarkupLine($"  Using Production environment: [bold]{srcEnvironment.DisplayName}[/] ({srcEnvironment.EnvironmentUrl}) - Type: {srcEnvironment.Type})");
+
+        // Prepare the target environment name and url
+        var suffix = string.IsNullOrWhiteSpace(settings.Suffix)
+            ? (settings.Role == Role.Dev ? "Dev" : "Staging")
+            : settings.Suffix;
+        var targetDisplayName = $"{srcEnvironment.DisplayName} {suffix}";
+        EnvironmentUrlParts urlParts = PacUtils.GetPartsFromEnvUrl(srcEnvironment.EnvironmentUrl!);
+        var targetUrl = $"https://{urlParts.Organization}-{suffix.ToLower()}.{urlParts.Host}/";
+
+        // TODO: verify if the target environment url is given, is in the same region. Is this needed?
+        // if <org> already ends with your suffix, don’t duplicate.
+        // If your prod org is named contoso-prod, add a config “swap map” so -prod → -dev/-stg instead of appending.
+
+        string? url = settings.Role switch
+        {
+            Role.Dev => config.GetOrUpdateDevUrl(targetUrl, settings),
+            Role.Staging => config.GetOrUpdateStagingUrl(targetUrl, settings),
+            _ => null
+        };
+
+        if (url == null)
+        {
+            AnsiConsole.MarkupLine("[red]Can't create valid url or mismatch with .flowline.[/]");
+            return 1;
+        }
+
+        // Validate target environment
+        var targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, cancellationToken);
+        if (targetEnv == null)
+        {
+            AnsiConsole.MarkupLine($"Creating environment {targetUrl}...");
+
+            await Cli.Wrap("pac")
+                     .WithArguments(args => args
+                                            .Add("admin")
+                                            .Add("create")
+                                            .Add("--name").Add($"{targetDisplayName} (cloning)")
+                                            .Add("--domain").Add($"{urlParts.Organization}-{suffix.ToLower()}")
+                                            .Add("--region").Add(urlParts.Region))
+                     .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
+                     .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
+                     .ExecuteAsync(cancellationToken);
+
+            targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, cancellationToken);
+            if (targetEnv == null)
+            {
+                AnsiConsole.MarkupLine("[red]Target Environment not found after creating.[/]");
+                return 1;
+            }
+        }
+        else
+        {
+            AnsiConsole.MarkupLine($"Target Environment already exists: [link]{targetEnv.EnvironmentUrl}[/]");
+        }
+
+        if (targetEnv.Type == "Production")
+        {
+            AnsiConsole.MarkupLine("[red]Cannot overwrite production environment.[/]");
+            return 1;
+        }
+
+        if (!settings.AllowOverwrite)
+        {
+            AnsiConsole.MarkupLine($"[red]Environment '{targetEnv.DisplayName}' ({targetEnv.EnvironmentUrl}) already exists. Use --allow-overwrite to overwrite.[/]");
+            return 0;
+        }
+
+        AnsiConsole.MarkupLine("Overwriting existing environment...");
+
+        // Staging is always a FullCopy
+        string copyType = (settings.Role == Role.Staging || settings.CopyType == CopyType.Full) ? "FullCopy" : "MinimalCopy";
+
+        AnsiConsole.MarkupLine($"Copy '{prodUrl}' to '{targetUrl}'...");
+        await Cli.Wrap("pac")
+                 .WithArguments(args => args
+                                        .Add("admin")
+                                        .Add("copy")
+                                        .Add("--name").Add(targetDisplayName)
+                                        .Add("--source-env").Add(srcEnvironment.EnvironmentUrl!)
+                                        .Add("--target-env").Add(targetEnv.EnvironmentUrl!)
+                                        .Add("--type").Add(copyType))
+                 .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
+                 .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
+                 .ExecuteAsync(cancellationToken);
+
+        AnsiConsole.MarkupLine($"[green]All done! See [link]{targetEnv.EnvironmentUrl}[/][/]");
+
+        config.Save();
+        AnsiConsole.MarkupLine("[dim]Project configuration saved with target environment. You can now run 'sync' command.[/]");
+
+        return 0;
+
+        // TODO: add a different strategy where we import solution(s) from prod, instead of copying the whole environment.
+        // should be much faster. also for reset the environment. => use this path also for Development environments.
+    }
+}

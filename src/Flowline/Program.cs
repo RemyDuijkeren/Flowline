@@ -26,15 +26,15 @@ app.Configure(config =>
     config.ValidateExamples();
 #endif
 
-    config.AddCommand<InitCommand>("init") // init (new repo) or clone (existing repo)
+    config.AddCommand<CloneCommand>("clone") // init (new repo) or clone (existing repo)
           .WithDescription("Init a local folder by cloning a remote git repository and Dataverse solution")
-          .WithExample("init", "https://github.com/contoso/Dataverse01.git --environment https://contoso.crm4.dynamics.com")
-          .WithExample("init", "https://github.com/contoso/Dataverse01.git --environment https://contoso.crm4.dynamics.com --solution ContosoCustomizations")
-          .WithExample("init", "https://github.com/contoso/Dataverse01.git --environment https://contoso.crm4.dynamics.com --solution ContosoCustomizations --managed");
+          .WithExample("clone", "https://github.com/contoso/Dataverse01.git --environment https://contoso.crm4.dynamics.com")
+          .WithExample("clone", "https://github.com/contoso/Dataverse01.git --environment https://contoso.crm4.dynamics.com --solution ContosoCustomizations")
+          .WithExample("clone", "https://github.com/contoso/Dataverse01.git --environment https://contoso.crm4.dynamics.com --solution ContosoCustomizations --managed");
 
     // copy  = Copy Source environment to destination environment
     // clone = Clone solution from environment to local folder
-    config.AddCommand<PrimeCommand>("prime") // prime from PROD, use also reset (https://learn.microsoft.com/en-us/power-platform/admin/reset-environment)?
+    config.AddCommand<ProvisionCommand>("prime") // prime from PROD, use also reset (https://learn.microsoft.com/en-us/power-platform/admin/reset-environment)?
           .WithDescription("Branch a Power Platform production environment by coping into a new environment and create a new branch in the git repository")
           .WithExample("prime")
           .WithExample("prime", "dev")
@@ -51,7 +51,7 @@ app.Configure(config =>
         .WithExample("push", "https://contoso-dev.crm4.dynamics.com/");
 
     // export or snapshot
-    config.AddCommand<ExportCommand>("export")
+    config.AddCommand<SyncCommand>("export")
           .WithDescription("Export a Power Platform solution to source control)")
           .WithExample("export")
           .WithExample("export", "https://contoso-dev.crm4.dynamics.com/");

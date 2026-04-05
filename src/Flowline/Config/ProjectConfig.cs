@@ -1,119 +1,181 @@
-﻿using System.Text.Json;
+using System.Text.Json;
+using Flowline.Utils;
 using Spectre.Console;
 
 namespace Flowline.Config;
 
 public class ProjectConfig
 {
-    public string? ProductionEnvironment
-    {
-        get;
-        set
-        {
-            if (!string.IsNullOrEmpty(field))
-            {
-                if (field == value) return;
+    internal static readonly string s_configFileName = ".flowline";
 
-                AnsiConsole.MarkupLine($"Production Environment found in config: {field}");
-                if (!AnsiConsole.Confirm("[yellow]Do you want to overwrite it?[/]", false))
-                {
-                    AnsiConsole.MarkupLine($"[green]Alright, we keep as-is! See [link]{field}[/][/]");
-                    return;
-                }
-                AnsiConsole.MarkupLine("[yellow]Overriding existing environment project configuration.[/]");
-            }
-            field = value;
-        }
+    HashSet<ProjectSolution> _solutions = new(ProjectSolution.NameComparer);
+
+    public string? ProdUrl { get; set; }
+    public string? StagingUrl { get; set; }
+    public string? DevUrl { get; set; }
+    public HashSet<ProjectSolution> Solutions
+    {
+        get => _solutions;
+        set => _solutions = value == null
+            ? new HashSet<ProjectSolution>(ProjectSolution.NameComparer)
+            : new HashSet<ProjectSolution>(value.Where(solution => !string.IsNullOrWhiteSpace(solution.Name)), ProjectSolution.NameComparer);
     }
 
-    public string? StagingEnvironment
+    public string? GetOrUpdateStagingUrl(string? inputStagingUrl, FlowlineSettings? settings = null)
     {
-        get;
-        set
-        {
-            if (!string.IsNullOrEmpty(field))
-            {
-                if (field == value) return;
+        inputStagingUrl = inputStagingUrl?.Trim();
 
-                AnsiConsole.MarkupLine($"Staging Environment found in config: {field}");
-                if (!AnsiConsole.Confirm("[yellow]Do you want to overwrite it?[/]", false))
-                {
-                    AnsiConsole.MarkupLine($"[green]Alright, we keep as-is! See [link]{field}[/][/]");
-                    return;
-                }
-                AnsiConsole.MarkupLine("[yellow]Overriding existing environment project configuration.[/]");
-            }
-            field = value;
+        if (string.IsNullOrWhiteSpace(StagingUrl))
+        {
+            StagingUrl = inputStagingUrl;
+            return StagingUrl;
         }
+
+        if (string.IsNullOrWhiteSpace(inputStagingUrl))
+        {
+            return StagingUrl;
+        }
+
+        if (StagingUrl != inputStagingUrl)
+        {
+            AnsiConsole.MarkupLine($"Staging Url found in config: {StagingUrl}");
+            if (!ConsoleHelper.Confirm("[yellow]Do you want to overwrite it?[/]", false, settings))
+            {
+                AnsiConsole.MarkupLine($"[green]Alright, we keep as-is! See [link]{StagingUrl}[/][/]");
+                return StagingUrl;
+            }
+            AnsiConsole.MarkupLine("[yellow]Overriding existing environment project configuration.[/]");
+        }
+        StagingUrl = inputStagingUrl;
+        return StagingUrl;
     }
 
-    public string? DevelopmentEnvironment
+    public string? GetOrUpdateDevUrl(string? inputDevUrl, FlowlineSettings? settings = null)
     {
-        get;
-        set
-        {
-            if (!string.IsNullOrEmpty(field))
-            {
-                if (field == value) return;
+        inputDevUrl = inputDevUrl?.Trim();
 
-                AnsiConsole.MarkupLine($"Development Environment found in config: {field}");
-                if (!AnsiConsole.Confirm("[yellow]Do you want to overwrite it?[/]", false))
-                {
-                    AnsiConsole.MarkupLine($"[green]Alright, we keep as-is! See [link]{field}[/][/]");
-                    return;
-                }
-                AnsiConsole.MarkupLine("[yellow]Overriding existing environment project configuration.[/]");
-            }
-            field = value;
+        if (string.IsNullOrWhiteSpace(DevUrl))
+        {
+            DevUrl = inputDevUrl;
+            return DevUrl;
         }
+
+        if (string.IsNullOrWhiteSpace(inputDevUrl))
+        {
+            return DevUrl;
+        }
+
+        if (DevUrl != inputDevUrl)
+        {
+            AnsiConsole.MarkupLine($"Development Url found in config: {DevUrl}");
+            if (!ConsoleHelper.Confirm("[yellow]Do you want to overwrite it?[/]", false, settings))
+            {
+                AnsiConsole.MarkupLine($"[green]Alright, we keep as-is! See [link]{DevUrl}[/][/]");
+                return DevUrl;
+            }
+            AnsiConsole.MarkupLine("[yellow]Overriding existing environment project configuration.[/]");
+        }
+        DevUrl = inputDevUrl;
+        return DevUrl;
     }
 
-    public string? SolutionName
+    public string? GetOrUpdateProdUrl(string? inputProdUrl, FlowlineSettings? settings = null)
     {
-        get;
-        set
-        {
-            if (!string.IsNullOrEmpty(field))
-            {
-                if (field == value) return;
+        inputProdUrl = inputProdUrl?.Trim();
 
-                AnsiConsole.MarkupLine($"SolutionName in config: {field}");
-                if (!AnsiConsole.Confirm("[yellow]Do you want to overwrite it?[/]", false))
-                {
-                    AnsiConsole.MarkupLine($"[green]Alright, we keep as-is! See {field}[/]");
-                    return;
-                }
-                AnsiConsole.MarkupLine("[yellow]Overriding existing SolutionName in config.[/]");
-            }
-            field = value;
+        if (string.IsNullOrWhiteSpace(ProdUrl))
+        {
+            return string.IsNullOrWhiteSpace(inputProdUrl) ? null : inputProdUrl;
         }
+
+        if (string.IsNullOrWhiteSpace(inputProdUrl))
+        {
+            AnsiConsole.MarkupLine($"  Using configured production environment: [bold]{ProdUrl}[/]");
+            return ProdUrl;
+        }
+
+        if (ProdUrl != inputProdUrl)
+        {
+            AnsiConsole.MarkupLine($"Production Url found in config: {ProdUrl}");
+            if (!ConsoleHelper.Confirm("[yellow]Do you want to overwrite it?[/]", false, settings))
+            {
+                AnsiConsole.MarkupLine($"[green]Alright, we keep as-is! See [link]{ProdUrl}[/][/]");
+                return ProdUrl;
+            }
+            AnsiConsole.MarkupLine("[yellow]Overriding existing environment project configuration.[/]");
+        }
+
+        ProdUrl = inputProdUrl;
+        return ProdUrl;
     }
 
-    public bool UseManagedSolution
+    public ProjectSolution AddOrUpdateSolution(ProjectSolution solution)
     {
-        get;
-        set
+        ArgumentNullException.ThrowIfNull(solution);
+
+        if (string.IsNullOrWhiteSpace(solution.Name))
         {
-            if (field == value) return;
-
-            AnsiConsole.MarkupLine($"UseManagedSolution found in config: {field}");
-            if (!AnsiConsole.Confirm("[yellow]Do you want to overwrite it?[/]", false))
-            {
-                AnsiConsole.MarkupLine($"[green]Alright, we keep as-is! See {field}[/]");
-                return;
-            }
-
-            AnsiConsole.MarkupLine("[yellow]Overriding UseManagedSolution in config.[/]");
-            field = value;
+            throw new ArgumentException("Solution name is required.", nameof(solution));
         }
-    } = false;
 
-    internal static readonly string ConfigFileName = ".flowline";
+        var normalizedSolution = new ProjectSolution
+        {
+            Name = solution.Name.Trim(),
+            IncludeManaged = solution.IncludeManaged
+        };
+
+        _solutions.Remove(normalizedSolution);
+        _solutions.Add(normalizedSolution);
+
+        return normalizedSolution;
+    }
+
+    public ProjectSolution AddOrUpdateSolution(string name, bool includeManaged = false) =>
+        AddOrUpdateSolution(new ProjectSolution { Name = name, IncludeManaged = includeManaged });
+
+    public ProjectSolution? GetOrUpdateSolution(string? name, bool includeManaged = false, FlowlineSettings? settings = null)
+    {
+        name = name?.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            if (Solutions.Count != 1)
+            {
+                return null;
+            }
+            else
+            {
+                var first = Solutions.Single();
+                AnsiConsole.MarkupLine($"  Using configured solution: [bold]{first.Name}[/]");
+                return first;
+            }
+        }
+
+        var sln = _solutions.FirstOrDefault(solution => StringComparer.OrdinalIgnoreCase.Equals(solution.Name, name));
+        if (sln == null)
+        {
+            return AddOrUpdateSolution(name, includeManaged);
+        }
+
+        if (sln.IncludeManaged != includeManaged)
+        {
+            AnsiConsole.MarkupLine($"Include Managed mismatch with existing config: {sln.Name} - managed: {sln.IncludeManaged}");
+
+            if (!ConsoleHelper.Confirm("[yellow]Do you want to overwrite it?[/]", false, settings))
+            {
+                AnsiConsole.MarkupLine($"[green]Alright, we keep as-is! See [link]{ProdUrl}[/][/]");
+                return sln;
+            }
+            AnsiConsole.MarkupLine("[yellow]Overriding existing environment project configuration.[/]");
+            return AddOrUpdateSolution(name, includeManaged);
+        }
+
+        return sln;
+    }
 
     public static ProjectConfig? Load(string? rootFolder = null)
     {
         rootFolder ??= Directory.GetCurrentDirectory();
-        var configPath = Path.Combine(rootFolder, ConfigFileName);
+        var configPath = Path.Combine(rootFolder, s_configFileName);
 
         if (!File.Exists(configPath))
         {
@@ -123,13 +185,11 @@ public class ProjectConfig
         try
         {
             var json = File.ReadAllText(configPath);
-            var config = JsonSerializer.Deserialize<ProjectConfig>(json);
-            return config;
+            return JsonSerializer.Deserialize<ProjectConfig>(json);
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"Failed to read configuration: {ex.Message}");
-            // If we can't read the config file, return null
             return null;
         }
     }
@@ -137,7 +197,7 @@ public class ProjectConfig
     public void Save(string? rootFolder = null)
     {
         rootFolder ??= Directory.GetCurrentDirectory();
-        var configPath = Path.Combine(rootFolder, ConfigFileName);
+        var configPath = Path.Combine(rootFolder, s_configFileName);
 
         try
         {
@@ -147,6 +207,37 @@ public class ProjectConfig
         catch (Exception ex)
         {
             Console.Error.WriteLine($"Failed to save configuration: {ex.Message}");
+        }
+    }
+}
+
+public class ProjectSolution
+{
+    public static IEqualityComparer<ProjectSolution> NameComparer { get; } = new ProjectSolutionNameComparer();
+
+    public string Name { get; init; } = null!;
+    public bool IncludeManaged { get; set; } = false;
+
+    private sealed class ProjectSolutionNameComparer : IEqualityComparer<ProjectSolution>
+    {
+        public bool Equals(ProjectSolution? x, ProjectSolution? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return true;
+            }
+
+            if (x is null || y is null)
+            {
+                return false;
+            }
+
+            return StringComparer.OrdinalIgnoreCase.Equals(x.Name, y.Name);
+        }
+
+        public int GetHashCode(ProjectSolution obj)
+        {
+            return StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Name);
         }
     }
 }

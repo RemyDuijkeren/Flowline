@@ -44,18 +44,18 @@ public class StatusCommand : AsyncCommand<StatusCommand.Settings>
 
         if (config is not null)
         {
-            if (!string.IsNullOrEmpty(config.ProductionEnvironment))
-                AnsiConsole.MarkupLine($"  Production: [blue]{config.ProductionEnvironment}[/]");
+            if (!string.IsNullOrEmpty(config.ProdUrl))
+                AnsiConsole.MarkupLine($"  Production: [blue]{config.ProdUrl}[/]");
             else
                 AnsiConsole.MarkupLine("  Production: [gray]Not configured[/]");
 
-            if (!string.IsNullOrEmpty(config.StagingEnvironment))
-                AnsiConsole.MarkupLine($"  Staging: [blue]{config.StagingEnvironment}[/]");
+            if (!string.IsNullOrEmpty(config.StagingUrl))
+                AnsiConsole.MarkupLine($"  Staging: [blue]{config.StagingUrl}[/]");
             else
                 AnsiConsole.MarkupLine("  Staging: [gray]Not configured[/]");
 
-            if (!string.IsNullOrEmpty(config.DevelopmentEnvironment))
-                AnsiConsole.MarkupLine($"  Development: [blue]{config.DevelopmentEnvironment}[/]");
+            if (!string.IsNullOrEmpty(config.DevUrl))
+                AnsiConsole.MarkupLine($"  Development: [blue]{config.DevUrl}[/]");
             else
                 AnsiConsole.MarkupLine("  Development: [gray]Not configured[/]");
         }
