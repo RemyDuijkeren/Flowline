@@ -84,8 +84,9 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
             }
         }
 
-        var srcSolutionFolder = Path.Combine(rootFolder, "solutions", sln.Name);
-        var cdsprojPath = Path.Combine(srcSolutionFolder, $"{sln.Name}.cdsproj");
+        var slnFolder = Path.Combine(rootFolder, "solutions", sln.Name);
+        var packageFolder = Path.Combine(slnFolder, "SolutionPackage");
+        var cdsprojPath = Path.Combine(packageFolder, "SolutionPackage.cdsproj");
         if (!File.Exists(cdsprojPath))
         {
             AnsiConsole.MarkupLine($"[red]Solution project '{sln.Name}' not found in '{cdsprojPath}'. Please run 'clone' first.[/]");
@@ -94,9 +95,9 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
 
         // Standard Dataverse solution build produces zip in bin/Debug for unmanaged or bin/Release for managed.
         // We assume Debug for simplicity, or we should check for built artifacts.
-        // SyncCommand uses dotnet build <srcSolutionFolder> which defaults to Debug.
+        // SyncCommand uses dotnet build <packageFolder> which defaults to Debug.
         var buildType = "Debug";
-        var packagePath = Path.Combine(srcSolutionFolder, "bin", buildType, $"{sln.Name}{(sln.IncludeManaged ? "_managed" : "")}.zip");
+        var packagePath = Path.Combine(packageFolder, "bin", buildType, $"{sln.Name}{(sln.IncludeManaged ? "_managed" : "")}.zip");
 
         if (!File.Exists(packagePath))
         {
@@ -104,7 +105,7 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
             var buildResult = await Cli.Wrap("dotnet")
                                      .WithArguments(args => args
                                                           .Add("build")
-                                                          .Add(srcSolutionFolder))
+                                                          .Add(packageFolder))
                                      .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]DOTNET: {s}[/]")))
                                      .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
                                      .ExecuteAsync(cancellationToken);

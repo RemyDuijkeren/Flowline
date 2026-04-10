@@ -81,8 +81,9 @@ public class SyncCommand : AsyncCommand<SyncCommand.Settings>
 
 
         // Validate that we have an initialized project
-        var srcSolutionFolder = Path.Combine(rootFolder, "solutions", sln.Name);
-        var cdsprojPath = Path.Combine(srcSolutionFolder, $"{sln.Name}.cdsproj");
+        var slnFolder = Path.Combine(rootFolder, "solutions", sln.Name);
+        var packageFolder = Path.Combine(slnFolder, "SolutionPackage");
+        var cdsprojPath = Path.Combine(packageFolder, "SolutionPackage.cdsproj");
         if (!File.Exists(cdsprojPath))
         {
             AnsiConsole.MarkupLine($"[red]Solution project '{sln.Name}' not found in '{cdsprojPath}'. Please run 'clone' first.[/]");
@@ -97,7 +98,7 @@ public class SyncCommand : AsyncCommand<SyncCommand.Settings>
                                     .Add("solution")
                                     .Add("sync")
                                     .Add("--async")
-                                    .Add("--solution-folder").Add(srcSolutionFolder)
+                                    .Add("--solution-folder").Add(packageFolder)
                                     .Add("--environment").Add(devEnv.EnvironmentUrl!)
                                     .Add("--packagetype").Add(sln.IncludeManaged ? "Both" : "Unmanaged"))
                               .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
@@ -115,7 +116,7 @@ public class SyncCommand : AsyncCommand<SyncCommand.Settings>
         await Cli.Wrap("dotnet")
                  .WithArguments(args => args
                       .Add("build")
-                      .Add(srcSolutionFolder))
+                      .Add(packageFolder))
                       //.Add("--configuration").Add("Release")) // Release for Managed solution
                       //.Add("--output").Add(Path.Combine(rootFolder, "artifacts")))
                  .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]DOTNET: {s}[/]")))

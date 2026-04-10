@@ -82,18 +82,20 @@ public class CloneCommand : AsyncCommand<CloneCommand.Settings>
         AnsiConsole.MarkupLine($"Project configuration saved to {ProjectConfig.s_configFileName}.");
 
         // Clone solution from Dataverse if it doesn't exist locally
-        var srcSolutionFolder = Path.Combine(rootFolder, "solutions", sln.Name);
-        var cdsprojPath = Path.Combine(srcSolutionFolder, $"{sln.Name}.cdsproj");
+        var slnFolder = Path.Combine(rootFolder, "solutions", sln.Name);
+        var packageFolder = Path.Combine(slnFolder, "SolutionPackage");
+        var cdsprojPath = Path.Combine(packageFolder, "SolutionPackage.cdsproj");
         if (!File.Exists(cdsprojPath))
         {
             AnsiConsole.MarkupLine($"No solution folder for '{sln.Name}' found. Cloning from Dataverse...");
 
-            if (Directory.Exists(srcSolutionFolder))
+            if (Directory.Exists(slnFolder))
             {
                 AnsiConsole.MarkupLine("Removing existing solution folder...");
-                Directory.Delete(srcSolutionFolder, true);
+                Directory.Delete(slnFolder, true);
             }
 
+            var solutionsRoot = Path.Combine(rootFolder, "solutions");
             var result = await Cli.Wrap("pac")
                                   .WithArguments(args => args
                                                          .Add("solution")
@@ -102,7 +104,7 @@ public class CloneCommand : AsyncCommand<CloneCommand.Settings>
                                                          .Add("--async")
                                                          .Add("--environment").Add(config.ProdUrl)
                                                          .Add("--packagetype").Add(sln.IncludeManaged ? "Both" : "Unmanaged")
-                                                         .Add("--outputDirectory").Add($"{Path.Combine(rootFolder, "solutions")}"))
+                                                         .Add("--outputDirectory").Add(solutionsRoot))
                                   .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
                                   .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
                                   .ExecuteAsync(cancellationToken);
@@ -112,10 +114,123 @@ public class CloneCommand : AsyncCommand<CloneCommand.Settings>
                 AnsiConsole.MarkupLine("[red]Failed to clone the solution. Please check the environment and solution name.[/]");
                 return 1;
             }
+
+            // PAC creates solutions/SolutionName/SolutionName.cdsproj
+            // We want solutions/SolutionName/SolutionPackage/SolutionPackage.cdsproj
+            var tempFolder = Path.Combine(slnFolder, "SolutionPackage");
+            Directory.CreateDirectory(tempFolder);
+
+            // Move all files and folders from slnFolder to tempFolder, except tempFolder itself
+            foreach (var dir in Directory.GetDirectories(slnFolder))
+            {
+                if (dir == tempFolder) continue;
+                Directory.Move(dir, Path.Combine(tempFolder, Path.GetFileName(dir)));
+            }
+            foreach (var file in Directory.GetFiles(slnFolder))
+            {
+                File.Move(file, Path.Combine(tempFolder, Path.GetFileName(file)));
+            }
+
+            // Rename .cdsproj
+            var oldCdsproj = Path.Combine(tempFolder, $"{sln.Name}.cdsproj");
+            if (File.Exists(oldCdsproj))
+            {
+                File.Move(oldCdsproj, Path.Combine(tempFolder, "SolutionPackage.cdsproj"));
+            }
+
+            // Create Solution file if it doesn't exist
+            var slnFilePath = Path.Combine(slnFolder, $"{sln.Name}.sln");
+            if (!File.Exists(slnFilePath))
+            {
+                AnsiConsole.MarkupLine($"Creating solution file '{sln.Name}.sln'...");
+                await Cli.Wrap("dotnet")
+                         .WithArguments(args => args
+                                              .Add("new")
+                                              .Add("sln")
+                                              .Add("--name")
+                                              .Add(sln.Name)
+                                              .Add("--output")
+                                              .Add(slnFolder))
+                         .ExecuteAsync(cancellationToken);
+
+                // Add SolutionPackage.cdsproj to the solution
+                await Cli.Wrap("dotnet")
+                         .WithArguments(args => args
+                                              .Add("sln")
+                                              .Add(slnFilePath)
+                                              .Add("add")
+                                              .Add(cdsprojPath))
+                         .ExecuteAsync(cancellationToken);
+            }
+
+            // Create Extensions project if it doesn't exist
+            var extensionsFolder = Path.Combine(slnFolder, "Extensions");
+            var extensionsCsproj = Path.Combine(extensionsFolder, "Extensions.csproj");
+            if (!File.Exists(extensionsCsproj))
+            {
+                AnsiConsole.MarkupLine("Initializing Extensions project...");
+                Directory.CreateDirectory(extensionsFolder);
+                await Cli.Wrap("pac")
+                         .WithArguments(args => args
+                                              .Add("plugin")
+                                              .Add("init")
+                                              .Add("--outputDirectory")
+                                              .Add(extensionsFolder))
+                         .ExecuteAsync(cancellationToken);
+
+                // Rename the .csproj created by pac plugin init (it uses the folder name)
+                var pacGeneratedCsproj = Directory.GetFiles(extensionsFolder, "*.csproj").FirstOrDefault();
+                if (pacGeneratedCsproj != null && Path.GetFileName(pacGeneratedCsproj) != "Extensions.csproj")
+                {
+                    File.Move(pacGeneratedCsproj, extensionsCsproj);
+                }
+
+                // Add Extensions.csproj to the solution
+                await Cli.Wrap("dotnet")
+                         .WithArguments(args => args
+                                              .Add("sln")
+                                              .Add(slnFilePath)
+                                              .Add("add")
+                                              .Add(extensionsCsproj))
+                         .ExecuteAsync(cancellationToken);
+            }
+
+            // Create WebResources project if it doesn't exist
+            var webresourcesFolder = Path.Combine(slnFolder, "WebResources");
+            var webresourcesCsproj = Path.Combine(webresourcesFolder, "WebResources.csproj");
+            if (!File.Exists(webresourcesCsproj))
+            {
+                AnsiConsole.MarkupLine("Initializing WebResources project...");
+                Directory.CreateDirectory(webresourcesFolder);
+                Directory.CreateDirectory(Path.Combine(webresourcesFolder, "src"));
+                Directory.CreateDirectory(Path.Combine(webresourcesFolder, "public"));
+                Directory.CreateDirectory(Path.Combine(webresourcesFolder, "dist"));
+
+                // Create a basic class library for WebResources.csproj
+                await Cli.Wrap("dotnet")
+                         .WithArguments(args => args
+                                              .Add("new")
+                                              .Add("classlib")
+                                              .Add("--name")
+                                              .Add("WebResources")
+                                              .Add("--output")
+                                              .Add(webresourcesFolder)
+                                              .Add("--force"))
+                         .ExecuteAsync(cancellationToken);
+
+                // Add WebResources.csproj to the solution
+                await Cli.Wrap("dotnet")
+                         .WithArguments(args => args
+                                              .Add("sln")
+                                              .Add(slnFilePath)
+                                              .Add("add")
+                                              .Add(webresourcesCsproj))
+                         .ExecuteAsync(cancellationToken);
+            }
         }
         else
         {
-            AnsiConsole.MarkupLine($"[yellow]Found '{sln.Name}.cdsproj'. Solution already cloned locally.[/]");
+            AnsiConsole.MarkupLine($"[yellow]Found 'SolutionPackage.cdsproj'. Solution already cloned locally.[/]");
         }
 
         AnsiConsole.MarkupLine("[green]Initialization complete! You can now use 'push' and 'sync' to keep your solution up to date.[/]");
