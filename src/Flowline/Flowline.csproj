@@ -50,14 +50,19 @@
 
     <ItemGroup>
       <PackageReference Include="CliWrap" Version="3.10.0" />
+      <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.5" />
       <PackageReference Include="Spectre.Console.Cli" Version="0.53.1" />
       <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.103" PrivateAssets="All" />
       <PackageReference Include="MinVer" Version="7.0.0" PrivateAssets="All" />
     </ItemGroup>
 
     <ItemGroup>
-      <None Include="../../docs/Flowline-icon.png" Pack="true" PackagePath="\" Visible="false"/>
-      <None Include="../../README.md" Pack="true" PackagePath="\" Visible="false"/>
+      <None Include="../../docs/Flowline-icon.png" Pack="true" PackagePath="\" Visible="false" />
+      <None Include="../../README.md" Pack="true" PackagePath="\" Visible="false" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\Flowline.Core\Flowline.Core.csproj" />
     </ItemGroup>
 
 </Project>

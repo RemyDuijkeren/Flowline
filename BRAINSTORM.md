@@ -192,7 +192,7 @@ Flowline should likely be PAC-first for the main ALM mechanics:
 
 However, PAC CLI does not appear to provide an equally strong direct inner-loop push story for all asset types.
 
-Because of that, Flowline may selectively use DAXIF where PAC is weak.
+Because of that, Flowline may selectively use internal libraries where PAC is weak.
 
 Most likely candidates:
 
@@ -202,8 +202,8 @@ Most likely candidates:
 Practical direction:
 
 - use PAC as the primary foundation for solution and environment workflows
-- consider DAXIF as a targeted dependency for technical-consultant asset push workflows
-- avoid making DAXIF the foundation for the whole product unless it becomes clearly necessary
+- consider internal core libraries as a targeted dependency for technical-consultant asset push workflows
+- avoid making these libraries the foundation for the whole product unless it becomes clearly necessary
 
 ## Baseline Tracking
 

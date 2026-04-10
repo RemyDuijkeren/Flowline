@@ -1,4 +1,4 @@
-﻿<Solution>
+<Solution>
   <Folder Name="/Solution Items/">
     <File Path=".editorconfig" />
     <File Path=".gitignore" />
@@ -10,9 +10,11 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src\Flowline\Flowline.csproj" />
+    <Project Path="src\Flowline.Core\Flowline.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests\Flowline.Tests\Flowline.Tests.csproj" Type="C#" />
+    <Project Path="tests/Flowline.Core.Tests/Flowline.Core.Tests.csproj" />
+    <Project Path="tests\Flowline.Tests\Flowline.Tests.csproj" />
   </Folder>
   <Folder Name="/workflows/">
     <File Path=".github/workflows/ci.yml" />

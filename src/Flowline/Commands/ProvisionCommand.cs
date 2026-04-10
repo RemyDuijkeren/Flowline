@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using CliWrap;
 using Flowline.Config;
-using Flowline.Utils;
 using Spectre.Console;
 using Spectre.Console.Cli;
 

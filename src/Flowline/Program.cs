@@ -70,6 +70,12 @@ app.Configure(config =>
     config.AddCommand<StatusCommand>("status")
           .WithDescription("Show current environment and the version of Flowline and Power Platform CLI")
           .WithExample("status");
+
+    // Translation sync (export/import translations)
+    config.AddCommand<TranslationCommand>("translations")
+          .WithDescription("Export or import solution translations")
+          .WithExample("translations", "export --solution ContosoCustomizations")
+          .WithExample("translations", "import translations.zip");
 });
 
 return await app.RunAsync(args, cancellationTokenSource.Token);
