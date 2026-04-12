@@ -1,8 +1,10 @@
 using System.ComponentModel;
 using CliWrap;
 using Flowline.Config;
+using Flowline.Utils;
 using Spectre.Console;
 using Spectre.Console.Cli;
+using Spectre.Console.Extensions;
 
 namespace Flowline.Commands;
 
@@ -18,7 +20,7 @@ public class ProvisionCommand : AsyncCommand<ProvisionCommand.Settings>
         [Description("Choose whether to provision `dev` or `staging` (default: dev)")]
         public Role Role { get; set; } = Role.Dev; // dev|staging
 
-        [CommandOption("--prod <environment-url>")]
+        [CommandOption("--prod <URL>")]
         [Description("The production environment to provision the new environment from")]
         public string? ProdUrl { get; set; }
 
@@ -37,11 +39,12 @@ public class ProvisionCommand : AsyncCommand<ProvisionCommand.Settings>
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        await GitUtils.AssertGitInstalledAsync(cancellationToken);
-        await PacUtils.AssertPacCliInstalledAsync(cancellationToken);
+        await DotNetUtils.AssertDotNetInstalledAsync(settings.Verbose, cancellationToken).Spinner();
+        await GitUtils.AssertGitInstalledAsync(settings.Verbose, cancellationToken).Spinner();
+        await PacUtils.AssertPacCliInstalledAsync(settings.Verbose, cancellationToken).Spinner();
 
         var rootFolder = Directory.GetCurrentDirectory();
-        await GitUtils.AssertGitRepoAsync(rootFolder, cancellationToken);
+        await GitUtils.AssertGitRepoAsync(rootFolder, settings.Verbose, cancellationToken).Spinner();
 
         AnsiConsole.MarkupLine($"Validating [bold]'{settings.Role}'[/]...");
 
@@ -57,15 +60,15 @@ public class ProvisionCommand : AsyncCommand<ProvisionCommand.Settings>
         var prodUrl = config.GetOrUpdateProdUrl(settings.ProdUrl, settings);
         if (prodUrl == null)
         {
-            AnsiConsole.MarkupLine("[red]Production environment is required. Please provide a Dataverse environment URL using --prod <environment-url>.[/]");
+            AnsiConsole.MarkupLine("[red]Production environment is required. Please provide a Dataverse environment URL using --prod <URL>.[/]");
             return 1;
         }
 
         // Validate Prod URL
-        var srcEnvironment = await PacUtils.GetEnvironmentInfoByUrlAsync(prodUrl, cancellationToken);
+        var srcEnvironment = await PacUtils.GetEnvironmentInfoByUrlAsync(prodUrl, settings.Verbose, cancellationToken);
         if (srcEnvironment == null)
         {
-            AnsiConsole.MarkupLine("[red]Invalid Production environment. Please provide a valid Dataverse environment URL using --prod <environment-url> or run clone first.[/]");
+            AnsiConsole.MarkupLine("[red]Invalid Production environment. Please provide a valid Dataverse environment URL using --prod <URL> or run clone first.[/]");
             return 1;
         }
 
@@ -103,23 +106,29 @@ public class ProvisionCommand : AsyncCommand<ProvisionCommand.Settings>
         }
 
         // Validate target environment
-        var targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, cancellationToken);
+        var targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, settings.Verbose, cancellationToken);
         if (targetEnv == null)
         {
             AnsiConsole.MarkupLine($"Creating environment {targetUrl}...");
 
-            await Cli.Wrap("pac")
-                     .WithArguments(args => args
-                                            .Add("admin")
-                                            .Add("create")
-                                            .Add("--name").Add($"{targetDisplayName} (cloning)")
-                                            .Add("--domain").Add($"{urlParts.Organization}-{suffix.ToLower()}")
-                                            .Add("--region").Add(urlParts.Region))
+            var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
+            var pacAdminCreateCmd = Cli.Wrap(cmdName)
+                .WithArguments(args => args
+                    .AddIfNotNull(prefixArgs)
+                    .Add("admin")
+                    .Add("create")
+                    .Add("--name").Add($"{targetDisplayName} (cloning)")
+                    .Add("--domain").Add($"{urlParts.Organization}-{suffix.ToLower()}")
+                    .Add("--region").Add(urlParts.Region)
+                    .Add("--async"))
+                .WithToolExecutionLog();
+
+            await pacAdminCreateCmd
                      .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
                      .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
                      .ExecuteAsync(cancellationToken);
 
-            targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, cancellationToken);
+            targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, true, cancellationToken);
             if (targetEnv == null)
             {
                 AnsiConsole.MarkupLine("[red]Target Environment not found after creating.[/]");
@@ -151,14 +160,20 @@ public class ProvisionCommand : AsyncCommand<ProvisionCommand.Settings>
         string copyType = (settings.Role == Role.Staging || settings.CopyType == CopyType.Full) ? "FullCopy" : "MinimalCopy";
 
         AnsiConsole.MarkupLine($"Copy '{prodUrl}' to '{targetUrl}'...");
-        await Cli.Wrap("pac")
-                 .WithArguments(args => args
-                                        .Add("admin")
-                                        .Add("copy")
-                                        .Add("--name").Add(targetDisplayName)
-                                        .Add("--source-env").Add(srcEnvironment.EnvironmentUrl!)
-                                        .Add("--target-env").Add(targetEnv.EnvironmentUrl!)
-                                        .Add("--type").Add(copyType))
+        var (cmdNameCopy, prefixArgsCopy, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
+        var pacAdminCopyCmd = Cli.Wrap(cmdNameCopy)
+            .WithArguments(args => args
+                .AddIfNotNull(prefixArgsCopy)
+                .Add("admin")
+                .Add("copy")
+                .Add("--name").Add(targetDisplayName)
+                .Add("--source-env").Add(srcEnvironment.EnvironmentUrl!)
+                .Add("--target-env").Add(targetEnv.EnvironmentUrl!)
+                .Add("--type").Add(copyType)
+                .Add("--async"))
+            .WithToolExecutionLog();
+
+        await pacAdminCopyCmd
                  .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
                  .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
                  .ExecuteAsync(cancellationToken);

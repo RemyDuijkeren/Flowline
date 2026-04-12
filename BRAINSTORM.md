@@ -477,17 +477,31 @@ Parameters:
 
 ### `push`
 
+Use to push local technical assets into the `dev` environment.
+
+This is mainly for developers and technical consultants.
+
+`push` is a dev-only workflow and should reject staging or production roles.
+
 Preferred shape:
 
 - `flowline push`
 - `flowline push <solution>`
+- `flowline push <solution> --scope plugins`
 
 Parameters:
 
 - `<solution>`: optional solution override when multiple solutions exist
 - `--dev <url>`: override the configured development environment
-- `--assets <all|webresources|plugins|pcf>`: limit the push scope
+- `-s, --scope <SCOPE>`: limit the push scope (all|webresources|plugins|pcf). Defaults to `all`. Can be specified multiple times.
 - `--force`: bypass lightweight safety checks
+
+Dispatching Logic:
+
+- The first positional argument is strictly treated as the solution name.
+- Scopes are specified via the `--scope` (or `-s`) option.
+- If no scopes are provided, it defaults to `all`.
+- Multiple scopes are supported by repeating the flag: `--scope plugins --scope webresources`.
 
 ### `sync`
 

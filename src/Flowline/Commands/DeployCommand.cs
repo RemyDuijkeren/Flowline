@@ -26,12 +26,13 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        await PacUtils.AssertPacCliInstalledAsync(cancellationToken);
-        await GitUtils.AssertGitInstalledAsync(cancellationToken);
+        await DotNetUtils.AssertDotNetInstalledAsync(settings.Verbose, cancellationToken);
+        await PacUtils.AssertPacCliInstalledAsync(settings.Verbose, cancellationToken);
+        await GitUtils.AssertGitInstalledAsync(settings.Verbose, cancellationToken);
 
         var rootFolder = Directory.GetCurrentDirectory();
-        await GitUtils.AssertGitRepoAsync(rootFolder, cancellationToken);
-        await GitUtils.AssertRepoCleanAsync(cancellationToken);
+        await GitUtils.AssertGitRepoAsync(rootFolder, settings.Verbose, cancellationToken);
+        await GitUtils.AssertRepoCleanAsync(settings.Verbose, cancellationToken);
 
         // Load or create the project configuration
         var config = ProjectConfig.Load();
@@ -65,7 +66,7 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
 
         // Validate target environment
         AnsiConsole.MarkupLine($"Validating [bold]'{targetUrl}'[/]...");
-        var targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, cancellationToken);
+        var targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, settings.Verbose, cancellationToken);
         if (targetEnv == null)
         {
             AnsiConsole.MarkupLine($"[red]Invalid target environment. Please provide a valid Dataverse environment URL.[/]");
@@ -108,6 +109,7 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
                                                           .Add(packageFolder))
                                      .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]DOTNET: {s}[/]")))
                                      .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
+                                     .WithToolExecutionLog()
                                      .ExecuteAsync(cancellationToken);
 
             if (buildResult.ExitCode != 0)
@@ -125,13 +127,18 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
 
         AnsiConsole.MarkupLine($"Deploying [bold]{sln.Name}[/] {(sln.IncludeManaged ? "(managed) " : "")}to [bold]{targetEnv.DisplayName}[/]...");
 
-        var importResult = await Cli.Wrap("pac")
-                                    .WithArguments(args => args
-                                                         .Add("solution")
-                                                         .Add("import")
-                                                         .Add("--path").Add(packagePath)
-                                                         .Add("--environment").Add(targetEnv.EnvironmentUrl!)
-                                                         .Add("--async"))
+        var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
+        var pacSolutionImportCmd = Cli.Wrap(cmdName)
+            .WithArguments(args => args
+                .AddIfNotNull(prefixArgs)
+                .Add("solution")
+                .Add("import")
+                .Add("--path").Add(packagePath)
+                .Add("--environment").Add(targetEnv.EnvironmentUrl!)
+                .Add("--async"))
+            .WithToolExecutionLog();
+
+        var importResult = await pacSolutionImportCmd
                                     .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
                                     .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
                                     .ExecuteAsync(cancellationToken);

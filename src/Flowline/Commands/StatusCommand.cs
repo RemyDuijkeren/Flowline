@@ -1,6 +1,7 @@
 ﻿using System.ComponentModel;
 using System.Reflection;
 using Flowline.Config;
+using Flowline.Utils;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -19,10 +20,13 @@ public class StatusCommand : AsyncCommand<StatusCommand.Settings>
 
         try
         {
-            var pacVersion = await PacUtils.AssertPacCliInstalledAsync(cancellationToken);
-            AnsiConsole.MarkupLine($"[bold]Power Platform CLI[/] version: [green]{pacVersion}[/]");
+            var dotNetVersion = await DotNetUtils.AssertDotNetInstalledAsync(false, cancellationToken);
+            AnsiConsole.MarkupLine($"[bold].NET SDK[/] version: [green]{dotNetVersion}[/]");
 
-            var gitVersion = await GitUtils.AssertGitInstalledAsync(cancellationToken);
+            var (pacVersion, pacInstallType) = await PacUtils.AssertPacCliInstalledAsync(false, cancellationToken);
+            AnsiConsole.MarkupLine($"[bold]Power Platform CLI[/] version: [green]{pacVersion}[/] ({pacInstallType})");
+
+            var gitVersion = await GitUtils.AssertGitInstalledAsync(false, cancellationToken);
             AnsiConsole.MarkupLine($"[bold]Git[/] version: [green]{gitVersion}[/]");
 
             if (settings.Verbose)

@@ -33,6 +33,7 @@ public class ProjectConfig
 
         if (string.IsNullOrWhiteSpace(inputStagingUrl))
         {
+            AnsiConsole.MarkupLine($"[dim]Using configured staging environment: [bold]{StagingUrl}[/][/]");
             return StagingUrl;
         }
 
@@ -62,6 +63,7 @@ public class ProjectConfig
 
         if (string.IsNullOrWhiteSpace(inputDevUrl))
         {
+            AnsiConsole.MarkupLine($"[dim]Using configured develpment environment: [bold]{DevUrl}[/][/]");
             return DevUrl;
         }
 
@@ -90,7 +92,11 @@ public class ProjectConfig
 
         if (string.IsNullOrWhiteSpace(inputProdUrl))
         {
-            AnsiConsole.MarkupLine($"  Using configured production environment: [bold]{ProdUrl}[/]");
+            if (settings is { Verbose: true })
+            {
+                AnsiConsole.MarkupLine($"[dim]Using configured production environment: [bold]{ProdUrl}[/][/]");
+            }
+
             return ProdUrl;
         }
 
@@ -206,7 +212,8 @@ public class ProjectConfig
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Failed to save configuration: {ex.Message}");
+            AnsiConsole.MarkupLine("[red]Failed to save configuration.[/]");
+            AnsiConsole.WriteException(ex);
         }
     }
 }

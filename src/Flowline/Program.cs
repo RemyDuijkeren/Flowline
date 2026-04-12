@@ -39,9 +39,9 @@ app.Configure(config =>
           .WithExample("provision", "dev")
           .WithExample("provision", "staging")
           .WithExample("provision", "dev --prod https://contoso.crm4.dynamics.com")
-          .WithExample("provision", "dev --prod https://contoso.crm4.dynamics.com --copy full")
-          .WithExample("provision", "dev --prod https://contoso.crm4.dynamics.com --suffix mydev")
-          .WithExample("provision", "dev --prod https://contoso.crm4.dynamics.com --allow-overwrite");
+          .WithExample("provision", "dev --copy full")
+          .WithExample("provision", "dev --suffix mydev")
+          .WithExample("provision", "dev --allow-overwrite");
 
     // Push assets to dev environment (upload and push assets to environment: plugins, webresources, pcf controls, etc.)
     config.AddCommand<PushCommand>("push")

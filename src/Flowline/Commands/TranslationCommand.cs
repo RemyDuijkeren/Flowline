@@ -46,20 +46,31 @@ public class TranslationCommand : AsyncCommand<TranslationSettings>
         }
 
         var config = ProjectConfig.Load();
+        if (config == null)
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] Project configuration is not loaded.");
+            return 1;
+        }
+
         var targetUrl = settings.Target;
 
         if (string.IsNullOrEmpty(targetUrl))
         {
             targetUrl = config.DevUrl;
+            if (string.IsNullOrEmpty(targetUrl))
+            {
+                AnsiConsole.MarkupLine("[red]Error:[/] Dev URL is not configured in .flowline.");
+                return 1;
+            }
             AnsiConsole.MarkupLine($"[grey]No target specified, using default dev URL: {targetUrl}[/]");
         }
         else
         {
             targetUrl = targetUrl.ToLowerInvariant() switch
             {
-                "dev" => config.DevUrl,
-                "staging" => config.StagingUrl,
-                "prod" => config.ProdUrl,
+                "dev" => config.DevUrl ?? string.Empty,
+                "staging" => config.StagingUrl ?? string.Empty,
+                "prod" => config.ProdUrl ?? string.Empty,
                 _ => targetUrl
             };
         }

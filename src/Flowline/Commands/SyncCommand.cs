@@ -2,6 +2,7 @@ using System.ComponentModel;
 using CliWrap;
 using CliWrap.Buffered;
 using Flowline.Config;
+using Flowline.Utils;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -15,7 +16,7 @@ public class SyncCommand : AsyncCommand<SyncCommand.Settings>
         [Description("optional solution override when multiple solutions exist")]
         public string? Solution { get; set; }
 
-        [CommandOption("--dev <target url>")]
+        [CommandOption("--dev <URL>")]
         [Description("Override the configured development environment")]
         public string? DevUrl { get; set; }
 
@@ -27,11 +28,12 @@ public class SyncCommand : AsyncCommand<SyncCommand.Settings>
 
     public override async Task<int> ExecuteAsync(CommandContext context, SyncCommand.Settings settings, CancellationToken cancellationToken)
     {
-        await GitUtils.AssertGitInstalledAsync(cancellationToken);
-        await PacUtils.AssertPacCliInstalledAsync(cancellationToken);
+        await DotNetUtils.AssertDotNetInstalledAsync(settings.Verbose, cancellationToken);
+        await GitUtils.AssertGitInstalledAsync(settings.Verbose, cancellationToken);
+        await PacUtils.AssertPacCliInstalledAsync(settings.Verbose, cancellationToken);
 
         var rootFolder = Directory.GetCurrentDirectory();
-        await GitUtils.AssertGitRepoAsync(rootFolder, cancellationToken);
+        await GitUtils.AssertGitRepoAsync(rootFolder, settings.Verbose, cancellationToken);
 
         // Load or create the project configuration
         var config = ProjectConfig.Load();
@@ -57,14 +59,14 @@ public class SyncCommand : AsyncCommand<SyncCommand.Settings>
         var devUrl = config.GetOrUpdateDevUrl(settings.DevUrl, settings);
         if (string.IsNullOrEmpty(devUrl))
         {
-            AnsiConsole.MarkupLine("[red]Dev URL is required. Please provide a dev URL using 'sync <solutionName> --dev <target url>'.[/]");
+            AnsiConsole.MarkupLine("[red]Dev URL is required. Please provide a dev URL using 'sync <solutionName> --dev <URL>'.[/]");
             return 1;
         }
 
 
         // Validate Dev URL
         AnsiConsole.MarkupLine($"Validating [bold]'{devUrl}'[/]...");
-        var devEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(devUrl, cancellationToken);
+        var devEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(devUrl, settings.Verbose, cancellationToken);
         if (devEnv == null)
         {
             AnsiConsole.MarkupLine("[red]Invalid Dev environment. Please provide a valid Dataverse environment URL using --dev <environment-url>.[/]");
@@ -93,14 +95,19 @@ public class SyncCommand : AsyncCommand<SyncCommand.Settings>
         // Perform sync
         AnsiConsole.MarkupLine($"Syncing solution '{sln.Name}' from environment '{devEnv.DisplayName}' ({devEnv.EnvironmentUrl})...");
 
-        var result = await Cli.Wrap("pac")
-                              .WithArguments(args => args
-                                    .Add("solution")
-                                    .Add("sync")
-                                    .Add("--async")
-                                    .Add("--solution-folder").Add(packageFolder)
-                                    .Add("--environment").Add(devEnv.EnvironmentUrl!)
-                                    .Add("--packagetype").Add(sln.IncludeManaged ? "Both" : "Unmanaged"))
+        var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
+        var pacSolutionSyncCmd = Cli.Wrap(cmdName)
+            .WithArguments(args => args
+                .AddIfNotNull(prefixArgs)
+                .Add("solution")
+                .Add("sync")
+                .Add("--solution-folder").Add(packageFolder)
+                .Add("--environment").Add(devEnv.EnvironmentUrl!)
+                .Add("--packagetype").Add(sln.IncludeManaged ? "Both" : "Unmanaged")
+                .Add("--async"))
+            .WithToolExecutionLog();
+
+        var result = await pacSolutionSyncCmd
                               .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
                               .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
                               .ExecuteAsync(cancellationToken);
@@ -121,6 +128,7 @@ public class SyncCommand : AsyncCommand<SyncCommand.Settings>
                       //.Add("--output").Add(Path.Combine(rootFolder, "artifacts")))
                  .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]DOTNET: {s}[/]")))
                  .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
+                 .WithToolExecutionLog()
                  .ExecuteAsync(cancellationToken);
 
         AnsiConsole.MarkupLine("[green]All done! Use 'git add' and 'git commit' to create a checkpoint.[/]");
@@ -135,11 +143,13 @@ public class SyncCommand : AsyncCommand<SyncCommand.Settings>
                  .WithArguments("add -A")
                  .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
                  .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
+                 .WithToolExecutionLog()
                  .ExecuteAsync(cancellationToken);
 
         // Check if there are changes to commit
         var statusResult = await Cli.Wrap("git")
                                     .WithArguments("status --porcelain")
+                                    .WithToolExecutionLog()
                                     .ExecuteBufferedAsync(cancellationToken);
 
         if (string.IsNullOrWhiteSpace(statusResult.StandardOutput))
@@ -156,6 +166,7 @@ public class SyncCommand : AsyncCommand<SyncCommand.Settings>
                                         .Add("-m").Add("flowline: sync solution"))
                  .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
                  .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
+                 .WithToolExecutionLog()
                  .ExecuteAsync(cancellationToken);
     }
 }

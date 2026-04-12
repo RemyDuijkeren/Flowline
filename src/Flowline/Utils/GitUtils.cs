@@ -1,24 +1,31 @@
 ﻿using CliWrap;
 using CliWrap.Buffered;
+using Flowline.Utils;
 using Spectre.Console;
 
 namespace Flowline;
 
 public static class GitUtils
 {
-    public static async Task<string> AssertGitInstalledAsync(CancellationToken cancellationToken = default)
+    public static async Task<string> AssertGitInstalledAsync(bool verbose = true, CancellationToken cancellationToken = default)
     {
         try
         {
             var result = await Cli.Wrap("git")
                                   .WithArguments("--version")
+                                  .WithToolExecutionLog(verbose)
                                   .ExecuteBufferedAsync(cancellationToken);
 
             // Extract the version from the output (format: "git version X.Y.Z")
             var output = result.StandardOutput.Trim();
             if (output.StartsWith("git version "))
             {
-                return output.Substring("git version ".Length);
+                string gitVersion = output.Substring("git version ".Length);
+                if (verbose)
+                {
+                    AnsiConsole.MarkupLine($"[dim]Git version: {gitVersion}[/]");
+                }
+                return gitVersion;
             }
 
             return "Unknown";
@@ -31,7 +38,7 @@ public static class GitUtils
         }
     }
 
-    public static async Task<(string? remoteName, string? remoteUrl)> GetRemoteUrlAsync(CancellationToken cancellationToken = default)
+    public static async Task<(string? remoteName, string? remoteUrl)> GetRemoteUrlAsync(bool verbose = true, CancellationToken cancellationToken = default)
     {
         // Retrieve remote of the current branch and show it
         string? remoteName = null;
@@ -41,8 +48,7 @@ public static class GitUtils
             // Get upstream ref of the current branch (e.g., "origin/main")
             var upstreamResult = await Cli.Wrap("git")
                                           .WithArguments("rev-parse --abbrev-ref --symbolic-full-name @{u}")
-                                          .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
-                                          .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
+                                          .WithToolExecutionLog(verbose)
                                           .ExecuteBufferedAsync(cancellationToken);
 
             var upstream = upstreamResult.StandardOutput.Trim();
@@ -56,8 +62,7 @@ public static class GitUtils
             {
                 var remoteUrlResult = await Cli.Wrap("git")
                                                .WithArguments(args => args.Add("remote").Add("get-url").Add(remoteName))
-                                               .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
-                                               .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
+                                               .WithToolExecutionLog(verbose)
                                                .ExecuteBufferedAsync(cancellationToken);
 
                 if (remoteUrlResult.ExitCode == 0)
@@ -69,8 +74,7 @@ public static class GitUtils
             {
                 var originResult = await Cli.Wrap("git")
                                             .WithArguments("remote get-url origin")
-                                            .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
-                                            .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
+                                            .WithToolExecutionLog(verbose)
                                             .ExecuteBufferedAsync(cancellationToken);
 
                 if (originResult.ExitCode == 0)
@@ -82,8 +86,7 @@ public static class GitUtils
             {
                 var remotesResult = await Cli.Wrap("git")
                                              .WithArguments("remote")
-                                             .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
-                                             .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
+                                             .WithToolExecutionLog(verbose)
                                              .ExecuteBufferedAsync(cancellationToken);
 
                 var firstRemote = remotesResult.StandardOutput
@@ -94,6 +97,7 @@ public static class GitUtils
                 {
                     var firstUrlResult = await Cli.Wrap("git")
                                                   .WithArguments(args => args.Add("remote").Add("get-url").Add(firstRemote))
+                                                  .WithToolExecutionLog(verbose)
                                                   .ExecuteBufferedAsync(cancellationToken);
 
                     if (firstUrlResult.ExitCode == 0)
@@ -109,12 +113,13 @@ public static class GitUtils
         return (remoteName, remoteUrl);
     }
 
-    public static async Task<bool> IsRepoCleanAsync(CancellationToken cancellationToken = default)
+    public static async Task<bool> IsRepoCleanAsync(bool verbose = true, CancellationToken cancellationToken = default)
     {
         try
         {
             var result = await Cli.Wrap("git")
                                   .WithArguments("status --porcelain")
+                                  .WithToolExecutionLog(verbose)
                                   .ExecuteBufferedAsync(cancellationToken);
 
             return string.IsNullOrWhiteSpace(result.StandardOutput);
@@ -125,16 +130,16 @@ public static class GitUtils
         }
     }
 
-    public static async Task AssertRepoCleanAsync(CancellationToken cancellationToken = default)
+    public static async Task AssertRepoCleanAsync(bool verbose = true, CancellationToken cancellationToken = default)
     {
-        if (!await IsRepoCleanAsync(cancellationToken))
+        if (!await IsRepoCleanAsync(verbose, cancellationToken))
         {
             AnsiConsole.MarkupLine("[red]Uncommitted changes found in Git repository. Please commit or stash your changes before deploying.[/]");
             Environment.Exit(1);
         }
     }
 
-    public static async Task AssertGitRepoAsync(string rootFolder, CancellationToken cancellationToken = default)
+    public static async Task AssertGitRepoAsync(string rootFolder, bool verbose = true, CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(Path.Combine(rootFolder, ".git")))
         {
@@ -143,13 +148,19 @@ public static class GitUtils
             return;
         }
 
-        AnsiConsole.MarkupLine("[green]Git repository found.[/]");
+        if (verbose)
+        {
+            AnsiConsole.MarkupLine("[dim]Git repository found in current folder.[/]");
+        }
 
         // Check if remote URL is configured
-        (string? remoteName, string? remoteUrl) = await GetRemoteUrlAsync(cancellationToken);
+        (string? remoteName, string? remoteUrl) = await GetRemoteUrlAsync(verbose, cancellationToken);
         if (!string.IsNullOrWhiteSpace(remoteUrl))
         {
-            AnsiConsole.MarkupLineInterpolated($"  Remote URL: [link]{remoteUrl}[/] ({remoteName})");
+            if (verbose)
+            {
+                AnsiConsole.MarkupLineInterpolated($"[dim]Remote URL: [link]{remoteUrl}[/] ({remoteName})[/]");
+            }
         }
         else
         {
