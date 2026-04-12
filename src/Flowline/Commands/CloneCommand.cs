@@ -5,7 +5,6 @@ using Flowline.Utils;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using Spectre.Console.Extensions;
-using Command = CliWrap.Command;
 
 namespace Flowline.Commands;
 
@@ -53,7 +52,7 @@ public class CloneCommand : AsyncCommand<CloneCommand.Settings>
         var config = ProjectConfig.Load();
         if (config != null)
         {
-            AnsiConsole.MarkupLine("[yellow]Project configuration already exists. Skip creating[/]");
+            AnsiConsole.MarkupLine("[yellow]Project configuration (.flowline) already exists. Skip creating[/]");
         }
         else
         {
@@ -139,46 +138,26 @@ public class CloneCommand : AsyncCommand<CloneCommand.Settings>
 
             // Clone solution from Dataverse
             var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-            Command pacSolutionCloneCmd = Cli.Wrap(cmdName)
-                .WithArguments(args => args
-                    .AddIfNotNull(prefixArgs)
-                    .Add("solution")
-                    .Add("clone")
-                    .Add("--name").Add(sln.Name)
-                    .Add("--environment").Add(config.ProdUrl!)
-                    .Add("--packagetype").Add(sln.IncludeManaged ? "Both" : "Unmanaged")
-                    .Add("--outputDirectory").Add(slnFolder) // will create <sln.Name> folder under this given folder
-                    .Add("--async"))
-                .WithValidation(CommandResultValidation.None)
-                .WithStandardErrorPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[red]PAC: {s}[/]")))
-                .WithToolExecutionLog();
-
-            string? errorMsg = null;
             CommandResult result = await AnsiConsole.Status().StartAsync(
                 "Connecting...",
-                ctx => pacSolutionCloneCmd
-                       .WithStandardOutputPipe(PipeTarget.ToDelegate(s =>
-                       {
-                           if (!string.IsNullOrWhiteSpace(s))
-                               ctx.Status(s.StartsWith("Processing asynchronous operation...") ? $"Cloning... {s}" : s);
-
-                           if (settings.Verbose)
-                           {
-                               if (!s.StartsWith("Processing asynchronous operation..."))
-                                   AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]");
-                           }
-
-                           if (s.Contains("Error: ") || s.Contains("The reason given was: ")) errorMsg += s;
-                       }))
-                       .ExecuteAsync(cancellationToken).Task);
+                ctx => Cli.Wrap(cmdName)
+                          .WithArguments(args => args
+                                                 .AddIfNotNull(prefixArgs)
+                                                 .Add("solution")
+                                                 .Add("clone")
+                                                 .Add("--name").Add(sln.Name)
+                                                 .Add("--environment").Add(config.ProdUrl!)
+                                                 .Add("--packagetype").Add(sln.IncludeManaged ? "Both" : "Unmanaged")
+                                                 .Add("--outputDirectory").Add(slnFolder) // will create <sln.Name> folder under this given folder
+                                                 .Add("--async"))
+                          .WithValidation(CommandResultValidation.None)
+                          .WithToolExecutionLog(settings.Verbose, ctx)
+                          .ExecuteAsync(cancellationToken)
+                          .Task);
 
             if (!result.IsSuccess)
             {
                 AnsiConsole.MarkupLine("[red]Failed to clone the solution. Please check the environment and solution name.[/]");
-                if (errorMsg != null)
-                {
-                    AnsiConsole.MarkupLine($"[red]{errorMsg}[/]");
-                }
                 return 1;
             }
 
@@ -265,75 +244,131 @@ public class CloneCommand : AsyncCommand<CloneCommand.Settings>
         }
         else
         {
-            AnsiConsole.MarkupLine($"[yellow]Solution file (sln) already exists. Skip creation.[/]");
+            AnsiConsole.MarkupLine($"[yellow]Solution file (sln) already exists. Skip creation[/]");
         }
 
-        // // Create Extensions project if it doesn't exist
-        // var extensionsFolder = Path.Combine(slnFolder, "Extensions");
-        // var extensionsCsproj = Path.Combine(extensionsFolder, "Extensions.csproj");
-        // if (!File.Exists(extensionsCsproj))
-        // {
-        //     AnsiConsole.MarkupLine("Initializing Extensions project...");
-        //     Directory.CreateDirectory(extensionsFolder);
-        //     await Cli.Wrap("pac")
-        //              .WithArguments(args => args
-        //                                   .Add("plugin")
-        //                                   .Add("init")
-        //                                   .Add("--outputDirectory")
-        //                                   .Add(extensionsFolder))
-        //              .ExecuteAsync(cancellationToken);
-        //
-        //     // Rename the .csproj created by pac plugin init (it uses the folder name)
-        //     var pacGeneratedCsproj = Directory.GetFiles(extensionsFolder, "*.csproj").FirstOrDefault();
-        //     if (pacGeneratedCsproj != null && Path.GetFileName(pacGeneratedCsproj) != "Extensions.csproj")
-        //     {
-        //         File.Move(pacGeneratedCsproj, extensionsCsproj);
-        //     }
-        //
-        //     // Add Extensions.csproj to the solution
-        //     await Cli.Wrap("dotnet")
-        //              .WithArguments(args => args
-        //                                   .Add("sln")
-        //                                   .Add(slnFilePath)
-        //                                   .Add("add")
-        //                                   .Add(extensionsCsproj))
-        //              .ExecuteAsync(cancellationToken);
-        // }
-        //
-        // // Create WebResources project if it doesn't exist
-        // var webresourcesFolder = Path.Combine(slnFolder, "WebResources");
-        // var webresourcesCsproj = Path.Combine(webresourcesFolder, "WebResources.csproj");
-        // if (!File.Exists(webresourcesCsproj))
-        // {
-        //     AnsiConsole.MarkupLine("Initializing WebResources project...");
-        //     Directory.CreateDirectory(webresourcesFolder);
-        //     Directory.CreateDirectory(Path.Combine(webresourcesFolder, "src"));
-        //     Directory.CreateDirectory(Path.Combine(webresourcesFolder, "public"));
-        //     Directory.CreateDirectory(Path.Combine(webresourcesFolder, "dist"));
-        //
-        //     // Create a basic class library for WebResources.csproj
-        //     await Cli.Wrap("dotnet")
-        //              .WithArguments(args => args
-        //                                   .Add("new")
-        //                                   .Add("classlib")
-        //                                   .Add("--name")
-        //                                   .Add("WebResources")
-        //                                   .Add("--output")
-        //                                   .Add(webresourcesFolder)
-        //                                   .Add("--force"))
-        //              .ExecuteAsync(cancellationToken);
-        //
-        //     // Add WebResources.csproj to the solution
-        //     await Cli.Wrap("dotnet")
-        //              .WithArguments(args => args
-        //                                   .Add("sln")
-        //                                   .Add(slnFilePath)
-        //                                   .Add("add")
-        //                                   .Add(webresourcesCsproj))
-        //              .ExecuteAsync(cancellationToken);
-        // }
+        // Create Extensions (plugins) project if it doesn't exist
+        var extensionsFolder = Path.Combine(slnFolder, "Extensions");
+        var extensionsCsproj = Path.Combine(extensionsFolder, "Extensions.csproj");
+        if (!File.Exists(extensionsCsproj))
+        {
+            AnsiConsole.MarkupLine("Initializing Extensions project...");
+            Directory.CreateDirectory(extensionsFolder);
 
-        AnsiConsole.MarkupLine("[green]Initialization complete! You can now use 'push' and 'sync' to keep your solution up to date.[/]");
+            var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
+            await Cli.Wrap(cmdName)
+                     .WithArguments(args => args
+                         .AddIfNotNull(prefixArgs)
+                         .Add("plugin")
+                         .Add("init"))
+                     .WithWorkingDirectory(extensionsFolder)
+                     .WithToolExecutionLog(settings.Verbose)
+                     .ExecuteAsync(cancellationToken)
+                     .Task.Spinner();
+
+            // Add Extensions.csproj to the solution
+            await Cli.Wrap("dotnet")
+                     .WithArguments(args => args
+                                          .Add("sln")
+                                          //.Add(slnFilePath)
+                                          .Add("add")
+                                          .Add(extensionsCsproj))
+                     .WithWorkingDirectory(slnFolder)
+                     .WithToolExecutionLog(settings.Verbose)
+                     .ExecuteAsync(cancellationToken)
+                     .Task.Spinner();
+
+            AnsiConsole.MarkupLine("[green]Initialized Extensions project[/]");
+        }
+        else
+        {
+            AnsiConsole.MarkupLine($"[yellow]Extensions project (plugins) already exists. Skip creation[/]");
+        }
+
+        // Create WebResources project if it doesn't exist
+        var webresourcesFolder = Path.Combine(slnFolder, "WebResources");
+        var webresourcesCsproj = Path.Combine(webresourcesFolder, "WebResources.csproj");
+        if (!File.Exists(webresourcesCsproj))
+        {
+            AnsiConsole.MarkupLine("Initializing WebResources project...");
+
+            // Create a basic class library for WebResources.csproj
+            await Cli.Wrap("dotnet")
+                     .WithArguments(args => args
+                                          .Add("new")
+                                          .Add("classlib")
+                                          .Add("--name").Add("WebResources"))
+                     .WithWorkingDirectory(slnFolder)
+                     .WithToolExecutionLog(settings.Verbose)
+                     .ExecuteAsync(cancellationToken);
+
+            // Add WebResources.csproj to the solution
+            await Cli.Wrap("dotnet")
+                     .WithArguments(args => args
+                                          .Add("sln")
+                                          .Add(slnFilePath)
+                                          .Add("add")
+                                          .Add(webresourcesCsproj))
+                     .WithToolExecutionLog(settings.Verbose)
+                     .ExecuteAsync(cancellationToken);
+
+            // Create default WebResources folder structure
+            File.Delete(Path.Combine(webresourcesFolder, "Class1.cs"));
+            Directory.CreateDirectory(Path.Combine(webresourcesFolder, "src"));
+            Directory.CreateDirectory(Path.Combine(webresourcesFolder, "public"));
+            Directory.CreateDirectory(Path.Combine(webresourcesFolder, "dist"));
+
+            AnsiConsole.MarkupLine("[green]Initialized WebResources project[/]");
+        }
+        else
+        {
+            AnsiConsole.MarkupLine($"[yellow]WebResources project already exists. Skip creation[/]");
+        }
+
+        // Create XML Mapping file in SolutionPackage folder
+        var mappingFilePath = Path.Combine(solutionPackageFolder, "Mapping.xml");
+        if (!File.Exists(mappingFilePath))
+        {
+            AnsiConsole.MarkupLine("Creating XML Mapping file...");
+            await File.WriteAllTextAsync(
+                mappingFilePath,
+                $"""
+                  <?xml version="1.0" encoding="utf-8"?>
+                 <Mapping>
+                     <!-- https://docs.microsoft.com/en-us/dynamics365/customer-engagement/developer/compress-extract-solution-file-solutionpackager -->
+                     <FileToFile map="PluginAssemblies\**\Extensions.dll" to="..\..\Extensions\bin\Release\net462\Extensions.dll" />
+                     <FileToPath map="WebResources\**\*.*" to="..\..\WebResources\dist\**" />
+                 </Mapping>
+                 """,
+                cancellationToken).Spinner();
+
+            AnsiConsole.MarkupLine($"[green]Created XML Mapping file at {mappingFilePath}[/]");
+        }
+        else
+        {
+            AnsiConsole.MarkupLine($"[yellow]XML Mapping file already exists. Skip creation[/]");
+        }
+
+        // Build the solution in dotnet to validate it
+        AnsiConsole.MarkupLine("Building solution...");
+        var buildResult = await Cli.Wrap("dotnet")
+                            .WithArguments(args => args.Add("build"))
+                            .WithWorkingDirectory(slnFolder)
+                            .WithToolExecutionLog(settings.Verbose)
+                            .ExecuteAsync(cancellationToken)
+                            .Task.Spinner();
+
+        if (!buildResult.IsSuccess)
+        {
+            AnsiConsole.MarkupLine($"[red]Failed to build solution. Please check the logs for more details.[/]");
+            return 1;
+        }
+        else
+        {
+            AnsiConsole.MarkupLine("[green]Solution built successfully[/]");
+        }
+
+        AnsiConsole.MarkupLine("[bold green]:rocket: Flowline cloned it! You can now use 'push' and 'sync' to keep your solution up to date.[/]");
 
         return 0;
     }

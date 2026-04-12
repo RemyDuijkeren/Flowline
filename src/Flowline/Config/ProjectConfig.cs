@@ -28,7 +28,7 @@ public class ProjectConfig
         if (string.IsNullOrWhiteSpace(StagingUrl))
         {
             StagingUrl = inputStagingUrl;
-            return StagingUrl;
+            return string.IsNullOrWhiteSpace(inputStagingUrl) ? null : inputStagingUrl;
         }
 
         if (string.IsNullOrWhiteSpace(inputStagingUrl))
@@ -58,7 +58,7 @@ public class ProjectConfig
         if (string.IsNullOrWhiteSpace(DevUrl))
         {
             DevUrl = inputDevUrl;
-            return DevUrl;
+            return string.IsNullOrWhiteSpace(inputDevUrl) ? null : inputDevUrl;
         }
 
         if (string.IsNullOrWhiteSpace(inputDevUrl))
@@ -87,6 +87,7 @@ public class ProjectConfig
 
         if (string.IsNullOrWhiteSpace(ProdUrl))
         {
+            ProdUrl = inputProdUrl;
             return string.IsNullOrWhiteSpace(inputProdUrl) ? null : inputProdUrl;
         }
 
@@ -151,7 +152,7 @@ public class ProjectConfig
             else
             {
                 var first = Solutions.Single();
-                AnsiConsole.MarkupLine($"  Using configured solution: [bold]{first.Name}[/]");
+                AnsiConsole.MarkupLine($"[dim]Using configured solution: [bold]{first.Name}[/][/]");
                 return first;
             }
         }
