@@ -5,6 +5,7 @@ using Flowline.Utils;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using Spectre.Console.Extensions;
+using Command = CliWrap.Command;
 
 namespace Flowline.Commands;
 
@@ -39,20 +40,26 @@ public class ProvisionCommand : AsyncCommand<ProvisionCommand.Settings>
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        await DotNetUtils.AssertDotNetInstalledAsync(settings.Verbose, cancellationToken).Spinner();
-        await GitUtils.AssertGitInstalledAsync(settings.Verbose, cancellationToken).Spinner();
-        await PacUtils.AssertPacCliInstalledAsync(settings.Verbose, cancellationToken).Spinner();
-
         var rootFolder = Directory.GetCurrentDirectory();
-        await GitUtils.AssertGitRepoAsync(rootFolder, settings.Verbose, cancellationToken).Spinner();
+        await AnsiConsole.Status().StartAsync("Validating environment...", async ctx =>
+        {
+            await DotNetUtils.AssertDotNetInstalledAsync(settings.Verbose, cancellationToken);
+            await PacUtils.AssertPacCliInstalledAsync(settings.Verbose, cancellationToken);
+            await GitUtils.AssertGitInstalledAsync(settings.Verbose, cancellationToken);
+            await GitUtils.AssertGitRepoAsync(rootFolder, settings.Verbose, cancellationToken);
+        });
 
-        AnsiConsole.MarkupLine($"Validating [bold]'{settings.Role}'[/]...");
+        AnsiConsole.MarkupLine("[green]Valid Environment[/]");
 
         // Load or create the project configuration
         var config = ProjectConfig.Load();
-        if (config == null)
+        if (config != null)
         {
-            AnsiConsole.MarkupLine("[yellow]No project configuration found. Creating...[/]");
+            AnsiConsole.MarkupLine("[yellow]Project configuration (.flowline) already exists. Skip creating[/]");
+        }
+        else
+        {
+            AnsiConsole.MarkupLine("No project configuration found. Creating...");
             config = new ProjectConfig();
         }
 
@@ -112,20 +119,16 @@ public class ProvisionCommand : AsyncCommand<ProvisionCommand.Settings>
             AnsiConsole.MarkupLine($"Creating environment {targetUrl}...");
 
             var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-            var pacAdminCreateCmd = Cli.Wrap(cmdName)
-                .WithArguments(args => args
-                    .AddIfNotNull(prefixArgs)
-                    .Add("admin")
-                    .Add("create")
-                    .Add("--name").Add($"{targetDisplayName} (cloning)")
-                    .Add("--domain").Add($"{urlParts.Organization}-{suffix.ToLower()}")
-                    .Add("--region").Add(urlParts.Region)
-                    .Add("--async"))
-                .WithToolExecutionLog();
-
-            await pacAdminCreateCmd
-                     .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
-                     .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
+            await Cli.Wrap(cmdName)
+                     .WithArguments(args => args
+                                            .AddIfNotNull(prefixArgs)
+                                            .Add("admin")
+                                            .Add("create")
+                                            .Add("--name").Add($"{targetDisplayName} (cloning)")
+                                            .Add("--domain").Add($"{urlParts.Organization}-{suffix.ToLower()}")
+                                            .Add("--region").Add(urlParts.Region)
+                                            .Add("--async"))
+                     .WithToolExecutionLog(settings.Verbose)
                      .ExecuteAsync(cancellationToken);
 
             targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, true, cancellationToken);
