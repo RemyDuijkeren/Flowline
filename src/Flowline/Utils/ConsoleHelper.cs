@@ -1,4 +1,6 @@
+using CliWrap;
 using Spectre.Console;
+using Spectre.Console.Extensions;
 
 namespace Flowline.Utils;
 
@@ -6,7 +8,7 @@ public static class ConsoleHelper
 {
     /// <summary>
     /// Detects if the current run is in interactive mode.
-    /// Non-interactive mode is typically detected via Environment.UserInteractive, 
+    /// Non-interactive mode is typically detected via Environment.UserInteractive,
     /// if the output is redirected, or if explicit CLI flags like --json are set.
     /// </summary>
     /// <param name="settings">The current Flowline settings which may contain flags like --json.</param>

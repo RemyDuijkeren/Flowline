@@ -69,7 +69,7 @@ public class PushCommand : FlowlineCommand<PushCommand.Settings>
         var extensionsCsproj = Path.Combine(extensionsFolder, $"{ExtensionsName}.csproj");
 
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-        CommandResult result = await AnsiConsole.Status().StartAsync(
+        CommandResult result = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
             "Connecting...",
             ctx => Cli.Wrap(cmdName)
                       .WithArguments(args => args

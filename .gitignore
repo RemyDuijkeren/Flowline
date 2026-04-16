@@ -6,6 +6,7 @@
 .env
 .junie
 .codex
+.claude
 
 # Build results
 [Bb]in/

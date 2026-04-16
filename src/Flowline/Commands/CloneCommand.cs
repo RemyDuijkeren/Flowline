@@ -4,7 +4,6 @@ using Flowline.Config;
 using Flowline.Utils;
 using Spectre.Console;
 using Spectre.Console.Cli;
-using Spectre.Console.Extensions;
 
 namespace Flowline.Commands;
 
@@ -65,7 +64,7 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
 
             // Clone solution from Dataverse
             var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-            CommandResult result = await AnsiConsole.Status().StartAsync(
+            CommandResult result = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
                 "Connecting...",
                 ctx => Cli.Wrap(cmdName)
                           .WithArguments(args => args
@@ -105,7 +104,7 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
         }
         else
         {
-            AnsiConsole.MarkupLine($"[yellow]Clone in '{SolutionPackageName}' folder already exist. Skip cloning[/]");
+            AnsiConsole.MarkupLine($"Clone in '{SolutionPackageName}' folder already exist. Skip cloning");
         }
 
         // Create Solution file if it doesn't exist (use sln for now because slnx can't handle .cdsproj yet)
@@ -121,7 +120,7 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
                                   .WithWorkingDirectory(slnFolder)
                                   .WithToolExecutionLog(settings.Verbose)
                                   .ExecuteAsync(cancellationToken)
-                                  .Task.Spinner();
+                                  .WithFlowlineSpinner();
 
             if (!result.IsSuccess || !File.Exists(slnFilePath))
             {
@@ -149,7 +148,7 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
                      .WithWorkingDirectory(slnFolder)
                      .WithToolExecutionLog(settings.Verbose)
                      .ExecuteAsync(cancellationToken)
-                     .Task.Spinner();
+                     .WithFlowlineSpinner();
 
             // Rename back to .cdsproj
             if (File.Exists(csprojPath))
@@ -171,7 +170,7 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
         }
         else
         {
-            AnsiConsole.MarkupLine($"[yellow]Solution file (sln) already exists. Skip creation[/]");
+            AnsiConsole.MarkupLine($"Solution file (sln) already exists. Skip creation");
         }
 
         // Create Extensions (plugins) project if it doesn't exist
@@ -191,7 +190,7 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
                      .WithWorkingDirectory(extensionsFolder)
                      .WithToolExecutionLog(settings.Verbose)
                      .ExecuteAsync(cancellationToken)
-                     .Task.Spinner();
+                     .WithFlowlineSpinner();
 
             // Add Extensions.csproj to the solution
             await Cli.Wrap("dotnet")
@@ -203,13 +202,13 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
                      .WithWorkingDirectory(slnFolder)
                      .WithToolExecutionLog(settings.Verbose)
                      .ExecuteAsync(cancellationToken)
-                     .Task.Spinner();
+                     .WithFlowlineSpinner();
 
             AnsiConsole.MarkupLine("[green]Initialized Extensions project[/]");
         }
         else
         {
-            AnsiConsole.MarkupLine($"[yellow]Extensions project (plugins) already exists. Skip creation[/]");
+            AnsiConsole.MarkupLine($"Extensions project (plugins) already exists. Skip creation");
         }
 
         // Create WebResources project if it doesn't exist
@@ -249,7 +248,7 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
         }
         else
         {
-            AnsiConsole.MarkupLine($"[yellow]WebResources project already exists. Skip creation[/]");
+            AnsiConsole.MarkupLine($"WebResources project already exists. Skip creation");
         }
 
         // Create XML Mapping file in SolutionPackage folder
@@ -267,13 +266,13 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
                      <FileToPath map="WebResources\**\*.*" to="..\..\WebResources\dist\**" />
                  </Mapping>
                  """,
-                cancellationToken).Spinner();
+                cancellationToken).FlowlineSpinner();
 
             AnsiConsole.MarkupLine($"[green]Created XML Mapping file at {mappingFilePath}[/]");
         }
         else
         {
-            AnsiConsole.MarkupLine($"[yellow]XML Mapping file already exists. Skip creation[/]");
+            AnsiConsole.MarkupLine($"XML Mapping file already exists. Skip creation");
         }
 
         // Build the solution in dotnet to validate it

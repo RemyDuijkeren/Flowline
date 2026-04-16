@@ -28,7 +28,7 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
 
     protected virtual async Task ValidateEnvironmentAsync(TSettings settings, CancellationToken cancellationToken)
     {
-        await AnsiConsole.Status().StartAsync("Validating environment...", async ctx =>
+        await AnsiConsole.Status().FlowlineSpinner().StartAsync("Validating environment...", async ctx =>
         {
             await DotNetUtils.AssertDotNetInstalledAsync(settings.Verbose, cancellationToken);
             await PacUtils.AssertPacCliInstalledAsync(settings.Verbose, cancellationToken);
@@ -48,7 +48,7 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
             return null;
         }
 
-        EnvironmentInfo? srcEnvironment = await AnsiConsole.Status().Spinner(spinner: Spinner.Known.Star2).StartAsync(
+        EnvironmentInfo? srcEnvironment = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
             $"Validating Production environment [bold]'{prodUrl}'[/]...",
             ctx => PacUtils.GetEnvironmentInfoByUrlAsync(prodUrl, settings.Verbose, cancellationToken));
 
@@ -77,7 +77,7 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
             return null;
         }
 
-        EnvironmentInfo? devEnv = await AnsiConsole.Status().StartAsync(
+        EnvironmentInfo? devEnv = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
             $"Validating Development environment [bold]'{devUrl}'[/]...",
             ctx => PacUtils.GetEnvironmentInfoByUrlAsync(devUrl, settings.Verbose, cancellationToken));
 
@@ -106,7 +106,7 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
             return null;
         }
 
-        List<SolutionInfo> solutions = await AnsiConsole.Status().StartAsync(
+        List<SolutionInfo> solutions = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
             $"Validating solution [bold]'{sln.Name}'[/]...",
             ctx => PacUtils.GetSolutionsAsync(environmentUrl, settings.Verbose, cancellationToken));
 

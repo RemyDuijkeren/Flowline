@@ -1,7 +1,6 @@
 using CliWrap;
 using CliWrap.Buffered;
 using Spectre.Console;
-using Spectre.Console.Extensions;
 
 namespace Flowline.Utils;
 
@@ -10,13 +9,12 @@ public static class DotNetUtils
     public static async Task<int> BuildSolutionAsync(string workingDirectory, bool verbose = true, CancellationToken cancellationToken = default)
     {
         // Build the solution in dotnet to validate it
-        AnsiConsole.MarkupLine("Building solution...");
-        var buildResult = await Cli.Wrap("dotnet")
-                            .WithArguments(args => args.Add("build"))
-                            .WithWorkingDirectory(workingDirectory)
-                            .WithToolExecutionLog(verbose)
-                            .ExecuteAsync(cancellationToken)
-                            .Task.Spinner();
+        var buildResult = await AnsiConsole.Status().FlowlineSpinner().StartAsync("Building solution...", ctx =>
+            Cli.Wrap("dotnet")
+               .WithArguments(args => args.Add("build"))
+               .WithWorkingDirectory(workingDirectory)
+               .WithToolExecutionLog(verbose)
+               .ExecuteAsync(cancellationToken).Task);
 
         if (!buildResult.IsSuccess)
         {
