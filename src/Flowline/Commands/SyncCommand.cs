@@ -8,7 +8,7 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class SyncCommand : AsyncCommand<SyncCommand.Settings>
+public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
 {
     public sealed class Settings : FlowlineSettings
     {
@@ -26,64 +26,18 @@ public class SyncCommand : AsyncCommand<SyncCommand.Settings>
 
     }
 
-    public override async Task<int> ExecuteAsync(CommandContext context, SyncCommand.Settings settings, CancellationToken cancellationToken)
+    protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        await DotNetUtils.AssertDotNetInstalledAsync(settings.Verbose, cancellationToken);
-        await GitUtils.AssertGitInstalledAsync(settings.Verbose, cancellationToken);
-        await PacUtils.AssertPacCliInstalledAsync(settings.Verbose, cancellationToken);
-
-        var rootFolder = Directory.GetCurrentDirectory();
-        await GitUtils.AssertGitRepoAsync(rootFolder, settings.Verbose, cancellationToken);
-
-        // Load or create the project configuration
-        var config = ProjectConfig.Load();
-        if (config != null)
-        {
-            AnsiConsole.MarkupLine("[yellow]Project configuration already exists.[/]");
-        }
-        else
-        {
-            AnsiConsole.MarkupLine("No project configuration found. Creating...");
-            config = new ProjectConfig();
-        }
+        // Dev URL is required
+        var devEnv = await ResolveAndValidateDevUrlAsync(settings.DevUrl, settings, cancellationToken);
+        if (devEnv == null) return 1;
 
         // Solution name is required
-        var sln = config.GetOrUpdateSolution(settings.Solution, settings.IncludeManaged, settings);
-        if (sln == null)
-        {
-            AnsiConsole.MarkupLine("[red]Solution name is required. Please provide a solution name using 'sync <solutionName>'.[/]");
-            return 1;
-        }
-
-        // Dev URL is required
-        var devUrl = config.GetOrUpdateDevUrl(settings.DevUrl, settings);
-        if (string.IsNullOrEmpty(devUrl))
-        {
-            AnsiConsole.MarkupLine("[red]Dev URL is required. Please provide a dev URL using 'sync <solutionName> --dev <URL>'.[/]");
-            return 1;
-        }
-
-
-        // Validate Dev URL
-        AnsiConsole.MarkupLine($"Validating [bold]'{devUrl}'[/]...");
-        var devEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(devUrl, settings.Verbose, cancellationToken);
-        if (devEnv == null)
-        {
-            AnsiConsole.MarkupLine("[red]Invalid Dev environment. Please provide a valid Dataverse environment URL using --dev <environment-url>.[/]");
-            return 1;
-        }
-
-        if (devEnv.Type == "Production")
-        {
-            AnsiConsole.MarkupLine("[red]Dev environment must not be of type 'Production'.[/]");
-            return 1;
-        }
-
-        AnsiConsole.MarkupLine($"  Using Dev environment: [bold]{devEnv.DisplayName}[/] ({devEnv.EnvironmentUrl}) - Type: {devEnv.Type})");
-
+        var sln = await ResolveAndValidateSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken);
+        if (sln == null) return 1;
 
         // Validate that we have an initialized project
-        var slnFolder = Path.Combine(rootFolder, "solutions", sln.Name);
+        var slnFolder = Path.Combine(RootFolder, "solutions", sln.Name);
         var packageFolder = Path.Combine(slnFolder, "SolutionPackage");
         var cdsprojPath = Path.Combine(packageFolder, "SolutionPackage.cdsproj");
         if (!File.Exists(cdsprojPath))
@@ -93,7 +47,7 @@ public class SyncCommand : AsyncCommand<SyncCommand.Settings>
         }
 
         // Perform sync
-        AnsiConsole.MarkupLine($"Syncing solution '{sln.Name}' from environment '{devEnv.DisplayName}' ({devEnv.EnvironmentUrl})...");
+        AnsiConsole.MarkupLine($"Syncing solution '{sln.Name}' from environment [bold]'{devEnv.EnvironmentUrl}'[/]...");
 
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
         var pacSolutionSyncCmd = Cli.Wrap(cmdName)

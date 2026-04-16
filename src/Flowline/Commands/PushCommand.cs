@@ -1,4 +1,6 @@
 using System.ComponentModel;
+using System.Diagnostics;
+using CliWrap;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using Flowline.Config;
@@ -6,7 +8,7 @@ using Flowline.Utils;
 
 namespace Flowline.Commands;
 
-public class PushCommand : AsyncCommand<PushCommand.Settings>
+public class PushCommand : FlowlineCommand<PushCommand.Settings>
 {
     [Flags]
     public enum PushScope
@@ -38,61 +40,58 @@ public class PushCommand : AsyncCommand<PushCommand.Settings>
         public bool Save { get; set; } = false;
     }
 
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
+    protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        await DotNetUtils.AssertDotNetInstalledAsync(settings.Verbose, cancellationToken);
-        await PacUtils.AssertPacCliInstalledAsync(settings.Verbose, cancellationToken);
-        await GitUtils.AssertGitInstalledAsync(settings.Verbose, cancellationToken);
-
-        var rootFolder = Directory.GetCurrentDirectory();
-        await GitUtils.AssertGitRepoAsync(rootFolder, settings.Verbose, cancellationToken);
-
-        // Load project configuration
-        var config = ProjectConfig.Load();
-        if (config == null)
-        {
-            AnsiConsole.MarkupLine("[red]No project configuration found. Please run 'clone' first.[/]");
-            return 1;
-        }
+        // Dev URL is required for push
+        var devEnv = await ResolveAndValidateDevUrlAsync(settings.DevUrl, settings, cancellationToken);
+        if (devEnv == null) return 1;
 
         // Resolve solution
-        var solutionName = settings.Solution;
-        var sln = config.GetOrUpdateSolution(solutionName, false, settings);
-        if (sln == null)
-        {
-            AnsiConsole.MarkupLine("[red]Solution name is required. Please provide a solution name or configure it in .flowline.[/]");
-            return 1;
-        }
+        var sln = await ResolveAndValidateSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, false, settings, cancellationToken);
+        if (sln == null) return 1;
 
         // Resolve Scopes into one final scope (PushScope finalScope)
         var pushScope = settings.Scopes.Aggregate(PushScope.None, (current, scope) => current | scope);
         AnsiConsole.MarkupLine($"[dim]Push scope: {pushScope}[/]");
 
-        // Dev URL is required for push
-        var devUrl = config.GetOrUpdateDevUrl(settings.DevUrl, settings);
-        if (string.IsNullOrEmpty(devUrl))
-        {
-            AnsiConsole.MarkupLine("[red]Dev URL is required for push. Please provide a dev URL using --dev <url> or configure it in .flowline.[/]");
-            return 1;
-        }
-
-        // Validate Dev environment
-        AnsiConsole.MarkupLine($"Validating [bold]'{devUrl}'[/]...");
-        var devEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(devUrl, settings.Verbose, cancellationToken);
-        if (devEnv == null)
-        {
-            AnsiConsole.MarkupLine("[red]Invalid Dev environment. Please provide a valid Dataverse environment URL.[/]");
-            return 1;
-        }
-
-        if (devEnv.Type == "Production")
-        {
-            AnsiConsole.MarkupLine("[red]Push is a dev-only workflow and cannot be used with Production environments.[/]");
-            return 1;
-        }
-
         // Resolve scopes
-        AnsiConsole.MarkupLine($"Pushing assets [bold]{pushScope}[/] for solution [bold]{sln.Name}[/] to [bold]{devEnv.DisplayName}[/]...");
+        AnsiConsole.MarkupLine($"Pushing assets [bold]{pushScope}[/] for solution [bold]{sln.Name}[/] to environment [bold]'{devEnv.EnvironmentUrl}'[/]...");
+
+        // Build the solution in dotnet
+        var slnFolder = Path.Combine(RootFolder, AllSolutionsFolderName, sln.Name);
+        if (await DotNetUtils.BuildSolutionAsync(slnFolder, settings.Verbose, cancellationToken) != 0)
+        {
+            return 1;
+        }
+
+        // Push Extensions (plugins) to Dev environment
+        var extensionsFolder = Path.Combine(slnFolder, ExtensionsName);
+        var extensionsCsproj = Path.Combine(extensionsFolder, $"{ExtensionsName}.csproj");
+
+        var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
+        CommandResult result = await AnsiConsole.Status().StartAsync(
+            "Connecting...",
+            ctx => Cli.Wrap(cmdName)
+                      .WithArguments(args => args
+                                             .AddIfNotNull(prefixArgs)
+                                             .Add("plugin")
+                                             .Add("push")
+                                             .Add("--name").Add(sln.Name)
+                                             .Add("--environment").Add(devEnv.EnvironmentUrl!)
+                                             .Add("--packagetype").Add(sln.IncludeManaged ? "Both" : "Unmanaged")
+                                             .Add("--outputDirectory").Add(slnFolder) // will create <sln.Name> folder under this given folder
+                                             .Add("--async"))
+                      .WithValidation(CommandResultValidation.None)
+                      .WithToolExecutionLog(settings.Verbose, ctx)
+                      .ExecuteAsync(cancellationToken)
+                      .Task);
+
+        if (!result.IsSuccess)
+        {
+            AnsiConsole.MarkupLine("[red]Failed to clone the solution. Please check the environment and solution name.[/]");
+            return 1;
+        }
+
 
         // TODO: Implement the upload logic
         if (settings.Save) AnsiConsole.MarkupLine("[dim]Save mode enabled: Assets not in source control will be preserved.[/]");

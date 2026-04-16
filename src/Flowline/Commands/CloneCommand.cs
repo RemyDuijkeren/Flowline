@@ -8,11 +8,8 @@ using Spectre.Console.Extensions;
 
 namespace Flowline.Commands;
 
-public class CloneCommand : AsyncCommand<CloneCommand.Settings>
+public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
 {
-    const string AllSolutionsFolderName = "solutions";
-    const string SolutionPackageName = "SolutionPackage";
-
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "<solution>")]
@@ -35,93 +32,23 @@ public class CloneCommand : AsyncCommand<CloneCommand.Settings>
         // - `--dev <url>`: save the development environment URL into `.flowconfig`
     }
 
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
+    protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        var rootFolder = Directory.GetCurrentDirectory();
-        await AnsiConsole.Status().StartAsync("Validating environment...", async ctx =>
-        {
-            await DotNetUtils.AssertDotNetInstalledAsync(settings.Verbose, cancellationToken);
-            await PacUtils.AssertPacCliInstalledAsync(settings.Verbose, cancellationToken);
-            await GitUtils.AssertGitInstalledAsync(settings.Verbose, cancellationToken);
-            await GitUtils.AssertGitRepoAsync(rootFolder, settings.Verbose, cancellationToken);
-        });
-
-        AnsiConsole.MarkupLine("[green]Valid Environment[/]");
-
-        // Load or create the project configuration
-        var config = ProjectConfig.Load();
-        if (config != null)
-        {
-            AnsiConsole.MarkupLine("[yellow]Project configuration (.flowline) already exists. Skip creating[/]");
-        }
-        else
-        {
-            AnsiConsole.MarkupLine("No project configuration found. Creating...");
-            config = new ProjectConfig();
-        }
-
         // Production URL is required
-        var prodUrl = config.GetOrUpdateProdUrl(settings.ProdUrl, settings);
-        if (prodUrl == null)
-        {
-            AnsiConsole.MarkupLine("[red]Production environment is required. Please provide a Dataverse environment URL using --prod <URL>.[/]");
-            return 1;
-        }
-
-        // Validate Prod URL
-        EnvironmentInfo? srcEnvironment = await AnsiConsole.Status().StartAsync(
-            $"Validating [bold]'{prodUrl}'[/]...",
-            ctx => PacUtils.GetEnvironmentInfoByUrlAsync(prodUrl, settings.Verbose, cancellationToken));
-
-        if (srcEnvironment == null)
-        {
-            AnsiConsole.MarkupLine("[red]Invalid Production environment. Please provide a valid Dataverse environment URL using --prod <URL>.[/]");
-            return 1;
-        }
-
-        if (srcEnvironment.Type != "Production")
-        {
-            AnsiConsole.MarkupLine("[red]Production environment must be of type 'Production'.[/]");
-            return 1;
-        }
-
-        AnsiConsole.MarkupLine($"[green]Valid Production environment: [bold]{srcEnvironment.DisplayName}[/] ({srcEnvironment.EnvironmentUrl}, Type: {srcEnvironment.Type})[/]");
+        var prodEnv = await ResolveAndValidateProdUrlAsync(settings.ProdUrl, settings, cancellationToken);
+        if (prodEnv == null) return 1;
 
         // Solution name is required
-        var sln = config.GetOrUpdateSolution(settings.Solution, settings.IncludeManaged, settings);
-        if (sln == null)
-        {
-            AnsiConsole.MarkupLine("[red]Unexpected error: Solution could not be resolved.[/]");
-            return 1;
-        }
-
-        // Validate Solution
-        List<SolutionInfo> solutions = await AnsiConsole.Status().StartAsync(
-            $"Validating solution [bold]'{sln.Name}'[/]...",
-            ctx => PacUtils.GetSolutionsAsync(prodUrl, settings.Verbose, cancellationToken));
-
-        var remoteSolution = solutions.FirstOrDefault(s => s.SolutionUniqueName?.Equals(sln.Name, StringComparison.OrdinalIgnoreCase) == true);
-        if (remoteSolution == null)
-        {
-            AnsiConsole.MarkupLine($"[red]Solution '{sln.Name}' not found in environment '{prodUrl}'.[/]");
-            return 1;
-        }
-
-        if (remoteSolution.IsManaged && !settings.IncludeManaged)
-        {
-            AnsiConsole.MarkupLine($"[red]Solution '{sln.Name}' is managed amd --include-managed is not specified. We need dev environment to clone unmanaged artifacts.[/]");
-            return 0;
-        }
-
-        AnsiConsole.MarkupLine($"[green]Valid Solution: [bold]'{sln.Name}'[/] ({remoteSolution.SolutionUniqueName}, Managed: {remoteSolution.IsManaged})[/]");
+        var sln = await ResolveAndValidateSolutionAsync(settings.Solution, prodEnv.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken);
+        if (sln == null) return 1;
 
         // Save the configuration
-        config.Save();
+        Config?.Save();
         if (settings.Verbose)
             AnsiConsole.MarkupLine($"[dim]Project configuration saved to {ProjectConfig.s_configFileName}.[/]");
 
         // Cleanup if existing cloned output folder exists, so we download into a clean folder
-        var slnFolder = Path.Combine(rootFolder, AllSolutionsFolderName, sln.Name);
+        var slnFolder = Path.Combine(RootFolder, AllSolutionsFolderName, sln.Name);
         string tempClonedOutputFolder = Path.Combine(slnFolder, sln.Name);
         if (Directory.Exists(tempClonedOutputFolder))
         {
@@ -142,14 +69,14 @@ public class CloneCommand : AsyncCommand<CloneCommand.Settings>
                 "Connecting...",
                 ctx => Cli.Wrap(cmdName)
                           .WithArguments(args => args
-                                                 .AddIfNotNull(prefixArgs)
-                                                 .Add("solution")
-                                                 .Add("clone")
-                                                 .Add("--name").Add(sln.Name)
-                                                 .Add("--environment").Add(config.ProdUrl!)
-                                                 .Add("--packagetype").Add(sln.IncludeManaged ? "Both" : "Unmanaged")
-                                                 .Add("--outputDirectory").Add(slnFolder) // will create <sln.Name> folder under this given folder
-                                                 .Add("--async"))
+                              .AddIfNotNull(prefixArgs)
+                              .Add("solution")
+                              .Add("clone")
+                              .Add("--name").Add(sln.Name)
+                              .Add("--environment").Add(Config!.ProdUrl!)
+                              .Add("--packagetype").Add(sln.IncludeManaged ? "Both" : "Unmanaged")
+                              .Add("--outputDirectory").Add(slnFolder) // will create <sln.Name> folder under this given folder
+                              .Add("--async"))
                           .WithValidation(CommandResultValidation.None)
                           .WithToolExecutionLog(settings.Verbose, ctx)
                           .ExecuteAsync(cancellationToken)
@@ -248,8 +175,8 @@ public class CloneCommand : AsyncCommand<CloneCommand.Settings>
         }
 
         // Create Extensions (plugins) project if it doesn't exist
-        var extensionsFolder = Path.Combine(slnFolder, "Extensions");
-        var extensionsCsproj = Path.Combine(extensionsFolder, "Extensions.csproj");
+        var extensionsFolder = Path.Combine(slnFolder, ExtensionsName);
+        var extensionsCsproj = Path.Combine(extensionsFolder, $"{ExtensionsName}.csproj");
         if (!File.Exists(extensionsCsproj))
         {
             AnsiConsole.MarkupLine("Initializing Extensions project...");
@@ -286,8 +213,8 @@ public class CloneCommand : AsyncCommand<CloneCommand.Settings>
         }
 
         // Create WebResources project if it doesn't exist
-        var webresourcesFolder = Path.Combine(slnFolder, "WebResources");
-        var webresourcesCsproj = Path.Combine(webresourcesFolder, "WebResources.csproj");
+        var webresourcesFolder = Path.Combine(slnFolder, WebResourcesName);
+        var webresourcesCsproj = Path.Combine(webresourcesFolder, $"{WebResourcesName}.csproj");
         if (!File.Exists(webresourcesCsproj))
         {
             AnsiConsole.MarkupLine("Initializing WebResources project...");
@@ -297,7 +224,7 @@ public class CloneCommand : AsyncCommand<CloneCommand.Settings>
                      .WithArguments(args => args
                                           .Add("new")
                                           .Add("classlib")
-                                          .Add("--name").Add("WebResources"))
+                                          .Add("--name").Add(WebResourcesName))
                      .WithWorkingDirectory(slnFolder)
                      .WithToolExecutionLog(settings.Verbose)
                      .ExecuteAsync(cancellationToken);
@@ -350,22 +277,9 @@ public class CloneCommand : AsyncCommand<CloneCommand.Settings>
         }
 
         // Build the solution in dotnet to validate it
-        AnsiConsole.MarkupLine("Building solution...");
-        var buildResult = await Cli.Wrap("dotnet")
-                            .WithArguments(args => args.Add("build"))
-                            .WithWorkingDirectory(slnFolder)
-                            .WithToolExecutionLog(settings.Verbose)
-                            .ExecuteAsync(cancellationToken)
-                            .Task.Spinner();
-
-        if (!buildResult.IsSuccess)
+        if (await DotNetUtils.BuildSolutionAsync(slnFolder, settings.Verbose, cancellationToken) != 0)
         {
-            AnsiConsole.MarkupLine($"[red]Failed to build solution. Please check the logs for more details.[/]");
             return 1;
-        }
-        else
-        {
-            AnsiConsole.MarkupLine("[green]Solution built successfully[/]");
         }
 
         AnsiConsole.MarkupLine("[bold green]:rocket: Flowline cloned it! You can now use 'push' and 'sync' to keep your solution up to date.[/]");
