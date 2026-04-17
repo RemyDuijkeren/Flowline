@@ -38,7 +38,7 @@ public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         // Production URL is required
-        var prodEnv = await ResolveAndValidateProdUrlAsync(settings.ProdUrl, settings, cancellationToken);
+        var prodEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Prod, settings.ProdUrl, settings, cancellationToken);
         if (prodEnv == null) return 1;
 
         // Prepare the target environment name and url

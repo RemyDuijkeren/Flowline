@@ -5,6 +5,8 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
+public enum EnvironmentRole { Prod, Staging, Dev }
+
 public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where TSettings : FlowlineSettings
 {
     protected const string AllSolutionsFolderName = "solutions";
@@ -17,7 +19,7 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
 
     public override async Task<int> ExecuteAsync(CommandContext context, TSettings settings, CancellationToken cancellationToken)
     {
-        await ValidateEnvironmentAsync(settings, cancellationToken);
+        await CheckSetupAsync(settings, cancellationToken);
 
         Config = ProjectConfig.Load(RootFolder) ?? new ProjectConfig();
 
@@ -26,7 +28,7 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
 
     protected abstract Task<int> ExecuteFlowlineAsync(CommandContext context, TSettings settings, CancellationToken cancellationToken);
 
-    protected virtual async Task ValidateEnvironmentAsync(TSettings settings, CancellationToken cancellationToken)
+    protected virtual async Task CheckSetupAsync(TSettings settings, CancellationToken cancellationToken)
     {
         await AnsiConsole.Status().FlowlineSpinner().StartAsync("Checking your setup...", async ctx =>
         {
@@ -39,65 +41,64 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
         AnsiConsole.MarkupLine("[green]All good, let's go![/]");
     }
 
-    protected async Task<EnvironmentInfo?> ResolveAndValidateProdUrlAsync(string? inputUrl, TSettings settings, CancellationToken cancellationToken)
+    protected async Task<EnvironmentInfo?> GetAndCheckEnvironmentInfoAsync(EnvironmentRole role, string? inputUrl, TSettings settings, CancellationToken cancellationToken)
     {
-        var prodUrl = Config!.GetOrUpdateProdUrl(inputUrl, settings);
-        if (prodUrl == null)
+        var label = role switch
         {
-            AnsiConsole.MarkupLine("[red]Prod URL is required — use --prod <URL>.[/]");
+            EnvironmentRole.Prod    => "Prod",
+            EnvironmentRole.Staging => "Staging",
+            EnvironmentRole.Dev     => "Dev",
+            _ => throw new ArgumentOutOfRangeException(nameof(role))
+        };
+        var flag = role switch
+        {
+            EnvironmentRole.Prod    => "--prod",
+            EnvironmentRole.Staging => "--staging",
+            EnvironmentRole.Dev     => "--dev",
+            _ => throw new ArgumentOutOfRangeException(nameof(role))
+        };
+
+        var url = role switch
+        {
+            EnvironmentRole.Prod    => Config!.GetOrUpdateProdUrl(inputUrl, settings),
+            EnvironmentRole.Staging => Config!.GetOrUpdateStagingUrl(inputUrl, settings),
+            EnvironmentRole.Dev     => Config!.GetOrUpdateDevUrl(inputUrl, settings),
+            _ => throw new ArgumentOutOfRangeException(nameof(role))
+        };
+
+        if (string.IsNullOrEmpty(url))
+        {
+            AnsiConsole.MarkupLine($"[red]{label} URL is required — use {flag} <URL>.[/]");
             return null;
         }
 
-        EnvironmentInfo? srcEnvironment = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-            $"Checking prod [bold]'{prodUrl}'[/]...",
-            ctx => PacUtils.GetEnvironmentInfoByUrlAsync(prodUrl, settings.Verbose, cancellationToken));
+        EnvironmentInfo? env = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+            $"Checking {label.ToLower()} [bold]'{url}'[/]...",
+            ctx => PacUtils.GetEnvironmentInfoByUrlAsync(url, settings.Verbose, cancellationToken));
 
-        if (srcEnvironment == null)
+        if (env == null)
         {
-            AnsiConsole.MarkupLine("[red]Prod environment not found. Check the URL or your PAC login.[/]");
+            AnsiConsole.MarkupLine($"[red]{label} environment not found — check the URL or your PAC login.[/]");
             return null;
         }
 
-        if (srcEnvironment.Type != "Production")
+        if (role == EnvironmentRole.Prod && env.Type != "Production")
         {
             AnsiConsole.MarkupLine("[red]That environment isn't Production type.[/]");
             return null;
         }
 
-        AnsiConsole.MarkupLine($"[green]Prod: [bold]{srcEnvironment.DisplayName}[/] ({srcEnvironment.EnvironmentUrl})[/]");
-        return srcEnvironment;
+        if (role != EnvironmentRole.Prod && env.Type == "Production")
+        {
+            AnsiConsole.MarkupLine("[red]That's a Production environment — use a sandbox or dev instead.[/]");
+            return null;
+        }
+
+        AnsiConsole.MarkupLine($"[green]{label}: [bold]{env.DisplayName}[/] ({env.EnvironmentUrl})[/]");
+        return env;
     }
 
-    protected async Task<EnvironmentInfo?> ResolveAndValidateDevUrlAsync(string? inputUrl, TSettings settings, CancellationToken cancellationToken)
-    {
-        var devUrl = Config!.GetOrUpdateDevUrl(inputUrl, settings);
-        if (string.IsNullOrEmpty(devUrl))
-        {
-            AnsiConsole.MarkupLine("[red]Dev URL is required — use --dev <URL>.[/]");
-            return null;
-        }
-
-        EnvironmentInfo? devEnv = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-            $"Checking dev [bold]'{devUrl}'[/]...",
-            ctx => PacUtils.GetEnvironmentInfoByUrlAsync(devUrl, settings.Verbose, cancellationToken));
-
-        if (devEnv == null)
-        {
-            AnsiConsole.MarkupLine("[red]Dev environment not found. Check the URL or your PAC login.[/]");
-            return null;
-        }
-
-        if (devEnv.Type == "Production")
-        {
-            AnsiConsole.MarkupLine("[red]That's a Production environment — use a dev or sandbox instead.[/]");
-            return null;
-        }
-
-        AnsiConsole.MarkupLine($"[green]Dev: [bold]{devEnv.DisplayName}[/] ({devEnv.EnvironmentUrl})[/]");
-        return devEnv;
-    }
-
-    protected async Task<ProjectSolution?> ResolveAndValidateSolutionAsync(string? inputName, string environmentUrl, bool includeManaged, TSettings settings, CancellationToken cancellationToken)
+    protected async Task<ProjectSolution?> GetAndCheckSolutionAsync(string? inputName, string environmentUrl, bool includeManaged, TSettings settings, CancellationToken cancellationToken)
     {
         var sln = Config!.GetOrUpdateSolution(inputName, includeManaged, settings);
         if (sln == null)

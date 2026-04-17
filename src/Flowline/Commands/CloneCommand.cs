@@ -34,11 +34,11 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         // Production URL is required
-        var prodEnv = await ResolveAndValidateProdUrlAsync(settings.ProdUrl, settings, cancellationToken);
+        var prodEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Prod, settings.ProdUrl, settings, cancellationToken);
         if (prodEnv == null) return 1;
 
         // Solution name is required
-        var sln = await ResolveAndValidateSolutionAsync(settings.Solution, prodEnv.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken);
+        var sln = await GetAndCheckSolutionAsync(settings.Solution, prodEnv.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken);
         if (sln == null) return 1;
 
         // Save the configuration

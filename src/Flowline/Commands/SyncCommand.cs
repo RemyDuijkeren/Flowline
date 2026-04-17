@@ -29,11 +29,11 @@ public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         // Dev URL is required
-        var devEnv = await ResolveAndValidateDevUrlAsync(settings.DevUrl, settings, cancellationToken);
+        var devEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, settings.DevUrl, settings, cancellationToken);
         if (devEnv == null) return 1;
 
         // Solution name is required
-        var sln = await ResolveAndValidateSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken);
+        var sln = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken);
         if (sln == null) return 1;
 
         // Validate that we have an initialized project

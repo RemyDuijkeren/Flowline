@@ -43,11 +43,11 @@ public class PushCommand : FlowlineCommand<PushCommand.Settings>
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         // Dev URL is required for push
-        var devEnv = await ResolveAndValidateDevUrlAsync(settings.DevUrl, settings, cancellationToken);
+        var devEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, settings.DevUrl, settings, cancellationToken);
         if (devEnv == null) return 1;
 
         // Resolve solution
-        var sln = await ResolveAndValidateSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, false, settings, cancellationToken);
+        var sln = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, false, settings, cancellationToken);
         if (sln == null) return 1;
 
         // Resolve Scopes into one final scope (PushScope finalScope)
