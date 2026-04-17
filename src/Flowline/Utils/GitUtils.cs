@@ -21,6 +21,7 @@ public static class GitUtils
             if (output.StartsWith("git version "))
             {
                 string gitVersion = output.Substring("git version ".Length);
+                AnsiConsole.MarkupLine("Git checked out");
                 if (verbose)
                 {
                     AnsiConsole.MarkupLine($"[dim]Git version: {gitVersion}[/]");
@@ -148,10 +149,7 @@ public static class GitUtils
             return;
         }
 
-        if (verbose)
-        {
-            AnsiConsole.MarkupLine("[dim]Git repository found in current folder.[/]");
-        }
+        AnsiConsole.MarkupLine("Current folder is in Git territory");
 
         // Check if remote URL is configured
         (string? remoteName, string? remoteUrl) = await GetRemoteUrlAsync(verbose, cancellationToken);

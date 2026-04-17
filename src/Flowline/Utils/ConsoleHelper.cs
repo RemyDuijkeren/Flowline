@@ -15,6 +15,8 @@ public static class ConsoleHelper
     /// <returns>True if interactive, false otherwise.</returns>
     public static bool IsInteractive(FlowlineSettings? settings)
     {
+        // return AnsiConsole.Profile.Capabilities.Interactive;
+
         // Explicitly set non-interactive flags
         if (settings is { JsonOutput: true })
         {

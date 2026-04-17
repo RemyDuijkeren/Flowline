@@ -22,16 +22,6 @@ public static class SpinnerExtensions
                          .SpinnerStyle(new Style(foreground: SpinnerColor)));
     }
 
-    extension<T>(CommandTask<T> commandTask)
-    {
-        /// <summary>
-        /// Awaits a CliWrap <see cref="CommandTask{T}"/> while showing the Flowline spinner.
-        /// Use as <c>.ExecuteAsync(token).WithFlowlineSpinner()</c>.
-        /// </summary>
-        public Task<T> WithFlowlineSpinner()
-            => commandTask.Task.Spinner(SpinnerType, new Style(foreground: SpinnerColor));
-    }
-
     extension<T>(Task<T> task)
     {
         /// <summary>

@@ -74,6 +74,7 @@ public static class PacUtils
             if (versionLine != null)
             {
                 var version = versionLine.Trim().Replace("Version: ", string.Empty);
+                AnsiConsole.MarkupLine("PAC CLI is good to manage");
                 if (verbose)
                 {
                     AnsiConsole.MarkupLine($"[dim]Power Platform CLI version: {version} ({installType})[/]");

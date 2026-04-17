@@ -30,10 +30,10 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
     {
         await AnsiConsole.Status().FlowlineSpinner().StartAsync("Validating environment...", async ctx =>
         {
-            await DotNetUtils.AssertDotNetInstalledAsync(settings.Verbose, cancellationToken);
-            await PacUtils.AssertPacCliInstalledAsync(settings.Verbose, cancellationToken);
             await GitUtils.AssertGitInstalledAsync(settings.Verbose, cancellationToken);
             await GitUtils.AssertGitRepoAsync(RootFolder, settings.Verbose, cancellationToken);
+            await DotNetUtils.AssertDotNetInstalledAsync(settings.Verbose, cancellationToken);
+            await PacUtils.AssertPacCliInstalledAsync(settings.Verbose, cancellationToken);
         });
 
         AnsiConsole.MarkupLine("[green]Valid Environment[/]");
@@ -64,7 +64,7 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
             return null;
         }
 
-        AnsiConsole.MarkupLine($"[green]Valid Production environment: [bold]{srcEnvironment.DisplayName}[/] ({srcEnvironment.EnvironmentUrl}, Type: {srcEnvironment.Type})[/]");
+        AnsiConsole.MarkupLine($"[green]Valid Prod env: [bold]{srcEnvironment.DisplayName}[/] ({srcEnvironment.EnvironmentUrl}, Type: {srcEnvironment.Type})[/]");
         return srcEnvironment;
     }
 
@@ -93,7 +93,7 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
             return null;
         }
 
-        AnsiConsole.MarkupLine($"[green]Valid Dev environment: [bold]{devEnv.DisplayName}[/] ({devEnv.EnvironmentUrl}, Type: {devEnv.Type})[/]");
+        AnsiConsole.MarkupLine($"[green]Valid Dev env: [bold]{devEnv.DisplayName}[/] ({devEnv.EnvironmentUrl}, Type: {devEnv.Type})[/]");
         return devEnv;
     }
 

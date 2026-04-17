@@ -69,28 +69,28 @@ public class PushCommand : FlowlineCommand<PushCommand.Settings>
         var extensionsCsproj = Path.Combine(extensionsFolder, $"{ExtensionsName}.csproj");
 
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-        CommandResult result = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-            "Connecting...",
-            ctx => Cli.Wrap(cmdName)
-                      .WithArguments(args => args
-                                             .AddIfNotNull(prefixArgs)
-                                             .Add("plugin")
-                                             .Add("push")
-                                             .Add("--name").Add(sln.Name)
-                                             .Add("--environment").Add(devEnv.EnvironmentUrl!)
-                                             .Add("--packagetype").Add(sln.IncludeManaged ? "Both" : "Unmanaged")
-                                             .Add("--outputDirectory").Add(slnFolder) // will create <sln.Name> folder under this given folder
-                                             .Add("--async"))
-                      .WithValidation(CommandResultValidation.None)
-                      .WithToolExecutionLog(settings.Verbose, ctx)
-                      .ExecuteAsync(cancellationToken)
-                      .Task);
-
-        if (!result.IsSuccess)
-        {
-            AnsiConsole.MarkupLine("[red]Failed to clone the solution. Please check the environment and solution name.[/]");
-            return 1;
-        }
+        // CommandResult result = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+        //     "Connecting...",
+        //     ctx => Cli.Wrap(cmdName)
+        //               .WithArguments(args => args
+        //                                      .AddIfNotNull(prefixArgs)
+        //                                      .Add("plugin")
+        //                                      .Add("push")
+        //                                      .Add("--name").Add(sln.Name)
+        //                                      .Add("--environment").Add(devEnv.EnvironmentUrl!)
+        //                                      .Add("--packagetype").Add(sln.IncludeManaged ? "Both" : "Unmanaged")
+        //                                      .Add("--outputDirectory").Add(slnFolder) // will create <sln.Name> folder under this given folder
+        //                                      .Add("--async"))
+        //               .WithValidation(CommandResultValidation.None)
+        //               .WithToolExecutionLog(settings.Verbose, ctx)
+        //               .ExecuteAsync(cancellationToken)
+        //               .Task);
+        //
+        // if (!result.IsSuccess)
+        // {
+        //     AnsiConsole.MarkupLine("[red]Failed to clone the solution. Please check the environment and solution name.[/]");
+        //     return 1;
+        // }
 
 
         // TODO: Implement the upload logic

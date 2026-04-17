@@ -120,7 +120,7 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
                                   .WithWorkingDirectory(slnFolder)
                                   .WithToolExecutionLog(settings.Verbose)
                                   .ExecuteAsync(cancellationToken)
-                                  .WithFlowlineSpinner();
+                                  .Task.FlowlineSpinner();
 
             if (!result.IsSuccess || !File.Exists(slnFilePath))
             {
@@ -148,7 +148,7 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
                      .WithWorkingDirectory(slnFolder)
                      .WithToolExecutionLog(settings.Verbose)
                      .ExecuteAsync(cancellationToken)
-                     .WithFlowlineSpinner();
+                     .Task.FlowlineSpinner();
 
             // Rename back to .cdsproj
             if (File.Exists(csprojPath))
@@ -190,19 +190,18 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
                      .WithWorkingDirectory(extensionsFolder)
                      .WithToolExecutionLog(settings.Verbose)
                      .ExecuteAsync(cancellationToken)
-                     .WithFlowlineSpinner();
+                     .Task.FlowlineSpinner();
 
             // Add Extensions.csproj to the solution
             await Cli.Wrap("dotnet")
                      .WithArguments(args => args
                                           .Add("sln")
-                                          //.Add(slnFilePath)
                                           .Add("add")
                                           .Add(extensionsCsproj))
                      .WithWorkingDirectory(slnFolder)
                      .WithToolExecutionLog(settings.Verbose)
                      .ExecuteAsync(cancellationToken)
-                     .WithFlowlineSpinner();
+                     .Task.FlowlineSpinner();
 
             AnsiConsole.MarkupLine("[green]Initialized Extensions project[/]");
         }

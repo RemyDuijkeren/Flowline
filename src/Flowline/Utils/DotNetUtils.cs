@@ -37,6 +37,7 @@ public static class DotNetUtils
                                   .ExecuteBufferedAsync(cancellationToken);
 
             var version = result.StandardOutput.Trim();
+            AnsiConsole.MarkupLine(".NET is ready to build");
             if (verbose)
             {
                 AnsiConsole.MarkupLine($"[dim].NET SDK version: {version}[/]");

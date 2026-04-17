@@ -1,10 +1,8 @@
 using System.ComponentModel;
 using CliWrap;
-using Flowline.Config;
 using Flowline.Utils;
 using Spectre.Console;
 using Spectre.Console.Cli;
-using Command = CliWrap.Command;
 
 namespace Flowline.Commands;
 
@@ -86,7 +84,7 @@ public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
                                             .Add("--async"))
                      .WithToolExecutionLog(settings.Verbose)
                      .ExecuteAsync(cancellationToken)
-                     .WithFlowlineSpinner();
+                     .Task.FlowlineSpinner();
 
             targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, true, cancellationToken);
             if (targetEnv == null)
@@ -134,7 +132,7 @@ public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
                                         .Add("--async"))
                  .WithToolExecutionLog(settings.Verbose)
                  .ExecuteAsync(cancellationToken)
-                 .WithFlowlineSpinner();
+                 .Task.FlowlineSpinner();
 
         AnsiConsole.MarkupLine($"[green]All done! See [link]{targetEnv.EnvironmentUrl}[/][/]");
 
