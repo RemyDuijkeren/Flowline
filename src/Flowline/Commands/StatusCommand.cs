@@ -44,7 +44,7 @@ public class StatusCommand : AsyncCommand<StatusCommand.Settings>
 
         // Show the current configuration
         var config = ProjectConfig.Load();
-        AnsiConsole.MarkupLine("\n[bold]Current environment configuration:[/]");
+        AnsiConsole.MarkupLine("\n[bold]Configuration[/]");
 
         if (config is not null)
         {
@@ -65,7 +65,7 @@ public class StatusCommand : AsyncCommand<StatusCommand.Settings>
         }
         else
         {
-            AnsiConsole.MarkupLine("  [yellow]No project config foud in path[/]");
+            AnsiConsole.MarkupLine("  [yellow]No .flowline config found[/]");
         }
 
         return 0;

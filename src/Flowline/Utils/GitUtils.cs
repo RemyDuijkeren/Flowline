@@ -21,7 +21,7 @@ public static class GitUtils
             if (output.StartsWith("git version "))
             {
                 string gitVersion = output.Substring("git version ".Length);
-                AnsiConsole.MarkupLine("Git checked out");
+                AnsiConsole.MarkupLine("Git's good");
                 if (verbose)
                 {
                     AnsiConsole.MarkupLine($"[dim]Git version: {gitVersion}[/]");
@@ -149,7 +149,7 @@ public static class GitUtils
             return;
         }
 
-        AnsiConsole.MarkupLine("Current folder is in Git territory");
+        AnsiConsole.MarkupLine("You're in a Git repo");
 
         // Check if remote URL is configured
         (string? remoteName, string? remoteUrl) = await GetRemoteUrlAsync(verbose, cancellationToken);
@@ -162,7 +162,7 @@ public static class GitUtils
         }
         else
         {
-            AnsiConsole.MarkupLine("[yellow]No remote configured for current Git repository. Please configure a remote URL using 'git remote add <name> <url>'.[/]");
+            AnsiConsole.MarkupLine("[yellow]No remote configured — run 'git remote add <name> <url>' to set one up.[/]");
         }
     }
 }

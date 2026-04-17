@@ -9,7 +9,7 @@ public static class DotNetUtils
     public static async Task<int> BuildSolutionAsync(string workingDirectory, bool verbose = true, CancellationToken cancellationToken = default)
     {
         // Build the solution in dotnet to validate it
-        var buildResult = await AnsiConsole.Status().FlowlineSpinner().StartAsync("Building solution...", ctx =>
+        var buildResult = await AnsiConsole.Status().FlowlineSpinner().StartAsync("Building...", ctx =>
             Cli.Wrap("dotnet")
                .WithArguments(args => args.Add("build"))
                .WithWorkingDirectory(workingDirectory)
@@ -18,12 +18,12 @@ public static class DotNetUtils
 
         if (!buildResult.IsSuccess)
         {
-            AnsiConsole.MarkupLine($"[red]Failed to build solution. Please check the logs for more details.[/]");
+            AnsiConsole.MarkupLine("[red]Build failed — check the output above (- use --verbose)[/]");
             return 1;
         }
         else
         {
-            AnsiConsole.MarkupLine("[green]Solution built successfully[/]");
+            AnsiConsole.MarkupLine("[green]Build done[/]");
             return 0;
         }
     }
@@ -37,7 +37,7 @@ public static class DotNetUtils
                                   .ExecuteBufferedAsync(cancellationToken);
 
             var version = result.StandardOutput.Trim();
-            AnsiConsole.MarkupLine(".NET is ready to build");
+            AnsiConsole.MarkupLine(".NET's good");
             if (verbose)
             {
                 AnsiConsole.MarkupLine($"[dim].NET SDK version: {version}[/]");

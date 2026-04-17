@@ -60,12 +60,10 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
         var cdsprojPath = Path.Combine(slnFolder, SolutionPackageName, $"{SolutionPackageName}.cdsproj");
         if (!Directory.Exists(solutionPackageFolder) || !File.Exists(cdsprojPath))
         {
-            AnsiConsole.MarkupLine($"No {SolutionPackageName} folder and {SolutionPackageName}.cdsproj found for '{sln.Name}' found. Cloning from Dataverse...");
-
             // Clone solution from Dataverse
             var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
             CommandResult result = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-                "Connecting...",
+                $"Cloning [bold]{sln.Name}[/] from Dataverse...",
                 ctx => Cli.Wrap(cmdName)
                           .WithArguments(args => args
                               .AddIfNotNull(prefixArgs)
@@ -83,7 +81,7 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
 
             if (!result.IsSuccess)
             {
-                AnsiConsole.MarkupLine("[red]Failed to clone the solution. Please check the environment and solution name.[/]");
+                AnsiConsole.MarkupLine("[red]Clone failed — check the environment and your PAC login.[/]");
                 return 1;
             }
 
@@ -104,7 +102,7 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
         }
         else
         {
-            AnsiConsole.MarkupLine($"Clone in '{SolutionPackageName}' folder already exist. Skip cloning");
+            AnsiConsole.MarkupLine($"[dim]Solution already cloned — skipping[/]");
         }
 
         // Create Solution file if it doesn't exist (use sln for now because slnx can't handle .cdsproj yet)
@@ -124,11 +122,11 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
 
             if (!result.IsSuccess || !File.Exists(slnFilePath))
             {
-                AnsiConsole.MarkupLine($"Failed to create solution file '{sln.Name}.sln'.");
+                AnsiConsole.MarkupLine($"[red]Couldn't create the solution file.[/]");
                 return 1;
             }
 
-            AnsiConsole.MarkupLine($"[green]Created Solution file '{slnFilePath}'[/]");
+            AnsiConsole.MarkupLine("[green]Solution file created[/]");
 
             // Add SolutionPackage.cdsproj to the solution
             // NOTE: 'dotnet sln add' doesn't support .cdsproj directly.
@@ -170,7 +168,7 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
         }
         else
         {
-            AnsiConsole.MarkupLine($"Solution file (sln) already exists. Skip creation");
+            AnsiConsole.MarkupLine("[dim]Solution file already there — skipping[/]");
         }
 
         // Create Extensions (plugins) project if it doesn't exist
@@ -178,7 +176,7 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
         var extensionsCsproj = Path.Combine(extensionsFolder, $"{ExtensionsName}.csproj");
         if (!File.Exists(extensionsCsproj))
         {
-            AnsiConsole.MarkupLine("Initializing Extensions project...");
+            AnsiConsole.MarkupLine("Setting up Extensions project...");
             Directory.CreateDirectory(extensionsFolder);
 
             var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
@@ -203,11 +201,11 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
                      .ExecuteAsync(cancellationToken)
                      .Task.FlowlineSpinner();
 
-            AnsiConsole.MarkupLine("[green]Initialized Extensions project[/]");
+            AnsiConsole.MarkupLine("[green]Extensions project ready[/]");
         }
         else
         {
-            AnsiConsole.MarkupLine($"Extensions project (plugins) already exists. Skip creation");
+            AnsiConsole.MarkupLine("[dim]Extensions project already there — skipping[/]");
         }
 
         // Create WebResources project if it doesn't exist
@@ -215,7 +213,7 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
         var webresourcesCsproj = Path.Combine(webresourcesFolder, $"{WebResourcesName}.csproj");
         if (!File.Exists(webresourcesCsproj))
         {
-            AnsiConsole.MarkupLine("Initializing WebResources project...");
+            AnsiConsole.MarkupLine("Setting up WebResources project...");
 
             // Create a basic class library for WebResources.csproj
             await Cli.Wrap("dotnet")
@@ -243,18 +241,17 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
             Directory.CreateDirectory(Path.Combine(webresourcesFolder, "public"));
             Directory.CreateDirectory(Path.Combine(webresourcesFolder, "dist"));
 
-            AnsiConsole.MarkupLine("[green]Initialized WebResources project[/]");
+            AnsiConsole.MarkupLine("[green]WebResources project ready[/]");
         }
         else
         {
-            AnsiConsole.MarkupLine($"WebResources project already exists. Skip creation");
+            AnsiConsole.MarkupLine("[dim]WebResources project already there — skipping[/]");
         }
 
         // Create XML Mapping file in SolutionPackage folder
         var mappingFilePath = Path.Combine(solutionPackageFolder, "Mapping.xml");
         if (!File.Exists(mappingFilePath))
         {
-            AnsiConsole.MarkupLine("Creating XML Mapping file...");
             await File.WriteAllTextAsync(
                 mappingFilePath,
                 $"""
@@ -267,11 +264,11 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
                  """,
                 cancellationToken).FlowlineSpinner();
 
-            AnsiConsole.MarkupLine($"[green]Created XML Mapping file at {mappingFilePath}[/]");
+            AnsiConsole.MarkupLine("[green]Mapping file written[/]");
         }
         else
         {
-            AnsiConsole.MarkupLine($"XML Mapping file already exists. Skip creation");
+            AnsiConsole.MarkupLine("[dim]Mapping file already there — skipping[/]");
         }
 
         // Build the solution in dotnet to validate it
@@ -280,7 +277,7 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
             return 1;
         }
 
-        AnsiConsole.MarkupLine("[bold green]:rocket: Flowline cloned it! You can now use 'push' and 'sync' to keep your solution up to date.[/]");
+        AnsiConsole.MarkupLine("[bold green]:rocket: Cloned! Use 'push' and 'sync' to keep it in flow.[/]");
 
         return 0;
     }

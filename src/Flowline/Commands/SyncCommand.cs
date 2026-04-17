@@ -42,12 +42,12 @@ public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
         var cdsprojPath = Path.Combine(packageFolder, "SolutionPackage.cdsproj");
         if (!File.Exists(cdsprojPath))
         {
-            AnsiConsole.MarkupLine($"[red]Solution project '{sln.Name}' not found in '{cdsprojPath}'. Please run 'clone' first.[/]");
+            AnsiConsole.MarkupLine($"[red]No solution found at '{cdsprojPath}' — run 'clone' first.[/]");
             return 1;
         }
 
         // Perform sync
-        AnsiConsole.MarkupLine($"Syncing solution '{sln.Name}' from environment [bold]'{devEnv.EnvironmentUrl}'[/]...");
+        AnsiConsole.MarkupLine($"Syncing [bold]{sln.Name}[/]...");
 
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
         var pacSolutionSyncCmd = Cli.Wrap(cmdName)
@@ -68,11 +68,11 @@ public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
 
         if (result.ExitCode != 0)
         {
-            AnsiConsole.MarkupLine("[red]Failed to sync the solution. Please check the environment and solution name.[/]");
+            AnsiConsole.MarkupLine("[red]Sync failed — check the environment and your PAC login.[/]");
             return 1;
         }
 
-        AnsiConsole.MarkupLine($"Building Solution '{sln.Name}'...");
+        AnsiConsole.MarkupLine($"Building [bold]{sln.Name}[/]...");
 
         await Cli.Wrap("dotnet")
                  .WithArguments(args => args
@@ -85,7 +85,7 @@ public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
                  .WithToolExecutionLog()
                  .ExecuteAsync(cancellationToken);
 
-        AnsiConsole.MarkupLine("[green]All done! Use 'git add' and 'git commit' to create a checkpoint.[/]");
+        AnsiConsole.MarkupLine("[bold green]:white_check_mark: Synced! Run 'git commit' to save a checkpoint.[/]");
 
         return 0;
     }

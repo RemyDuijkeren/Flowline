@@ -28,15 +28,15 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
 
     protected virtual async Task ValidateEnvironmentAsync(TSettings settings, CancellationToken cancellationToken)
     {
-        await AnsiConsole.Status().FlowlineSpinner().StartAsync("Validating environment...", async ctx =>
+        await AnsiConsole.Status().FlowlineSpinner().StartAsync("Checking your setup...", async ctx =>
         {
-            await GitUtils.AssertGitInstalledAsync(settings.Verbose, cancellationToken);
-            await GitUtils.AssertGitRepoAsync(RootFolder, settings.Verbose, cancellationToken);
             await DotNetUtils.AssertDotNetInstalledAsync(settings.Verbose, cancellationToken);
             await PacUtils.AssertPacCliInstalledAsync(settings.Verbose, cancellationToken);
+            await GitUtils.AssertGitInstalledAsync(settings.Verbose, cancellationToken);
+            await GitUtils.AssertGitRepoAsync(RootFolder, settings.Verbose, cancellationToken);
         });
 
-        AnsiConsole.MarkupLine("[green]Valid Environment[/]");
+        AnsiConsole.MarkupLine("[green]All good, let's go![/]");
     }
 
     protected async Task<EnvironmentInfo?> ResolveAndValidateProdUrlAsync(string? inputUrl, TSettings settings, CancellationToken cancellationToken)
@@ -44,27 +44,27 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
         var prodUrl = Config!.GetOrUpdateProdUrl(inputUrl, settings);
         if (prodUrl == null)
         {
-            AnsiConsole.MarkupLine("[red]Production environment is required. Please provide a Dataverse environment URL using --prod <URL>.[/]");
+            AnsiConsole.MarkupLine("[red]Prod URL is required — use --prod <URL>.[/]");
             return null;
         }
 
         EnvironmentInfo? srcEnvironment = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-            $"Validating Production environment [bold]'{prodUrl}'[/]...",
+            $"Checking prod [bold]'{prodUrl}'[/]...",
             ctx => PacUtils.GetEnvironmentInfoByUrlAsync(prodUrl, settings.Verbose, cancellationToken));
 
         if (srcEnvironment == null)
         {
-            AnsiConsole.MarkupLine("[red]Invalid Production environment. Please provide a valid Dataverse environment URL using --prod <URL>.[/]");
+            AnsiConsole.MarkupLine("[red]Prod environment not found. Check the URL or your PAC login.[/]");
             return null;
         }
 
         if (srcEnvironment.Type != "Production")
         {
-            AnsiConsole.MarkupLine("[red]Production environment must be of type 'Production'.[/]");
+            AnsiConsole.MarkupLine("[red]That environment isn't Production type.[/]");
             return null;
         }
 
-        AnsiConsole.MarkupLine($"[green]Valid Prod env: [bold]{srcEnvironment.DisplayName}[/] ({srcEnvironment.EnvironmentUrl}, Type: {srcEnvironment.Type})[/]");
+        AnsiConsole.MarkupLine($"[green]Prod: [bold]{srcEnvironment.DisplayName}[/] ({srcEnvironment.EnvironmentUrl})[/]");
         return srcEnvironment;
     }
 
@@ -73,27 +73,27 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
         var devUrl = Config!.GetOrUpdateDevUrl(inputUrl, settings);
         if (string.IsNullOrEmpty(devUrl))
         {
-            AnsiConsole.MarkupLine("[red]Dev URL is required. Please provide a dev URL using --dev <URL>.[/]");
+            AnsiConsole.MarkupLine("[red]Dev URL is required — use --dev <URL>.[/]");
             return null;
         }
 
         EnvironmentInfo? devEnv = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-            $"Validating Development environment [bold]'{devUrl}'[/]...",
+            $"Checking dev [bold]'{devUrl}'[/]...",
             ctx => PacUtils.GetEnvironmentInfoByUrlAsync(devUrl, settings.Verbose, cancellationToken));
 
         if (devEnv == null)
         {
-            AnsiConsole.MarkupLine("[red]Invalid Dev environment. Please provide a valid Dataverse environment URL using --dev <URL>.[/]");
+            AnsiConsole.MarkupLine("[red]Dev environment not found. Check the URL or your PAC login.[/]");
             return null;
         }
 
         if (devEnv.Type == "Production")
         {
-            AnsiConsole.MarkupLine("[red]Dev environment must not be of type 'Production'.[/]");
+            AnsiConsole.MarkupLine("[red]That's a Production environment — use a dev or sandbox instead.[/]");
             return null;
         }
 
-        AnsiConsole.MarkupLine($"[green]Valid Dev env: [bold]{devEnv.DisplayName}[/] ({devEnv.EnvironmentUrl}, Type: {devEnv.Type})[/]");
+        AnsiConsole.MarkupLine($"[green]Dev: [bold]{devEnv.DisplayName}[/] ({devEnv.EnvironmentUrl})[/]");
         return devEnv;
     }
 
@@ -102,28 +102,28 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
         var sln = Config!.GetOrUpdateSolution(inputName, includeManaged, settings);
         if (sln == null)
         {
-            AnsiConsole.MarkupLine("[red]Solution could not be resolved. Please provide a solution name.[/]");
+            AnsiConsole.MarkupLine("[red]Solution name is required — pass it as an argument or use --solution <name>.[/]");
             return null;
         }
 
         List<SolutionInfo> solutions = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-            $"Validating solution [bold]'{sln.Name}'[/]...",
+            $"Looking up [bold]'{sln.Name}'[/]...",
             ctx => PacUtils.GetSolutionsAsync(environmentUrl, settings.Verbose, cancellationToken));
 
         var remoteSolution = solutions.FirstOrDefault(s => s.SolutionUniqueName?.Equals(sln.Name, StringComparison.OrdinalIgnoreCase) == true);
         if (remoteSolution == null)
         {
-            AnsiConsole.MarkupLine($"[red]Solution '{sln.Name}' not found in environment '{environmentUrl}'.[/]");
+            AnsiConsole.MarkupLine($"[red]'{sln.Name}' not found in that environment.[/]");
             return null;
         }
 
         if (remoteSolution.IsManaged && !sln.IncludeManaged)
         {
-            AnsiConsole.MarkupLine($"[red]Solution '{sln.Name}' is managed and --managed is not specified. We need dev environment to clone unmanaged artifacts.[/]");
+            AnsiConsole.MarkupLine($"[red]'{sln.Name}' is managed — add --managed to include managed artifacts.[/]");
             return null;
         }
 
-        AnsiConsole.MarkupLine($"[green]Valid Solution: [bold]'{sln.Name}'[/] ({remoteSolution.SolutionUniqueName}, Managed: {remoteSolution.IsManaged})[/]");
+        AnsiConsole.MarkupLine($"[green]Solution: [bold]'{sln.Name}'[/] (managed: {remoteSolution.IsManaged})[/]");
 
         return sln;
     }

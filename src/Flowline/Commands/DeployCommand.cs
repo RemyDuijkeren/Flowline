@@ -38,7 +38,7 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
         var config = ProjectConfig.Load();
         if (config == null)
         {
-            AnsiConsole.MarkupLine("[yellow]No project configuration found. Creating...[/]");
+            AnsiConsole.MarkupLine("[dim]No .flowline config found — starting fresh[/]");
             config = new ProjectConfig();
         }
 
@@ -52,7 +52,7 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
 
         if (string.IsNullOrWhiteSpace(targetUrl))
         {
-            AnsiConsole.MarkupLine($"[red]Could not resolve target environment URL for '{settings.Target}'. Please provide an explicit URL or check your .flowline config.[/]");
+            AnsiConsole.MarkupLine($"[red]Can't resolve '{settings.Target}' — provide an explicit URL or check your .flowline config.[/]");
             return 1;
         }
 
@@ -60,27 +60,27 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
         var sln = config.GetOrUpdateSolution(settings.Solution, settings.Managed, settings);
         if (sln == null)
         {
-            AnsiConsole.MarkupLine("[red]Solution name is required. Please provide a solution name using --solution <name>.[/]");
+            AnsiConsole.MarkupLine("[red]Solution name is required — use --solution <name>.[/]");
             return 1;
         }
 
         // Validate target environment
-        AnsiConsole.MarkupLine($"Validating [bold]'{targetUrl}'[/]...");
+        AnsiConsole.MarkupLine($"Checking [bold]'{targetUrl}'[/]...");
         var targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, settings.Verbose, cancellationToken);
         if (targetEnv == null)
         {
-            AnsiConsole.MarkupLine($"[red]Invalid target environment. Please provide a valid Dataverse environment URL.[/]");
+            AnsiConsole.MarkupLine("[red]Target environment not found. Check the URL or your PAC login.[/]");
             return 1;
         }
 
-        AnsiConsole.MarkupLine($"  Target environment: [bold]{targetEnv.DisplayName}[/] ({targetEnv.EnvironmentUrl}) - Type: {targetEnv.Type}");
+        AnsiConsole.MarkupLine($"[green]Target: [bold]{targetEnv.DisplayName}[/] ({targetEnv.EnvironmentUrl})[/]");
 
         // Ask for confirmation if target is Production
         if (targetEnv.Type == "Production")
         {
             if (!ConsoleHelper.Confirm($"[yellow]Are you sure you want to deploy to PRODUCTION ([bold]{targetEnv.DisplayName}[/])?[/]", false, settings))
             {
-                AnsiConsole.MarkupLine("[green]Deployment cancelled.[/]");
+                AnsiConsole.MarkupLine("[dim]Deploy cancelled.[/]");
                 return 0;
             }
         }
@@ -90,7 +90,7 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
         var cdsprojPath = Path.Combine(packageFolder, "SolutionPackage.cdsproj");
         if (!File.Exists(cdsprojPath))
         {
-            AnsiConsole.MarkupLine($"[red]Solution project '{sln.Name}' not found in '{cdsprojPath}'. Please run 'clone' first.[/]");
+            AnsiConsole.MarkupLine($"[red]No solution found at '{cdsprojPath}' — run 'clone' first.[/]");
             return 1;
         }
 
@@ -102,7 +102,7 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
 
         if (!File.Exists(packagePath))
         {
-            AnsiConsole.MarkupLine($"[yellow]Solution package '{packagePath}' not found. Building...[/]");
+            AnsiConsole.MarkupLine("[dim]No package found — building first...[/]");
             var buildResult = await Cli.Wrap("dotnet")
                                      .WithArguments(args => args
                                                           .Add("build")
@@ -114,18 +114,18 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
 
             if (buildResult.ExitCode != 0)
             {
-                AnsiConsole.MarkupLine("[red]Failed to build the solution project.[/]");
+                AnsiConsole.MarkupLine("[red]Build failed — check the output above (- use --verbose).[/]");
                 return 1;
             }
 
             if (!File.Exists(packagePath))
             {
-                AnsiConsole.MarkupLine($"[red]Built successfully, but could not find solution package at '{packagePath}'.[/]");
+                AnsiConsole.MarkupLine($"[red]Build done but no package at '{packagePath}'.[/]");
                 return 1;
             }
         }
 
-        AnsiConsole.MarkupLine($"Deploying [bold]{sln.Name}[/] {(sln.IncludeManaged ? "(managed) " : "")}to [bold]{targetEnv.DisplayName}[/]...");
+        AnsiConsole.MarkupLine($"Deploying [bold]{sln.Name}[/]{(sln.IncludeManaged ? " (managed)" : "")} → [bold]{targetEnv.DisplayName}[/]...");
 
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
         var pacSolutionImportCmd = Cli.Wrap(cmdName)
@@ -145,11 +145,11 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
 
         if (importResult.ExitCode != 0)
         {
-            AnsiConsole.MarkupLine("[red]Failed to import the solution.[/]");
+            AnsiConsole.MarkupLine("[red]Deploy failed — check the environment and your PAC login.[/]");
             return 1;
         }
 
-        AnsiConsole.MarkupLine("[green]All done![/]");
+        AnsiConsole.MarkupLine("[bold green]:rocket: Deployed! Your solution is live.[/]");
 
         return 0;
     }

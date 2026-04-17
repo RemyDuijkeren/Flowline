@@ -15,8 +15,6 @@ public static class ConsoleHelper
     /// <returns>True if interactive, false otherwise.</returns>
     public static bool IsInteractive(FlowlineSettings? settings)
     {
-        // return AnsiConsole.Profile.Capabilities.Interactive;
-
         // Explicitly set non-interactive flags
         if (settings is { JsonOutput: true })
         {
@@ -33,19 +31,7 @@ public static class ConsoleHelper
             return false;
         }
 
-        // Environment-based detection
-        if (!Environment.UserInteractive)
-        {
-            return false;
-        }
-
-        // Check if output is redirected (standard for CI/CD pipelines)
-        if (Console.IsOutputRedirected || Console.IsInputRedirected || Console.IsErrorRedirected)
-        {
-            return false;
-        }
-
-        return true;
+        return AnsiConsole.Profile.Capabilities.Interactive;
     }
 
     /// <summary>

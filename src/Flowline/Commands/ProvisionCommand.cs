@@ -62,7 +62,7 @@ public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
 
         if (url == null)
         {
-            AnsiConsole.MarkupLine("[red]Can't create valid url or mismatch with .flowline.[/]");
+            AnsiConsole.MarkupLine("[red]Couldn't build a valid target URL — check your .flowline config.[/]");
             return 1;
         }
 
@@ -70,7 +70,7 @@ public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
         var targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, settings.Verbose, cancellationToken);
         if (targetEnv == null)
         {
-            AnsiConsole.MarkupLine($"Creating environment {targetUrl}...");
+            AnsiConsole.MarkupLine($"Creating [bold]{targetDisplayName}[/]...");
 
             var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
             await Cli.Wrap(cmdName)
@@ -89,35 +89,33 @@ public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
             targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, true, cancellationToken);
             if (targetEnv == null)
             {
-                AnsiConsole.MarkupLine("[red]Target Environment not found after creating.[/]");
+                AnsiConsole.MarkupLine("[red]Environment created but not found — check the Power Platform admin center.[/]");
                 return 1;
             }
         }
         else
         {
-            AnsiConsole.MarkupLine($"Target Environment already exists: [link]{targetEnv.EnvironmentUrl}[/]");
+            AnsiConsole.MarkupLine($"[dim]Environment already exists — [link]{targetEnv.EnvironmentUrl}[/][/]");
         }
 
         if (targetEnv.Type == "Production")
         {
-            AnsiConsole.MarkupLine("[red]Cannot overwrite production environment.[/]");
+            AnsiConsole.MarkupLine("[red]Can't overwrite a Production environment.[/]");
             return 1;
         }
 
         if (!settings.AllowOverwrite)
         {
-            AnsiConsole.MarkupLine($"[red]Environment '{targetEnv.DisplayName}' ({targetEnv.EnvironmentUrl}) already exists. Use --allow-overwrite to overwrite.[/]");
+            AnsiConsole.MarkupLine($"[yellow]'{targetEnv.DisplayName}' already exists — use --allow-overwrite to overwrite.[/]");
             return 0;
         }
-
-        AnsiConsole.MarkupLine("Overwriting existing environment...");
         // reset: empty env with factory settings (https://learn.microsoft.com/en-us/power-platform/admin/reset-environment)?
         // after rest: deploy solution from prod?
 
         // Staging is always a FullCopy
         string copyType = (settings.Role == Role.Staging || settings.CopyType == CopyType.Full) ? "FullCopy" : "MinimalCopy";
 
-        AnsiConsole.MarkupLine($"Copy '{prodEnv.EnvironmentUrl}' to '{targetUrl}'...");
+        AnsiConsole.MarkupLine($"Copying prod to [bold]{targetDisplayName}[/]...");
         var (cmdNameCopy, prefixArgsCopy, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
 
         await Cli.Wrap(cmdNameCopy)
@@ -134,10 +132,10 @@ public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
                  .ExecuteAsync(cancellationToken)
                  .Task.FlowlineSpinner();
 
-        AnsiConsole.MarkupLine($"[green]All done! See [link]{targetEnv.EnvironmentUrl}[/][/]");
+        AnsiConsole.MarkupLine($"[bold green]:rocket: Provisioned! See [link]{targetEnv.EnvironmentUrl}[/][/]");
 
         Config!.Save();
-        AnsiConsole.MarkupLine("[dim]Project configuration saved with target environment. You can now run 'sync' command.[/]");
+        AnsiConsole.MarkupLine("[dim]Config saved — you can now run 'clone' or 'sync'.[/]");
 
         return 0;
 
