@@ -74,7 +74,7 @@ public class PushCommand : FlowlineCommand<PushCommand.Settings>
 
         // Analyze the assembly
         var analysisSrv = new AssemblyAnalysisService();
-        var metadata = analysisSrv.Analyze(extensionsDll, IsolationMode.Sandbox);
+        // var metadata = analysisSrv.Analyze(extensionsDll, IsolationMode.Sandbox);
 
         // Sync Plugins
         var logger = new Logger<AuthenticationService>(new LoggerFactory());

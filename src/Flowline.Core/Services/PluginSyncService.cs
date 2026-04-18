@@ -36,6 +36,9 @@ public class PluginSyncService : IPluginSyncService
         var existingTypes = await GetPluginTypes(service, assembly.Id);
         var typeNames = existingTypes.ToDictionary(t => t.GetAttributeValue<string>("typename"), t => t);
 
+        var messageCache = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        var filterCache = new Dictionary<(Guid messageId, string entityName), Guid?>();
+
         foreach (var plugin in metadata.Plugins)
         {
             Entity typeEntity;
@@ -58,17 +61,30 @@ public class PluginSyncService : IPluginSyncService
                 Entity stepEntity;
                 if (!stepNames.TryGetValue(step.Name, out stepEntity!))
                 {
-                    stepEntity = new Entity("sdkmessageprocessingstep");
-                    stepEntity["name"] = step.Name;
-                    stepEntity["plugintypeid"] = typeEntity.ToEntityReference();
-                    stepEntity["stage"] = new OptionSetValue(step.Stage);
-                    stepEntity["mode"] = new OptionSetValue(step.Mode);
-                    stepEntity["rank"] = step.Order;
-                    stepEntity["filteringattributes"] = step.FilteringAttributes;
-                    stepEntity["configuration"] = step.Configuration;
+                    if (!messageCache.TryGetValue(step.Message, out var messageId))
+                    {
+                        messageId = await LookupSdkMessageIdAsync(service, step.Message);
+                        messageCache[step.Message] = messageId;
+                    }
 
-                    // We need to look up SdkMessage and SdkMessageFilter IDs here in a real implementation
-                    // Simplified for now: assuming message and entity lookup logic is available
+                    if (!filterCache.TryGetValue((messageId, step.EntityName), out var filterId))
+                    {
+                        filterId = await LookupSdkMessageFilterIdAsync(service, messageId, step.EntityName);
+                        filterCache[(messageId, step.EntityName)] = filterId;
+                    }
+
+                    stepEntity = new Entity("sdkmessageprocessingstep")
+                    {
+                        ["name"] = step.Name, ["plugintypeid"] = typeEntity.ToEntityReference(),
+                        ["sdkmessageid"] = new EntityReference("sdkmessage", messageId),
+                        ["stage"] = new OptionSetValue(step.Stage),
+                        ["mode"] = new OptionSetValue(step.Mode),
+                        ["rank"] = step.Order,
+                        ["filteringattributes"] = step.FilteringAttributes,
+                        ["configuration"] = step.Configuration
+                    };
+                    if (filterId.HasValue)
+                        stepEntity["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId.Value);
 
                     await service.CreateAsync(stepEntity);
                 }
@@ -100,11 +116,13 @@ public class PluginSyncService : IPluginSyncService
 
         if (existing == null)
         {
-            var entity = new Entity("pluginassembly");
-            entity["name"] = metadata.Name;
-            entity["content"] = Convert.ToBase64String(metadata.Content);
-            entity["version"] = metadata.Version;
-            entity["isolationmode"] = new OptionSetValue((int)metadata.IsolationMode);
+            var entity = new Entity("pluginassembly")
+            {
+                ["name"] = metadata.Name,
+                ["content"] = Convert.ToBase64String(metadata.Content),
+                ["version"] = metadata.Version,
+                ["isolationmode"] = new OptionSetValue((int)metadata.IsolationMode)
+            };
 
             // entity["sourcetype"] = new OptionSetValue(0); // 0=Database (default), 4=File Store (NuGet package)
             // Nuget is stored in the pluginpackage table
@@ -113,8 +131,7 @@ public class PluginSyncService : IPluginSyncService
             // Dataverse file columns must be uploaded using the file upload APIs (InitializeFileBlocksUpload / UploadBlock / CommitFileBlocksUpload) rather
             // than setting them directly in a normal create/update payload.
 
-            var createReq = new CreateRequest { Target = entity };
-            createReq["SolutionUniqueName"] = solutionName;
+            var createReq = new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName };
             var response = (CreateResponse)await service.ExecuteAsync(createReq);
             entity.Id = response.id;
             return entity;
@@ -148,5 +165,35 @@ public class PluginSyncService : IPluginSyncService
         };
         query.Criteria.AddCondition("plugintypeid", ConditionOperator.Equal, typeId);
         return (await service.RetrieveMultipleAsync(query)).Entities.ToList();
+    }
+
+    async Task<Guid> LookupSdkMessageIdAsync(IOrganizationServiceAsync2 service, string messageName)
+    {
+        var query = new QueryExpression("sdkmessage")
+        {
+            ColumnSet = new ColumnSet("sdkmessageid"),
+            Criteria = new FilterExpression()
+        };
+        query.Criteria.AddCondition("name", ConditionOperator.Equal, messageName);
+
+        var result = await service.RetrieveMultipleAsync(query);
+        var message = result.Entities.FirstOrDefault()
+            ?? throw new InvalidOperationException($"Dataverse message '{messageName}' not found in sdkmessage.");
+
+        return message.Id;
+    }
+
+    async Task<Guid?> LookupSdkMessageFilterIdAsync(IOrganizationServiceAsync2 service, Guid messageId, string entityName)
+    {
+        var query = new QueryExpression("sdkmessagefilter")
+        {
+            ColumnSet = new ColumnSet("sdkmessagefilterid"),
+            Criteria = new FilterExpression()
+        };
+        query.Criteria.AddCondition("sdkmessageid", ConditionOperator.Equal, messageId);
+        query.Criteria.AddCondition("primaryobjecttypecode", ConditionOperator.Equal, entityName);
+
+        var result = await service.RetrieveMultipleAsync(query);
+        return result.Entities.FirstOrDefault()?.Id;
     }
 }
