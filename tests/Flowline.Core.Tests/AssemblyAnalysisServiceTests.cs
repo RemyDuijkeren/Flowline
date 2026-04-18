@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Flowline.Attributes;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 
@@ -30,12 +31,12 @@ public class AssemblyAnalysisServiceTests
     {
         // We can't easily create a DLL with attributes at runtime here without much ceremony.
         // But we can check if it filters out non-plugins correctly.
-        
+
         var service = new AssemblyAnalysisService();
         var dllPath = typeof(AssemblyAnalysisServiceTests).Assembly.Location;
-        
+
         var metadata = service.Analyze(dllPath, IsolationMode.Sandbox);
-        
+
         // This class is not a plugin, so it shouldn't be in the list
         Assert.DoesNotContain(metadata.Plugins, p => p.FullName == typeof(AssemblyAnalysisServiceTests).FullName);
     }
@@ -45,8 +46,9 @@ public class AssemblyAnalysisServiceTests
 public interface IPlugin { }
 public abstract class CodeActivity { }
 
-[Step("Create", "account")]
-public class MockPlugin : IPlugin { }
 
-[Step("Execute", "none")]
+[Entity("account")]
+public class MockPreCreatePlugin : IPlugin { }
+
+
 public class MockWorkflow : CodeActivity { }

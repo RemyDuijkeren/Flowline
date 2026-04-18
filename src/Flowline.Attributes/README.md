@@ -110,7 +110,7 @@ public class AccountPreUpdatePlugin : AccountSavePlugin { }
 
 ### `[Entity]` — required
 
-Specifies the Dataverse entity logical name. Without this attribute Flowline ignores the class.
+Specifies the Dataverse entity logical name. Without this attribute, Flowline ignores the class for step registration.
 
 ```csharp
 [Entity("account")]
@@ -118,6 +118,60 @@ public class AccountPostCreatePlugin : IPlugin { ... }
 
 [Entity("cr07982_invoice")]
 public class InvoicePreUpdatePlugin : IPlugin { ... }
+```
+
+Optional named properties:
+
+| Property | Type | Default | Maps to |
+|---|---|---|---|
+| `Order` | `int` | `1` | Execution Order in Plugin Registration Tool |
+| `As` | `ExecuteAs` | `CallingUser` | Run in User's Context |
+| `Configuration` | `string?` | `null` | Unsecure Configuration |
+
+**`Order`** — controls ordering when multiple plugins are registered on the same step. Lower numbers run first.
+
+**`ExecuteAs`** — controls `context.UserId` inside `Execute`. Use `InitiatingUser` when a Flow or workflow triggers your plugin and you need the human user's context rather than the service account that owns the automation:
+
+```csharp
+[Entity("account", As = ExecuteAs.InitiatingUser)]
+public class AccountPostCreatePlugin : IPlugin
+{
+    public void Execute(IServiceProvider sp)
+    {
+        var context = (IPluginExecutionContext)sp.GetService(typeof(IPluginExecutionContext));
+        // context.UserId is the human user who triggered the flow, not the flow service account
+    }
+}
+```
+
+**`Configuration`** — a plain string passed to your plugin constructor as the first parameter. Use it to supply endpoint URLs, feature flags, or serialized JSON config without hardcoding them:
+
+```csharp
+[Entity("account", Configuration = "{\"endpoint\":\"https://my-service.example.com\"}")]
+public class AccountPostCreatePlugin : IPlugin
+{
+    private readonly string _endpoint;
+
+    public AccountPostCreatePlugin(string unsecureConfig)
+    {
+        _endpoint = JsonSerializer.Deserialize<Config>(unsecureConfig)!.Endpoint;
+    }
+
+    public void Execute(IServiceProvider sp) { ... }
+}
+```
+
+> **Secure Configuration is intentionally not supported.** Secrets should not be committed to
+> source code. Use environment variables or Azure Key Vault instead.
+
+Full example with all properties:
+
+```csharp
+[Entity("account",
+    Order = 2,
+    As = ExecuteAs.InitiatingUser,
+    Configuration = "{\"endpoint\":\"https://my-service.example.com\"}")]
+public class AccountPreUpdatePlugin : IPlugin { ... }
 ```
 
 ### `[Filter]` — optional
@@ -145,11 +199,11 @@ Registers a pre- or post-image snapshot on the step. Stack multiple times for bo
 
 ```csharp
 [Entity("account")]
-[Image("Pre Image", "preimage", ImageType.PreImage)]   // all attributes
+[Image(ImageType.PreImage)]                                    // all attributes
 public class AccountPreUpdatePlugin : IPlugin { ... }
 
 [Entity("account")]
-[Image("Pre Image", "preimage", ImageType.PreImage, "name", "telephone1")]  // specific attributes
+[Image(ImageType.PreImage, "name", "telephone1")]              // specific attributes
 public class AccountPreUpdatePlugin : IPlugin { ... }
 ```
 
@@ -157,8 +211,21 @@ Use `nameof` here too:
 
 ```csharp
 [Entity("account")]
-[Image("Pre Image", "preimage", ImageType.PreImage, nameof(Account.name))]
+[Image(ImageType.PreImage, nameof(Account.name))]
 public class AccountPreUpdatePlugin : IPlugin { ... }
+```
+
+The alias used to retrieve the image in code is derived from the `ImageType` — you don't set it explicitly:
+
+```csharp
+var preImage = context.PreEntityImages["preimage"];
+var postImage = context.PostEntityImages["postimage"];
+```
+
+If you need a custom alias (rare — only when stacking two images of the same type), pass it as the first argument:
+
+```csharp
+[Image("beforeMerge", ImageType.PreImage, "name")]
 ```
 
 ## Examples
@@ -216,8 +283,8 @@ public class InvoicePostUpdateAsyncPlugin : IPlugin
 ```csharp
 [Entity("account")]
 [Filter("name", "telephone1")]
-[Image("Pre Image", "preimage", ImageType.PreImage, "name", "telephone1")]
-[Image("Post Image", "postimage", ImageType.PostImage, "name", "telephone1")]
+[Image(ImageType.PreImage, "name", "telephone1")]
+[Image(ImageType.PostImage, "name", "telephone1")]
 public class AccountPostUpdatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider)

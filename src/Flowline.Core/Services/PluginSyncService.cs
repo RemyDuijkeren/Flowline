@@ -44,6 +44,7 @@ public class PluginSyncService : IPluginSyncService
                 typeEntity = new Entity("plugintype");
                 typeEntity["typename"] = plugin.FullName;
                 typeEntity["name"] = plugin.FullName;
+                typeEntity["friendlyname"] = plugin.Name;
                 typeEntity["pluginassemblyid"] = assembly.ToEntityReference();
                 typeEntity.Id = await service.CreateAsync(typeEntity);
             }

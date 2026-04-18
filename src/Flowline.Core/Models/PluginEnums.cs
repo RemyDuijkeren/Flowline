@@ -1,14 +1,5 @@
 ﻿namespace Flowline.Core.Models;
 
-// Copied from https://github.com/rappen/Rappen.XTB.Helper/blob/main/Rappen.XRM.Helpers/Plugin/Enums.cs
-// Could be usefull to use?
-
-public enum ExecuteAs
-{
-    User,
-    Initiating
-}
-
 // same as ExecutionStage in Plugin.cs
 public enum ProcessingStage
 {

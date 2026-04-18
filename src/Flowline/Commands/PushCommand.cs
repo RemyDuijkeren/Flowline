@@ -4,6 +4,7 @@ using Flowline.Core.Services;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using Flowline.Utils;
+using Microsoft.Extensions.Logging;
 
 namespace Flowline.Commands;
 
@@ -72,10 +73,21 @@ public class PushCommand : FlowlineCommand<PushCommand.Settings>
         }
 
         // Analyze the assembly
-        var analysisService = new AssemblyAnalysisService();
-        var metadata = analysisService.Analyze(extensionsDll, IsolationMode.Sandbox);
+        var analysisSrv = new AssemblyAnalysisService();
+        var metadata = analysisSrv.Analyze(extensionsDll, IsolationMode.Sandbox);
 
-        //
+        // Sync Plugins
+        var logger = new Logger<AuthenticationService>(new LoggerFactory());
+        var authSrv = new AuthenticationService(logger);
+
+        var profile = authSrv.GetPacProfiles().Where(p => !string.IsNullOrWhiteSpace(devEnv.EnvironmentUrl)).FirstOrDefault()
+                      ?? authSrv.GetPacProfiles().Where(p => p.IsUniversal).FirstOrDefault();
+        if (profile == null)
+            AnsiConsole.MarkupLine("[red]No PAC profile found. Please configure one first.[/]");
+
+        var conn = authSrv.ConnectViaPac(profile, devEnv.EnvironmentUrl);
+        var pluginSyncSrv = new PluginSyncService(analysisSrv);
+        await pluginSyncSrv.SyncSolutionAsync(conn, extensionsDll, sln.Name, IsolationMode.Sandbox);
 
         // TODO: Implement the upload logic
         if (settings.Save) AnsiConsole.MarkupLine("[dim]Save mode enabled: Assets not in source control will be preserved.[/]");

@@ -9,23 +9,50 @@ namespace Flowline.Attributes;
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
 public sealed class ImageAttribute : Attribute
 {
-    public string Name { get; }
+    /// <summary>Key used in plugin code: <c>context.PreEntityImages["alias"]</c>.</summary>
     public string Alias { get; }
+
+    /// <summary>
+    /// Display name shown in the Plugin Registration Tool. Defaults to "Pre Image", "Post Image", or "Image".
+    /// Not used in plugin code — override only when you need a custom label.
+    /// </summary>
+    public string Name { get; set; }
+
+    /// <summary>Type of image snapshot.</summary>
     public ImageType ImageType { get; }
+
+    /// <summary>Attributes to include. Omit to include all attributes.</summary>
     public string[] Attributes { get; }
 
-    /// <param name="name">Display name of the image in Plugin Registration Tool.</param>
-    /// <param name="alias">Alias used to access the image in plugin code via <c>context.PreEntityImages["alias"]</c>.</param>
-    /// <param name="imageType">Type of image snapshot. Defaults to <see cref="ImageType.PostImage"/>.</param>
-    /// <param name="attributes">Attributes to include in the snapshot. Omit to include all attributes.</param>
-    public ImageAttribute(string name, string alias,
-        ImageType imageType = ImageType.PostImage, params string[] attributes)
+    /// <param name="imageType">Type of image snapshot.</param>
+    /// <param name="attributes">Attributes to include. Omit to include all attributes.</param>
+    public ImageAttribute(ImageType imageType, params string[] attributes)
+        : this(DefaultAlias(imageType), imageType, attributes) { }
+
+    /// <param name="alias">Key used in plugin code: <c>context.PreEntityImages["alias"]</c>. Use when the default alias conflicts.</param>
+    /// <param name="imageType">Type of image snapshot.</param>
+    /// <param name="attributes">Attributes to include. Omit to include all attributes.</param>
+    public ImageAttribute(string alias, ImageType imageType, params string[] attributes)
     {
-        Name = name;
         Alias = alias;
         ImageType = imageType;
         Attributes = attributes;
+        Name = DefaultName(imageType);
     }
+
+    private static string DefaultAlias(ImageType t) => t switch
+    {
+        ImageType.PreImage => "preimage",
+        ImageType.PostImage => "postimage",
+        _ => "image"
+    };
+
+    private static string DefaultName(ImageType t) => t switch
+    {
+        ImageType.PreImage => "Pre Image",
+        ImageType.PostImage => "Post Image",
+        _ => "Image"
+    };
 }
 
 public enum ImageType

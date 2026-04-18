@@ -483,6 +483,9 @@ it did, and stacking multiple registrations on one class is no longer supported.
 public sealed class EntityAttribute : Attribute
 {
     public string LogicalName { get; }
+    public int ExecutionOrder { get; set; } = 1;
+    public ExecuteAs ExecuteAs { get; set; } = ExecuteAs.CallingUser;
+    public string? UnsecureConfiguration { get; set; }
 
     public EntityAttribute(string logicalName) => LogicalName = logicalName;
 }
@@ -490,6 +493,22 @@ public sealed class EntityAttribute : Attribute
 
 - `AllowMultiple = false` enforces 1 plugin = 1 step at the attribute level
 - `logicalName` is the Dataverse logical name: `"account"`, `"cr07982_invoice"`, etc.
+- `ExecutionOrder` — controls ordering when multiple plugins fire on the same step (default 1)
+- `ExecuteAs` — maps to "Run in User's Context" in Plugin Registration Tool (default `CallingUser`)
+- `UnsecureConfiguration` — plain string passed to the plugin constructor; Secure Configuration is intentionally omitted — it should not be committed to source code
+
+### `ExecuteAs` enum
+
+```csharp
+public enum ExecuteAs
+{
+    CallingUser = 0,
+    InitiatingUser = 1
+}
+```
+
+Renamed from the ambiguous `User`/`Initiating` in `PluginEnums.cs` for clarity. Moved to
+`Flowline.Attributes` so plugin developers can use it without referencing `Flowline.Core`.
 
 ### `FilterAttribute` — optional, one per class
 

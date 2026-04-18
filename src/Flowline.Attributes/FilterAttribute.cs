@@ -8,9 +8,7 @@ namespace Flowline.Attributes;
 /// Omit to fire on all attribute changes.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
-public sealed class FilterAttribute : Attribute
+public sealed class FilterAttribute(params string[] attributes) : Attribute
 {
-    public string[] Attributes { get; }
-
-    public FilterAttribute(params string[] attributes) => Attributes = attributes;
+    public string[] Attributes { get; } = attributes;
 }

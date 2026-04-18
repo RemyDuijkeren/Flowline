@@ -59,7 +59,7 @@ public interface IAuthenticationService
 
 public class AuthenticationService : IAuthenticationService
 {
-    private readonly ILogger<AuthenticationService> _logger;
+    readonly ILogger<AuthenticationService> _logger;
 
     public AuthenticationService(ILogger<AuthenticationService> logger)
     {
@@ -69,7 +69,7 @@ public class AuthenticationService : IAuthenticationService
     public IOrganizationServiceAsync2 Connect(string connectionString)
     {
         _logger.LogInformation("Connecting to Dataverse...");
-        
+
         var client = new ServiceClient(connectionString);
 
         if (!client.IsReady)
@@ -80,9 +80,9 @@ public class AuthenticationService : IAuthenticationService
             client.Dispose();
             throw new Exception($"Failed to connect to Dataverse: {lastError}", lastException);
         }
-        
+
         _logger.LogInformation("Connected successfully to {EnvironmentUrl}", client.ConnectedOrgUriActual);
-        
+
         return client;
     }
 
@@ -90,7 +90,7 @@ public class AuthenticationService : IAuthenticationService
     {
         if (profile == null) throw new ArgumentNullException(nameof(profile));
 
-        if (string.IsNullOrWhiteSpace(environmentUrl)) 
+        if (string.IsNullOrWhiteSpace(environmentUrl))
         {
             throw new ArgumentException("Environment URL is required for connecting via PAC profile.", nameof(environmentUrl));
         }
@@ -108,8 +108,8 @@ public class AuthenticationService : IAuthenticationService
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var tokenCachePath = Path.Combine(localAppData, ".IdentityService");
 
-        var authority = string.IsNullOrWhiteSpace(profile.Authority) 
-            ? "https://login.microsoftonline.com/organizations" 
+        var authority = string.IsNullOrWhiteSpace(profile.Authority)
+            ? "https://login.microsoftonline.com/organizations"
             : profile.Authority;
 
         // Ensure authority doesn't end with a slash for the connection string if it's explicitly provided
