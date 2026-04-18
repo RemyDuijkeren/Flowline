@@ -331,9 +331,13 @@
           "System.Drawing.Common": "6.0.0"
         }
       },
+      "flowline.attributes": {
+        "type": "Project"
+      },
       "flowline.core": {
         "type": "Project",
         "dependencies": {
+          "Flowline.Attributes": "[1.0.0, )",
           "Microsoft.PowerPlatform.Dataverse.Client": "[1.2.10, )",
           "System.Reflection.MetadataLoadContext": "[10.0.5, )"
         }

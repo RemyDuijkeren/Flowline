@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <PackageId>Flowline.Attributes</PackageId>
+    <Description>Source-only package providing Dataverse plugin step registration attributes for use with the Flowline CLI.</Description>
+    <Copyright>Copyright (c) Remy van Duijkeren 2025</Copyright>
+    <Authors>Remy van Duijkeren (@RemyDuijkeren)</Authors>
+    <PackageProjectUrl>https://github.com/RemyDuijkeren/Flowline</PackageProjectUrl>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/RemyDuijkeren/Flowline.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>Dataverse Dynamics PowerApps PowerPlatform Plugin Attributes</PackageTags>
+
+    <!-- Source-only package: no compiled DLL output in the package -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <!-- Marks this as a development-time dependency — PrivateAssets="all" by default for consumers -->
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <PackageOutputPath>../../../artifacts/nupkg</PackageOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Ship source files as contentFiles so they compile into the consuming plugin assembly -->
+    <Content Include="**/*.cs" Exclude="obj/**">
+      <Pack>true</Pack>
+      <PackagePath>contentFiles/cs/any/</PackagePath>
+      <BuildAction>Compile</BuildAction>
+    </Content>
+  </ItemGroup>
+
+</Project>

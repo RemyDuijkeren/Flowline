@@ -1,5 +1,6 @@
 namespace Flowline.Core.Models;
 
+// TO BE REMOVED => use EntityAttribute and classname by convention.
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
 public class StepAttribute : Attribute
 {
@@ -17,22 +18,6 @@ public class StepAttribute : Attribute
         EntityName = entityName;
         Stage = stage;
         Mode = mode;
-    }
-}
-
-[AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
-public class ImageAttribute : Attribute
-{
-    public string Name { get; }
-    public string Alias { get; }
-    public int ImageType { get; } // 0 = Pre-Image, 1 = Post-Image, 2 = Both
-    public string? Attributes { get; set; }
-
-    public ImageAttribute(string name, string alias, int imageType = 1)
-    {
-        Name = name;
-        Alias = alias;
-        ImageType = imageType;
     }
 }
 

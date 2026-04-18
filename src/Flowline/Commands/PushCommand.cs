@@ -1,9 +1,8 @@
 using System.ComponentModel;
-using System.Diagnostics;
-using CliWrap;
+using Flowline.Core.Models;
+using Flowline.Core.Services;
 using Spectre.Console;
 using Spectre.Console.Cli;
-using Flowline.Config;
 using Flowline.Utils;
 
 namespace Flowline.Commands;
@@ -58,40 +57,25 @@ public class PushCommand : FlowlineCommand<PushCommand.Settings>
         AnsiConsole.MarkupLine($"Pushing assets [bold]{pushScope}[/] for solution [bold]{sln.Name}[/] to environment [bold]'{devEnv.EnvironmentUrl}'[/]...");
 
         // Build the solution in dotnet
-        var slnFolder = Path.Combine(RootFolder, AllSolutionsFolderName, sln.Name);
-        if (await DotNetUtils.BuildSolutionAsync(slnFolder, settings.Verbose, cancellationToken) != 0)
+        var extensionsFolder = Path.Combine(RootFolder, AllSolutionsFolderName, sln.Name, ExtensionsName);
+        if (await DotNetUtils.BuildSolutionAsync(extensionsFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
         {
             return 1;
         }
 
-        // Push Extensions (plugins) to Dev environment
-        var extensionsFolder = Path.Combine(slnFolder, ExtensionsName);
-        var extensionsCsproj = Path.Combine(extensionsFolder, $"{ExtensionsName}.csproj");
+        // Find 'Extensions.dll' in bin/Release folder
+        var extensionsDll = Path.Combine(extensionsFolder, "bin", "Release", "net462", "publish", $"{ExtensionsName}.dll");
+        if (!File.Exists(extensionsDll))
+        {
+            AnsiConsole.MarkupLine("[red]Extensions.dll not found. Please build the solution first.[/]");
+            return 1;
+        }
 
-        var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-        // CommandResult result = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-        //     "Connecting...",
-        //     ctx => Cli.Wrap(cmdName)
-        //               .WithArguments(args => args
-        //                                      .AddIfNotNull(prefixArgs)
-        //                                      .Add("plugin")
-        //                                      .Add("push")
-        //                                      .Add("--name").Add(sln.Name)
-        //                                      .Add("--environment").Add(devEnv.EnvironmentUrl!)
-        //                                      .Add("--packagetype").Add(sln.IncludeManaged ? "Both" : "Unmanaged")
-        //                                      .Add("--outputDirectory").Add(slnFolder) // will create <sln.Name> folder under this given folder
-        //                                      .Add("--async"))
-        //               .WithValidation(CommandResultValidation.None)
-        //               .WithToolExecutionLog(settings.Verbose, ctx)
-        //               .ExecuteAsync(cancellationToken)
-        //               .Task);
+        // Analyze the assembly
+        var analysisService = new AssemblyAnalysisService();
+        var metadata = analysisService.Analyze(extensionsDll, IsolationMode.Sandbox);
+
         //
-        // if (!result.IsSuccess)
-        // {
-        //     AnsiConsole.MarkupLine("[red]Failed to clone the solution. Please check the environment and solution name.[/]");
-        //     return 1;
-        // }
-
 
         // TODO: Implement the upload logic
         if (settings.Save) AnsiConsole.MarkupLine("[dim]Save mode enabled: Assets not in source control will be preserved.[/]");

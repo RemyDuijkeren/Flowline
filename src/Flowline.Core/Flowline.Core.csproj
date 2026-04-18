@@ -11,4 +11,8 @@
     <PackageReference Include="System.Reflection.MetadataLoadContext" Version="10.0.5" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Flowline.Attributes\Flowline.Attributes.csproj" />
+  </ItemGroup>
+
 </Project>

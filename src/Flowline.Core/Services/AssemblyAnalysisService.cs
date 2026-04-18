@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
+using Flowline.Attributes;
 using Flowline.Core.Models;
 
 namespace Flowline.Core.Services;
@@ -13,8 +14,25 @@ public class AssemblyAnalysisService : IAssemblyAnalysisService
 {
     public PluginAssemblyMetadata Analyze(string dllPath, IsolationMode isolationMode)
     {
+        // Load all assemblies in the runtime directory
         var runtimeDir = RuntimeEnvironment.GetRuntimeDirectory();
         var paths = Directory.GetFiles(runtimeDir, "*.dll").ToList();
+
+        // Add all referenced assemblies in one-level-up directory as the current assembly
+        var assemblyDir = Path.GetDirectoryName(dllPath);
+        if (!string.IsNullOrWhiteSpace(assemblyDir) && Directory.Exists(assemblyDir))
+        {
+            var parentDir = Directory.GetParent(assemblyDir)?.FullName;
+            if (parentDir != null && Directory.Exists(parentDir))
+            {
+                foreach (var file in Directory.EnumerateFiles(parentDir, "*.dll", SearchOption.AllDirectories))
+                {
+                    paths.Add(file);
+                }
+            }
+        }
+
+        // Add the current assembly to the list
         paths.Add(dllPath);
         var resolver = new PathAssemblyResolver(paths);
         using var mlc = new MetadataLoadContext(resolver);
@@ -33,7 +51,7 @@ public class AssemblyAnalysisService : IAssemblyAnalysisService
             if (isPlugin || isWorkflow)
             {
                 var steps = new List<PluginStepMetadata>();
-                
+
                 var stepAttrs = type.GetCustomAttributesData()
                     .Where(a => a.AttributeType.FullName == "Flowline.Core.Models.StepAttribute");
 
@@ -43,7 +61,7 @@ public class AssemblyAnalysisService : IAssemblyAnalysisService
                     var entityName = (string)stepData.ConstructorArguments[1].Value!;
                     var stage = (int)stepData.ConstructorArguments[2].Value!;
                     var mode = (int)stepData.ConstructorArguments[3].Value!;
-                    
+
                     var order = 1;
                     var filteringAttributes = (string?)null;
                     var configuration = (string?)null;
@@ -56,7 +74,7 @@ public class AssemblyAnalysisService : IAssemblyAnalysisService
                     }
 
                     var images = new List<PluginImageMetadata>();
-                    // Images are typically linked to steps in a real implementation, 
+                    // Images are typically linked to steps in a real implementation,
                     // but here we'll simplify and just look for all ImageAttributes on the class
                     var imageAttrs = type.GetCustomAttributesData()
                         .Where(a => a.AttributeType.FullName == "Flowline.Core.Models.ImageAttribute");
@@ -66,13 +84,13 @@ public class AssemblyAnalysisService : IAssemblyAnalysisService
                         var imgName = (string)imageData.ConstructorArguments[0].Value!;
                         var imgAlias = (string)imageData.ConstructorArguments[1].Value!;
                         var imgType = (int)imageData.ConstructorArguments[2].Value!;
-                        
+
                         var imgAttributes = (string?)null;
                         foreach (var namedArg in imageData.NamedArguments)
                         {
                             if (namedArg.MemberName == "Attributes") imgAttributes = (string?)namedArg.TypedValue.Value;
                         }
-                        
+
                         images.Add(new PluginImageMetadata(imgName, imgAlias, imgType, imgAttributes));
                     }
 

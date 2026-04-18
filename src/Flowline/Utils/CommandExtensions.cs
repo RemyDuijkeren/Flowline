@@ -9,7 +9,7 @@ public static class CommandExtensions
     {
         if (verbose)
         {
-            AnsiConsole.MarkupLine($"[dim]Executing: [white italic]{Markup.Escape(command.ToString())}[/][/]");
+            AnsiConsole.MarkupLine($"[dim]Executing: [italic]{Markup.Escape(command.ToString())}[/][/]");
         }
         return command;
     }
@@ -18,7 +18,7 @@ public static class CommandExtensions
     {
         if (verbose)
         {
-            AnsiConsole.MarkupLine($"[dim]Executing: [white italic]{Markup.Escape(command.ToString())}[/][/]");
+            AnsiConsole.MarkupLine($"[dim]Executing: [italic]{Markup.Escape(command.ToString())}[/][/]");
 
             return command
                    .WithStandardOutputPipe(PipeTarget.ToDelegate(s =>
@@ -29,21 +29,43 @@ public static class CommandExtensions
                            //ctx.Status(s.StartsWith("Processing asynchronous operation...") ? $"Cloning... {s}[/]" : s);
                        }
 
-                       // Skip if the output is PAC async operation progress
-                       if (!s.StartsWith("Processing asynchronous operation..."))
-                       {
-                           AnsiConsole.MarkupLineInterpolated($"[dim]{command.TargetFilePath}: {s}[/]");
-                       }
+                       // Skip if the output is an error message
+                       if (DisplayErrorMessage(s, command.TargetFilePath)) return;
 
-                       // For PAC async operation errors, we want to output the error message explicitly
-                       if (s.Contains("Error: ") || s.Contains("The reason given was: "))
-                       {
-                           AnsiConsole.MarkupLine($"[red]{s}[/]");
-                       }
+                       // Skip if the output is PAC async operation progress
+                       if (s.StartsWith("Processing asynchronous operation...")) return;
+
+                       AnsiConsole.MarkupLineInterpolated($"[dim]{command.TargetFilePath}: {s}[/]");
                    }))
                    .WithStandardErrorPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[red]{command.TargetFilePath}: {s}[/]")));
         }
 
-        return command.WithStandardErrorPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[red]{command.TargetFilePath}: {s}[/]")));
+        return command
+               .WithStandardOutputPipe(PipeTarget.ToDelegate(s => DisplayErrorMessage(s, command.TargetFilePath)))
+               .WithStandardErrorPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[red]{command.TargetFilePath}: {s}[/]")));
+    }
+
+    static bool DisplayErrorMessage(string s, string? targetFilePath = null)
+    {
+        // For PAC async operation errors, we want to output the error message explicitly
+        if (s.Contains("Error: ") || s.Contains("The reason given was: "))
+        {
+            AnsiConsole.MarkupLineInterpolated($"[red]{targetFilePath}: {s}[/]");
+            return true;
+        }
+
+        // For dotnet errors, we want to output the error message explicitly
+        if (s.Contains(": error"))
+        {
+            AnsiConsole.MarkupLineInterpolated($"[red]{targetFilePath}: {s}[/]");
+            return true;
+        }
+        if (s.Contains(": warning"))
+        {
+            AnsiConsole.MarkupLineInterpolated($"[yellow]{targetFilePath}: {s}[/]");
+            return true;
+        }
+
+        return false;
     }
 }

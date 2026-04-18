@@ -73,7 +73,7 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
         }
 
         EnvironmentInfo? env = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-            $"Checking {label.ToLower()} [bold]'{url}'[/]...",
+            $"Checking {label.ToLower()} [bold]{url}[/]...",
             ctx => PacUtils.GetEnvironmentInfoByUrlAsync(url, settings.Verbose, cancellationToken));
 
         if (env == null)
@@ -108,7 +108,7 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
         }
 
         List<SolutionInfo> solutions = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-            $"Looking up [bold]'{sln.Name}'[/]...",
+            $"Looking up [bold]{sln.Name}[/]...",
             ctx => PacUtils.GetSolutionsAsync(environmentUrl, settings.Verbose, cancellationToken));
 
         var remoteSolution = solutions.FirstOrDefault(s => s.SolutionUniqueName?.Equals(sln.Name, StringComparison.OrdinalIgnoreCase) == true);
@@ -120,11 +120,11 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
 
         if (remoteSolution.IsManaged && !sln.IncludeManaged)
         {
-            AnsiConsole.MarkupLine($"[red]'{sln.Name}' is managed — add --managed to include managed artifacts.[/]");
+            AnsiConsole.MarkupLine($"[red][bold]{sln.Name}[/] is managed — add --managed to include managed artifacts.[/]");
             return null;
         }
 
-        AnsiConsole.MarkupLine($"[green]Solution: [bold]'{sln.Name}'[/] (managed: {remoteSolution.IsManaged})[/]");
+        AnsiConsole.MarkupLine($"[green]Solution: [bold]{sln.Name}[/] (managed: {remoteSolution.IsManaged})[/]");
 
         return sln;
     }

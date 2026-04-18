@@ -47,7 +47,8 @@ app.Configure(config =>
     config.AddCommand<PushCommand>("push")
         .WithDescription("Upload assets (webresources, plugins) to a Power Platform environment")
         .WithExample("push")
-        .WithExample("push", "--dev https://contoso-dev.crm4.dynamics.com/");
+        .WithExample("push", "ContosoCustomizations")
+        .WithExample("push", "ContosoCustomizations --dev https://contoso-dev.crm4.dynamics.com/");
 
     // Sync changes to local repo (export solution and unpack)
     config.AddCommand<SyncCommand>("sync")

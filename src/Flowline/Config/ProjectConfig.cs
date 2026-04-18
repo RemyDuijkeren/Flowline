@@ -33,7 +33,11 @@ public class ProjectConfig
 
         if (string.IsNullOrWhiteSpace(inputStagingUrl))
         {
-            AnsiConsole.MarkupLine($"[dim]Using configured staging environment: [bold]{StagingUrl}[/][/]");
+            if (settings is { Verbose: true })
+            {
+                AnsiConsole.MarkupLine($"[dim]Using configured staging environment: [bold]{StagingUrl}[/][/]");
+            }
+
             return StagingUrl;
         }
 
@@ -47,6 +51,7 @@ public class ProjectConfig
             }
             AnsiConsole.MarkupLine("[yellow]Overriding existing environment project configuration.[/]");
         }
+
         StagingUrl = inputStagingUrl;
         return StagingUrl;
     }
@@ -63,7 +68,11 @@ public class ProjectConfig
 
         if (string.IsNullOrWhiteSpace(inputDevUrl))
         {
-            AnsiConsole.MarkupLine($"[dim]Using configured develpment environment: [bold]{DevUrl}[/][/]");
+            if (settings is { Verbose: true })
+            {
+                AnsiConsole.MarkupLine($"[dim]Using configured develpment environment: [bold]{DevUrl}[/][/]");
+            }
+
             return DevUrl;
         }
 
@@ -77,6 +86,7 @@ public class ProjectConfig
             }
             AnsiConsole.MarkupLine("[yellow]Overriding existing environment project configuration.[/]");
         }
+
         DevUrl = inputDevUrl;
         return DevUrl;
     }
@@ -152,7 +162,11 @@ public class ProjectConfig
             else
             {
                 var first = Solutions.Single();
-                AnsiConsole.MarkupLine($"[dim]Using configured solution: [bold]{first.Name}[/][/]");
+                if (settings is { Verbose: true })
+                {
+                    AnsiConsole.MarkupLine($"[dim]Using configured solution: [bold]{first.Name}[/][/]");
+                }
+
                 return first;
             }
         }

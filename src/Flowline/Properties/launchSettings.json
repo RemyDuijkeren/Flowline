@@ -1,0 +1,24 @@
+{
+  "profiles": {
+    "status": {
+      "commandName": "Project",
+      "commandLineArgs": "status",
+      "workingDirectory": "E:/Code/TryOut/MyFlowTest"
+    },
+    "clone": {
+      "commandName": "Project",
+      "commandLineArgs": "clone Cr07982",
+      "workingDirectory": "E:/Code/TryOut/MyFlowTest"
+    },
+    "push": {
+      "commandName": "Project",
+      "commandLineArgs": "push",
+      "workingDirectory": "E:/Code/TryOut/MyFlowTest"
+    },
+    "push --verbose": {
+      "commandName": "Project",
+      "commandLineArgs": "push --verbose",
+      "workingDirectory": "E:/Code/TryOut/MyFlowTest"
+    }
+  }
+}

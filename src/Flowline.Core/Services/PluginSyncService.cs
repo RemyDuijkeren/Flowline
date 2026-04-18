@@ -17,7 +17,7 @@ public interface IPluginSyncService
 
 public class PluginSyncService : IPluginSyncService
 {
-    private readonly IAssemblyAnalysisService _analysisService;
+    readonly IAssemblyAnalysisService _analysisService;
 
     public PluginSyncService(IAssemblyAnalysisService analysisService)
     {
@@ -32,7 +32,7 @@ public class PluginSyncService : IPluginSyncService
     {
         var metadata = _analysisService.Analyze(dllPath, isolationMode);
         var assembly = await GetOrCreateAssembly(service, metadata, solutionName);
-        
+
         var existingTypes = await GetPluginTypes(service, assembly.Id);
         var typeNames = existingTypes.ToDictionary(t => t.GetAttributeValue<string>("typename"), t => t);
 
@@ -65,10 +65,10 @@ public class PluginSyncService : IPluginSyncService
                     stepEntity["rank"] = step.Order;
                     stepEntity["filteringattributes"] = step.FilteringAttributes;
                     stepEntity["configuration"] = step.Configuration;
-                    
+
                     // We need to look up SdkMessage and SdkMessageFilter IDs here in a real implementation
                     // Simplified for now: assuming message and entity lookup logic is available
-                    
+
                     await service.CreateAsync(stepEntity);
                 }
                 else
@@ -85,7 +85,7 @@ public class PluginSyncService : IPluginSyncService
         }
     }
 
-    private async Task<Entity> GetOrCreateAssembly(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName)
+    async Task<Entity> GetOrCreateAssembly(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName)
     {
         var query = new QueryExpression("pluginassembly")
         {
@@ -104,7 +104,14 @@ public class PluginSyncService : IPluginSyncService
             entity["content"] = Convert.ToBase64String(metadata.Content);
             entity["version"] = metadata.Version;
             entity["isolationmode"] = new OptionSetValue((int)metadata.IsolationMode);
-            
+
+            // entity["sourcetype"] = new OptionSetValue(0); // 0=Database (default), 4=File Store (NuGet package)
+            // Nuget is stored in the pluginpackage table
+            // Upload the .nupkg to the pluginpackage.package file column pluginpackage.package is a File column,
+            // not a memo/base64 blob column. Microsoft documents it as a file column with max size 10 GB, and
+            // Dataverse file columns must be uploaded using the file upload APIs (InitializeFileBlocksUpload / UploadBlock / CommitFileBlocksUpload) rather
+            // than setting them directly in a normal create/update payload.
+
             var createReq = new CreateRequest { Target = entity };
             createReq["SolutionUniqueName"] = solutionName;
             var response = (CreateResponse)await service.ExecuteAsync(createReq);
@@ -120,7 +127,7 @@ public class PluginSyncService : IPluginSyncService
         }
     }
 
-    private async Task<List<Entity>> GetPluginTypes(IOrganizationServiceAsync2 service, Guid assemblyId)
+    async Task<List<Entity>> GetPluginTypes(IOrganizationServiceAsync2 service, Guid assemblyId)
     {
         var query = new QueryExpression("plugintype")
         {
@@ -131,7 +138,7 @@ public class PluginSyncService : IPluginSyncService
         return (await service.RetrieveMultipleAsync(query)).Entities.ToList();
     }
 
-    private async Task<List<Entity>> GetSteps(IOrganizationServiceAsync2 service, Guid typeId)
+    async Task<List<Entity>> GetSteps(IOrganizationServiceAsync2 service, Guid typeId)
     {
         var query = new QueryExpression("sdkmessageprocessingstep")
         {

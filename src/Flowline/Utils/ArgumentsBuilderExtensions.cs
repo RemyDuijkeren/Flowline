@@ -24,19 +24,6 @@ public static class ArgumentsBuilderExtensions
         return builder;
     }
 
-    public static ArgumentsBuilder AddIf(this ArgumentsBuilder builder, bool condition, string[] arguments)
-    {
-        if (condition && arguments is not null)
-        {
-            foreach (var argument in arguments)
-            {
-                builder.Add(argument);
-            }
-        }
-
-        return builder;
-    }
-
     public static ArgumentsBuilder AddIf<T>(this ArgumentsBuilder builder, bool condition, string argument, T value)
     {
         if (condition)
@@ -47,13 +34,26 @@ public static class ArgumentsBuilderExtensions
         return builder;
     }
 
-    public static ArgumentsBuilder AddIfNotNull(this ArgumentsBuilder builder, string[]? values)
+    public static ArgumentsBuilder AddIf(this ArgumentsBuilder builder, bool condition, string[]? arguments)
     {
-        if (values != null)
+        if (condition && arguments is not null)
         {
-            foreach (var value in values)
+            foreach (var arg in arguments)
             {
-                builder.Add(value);
+                builder.Add(arg);
+            }
+        }
+
+        return builder;
+    }
+
+    public static ArgumentsBuilder AddIfNotNull(this ArgumentsBuilder builder, string[]? arguments)
+    {
+        if (arguments is not null)
+        {
+            foreach (var arg in arguments)
+            {
+                builder.Add(arg);
             }
         }
 

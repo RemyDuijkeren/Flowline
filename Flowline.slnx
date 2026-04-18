@@ -8,9 +8,11 @@
     <File Path="README.md" />
     <File Path="docs\IDEAS.md" />
     <File Path="reinstall-flowline.ps1" />
+    <File Path="src/Flowline/Properties/launchSettings.json" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src\Flowline\Flowline.csproj" />
+    <Project Path="src/Flowline.Attributes/Flowline.Attributes.csproj" />
     <Project Path="src\Flowline.Core\Flowline.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
