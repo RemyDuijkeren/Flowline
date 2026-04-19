@@ -44,27 +44,48 @@ dotnet tool install --global Flowline
 ```
 
 ## 🛠️ Commands
-```bash
-flowline init
-```
-➡ Clone your Production environment to a new Dev environment (creates a fresh sandbox).
 
 ```bash
-flowline prime
+flowline clone <solution> --prod <URL>
 ```
-➡ Sync solutions: download from Dev, unpack, and commit into Git.
+➡ Bootstrap an existing solution from Production into the local repo.
 
 ```bash
-flowline export --target prod
+flowline provision [dev|staging] --prod <URL>
 ```
-➡ Deploy your solution to Production (or another target like Test).
+➡ Provision a Dev or Staging environment by copying from Production.
 
-🌟 Example usage
 ```bash
-flowline prime --name Dev123 --region europe
-flowline export --solution MySolution
-flowline stage --solution MySolution
-flowline release --solution MySolution
+flowline push [solution] [--dev <URL>]
+```
+➡ Upload local assets (plugins, web resources) to the Dev environment.
+
+```bash
+flowline sync [solution] [--dev <URL>]
+```
+➡ Pull the current solution from Dev, unpack it, and write it back into the repo.
+
+```bash
+flowline deploy <prod|staging|URL> [--solution <name>]
+```
+➡ Pack and import the solution into a target environment.
+
+```bash
+flowline status
+```
+➡ Show the current Flowline version and PAC CLI status.
+
+```bash
+flowline translations export|import [path] [--solution <name>]
+```
+➡ Export or import solution translations.
+
+🌟 Example workflow
+```bash
+flowline clone ContosoCustomizations --prod https://contoso.crm4.dynamics.com
+flowline push ContosoCustomizations
+flowline sync ContosoCustomizations
+flowline deploy prod --solution ContosoCustomizations
 ```
 ## Development
 

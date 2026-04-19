@@ -21,86 +21,192 @@ public class PluginSyncServiceTests
         _service = new PluginSyncService(_analysisServiceMock.Object);
     }
 
-    [Fact]
-    public async Task SyncSolutionAsync_CreateNewAssembly_ShouldCallExecuteWithCreateRequest()
+    // -- Helpers --
+
+    private Entity ExistingAssembly(Guid id, string version = "1.0.0.0")
     {
-        // Arrange
-        var solutionName = "MySolution";
-        var dllPath = "MyPlugin.dll";
-        var isolationMode = IsolationMode.Sandbox;
-        var metadata = new PluginAssemblyMetadata(
-            "MyPlugin", 
-            "MyPlugin, Version=1.0.0.0", 
-            new byte[] { 1, 2, 3 }, 
-            "1.0.0.0", 
-            isolationMode, 
-            new List<PluginTypeMetadata>());
+        var e = new Entity("pluginassembly", id);
+        e["name"] = "MyPlugin";
+        e["version"] = version;
+        return e;
+    }
 
-        _analysisServiceMock.Setup(x => x.Analyze(dllPath, isolationMode)).Returns(metadata);
+    private void SetupAssembly(Entity? existing = null)
+    {
+        if (existing == null)
+        {
+            _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "pluginassembly")))
+                .ReturnsAsync(new EntityCollection());
+            var createResponse = new CreateResponse();
+            createResponse.Results["id"] = Guid.NewGuid();
+            _serviceMock.Setup(x => x.ExecuteAsync(It.IsAny<CreateRequest>()))
+                .ReturnsAsync(createResponse);
+        }
+        else
+        {
+            _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "pluginassembly")))
+                .ReturnsAsync(new EntityCollection(new List<Entity> { existing }));
+        }
+    }
 
-        // Mock assembly retrieval (empty)
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "pluginassembly")))
-            .ReturnsAsync(new EntityCollection());
-
-        // Mock plugin types retrieval (empty)
+    private void SetupPluginTypes(params Entity[] types)
+    {
         _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "plugintype")))
-            .ReturnsAsync(new EntityCollection());
+            .ReturnsAsync(new EntityCollection(types.ToList()));
+    }
 
-        // Mock CreateRequest response
-        var createResponse = new CreateResponse();
-        createResponse.Results["id"] = Guid.NewGuid();
-        _serviceMock.Setup(x => x.ExecuteAsync(It.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly")))
-            .ReturnsAsync(createResponse);
+    private void SetupSteps(params Entity[] steps)
+    {
+        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep")))
+            .ReturnsAsync(new EntityCollection(steps.ToList()));
+    }
 
-        // Act
-        await _service.SyncSolutionAsync(_serviceMock.Object, dllPath, solutionName, isolationMode);
+    private PluginAssemblyMetadata Metadata(string name = "MyPlugin", string version = "1.0.0.0", params PluginTypeMetadata[] plugins) =>
+        new(name, $"{name}, Version={version}", new byte[] { 1, 2, 3 }, version, IsolationMode.Sandbox, plugins.ToList());
 
-        // Assert
-        _serviceMock.Verify(x => x.ExecuteAsync(It.Is<CreateRequest>(r => 
-            r.Target.GetAttributeValue<string>("name") == metadata.Name &&
-            r["SolutionUniqueName"].ToString() == solutionName
+    // -- Assembly create/update --
+
+    [Fact]
+    public async Task SyncSolutionAsync_NewAssembly_CreatesWithSolutionName()
+    {
+        SetupAssembly();
+        SetupPluginTypes();
+        _analysisServiceMock.Setup(x => x.Analyze(It.IsAny<string>(), It.IsAny<IsolationMode>()))
+            .Returns(Metadata());
+
+        await _service.SyncSolutionAsync(_serviceMock.Object, "MyPlugin.dll", "MySolution", IsolationMode.Sandbox);
+
+        _serviceMock.Verify(x => x.ExecuteAsync(It.Is<CreateRequest>(r =>
+            r.Target.LogicalName == "pluginassembly" &&
+            r.Target.GetAttributeValue<string>("name") == "MyPlugin" &&
+            r["SolutionUniqueName"].ToString() == "MySolution"
         )), Times.Once);
     }
 
     [Fact]
-    public async Task SyncSolutionAsync_UpdateExistingAssembly_ShouldCallUpdateAsync()
+    public async Task SyncSolutionAsync_ExistingAssembly_UpdatesVersion()
     {
-        // Arrange
-        var solutionName = "MySolution";
-        var dllPath = "MyPlugin.dll";
-        var isolationMode = IsolationMode.Sandbox;
-        var metadata = new PluginAssemblyMetadata(
-            "MyPlugin", 
-            "MyPlugin, Version=1.0.0.0", 
-            new byte[] { 4, 5, 6 }, 
-            "1.0.0.1", 
-            isolationMode, 
-            new List<PluginTypeMetadata>());
-
-        _analysisServiceMock.Setup(x => x.Analyze(dllPath, isolationMode)).Returns(metadata);
-
-        // Mock assembly retrieval (exists)
         var assemblyId = Guid.NewGuid();
-        var existingAssembly = new Entity("pluginassembly", assemblyId)
-        {
-            ["name"] = "MyPlugin",
-            ["version"] = "1.0.0.0"
-        };
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "pluginassembly")))
-            .ReturnsAsync(new EntityCollection(new List<Entity> { existingAssembly }));
+        SetupAssembly(ExistingAssembly(assemblyId, "1.0.0.0"));
+        SetupPluginTypes();
+        _analysisServiceMock.Setup(x => x.Analyze(It.IsAny<string>(), It.IsAny<IsolationMode>()))
+            .Returns(Metadata(version: "1.0.0.1"));
 
-        // Mock plugin types retrieval (empty)
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "plugintype")))
-            .ReturnsAsync(new EntityCollection());
+        await _service.SyncSolutionAsync(_serviceMock.Object, "MyPlugin.dll", "MySolution", IsolationMode.Sandbox);
 
-        // Act
-        await _service.SyncSolutionAsync(_serviceMock.Object, dllPath, solutionName, isolationMode);
-
-        // Assert
-        _serviceMock.Verify(x => x.UpdateAsync(It.Is<Entity>(e => 
-            e.LogicalName == "pluginassembly" && 
-            e.Id == assemblyId && 
+        _serviceMock.Verify(x => x.UpdateAsync(It.Is<Entity>(e =>
+            e.LogicalName == "pluginassembly" &&
+            e.Id == assemblyId &&
             e.GetAttributeValue<string>("version") == "1.0.0.1"
         )), Times.Once);
+    }
+
+    // -- Plugin type creation --
+
+    [Fact]
+    public async Task SyncSolutionAsync_NewPluginType_CreatesPluginType()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId));
+        SetupPluginTypes();
+        SetupSteps();
+        _analysisServiceMock.Setup(x => x.Analyze(It.IsAny<string>(), It.IsAny<IsolationMode>()))
+            .Returns(Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", false, [])));
+
+        await _service.SyncSolutionAsync(_serviceMock.Object, "MyPlugin.dll", "MySolution", IsolationMode.Sandbox);
+
+        _serviceMock.Verify(x => x.CreateAsync(It.Is<Entity>(e =>
+            e.LogicalName == "plugintype" &&
+            e.GetAttributeValue<string>("typename") == "MyNamespace.MyPlugin" &&
+            !e.Contains("workflowactivitygroupname")
+        )), Times.Once);
+    }
+
+    // -- Workflow type creation --
+
+    [Fact]
+    public async Task SyncSolutionAsync_NewWorkflowType_SetsWorkflowActivityGroupName()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId));
+        SetupPluginTypes();
+        _analysisServiceMock.Setup(x => x.Analyze(It.IsAny<string>(), It.IsAny<IsolationMode>()))
+            .Returns(Metadata(plugins: new PluginTypeMetadata("MyActivity", "MyNamespace.MyActivity", true, [])));
+
+        await _service.SyncSolutionAsync(_serviceMock.Object, "MyPlugin.dll", "MySolution", IsolationMode.Sandbox);
+
+        _serviceMock.Verify(x => x.CreateAsync(It.Is<Entity>(e =>
+            e.LogicalName == "plugintype" &&
+            e.GetAttributeValue<string>("typename") == "MyNamespace.MyActivity" &&
+            e.GetAttributeValue<string>("workflowactivitygroupname") == "MyPlugin (1.0.0.0)"
+        )), Times.Once);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_WorkflowType_DoesNotQuerySteps()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId));
+        SetupPluginTypes();
+        _analysisServiceMock.Setup(x => x.Analyze(It.IsAny<string>(), It.IsAny<IsolationMode>()))
+            .Returns(Metadata(plugins: new PluginTypeMetadata("MyActivity", "MyNamespace.MyActivity", true, [])));
+
+        await _service.SyncSolutionAsync(_serviceMock.Object, "MyPlugin.dll", "MySolution", IsolationMode.Sandbox);
+
+        _serviceMock.Verify(x => x.RetrieveMultipleAsync(
+            It.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep")), Times.Never);
+    }
+
+    // -- Deletion of obsolete types --
+
+    [Fact]
+    public async Task SyncSolutionAsync_ObsoletePluginType_DeletesStepsThenType()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId));
+
+        var obsoleteTypeId = Guid.NewGuid();
+        var obsoleteType = new Entity("plugintype", obsoleteTypeId)
+        {
+            ["typename"] = "Obsolete.Plugin",
+            ["isworkflowactivity"] = false
+        };
+        SetupPluginTypes(obsoleteType);
+
+        var stepId = Guid.NewGuid();
+        var obsoleteStep = new Entity("sdkmessageprocessingstep", stepId);
+        SetupSteps(obsoleteStep);
+
+        _analysisServiceMock.Setup(x => x.Analyze(It.IsAny<string>(), It.IsAny<IsolationMode>()))
+            .Returns(Metadata()); // no plugins in assembly
+
+        await _service.SyncSolutionAsync(_serviceMock.Object, "MyPlugin.dll", "MySolution", IsolationMode.Sandbox);
+
+        _serviceMock.Verify(x => x.DeleteAsync("sdkmessageprocessingstep", stepId), Times.Once);
+        _serviceMock.Verify(x => x.DeleteAsync("plugintype", obsoleteTypeId), Times.Once);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_ObsoleteWorkflowType_DeletesTypeWithoutQueryingSteps()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId));
+
+        var obsoleteTypeId = Guid.NewGuid();
+        var obsoleteType = new Entity("plugintype", obsoleteTypeId)
+        {
+            ["typename"] = "Obsolete.Activity",
+            ["isworkflowactivity"] = true
+        };
+        SetupPluginTypes(obsoleteType);
+
+        _analysisServiceMock.Setup(x => x.Analyze(It.IsAny<string>(), It.IsAny<IsolationMode>()))
+            .Returns(Metadata());
+
+        await _service.SyncSolutionAsync(_serviceMock.Object, "MyPlugin.dll", "MySolution", IsolationMode.Sandbox);
+
+        _serviceMock.Verify(x => x.RetrieveMultipleAsync(
+            It.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep")), Times.Never);
+        _serviceMock.Verify(x => x.DeleteAsync("plugintype", obsoleteTypeId), Times.Once);
     }
 }

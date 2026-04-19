@@ -184,7 +184,7 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
                      .WithArguments(args => args
                          .AddIfNotNull(prefixArgs)
                          .Add("plugin")
-                         .Add("init"))
+                         .Add("init")) // --skip-signing
                      .WithWorkingDirectory(extensionsFolder)
                      .WithToolExecutionLog(settings.Verbose)
                      .ExecuteAsync(cancellationToken)

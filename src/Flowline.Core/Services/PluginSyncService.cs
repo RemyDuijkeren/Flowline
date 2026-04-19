@@ -15,24 +15,21 @@ public interface IPluginSyncService
         IsolationMode isolationMode);
 }
 
-public class PluginSyncService : IPluginSyncService
+public class PluginSyncService(IAssemblyAnalysisService analysisService) : IPluginSyncService
 {
-    readonly IAssemblyAnalysisService _analysisService;
-
-    public PluginSyncService(IAssemblyAnalysisService analysisService)
-    {
-        _analysisService = analysisService;
-    }
-
     public async Task SyncSolutionAsync(
         IOrganizationServiceAsync2 service,
         string dllPath,
         string solutionName,
         IsolationMode isolationMode)
     {
-        var metadata = _analysisService.Analyze(dllPath, isolationMode);
+        var metadata = analysisService.Analyze(dllPath, isolationMode);
         var assembly = await GetOrCreateAssembly(service, metadata, solutionName);
+        await SyncPluginTypesAsync(service, metadata, assembly);
+    }
 
+    async Task SyncPluginTypesAsync(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, Entity assembly)
+    {
         var existingTypes = await GetPluginTypes(service, assembly.Id);
         var typeNames = existingTypes.ToDictionary(t => t.GetAttributeValue<string>("typename"), t => t);
 
@@ -41,63 +38,92 @@ public class PluginSyncService : IPluginSyncService
 
         foreach (var plugin in metadata.Plugins)
         {
-            Entity typeEntity;
-            if (!typeNames.TryGetValue(plugin.FullName, out typeEntity!))
+            // https://learn.microsoft.com/en-us/power-apps/developer/data-platform/reference/entities/plugintype
+            if (!typeNames.TryGetValue(plugin.FullName, out var typeEntity))
             {
-                typeEntity = new Entity("plugintype");
-                typeEntity["typename"] = plugin.FullName;
-                typeEntity["name"] = plugin.FullName;
-                typeEntity["friendlyname"] = plugin.Name;
-                typeEntity["pluginassemblyid"] = assembly.ToEntityReference();
+                typeEntity = new Entity("plugintype")
+                {
+                    ["typename"] = plugin.FullName,
+                    ["name"] = plugin.FullName,
+                    ["friendlyname"] = plugin.Name,
+                    ["pluginassemblyid"] = assembly.ToEntityReference(),
+                    ["description"] = $"Created by Flowline at {DateTime.UtcNow}"
+                };
+
+                if (plugin.IsWorkflow)
+                    typeEntity["workflowactivitygroupname"] = $"{metadata.Name} ({metadata.Version})";
+
                 typeEntity.Id = await service.CreateAsync(typeEntity);
             }
 
-            // Sync Steps
-            var existingSteps = await GetSteps(service, typeEntity.Id);
-            var stepNames = existingSteps.ToDictionary(s => s.GetAttributeValue<string>("name"), s => s);
+            if (!plugin.IsWorkflow)
+                await SyncStepsAsync(service, typeEntity, plugin.Steps, messageCache, filterCache);
+        }
 
-            foreach (var step in plugin.Steps)
+        var localNames = metadata.Plugins.Select(p => p.FullName).ToHashSet();
+        foreach (var obsolete in existingTypes.Where(t => !localNames.Contains(t.GetAttributeValue<string>("typename"))))
+        {
+            if (!obsolete.GetAttributeValue<bool>("isworkflowactivity"))
             {
-                Entity stepEntity;
-                if (!stepNames.TryGetValue(step.Name, out stepEntity!))
+                var steps = await GetSteps(service, obsolete.Id);
+                foreach (var step in steps)
+                    await service.DeleteAsync("sdkmessageprocessingstep", step.Id);
+            }
+            await service.DeleteAsync("plugintype", obsolete.Id);
+        }
+    }
+
+    async Task SyncStepsAsync(
+        IOrganizationServiceAsync2 service,
+        Entity typeEntity,
+        List<PluginStepMetadata> steps,
+        Dictionary<string, Guid> messageCache,
+        Dictionary<(Guid messageId, string entityName), Guid?> filterCache)
+    {
+        var existingSteps = await GetSteps(service, typeEntity.Id);
+        var stepNames = existingSteps.ToDictionary(s => s.GetAttributeValue<string>("name"), s => s);
+
+        foreach (var step in steps)
+        {
+            if (!stepNames.TryGetValue(step.Name, out var stepEntity))
+            {
+                if (!messageCache.TryGetValue(step.Message, out var messageId))
                 {
-                    if (!messageCache.TryGetValue(step.Message, out var messageId))
-                    {
-                        messageId = await LookupSdkMessageIdAsync(service, step.Message);
-                        messageCache[step.Message] = messageId;
-                    }
-
-                    if (!filterCache.TryGetValue((messageId, step.EntityName), out var filterId))
-                    {
-                        filterId = await LookupSdkMessageFilterIdAsync(service, messageId, step.EntityName);
-                        filterCache[(messageId, step.EntityName)] = filterId;
-                    }
-
-                    stepEntity = new Entity("sdkmessageprocessingstep")
-                    {
-                        ["name"] = step.Name, ["plugintypeid"] = typeEntity.ToEntityReference(),
-                        ["sdkmessageid"] = new EntityReference("sdkmessage", messageId),
-                        ["stage"] = new OptionSetValue(step.Stage),
-                        ["mode"] = new OptionSetValue(step.Mode),
-                        ["rank"] = step.Order,
-                        ["filteringattributes"] = step.FilteringAttributes,
-                        ["configuration"] = step.Configuration
-                    };
-                    if (filterId.HasValue)
-                        stepEntity["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId.Value);
-
-                    await service.CreateAsync(stepEntity);
+                    messageId = await LookupSdkMessageIdAsync(service, step.Message);
+                    messageCache[step.Message] = messageId;
                 }
-                else
+
+                if (!filterCache.TryGetValue((messageId, step.EntityName), out var filterId))
                 {
-                    // Update
-                    stepEntity["stage"] = new OptionSetValue(step.Stage);
-                    stepEntity["mode"] = new OptionSetValue(step.Mode);
-                    stepEntity["rank"] = step.Order;
-                    stepEntity["filteringattributes"] = step.FilteringAttributes;
-                    stepEntity["configuration"] = step.Configuration;
-                    await service.UpdateAsync(stepEntity);
+                    filterId = await LookupSdkMessageFilterIdAsync(service, messageId, step.EntityName);
+                    filterCache[(messageId, step.EntityName)] = filterId;
                 }
+
+                var entity = new Entity("sdkmessageprocessingstep")
+                {
+                    ["name"] = step.Name,
+                    ["plugintypeid"] = typeEntity.ToEntityReference(),
+                    ["sdkmessageid"] = new EntityReference("sdkmessage", messageId),
+                    ["stage"] = new OptionSetValue(step.Stage),
+                    ["mode"] = new OptionSetValue(step.Mode),
+                    ["rank"] = step.Order,
+                    ["filteringattributes"] = step.FilteringAttributes,
+                    ["configuration"] = step.Configuration
+                };
+                if (filterId.HasValue)
+                    entity["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId.Value);
+
+                stepEntity = entity;
+                await service.CreateAsync(stepEntity);
+            }
+            else
+            {
+                stepEntity["stage"] = new OptionSetValue(step.Stage);
+                stepEntity["mode"] = new OptionSetValue(step.Mode);
+                stepEntity["rank"] = step.Order;
+                stepEntity["filteringattributes"] = step.FilteringAttributes;
+                stepEntity["configuration"] = step.Configuration;
+                await service.UpdateAsync(stepEntity);
             }
         }
     }
@@ -149,7 +175,7 @@ public class PluginSyncService : IPluginSyncService
     {
         var query = new QueryExpression("plugintype")
         {
-            ColumnSet = new ColumnSet("typename", "name"),
+            ColumnSet = new ColumnSet("typename", "name", "isworkflowactivity"),
             Criteria = new FilterExpression()
         };
         query.Criteria.AddCondition("pluginassemblyid", ConditionOperator.Equal, assemblyId);

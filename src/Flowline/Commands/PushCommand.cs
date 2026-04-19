@@ -89,7 +89,6 @@ public class PushCommand : FlowlineCommand<PushCommand.Settings>
         var pluginSyncSrv = new PluginSyncService(analysisSrv);
         await pluginSyncSrv.SyncSolutionAsync(conn, extensionsDll, sln.Name, IsolationMode.Sandbox);
 
-        // TODO: Implement the upload logic
         if (settings.Save) AnsiConsole.MarkupLine("[dim]Save mode enabled: Assets not in source control will be preserved.[/]");
         if (settings.Force) AnsiConsole.MarkupLine("[dim]Force mode enabled: Safety checks will be bypassed.[/]");
 

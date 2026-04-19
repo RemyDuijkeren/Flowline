@@ -57,7 +57,7 @@ public class AssemblyAnalysisService : IAssemblyAnalysisService
             }
             // workflows don't register plugin steps
 
-            plugins.Add(new PluginTypeMetadata(type.Name, type.FullName!, steps));
+            plugins.Add(new PluginTypeMetadata(type.Name, type.FullName!, isWorkflow, steps));
         }
 
         return new PluginAssemblyMetadata(

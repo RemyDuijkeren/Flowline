@@ -1,8 +1,3 @@
-using Microsoft.Xrm.Sdk;
-using Microsoft.Xrm.Sdk.Messages;
-using Microsoft.Xrm.Sdk.Query;
-using Microsoft.PowerPlatform.Dataverse.Client;
-
 namespace Flowline.Core.Models;
 
 public enum WebResourceType
