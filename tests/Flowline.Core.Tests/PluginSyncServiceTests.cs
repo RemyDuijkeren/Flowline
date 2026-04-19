@@ -209,4 +209,83 @@ public class PluginSyncServiceTests
             It.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep")), Times.Never);
         _serviceMock.Verify(x => x.DeleteAsync("plugintype", obsoleteTypeId), Times.Once);
     }
+
+    // -- DLL as source of truth: all orphaned steps deleted --
+
+    [Fact]
+    public async Task SyncSolutionAsync_PluginWithNoSteps_DeletesAllExistingSteps()
+    {
+        // [Entity] removed to disable a plugin — Flowline deletes all steps for that type
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId));
+        SetupPluginTypes();
+        var stepId = Guid.NewGuid();
+        SetupSteps(new Entity("sdkmessageprocessingstep", stepId) { ["name"] = "Old step" });
+        _analysisServiceMock.Setup(x => x.Analyze(It.IsAny<string>(), It.IsAny<IsolationMode>()))
+            .Returns(Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", false, [])));
+
+        await _service.SyncSolutionAsync(_serviceMock.Object, "MyPlugin.dll", "MySolution", IsolationMode.Sandbox);
+
+        _serviceMock.Verify(x => x.DeleteAsync("sdkmessageprocessingstep", stepId), Times.Once);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_PluginWithSteps_DeletesOrphanedSteps()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId));
+        SetupPluginTypes();
+
+        var orphanId = Guid.NewGuid();
+        SetupSteps(new Entity("sdkmessageprocessingstep", orphanId) { ["name"] = "Orphaned step" });
+
+        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessage")))
+            .ReturnsAsync(new EntityCollection(new List<Entity> { new Entity("sdkmessage", Guid.NewGuid()) }));
+        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter")))
+            .ReturnsAsync(new EntityCollection());
+
+        var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of contact", "Update", "contact", 20, 0, 1, null, null, []);
+        _analysisServiceMock.Setup(x => x.Analyze(It.IsAny<string>(), It.IsAny<IsolationMode>()))
+            .Returns(Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", false, [step])));
+
+        await _service.SyncSolutionAsync(_serviceMock.Object, "MyPlugin.dll", "MySolution", IsolationMode.Sandbox);
+
+        _serviceMock.Verify(x => x.DeleteAsync("sdkmessageprocessingstep", orphanId), Times.Once);
+    }
+
+    // -- Save mode: report skipped deletions --
+
+    [Fact]
+    public async Task SyncSolutionAsync_SaveMode_ReportsSkippedStepAndTypeDeletions()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId));
+
+        SetupPluginTypes(new Entity("plugintype", Guid.NewGuid())
+        {
+            ["typename"] = "Obsolete.Plugin",
+            ["isworkflowactivity"] = false
+        });
+
+        var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of contact", "Update", "contact", 20, 0, 1, null, null, []);
+        var plugin = new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", false, [step]);
+
+        var existingStepId = Guid.NewGuid();
+        SetupSteps(new Entity("sdkmessageprocessingstep", existingStepId) { ["name"] = "Orphaned step" });
+
+        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessage")))
+            .ReturnsAsync(new EntityCollection(new List<Entity> { new Entity("sdkmessage", Guid.NewGuid()) }));
+        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter")))
+            .ReturnsAsync(new EntityCollection());
+
+        _analysisServiceMock.Setup(x => x.Analyze(It.IsAny<string>(), It.IsAny<IsolationMode>()))
+            .Returns(Metadata(plugins: plugin));
+
+        var skipped = new List<string>();
+        await _service.SyncSolutionAsync(_serviceMock.Object, "MyPlugin.dll", "MySolution", IsolationMode.Sandbox, save: true, onSaveSkip: skipped.Add);
+
+        _serviceMock.Verify(x => x.DeleteAsync(It.IsAny<string>(), It.IsAny<Guid>()), Times.Never);
+        Assert.Contains(skipped, s => s.Contains("Orphaned step"));
+        Assert.Contains(skipped, s => s.Contains("Obsolete.Plugin"));
+    }
 }

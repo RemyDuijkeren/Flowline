@@ -12,23 +12,29 @@ public interface IPluginSyncService
         IOrganizationServiceAsync2 service,
         string dllPath,
         string solutionName,
-        IsolationMode isolationMode);
+        IsolationMode isolationMode,
+        bool save = false,
+        Action<string>? onSaveSkip = null);
 }
 
 public class PluginSyncService(IAssemblyAnalysisService analysisService) : IPluginSyncService
 {
+    internal const string FlowlineMarker = "[flowline]";
+
     public async Task SyncSolutionAsync(
         IOrganizationServiceAsync2 service,
         string dllPath,
         string solutionName,
-        IsolationMode isolationMode)
+        IsolationMode isolationMode,
+        bool save = false,
+        Action<string>? onSaveSkip = null)
     {
         var metadata = analysisService.Analyze(dllPath, isolationMode);
         var assembly = await GetOrCreateAssembly(service, metadata, solutionName);
-        await SyncPluginTypesAsync(service, metadata, assembly);
+        await SyncPluginTypesAsync(service, metadata, assembly, save, onSaveSkip);
     }
 
-    async Task SyncPluginTypesAsync(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, Entity assembly)
+    async Task SyncPluginTypesAsync(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, Entity assembly, bool save, Action<string>? onSaveSkip)
     {
         var existingTypes = await GetPluginTypes(service, assembly.Id);
         var typeNames = existingTypes.ToDictionary(t => t.GetAttributeValue<string>("typename"), t => t);
@@ -47,7 +53,7 @@ public class PluginSyncService(IAssemblyAnalysisService analysisService) : IPlug
                     ["name"] = plugin.FullName,
                     ["friendlyname"] = plugin.Name,
                     ["pluginassemblyid"] = assembly.ToEntityReference(),
-                    ["description"] = $"Created by Flowline at {DateTime.UtcNow}"
+                    ["description"] = $"{FlowlineMarker} Created at {DateTime.UtcNow:u}"
                 };
 
                 if (plugin.IsWorkflow)
@@ -57,19 +63,30 @@ public class PluginSyncService(IAssemblyAnalysisService analysisService) : IPlug
             }
 
             if (!plugin.IsWorkflow)
-                await SyncStepsAsync(service, typeEntity, plugin.Steps, messageCache, filterCache);
+                await SyncStepsAsync(service, typeEntity, plugin.Steps, messageCache, filterCache, save, onSaveSkip);
         }
 
-        var localNames = metadata.Plugins.Select(p => p.FullName).ToHashSet();
-        foreach (var obsolete in existingTypes.Where(t => !localNames.Contains(t.GetAttributeValue<string>("typename"))))
+        // Remove obsolete plugin types (non-workflow only, unless save mode preserves them)
+        if (!save)
         {
-            if (!obsolete.GetAttributeValue<bool>("isworkflowactivity"))
+            var localNames = metadata.Plugins.Select(p => p.FullName).ToHashSet();
+            foreach (var obsolete in existingTypes.Where(t => !localNames.Contains(t.GetAttributeValue<string>("typename"))))
             {
-                var steps = await GetSteps(service, obsolete.Id);
-                foreach (var step in steps)
-                    await service.DeleteAsync("sdkmessageprocessingstep", step.Id);
+                if (!obsolete.GetAttributeValue<bool>("isworkflowactivity"))
+                {
+                    var steps = await GetSteps(service, obsolete.Id);
+                    foreach (var step in steps)
+                        await service.DeleteAsync("sdkmessageprocessingstep", step.Id);
+                }
+
+                await service.DeleteAsync("plugintype", obsolete.Id);
             }
-            await service.DeleteAsync("plugintype", obsolete.Id);
+        }
+        else
+        {
+            var localNames = metadata.Plugins.Select(p => p.FullName).ToHashSet();
+            foreach (var obsolete in existingTypes.Where(t => !localNames.Contains(t.GetAttributeValue<string>("typename"))))
+                onSaveSkip?.Invoke($"Plugin type '{obsolete.GetAttributeValue<string>("typename")}' not in source — kept (--save)");
         }
     }
 
@@ -78,7 +95,9 @@ public class PluginSyncService(IAssemblyAnalysisService analysisService) : IPlug
         Entity typeEntity,
         List<PluginStepMetadata> steps,
         Dictionary<string, Guid> messageCache,
-        Dictionary<(Guid messageId, string entityName), Guid?> filterCache)
+        Dictionary<(Guid messageId, string entityName), Guid?> filterCache,
+        bool save,
+        Action<string>? onSaveSkip)
     {
         var existingSteps = await GetSteps(service, typeEntity.Id);
         var stepNames = existingSteps.ToDictionary(s => s.GetAttributeValue<string>("name"), s => s);
@@ -108,7 +127,8 @@ public class PluginSyncService(IAssemblyAnalysisService analysisService) : IPlug
                     ["mode"] = new OptionSetValue(step.Mode),
                     ["rank"] = step.Order,
                     ["filteringattributes"] = step.FilteringAttributes,
-                    ["configuration"] = step.Configuration
+                    ["configuration"] = step.Configuration,
+                    ["description"] = $"{FlowlineMarker} Created at {DateTime.UtcNow:u}"
                 };
                 if (filterId.HasValue)
                     entity["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId.Value);
@@ -125,6 +145,22 @@ public class PluginSyncService(IAssemblyAnalysisService analysisService) : IPlug
                 stepEntity["configuration"] = step.Configuration;
                 await service.UpdateAsync(stepEntity);
             }
+        }
+
+        // DLL is the source of truth — delete any step that is no longer in local metadata
+        var localStepNames = steps.Select(s => s.Name).ToHashSet();
+        var obsoleteSteps = existingSteps
+            .Where(s => !localStepNames.Contains(s.GetAttributeValue<string>("name")))
+            .ToList();
+        if (!save)
+        {
+            foreach (var obsolete in obsoleteSteps)
+                await service.DeleteAsync("sdkmessageprocessingstep", obsolete.Id);
+        }
+        else
+        {
+            foreach (var obsolete in obsoleteSteps)
+                onSaveSkip?.Invoke($"Step '{obsolete.GetAttributeValue<string>("name")}' not in source — kept (--save)");
         }
     }
 

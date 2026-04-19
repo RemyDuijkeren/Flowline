@@ -82,11 +82,15 @@ public class PushCommand(IAuthenticationService authSrv, IPluginSyncService plug
             return 1;
         }
 
-        var conn = authSrv.ConnectViaPac(profile, devEnv.EnvironmentUrl);
-        await pluginSyncSrv.SyncSolutionAsync(conn, extensionsDll, sln.Name, IsolationMode.Sandbox);
-
         if (settings.Save) AnsiConsole.MarkupLine("[dim]Save mode enabled: Assets not in source control will be preserved.[/]");
         if (settings.Force) AnsiConsole.MarkupLine("[dim]Force mode enabled: Safety checks will be bypassed.[/]");
+
+        Action<string>? onSaveSkip = settings.Save
+            ? msg => AnsiConsole.MarkupLine($"[dim]{msg}[/]")
+            : null;
+
+        var conn = authSrv.ConnectViaPac(profile, devEnv.EnvironmentUrl);
+        await pluginSyncSrv.SyncSolutionAsync(conn, extensionsDll, sln.Name, IsolationMode.Sandbox, settings.Save, onSaveSkip);
 
         AnsiConsole.MarkupLine("[green]All done![/]");
 

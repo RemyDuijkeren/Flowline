@@ -40,72 +40,6 @@ helps readability in the IDE and in Plugin Registration Tool.
 
 If no stage keyword or no `[Entity]` attribute is found, Flowline skips the class.
 
-## The "1 plugin = 1 step" rule
-
-Each plugin class registers exactly one step. This is an intentional design decision enforced
-by Flowline. Here is why it makes your life easier in the long run.
-
-**Clearer telemetry and error logs**
-When a plugin throws, Dataverse logs the class name. If one class handles both `Create` and
-`Update`, your logs say `AccountPlugin` — you still have to look at the context to know what
-triggered it. With one class per step, the log says `AccountPostCreatePlugin` — the failure is
-self-describing.
-
-**Simpler `Execute` bodies**
-Without the rule, `Execute` fills up with branching logic:
-```csharp
-public void Execute(IServiceProvider sp)
-{
-    var context = ...;
-    if (context.MessageName == "Create") { ... }
-    else if (context.MessageName == "Update") { ... }
-}
-```
-With the rule, every `Execute` does exactly one thing. No branching, no defensive checks on
-`MessageName` or `Stage` — Dataverse guarantees which step fired because you registered only one.
-
-**Easier unit testing**
-Testing one class per step means one test class per plugin. Each test has a clear arrange/act/assert
-structure with no need to set up different `MessageName` values to hit different branches.
-
-**Unambiguous image and filter ownership**
-When a class registers multiple steps, `[Filter]` and `[Image]` become ambiguous — which step do
-they belong to? With one class per step, every attribute on the class unambiguously belongs to
-that single step.
-
-**Shared logic still works — use a base class**
-The rule does not mean duplicating code. When the same logic applies to multiple steps, put it in
-a base class and declare one leaf class per step:
-
-```csharp
-public abstract class AccountSavePlugin : IPlugin
-{
-    public void Execute(IServiceProvider sp) { /* shared logic */ }
-}
-
-[Entity("account")]
-public class AccountPreCreate : AccountSavePlugin { }
-
-[Entity("account")]
-public class AccountPreUpdate : AccountSavePlugin { }
-```
-
-This is the same pattern for multiple messages (`Create` + `Update`) and for multiple entities
-(same step firing on `account`, `contact`, and `opportunity`). One solution for all cases.
-
-```csharp
-public abstract class AccountSavePlugin : IPlugin
-{
-    public void Execute(IServiceProvider sp) { /* shared logic */ }
-}
-
-[Entity("account")]
-public class AccountPreCreatePlugin : AccountSavePlugin { }
-
-[Entity("account")]
-public class AccountPreUpdatePlugin : AccountSavePlugin { }
-```
-
 ## Attributes
 
 ### `[Entity]` — required
@@ -323,4 +257,109 @@ public class RelatedEntityPostCreateForContactPlugin : RelatedEntityPostCreatePl
 
 [Entity("opportunity")]
 public class RelatedEntityPostCreateForOpportunityPlugin : RelatedEntityPostCreatePlugin { }
+```
+
+## Step lifecycle
+
+Flowline treats the DLL as the source of truth. On every `flowline push`:
+
+- **Plugin types** — created for every public `IPlugin` or `CodeActivity` class; deleted when the class is removed from the DLL.
+- **Steps** — created or updated for every class with `[Entity]`; deleted when the class loses `[Entity]` or is removed entirely.
+
+Steps Flowline creates are stamped with `[flowline]` in their description, visible in Plugin Registration Tool.
+
+### Disabling a plugin
+
+Remove `[Entity]` from the class — Flowline deletes its steps on the next push, but keeps the plugin type registered. Delete the class entirely to remove both the type and its steps.
+
+### The `--save` flag
+
+Pass `--save` to suppress all deletions for that run. Flowline prints each skipped deletion, making it useful as a dry run before a clean push:
+
+```bash
+flowline push MySolution --save
+```
+
+## The "1 plugin = 1 step" rule
+
+Each plugin class registers exactly one plugin step. This is an intentional design decision enforced
+by Flowline. It gives up some flexibility, but in return it simplifies the way how you can write plugins.
+Here is why it makes your life easier in the long run.
+
+**Simpler attributes**
+When a class can register multiple steps, Flowline would have needed one attribute that encodes everything — entity, message, stage, mode, filter, images — for each step.
+The result would be something like:
+
+```csharp
+[Step("account", "Update", ProcessStage.PreOperation, ProcessMode.Synchronous, "name,creditlimit")]
+public class AccountPreUpdatePlugin : IPlugin { ... }
+```
+
+With one class per step, each concern gets its own focused attribute. There is no ambiguity about which step a `[Filter]` or `[Image]` belongs to — it always belongs to the one step the class registers.
+We can also use the class name to specify the message, process stage, and process mode: the 'convention over configuration' principle.
+This makes the attributes even more small and readable:
+
+```csharp
+[Entity("account")]
+[Filter("name", "creditlimit")]
+[Image(ImageType.PreImage, "name", "creditlimit")]
+public class AccountPreUpdatePlugin : IPlugin { ... }
+```
+
+It also allows you to write columns for filter and image directly in the attribute, without the need to pass a comma-seperated string like `"name,creditlimit"`.
+
+**Clearer telemetry and error logs**
+When a plugin throws, Dataverse logs the class name. If one class handles both `Create` and
+`Update`, your logs say `AccountPlugin` — you still have to look at the context to know what
+triggered it. With one class per step, the log says `AccountPostCreatePlugin` — the failure is
+self-describing.
+
+**Simpler `Execute` bodies**
+Without the rule, `Execute` fills up with branching logic:
+```csharp
+public void Execute(IServiceProvider sp)
+{
+    var context = ...;
+    if (context.MessageName == "Create") { ... }
+    else if (context.MessageName == "Update") { ... }
+}
+```
+With the rule, every `Execute` does exactly one thing. No branching, no defensive checks on
+`MessageName` or `Stage` — Dataverse guarantees which step fired because you registered only one.
+
+**Easier unit testing**
+Testing one class per step means one test class per plugin. Each test has a clear arrange/act/assert
+structure with no need to set up different `MessageName` values to hit different branches.
+
+**Shared logic still works — use a base class**
+The rule does not mean duplicating code. When the same logic applies to multiple steps, put it in
+a base class and declare one leaf class per step:
+
+```csharp
+public abstract class AccountSavePlugin : IPlugin
+{
+    public void Execute(IServiceProvider sp) { /* shared logic */ }
+}
+
+[Entity("account")]
+public class AccountPreCreate : AccountSavePlugin { }
+
+[Entity("account")]
+public class AccountPreUpdate : AccountSavePlugin { }
+```
+
+This is the same pattern for multiple messages (`Create` + `Update`) and for multiple entities
+(same step firing on `account`, `contact`, and `opportunity`). One solution for all cases.
+
+```csharp
+public abstract class AccountSavePlugin : IPlugin
+{
+    public void Execute(IServiceProvider sp) { /* shared logic */ }
+}
+
+[Entity("account")]
+public class AccountPreCreatePlugin : AccountSavePlugin { }
+
+[Entity("account")]
+public class AccountPreUpdatePlugin : AccountSavePlugin { }
 ```
