@@ -3,8 +3,6 @@ using System.Diagnostics.CodeAnalysis;
 using Flowline.Config;
 using Flowline.Core.Services;
 using Flowline.Utils;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -34,9 +32,10 @@ public class TranslationSettings : FlowlineSettings
     public string? Target { get; set; }
 }
 
-public class TranslationCommand : AsyncCommand<TranslationSettings>
+public class TranslationCommand(IAuthenticationService authService, ITranslationSyncService translationService)
+    : AsyncCommand<TranslationSettings>
 {
-    public override async Task<int> ExecuteAsync([NotNull] CommandContext context, [NotNull] TranslationSettings settings, CancellationToken cancellationToken)
+    protected override async Task<int> ExecuteAsync([NotNull] CommandContext context, [NotNull] TranslationSettings settings, CancellationToken cancellationToken)
     {
         var action = settings.Action.ToLowerInvariant();
         if (action != "export" && action != "import")
@@ -105,16 +104,6 @@ public class TranslationCommand : AsyncCommand<TranslationSettings>
                 ? $"{solutionName}_translations.zip" 
                 : "translations.zip";
         }
-
-        // Setup DI
-        var services = new ServiceCollection();
-        services.AddLogging(builder => builder.AddConsole());
-        services.AddSingleton<IAuthenticationService, AuthenticationService>();
-        services.AddSingleton<ITranslationSyncService, TranslationSyncService>();
-        
-        using var serviceProvider = services.BuildServiceProvider();
-        var authService = serviceProvider.GetRequiredService<IAuthenticationService>();
-        var translationService = serviceProvider.GetRequiredService<ITranslationSyncService>();
 
         try
         {

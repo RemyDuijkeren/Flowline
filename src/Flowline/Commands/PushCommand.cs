@@ -4,11 +4,11 @@ using Flowline.Core.Services;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using Flowline.Utils;
-using Microsoft.Extensions.Logging;
 
 namespace Flowline.Commands;
 
-public class PushCommand : FlowlineCommand<PushCommand.Settings>
+public class PushCommand(IAuthenticationService authSrv, IPluginSyncService pluginSyncSrv)
+    : FlowlineCommand<PushCommand.Settings>
 {
     [Flags]
     public enum PushScope
@@ -72,21 +72,17 @@ public class PushCommand : FlowlineCommand<PushCommand.Settings>
             return 1;
         }
 
-        // Analyze the assembly
-        var analysisSrv = new AssemblyAnalysisService();
-        // var metadata = analysisSrv.Analyze(extensionsDll, IsolationMode.Sandbox);
-
         // Sync Plugins
-        var logger = new Logger<AuthenticationService>(new LoggerFactory());
-        var authSrv = new AuthenticationService(logger);
-
-        var profile = authSrv.GetPacProfiles().Where(p => !string.IsNullOrWhiteSpace(devEnv.EnvironmentUrl)).FirstOrDefault()
-                      ?? authSrv.GetPacProfiles().Where(p => p.IsUniversal).FirstOrDefault();
+        var profile = authSrv.GetPacProfiles()
+                             .FirstOrDefault(p => p.Resource?.TrimEnd('/').Equals(devEnv.EnvironmentUrl?.TrimEnd('/'), StringComparison.OrdinalIgnoreCase) == true)
+                      ?? authSrv.GetPacProfiles().FirstOrDefault(p => p.IsUniversal);
         if (profile == null)
-            AnsiConsole.MarkupLine("[red]No PAC profile found. Please configure one first.[/]");
+        {
+            AnsiConsole.MarkupLine("[red]No PAC profile found — run 'pac auth create' first.[/]");
+            return 1;
+        }
 
         var conn = authSrv.ConnectViaPac(profile, devEnv.EnvironmentUrl);
-        var pluginSyncSrv = new PluginSyncService(analysisSrv);
         await pluginSyncSrv.SyncSolutionAsync(conn, extensionsDll, sln.Name, IsolationMode.Sandbox);
 
         if (settings.Save) AnsiConsole.MarkupLine("[dim]Save mode enabled: Assets not in source control will be preserved.[/]");

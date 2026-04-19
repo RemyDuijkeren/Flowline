@@ -24,7 +24,7 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
         public bool Managed { get; set; } = false;
     }
 
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
+    protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         await DotNetUtils.AssertDotNetInstalledAsync(settings.Verbose, cancellationToken);
         await PacUtils.AssertPacCliInstalledAsync(settings.Verbose, cancellationToken);

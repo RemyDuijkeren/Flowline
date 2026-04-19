@@ -26,7 +26,7 @@ public class SyncWebResourcesCommand : AsyncCommand<SyncWebResourcesCommand.Sett
         public string? Solution { get; set; }
     }
 
-    public override Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
+    protected override Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         // Implementation logic to connect to Dataverse and call _syncService.SyncSolutionAsync
         // For brevity in this step, I'm focusing on the command structure.
