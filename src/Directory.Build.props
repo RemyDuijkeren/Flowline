@@ -10,6 +10,10 @@
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
+  <ItemGroup>
+    <None Include="../../docs/Flowline-icon.png" Pack="true" PackagePath=""/>
+  </ItemGroup>
+
   <PropertyGroup Label="PackageMetadata">
     <Authors>Remy van Duijkeren (@RemyDuijkeren)</Authors>
     <Copyright>Copyright (c) Remy van Duijkeren 2026</Copyright>

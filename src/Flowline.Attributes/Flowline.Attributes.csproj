@@ -6,6 +6,8 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <!-- Source-only package: no compiled DLL output in the package -->
     <IncludeBuildOutput>false</IncludeBuildOutput>
+    <!-- Source-only package: no symbols package -->
+    <IncludeSymbols>false</IncludeSymbols>
     <!-- Marks this as a development-time dependency — PrivateAssets="all" by default for consumers -->
     <DevelopmentDependency>true</DevelopmentDependency>
     <PackageOutputPath>../../../artifacts/nupkg</PackageOutputPath>
@@ -18,12 +20,20 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Ship source files as contentFiles so they compile into the consuming plugin assembly -->
     <Content Include="**/*.cs" Exclude="obj/**">
       <Pack>true</Pack>
       <PackagePath>contentFiles/cs/any/</PackagePath>
       <BuildAction>Compile</BuildAction>
     </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MinVer" PrivateAssets="All" />
   </ItemGroup>
 
 </Project>
