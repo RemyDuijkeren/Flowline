@@ -7,7 +7,7 @@ using Flowline.Utils;
 
 namespace Flowline.Commands;
 
-public class PushCommand(IAuthenticationService authSrv, IPluginSyncService pluginSyncSrv)
+public class PushCommand(IAuthenticationService authSrv, IAssemblyAnalysisService analysisService, IPluginSyncService pluginSyncSrv, AnsiConsoleOutput output)
     : FlowlineCommand<PushCommand.Settings>
 {
     [Flags]
@@ -82,15 +82,14 @@ public class PushCommand(IAuthenticationService authSrv, IPluginSyncService plug
             return 1;
         }
 
+        output.IsVerbose = settings.Verbose;
+
         if (settings.Save) AnsiConsole.MarkupLine("[dim]Save mode enabled: Assets not in source control will be preserved.[/]");
         if (settings.Force) AnsiConsole.MarkupLine("[dim]Force mode enabled: Safety checks will be bypassed.[/]");
 
-        Action<string>? onSaveSkip = settings.Save
-            ? msg => AnsiConsole.MarkupLine($"[dim]{msg}[/]")
-            : null;
-
         var conn = authSrv.ConnectViaPac(profile, devEnv.EnvironmentUrl);
-        await pluginSyncSrv.SyncSolutionAsync(conn, extensionsDll, sln.Name, IsolationMode.Sandbox, settings.Save, onSaveSkip);
+        var metadata = analysisService.Analyze(extensionsDll, IsolationMode.Sandbox);
+        await pluginSyncSrv.SyncAsync(conn, metadata, sln.Name, settings.Save);
 
         AnsiConsole.MarkupLine("[green]All done![/]");
 

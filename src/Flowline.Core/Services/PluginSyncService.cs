@@ -8,33 +8,28 @@ namespace Flowline.Core.Services;
 
 public interface IPluginSyncService
 {
-    Task SyncSolutionAsync(
+    Task SyncAsync(
         IOrganizationServiceAsync2 service,
-        string dllPath,
+        PluginAssemblyMetadata metadata,
         string solutionName,
-        IsolationMode isolationMode,
-        bool save = false,
-        Action<string>? onSaveSkip = null);
+        bool save = false);
 }
 
-public class PluginSyncService(IAssemblyAnalysisService analysisService) : IPluginSyncService
+public class PluginSyncService(IFlowlineOutput output) : IPluginSyncService
 {
     internal const string FlowlineMarker = "[flowline]";
 
-    public async Task SyncSolutionAsync(
+    public async Task SyncAsync(
         IOrganizationServiceAsync2 service,
-        string dllPath,
+        PluginAssemblyMetadata metadata,
         string solutionName,
-        IsolationMode isolationMode,
-        bool save = false,
-        Action<string>? onSaveSkip = null)
+        bool save = false)
     {
-        var metadata = analysisService.Analyze(dllPath, isolationMode);
         var assembly = await GetOrCreateAssembly(service, metadata, solutionName);
-        await SyncPluginTypesAsync(service, metadata, assembly, save, onSaveSkip);
+        await SyncPluginTypesAsync(service, metadata, assembly, save);
     }
 
-    async Task SyncPluginTypesAsync(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, Entity assembly, bool save, Action<string>? onSaveSkip)
+    async Task SyncPluginTypesAsync(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, Entity assembly, bool save)
     {
         var existingTypes = await GetPluginTypes(service, assembly.Id);
         var typeNames = existingTypes.ToDictionary(t => t.GetAttributeValue<string>("typename"), t => t);
@@ -63,7 +58,7 @@ public class PluginSyncService(IAssemblyAnalysisService analysisService) : IPlug
             }
 
             if (!plugin.IsWorkflow)
-                await SyncStepsAsync(service, typeEntity, plugin.Steps, messageCache, filterCache, save, onSaveSkip);
+                await SyncStepsAsync(service, typeEntity, plugin.Steps, messageCache, filterCache, save);
         }
 
         // Remove obsolete plugin types (non-workflow only, unless save mode preserves them)
@@ -86,7 +81,7 @@ public class PluginSyncService(IAssemblyAnalysisService analysisService) : IPlug
         {
             var localNames = metadata.Plugins.Select(p => p.FullName).ToHashSet();
             foreach (var obsolete in existingTypes.Where(t => !localNames.Contains(t.GetAttributeValue<string>("typename"))))
-                onSaveSkip?.Invoke($"Plugin type '{obsolete.GetAttributeValue<string>("typename")}' not in source — kept (--save)");
+                output.Skip($"Plugin type '{obsolete.GetAttributeValue<string>("typename")}' not in source — kept (--save)");
         }
     }
 
@@ -96,8 +91,7 @@ public class PluginSyncService(IAssemblyAnalysisService analysisService) : IPlug
         List<PluginStepMetadata> steps,
         Dictionary<string, Guid> messageCache,
         Dictionary<(Guid messageId, string entityName), Guid?> filterCache,
-        bool save,
-        Action<string>? onSaveSkip)
+        bool save)
     {
         var existingSteps = await GetSteps(service, typeEntity.Id);
         var stepNames = existingSteps.ToDictionary(s => s.GetAttributeValue<string>("name"), s => s);
@@ -160,7 +154,7 @@ public class PluginSyncService(IAssemblyAnalysisService analysisService) : IPlug
         else
         {
             foreach (var obsolete in obsoleteSteps)
-                onSaveSkip?.Invoke($"Step '{obsolete.GetAttributeValue<string>("name")}' not in source — kept (--save)");
+                output.Skip($"Step '{obsolete.GetAttributeValue<string>("name")}' not in source — kept (--save)");
         }
     }
 

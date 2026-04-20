@@ -84,15 +84,6 @@ public class AssemblyAnalysisServiceTests
     }
 
     [Fact]
-    public void Analyze_ValidatePlugin_DetectsPreValidationStage()
-    {
-        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockValidateCreatePlugin)).Steps);
-
-        Assert.Equal((int)ProcessingStage.PreValidation, step.Stage);
-        Assert.Equal("Create", step.Message);
-    }
-
-    [Fact]
     public void Analyze_ValidationSuffixPlugin_DetectsPreValidationStage()
     {
         var step = Assert.Single(GetPlugin(Analyze(), nameof(MockValidationCreatePlugin)).Steps);
@@ -111,18 +102,106 @@ public class AssemblyAnalysisServiceTests
     [Fact]
     public void Analyze_PluginWithImages_DetectsPreAndPostImages()
     {
-        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockPostDeletePlugin)).Steps);
+        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockBothImagesPostUpdatePlugin)).Steps);
 
         Assert.Equal(2, step.Images.Count);
 
         var pre = step.Images.Single(i => i.ImageType == (int)ImageType.PreImage);
         Assert.Equal("preimage", pre.Alias);
         Assert.Equal("Pre Image", pre.Name);
-        Assert.Null(pre.Attributes);
+        Assert.Equal("name", pre.Attributes);
 
         var post = step.Images.Single(i => i.ImageType == (int)ImageType.PostImage);
         Assert.Equal("postimage", post.Alias);
         Assert.Equal("name,telephone1", post.Attributes);
+    }
+
+    [Fact]
+    public void Analyze_PluginWithImageAndNoFilter_AddsPerformanceWarning()
+    {
+        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockPostDeletePlugin)).Steps);
+
+        Assert.Single(step.Warnings);
+        Assert.Contains("PreImage", step.Warnings[0]);
+        Assert.Contains("no attribute filter", step.Warnings[0]);
+        Assert.Contains("https://learn.microsoft.com", step.Warnings[0]);
+    }
+
+    [Fact]
+    public void ValidateExecutionMode_AsyncOnPreOperation_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            AssemblyAnalysisService.ValidateExecutionMode("MockPreUpdateAsyncPlugin",
+                (int)ProcessingStage.PreOperation, (int)ProcessingMode.Asynchronous));
+        Assert.Contains("Asynchronous", ex.Message);
+        Assert.Contains("https://learn.microsoft.com", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateExecutionMode_AsyncOnPreValidation_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            AssemblyAnalysisService.ValidateExecutionMode("MockValidationUpdateAsyncPlugin",
+                (int)ProcessingStage.PreValidation, (int)ProcessingMode.Asynchronous));
+        Assert.Contains("Asynchronous", ex.Message);
+        Assert.Contains("https://learn.microsoft.com", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateExecutionMode_AsyncOnPostOperation_DoesNotThrow()
+    {
+        AssemblyAnalysisService.ValidateExecutionMode("MockPostUpdateAsyncPlugin",
+            (int)ProcessingStage.PostOperation, (int)ProcessingMode.Asynchronous);
+    }
+
+    [Fact]
+    public void ValidateImages_PreImageOnCreate_Throws()
+    {
+        var images = new List<PluginImageMetadata> { new("Pre Image", "preimage", (int)ImageType.PreImage, "name") };
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            AssemblyAnalysisService.ValidateImages("MockPlugin", "Create", (int)ProcessingStage.PostOperation, images));
+        Assert.Contains("[PreImage]", ex.Message);
+        Assert.Contains("https://learn.microsoft.com", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateImages_PostImageOnDelete_Throws()
+    {
+        var images = new List<PluginImageMetadata> { new("Post Image", "postimage", (int)ImageType.PostImage, "name") };
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            AssemblyAnalysisService.ValidateImages("MockPlugin", "Delete", (int)ProcessingStage.PostOperation, images));
+        Assert.Contains("[PostImage]", ex.Message);
+        Assert.Contains("https://learn.microsoft.com", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateImages_PostImageOnPreOperation_Throws()
+    {
+        var images = new List<PluginImageMetadata> { new("Post Image", "postimage", (int)ImageType.PostImage, "name") };
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            AssemblyAnalysisService.ValidateImages("MockPlugin", "Update", (int)ProcessingStage.PreOperation, images));
+        Assert.Contains("[PostImage]", ex.Message);
+        Assert.Contains("https://learn.microsoft.com", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateImages_PostImageOnPreValidation_Throws()
+    {
+        var images = new List<PluginImageMetadata> { new("Post Image", "postimage", (int)ImageType.PostImage, "name") };
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            AssemblyAnalysisService.ValidateImages("MockPlugin", "Update", (int)ProcessingStage.PreValidation, images));
+        Assert.Contains("[PostImage]", ex.Message);
+        Assert.Contains("https://learn.microsoft.com", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateImages_ImageOnUnsupportedMessage_Throws()
+    {
+        var images = new List<PluginImageMetadata> { new("Pre Image", "preimage", (int)ImageType.PreImage, "name") };
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            AssemblyAnalysisService.ValidateImages("MockPlugin", "Retrieve", (int)ProcessingStage.PostOperation, images));
+        Assert.Contains("Retrieve", ex.Message);
+        Assert.Contains("https://learn.microsoft.com", ex.Message);
     }
 
     [Fact]
@@ -218,12 +297,6 @@ public class MockPostUpdateAsyncPlugin : IPlugin
 }
 
 [Entity("account")]
-public class MockValidateCreatePlugin : IPlugin
-{
-    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
-}
-
-[Entity("account")]
 public class MockValidationCreatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
@@ -237,15 +310,22 @@ public class MockPreUpdatePlugin : IPlugin
 }
 
 [Entity("account")]
-[Image(ImageType.PreImage)]
-[Image(ImageType.PostImage, "name", "telephone1")]
+[PreImage]
 public class MockPostDeletePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
 
 [Entity("account")]
-[Image("before", ImageType.PreImage)]
+[PreImage("name")]
+[PostImage("name", "telephone1")]
+public class MockBothImagesPostUpdatePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+[Entity("account")]
+[PreImage(Alias = "before")]
 public class MockPostAssignPlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();

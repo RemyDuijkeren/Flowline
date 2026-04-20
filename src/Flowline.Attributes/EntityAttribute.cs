@@ -6,7 +6,7 @@ namespace Flowline.Attributes;
 /// Specifies the Dataverse entity (table) logical name this plugin step is registered for.
 /// Required on every IPlugin class for Flowline to detect and register the step.
 /// </summary>
-[AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
+[AttributeUsage(AttributeTargets.Class)]
 public sealed class EntityAttribute(string logicalName) : Attribute
 {
     public string LogicalName { get; } = logicalName;

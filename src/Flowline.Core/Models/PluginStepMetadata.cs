@@ -9,4 +9,5 @@ public record PluginStepMetadata(
     int Order,
     string? FilteringAttributes,
     string? Configuration,
-    List<PluginImageMetadata> Images);
+    List<PluginImageMetadata> Images,
+    List<string> Warnings);

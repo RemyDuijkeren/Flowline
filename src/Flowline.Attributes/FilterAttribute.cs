@@ -7,7 +7,7 @@ namespace Flowline.Attributes;
 /// The step only fires when at least one listed attribute is included in the operation.
 /// Omit to fire on all attribute changes.
 /// </summary>
-[AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
+[AttributeUsage(AttributeTargets.Class)]
 public sealed class FilterAttribute(params string[] attributes) : Attribute
 {
     public string[] Attributes { get; } = attributes;

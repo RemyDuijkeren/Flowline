@@ -1,4 +1,6 @@
-﻿using Flowline.Commands;
+﻿using Flowline;
+using Flowline.Commands;
+using Flowline.Core;
 using Flowline.Core.Services;
 using Flowline.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,6 +22,8 @@ Console.CancelKeyPress += (_, e) =>
 // Register services
 var services = new ServiceCollection();
 services.AddLogging(b => b.AddConsole());
+services.AddSingleton<AnsiConsoleOutput>();
+services.AddSingleton<IFlowlineOutput>(sp => sp.GetRequiredService<AnsiConsoleOutput>());
 services.AddSingleton<IAssemblyAnalysisService, AssemblyAnalysisService>();
 services.AddSingleton<IAuthenticationService, AuthenticationService>();
 services.AddSingleton<IPluginSyncService, PluginSyncService>();

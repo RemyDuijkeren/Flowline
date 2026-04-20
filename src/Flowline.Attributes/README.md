@@ -31,7 +31,7 @@ helps readability in the IDE and in Plugin Registration Tool.
 
 | Class name segment | Maps to | Value |
 |---|---|---|
-| `Validate` or `Validation` | `ProcessingStage.PreValidation` | 10 |
+| `Validation` | `ProcessingStage.PreValidation` | 10 |
 | `Pre` | `ProcessingStage.PreOperation` | 20 |
 | `Post` | `ProcessingStage.PostOperation` | 40 |
 | `Create`, `Update`, `Delete`, ... | `MessageName` | — |
@@ -64,7 +64,7 @@ Optional named properties:
 
 **`Order`** — controls ordering when multiple plugins are registered on the same step. Lower numbers run first.
 
-**`ExecuteAs`** — controls `context.UserId` inside `Execute`. Use `InitiatingUser` when a Flow or workflow triggers your plugin and you need the human user's context rather than the service account that owns the automation:
+**`(Execute)As`** — controls `context.UserId` inside `Execute`. Use `InitiatingUser` when a Flow or workflow triggers your plugin and you need the human user's context rather than the service account that owns the automation:
 
 ```csharp
 [Entity("account", As = ExecuteAs.InitiatingUser)]
@@ -127,40 +127,44 @@ Use `nameof` with your early-bound generated context class for refactor-safe nam
 public class AccountPreUpdatePlugin : IPlugin { ... }
 ```
 
-### `[Image]` — optional, stackable
+### `[PreImage]`, `[PostImage]` — optional
 
-Registers a pre- or post-image snapshot on the step. Stack multiple times for both.
-
-```csharp
-[Entity("account")]
-[Image(ImageType.PreImage)]                                    // all attributes
-public class AccountPreUpdatePlugin : IPlugin { ... }
-
-[Entity("account")]
-[Image(ImageType.PreImage, "name", "telephone1")]              // specific attributes
-public class AccountPreUpdatePlugin : IPlugin { ... }
-```
-
-Use `nameof` here too:
+Registers an image snapshot on the step. Use `[PreImage]` for a pre-image and `[PostImage]` for a
+post-image. Stack both on the same class when you need both.
 
 ```csharp
 [Entity("account")]
-[Image(ImageType.PreImage, nameof(Account.name))]
+[PreImage]
+public class AccountPreUpdatePlugin : IPlugin { ... }
+
+[Entity("account")]
+[PreImage("name", "telephone1")]
 public class AccountPreUpdatePlugin : IPlugin { ... }
 ```
 
-The alias used to retrieve the image in code is derived from the `ImageType` — you don't set it explicitly:
+Use `nameof` with your early-bound generated context class for refactor-safe names:
+
+```csharp
+[Entity("account")]
+[PreImage(nameof(Account.name), nameof(Account.telephone1))]
+public class AccountPreUpdatePlugin : IPlugin { ... }
+```
+
+Retrieve the image in plugin code using the fixed aliases:
 
 ```csharp
 var preImage = context.PreEntityImages["preimage"];
 var postImage = context.PostEntityImages["postimage"];
 ```
 
-If you need a custom alias (rare — only when stacking two images of the same type), pass it as the first argument:
-
-```csharp
-[Image("beforeMerge", ImageType.PreImage, "name")]
-```
+> **Advanced:** `Alias` can be overridden as a named property. The display name shown in Plugin
+> Registration Tool is always derived from Alias. Use this when migrating a solution that was
+> registered manually with a custom alias.
+>
+> ```csharp
+> [PreImage(Alias = "legacy_pre")]
+> // retrieve with: context.PreEntityImages["legacy_pre"]
+> ```
 
 ## Examples
 
@@ -185,7 +189,7 @@ public class AccountPostCreatePlugin : IPlugin
 ```csharp
 [Entity("account")]
 [Filter("creditlimit")]
-public class AccountValidateUpdatePlugin : IPlugin
+public class AccountValidationUpdatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider)
     {
@@ -217,8 +221,8 @@ public class InvoicePostUpdateAsyncPlugin : IPlugin
 ```csharp
 [Entity("account")]
 [Filter("name", "telephone1")]
-[Image(ImageType.PreImage, "name", "telephone1")]
-[Image(ImageType.PostImage, "name", "telephone1")]
+[PreImage("name", "telephone1")]
+[PostImage("name", "telephone1")]
 public class AccountPostUpdatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider)
@@ -236,27 +240,6 @@ public class AccountPostUpdatePlugin : IPlugin
         }
     }
 }
-```
-
-### Same logic, multiple entities
-
-```csharp
-public abstract class RelatedEntityPostCreatePlugin : IPlugin
-{
-    public void Execute(IServiceProvider serviceProvider)
-    {
-        // shared logic for all entity registrations
-    }
-}
-
-[Entity("account")]
-public class RelatedEntityPostCreateForAccountPlugin : RelatedEntityPostCreatePlugin { }
-
-[Entity("contact")]
-public class RelatedEntityPostCreateForContactPlugin : RelatedEntityPostCreatePlugin { }
-
-[Entity("opportunity")]
-public class RelatedEntityPostCreateForOpportunityPlugin : RelatedEntityPostCreatePlugin { }
 ```
 
 ## Step lifecycle
@@ -302,7 +285,7 @@ This makes the attributes even more small and readable:
 ```csharp
 [Entity("account")]
 [Filter("name", "creditlimit")]
-[Image(ImageType.PreImage, "name", "creditlimit")]
+[PreImage("name", "creditlimit")]
 public class AccountPreUpdatePlugin : IPlugin { ... }
 ```
 
@@ -352,14 +335,20 @@ This is the same pattern for multiple messages (`Create` + `Update`) and for mul
 (same step firing on `account`, `contact`, and `opportunity`). One solution for all cases.
 
 ```csharp
-public abstract class AccountSavePlugin : IPlugin
+public abstract class RelatedEntityPostCreatePlugin : IPlugin
 {
-    public void Execute(IServiceProvider sp) { /* shared logic */ }
+    public void Execute(IServiceProvider serviceProvider)
+    {
+        // shared logic for all entity registrations
+    }
 }
 
 [Entity("account")]
-public class AccountPreCreatePlugin : AccountSavePlugin { }
+public class RelatedEntityPostCreateForAccountPlugin : RelatedEntityPostCreatePlugin { }
 
-[Entity("account")]
-public class AccountPreUpdatePlugin : AccountSavePlugin { }
+[Entity("contact")]
+public class RelatedEntityPostCreateForContactPlugin : RelatedEntityPostCreatePlugin { }
+
+[Entity("opportunity")]
+public class RelatedEntityPostCreateForOpportunityPlugin : RelatedEntityPostCreatePlugin { }
 ```
