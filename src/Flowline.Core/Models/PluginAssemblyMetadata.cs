@@ -5,4 +5,5 @@ public record PluginAssemblyMetadata(
     string FullName,
     byte[] Content,
     string Version,
-    List<PluginTypeMetadata> Plugins);
+    List<PluginTypeMetadata> Plugins,
+    List<CustomApiMetadata> CustomApis);

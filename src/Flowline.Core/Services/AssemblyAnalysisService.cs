@@ -17,6 +17,25 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
         "Merge", "Route", "Send", "SetState", "Update"
     ];
 
+    // Maps C# type full names to CustomApiFieldType values.
+    private static readonly Dictionary<string, int> FieldTypeMap = new()
+    {
+        ["System.Boolean"]                          = 0,
+        ["System.DateTime"]                         = 1,
+        ["System.Decimal"]                          = 2,
+        ["Microsoft.Xrm.Sdk.Entity"]                = 3,
+        ["Microsoft.Xrm.Sdk.EntityCollection"]      = 4,
+        ["Microsoft.Xrm.Sdk.EntityReference"]       = 5,
+        ["System.Single"]                           = 6,
+        ["System.Double"]                           = 6,
+        ["System.Int32"]                            = 7,
+        ["Microsoft.Xrm.Sdk.Money"]                 = 8,
+        ["Microsoft.Xrm.Sdk.OptionSetValue"]        = 9,
+        ["System.String"]                           = 10,
+        ["System.String[]"]                         = 11,
+        ["System.Guid"]                             = 12,
+    };
+
     public PluginAssemblyMetadata Analyze(string dllPath)
     {
         var runtimeDir = RuntimeEnvironment.GetRuntimeDirectory();
@@ -44,12 +63,27 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
         output.Info($"Loaded assembly {assemblyName.Name}");
 
         var plugins = new List<PluginTypeMetadata>();
+        var customApis = new List<CustomApiMetadata>();
+
         foreach (var type in assembly.GetTypes().Where(t => t is { IsClass: true, IsAbstract: false, IsPublic: true }))
         {
             var isPlugin = IsDerivedFrom(type, "Microsoft.Xrm.Sdk.IPlugin");
             var isWorkflow = IsDerivedFrom(type, "System.Activities.CodeActivity");
 
             if (!isPlugin && !isWorkflow) continue;
+
+            if (isPlugin)
+            {
+                var customApi = TryBuildCustomApi(type);
+                if (customApi != null)
+                {
+                    output.Verbose($"Found custom API {type.FullName}");
+                    customApis.Add(customApi);
+                    // Plugin type still needs to be registered — custom API references it via plugintypeid
+                    plugins.Add(new PluginTypeMetadata(type.Name, type.FullName!, IsWorkflow: false, Steps: []));
+                    continue;
+                }
+            }
 
             if (isPlugin) output.Verbose($"Found plugin {type.FullName}");
             if (isWorkflow) output.Verbose($"Found workflow {type.FullName}");
@@ -66,7 +100,6 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
                     steps.Add(step);
                 }
             }
-            // workflows don't register plugin steps
 
             plugins.Add(new PluginTypeMetadata(type.Name, type.FullName!, isWorkflow, steps));
         }
@@ -76,7 +109,186 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
             assemblyName.FullName,
             content,
             assemblyName.Version!.ToString(),
-            plugins);
+            plugins,
+            customApis);
+    }
+
+    private CustomApiMetadata? TryBuildCustomApi(Type type)
+    {
+        var customApiAttr = type.GetCustomAttributesData()
+            .FirstOrDefault(a => a.AttributeType.FullName == "Flowline.Attributes.CustomApiAttribute");
+        if (customApiAttr == null) return null;
+
+        // Detect tier and warn on mixed usage
+        var hasClassLevel = type.GetCustomAttributesData()
+            .Any(a => a.AttributeType.FullName is
+                "Flowline.Attributes.RequestParameterAttribute" or
+                "Flowline.Attributes.ResponsePropertyAttribute");
+        var hasPropertyLevel = type.GetProperties()
+            .Any(p => p.GetCustomAttributesData()
+                .Any(a => a.AttributeType.FullName is
+                    "Flowline.Attributes.RequestParameterAttribute" or
+                    "Flowline.Attributes.ResponsePropertyAttribute"));
+
+        if (hasClassLevel && hasPropertyLevel)
+        {
+            output.Info($"[yellow]Warning:[/] {type.Name} mixes class-level and property-level " +
+                        $"[RequestParameter]/[ResponseProperty] — using class-level, ignoring property-level.");
+            hasPropertyLevel = false;
+        }
+
+        // Read [CustomApi] attribute values
+        string? boundEntity = customApiAttr.ConstructorArguments.Count > 0
+            ? customApiAttr.ConstructorArguments[0].Value as string
+            : null;
+
+        string? entityCollection = null;
+        bool isFunction = false;
+        bool isPrivate = false;
+        int allowedStepType = 0;
+        string? displayName = null;
+        string? description = null;
+        string? executePrivilege = null;
+
+        foreach (var arg in customApiAttr.NamedArguments)
+        {
+            switch (arg.MemberName)
+            {
+                case "EntityCollection": entityCollection = arg.TypedValue.Value as string; break;
+                case "IsFunction":       isFunction = (bool)arg.TypedValue.Value!; break;
+                case "IsPrivate":        isPrivate = (bool)arg.TypedValue.Value!; break;
+                case "AllowedStepType":  allowedStepType = Convert.ToInt32(arg.TypedValue.Value); break;
+                case "DisplayName":      displayName = arg.TypedValue.Value as string; break;
+                case "Description":      description = arg.TypedValue.Value as string; break;
+                case "ExecutePrivilege": executePrivilege = arg.TypedValue.Value as string; break;
+            }
+        }
+
+        int bindingType;
+        string? boundEntityLogicalName;
+        if (boundEntity != null)        { bindingType = 1; boundEntityLogicalName = boundEntity; }
+        else if (entityCollection != null) { bindingType = 2; boundEntityLogicalName = entityCollection; }
+        else                            { bindingType = 0; boundEntityLogicalName = null; }
+
+        var baseName = StripCustomApiSuffix(type.Name);
+        displayName ??= SplitPascalCase(baseName);
+
+        var (requestParams, responseProps) = hasPropertyLevel
+            ? ReadPropertyLevelParameters(type, baseName)
+            : ReadClassLevelParameters(type, baseName);
+
+        return new CustomApiMetadata(
+            baseName, displayName, description,
+            bindingType, boundEntityLogicalName,
+            isFunction, isPrivate, allowedStepType, executePrivilege,
+            type.FullName!,
+            requestParams, responseProps);
+    }
+
+    private static (List<CustomApiRequestParameterMetadata>, List<CustomApiResponsePropertyMetadata>)
+        ReadClassLevelParameters(Type type, string apiBaseName)
+    {
+        var requestParams = new List<CustomApiRequestParameterMetadata>();
+        var responseProps = new List<CustomApiResponsePropertyMetadata>();
+
+        foreach (var attr in type.GetCustomAttributesData())
+        {
+            if (attr.AttributeType.FullName == "Flowline.Attributes.RequestParameterAttribute" &&
+                attr.ConstructorArguments.Count == 2)
+            {
+                var uniqueName = (string)attr.ConstructorArguments[0].Value!;
+                var fieldType = Convert.ToInt32(attr.ConstructorArguments[1].Value);
+                bool isOptional = false;
+                string? entityName = null, displayName = null, description = null;
+
+                foreach (var arg in attr.NamedArguments)
+                {
+                    switch (arg.MemberName)
+                    {
+                        case "IsOptional":   isOptional = (bool)arg.TypedValue.Value!; break;
+                        case "EntityName":   entityName = arg.TypedValue.Value as string; break;
+                        case "DisplayName":  displayName = arg.TypedValue.Value as string; break;
+                        case "Description":  description = arg.TypedValue.Value as string; break;
+                    }
+                }
+
+                displayName ??= SplitPascalCase(uniqueName);
+                requestParams.Add(new(uniqueName, displayName, description, fieldType, isOptional, entityName));
+            }
+            else if (attr.AttributeType.FullName == "Flowline.Attributes.ResponsePropertyAttribute" &&
+                     attr.ConstructorArguments.Count == 2)
+            {
+                var uniqueName = (string)attr.ConstructorArguments[0].Value!;
+                var fieldType = Convert.ToInt32(attr.ConstructorArguments[1].Value);
+                string? entityName = null, displayName = null, description = null;
+
+                foreach (var arg in attr.NamedArguments)
+                {
+                    switch (arg.MemberName)
+                    {
+                        case "EntityName":   entityName = arg.TypedValue.Value as string; break;
+                        case "DisplayName":  displayName = arg.TypedValue.Value as string; break;
+                        case "Description":  description = arg.TypedValue.Value as string; break;
+                    }
+                }
+
+                displayName ??= SplitPascalCase(uniqueName);
+                responseProps.Add(new(uniqueName, displayName, description, fieldType, entityName));
+            }
+        }
+
+        return (requestParams, responseProps);
+    }
+
+    private (List<CustomApiRequestParameterMetadata>, List<CustomApiResponsePropertyMetadata>)
+        ReadPropertyLevelParameters(Type type, string apiBaseName)
+    {
+        var requestParams = new List<CustomApiRequestParameterMetadata>();
+        var responseProps = new List<CustomApiResponsePropertyMetadata>();
+
+        foreach (var prop in type.GetProperties(BindingFlags.Instance | BindingFlags.Public))
+        {
+            var reqAttr = prop.GetCustomAttributesData()
+                .FirstOrDefault(a => a.AttributeType.FullName == "Flowline.Attributes.RequestParameterAttribute");
+            var respAttr = prop.GetCustomAttributesData()
+                .FirstOrDefault(a => a.AttributeType.FullName == "Flowline.Attributes.ResponsePropertyAttribute");
+
+            if (reqAttr == null && respAttr == null) continue;
+
+            var attr = reqAttr ?? respAttr!;
+            var uniqueName = ToCamelCase(prop.Name);
+            var (propType, isNullable) = UnwrapNullable(prop.PropertyType);
+            string? entityName = null, displayName = null, description = null;
+
+            foreach (var arg in attr.NamedArguments)
+            {
+                switch (arg.MemberName)
+                {
+                    case "EntityName":  entityName = arg.TypedValue.Value as string; break;
+                    case "DisplayName": displayName = arg.TypedValue.Value as string; break;
+                    case "Description": description = arg.TypedValue.Value as string; break;
+                }
+            }
+
+            displayName ??= SplitPascalCase(prop.Name);
+
+            if (!FieldTypeMap.TryGetValue(propType.FullName ?? "", out var fieldType))
+            {
+                output.Info($"[yellow]Warning:[/] {type.Name}.{prop.Name} has unsupported type '{propType.FullName}' — skipping parameter.");
+                continue;
+            }
+
+            // For reference types, check NullableAttribute for IsOptional
+            if (!isNullable && !propType.IsValueType)
+                isNullable = IsNullableReferenceType(prop);
+
+            if (reqAttr != null)
+                requestParams.Add(new(uniqueName, displayName, description, fieldType, isNullable, entityName));
+            else
+                responseProps.Add(new(uniqueName, displayName, description, fieldType, entityName));
+        }
+
+        return (requestParams, responseProps);
     }
 
     private static PluginStepMetadata? TryBuildStep(Type type)
@@ -280,6 +492,58 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
             if (current.GetInterfaces().Any(i => i.FullName == targetTypeName)) return true;
             current = current.BaseType;
         }
+        return false;
+    }
+
+    // Strips Api, CustomApi, or Plugin suffix to get the base name for uniqueName derivation.
+    internal static string StripCustomApiSuffix(string className)
+    {
+        if (className.EndsWith("CustomApi", StringComparison.Ordinal)) return className[..^9];
+        if (className.EndsWith("Api", StringComparison.Ordinal))       return className[..^3];
+        if (className.EndsWith("Plugin", StringComparison.Ordinal))    return className[..^6];
+        return className;
+    }
+
+    // Splits PascalCase into "Title Case" words, e.g. "GetAccountRisk" → "Get Account Risk".
+    internal static string SplitPascalCase(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return name;
+        var result = new System.Text.StringBuilder();
+        for (int i = 0; i < name.Length; i++)
+        {
+            if (i > 0 && char.IsUpper(name[i]) && (char.IsLower(name[i - 1]) || (i + 1 < name.Length && char.IsLower(name[i + 1]))))
+                result.Append(' ');
+            result.Append(name[i]);
+        }
+        return result.ToString();
+    }
+
+    private static string ToCamelCase(string name) =>
+        name.Length == 0 ? name : char.ToLowerInvariant(name[0]) + name[1..];
+
+    // Unwraps Nullable<T> and returns (innerType, isNullable).
+    private static (Type type, bool isNullable) UnwrapNullable(Type type)
+    {
+        if (type.IsGenericType)
+        {
+            var def = type.GetGenericTypeDefinition();
+            if (def.FullName == "System.Nullable`1")
+                return (type.GetGenericArguments()[0], true);
+        }
+        return (type, false);
+    }
+
+    // Checks the compiler-emitted NullableAttribute to determine if a reference-type property is nullable.
+    private static bool IsNullableReferenceType(PropertyInfo prop)
+    {
+        var nullableAttr = prop.GetCustomAttributesData()
+            .FirstOrDefault(a => a.AttributeType.FullName == "System.Runtime.CompilerServices.NullableAttribute");
+        if (nullableAttr == null || nullableAttr.ConstructorArguments.Count == 0) return false;
+
+        var val = nullableAttr.ConstructorArguments[0].Value;
+        if (val is byte b) return b == 2;
+        if (val is IEnumerable<CustomAttributeTypedArgument> bytes)
+            return bytes.FirstOrDefault().Value is byte b2 && b2 == 2;
         return false;
     }
 }

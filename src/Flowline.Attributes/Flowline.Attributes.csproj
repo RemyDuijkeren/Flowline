@@ -34,6 +34,8 @@
 
   <ItemGroup>
     <PackageReference Include="MinVer" PrivateAssets="All" />
+    <!-- Required to compile CustomApiBase; consumers supply their own Dataverse SDK reference -->
+    <PackageReference Include="Microsoft.CrmSdk.CoreAssemblies" PrivateAssets="All" />
   </ItemGroup>
 
 </Project>

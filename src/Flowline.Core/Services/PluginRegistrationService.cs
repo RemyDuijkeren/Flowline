@@ -8,7 +8,7 @@ namespace Flowline.Core.Services;
 
 public class PluginRegistrationService(IFlowlineOutput output)
 {
-    const string FlowlineMarker = "[flowline]";
+    internal const string FlowlineMarker = "[flowline]";
 
     static readonly Dictionary<string, string> MessagePropertyNames = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -25,10 +25,20 @@ public class PluginRegistrationService(IFlowlineOutput output)
         ["Update"]                  = "Target",
     };
 
-    public async Task SyncAsync(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName, bool save = false)
+    public async Task SyncAsync(
+        IOrganizationServiceAsync2 service,
+        PluginAssemblyMetadata metadata,
+        string solutionName,
+        bool save = false)
     {
         var assembly = await GetOrRegisterAssembly(service, metadata, solutionName);
         await RegisterPluginTypesAsync(service, metadata, assembly, save);
+
+        if (metadata.CustomApis.Count > 0)
+        {
+            var prefix = await GetPublisherPrefixAsync(service, solutionName);
+            await RegisterCustomApisAsync(service, metadata.CustomApis, assembly.Id, prefix, solutionName, save);
+        }
     }
 
     async Task RegisterPluginTypesAsync(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, Entity assembly, bool save)
@@ -216,15 +226,297 @@ public class PluginRegistrationService(IFlowlineOutput output)
         }
     }
 
-    async Task<List<Entity>> GetImages(IOrganizationServiceAsync2 service, Guid stepId)
+    async Task RegisterCustomApisAsync(
+        IOrganizationServiceAsync2 service,
+        List<CustomApiMetadata> customApis,
+        Guid assemblyId,
+        string prefix,
+        string solutionName,
+        bool save)
     {
-        var query = new QueryExpression("sdkmessageprocessingstepimage")
+        var pluginTypeMap = (await GetPluginTypes(service, assemblyId))
+            .ToDictionary(t => t.GetAttributeValue<string>("typename"), t => t);
+
+        var existing = await GetCustomApis(service, assemblyId);
+        var existingByUniqueName = existing.ToDictionary(
+            e => e.GetAttributeValue<string>("uniquename"), e => e);
+
+        foreach (var api in customApis)
         {
-            ColumnSet = new ColumnSet("name", "entityalias", "imagetype", "attributes"),
-            Criteria = new FilterExpression()
+            var uniqueName = $"{prefix}_{api.UniqueName}";
+
+            if (!pluginTypeMap.TryGetValue(api.PluginTypeFullName, out var pluginType))
+            {
+                output.Info($"[yellow]Warning:[/] Plugin type '{api.PluginTypeFullName}' not found — skipping Custom API '{uniqueName}'.");
+                continue;
+            }
+
+            if (!existingByUniqueName.TryGetValue(uniqueName, out var existingApi))
+                await CreateCustomApiAsync(service, api, uniqueName, pluginType, solutionName);
+            else
+                await SyncExistingCustomApiAsync(service, api, uniqueName, existingApi, pluginType, save);
+        }
+
+        var localUniqueNames = customApis.Select(a => $"{prefix}_{a.UniqueName}").ToHashSet();
+        var obsolete = existing.Where(e => !localUniqueNames.Contains(e.GetAttributeValue<string>("uniquename"))).ToList();
+        if (!save)
+        {
+            foreach (var e in obsolete)
+                await DeleteCustomApiAsync(service, e.Id);
+        }
+        else
+        {
+            foreach (var e in obsolete)
+                output.Skip($"Custom API '{e.GetAttributeValue<string>("uniquename")}' not in source — kept (--save)");
+        }
+    }
+
+    async Task CreateCustomApiAsync(
+        IOrganizationServiceAsync2 service,
+        CustomApiMetadata api,
+        string uniqueName,
+        Entity pluginType,
+        string solutionName)
+    {
+        var entity = new Entity("customapi")
+        {
+            ["uniquename"]                      = uniqueName,
+            ["name"]                            = uniqueName,
+            ["displayname"]                     = api.DisplayName,
+            ["description"]                     = api.Description,
+            ["bindingtype"]                     = new OptionSetValue(api.BindingType),
+            ["boundentitylogicalname"]          = api.BoundEntityLogicalName,
+            ["isfunction"]                      = api.IsFunction,
+            ["isprivate"]                       = api.IsPrivate,
+            ["allowedcustomprocessingsteptype"] = new OptionSetValue(api.AllowedStepType),
+            ["executeprivilegename"]            = api.ExecutePrivilege,
+            ["plugintypeid"]                    = pluginType.ToEntityReference(),
         };
-        query.Criteria.AddCondition("sdkmessageprocessingstepid", ConditionOperator.Equal, stepId);
-        return (await service.RetrieveMultipleAsync(query)).Entities.ToList();
+
+        Guid apiId;
+        if (!string.IsNullOrEmpty(solutionName))
+        {
+            var req = new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName };
+            apiId = ((CreateResponse)await service.ExecuteAsync(req)).id;
+        }
+        else
+        {
+            apiId = await service.CreateAsync(entity);
+        }
+
+        foreach (var param in api.RequestParameters)
+            await CreateRequestParameterAsync(service, param, apiId, uniqueName, solutionName);
+
+        foreach (var prop in api.ResponseProperties)
+            await CreateResponsePropertyAsync(service, prop, apiId, uniqueName, solutionName);
+    }
+
+    async Task SyncExistingCustomApiAsync(
+        IOrganizationServiceAsync2 service,
+        CustomApiMetadata api,
+        string uniqueName,
+        Entity existingApi,
+        Entity pluginType,
+        bool save)
+    {
+        var immutableChanged =
+            (existingApi.GetAttributeValue<OptionSetValue>("bindingtype")?.Value ?? 0) != api.BindingType ||
+            existingApi.GetAttributeValue<string>("boundentitylogicalname") != api.BoundEntityLogicalName ||
+            existingApi.GetAttributeValue<bool>("isfunction") != api.IsFunction ||
+            (existingApi.GetAttributeValue<OptionSetValue>("allowedcustomprocessingsteptype")?.Value ?? 0) != api.AllowedStepType;
+
+        if (immutableChanged)
+        {
+            output.Info($"[yellow]Warning:[/] '{uniqueName}' has immutable field changes — deleting and recreating.");
+            await DeleteCustomApiAsync(service, existingApi.Id);
+            await CreateCustomApiAsync(service, api, uniqueName, pluginType, solutionName: "");
+            return;
+        }
+
+        existingApi["displayname"]          = api.DisplayName;
+        existingApi["description"]          = api.Description;
+        existingApi["isprivate"]            = api.IsPrivate;
+        existingApi["executeprivilegename"] = api.ExecutePrivilege;
+        await service.UpdateAsync(existingApi);
+
+        var existingParams = await GetRequestParameters(service, existingApi.Id);
+        await SyncRequestParametersAsync(service, api.RequestParameters, existingParams, existingApi.Id, uniqueName, save);
+
+        var existingProps = await GetResponseProperties(service, existingApi.Id);
+        await SyncResponsePropertiesAsync(service, api.ResponseProperties, existingProps, existingApi.Id, uniqueName, save);
+    }
+
+    async Task SyncRequestParametersAsync(
+        IOrganizationServiceAsync2 service,
+        List<CustomApiRequestParameterMetadata> parameters,
+        List<Entity> existing,
+        Guid apiId,
+        string apiUniqueName,
+        bool save)
+    {
+        var existingByName = existing.ToDictionary(e => e.GetAttributeValue<string>("uniquename"), e => e);
+
+        foreach (var param in parameters)
+        {
+            if (!existingByName.TryGetValue(param.UniqueName, out var existingParam))
+            {
+                await CreateRequestParameterAsync(service, param, apiId, apiUniqueName, solutionName: "");
+            }
+            else
+            {
+                var immutableChanged =
+                    (existingParam.GetAttributeValue<OptionSetValue>("type")?.Value ?? 0) != param.Type ||
+                    existingParam.GetAttributeValue<bool>("isoptional") != param.IsOptional ||
+                    existingParam.GetAttributeValue<string>("logicalentityname") != param.EntityName;
+
+                if (immutableChanged)
+                {
+                    output.Info($"[yellow]Warning:[/] Request parameter '{param.UniqueName}' on '{apiUniqueName}' has immutable field changes — deleting and recreating.");
+                    await service.DeleteAsync("customapirequestparameter", existingParam.Id);
+                    await CreateRequestParameterAsync(service, param, apiId, apiUniqueName, solutionName: "");
+                }
+                else
+                {
+                    existingParam["displayname"] = param.DisplayName;
+                    existingParam["description"] = param.Description;
+                    await service.UpdateAsync(existingParam);
+                }
+            }
+        }
+
+        var localNames = parameters.Select(p => p.UniqueName).ToHashSet();
+        var obsolete = existing.Where(e => !localNames.Contains(e.GetAttributeValue<string>("uniquename"))).ToList();
+        if (!save)
+        {
+            foreach (var e in obsolete)
+                await service.DeleteAsync("customapirequestparameter", e.Id);
+        }
+        else
+        {
+            foreach (var e in obsolete)
+                output.Skip($"Request parameter '{e.GetAttributeValue<string>("uniquename")}' not in source — kept (--save)");
+        }
+    }
+
+    async Task SyncResponsePropertiesAsync(
+        IOrganizationServiceAsync2 service,
+        List<CustomApiResponsePropertyMetadata> properties,
+        List<Entity> existing,
+        Guid apiId,
+        string apiUniqueName,
+        bool save)
+    {
+        var existingByName = existing.ToDictionary(e => e.GetAttributeValue<string>("uniquename"), e => e);
+
+        foreach (var prop in properties)
+        {
+            if (!existingByName.TryGetValue(prop.UniqueName, out var existingProp))
+            {
+                await CreateResponsePropertyAsync(service, prop, apiId, apiUniqueName, solutionName: "");
+            }
+            else
+            {
+                var immutableChanged =
+                    (existingProp.GetAttributeValue<OptionSetValue>("type")?.Value ?? 0) != prop.Type ||
+                    existingProp.GetAttributeValue<string>("logicalentityname") != prop.EntityName;
+
+                if (immutableChanged)
+                {
+                    output.Info($"[yellow]Warning:[/] Response property '{prop.UniqueName}' on '{apiUniqueName}' has immutable field changes — deleting and recreating.");
+                    await service.DeleteAsync("customapiresponseproperty", existingProp.Id);
+                    await CreateResponsePropertyAsync(service, prop, apiId, apiUniqueName, solutionName: "");
+                }
+                else
+                {
+                    existingProp["displayname"] = prop.DisplayName;
+                    existingProp["description"] = prop.Description;
+                    await service.UpdateAsync(existingProp);
+                }
+            }
+        }
+
+        var localNames = properties.Select(p => p.UniqueName).ToHashSet();
+        var obsolete = existing.Where(e => !localNames.Contains(e.GetAttributeValue<string>("uniquename"))).ToList();
+        if (!save)
+        {
+            foreach (var e in obsolete)
+                await service.DeleteAsync("customapiresponseproperty", e.Id);
+        }
+        else
+        {
+            foreach (var e in obsolete)
+                output.Skip($"Response property '{e.GetAttributeValue<string>("uniquename")}' not in source — kept (--save)");
+        }
+    }
+
+    async Task CreateRequestParameterAsync(
+        IOrganizationServiceAsync2 service,
+        CustomApiRequestParameterMetadata param,
+        Guid apiId,
+        string apiUniqueName,
+        string solutionName)
+    {
+        var entity = new Entity("customapirequestparameter")
+        {
+            ["uniquename"]        = param.UniqueName,
+            ["name"]              = $"{apiUniqueName}.{param.UniqueName}",
+            ["displayname"]       = param.DisplayName,
+            ["description"]       = param.Description,
+            ["type"]              = new OptionSetValue(param.Type),
+            ["isoptional"]        = param.IsOptional,
+            ["logicalentityname"] = param.EntityName,
+            ["customapiid"]       = new EntityReference("customapi", apiId),
+        };
+
+        if (!string.IsNullOrEmpty(solutionName))
+        {
+            var req = new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName };
+            await service.ExecuteAsync(req);
+        }
+        else
+        {
+            await service.CreateAsync(entity);
+        }
+    }
+
+    async Task CreateResponsePropertyAsync(
+        IOrganizationServiceAsync2 service,
+        CustomApiResponsePropertyMetadata prop,
+        Guid apiId,
+        string apiUniqueName,
+        string solutionName)
+    {
+        var entity = new Entity("customapiresponseproperty")
+        {
+            ["uniquename"]        = prop.UniqueName,
+            ["name"]              = $"{apiUniqueName}.{prop.UniqueName}",
+            ["displayname"]       = prop.DisplayName,
+            ["description"]       = prop.Description,
+            ["type"]              = new OptionSetValue(prop.Type),
+            ["logicalentityname"] = prop.EntityName,
+            ["customapiid"]       = new EntityReference("customapi", apiId),
+        };
+
+        if (!string.IsNullOrEmpty(solutionName))
+        {
+            var req = new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName };
+            await service.ExecuteAsync(req);
+        }
+        else
+        {
+            await service.CreateAsync(entity);
+        }
+    }
+
+    async Task DeleteCustomApiAsync(IOrganizationServiceAsync2 service, Guid apiId)
+    {
+        foreach (var p in await GetResponseProperties(service, apiId))
+            await service.DeleteAsync("customapiresponseproperty", p.Id);
+
+        foreach (var p in await GetRequestParameters(service, apiId))
+            await service.DeleteAsync("customapirequestparameter", p.Id);
+
+        await service.DeleteAsync("customapi", apiId);
     }
 
     async Task<Entity> GetOrRegisterAssembly(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName)
@@ -249,13 +541,6 @@ public class PluginRegistrationService(IFlowlineOutput output)
                 ["isolationmode"] = new OptionSetValue(2) // 2 = Sandbox (cloud only)
             };
 
-            // entity["sourcetype"] = new OptionSetValue(0); // 0=Database (default), 4=File Store (NuGet package)
-            // Nuget is stored in the pluginpackage table
-            // Upload the .nupkg to the pluginpackage.package file column pluginpackage.package is a File column,
-            // not a memo/base64 blob column. Microsoft documents it as a file column with max size 10 GB, and
-            // Dataverse file columns must be uploaded using the file upload APIs (InitializeFileBlocksUpload / UploadBlock / CommitFileBlocksUpload) rather
-            // than setting them directly in a normal create/update payload.
-
             var createReq = new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName };
             var response = (CreateResponse)await service.ExecuteAsync(createReq);
             entity.Id = response.id;
@@ -268,6 +553,27 @@ public class PluginRegistrationService(IFlowlineOutput output)
             await service.UpdateAsync(existing);
             return existing;
         }
+    }
+
+    async Task<string> GetPublisherPrefixAsync(IOrganizationServiceAsync2 service, string solutionName)
+    {
+        var query = new QueryExpression("solution")
+        {
+            ColumnSet = new ColumnSet("publisherid"),
+            Criteria = new FilterExpression()
+        };
+        query.Criteria.AddCondition("uniquename", ConditionOperator.Equal, solutionName);
+
+        var pubLink = query.AddLink("publisher", "publisherid", "publisherid");
+        pubLink.Columns = new ColumnSet("customizationprefix");
+        pubLink.EntityAlias = "pub";
+
+        var result = await service.RetrieveMultipleAsync(query);
+        var solution = result.Entities.FirstOrDefault()
+            ?? throw new InvalidOperationException($"Solution '{solutionName}' not found in Dataverse.");
+
+        return solution.GetAttributeValue<AliasedValue>("pub.customizationprefix")?.Value as string
+            ?? throw new InvalidOperationException($"Could not read publisher prefix for solution '{solutionName}'.");
     }
 
     async Task<List<Entity>> GetPluginTypes(IOrganizationServiceAsync2 service, Guid assemblyId)
@@ -292,6 +598,54 @@ public class PluginRegistrationService(IFlowlineOutput output)
         return (await service.RetrieveMultipleAsync(query)).Entities.ToList();
     }
 
+    async Task<List<Entity>> GetImages(IOrganizationServiceAsync2 service, Guid stepId)
+    {
+        var query = new QueryExpression("sdkmessageprocessingstepimage")
+        {
+            ColumnSet = new ColumnSet("name", "entityalias", "imagetype", "attributes"),
+            Criteria = new FilterExpression()
+        };
+        query.Criteria.AddCondition("sdkmessageprocessingstepid", ConditionOperator.Equal, stepId);
+        return (await service.RetrieveMultipleAsync(query)).Entities.ToList();
+    }
+
+    async Task<List<Entity>> GetCustomApis(IOrganizationServiceAsync2 service, Guid assemblyId)
+    {
+        var query = new QueryExpression("customapi")
+        {
+            ColumnSet = new ColumnSet(
+                "uniquename", "name", "displayname", "description",
+                "bindingtype", "boundentitylogicalname", "isfunction",
+                "isprivate", "allowedcustomprocessingsteptype", "executeprivilegename",
+                "plugintypeid")
+        };
+        var typeLink = query.AddLink("plugintype", "plugintypeid", "plugintypeid");
+        typeLink.LinkCriteria.AddCondition("pluginassemblyid", ConditionOperator.Equal, assemblyId);
+        return (await service.RetrieveMultipleAsync(query)).Entities.ToList();
+    }
+
+    async Task<List<Entity>> GetRequestParameters(IOrganizationServiceAsync2 service, Guid apiId)
+    {
+        var query = new QueryExpression("customapirequestparameter")
+        {
+            ColumnSet = new ColumnSet("uniquename", "name", "displayname", "description", "type", "isoptional", "logicalentityname"),
+            Criteria = new FilterExpression()
+        };
+        query.Criteria.AddCondition("customapiid", ConditionOperator.Equal, apiId);
+        return (await service.RetrieveMultipleAsync(query)).Entities.ToList();
+    }
+
+    async Task<List<Entity>> GetResponseProperties(IOrganizationServiceAsync2 service, Guid apiId)
+    {
+        var query = new QueryExpression("customapiresponseproperty")
+        {
+            ColumnSet = new ColumnSet("uniquename", "name", "displayname", "description", "type", "logicalentityname"),
+            Criteria = new FilterExpression()
+        };
+        query.Criteria.AddCondition("customapiid", ConditionOperator.Equal, apiId);
+        return (await service.RetrieveMultipleAsync(query)).Entities.ToList();
+    }
+
     async Task<Guid> LookupSdkMessageIdAsync(IOrganizationServiceAsync2 service, string messageName)
     {
         var query = new QueryExpression("sdkmessage")
@@ -302,10 +656,8 @@ public class PluginRegistrationService(IFlowlineOutput output)
         query.Criteria.AddCondition("name", ConditionOperator.Equal, messageName);
 
         var result = await service.RetrieveMultipleAsync(query);
-        var message = result.Entities.FirstOrDefault()
+        return result.Entities.FirstOrDefault()?.Id
             ?? throw new InvalidOperationException($"Dataverse message '{messageName}' not found in sdkmessage.");
-
-        return message.Id;
     }
 
     async Task<Guid?> LookupSdkMessageFilterIdAsync(IOrganizationServiceAsync2 service, Guid messageId, string entityName)
