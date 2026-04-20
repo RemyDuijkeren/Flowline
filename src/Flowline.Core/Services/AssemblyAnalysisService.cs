@@ -4,12 +4,7 @@ using Flowline.Core.Models;
 
 namespace Flowline.Core.Services;
 
-public interface IAssemblyAnalysisService
-{
-    PluginAssemblyMetadata Analyze(string dllPath, IsolationMode isolationMode);
-}
-
-public class AssemblyAnalysisService : IAssemblyAnalysisService
+public class AssemblyAnalysisService(IFlowlineOutput output)
 {
     private static readonly string[] MessageNames =
         Enum.GetNames<MessageName>().OrderByDescending(n => n.Length).ToArray();
@@ -22,7 +17,7 @@ public class AssemblyAnalysisService : IAssemblyAnalysisService
         "Merge", "Route", "Send", "SetState", "Update"
     ];
 
-    public PluginAssemblyMetadata Analyze(string dllPath, IsolationMode isolationMode)
+    public PluginAssemblyMetadata Analyze(string dllPath)
     {
         var runtimeDir = RuntimeEnvironment.GetRuntimeDirectory();
         var paths = Directory.GetFiles(runtimeDir, "*.dll").ToList();
@@ -46,8 +41,9 @@ public class AssemblyAnalysisService : IAssemblyAnalysisService
         var assemblyName = assembly.GetName();
         var content = File.ReadAllBytes(dllPath);
 
-        var plugins = new List<PluginTypeMetadata>();
+        output.Info($"Loaded assembly {assemblyName.Name}");
 
+        var plugins = new List<PluginTypeMetadata>();
         foreach (var type in assembly.GetTypes().Where(t => t is { IsClass: true, IsAbstract: false, IsPublic: true }))
         {
             var isPlugin = IsDerivedFrom(type, "Microsoft.Xrm.Sdk.IPlugin");
@@ -55,13 +51,20 @@ public class AssemblyAnalysisService : IAssemblyAnalysisService
 
             if (!isPlugin && !isWorkflow) continue;
 
-            var steps = new List<PluginStepMetadata>();
+            if (isPlugin) output.Verbose($"Found plugin {type.FullName}");
+            if (isWorkflow) output.Verbose($"Found workflow {type.FullName}");
 
+            var steps = new List<PluginStepMetadata>();
             if (isPlugin)
             {
                 var step = TryBuildStep(type);
                 if (step != null)
+                {
+                    output.Verbose($"with plugin step {step.Name}");
+                    foreach (var warning in step.Warnings)
+                        output.Info($"[yellow]Warning:[/] {warning}");
                     steps.Add(step);
+                }
             }
             // workflows don't register plugin steps
 
@@ -73,7 +76,6 @@ public class AssemblyAnalysisService : IAssemblyAnalysisService
             assemblyName.FullName,
             content,
             assemblyName.Version!.ToString(),
-            isolationMode,
             plugins);
     }
 

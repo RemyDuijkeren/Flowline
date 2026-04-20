@@ -6,17 +6,7 @@ using Flowline.Core.Models;
 
 namespace Flowline.Core.Services;
 
-public interface IWebResourceSyncService
-{
-    Task SyncSolutionAsync(
-        IOrganizationServiceAsync2 service,
-        string webresourceRoot,
-        string solutionName,
-        string? patchSolutionName = null,
-        bool publishAfterSync = true);
-}
-
-public class WebResourceSyncService : IWebResourceSyncService
+public class WebResourceSyncService(IFlowlineOutput output)
 {
     public async Task SyncSolutionAsync(
         IOrganizationServiceAsync2 service,
@@ -92,7 +82,7 @@ public class WebResourceSyncService : IWebResourceSyncService
         // 5. Execute Actions
         if (actions.Count == 0)
         {
-            // Nothing to do
+            output.Skip("Web resources already up to date — skipping");
             return;
         }
 
@@ -105,10 +95,12 @@ public class WebResourceSyncService : IWebResourceSyncService
                     var createReq = new CreateRequest { Target = entity };
                     createReq["SolutionUniqueName"] = patchSolutionName ?? solutionName;
                     await service.ExecuteAsync(createReq);
+                    output.Info($"[green]Created [bold]{name}[/][/]");
                     break;
 
                 case WebResourceAction.Update:
                     await service.UpdateAsync(entity);
+                    output.Info($"[green]Updated [bold]{name}[/][/]");
                     break;
 
                 case WebResourceAction.UpdateAndAddToPatchSolution:
@@ -122,10 +114,12 @@ public class WebResourceSyncService : IWebResourceSyncService
                         addReq["AddRequiredComponents"] = false;
                         await service.ExecuteAsync(addReq);
                     }
+                    output.Info($"[green]Updated [bold]{name}[/][/]");
                     break;
 
                 case WebResourceAction.Delete:
                     await service.DeleteAsync(entity.LogicalName, entity.Id);
+                    output.Info($"[green]Deleted [bold]{name}[/][/]");
                     break;
             }
         }

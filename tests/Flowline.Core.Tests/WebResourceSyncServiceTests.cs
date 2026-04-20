@@ -5,6 +5,7 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 using Moq;
 using Flowline.Core.Services;
 using Flowline.Core.Models;
+using Flowline.Core;
 
 namespace Flowline.Core.Tests;
 
@@ -16,7 +17,7 @@ public class WebResourceSyncServiceTests
     public WebResourceSyncServiceTests()
     {
         _serviceMock = new Mock<IOrganizationServiceAsync2>();
-        _service = new WebResourceSyncService();
+        _service = new WebResourceSyncService(new NullFlowlineOutput());
     }
 
     [Fact]

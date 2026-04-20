@@ -9,17 +9,17 @@ using Flowline.Core;
 
 namespace Flowline.Core.Tests;
 
-public class PluginSyncServiceTests
+public class PluginRegistrationServiceTests
 {
     private readonly Mock<IOrganizationServiceAsync2> _serviceMock;
     private readonly Mock<IFlowlineOutput> _outputMock;
-    private readonly PluginSyncService _service;
+    private readonly PluginRegistrationService _service;
 
-    public PluginSyncServiceTests()
+    public PluginRegistrationServiceTests()
     {
         _serviceMock = new Mock<IOrganizationServiceAsync2>();
         _outputMock = new Mock<IFlowlineOutput>();
-        _service = new PluginSyncService(_outputMock.Object);
+        _service = new PluginRegistrationService(_outputMock.Object);
     }
 
     // -- Helpers --
@@ -63,7 +63,7 @@ public class PluginSyncServiceTests
     }
 
     private PluginAssemblyMetadata Metadata(string name = "MyPlugin", string version = "1.0.0.0", params PluginTypeMetadata[] plugins) =>
-        new(name, $"{name}, Version={version}", new byte[] { 1, 2, 3 }, version, IsolationMode.Sandbox, plugins.ToList());
+        new(name, $"{name}, Version={version}", new byte[] { 1, 2, 3 }, version, plugins.ToList());
 
     // -- Assembly create/update --
 

@@ -3,6 +3,7 @@ using Microsoft.Xrm.Sdk;
 using Flowline.Attributes;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
+using Flowline.Core;
 
 namespace Flowline.Core.Tests;
 
@@ -11,7 +12,7 @@ public class AssemblyAnalysisServiceTests
     private static string DllPath => typeof(AssemblyAnalysisServiceTests).Assembly.Location;
 
     private static PluginAssemblyMetadata Analyze() =>
-        new AssemblyAnalysisService().Analyze(DllPath, IsolationMode.Sandbox);
+        new AssemblyAnalysisService(new NullFlowlineOutput()).Analyze(DllPath);
 
     private static PluginTypeMetadata GetPlugin(PluginAssemblyMetadata meta, string name) =>
         meta.Plugins.Single(p => p.Name == name);
@@ -22,7 +23,6 @@ public class AssemblyAnalysisServiceTests
         var metadata = Analyze();
 
         Assert.Equal("Flowline.Core.Tests", metadata.Name);
-        Assert.Equal(IsolationMode.Sandbox, metadata.IsolationMode);
         Assert.NotNull(metadata.Plugins);
     }
 

@@ -6,16 +6,7 @@ using Flowline.Core.Models;
 
 namespace Flowline.Core.Services;
 
-public interface IPluginSyncService
-{
-    Task SyncAsync(
-        IOrganizationServiceAsync2 service,
-        PluginAssemblyMetadata metadata,
-        string solutionName,
-        bool save = false);
-}
-
-public class PluginSyncService(IFlowlineOutput output) : IPluginSyncService
+public class PluginRegistrationService(IFlowlineOutput output)
 {
     internal const string FlowlineMarker = "[flowline]";
 
@@ -25,11 +16,11 @@ public class PluginSyncService(IFlowlineOutput output) : IPluginSyncService
         string solutionName,
         bool save = false)
     {
-        var assembly = await GetOrCreateAssembly(service, metadata, solutionName);
-        await SyncPluginTypesAsync(service, metadata, assembly, save);
+        var assembly = await GetOrRegisterAssembly(service, metadata, solutionName);
+        await RegisterPluginTypesAsync(service, metadata, assembly, save);
     }
 
-    async Task SyncPluginTypesAsync(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, Entity assembly, bool save)
+    async Task RegisterPluginTypesAsync(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, Entity assembly, bool save)
     {
         var existingTypes = await GetPluginTypes(service, assembly.Id);
         var typeNames = existingTypes.ToDictionary(t => t.GetAttributeValue<string>("typename"), t => t);
@@ -58,7 +49,7 @@ public class PluginSyncService(IFlowlineOutput output) : IPluginSyncService
             }
 
             if (!plugin.IsWorkflow)
-                await SyncStepsAsync(service, typeEntity, plugin.Steps, messageCache, filterCache, save);
+                await RegisterPluginStepsAsync(service, typeEntity, plugin.Steps, messageCache, filterCache, save);
         }
 
         // Remove obsolete plugin types (non-workflow only, unless save mode preserves them)
@@ -85,7 +76,7 @@ public class PluginSyncService(IFlowlineOutput output) : IPluginSyncService
         }
     }
 
-    async Task SyncStepsAsync(
+    async Task RegisterPluginStepsAsync(
         IOrganizationServiceAsync2 service,
         Entity typeEntity,
         List<PluginStepMetadata> steps,
@@ -158,7 +149,7 @@ public class PluginSyncService(IFlowlineOutput output) : IPluginSyncService
         }
     }
 
-    async Task<Entity> GetOrCreateAssembly(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName)
+    async Task<Entity> GetOrRegisterAssembly(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName)
     {
         var query = new QueryExpression("pluginassembly")
         {
@@ -177,7 +168,7 @@ public class PluginSyncService(IFlowlineOutput output) : IPluginSyncService
                 ["name"] = metadata.Name,
                 ["content"] = Convert.ToBase64String(metadata.Content),
                 ["version"] = metadata.Version,
-                ["isolationmode"] = new OptionSetValue((int)metadata.IsolationMode)
+                ["isolationmode"] = new OptionSetValue(2) // 2 = Sandbox (cloud only)
             };
 
             // entity["sourcetype"] = new OptionSetValue(0); // 0=Database (default), 4=File Store (NuGet package)

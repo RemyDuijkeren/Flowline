@@ -4,7 +4,6 @@ using Flowline.Core;
 using Flowline.Core.Services;
 using Flowline.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Spectre.Console.Cli;
 using System.Reflection;
 
@@ -21,14 +20,13 @@ Console.CancelKeyPress += (_, e) =>
 
 // Register services
 var services = new ServiceCollection();
-services.AddLogging(b => b.AddConsole());
 services.AddSingleton<AnsiConsoleOutput>();
 services.AddSingleton<IFlowlineOutput>(sp => sp.GetRequiredService<AnsiConsoleOutput>());
-services.AddSingleton<IAssemblyAnalysisService, AssemblyAnalysisService>();
-services.AddSingleton<IAuthenticationService, AuthenticationService>();
-services.AddSingleton<IPluginSyncService, PluginSyncService>();
-services.AddSingleton<IWebResourceSyncService, WebResourceSyncService>();
-services.AddSingleton<ITranslationSyncService, TranslationSyncService>();
+services.AddSingleton<AssemblyAnalysisService>();
+services.AddSingleton<AuthenticationService>();
+services.AddSingleton<PluginRegistrationService>();
+services.AddSingleton<WebResourceSyncService>();
+services.AddSingleton<TranslationSyncService>();
 
 // Configure and run the app
 var app = new CommandApp(new TypeRegistrar(services));

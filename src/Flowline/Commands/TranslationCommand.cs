@@ -32,7 +32,7 @@ public class TranslationSettings : FlowlineSettings
     public string? Target { get; set; }
 }
 
-public class TranslationCommand(IAuthenticationService authService, ITranslationSyncService translationService)
+public class TranslationCommand(AuthenticationService authService, TranslationSyncService translationService)
     : AsyncCommand<TranslationSettings>
 {
     protected override async Task<int> ExecuteAsync([NotNull] CommandContext context, [NotNull] TranslationSettings settings, CancellationToken cancellationToken)

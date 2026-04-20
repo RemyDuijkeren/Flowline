@@ -8,9 +8,9 @@ namespace Flowline.Commands;
 
 public class SyncWebResourcesCommand : AsyncCommand<SyncWebResourcesCommand.Settings>
 {
-    private readonly IWebResourceSyncService _syncService;
+    private readonly WebResourceSyncService _syncService;
 
-    public SyncWebResourcesCommand(IWebResourceSyncService syncService)
+    public SyncWebResourcesCommand(WebResourceSyncService syncService)
     {
         _syncService = syncService;
     }

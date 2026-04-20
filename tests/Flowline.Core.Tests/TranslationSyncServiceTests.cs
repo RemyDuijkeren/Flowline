@@ -1,7 +1,7 @@
-using Microsoft.Extensions.Logging;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Flowline.Core.Services;
+using Flowline.Core;
 using Moq;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Xunit;
@@ -10,15 +10,13 @@ namespace Flowline.Core.Tests;
 
 public class TranslationSyncServiceTests
 {
-    private readonly Mock<ILogger<TranslationSyncService>> _loggerMock;
     private readonly Mock<IOrganizationServiceAsync2> _serviceMock;
     private readonly TranslationSyncService _service;
 
     public TranslationSyncServiceTests()
     {
-        _loggerMock = new Mock<ILogger<TranslationSyncService>>();
         _serviceMock = new Mock<IOrganizationServiceAsync2>();
-        _service = new TranslationSyncService(_loggerMock.Object);
+        _service = new TranslationSyncService(new NullFlowlineOutput());
     }
 
     [Fact]

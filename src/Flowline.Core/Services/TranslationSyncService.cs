@@ -1,28 +1,14 @@
-using Microsoft.Extensions.Logging;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.PowerPlatform.Dataverse.Client;
 
 namespace Flowline.Core.Services;
 
-public interface ITranslationSyncService
+public class TranslationSyncService(IFlowlineOutput output)
 {
-    Task ExportAsync(IOrganizationServiceAsync2 service, string solutionName, string exportPath);
-    Task ImportAsync(IOrganizationServiceAsync2 service, string importPath);
-}
-
-public class TranslationSyncService : ITranslationSyncService
-{
-    private readonly ILogger<TranslationSyncService> _logger;
-
-    public TranslationSyncService(ILogger<TranslationSyncService> logger)
-    {
-        _logger = logger;
-    }
-
     public async Task ExportAsync(IOrganizationServiceAsync2 service, string solutionName, string exportPath)
     {
-        _logger.LogInformation("Exporting translations for solution {SolutionName}...", solutionName);
+        output.Verbose($"Exporting translations for solution {solutionName}...");
 
         var request = new OrganizationRequest("ExportTranslation")
         {
@@ -35,22 +21,18 @@ public class TranslationSyncService : ITranslationSyncService
 
         var directory = Path.GetDirectoryName(exportPath);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-        {
             Directory.CreateDirectory(directory);
-        }
 
         await File.WriteAllBytesAsync(exportPath, compressedTranslations);
-        _logger.LogInformation("Translations exported to {ExportPath}", exportPath);
+        output.Info($"[green]Translations exported to [bold]{exportPath}[/][/]");
     }
 
     public async Task ImportAsync(IOrganizationServiceAsync2 service, string importPath)
     {
-        _logger.LogInformation("Importing translations from {ImportPath}...", importPath);
+        output.Verbose($"Importing translations from {importPath}...");
 
         if (!File.Exists(importPath))
-        {
             throw new FileNotFoundException("Translation file not found.", importPath);
-        }
 
         var compressedTranslations = await File.ReadAllBytesAsync(importPath);
         var translationXml = Convert.ToBase64String(compressedTranslations);
@@ -61,10 +43,10 @@ public class TranslationSyncService : ITranslationSyncService
         };
 
         await service.ExecuteAsync(request);
-        _logger.LogInformation("Translations imported successfully.");
+        output.Info("[green]Translations imported[/]");
 
-        _logger.LogInformation("Publishing all changes...");
+        output.Verbose("Publishing all changes...");
         await service.ExecuteAsync(new OrganizationRequest("PublishAllXml"));
-        _logger.LogInformation("Changes published.");
+        output.Verbose("Changes published");
     }
 }

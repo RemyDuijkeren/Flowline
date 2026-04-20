@@ -1,6 +1,6 @@
 using Flowline.Core.Services;
+using Flowline.Core;
 using Microsoft.Crm.Sdk.Messages;
-using Microsoft.Extensions.Logging;
 using Moq;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Xunit;
@@ -9,13 +9,11 @@ namespace Flowline.Core.Tests;
 
 public class AuthenticationServiceTests
 {
-    private readonly Mock<ILogger<AuthenticationService>> _loggerMock;
     private readonly AuthenticationService _service;
 
     public AuthenticationServiceTests()
     {
-        _loggerMock = new Mock<ILogger<AuthenticationService>>();
-        _service = new AuthenticationService(_loggerMock.Object);
+        _service = new AuthenticationService(new NullFlowlineOutput());
     }
 
     [Fact]

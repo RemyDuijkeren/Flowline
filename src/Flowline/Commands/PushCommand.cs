@@ -7,7 +7,7 @@ using Flowline.Utils;
 
 namespace Flowline.Commands;
 
-public class PushCommand(IAuthenticationService authSrv, IAssemblyAnalysisService analysisService, IPluginSyncService pluginSyncSrv, AnsiConsoleOutput output)
+public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService analysisService, PluginRegistrationService pluginSyncSrv, AnsiConsoleOutput output)
     : FlowlineCommand<PushCommand.Settings>
 {
     [Flags]
@@ -88,7 +88,7 @@ public class PushCommand(IAuthenticationService authSrv, IAssemblyAnalysisServic
         if (settings.Force) AnsiConsole.MarkupLine("[dim]Force mode enabled: Safety checks will be bypassed.[/]");
 
         var conn = authSrv.ConnectViaPac(profile, devEnv.EnvironmentUrl);
-        var metadata = analysisService.Analyze(extensionsDll, IsolationMode.Sandbox);
+        var metadata = analysisService.Analyze(extensionsDll);
         await pluginSyncSrv.SyncAsync(conn, metadata, sln.Name, settings.Save);
 
         AnsiConsole.MarkupLine("[green]All done![/]");
