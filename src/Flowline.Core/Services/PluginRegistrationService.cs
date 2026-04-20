@@ -8,13 +8,24 @@ namespace Flowline.Core.Services;
 
 public class PluginRegistrationService(IFlowlineOutput output)
 {
-    internal const string FlowlineMarker = "[flowline]";
+    const string FlowlineMarker = "[flowline]";
 
-    public async Task SyncAsync(
-        IOrganizationServiceAsync2 service,
-        PluginAssemblyMetadata metadata,
-        string solutionName,
-        bool save = false)
+    static readonly Dictionary<string, string> MessagePropertyNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Assign"]                  = "Target",
+        ["Create"]                  = "id",
+        ["Delete"]                  = "Target",
+        ["DeliverIncoming"]         = "emailid",
+        ["DeliverPromote"]          = "emailid",
+        ["Merge"]                   = "Target",
+        ["Route"]                   = "Target",
+        ["Send"]                    = "emailid",
+        ["SetState"]                = "entityMoniker",
+        ["SetStateDynamicEntity"]   = "entityMoniker",
+        ["Update"]                  = "Target",
+    };
+
+    public async Task SyncAsync(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName, bool save = false)
     {
         var assembly = await GetOrRegisterAssembly(service, metadata, solutionName);
         await RegisterPluginTypesAsync(service, metadata, assembly, save);
@@ -119,7 +130,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
                     entity["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId.Value);
 
                 stepEntity = entity;
-                await service.CreateAsync(stepEntity);
+                stepEntity.Id = await service.CreateAsync(stepEntity);
             }
             else
             {
@@ -130,6 +141,8 @@ public class PluginRegistrationService(IFlowlineOutput output)
                 stepEntity["configuration"] = step.Configuration;
                 await service.UpdateAsync(stepEntity);
             }
+
+            await RegisterImagesAsync(service, stepEntity, step.Images, step.Message, save);
         }
 
         // DLL is the source of truth — delete any step that is no longer in local metadata
@@ -147,6 +160,71 @@ public class PluginRegistrationService(IFlowlineOutput output)
             foreach (var obsolete in obsoleteSteps)
                 output.Skip($"Step '{obsolete.GetAttributeValue<string>("name")}' not in source — kept (--save)");
         }
+    }
+
+    async Task RegisterImagesAsync(IOrganizationServiceAsync2 service, Entity stepEntity, List<PluginImageMetadata> images, string message, bool save)
+    {
+        var existing = await GetImages(service, stepEntity.Id);
+        var existingByName = existing.ToDictionary(e => e.GetAttributeValue<string>("name"), e => e);
+
+        foreach (var image in images)
+        {
+            if (!existingByName.TryGetValue(image.Name, out var imageEntity))
+            {
+                if (!MessagePropertyNames.TryGetValue(message, out var propertyName))
+                    throw new InvalidOperationException($"Message '{message}' does not support step images.");
+
+                var entity = new Entity("sdkmessageprocessingstepimage")
+                {
+                    ["name"]                          = image.Name,
+                    ["entityalias"]                   = image.Alias,
+                    ["imagetype"]                     = new OptionSetValue(image.ImageType),
+                    ["attributes"]                    = image.Attributes,
+                    ["messagepropertyname"]           = propertyName,
+                    ["sdkmessageprocessingstepid"]    = stepEntity.ToEntityReference()
+                };
+                await service.CreateAsync(entity);
+            }
+            else
+            {
+                var changed =
+                    imageEntity.GetAttributeValue<string>("entityalias") != image.Alias ||
+                    (imageEntity.GetAttributeValue<OptionSetValue>("imagetype")?.Value ?? 0) != image.ImageType ||
+                    imageEntity.GetAttributeValue<string>("attributes") != image.Attributes;
+
+                if (changed)
+                {
+                    imageEntity["entityalias"]  = image.Alias;
+                    imageEntity["imagetype"]    = new OptionSetValue(image.ImageType);
+                    imageEntity["attributes"]   = image.Attributes;
+                    await service.UpdateAsync(imageEntity);
+                }
+            }
+        }
+
+        var localNames = images.Select(i => i.Name).ToHashSet();
+        var obsolete = existing.Where(e => !localNames.Contains(e.GetAttributeValue<string>("name"))).ToList();
+        if (!save)
+        {
+            foreach (var e in obsolete)
+                await service.DeleteAsync("sdkmessageprocessingstepimage", e.Id);
+        }
+        else
+        {
+            foreach (var e in obsolete)
+                output.Skip($"Image '{e.GetAttributeValue<string>("name")}' not in source — kept (--save)");
+        }
+    }
+
+    async Task<List<Entity>> GetImages(IOrganizationServiceAsync2 service, Guid stepId)
+    {
+        var query = new QueryExpression("sdkmessageprocessingstepimage")
+        {
+            ColumnSet = new ColumnSet("name", "entityalias", "imagetype", "attributes"),
+            Criteria = new FilterExpression()
+        };
+        query.Criteria.AddCondition("sdkmessageprocessingstepid", ConditionOperator.Equal, stepId);
+        return (await service.RetrieveMultipleAsync(query)).Entities.ToList();
     }
 
     async Task<Entity> GetOrRegisterAssembly(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName)
