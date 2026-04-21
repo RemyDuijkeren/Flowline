@@ -16,6 +16,8 @@
   <ItemGroup Label="Build">
     <PackageVersion Include="Microsoft.SourceLink.GitHub"             Version="10.0.202" />
     <PackageVersion Include="MinVer"                                  Version="7.0.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp"           Version="4.8.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers"        Version="3.3.4" />
   </ItemGroup>
 
   <ItemGroup Label="Test">

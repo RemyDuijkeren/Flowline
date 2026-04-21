@@ -1,8 +1,8 @@
 # Flowline.Attributes
 
-Source-only NuGet package that provides attributes for registering Dataverse plugin steps with the Flowline CLI.
+Source-only NuGet package that provides attributes for registering Dataverse plugin steps and Custom APIs with the Flowline CLI.
 
-When you run `flowline push`, Flowline inspects your plugin assembly and automatically creates or updates the plugin step registrations in Dataverse — no Plugin Registration Tool needed.
+When you run `flowline push`, Flowline inspects your plugin assembly and automatically creates or updates all registrations in Dataverse — no Plugin Registration Tool needed.
 
 ## Installation
 
@@ -241,6 +241,201 @@ public class AccountPostUpdatePlugin : IPlugin
     }
 }
 ```
+
+---
+
+## Custom APIs
+
+Flowline can register Dataverse [Custom APIs](https://learn.microsoft.com/en-us/power-apps/developer/data-platform/custom-api) alongside your plugin steps. Add `[CustomApi]` to any `IPlugin` class to register it as a Custom API instead of a step.
+
+### Class naming
+
+Strip the class suffix to derive the Custom API unique name. Flowline recognises `Api`, `CustomApi`, and `Plugin` suffixes:
+
+| Class name | Unique name (+ publisher prefix) |
+|---|---|
+| `GetAccountRiskApi` | `cr123_GetAccountRisk` |
+| `SendNotificationCustomApi` | `cr123_SendNotification` |
+| `ApproveOrderPlugin` | `cr123_ApproveOrder` |
+
+The publisher prefix is read automatically from the solution's publisher — no config needed.
+
+### `[CustomApi]` — required
+
+Marks the class as a Custom API. Omit arguments for a global action:
+
+```csharp
+[CustomApi]
+public class SendNotificationApi : IPlugin { ... }
+```
+
+Pass an entity logical name for **entity binding** — Dataverse auto-generates the `Target` parameter pointing to a specific record:
+
+```csharp
+[CustomApi("salesorder")]
+public class ApproveOrderApi : IPlugin { ... }
+```
+
+Use the named property for **entity collection binding**:
+
+```csharp
+[CustomApi(EntityCollection = "invoice")]
+public class BulkApproveApi : IPlugin { ... }
+```
+
+Optional named properties:
+
+| Property | Type | Default | Maps to |
+|---|---|---|---|
+| `IsFunction` | `bool` | `false` | `isfunction` — GET-style, must return a value |
+| `IsPrivate` | `bool` | `false` | `isprivate` — hidden from the API catalog |
+| `AllowedStepType` | `CustomApiStepType` | `None` | `allowedcustomprocessingsteptype` |
+| `DisplayName` | `string?` | class name split | `displayname` |
+| `Description` | `string?` | `null` | `description` |
+| `ExecutePrivilege` | `string?` | `null` | `executeprivilegename` |
+
+### Declaring parameters — two styles
+
+#### Style 1: class-level attributes (explicit)
+
+Place `[RequestParameter]` and `[ResponseProperty]` directly on the class. Type and optionality are specified explicitly.
+
+```csharp
+[CustomApi("account")]
+[RequestParameter("targetId", CustomApiFieldType.EntityReference, EntityName = "account")]
+[RequestParameter("includeHistory", CustomApiFieldType.Boolean, IsOptional = true)]
+[ResponseProperty("riskScore", CustomApiFieldType.Integer)]
+[ResponseProperty("riskLabel", CustomApiFieldType.String)]
+public class GetAccountRiskApi : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider)
+    {
+        var context = (IPluginExecutionContext)serviceProvider.GetService(typeof(IPluginExecutionContext));
+        var targetId = (EntityReference)context.InputParameters["targetId"];
+        // ...
+        context.OutputParameters["riskScore"] = 72;
+        context.OutputParameters["riskLabel"] = "Medium";
+    }
+}
+```
+
+`[RequestParameter]` named properties:
+
+| Property | Type | Default | Notes |
+|---|---|---|---|
+| `IsOptional` | `bool` | `false` | Whether the caller must supply this parameter |
+| `EntityName` | `string?` | `null` | Required when `CustomApiFieldType` is `EntityReference` or `Entity` |
+| `DisplayName` | `string?` | unique name split | Shown in solution explorer |
+| `Description` | `string?` | `null` | |
+
+`[ResponseProperty]` has the same named properties except `IsOptional`.
+
+#### Style 2: property-level attributes (deduced)
+
+Declare properties on the class and annotate them. Flowline deduces the unique name from the property name, the type from the C# type, and optionality from nullability — you only need `EntityName` for lookups.
+
+```csharp
+[CustomApi("account")]
+public class GetAccountRiskApi : IPlugin
+{
+    [RequestParameter(EntityName = "account")]
+    public EntityReference TargetId { get; set; }       // required (non-nullable)
+
+    [RequestParameter]
+    public bool? IncludeHistory { get; set; }            // optional (nullable)
+
+    [ResponseProperty]
+    public int RiskScore { get; set; }
+
+    [ResponseProperty]
+    public string RiskLabel { get; set; }
+
+    public void Execute(IServiceProvider serviceProvider) { ... }
+}
+```
+
+Supported C# → Dataverse type mappings:
+
+| C# type | `CustomApiFieldType` |
+|---|---|
+| `bool` | Boolean |
+| `DateTime` | DateTime |
+| `decimal` | Decimal |
+| `Entity` | Entity |
+| `EntityCollection` | EntityCollection |
+| `EntityReference` | EntityReference |
+| `float` / `double` | Float |
+| `int` | Integer |
+| `Money` | Money |
+| `OptionSetValue` | Picklist |
+| `string` | String |
+| `string[]` | StringArray |
+| `Guid` | Guid |
+
+Nullable variants (`int?`, `string?`, etc.) set `isoptional = true` automatically.
+
+### Custom API runtime binding
+
+Flowline provides two ways to automatically bind your properties to `InputParameters` and `OutputParameters`.
+
+#### 1. Extension Methods (Standard)
+
+Call `context.LoadRequestParameters(this)` at the start of your plugin and `context.StoreResponseProperties(this)` at the end. This works with any `IPlugin` class using property-level attributes.
+
+```csharp
+[CustomApi("account")]
+public class GetAccountRiskApi : IPlugin
+{
+    [RequestParameter] public EntityReference TargetId { get; set; }
+    [ResponseProperty] public int RiskScore { get; set; }
+
+    public void Execute(IServiceProvider serviceProvider)
+    {
+        var context = (IPluginExecutionContext)serviceProvider.GetService(typeof(IPluginExecutionContext));
+
+        context.LoadRequestParameters(this);
+        // ... logic ...
+        context.StoreResponseProperties(this);
+    }
+}
+```
+
+#### 2. Source Generators (High Performance)
+
+If you use the `Flowline.Attributes` package in a modern IDE (Visual Studio 2022+ or Rider), Flowline automatically generates specialized mapping code for your plugin.
+
+Mark your plugin class as `partial`, and the compiler will automatically prefer the generated, reflection-free version of `LoadRequestParameters` over the generic one. This gives you **zero-reflection performance** with the same simple syntax.
+
+```csharp
+[CustomApi("account")]
+public partial class GetAccountRiskApi : IPlugin
+{
+    [RequestParameter] public EntityReference TargetId { get; set; }
+    [ResponseProperty] public int RiskScore { get; set; }
+
+    public void Execute(IServiceProvider serviceProvider)
+    {
+        var context = (IPluginExecutionContext)serviceProvider.GetService(typeof(IPluginExecutionContext));
+
+        context.LoadRequestParameters(this); // calls the generated method
+        // ...
+        context.StoreResponseProperties(this); // calls the generated method
+    }
+}
+```
+
+### Custom API lifecycle
+
+Flowline treats the DLL as the source of truth for Custom APIs, the same as for steps.
+
+- **Created** when a class with `[CustomApi]` appears that has no matching `uniquename` in Dataverse.
+- **Updated** when mutable fields change (`displayname`, `description`, `isprivate`, `executeprivilegename`).
+- **Deleted and recreated** when an immutable field changes (`bindingtype`, `boundentitylogicalname`, `isfunction`, `allowedcustomprocessingsteptype`, or a parameter's `type`/`isoptional`). Flowline warns before doing this.
+- **Deleted** when the class is removed from the DLL, or `[CustomApi]` is removed.
+
+The `--save` flag suppresses deletions for Custom APIs the same way it does for steps.
+
+---
 
 ## Step lifecycle
 

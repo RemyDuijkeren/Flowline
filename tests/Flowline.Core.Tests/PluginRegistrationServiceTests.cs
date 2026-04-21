@@ -62,8 +62,14 @@ public class PluginRegistrationServiceTests
             .ReturnsAsync(new EntityCollection(steps.ToList()));
     }
 
+    private void SetupImages(params Entity[] images)
+    {
+        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstepimage")))
+            .ReturnsAsync(new EntityCollection(images.ToList()));
+    }
+
     private PluginAssemblyMetadata Metadata(string name = "MyPlugin", string version = "1.0.0.0", params PluginTypeMetadata[] plugins) =>
-        new(name, $"{name}, Version={version}", new byte[] { 1, 2, 3 }, version, plugins.ToList());
+        new(name, $"{name}, Version={version}", new byte[] { 1, 2, 3 }, version, plugins.ToList(), []);
 
     // -- Assembly create/update --
 
@@ -221,6 +227,7 @@ public class PluginRegistrationServiceTests
 
         var orphanId = Guid.NewGuid();
         SetupSteps(new Entity("sdkmessageprocessingstep", orphanId) { ["name"] = "Orphaned step" });
+        SetupImages();
 
         _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessage")))
             .ReturnsAsync(new EntityCollection(new List<Entity> { new Entity("sdkmessage", Guid.NewGuid()) }));
@@ -253,6 +260,7 @@ public class PluginRegistrationServiceTests
 
         var existingStepId = Guid.NewGuid();
         SetupSteps(new Entity("sdkmessageprocessingstep", existingStepId) { ["name"] = "Orphaned step" });
+        SetupImages();
 
         _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessage")))
             .ReturnsAsync(new EntityCollection(new List<Entity> { new Entity("sdkmessage", Guid.NewGuid()) }));
