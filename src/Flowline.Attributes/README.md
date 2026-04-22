@@ -2,7 +2,7 @@
 
 Source-only NuGet package that provides attributes for registering Dataverse plugin steps and Custom APIs with the Flowline CLI.
 
-When you run `flowline push`, Flowline inspects your plugin assembly and automatically creates or updates all registrations in Dataverse — no Plugin Registration Tool needed.
+Run `flowline push` and Flowline inspects your plugin assembly and automatically creates or updates all registrations in Dataverse — no Plugin Registration Tool needed.
 
 ## Installation
 
@@ -10,34 +10,30 @@ When you run `flowline push`, Flowline inspects your plugin assembly and automat
 <PackageReference Include="Flowline.Attributes" Version="1.0.0" PrivateAssets="all" />
 ```
 
-`PrivateAssets="all"` keeps this as a development-time dependency. The attributes compile directly into your plugin assembly — no extra DLL is added to the output, which keeps the Dataverse sandbox happy.
+`PrivateAssets="all"` keeps this as a development-time dependency. The attributes compile directly into your plugin assembly — no extra DLL is shipped, which keeps the Dataverse sandbox happy.
 
-## How plugin steps work
+---
 
-A **plugin step** is code that Dataverse calls automatically when a specific operation (message)
-happens on a table. Flowline registers the step from your class name and attributes — you write
-the `IPlugin` class, Flowline handles the Dataverse registration.
+## Plugin steps
+
+Each `IPlugin` class registers **exactly one** plugin step. The message, stage, and processing mode come from the class name; the table and options come from attributes. This keeps each `Execute` body focused on one thing and makes log entries self-describing.
 
 ### The pipeline
 
-Every Dataverse operation passes through a pipeline with four points where your plugin can run:
-
 | Stage keyword | When it runs | In transaction? | Use for |
 |---|---|---|---|
-| `Validation` | Before the transaction opens | No | Validation that blocks the operation — throw here to reject cleanly with no rollback |
-| `Pre` | Before the record is saved | Yes | Enriching or correcting the incoming data — changes to `Target` are included in the save automatically |
-| `Post` (synchronous) | After the record is saved | Yes | Follow-up writes that must be atomic with the triggering operation |
-| `Post` + `Async` | After the transaction closes, in the background | No | Notifications, external API calls, long-running work — the user's operation completes first |
+| `Validation` | Before the transaction opens | No | Throwing to reject the operation cleanly — no rollback needed |
+| `Pre` | Before the record is saved | Yes | Enriching or correcting incoming data — changes to `Target` are saved automatically |
+| `Post` (sync) | After the record is saved | Yes | Follow-up writes that must be atomic with the triggering operation |
+| `Post` + `Async` | After the transaction closes | No | Notifications, external API calls, long-running work |
 
 ### Class naming
-
-Flowline reads the message, stage, and processing mode directly from the class name. The pattern is:
 
 ```
 {DescriptiveName}{Stage}{Message}[Async][Plugin]
 ```
 
-The `Plugin` suffix is optional but recommended for readability. Flowline strips it before scanning.
+The `Plugin` suffix is optional but recommended. Flowline strips it before parsing.
 
 | Class name | Message | Stage | Mode |
 |---|---|---|---|
@@ -45,25 +41,18 @@ The `Plugin` suffix is optional but recommended for readability. Flowline strips
 | `InvoicePreUpdatePlugin` | Update | PreOperation | Synchronous |
 | `ContactValidationDeletePlugin` | Delete | PreValidation | Synchronous |
 | `OrderPostUpdateAsyncPlugin` | Update | PostOperation | Asynchronous |
-| `AccountPreCreatePlugin` | Create | PreOperation | Synchronous |
 
-Common messages: `Create`, `Update`, `Delete`, `Retrieve`, `RetrieveMultiple`, `Associate`,
-`Disassociate`, `Assign`, `SetState`. The class name segment must match exactly (case-sensitive).
+Common messages: `Create`, `Update`, `Delete`, `Retrieve`, `RetrieveMultiple`, `Associate`, `Disassociate`, `Assign`, `SetState`. Names are case-sensitive.
 
-If no stage keyword or no `[Entity]` attribute is found, Flowline skips the class for plugin step registration.
-
-## Attributes
+Classes without a recognisable stage keyword or without `[Entity]` are skipped.
 
 ### `[Entity]` — required
 
-Specifies the table (entity) logical name. Without this attribute, Flowline ignores the class.
+Specifies the table logical name. Without it, Flowline ignores the class.
 
 ```csharp
 [Entity("account")]
 public class AccountPostCreatePlugin : IPlugin { ... }
-
-[Entity("cr07982_invoice")]
-public class InvoicePreUpdatePlugin : IPlugin { ... }
 ```
 
 The logical name is always lowercase and found in the maker portal under **Table → Properties → Name**.
@@ -73,26 +62,17 @@ Optional named properties:
 | Property | Type | Default | Description |
 |---|---|---|---|
 | `Order` | `int` | `1` | Execution order when multiple steps fire on the same event. Lower runs first. |
-| `As` | `ExecuteAs` | `CallingUser` | Which user identity the plugin runs under (`context.UserId`). |
-| `Configuration` | `string?` | `null` | String passed to the plugin constructor as `unsecureConfig`. |
+| `As` | `ExecuteAs` | `CallingUser` | User identity the plugin runs under (`context.UserId`). |
+| `Configuration` | `string?` | `null` | Passed to the plugin constructor as `unsecureConfig`. |
 
-**`Order`** — only relevant when multiple plugins are registered on the same message, stage, and table. Guaranteed ordering; lower numbers run first.
-
-**`As`** — use `ExecuteAs.InitiatingUser` when a Power Automate flow triggers your plugin and you need the human user's identity (not the flow service account) for auditing or row-level security:
+Use `ExecuteAs.InitiatingUser` when a Power Automate flow triggers your plugin and you need the human user's identity rather than the flow service account:
 
 ```csharp
 [Entity("account", As = ExecuteAs.InitiatingUser)]
-public class AccountPostCreatePlugin : IPlugin
-{
-    public void Execute(IServiceProvider sp)
-    {
-        var ctx = (IPluginExecutionContext)sp.GetService(typeof(IPluginExecutionContext));
-        // ctx.UserId is the human who triggered the flow, not the flow service account
-    }
-}
+public class AccountPostCreatePlugin : IPlugin { ... }
 ```
 
-**`Configuration`** — pass endpoint URLs, feature flags, or JSON settings without hardcoding them. Receive the string in a constructor overload that accepts `string unsecureConfig`:
+Use `Configuration` to pass endpoint URLs, feature flags, or JSON settings. Receive the value in a constructor overload that accepts `string unsecureConfig`:
 
 ```csharp
 [Entity("account", Configuration = "{\"endpoint\":\"https://api.example.com\"}")]
@@ -104,21 +84,16 @@ public class AccountPostCreatePlugin : IPlugin
     {
         _endpoint = JsonSerializer.Deserialize<Config>(unsecureConfig)!.Endpoint;
     }
-
-    public void Execute(IServiceProvider sp) { ... }
 }
 ```
 
-> **Do not store secrets in `Configuration`.** The string is visible in source control and the
-> solution XML. Use environment variables or Azure Key Vault for anything sensitive.
+> **Do not store secrets in `Configuration`.** The value is visible in source control and the solution XML. Use environment variables or Azure Key Vault for anything sensitive.
 
 ### `[Filter]` — optional, strongly recommended on Update steps
 
-Limits the step to fire only when at least one of the listed columns is included in the operation.
+Limits the step to fire only when at least one of the listed columns is included in the operation. Dataverse evaluates the filter before invoking your plugin — a filtered step that doesn't match costs almost nothing.
 
-Without `[Filter]`, an Update step fires on **every** update to the table — even when the columns
-your plugin cares about haven't changed. Dataverse evaluates the filter before invoking your plugin,
-so a filtered step that doesn't match costs almost nothing.
+Without `[Filter]`, an Update step fires on **every** update to the table, regardless of which columns changed.
 
 ```csharp
 [Entity("account")]
@@ -126,104 +101,28 @@ so a filtered step that doesn't match costs almost nothing.
 public class AccountPreUpdatePlugin : IPlugin { ... }
 ```
 
-Use `nameof` with early-bound entity classes for compile-time safety:
+Use `nameof` with early-bound classes for compile-time safety:
 
 ```csharp
-[Entity("account")]
 [Filter(nameof(Account.name), nameof(Account.creditlimit))]
-public class AccountPreUpdatePlugin : IPlugin { ... }
 ```
 
-> `[Filter]` only applies to `Update` steps. On `Create` and `Delete`, all columns are always
-> included and the filter has no effect.
+> `[Filter]` only applies to Update steps. Using it on Create, Delete, or any other message is an error — Flowline will throw during `flowline push`.
 
-### `[PreImage]` — optional
+### `[SecondaryEntity]` — required for Associate / Disassociate
 
-Registers a snapshot of the record's column values **before** the operation runs. Retrieve it
-from `context.PreEntityImages["preimage"]` inside `Execute`.
-
-**When it is available:**
-
-| Message | Available? |
-|---|---|
-| Create | No — the record did not exist before this operation |
-| Update | Yes — in any stage (PreValidation, PreOperation, PostOperation) |
-| Delete | Yes — in any stage |
-
-```csharp
-[Entity("account")]
-[Filter("name")]
-[PreImage("name", "creditlimit")]   // list only the columns you need
-public class AccountPreUpdatePlugin : IPlugin
-{
-    public void Execute(IServiceProvider sp)
-    {
-        var ctx      = (IPluginExecutionContext)sp.GetService(typeof(IPluginExecutionContext));
-        var preImage = ctx.PreEntityImages["preimage"];
-        var oldName  = preImage.GetAttributeValue<string>("name");
-    }
-}
-```
-
-Omit the column arguments to include all columns — use this sparingly, as large images are expensive.
-
-### `[PostImage]` — optional
-
-Registers a snapshot of the record's column values **after** the operation completes. Retrieve it
-from `context.PostEntityImages["postimage"]` inside `Execute`.
-
-**When it is available:**
-
-| Message | Available? |
-|---|---|
-| Create | Yes — PostOperation stage only (sync or async) |
-| Update | Yes — PostOperation stage only (sync or async) |
-| Delete | No — the record no longer exists after this operation |
-
-> Post-images are **not available** in PreValidation or PreOperation stages — the operation has
-> not completed yet at those points.
-
-```csharp
-[Entity("account")]
-[Filter("name")]
-[PreImage("name")]
-[PostImage("name")]
-public class AccountPostUpdatePlugin : IPlugin
-{
-    public void Execute(IServiceProvider sp)
-    {
-        var ctx       = (IPluginExecutionContext)sp.GetService(typeof(IPluginExecutionContext));
-        var preImage  = ctx.PreEntityImages["preimage"];
-        var postImage = ctx.PostEntityImages["postimage"];
-        var oldName   = preImage.GetAttributeValue<string>("name");
-        var newName   = postImage.GetAttributeValue<string>("name");
-        if (oldName != newName) { /* name changed */ }
-    }
-}
-```
-
-> **Advanced:** override `Alias` when migrating from a step that was manually registered with a
-> custom image alias, so existing retrieval code does not break:
-> ```csharp
-> [PreImage(Alias = "legacy_pre")]
-> // retrieve with: ctx.PreEntityImages["legacy_pre"]
-> ```
-
-### `[SecondaryEntity]` — required for Associate / Disassociate steps
-
-Specifies the related table for `Associate` and `Disassociate` messages, which fire when a
-many-to-many relationship between two records is created or removed.
+Scopes the step to a specific secondary table. Use `"none"` to fire on any table.
 
 ```csharp
 // Fires when a contact is associated with any record type
 [Entity("contact")]
 [SecondaryEntity("none")]
-public class ContactAssociatePlugin : IPlugin { ... }
+public class ContactPreAssociatePlugin : IPlugin { ... }
 
 // Fires only when a contact is associated with an account
 [Entity("contact")]
 [SecondaryEntity("account")]
-public class ContactAccountAssociatePlugin : IPlugin
+public class ContactAccountPreAssociatePlugin : IPlugin
 {
     public void Execute(IServiceProvider sp)
     {
@@ -235,51 +134,54 @@ public class ContactAccountAssociatePlugin : IPlugin
 }
 ```
 
-For all other messages (Create, Update, Delete, ...) omit `[SecondaryEntity]` — Dataverse uses
-`"none"` automatically.
+Omitting `[SecondaryEntity]` on an Associate or Disassociate step produces a warning during `flowline push`. Using it on any other message (Create, Update, Delete, ...) is an error.
 
-## Step lifecycle
+### `[PreImage]` and `[PostImage]` — optional
 
-Flowline treats the DLL as the source of truth. On every `flowline push`:
+Register snapshots of the record before and after the operation. Retrieve them from `context.PreEntityImages` and `context.PostEntityImages` inside `Execute`.
 
-- **Plugin types** — created for every public `IPlugin` or `CodeActivity` class; deleted when the class is removed from the DLL.
-- **Steps** — created or updated for every class with `[Entity]`; deleted when the class loses `[Entity]` or is removed entirely.
+**Availability by message and stage:**
 
-Steps Flowline creates are stamped with `[flowline]` in their description, visible in Plugin Registration Tool.
+| | PreImage | PostImage |
+|---|---|---|
+| Create | Not available — record didn't exist yet | PostOperation only |
+| Update | Any stage | PostOperation only |
+| Delete | Any stage | Not available — record no longer exists |
 
-### Disabling a plugin
+Violations are errors — Flowline throws during `flowline push`.
 
-Remove `[Entity]` from the class — Flowline deletes its steps on the next push, but keeps the plugin type registered. Delete the class entirely to remove both the type and its steps.
-
-### The `--save` flag
-
-Pass `--save` to suppress all deletions for that run. Flowline prints each skipped deletion, making it useful as a dry run before a clean push:
-
-```bash
-flowline push MySolution --save
-```
-
-## Examples
-
-### Minimal — PostOperation Create
+Specify only the columns your plugin needs. Omitting columns fetches all of them, which negatively impacts performance. Flowline warns when no columns are specified.
 
 ```csharp
-using Flowline.Attributes;
-using Microsoft.Xrm.Sdk;
-
 [Entity("account")]
-public class AccountPostCreatePlugin : IPlugin
+[Filter("name", "creditlimit")]
+[PreImage("name", "creditlimit")]
+[PostImage("name", "creditlimit")]
+public class AccountPostUpdatePlugin : IPlugin
 {
     public void Execute(IServiceProvider sp)
     {
-        var ctx    = (IPluginExecutionContext)sp.GetService(typeof(IPluginExecutionContext));
-        var target = (Entity)ctx.InputParameters["Target"];
-        // target contains the newly created account record
+        var ctx       = (IPluginExecutionContext)sp.GetService(typeof(IPluginExecutionContext));
+        var preImage  = ctx.PreEntityImages["preimage"];
+        var postImage = ctx.PostEntityImages["postimage"];
+
+        if (preImage.GetAttributeValue<string>("name") != postImage.GetAttributeValue<string>("name"))
+        {
+            // name changed — react here
+        }
     }
 }
 ```
 
-### PreValidation — reject the operation before anything is written
+Default aliases are `"preimage"` and `"postimage"`. Override `Alias` when migrating from a manually registered step with a different alias:
+
+```csharp
+[PreImage(Alias = "legacy_pre")]  // retrieve with: ctx.PreEntityImages["legacy_pre"]
+```
+
+### Examples
+
+**Minimal — reject an operation before anything is written:**
 
 ```csharp
 [Entity("account")]
@@ -291,14 +193,13 @@ public class AccountValidationUpdatePlugin : IPlugin
         var ctx    = (IPluginExecutionContext)sp.GetService(typeof(IPluginExecutionContext));
         var target = (Entity)ctx.InputParameters["Target"];
 
-        if (target.Contains("creditlimit") &&
-            target.GetAttributeValue<Money>("creditlimit").Value > 100_000)
+        if (target.GetAttributeValue<Money>("creditlimit")?.Value > 100_000)
             throw new InvalidPluginExecutionException("Credit limit cannot exceed 100,000.");
     }
 }
 ```
 
-### PreOperation — enrich the record before it is saved
+**Enrich a record before it is saved:**
 
 ```csharp
 [Entity("account")]
@@ -308,13 +209,12 @@ public class AccountPreCreatePlugin : IPlugin
     {
         var ctx    = (IPluginExecutionContext)sp.GetService(typeof(IPluginExecutionContext));
         var target = (Entity)ctx.InputParameters["Target"];
-        // Set a column on Target — it will be included in the save automatically
-        target["cr123_source"] = "web";
+        target["cr123_source"] = "web";  // included in the save automatically
     }
 }
 ```
 
-### PostOperation async — notify an external system after the save
+**Call an external system after the save, in the background:**
 
 ```csharp
 [Entity("cr07982_invoice")]
@@ -323,49 +223,40 @@ public class InvoicePostUpdateAsyncPlugin : IPlugin
 {
     public void Execute(IServiceProvider sp)
     {
-        // Runs in the background after the transaction commits.
-        // Safe to call external APIs here — a failure does not roll back the record.
+        // Runs after the transaction commits — safe to call external APIs here.
+        // A failure does not roll back the record.
     }
 }
 ```
 
-### PostOperation — compare old and new values with pre/post images
+### Lifecycle
 
-```csharp
-[Entity("account")]
-[Filter("name", "telephone1")]
-[PreImage("name", "telephone1")]
-[PostImage("name", "telephone1")]
-public class AccountPostUpdatePlugin : IPlugin
-{
-    public void Execute(IServiceProvider sp)
-    {
-        var ctx       = (IPluginExecutionContext)sp.GetService(typeof(IPluginExecutionContext));
-        var preImage  = ctx.PreEntityImages["preimage"];
-        var postImage = ctx.PostEntityImages["postimage"];
+Flowline treats the DLL as the source of truth. On every `flowline push`:
 
-        var oldName = preImage.GetAttributeValue<string>("name");
-        var newName = postImage.GetAttributeValue<string>("name");
+- **Plugin types** — created for every public `IPlugin` or `CodeActivity` class; deleted when the class is removed.
+- **Steps** — created or updated for every class with `[Entity]`; deleted when `[Entity]` is removed or the class is deleted.
 
-        if (oldName != newName)
-        {
-            // name changed — react here
-        }
-    }
-}
+Steps created by Flowline are stamped with `[flowline]` in their description, visible in Plugin Registration Tool.
+
+**Disabling a step without deleting it:** remove `[Entity]` — Flowline deletes the step but keeps the plugin type registered.
+
+**`--save` flag:** suppresses all deletions for that run and prints each skipped item — useful as a dry run:
+
+```bash
+flowline push MySolution --save
 ```
 
 ---
 
 ## Custom APIs
 
-A **Custom API** is a custom endpoint you define in Dataverse. Unlike a regular plugin step, which fires automatically when a record is created, updated, or deleted, a Custom API is invoked explicitly by name — from Power Automate, a canvas app, a JavaScript web resource, an external system via the Web API, or another plugin. Think of it as writing a backend function that callers can call by name.
+A Custom API is a custom endpoint you define in Dataverse, invoked explicitly by name — from Power Automate, a canvas app, a web resource, or another plugin. Unlike a plugin step, it does not fire automatically on record changes.
 
-Add `[CustomApi]` to an `IPlugin` class to register it as a Custom API instead of a plugin step. You write your `Execute` method exactly as you always would — Flowline only handles the Dataverse registration when you run `flowline push`.
+Add `[CustomApi]` to an `IPlugin` class to register it as a Custom API. You write `Execute` exactly as normal — Flowline handles the Dataverse registration.
 
 ### Class naming
 
-Flowline strips the `Api`, `CustomApi`, or `Plugin` suffix from the class name to derive the unique name, then prefixes it with the solution's publisher prefix:
+Flowline strips the `Api`, `CustomApi`, or `Plugin` suffix and prefixes the result with the solution's publisher prefix:
 
 | Class name | Unique name |
 |---|---|
@@ -373,32 +264,32 @@ Flowline strips the `Api`, `CustomApi`, or `Plugin` suffix from the class name t
 | `SendNotificationCustomApi` | `cr123_SendNotification` |
 | `ApproveOrderPlugin` | `cr123_ApproveOrder` |
 
-The publisher prefix is read automatically from the solution — no config needed.
+The publisher prefix is read from the solution automatically.
 
 ### `[CustomApi]` — required
 
-Marks the class as a Custom API. Without arguments, it registers a **global API** — one not tied to any specific table. Use this for operations like sending a notification or computing a value.
+Without arguments, registers a **global API** — not tied to any table:
 
 ```csharp
 [CustomApi]
 public class SendNotificationApi : IPlugin { ... }
 ```
 
-Pass a table logical name for **entity binding**. Dataverse automatically provides a `Target` `EntityReference` parameter containing the record the caller invoked the API on — you do not need to declare `Target` yourself.
+Pass a table logical name for **entity binding**. Dataverse automatically provides a `Target` `EntityReference` — you do not declare it yourself:
 
 ```csharp
 [CustomApi("salesorder")]
 public class ApproveOrderApi : IPlugin
 {
-    public void Execute(IServiceProvider serviceProvider)
+    public void Execute(IServiceProvider sp)
     {
-        var ctx = (IPluginExecutionContext)serviceProvider.GetService(typeof(IPluginExecutionContext));
+        var ctx     = (IPluginExecutionContext)sp.GetService(typeof(IPluginExecutionContext));
         var orderId = ((EntityReference)ctx.InputParameters["Target"]).Id;
     }
 }
 ```
 
-Use `EntityCollection` for **entity collection binding** — when the API operates on a set of records:
+Use `EntityCollection` for **entity collection binding**:
 
 ```csharp
 [CustomApi(EntityCollection = "invoice")]
@@ -409,16 +300,16 @@ Optional named properties:
 
 | Property | Type | Default | Description |
 |---|---|---|---|
-| `IsFunction` | `bool` | `false` | Function (HTTP GET, read-only) vs Action (HTTP POST). Use only for side-effect-free APIs. |
-| `IsPrivate` | `bool` | `false` | Hides the API from the OData catalog. Use for internal APIs. |
+| `IsFunction` | `bool` | `false` | `false` = Action (HTTP POST). `true` = Function (HTTP GET). |
+| `IsPrivate` | `bool` | `false` | Hides the API from the OData catalog. |
 | `AllowedStepType` | `AllowedStepType` | `None` | Whether third parties can register plugin steps on this API. |
-| `DisplayName` | `string?` | class name split | Display name in the solution explorer. |
-| `Description` | `string?` | `null` | Description in the solution explorer. |
-| `ExecutePrivilege` | `string?` | `null` | Privilege name required to call this API. Omit to allow any authenticated user. |
+| `DisplayName` | `string?` | class name split | Shown in solution explorer. |
+| `Description` | `string?` | `null` | Shown in solution explorer. |
+| `ExecutePrivilege` | `string?` | `null` | Privilege required to call this API. Omit to allow any authenticated user. |
 
-### Declaring inputs and outputs
+### `[Input]` and `[Output]`
 
-Use `[Input]` and `[Output]` on the class to declare which parameters Flowline should register in Dataverse. These are purely registration declarations — they tell Flowline the parameter name, type, and optionality. You read and write the actual values yourself in `Execute` via `context.InputParameters` and `context.OutputParameters`.
+Declare parameters on the class. These are registration declarations only — Flowline registers them in Dataverse; you read and write the values yourself in `Execute`.
 
 ```csharp
 [CustomApi]
@@ -428,9 +319,9 @@ Use `[Input]` and `[Output]` on the class to declare which parameters Flowline s
 [Output("riskLabel",     FieldType.String)]
 public class GetAccountRiskApi : IPlugin
 {
-    public void Execute(IServiceProvider serviceProvider)
+    public void Execute(IServiceProvider sp)
     {
-        var ctx = (IPluginExecutionContext)serviceProvider.GetService(typeof(IPluginExecutionContext));
+        var ctx = (IPluginExecutionContext)sp.GetService(typeof(IPluginExecutionContext));
 
         var accountId   = (EntityReference)ctx.InputParameters["accountId"];
         var withHistory = ctx.InputParameters.Contains("includeHistory")
@@ -442,20 +333,20 @@ public class GetAccountRiskApi : IPlugin
 }
 ```
 
+Always check `Contains` before reading an optional input — Dataverse throws if the caller omitted it.
+
 `[Input]` properties:
 
 | Property | Type | Default | Notes |
 |---|---|---|---|
-| `Name` | `string` | — | Name used in `context.InputParameters`. Must be unique within the API. Convention: camelCase. |
-| `Type` | `FieldType` | — | Dataverse field type. See type table below. |
-| `IsOptional` | `bool` | `false` | When `true`, check `Contains("name")` before reading. |
+| `Name` | `string` | — | Key in `context.InputParameters`. Convention: camelCase. |
+| `Type` | `FieldType` | — | See type table below. |
+| `IsOptional` | `bool` | `false` | Check `Contains("name")` before reading when `true`. |
 | `Entity` | `string?` | `null` | Required when type is `EntityReference` or `Entity`. |
-| `DisplayName` | `string?` | unique name split | Shown in solution explorer. |
+| `DisplayName` | `string?` | name split | Shown in solution explorer. |
 | `Description` | `string?` | `null` | |
 
 `[Output]` has the same properties except `IsOptional`.
-
-**Optional parameters:** always check `context.InputParameters.Contains("name")` before reading, otherwise Dataverse throws if the caller omitted the value.
 
 ### Supported types
 
@@ -475,73 +366,30 @@ public class GetAccountRiskApi : IPlugin
 | `string[]` | `StringArray` |
 | `Guid` | `Guid` |
 
-### Custom API lifecycle
+### Lifecycle
 
 Flowline treats the DLL as the source of truth for Custom APIs, the same as for steps.
 
-- **Created** when a class with `[CustomApi]` appears that has no matching unique name in Dataverse.
+- **Created** when a class with `[CustomApi]` has no matching unique name in Dataverse.
 - **Updated** when mutable fields change (`DisplayName`, `Description`, `IsPrivate`, `ExecutePrivilege`).
 - **Deleted and recreated** when an immutable field changes (binding type, `IsFunction`, `AllowedStepType`, or a parameter's type or optionality). Flowline warns before doing this.
-- **Deleted** when the class is removed from the DLL or `[CustomApi]` is removed.
+- **Deleted** when the class or `[CustomApi]` is removed.
 
-The `--save` flag suppresses deletions for Custom APIs the same way it does for steps.
+The `--save` flag suppresses deletions the same way it does for steps.
 
 ---
 
-## The "1 plugin = 1 step" rule
+## Why one class per step
 
-Each plugin class registers exactly one plugin step. This is an intentional design decision enforced
-by Flowline. It gives up some flexibility, but in return it simplifies the way how you can write plugins.
-Here is why it makes your life easier in the long run.
+Each plugin class registers exactly one step. This constraint pays dividends:
 
-**Simpler attributes**
-When a class can register multiple steps, Flowline would have needed one attribute that encodes everything — entity, message, stage, mode, filter, images — for each step.
-The result would be something like:
+**Focused `Execute` bodies.** Without the rule, `Execute` needs branching logic to handle different messages. With it, every `Execute` does one thing — Dataverse guarantees which step fired because only one is registered.
 
-```csharp
-[Step("account", "Update", ProcessStage.PreOperation, ProcessMode.Synchronous, "name,creditlimit")]
-public class AccountPreUpdatePlugin : IPlugin { ... }
-```
+**Self-describing logs.** When a plugin throws, Dataverse logs the class name. `AccountPostCreatePlugin` tells you exactly what happened; `AccountPlugin` does not.
 
-With one class per step, each concern gets its own focused attribute. There is no ambiguity about which step a `[Filter]` or `[Image]` belongs to — it always belongs to the one step the class registers.
-We can also use the class name to specify the message, process stage, and process mode: the 'convention over configuration' principle.
-This makes the attributes even more small and readable:
+**Unambiguous attributes.** `[Filter]`, `[PreImage]`, and `[PostImage]` always belong to exactly one step — the one the class registers. No need to associate them with a particular step in a multi-step registration.
 
-```csharp
-[Entity("account")]
-[Filter("name", "creditlimit")]
-[PreImage("name", "creditlimit")]
-public class AccountPreUpdatePlugin : IPlugin { ... }
-```
-
-It also allows you to write columns for filter and image directly in the attribute, without the need to pass a comma-seperated string like `"name,creditlimit"`.
-
-**Clearer telemetry and error logs**
-When a plugin throws, Dataverse logs the class name. If one class handles both `Create` and
-`Update`, your logs say `AccountPlugin` — you still have to look at the context to know what
-triggered it. With one class per step, the log says `AccountPostCreatePlugin` — the failure is
-self-describing.
-
-**Simpler `Execute` bodies**
-Without the rule, `Execute` fills up with branching logic:
-```csharp
-public void Execute(IServiceProvider sp)
-{
-    var context = ...;
-    if (context.MessageName == "Create") { ... }
-    else if (context.MessageName == "Update") { ... }
-}
-```
-With the rule, every `Execute` does exactly one thing. No branching, no defensive checks on
-`MessageName` or `Stage` — Dataverse guarantees which step fired because you registered only one.
-
-**Easier unit testing**
-Testing one class per step means one test class per plugin. Each test has a clear arrange/act/assert
-structure with no need to set up different `MessageName` values to hit different branches.
-
-**Shared logic still works — use a base class**
-The rule does not mean duplicating code. When the same logic applies to multiple steps, put it in
-a base class and declare one leaf class per step:
+**Shared logic via base classes.** The rule does not mean duplicating code. Put shared logic in a base class and declare one leaf class per step:
 
 ```csharp
 public abstract class AccountSavePlugin : IPlugin
@@ -550,30 +398,12 @@ public abstract class AccountSavePlugin : IPlugin
 }
 
 [Entity("account")]
-public class AccountPreCreate : AccountSavePlugin { }
+public class AccountPreCreatePlugin : AccountSavePlugin { }
 
 [Entity("account")]
-public class AccountPreUpdate : AccountSavePlugin { }
-```
+public class AccountPreUpdatePlugin : AccountSavePlugin { }
 
-This is the same pattern for multiple messages (`Create` + `Update`) and for multiple entities
-(same step firing on `account`, `contact`, and `opportunity`). One solution for all cases.
-
-```csharp
-public abstract class RelatedEntityPostCreatePlugin : IPlugin
-{
-    public void Execute(IServiceProvider serviceProvider)
-    {
-        // shared logic for all entity registrations
-    }
-}
-
-[Entity("account")]
-public class RelatedEntityPostCreateForAccountPlugin : RelatedEntityPostCreatePlugin { }
-
+// Same pattern for multiple entities:
 [Entity("contact")]
-public class RelatedEntityPostCreateForContactPlugin : RelatedEntityPostCreatePlugin { }
-
-[Entity("opportunity")]
-public class RelatedEntityPostCreateForOpportunityPlugin : RelatedEntityPostCreatePlugin { }
+public class ContactPreCreatePlugin : AccountSavePlugin { }
 ```

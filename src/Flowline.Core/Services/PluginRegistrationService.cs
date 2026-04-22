@@ -8,9 +8,9 @@ namespace Flowline.Core.Services;
 
 public class PluginRegistrationService(IFlowlineOutput output)
 {
-    internal const string FlowlineMarker = "[flowline]";
+    const string FlowlineMarker = "[flowline]";
 
-    static readonly Dictionary<string, string> MessagePropertyNames = new(StringComparer.OrdinalIgnoreCase)
+    static readonly Dictionary<string, string> s_messagePropertyNames = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Assign"]                  = "Target",
         ["Create"]                  = "id",
@@ -32,7 +32,8 @@ public class PluginRegistrationService(IFlowlineOutput output)
         bool save = false)
     {
         var assembly = await GetOrRegisterAssembly(service, metadata, solutionName);
-        await RegisterPluginTypesAsync(service, metadata, assembly, save);
+        await RegisterPluginsAsync(service, metadata, assembly, save);
+        await RegisterWorkflowActivitiesAsync(service, metadata, assembly, save);
 
         if (metadata.CustomApis.Count > 0)
         {
@@ -41,16 +42,18 @@ public class PluginRegistrationService(IFlowlineOutput output)
         }
     }
 
-    async Task RegisterPluginTypesAsync(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, Entity assembly, bool save)
+    async Task RegisterPluginsAsync(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, Entity assembly, bool save)
     {
-        var existingTypes = await GetPluginTypes(service, assembly.Id);
+        var existingTypes = (await GetPluginTypes(service, assembly.Id))
+            .Where(t => !t.GetAttributeValue<bool>("isworkflowactivity"))
+            .ToList();
         var typeNames = existingTypes.ToDictionary(t => t.GetAttributeValue<string>("typename"), t => t);
 
         var customApiTypeNames = metadata.CustomApis.Select(a => a.PluginTypeFullName).ToHashSet();
         var messageCache = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
         var filterCache = new Dictionary<(Guid messageId, string entityName, string secondaryEntity), Guid?>();
 
-        foreach (var plugin in metadata.Plugins)
+        foreach (var plugin in metadata.Plugins.Where(p => !p.IsWorkflow))
         {
             // https://learn.microsoft.com/en-us/power-apps/developer/data-platform/reference/entities/plugintype
             if (!typeNames.TryGetValue(plugin.FullName, out var typeEntity))
@@ -63,39 +66,66 @@ public class PluginRegistrationService(IFlowlineOutput output)
                     ["pluginassemblyid"] = assembly.ToEntityReference(),
                     ["description"] = $"{FlowlineMarker} Created at {DateTime.UtcNow:u}"
                 };
-
-                if (plugin.IsWorkflow)
-                    typeEntity["workflowactivitygroupname"] = $"{metadata.Name} ({metadata.Version})";
-
                 typeEntity.Id = await service.CreateAsync(typeEntity);
             }
 
             // Custom API backing types have their steps managed by Dataverse — skip step registration for them.
-            if (!plugin.IsWorkflow && !customApiTypeNames.Contains(plugin.FullName))
+            if (!customApiTypeNames.Contains(plugin.FullName))
                 await RegisterPluginStepsAsync(service, typeEntity, plugin.Steps, messageCache, filterCache, save);
         }
 
-        // Remove obsolete plugin types (non-workflow only, unless save mode preserves them)
+        var localNames = metadata.Plugins.Where(p => !p.IsWorkflow).Select(p => p.FullName).ToHashSet();
         if (!save)
         {
-            var localNames = metadata.Plugins.Select(p => p.FullName).ToHashSet();
             foreach (var obsolete in existingTypes.Where(t => !localNames.Contains(t.GetAttributeValue<string>("typename"))))
             {
-                if (!obsolete.GetAttributeValue<bool>("isworkflowactivity"))
-                {
-                    var steps = await GetSteps(service, obsolete.Id);
-                    foreach (var step in steps)
-                        await service.DeleteAsync("sdkmessageprocessingstep", step.Id);
-                }
-
+                var steps = await GetSteps(service, obsolete.Id);
+                foreach (var step in steps)
+                    await service.DeleteAsync("sdkmessageprocessingstep", step.Id);
                 await service.DeleteAsync("plugintype", obsolete.Id);
             }
         }
         else
         {
-            var localNames = metadata.Plugins.Select(p => p.FullName).ToHashSet();
             foreach (var obsolete in existingTypes.Where(t => !localNames.Contains(t.GetAttributeValue<string>("typename"))))
                 output.Skip($"Plugin type '{obsolete.GetAttributeValue<string>("typename")}' not in source — kept (--save)");
+        }
+    }
+
+    async Task RegisterWorkflowActivitiesAsync(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, Entity assembly, bool save)
+    {
+        var existingTypes = (await GetPluginTypes(service, assembly.Id))
+            .Where(t => t.GetAttributeValue<bool>("isworkflowactivity"))
+            .ToList();
+        var typeNames = existingTypes.ToDictionary(t => t.GetAttributeValue<string>("typename"), t => t);
+
+        foreach (var plugin in metadata.Plugins.Where(p => p.IsWorkflow))
+        {
+            if (!typeNames.ContainsKey(plugin.FullName))
+            {
+                var typeEntity = new Entity("plugintype")
+                {
+                    ["typename"] = plugin.FullName,
+                    ["name"] = plugin.FullName,
+                    ["friendlyname"] = plugin.Name,
+                    ["pluginassemblyid"] = assembly.ToEntityReference(),
+                    ["workflowactivitygroupname"] = $"{metadata.Name} ({metadata.Version})",
+                    ["description"] = $"{FlowlineMarker} Created at {DateTime.UtcNow:u}"
+                };
+                await service.CreateAsync(typeEntity);
+            }
+        }
+
+        var localNames = metadata.Plugins.Where(p => p.IsWorkflow).Select(p => p.FullName).ToHashSet();
+        if (!save)
+        {
+            foreach (var obsolete in existingTypes.Where(t => !localNames.Contains(t.GetAttributeValue<string>("typename"))))
+                await service.DeleteAsync("plugintype", obsolete.Id);
+        }
+        else
+        {
+            foreach (var obsolete in existingTypes.Where(t => !localNames.Contains(t.GetAttributeValue<string>("typename"))))
+                output.Skip($"Workflow activity '{obsolete.GetAttributeValue<string>("typename")}' not in source — kept (--save)");
         }
     }
 
@@ -184,7 +214,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
         {
             if (!existingByName.TryGetValue(image.Name, out var imageEntity))
             {
-                if (!MessagePropertyNames.TryGetValue(message, out var propertyName))
+                if (!s_messagePropertyNames.TryGetValue(message, out var propertyName))
                     throw new InvalidOperationException($"Message '{message}' does not support step images.");
 
                 var entity = new Entity("sdkmessageprocessingstepimage")
