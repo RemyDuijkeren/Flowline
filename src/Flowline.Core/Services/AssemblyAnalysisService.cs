@@ -122,13 +122,13 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
         // Detect tier and warn on mixed usage
         var hasClassLevel = type.GetCustomAttributesData()
             .Any(a => a.AttributeType.FullName is
-                "Flowline.Attributes.RequestParameterAttribute" or
-                "Flowline.Attributes.ResponsePropertyAttribute");
+                "Flowline.Attributes.InputAttribute" or
+                "Flowline.Attributes.OutputAttribute");
         var hasPropertyLevel = type.GetProperties()
             .Any(p => p.GetCustomAttributesData()
                 .Any(a => a.AttributeType.FullName is
-                    "Flowline.Attributes.RequestParameterAttribute" or
-                    "Flowline.Attributes.ResponsePropertyAttribute"));
+                    "Flowline.Attributes.InputAttribute" or
+                    "Flowline.Attributes.OutputAttribute"));
 
         if (hasClassLevel && hasPropertyLevel)
         {
@@ -172,6 +172,7 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
 
         var baseName = StripCustomApiSuffix(type.Name);
         displayName ??= SplitPascalCase(baseName);
+        description ??= displayName;
 
         var (requestParams, responseProps) = hasPropertyLevel
             ? ReadPropertyLevelParameters(type, baseName)
@@ -193,7 +194,7 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
 
         foreach (var attr in type.GetCustomAttributesData())
         {
-            if (attr.AttributeType.FullName == "Flowline.Attributes.RequestParameterAttribute" &&
+            if (attr.AttributeType.FullName == "Flowline.Attributes.InputAttribute" &&
                 attr.ConstructorArguments.Count == 2)
             {
                 var uniqueName = (string)attr.ConstructorArguments[0].Value!;
@@ -206,16 +207,17 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
                     switch (arg.MemberName)
                     {
                         case "IsOptional":   isOptional = (bool)arg.TypedValue.Value!; break;
-                        case "EntityName":   entityName = arg.TypedValue.Value as string; break;
+                        case "Entity":   entityName = arg.TypedValue.Value as string; break;
                         case "DisplayName":  displayName = arg.TypedValue.Value as string; break;
                         case "Description":  description = arg.TypedValue.Value as string; break;
                     }
                 }
 
                 displayName ??= SplitPascalCase(uniqueName);
+                description ??= displayName;
                 requestParams.Add(new(uniqueName, displayName, description, fieldType, isOptional, entityName));
             }
-            else if (attr.AttributeType.FullName == "Flowline.Attributes.ResponsePropertyAttribute" &&
+            else if (attr.AttributeType.FullName == "Flowline.Attributes.OutputAttribute" &&
                      attr.ConstructorArguments.Count == 2)
             {
                 var uniqueName = (string)attr.ConstructorArguments[0].Value!;
@@ -226,13 +228,14 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
                 {
                     switch (arg.MemberName)
                     {
-                        case "EntityName":   entityName = arg.TypedValue.Value as string; break;
+                        case "Entity":   entityName = arg.TypedValue.Value as string; break;
                         case "DisplayName":  displayName = arg.TypedValue.Value as string; break;
                         case "Description":  description = arg.TypedValue.Value as string; break;
                     }
                 }
 
                 displayName ??= SplitPascalCase(uniqueName);
+                description ??= displayName;
                 responseProps.Add(new(uniqueName, displayName, description, fieldType, entityName));
             }
         }
@@ -249,9 +252,9 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
         foreach (var prop in type.GetProperties(BindingFlags.Instance | BindingFlags.Public))
         {
             var reqAttr = prop.GetCustomAttributesData()
-                .FirstOrDefault(a => a.AttributeType.FullName == "Flowline.Attributes.RequestParameterAttribute");
+                .FirstOrDefault(a => a.AttributeType.FullName == "Flowline.Attributes.InputAttribute");
             var respAttr = prop.GetCustomAttributesData()
-                .FirstOrDefault(a => a.AttributeType.FullName == "Flowline.Attributes.ResponsePropertyAttribute");
+                .FirstOrDefault(a => a.AttributeType.FullName == "Flowline.Attributes.OutputAttribute");
 
             if (reqAttr == null && respAttr == null) continue;
 
@@ -264,13 +267,14 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
             {
                 switch (arg.MemberName)
                 {
-                    case "EntityName":  entityName = arg.TypedValue.Value as string; break;
+                    case "Entity":  entityName = arg.TypedValue.Value as string; break;
                     case "DisplayName": displayName = arg.TypedValue.Value as string; break;
                     case "Description": description = arg.TypedValue.Value as string; break;
                 }
             }
 
             displayName ??= SplitPascalCase(prop.Name);
+            description ??= displayName;
 
             if (!FieldTypeMap.TryGetValue(propType.FullName ?? "", out var fieldType))
             {

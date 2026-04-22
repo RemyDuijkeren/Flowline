@@ -46,6 +46,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
         var existingTypes = await GetPluginTypes(service, assembly.Id);
         var typeNames = existingTypes.ToDictionary(t => t.GetAttributeValue<string>("typename"), t => t);
 
+        var customApiTypeNames = metadata.CustomApis.Select(a => a.PluginTypeFullName).ToHashSet();
         var messageCache = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
         var filterCache = new Dictionary<(Guid messageId, string entityName), Guid?>();
 
@@ -69,7 +70,8 @@ public class PluginRegistrationService(IFlowlineOutput output)
                 typeEntity.Id = await service.CreateAsync(typeEntity);
             }
 
-            if (!plugin.IsWorkflow)
+            // Custom API backing types have their steps managed by Dataverse — skip step registration for them.
+            if (!plugin.IsWorkflow && !customApiTypeNames.Contains(plugin.FullName))
                 await RegisterPluginStepsAsync(service, typeEntity, plugin.Steps, messageCache, filterCache, save);
         }
 
@@ -490,8 +492,8 @@ public class PluginRegistrationService(IFlowlineOutput output)
         {
             ["uniquename"]        = prop.UniqueName,
             ["name"]              = $"{apiUniqueName}.{prop.UniqueName}",
-            ["displayname"]       = prop.DisplayName,
-            ["description"]       = prop.Description,
+            ["displayname"]       = prop.DisplayName ?? prop.UniqueName,
+            ["description"]       = string.IsNullOrWhiteSpace(prop.Description) ? (prop.DisplayName ?? prop.UniqueName) : prop.Description,
             ["type"]              = new OptionSetValue(prop.Type),
             ["logicalentityname"] = prop.EntityName,
             ["customapiid"]       = new EntityReference("customapi", apiId),
