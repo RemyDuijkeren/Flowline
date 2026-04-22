@@ -36,8 +36,4 @@
     <PackageReference Include="MinVer" PrivateAssets="All" />
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\Flowline.SourceGenerators\Flowline.SourceGenerators.csproj" PrivateAssets="all" ReferenceOutputAssembly="false" OutputItemType="Analyzer" />
-  </ItemGroup>
-
 </Project>

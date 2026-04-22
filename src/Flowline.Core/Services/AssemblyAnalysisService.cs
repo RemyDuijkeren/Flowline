@@ -310,19 +310,29 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
             else if (arg.MemberName == "Configuration") configuration = (string?)arg.TypedValue.Value;
         }
 
+        ValidateEntityName(type.Name, logicalName);
+
         if (!TryParseClassName(type.Name, out var message, out var stage, out var mode))
             return null;
 
         ValidateExecutionMode(type.Name, stage, mode);
+        ValidateCustomApiAttributesOnStep(type.Name, HasCustomApiAttributes(type));
 
         var filteringAttributes = ReadFilterAttributes(type);
+        ValidateFilter(type.Name, message, filteringAttributes);
+
+        var secondaryEntity = ReadSecondaryEntityAttribute(type);
+        ValidateSecondaryEntity(type.Name, message, secondaryEntity);
+
         var images = ReadImageAttributes(type);
         ValidateImages(type.Name, message, stage, images);
-        var warnings = BuildImageWarnings(type.Name, images);
+        var warnings = BuildStepWarnings(type.Name, message, filteringAttributes, secondaryEntity, images);
 
-        return new PluginStepMetadata(
-            $"{type.FullName}: {message} of {logicalName}",
-            message, logicalName, stage, mode, order, filteringAttributes, configuration, images, warnings);
+        var stepName = secondaryEntity != null
+            ? $"{type.FullName}: {message} of {logicalName} with {secondaryEntity}"
+            : $"{type.FullName}: {message} of {logicalName}";
+
+        return new PluginStepMetadata(stepName, message, logicalName, stage, mode, order, filteringAttributes, configuration, images, warnings, secondaryEntity);
     }
 
     internal static bool TryParseClassName(string className, out string message, out int stage, out int mode)
@@ -384,6 +394,44 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
         return attrs.Length > 0 ? string.Join(",", attrs) : null;
     }
 
+    internal static void ValidateEntityName(string className, string logicalName)
+    {
+        if (string.IsNullOrWhiteSpace(logicalName))
+            throw new InvalidOperationException(
+                $"{className}: [Entity] logical name cannot be empty. Specify the table's logical name, e.g. [Entity(\"account\")].");
+    }
+
+    internal static void ValidateCustomApiAttributesOnStep(string className, bool hasCustomApiAttributes)
+    {
+        if (!hasCustomApiAttributes) return;
+
+        throw new InvalidOperationException(
+            $"{className}: [Input] and [Output] are Custom API attributes — they have no effect on a plugin step. " +
+            $"Add [CustomApi] to register this class as a Custom API, or remove [Input]/[Output].");
+    }
+
+    private static bool HasCustomApiAttributes(Type type) =>
+        type.GetCustomAttributesData().Any(a => a.AttributeType.FullName is
+            "Flowline.Attributes.InputAttribute" or "Flowline.Attributes.OutputAttribute")
+        || type.GetProperties().Any(p => p.GetCustomAttributesData()
+            .Any(a => a.AttributeType.FullName is
+                "Flowline.Attributes.InputAttribute" or "Flowline.Attributes.OutputAttribute"));
+
+    private static string? ReadSecondaryEntityAttribute(Type type)
+    {
+        var attr = type.GetCustomAttributesData()
+            .FirstOrDefault(a => a.AttributeType.FullName == "Flowline.Attributes.SecondaryEntityAttribute");
+        return attr == null ? null : (string)attr.ConstructorArguments[0].Value!;
+    }
+
+    internal static void ValidateSecondaryEntity(string className, string message, string? secondaryEntity)
+    {
+        if (secondaryEntity != null && message is not ("Associate" or "Disassociate"))
+            throw new InvalidOperationException(
+                $"{className}: [SecondaryEntity] has no effect on {message} — it only applies to Associate and Disassociate steps. " +
+                $"Remove [SecondaryEntity] or change the step message.");
+    }
+
     // https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#execution-mode
     internal static void ValidateExecutionMode(string className, int stage, int mode)
     {
@@ -392,6 +440,15 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
                 $"{className}: Asynchronous execution is only available for PostOperation — " +
                 $"PreValidation and PreOperation always run synchronously. Rename the class to remove 'Async' or change the stage to Post. " +
                 $"See https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#execution-mode");
+    }
+
+    internal static void ValidateFilter(string className, string message, string? filteringAttributes)
+    {
+        if (filteringAttributes == null || message == "Update") return;
+
+        throw new InvalidOperationException(
+            $"{className}: [Filter] has no effect on {message} — column filtering only applies to Update steps. " +
+            $"Remove [Filter] or change the step to Update.");
     }
 
     // https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#define-entity-images
@@ -424,10 +481,21 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
                 $"See https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#define-entity-images");
     }
 
-    // https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#define-entity-images
-    private static List<string> BuildImageWarnings(string className, List<PluginImageMetadata> images)
+    private static List<string> BuildStepWarnings(string className, string message, string? filteringAttributes, string? secondaryEntity, List<PluginImageMetadata> images)
     {
         var warnings = new List<string>();
+
+        if (message == "Update" && filteringAttributes == null)
+            warnings.Add(
+                $"{className}: Update step has no [Filter] — it will fire on every update to the table, regardless of which columns changed. " +
+                $"Add [Filter] with the columns your plugin cares about. " +
+                $"See https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#set-filtering-attributes");
+
+        if (message is "Associate" or "Disassociate" && secondaryEntity == null)
+            warnings.Add(
+                $"{className}: {message} step has no [SecondaryEntity] — it will fire for any table on the other side of the relationship. " +
+                $"Add [SecondaryEntity(\"none\")] to make this explicit, or specify the exact secondary table logical name.");
+
         foreach (var image in images)
         {
             if (image.Attributes != null) continue;
@@ -437,6 +505,7 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
                 $"Specify only the columns your plugin requires. " +
                 $"See https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#define-entity-images");
         }
+
         return warnings;
     }
 

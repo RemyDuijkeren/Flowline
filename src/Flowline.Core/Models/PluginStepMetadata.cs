@@ -10,4 +10,5 @@ public record PluginStepMetadata(
     string? FilteringAttributes,
     string? Configuration,
     List<PluginImageMetadata> Images,
-    List<string> Warnings);
+    List<string> Warnings,
+    string? SecondaryEntity = null);

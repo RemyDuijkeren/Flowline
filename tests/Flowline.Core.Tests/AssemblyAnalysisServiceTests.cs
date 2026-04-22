@@ -155,6 +155,122 @@ public class AssemblyAnalysisServiceTests
     }
 
     [Fact]
+    public void ValidateEntityName_EmptyName_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            AssemblyAnalysisService.ValidateEntityName("MockPreCreatePlugin", ""));
+        Assert.Contains("[Entity]", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateEntityName_WhitespaceName_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            AssemblyAnalysisService.ValidateEntityName("MockPreCreatePlugin", "  "));
+        Assert.Contains("[Entity]", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateEntityName_ValidName_DoesNotThrow()
+    {
+        AssemblyAnalysisService.ValidateEntityName("MockPreCreatePlugin", "account");
+    }
+
+    [Fact]
+    public void ValidateCustomApiAttributesOnStep_WithAttributes_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            AssemblyAnalysisService.ValidateCustomApiAttributesOnStep("MockPreCreatePlugin", true));
+        Assert.Contains("[Input]", ex.Message);
+        Assert.Contains("[Output]", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateCustomApiAttributesOnStep_WithoutAttributes_DoesNotThrow()
+    {
+        AssemblyAnalysisService.ValidateCustomApiAttributesOnStep("MockPreCreatePlugin", false);
+    }
+
+    [Fact]
+    public void ValidateSecondaryEntity_OnNonAssociateMessage_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            AssemblyAnalysisService.ValidateSecondaryEntity("MockPreCreatePlugin", "Create", "account"));
+        Assert.Contains("[SecondaryEntity]", ex.Message);
+        Assert.Contains("Create", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSecondaryEntity_OnAssociate_DoesNotThrow()
+    {
+        AssemblyAnalysisService.ValidateSecondaryEntity("MockPreAssociatePlugin", "Associate", "account");
+    }
+
+    [Fact]
+    public void ValidateSecondaryEntity_NullOnAnyMessage_DoesNotThrow()
+    {
+        AssemblyAnalysisService.ValidateSecondaryEntity("MockPreCreatePlugin", "Create", null);
+    }
+
+    [Fact]
+    public void Analyze_UpdatePluginWithoutFilter_AddsWarning()
+    {
+        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockNoFilterPostUpdatePlugin)).Steps);
+
+        Assert.Single(step.Warnings);
+        Assert.Contains("[Filter]", step.Warnings[0]);
+        Assert.Contains("Update", step.Warnings[0]);
+    }
+
+    [Fact]
+    public void Analyze_AssociatePluginWithSecondaryEntity_DetectsSecondaryEntity()
+    {
+        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockPreAssociatePlugin)).Steps);
+
+        Assert.Equal("account", step.SecondaryEntity);
+        Assert.Empty(step.Warnings);
+    }
+
+    [Fact]
+    public void Analyze_AssociatePluginWithoutSecondaryEntity_AddsWarning()
+    {
+        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockNoSecondaryPreAssociatePlugin)).Steps);
+
+        Assert.Single(step.Warnings);
+        Assert.Contains("[SecondaryEntity]", step.Warnings[0]);
+    }
+
+    [Fact]
+    public void ValidateFilter_FilterOnCreate_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            AssemblyAnalysisService.ValidateFilter("MockPreCreatePlugin", "Create", "name,telephone1"));
+        Assert.Contains("[Filter]", ex.Message);
+        Assert.Contains("Create", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateFilter_FilterOnDelete_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            AssemblyAnalysisService.ValidateFilter("MockPreDeletePlugin", "Delete", "name"));
+        Assert.Contains("[Filter]", ex.Message);
+        Assert.Contains("Delete", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateFilter_FilterOnUpdate_DoesNotThrow()
+    {
+        AssemblyAnalysisService.ValidateFilter("MockPreUpdatePlugin", "Update", "name,telephone1");
+    }
+
+    [Fact]
+    public void ValidateFilter_NullFilter_DoesNotThrow()
+    {
+        AssemblyAnalysisService.ValidateFilter("MockPreCreatePlugin", "Create", null);
+    }
+
+    [Fact]
     public void ValidateImages_PreImageOnCreate_Throws()
     {
         var images = new List<PluginImageMetadata> { new("Pre Image", "preimage", (int)ImageType.PreImage, "name") };
@@ -355,4 +471,23 @@ public class MockNoStagePlugin : IPlugin
 public abstract class MockAbstractPlugin : IPlugin
 {
     public abstract void Execute(IServiceProvider serviceProvider);
+}
+
+[Entity("account")]
+public class MockNoFilterPostUpdatePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+[Entity("contact")]
+[SecondaryEntity("account")]
+public class MockPreAssociatePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+[Entity("contact")]
+public class MockNoSecondaryPreAssociatePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }

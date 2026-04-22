@@ -238,6 +238,27 @@ public class ContactAccountAssociatePlugin : IPlugin
 For all other messages (Create, Update, Delete, ...) omit `[SecondaryEntity]` — Dataverse uses
 `"none"` automatically.
 
+## Step lifecycle
+
+Flowline treats the DLL as the source of truth. On every `flowline push`:
+
+- **Plugin types** — created for every public `IPlugin` or `CodeActivity` class; deleted when the class is removed from the DLL.
+- **Steps** — created or updated for every class with `[Entity]`; deleted when the class loses `[Entity]` or is removed entirely.
+
+Steps Flowline creates are stamped with `[flowline]` in their description, visible in Plugin Registration Tool.
+
+### Disabling a plugin
+
+Remove `[Entity]` from the class — Flowline deletes its steps on the next push, but keeps the plugin type registered. Delete the class entirely to remove both the type and its steps.
+
+### The `--save` flag
+
+Pass `--save` to suppress all deletions for that run. Flowline prints each skipped deletion, making it useful as a dry run before a clean push:
+
+```bash
+flowline push MySolution --save
+```
+
 ## Examples
 
 ### Minimal — PostOperation Create
@@ -466,27 +487,6 @@ Flowline treats the DLL as the source of truth for Custom APIs, the same as for 
 The `--save` flag suppresses deletions for Custom APIs the same way it does for steps.
 
 ---
-
-## Step lifecycle
-
-Flowline treats the DLL as the source of truth. On every `flowline push`:
-
-- **Plugin types** — created for every public `IPlugin` or `CodeActivity` class; deleted when the class is removed from the DLL.
-- **Steps** — created or updated for every class with `[Entity]`; deleted when the class loses `[Entity]` or is removed entirely.
-
-Steps Flowline creates are stamped with `[flowline]` in their description, visible in Plugin Registration Tool.
-
-### Disabling a plugin
-
-Remove `[Entity]` from the class — Flowline deletes its steps on the next push, but keeps the plugin type registered. Delete the class entirely to remove both the type and its steps.
-
-### The `--save` flag
-
-Pass `--save` to suppress all deletions for that run. Flowline prints each skipped deletion, making it useful as a dry run before a clean push:
-
-```bash
-flowline push MySolution --save
-```
 
 ## The "1 plugin = 1 step" rule
 

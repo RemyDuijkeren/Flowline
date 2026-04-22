@@ -48,7 +48,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
 
         var customApiTypeNames = metadata.CustomApis.Select(a => a.PluginTypeFullName).ToHashSet();
         var messageCache = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
-        var filterCache = new Dictionary<(Guid messageId, string entityName), Guid?>();
+        var filterCache = new Dictionary<(Guid messageId, string entityName, string secondaryEntity), Guid?>();
 
         foreach (var plugin in metadata.Plugins)
         {
@@ -104,7 +104,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
         Entity typeEntity,
         List<PluginStepMetadata> steps,
         Dictionary<string, Guid> messageCache,
-        Dictionary<(Guid messageId, string entityName), Guid?> filterCache,
+        Dictionary<(Guid messageId, string entityName, string secondaryEntity), Guid?> filterCache,
         bool save)
     {
         var existingSteps = await GetSteps(service, typeEntity.Id);
@@ -120,10 +120,11 @@ public class PluginRegistrationService(IFlowlineOutput output)
                     messageCache[step.Message] = messageId;
                 }
 
-                if (!filterCache.TryGetValue((messageId, step.EntityName), out var filterId))
+                var secondaryEntity = step.SecondaryEntity ?? "none";
+                if (!filterCache.TryGetValue((messageId, step.EntityName, secondaryEntity), out var filterId))
                 {
-                    filterId = await LookupSdkMessageFilterIdAsync(service, messageId, step.EntityName);
-                    filterCache[(messageId, step.EntityName)] = filterId;
+                    filterId = await LookupSdkMessageFilterIdAsync(service, messageId, step.EntityName, step.SecondaryEntity);
+                    filterCache[(messageId, step.EntityName, secondaryEntity)] = filterId;
                 }
 
                 var entity = new Entity("sdkmessageprocessingstep")
@@ -662,7 +663,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
             ?? throw new InvalidOperationException($"Dataverse message '{messageName}' not found in sdkmessage.");
     }
 
-    async Task<Guid?> LookupSdkMessageFilterIdAsync(IOrganizationServiceAsync2 service, Guid messageId, string entityName)
+    async Task<Guid?> LookupSdkMessageFilterIdAsync(IOrganizationServiceAsync2 service, Guid messageId, string entityName, string? secondaryEntity = null)
     {
         var query = new QueryExpression("sdkmessagefilter")
         {
@@ -671,6 +672,8 @@ public class PluginRegistrationService(IFlowlineOutput output)
         };
         query.Criteria.AddCondition("sdkmessageid", ConditionOperator.Equal, messageId);
         query.Criteria.AddCondition("primaryobjecttypecode", ConditionOperator.Equal, entityName);
+        if (secondaryEntity != null)
+            query.Criteria.AddCondition("secondaryobjecttypecode", ConditionOperator.Equal, secondaryEntity);
 
         var result = await service.RetrieveMultipleAsync(query);
         return result.Entities.FirstOrDefault()?.Id;
