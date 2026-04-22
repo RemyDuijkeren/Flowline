@@ -1,7 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Flowline.SourceGenerators\Flowline.SourceGenerators.csproj" />
     <ProjectReference Include="..\..\src\Flowline.Attributes\Flowline.Attributes.csproj" />
   </ItemGroup>
 

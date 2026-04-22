@@ -14,7 +14,6 @@
     <Project Path="src\Flowline\Flowline.csproj" />
     <File Path="src/Directory.Build.props" />
     <Project Path="src/Flowline.Attributes/Flowline.Attributes.csproj" />
-    <Project Path="src/Flowline.SourceGenerators/Flowline.SourceGenerators.csproj" />
     <Project Path="src\Flowline.Core\Flowline.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
