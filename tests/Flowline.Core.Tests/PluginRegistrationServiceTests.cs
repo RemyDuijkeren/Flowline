@@ -20,15 +20,21 @@ public class PluginRegistrationServiceTests
         _serviceMock = new Mock<IOrganizationServiceAsync2>();
         _outputMock = new Mock<IFlowlineOutput>();
         _service = new PluginRegistrationService(_outputMock.Object);
+
+        // Default empty results for all queries
+        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.IsAny<QueryExpression>()))
+            .ReturnsAsync(new EntityCollection());
     }
 
     // -- Helpers --
 
-    private Entity ExistingAssembly(Guid id, string version = "1.0.0.0")
+    private Entity ExistingAssembly(Guid id, string version = "1.0.0.0", string? hash = null)
     {
         var e = new Entity("pluginassembly", id);
         e["name"] = "MyPlugin";
         e["version"] = version;
+        if (hash != null)
+            e["description"] = $"[flowline] sha256={hash}";
         return e;
     }
 
@@ -58,18 +64,28 @@ public class PluginRegistrationServiceTests
 
     private void SetupSteps(params Entity[] steps)
     {
+        foreach (var s in steps)
+        {
+            if (!s.Contains("plugintypeid"))
+                s["plugintypeid"] = new EntityReference("plugintype", Guid.NewGuid());
+        }
         _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep")))
             .ReturnsAsync(new EntityCollection(steps.ToList()));
     }
 
     private void SetupImages(params Entity[] images)
     {
+        foreach (var i in images)
+        {
+            if (!i.Contains("sdkmessageprocessingstepid"))
+                i["sdkmessageprocessingstepid"] = new EntityReference("sdkmessageprocessingstep", Guid.NewGuid());
+        }
         _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstepimage")))
             .ReturnsAsync(new EntityCollection(images.ToList()));
     }
 
-    private PluginAssemblyMetadata Metadata(string name = "MyPlugin", string version = "1.0.0.0", params PluginTypeMetadata[] plugins) =>
-        new(name, $"{name}, Version={version}", new byte[] { 1, 2, 3 }, version, plugins.ToList(), []);
+    private PluginAssemblyMetadata Metadata(string name = "MyPlugin", string version = "1.0.0.0", string hash = "deadbeef", params PluginTypeMetadata[] plugins) =>
+        new(name, $"{name}, Version={version}", new byte[] { 1, 2, 3 }, hash, version, plugins.ToList(), []);
 
     // -- Assembly create/update --
 
@@ -172,6 +188,7 @@ public class PluginRegistrationServiceTests
 
         var stepId = Guid.NewGuid();
         var obsoleteStep = new Entity("sdkmessageprocessingstep", stepId);
+        obsoleteStep["plugintypeid"] = new EntityReference("plugintype", obsoleteTypeId);
         SetupSteps(obsoleteStep);
 
         await _service.SyncAsync(_serviceMock.Object, Metadata(), "MySolution"); // no plugins in assembly
@@ -209,9 +226,13 @@ public class PluginRegistrationServiceTests
         // [Entity] removed to disable a plugin — Flowline deletes all steps for that type
         var assemblyId = Guid.NewGuid();
         SetupAssembly(ExistingAssembly(assemblyId));
-        SetupPluginTypes();
+        
+        var pluginType = new Entity("plugintype", Guid.NewGuid()) { ["typename"] = "MyNamespace.MyPlugin", ["isworkflowactivity"] = false };
+        SetupPluginTypes(pluginType);
+        
         var stepId = Guid.NewGuid();
-        SetupSteps(new Entity("sdkmessageprocessingstep", stepId) { ["name"] = "Old step" });
+        var existingStep = new Entity("sdkmessageprocessingstep", stepId) { ["name"] = "Old step", ["plugintypeid"] = pluginType.ToEntityReference() };
+        SetupSteps(existingStep);
 
         await _service.SyncAsync(_serviceMock.Object, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", false, [])), "MySolution");
 
@@ -223,14 +244,16 @@ public class PluginRegistrationServiceTests
     {
         var assemblyId = Guid.NewGuid();
         SetupAssembly(ExistingAssembly(assemblyId));
-        SetupPluginTypes();
+        
+        var pluginType = new Entity("plugintype", Guid.NewGuid()) { ["typename"] = "MyNamespace.MyPlugin", ["isworkflowactivity"] = false };
+        SetupPluginTypes(pluginType);
 
         var orphanId = Guid.NewGuid();
-        SetupSteps(new Entity("sdkmessageprocessingstep", orphanId) { ["name"] = "Orphaned step" });
+        SetupSteps(new Entity("sdkmessageprocessingstep", orphanId) { ["name"] = "Orphaned step", ["plugintypeid"] = pluginType.ToEntityReference() });
         SetupImages();
 
         _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessage")))
-            .ReturnsAsync(new EntityCollection(new List<Entity> { new Entity("sdkmessage", Guid.NewGuid()) }));
+            .ReturnsAsync(new EntityCollection(new List<Entity> { new Entity("sdkmessage", Guid.NewGuid()) { ["name"] = "Update" } }));
         _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter")))
             .ReturnsAsync(new EntityCollection());
 
@@ -241,6 +264,36 @@ public class PluginRegistrationServiceTests
         _serviceMock.Verify(x => x.DeleteAsync("sdkmessageprocessingstep", orphanId), Times.Once);
     }
 
+    // -- Hash-based change detection --
+
+    [Fact]
+    public async Task SyncAsync_UnchangedAssembly_SkipsUpload()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, hash: "abc123"));
+        SetupPluginTypes();
+
+        await _service.SyncAsync(_serviceMock.Object, Metadata(hash: "abc123"), "MySolution");
+
+        _serviceMock.Verify(x => x.UpdateAsync(It.Is<Entity>(e => e.LogicalName == "pluginassembly")), Times.Never);
+        _outputMock.Verify(x => x.Skip(It.Is<string>(s => s.Contains("unchanged"))), Times.Once);
+    }
+
+    [Fact]
+    public async Task SyncAsync_ChangedAssembly_UploadsNewContent()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, hash: "oldhash"));
+        SetupPluginTypes();
+
+        await _service.SyncAsync(_serviceMock.Object, Metadata(hash: "newhash"), "MySolution");
+
+        _serviceMock.Verify(x => x.UpdateAsync(It.Is<Entity>(e =>
+            e.LogicalName == "pluginassembly" &&
+            e.GetAttributeValue<string>("description") == "[flowline] sha256=newhash"
+        )), Times.Once);
+    }
+
     // -- Save mode: report skipped deletions --
 
     [Fact]
@@ -249,7 +302,8 @@ public class PluginRegistrationServiceTests
         var assemblyId = Guid.NewGuid();
         SetupAssembly(ExistingAssembly(assemblyId));
 
-        SetupPluginTypes(new Entity("plugintype", Guid.NewGuid())
+        var obsoleteTypeId = Guid.NewGuid();
+        SetupPluginTypes(new Entity("plugintype", obsoleteTypeId)
         {
             ["typename"] = "Obsolete.Plugin",
             ["isworkflowactivity"] = false
@@ -259,11 +313,11 @@ public class PluginRegistrationServiceTests
         var plugin = new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", false, [step]);
 
         var existingStepId = Guid.NewGuid();
-        SetupSteps(new Entity("sdkmessageprocessingstep", existingStepId) { ["name"] = "Orphaned step" });
+        SetupSteps(new Entity("sdkmessageprocessingstep", existingStepId) { ["name"] = "Orphaned step", ["plugintypeid"] = new EntityReference("plugintype", obsoleteTypeId) });
         SetupImages();
 
         _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessage")))
-            .ReturnsAsync(new EntityCollection(new List<Entity> { new Entity("sdkmessage", Guid.NewGuid()) }));
+            .ReturnsAsync(new EntityCollection(new List<Entity> { new Entity("sdkmessage", Guid.NewGuid()) { ["name"] = "Update" } }));
         _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter")))
             .ReturnsAsync(new EntityCollection());
 

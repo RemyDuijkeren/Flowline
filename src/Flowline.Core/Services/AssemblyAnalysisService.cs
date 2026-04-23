@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using Flowline.Core.Models;
 
 namespace Flowline.Core.Services;
@@ -59,6 +60,7 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
         var assembly = mlc.LoadFromAssemblyPath(dllPath);
         var assemblyName = assembly.GetName();
         var content = File.ReadAllBytes(dllPath);
+        var hash = Convert.ToHexString(SHA256.HashData(content));
 
         output.Info($"Loaded assembly {assemblyName.Name}");
 
@@ -108,6 +110,7 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
             assemblyName.Name!,
             assemblyName.FullName,
             content,
+            hash,
             assemblyName.Version!.ToString(),
             plugins,
             customApis);

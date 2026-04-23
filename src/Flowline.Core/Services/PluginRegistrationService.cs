@@ -31,7 +31,19 @@ public class PluginRegistrationService(IFlowlineOutput output)
         string solutionName,
         bool save = false)
     {
-        var assembly = await GetOrRegisterAssembly(service, metadata, solutionName);
+        // Phase 1: Get Assembly
+        var (assembly, needsUpdate) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName);
+
+        // Phase 2: Delete obsolete types, steps, images, and APIs
+
+        // Phase 3: Update Assembly content
+        if (needsUpdate)
+        {
+            await UpdateAssemblyContentAsync(service, assembly, metadata);
+            output.Info($"[green]Updated assembly content for [bold]{metadata.Name}[/][/]");
+        }
+
+        // Phase 4: Register Plugins, Workflows, and Custom APIs
         await RegisterPluginsAsync(service, metadata, assembly, save);
         await RegisterWorkflowActivitiesAsync(service, metadata, assembly, save);
 
@@ -40,6 +52,8 @@ public class PluginRegistrationService(IFlowlineOutput output)
             var prefix = await GetPublisherPrefixAsync(service, solutionName);
             await RegisterCustomApisAsync(service, metadata.CustomApis, assembly.Id, prefix, solutionName, save);
         }
+
+        // Phase 5: Finalize registration (Publish)
     }
 
     async Task RegisterPluginsAsync(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, Entity assembly, bool save)
@@ -552,11 +566,11 @@ public class PluginRegistrationService(IFlowlineOutput output)
         await service.DeleteAsync("customapi", apiId);
     }
 
-    async Task<Entity> GetOrRegisterAssembly(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName)
+    async Task<(Entity entity, bool needsUpdate)> GetOrRegisterAssemblyAsync(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName)
     {
         var query = new QueryExpression("pluginassembly")
         {
-            ColumnSet = new ColumnSet("pluginassemblyid", "name", "version", "content"),
+            ColumnSet = new ColumnSet("pluginassemblyid", "name", "version", "description"),
             Criteria = new FilterExpression()
         };
         query.Criteria.AddCondition("name", ConditionOperator.Equal, metadata.Name);
@@ -571,21 +585,35 @@ public class PluginRegistrationService(IFlowlineOutput output)
                 ["name"] = metadata.Name,
                 ["content"] = Convert.ToBase64String(metadata.Content),
                 ["version"] = metadata.Version,
-                ["isolationmode"] = new OptionSetValue(2) // 2 = Sandbox (cloud only)
+                ["isolationmode"] = new OptionSetValue(2), // 2 = Sandbox (cloud only)
+                ["description"] = $"{FlowlineMarker} sha256={metadata.Hash}"
             };
 
             var createReq = new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName };
             var response = (CreateResponse)await service.ExecuteAsync(createReq);
             entity.Id = response.id;
-            return entity;
+            return (entity, false);
         }
         else
         {
-            existing["content"] = Convert.ToBase64String(metadata.Content);
-            existing["version"] = metadata.Version;
-            await service.UpdateAsync(existing);
-            return existing;
+            var storedHash = ParseStoredHash(existing.GetAttributeValue<string>("description"));
+            return (existing, storedHash != metadata.Hash);
         }
+    }
+
+    async Task UpdateAssemblyContentAsync(IOrganizationServiceAsync2 service, Entity existing, PluginAssemblyMetadata metadata)
+    {
+        existing["content"] = Convert.ToBase64String(metadata.Content);
+        existing["version"] = metadata.Version;
+        existing["description"] = $"{FlowlineMarker} sha256={metadata.Hash}";
+        await service.UpdateAsync(existing);
+    }
+
+    static string? ParseStoredHash(string? description)
+    {
+        if (description == null) return null;
+        var idx = description.IndexOf("sha256=", StringComparison.Ordinal);
+        return idx < 0 ? null : description[(idx + 7)..].Split(' ')[0].Trim();
     }
 
     async Task<string> GetPublisherPrefixAsync(IOrganizationServiceAsync2 service, string solutionName)
