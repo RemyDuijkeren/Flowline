@@ -12,7 +12,7 @@
     },
     "push": {
       "commandName": "Project",
-      "commandLineArgs": "push",
+      "commandLineArgs": "push --verbose",
       "workingDirectory": "E:/Code/TryOut/MyFlowTest"
     },
     "push --verbose": {
