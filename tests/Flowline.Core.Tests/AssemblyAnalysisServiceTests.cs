@@ -100,6 +100,14 @@ public class AssemblyAnalysisServiceTests
     }
 
     [Fact]
+    public void Analyze_PluginWithWhitespaceInFilter_NormalizesFilteringAttributes()
+    {
+        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockWithWhitespacePreUpdatePlugin)).Steps);
+
+        Assert.Equal("name,firstname", step.FilteringAttributes);
+    }
+
+    [Fact]
     public void Analyze_PluginWithImages_DetectsPreAndPostImages()
     {
         var step = Assert.Single(GetPlugin(Analyze(), nameof(MockBothImagesPostUpdatePlugin)).Steps);
@@ -421,6 +429,13 @@ public class MockValidationCreatePlugin : IPlugin
 [Entity("account")]
 [Filter("name", "telephone1")]
 public class MockPreUpdatePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+[Entity("account")]
+[Filter(" name ", " firstname ")]
+public class MockWithWhitespacePreUpdatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }

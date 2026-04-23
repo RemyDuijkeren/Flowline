@@ -394,7 +394,9 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
         if (filterAttr == null) return null;
 
         var attrs = ReadStringArray(filterAttr.ConstructorArguments[0]);
-        return attrs.Length > 0 ? string.Join(",", attrs) : null;
+        var normalized = attrs.Select(v => v.Trim()).Where(v => !string.IsNullOrWhiteSpace(v)).ToArray();
+
+        return normalized.Length > 0 ? string.Join(",", normalized) : null;
     }
 
     internal static void ValidateEntityName(string className, string logicalName)
