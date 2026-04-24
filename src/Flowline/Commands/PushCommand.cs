@@ -1,9 +1,11 @@
 using System.ComponentModel;
+using CliWrap;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using Flowline.Utils;
+using Microsoft.PowerPlatform.Dataverse.Client;
 
 namespace Flowline.Commands;
 
@@ -42,6 +44,10 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
+        output.IsVerbose = settings.Verbose;
+        if (settings.Save) AnsiConsole.MarkupLine("[dim]Save mode enabled: Assets not in source control will be preserved.[/]");
+        if (settings.Force) AnsiConsole.MarkupLine("[dim]Force mode enabled: Safety checks will be bypassed.[/]");
+
         // Dev URL is required for push
         var devEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, settings.DevUrl, settings, cancellationToken);
         if (devEnv == null) return 1;
@@ -71,28 +77,41 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
             AnsiConsole.MarkupLine("[red]Extensions.dll not found. Please build the solution first.[/]");
             return 1;
         }
+        AnsiConsole.MarkupLine($"[green]Extensions.dll found: '{extensionsDll}'[/]");
 
-        // Sync Plugins
-        var profile = authSrv.GetPacProfiles()
-                             .FirstOrDefault(p => p.Resource?.TrimEnd('/').Equals(devEnv.EnvironmentUrl?.TrimEnd('/'), StringComparison.OrdinalIgnoreCase) == true)
-                      ?? authSrv.GetPacProfiles().FirstOrDefault(p => p.IsUniversal);
-        if (profile == null)
-        {
-            AnsiConsole.MarkupLine("[red]No PAC profile found — run 'pac auth create' first.[/]");
-            return 1;
-        }
+        // Analyze the assembly
+        var metadata = AnsiConsole.Status().FlowlineSpinner().Start(
+            "Analyzing assembly...",
+            ctx => analysisService.Analyze(extensionsDll));
 
-        output.IsVerbose = settings.Verbose;
+        AnsiConsole.MarkupLine("[green]Metadata found[/]");
 
-        if (settings.Save) AnsiConsole.MarkupLine("[dim]Save mode enabled: Assets not in source control will be preserved.[/]");
-        if (settings.Force) AnsiConsole.MarkupLine("[dim]Force mode enabled: Safety checks will be bypassed.[/]");
+        // Find PAC profile and connect
+        IOrganizationServiceAsync2? conn = AnsiConsole.Status().FlowlineSpinner().Start(
+            "Connecting to environment...",
+            ctx =>
+            {
+                var profile = authSrv.GetPacProfiles()
+                                     .FirstOrDefault(p => p.Resource?.TrimEnd('/').Equals(devEnv.EnvironmentUrl?.TrimEnd('/'), StringComparison.OrdinalIgnoreCase) == true)
+                              ?? authSrv.GetPacProfiles().FirstOrDefault(p => p.IsUniversal);
 
-        var metadata = analysisService.Analyze(extensionsDll);
+                if (profile != null) return authSrv.ConnectViaPac(profile, devEnv.EnvironmentUrl);
 
-        var conn = authSrv.ConnectViaPac(profile, devEnv.EnvironmentUrl);
-        await pluginSyncSrv.SyncAsync(conn, metadata, sln.Name, settings.Save, cancellationToken);
+                AnsiConsole.MarkupLine("[red]No PAC profile found — run 'pac auth create' first.[/]");
+                return null;
 
-        AnsiConsole.MarkupLine("[green]All done![/]");
+            });
+
+        if (conn == null) return 1;
+        AnsiConsole.MarkupLine("[green]Connected to environment[/]");
+
+        await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+            $"Pushing [bold]{ExtensionsName}.dll[/] to Dataverse...",
+            ctx => pluginSyncSrv.SyncAsync(conn, metadata, sln.Name, settings.Save, cancellationToken));
+
+        AnsiConsole.MarkupLine("[green]Assets pushed to Dataverse[/]");
+
+        AnsiConsole.MarkupLine("[bold green]:rocket: Pushed! Use 'sync' to keep it in flow.[/]");
 
         return 0;
     }
