@@ -82,7 +82,7 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
                     output.Verbose($"Found custom API {type.FullName}");
                     customApis.Add(customApi);
                     // Plugin type still needs to be registered — custom API references it via plugintypeid
-                    plugins.Add(new PluginTypeMetadata(type.Name, type.FullName!, IsWorkflow: false, Steps: []));
+                    plugins.Add(new PluginTypeMetadata(type.Name, type.FullName!, IsWorkflow: false, Steps: [], IsCustomApi: true));
                     continue;
                 }
             }

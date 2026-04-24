@@ -96,8 +96,6 @@ public class PluginRegistrationService(IFlowlineOutput output)
             .Where(t => !t.GetAttributeValue<bool>("isworkflowactivity"))
             .ToList();
         var typeNames = existingTypes.ToDictionary(t => t.GetAttributeValue<string>("typename"), t => t);
-
-        var customApiTypeNames = metadata.CustomApis.Select(a => a.PluginTypeFullName).ToHashSet();
         var messageCache = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
         var filterCache = new Dictionary<(Guid messageId, string entityName, string secondaryEntity), Guid?>();
 
@@ -119,7 +117,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
             }
 
             // Custom API backing types have their steps managed by Dataverse — skip step registration for them.
-            if (!customApiTypeNames.Contains(plugin.FullName))
+            if (!plugin.IsCustomApi)
                 await RegisterPluginStepsAsync(service, typeEntity, plugin.Steps, solutionName, messageCache, filterCache, save, allowDeletes, cancellationToken);
         }
 

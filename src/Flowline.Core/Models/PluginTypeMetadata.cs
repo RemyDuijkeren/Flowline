@@ -4,4 +4,5 @@ public record PluginTypeMetadata(
     string Name,
     string FullName,
     bool IsWorkflow,
-    List<PluginStepMetadata> Steps);
+    List<PluginStepMetadata> Steps,
+    bool IsCustomApi = false);
