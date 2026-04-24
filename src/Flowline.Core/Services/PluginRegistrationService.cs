@@ -10,6 +10,15 @@ public class PluginRegistrationService(IFlowlineOutput output)
 {
     const int MaxParallelism = 8;
     const string FlowlineMarker = "[flowline]";
+    const string DefaultSolutionUniqueName = "Default";
+    const int PluginAssemblyComponentType = 91;
+    const int SdkMessageProcessingStepComponentType = 92;
+
+    readonly Dictionary<string, int> _componentTypeByEntityLogicalName = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["pluginassembly"] = PluginAssemblyComponentType,
+        ["sdkmessageprocessingstep"] = SdkMessageProcessingStepComponentType
+    };
 
     sealed record DeletePlan(
         IReadOnlyList<EntityReference> Images,
@@ -41,6 +50,9 @@ public class PluginRegistrationService(IFlowlineOutput output)
         string solutionName,
         bool save = false, CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(solutionName))
+            throw new ArgumentException("solutionName is required and cannot be empty.", nameof(solutionName));
+
         // Phase 1: Get Assembly
         var (assembly, needsUpdate) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, cancellationToken);
 
@@ -64,7 +76,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
 
         // Phase 4: Upsert Plugins, Workflows, and Custom APIs
         output.Verbose("phase=3 wave=plugin-types-steps-images status=started");
-        await RegisterPluginsAsync(service, metadata, assembly, save, allowDeletes: false, cancellationToken);
+        await RegisterPluginsAsync(service, metadata, assembly, solutionName, save, allowDeletes: false, cancellationToken);
         output.Verbose("phase=3 wave=plugin-types-steps-images status=completed");
 
         output.Verbose("phase=3 wave=workflow-activities status=started");
@@ -78,7 +90,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
         // Phase 5: Finalize registration
     }
 
-    async Task RegisterPluginsAsync(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, Entity assembly, bool save, bool allowDeletes, CancellationToken cancellationToken = default)
+    async Task RegisterPluginsAsync(IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, Entity assembly, string solutionName, bool save, bool allowDeletes, CancellationToken cancellationToken = default)
     {
         var existingTypes = (await GetPluginTypesAsync(service, assembly.Id, cancellationToken))
             .Where(t => !t.GetAttributeValue<bool>("isworkflowactivity"))
@@ -94,7 +106,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
             // https://learn.microsoft.com/en-us/power-apps/developer/data-platform/reference/entities/plugintype
             if (!typeNames.TryGetValue(plugin.FullName, out var typeEntity))
             {
-                typeEntity = new Entity("plugintype")
+                typeEntity = new Entity("plugintype", Guid.NewGuid())
                 {
                     ["typename"] = plugin.FullName,
                     ["name"] = plugin.FullName,
@@ -102,12 +114,13 @@ public class PluginRegistrationService(IFlowlineOutput output)
                     ["pluginassemblyid"] = assembly.ToEntityReference(),
                     ["description"] = $"{FlowlineMarker} Created at {DateTime.UtcNow:u}"
                 };
-                typeEntity.Id = await service.CreateAsync(typeEntity, cancellationToken);
+
+                await service.CreateAsync(typeEntity, cancellationToken);
             }
 
             // Custom API backing types have their steps managed by Dataverse — skip step registration for them.
             if (!customApiTypeNames.Contains(plugin.FullName))
-                await RegisterPluginStepsAsync(service, typeEntity, plugin.Steps, messageCache, filterCache, save, allowDeletes, cancellationToken);
+                await RegisterPluginStepsAsync(service, typeEntity, plugin.Steps, solutionName, messageCache, filterCache, save, allowDeletes, cancellationToken);
         }
 
         var localNames = metadata.Plugins.Where(p => !p.IsWorkflow).Select(p => p.FullName).ToHashSet();
@@ -178,6 +191,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
         IOrganizationServiceAsync2 service,
         Entity typeEntity,
         List<PluginStepMetadata> steps,
+        string solutionName,
         Dictionary<string, Guid> messageCache,
         Dictionary<(Guid messageId, string entityName, string secondaryEntity), Guid?> filterCache,
         bool save,
@@ -204,7 +218,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
                     filterCache[(messageId, step.EntityName, secondaryEntity)] = filterId;
                 }
 
-                var entity = new Entity("sdkmessageprocessingstep")
+                var entity = new Entity("sdkmessageprocessingstep", Guid.NewGuid())
                 {
                     ["name"] = step.Name,
                     ["plugintypeid"] = typeEntity.ToEntityReference(),
@@ -219,16 +233,29 @@ public class PluginRegistrationService(IFlowlineOutput output)
                 if (filterId.HasValue)
                     entity["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId.Value);
 
+                var createStepRequest = new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName };
+                await service.ExecuteAsync(createStepRequest, cancellationToken);
                 stepEntity = entity;
-                stepEntity.Id = await service.CreateAsync(stepEntity,cancellationToken);
             }
             else
             {
+                await WarnIfComponentExistsInOtherSolutionsAsync(
+                    service,
+                    SdkMessageProcessingStepComponentType,
+                    stepEntity.Id,
+                    solutionName,
+                    "sdkmessageprocessingstep",
+                    step.Name,
+                    cancellationToken);
+
+                await EnsureComponentInSolutionAsync(service, "sdkmessageprocessingstep", stepEntity.Id, solutionName, cancellationToken);
+
                 stepEntity["stage"] = new OptionSetValue(step.Stage);
                 stepEntity["mode"] = new OptionSetValue(step.Mode);
                 stepEntity["rank"] = step.Order;
                 stepEntity["filteringattributes"] = step.FilteringAttributes;
                 stepEntity["configuration"] = step.Configuration;
+
                 await service.UpdateAsync(stepEntity, cancellationToken);
             }
 
@@ -349,7 +376,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
             if (!existingByUniqueName.TryGetValue(uniqueName, out var existingApi))
                 await CreateCustomApiAsync(service, api, uniqueName, pluginType, solutionName, cancellationToken);
             else
-                await SyncExistingCustomApiAsync(service, api, uniqueName, existingApi, pluginType, save, allowDeletes, cancellationToken);
+                await SyncExistingCustomApiAsync(service, api, uniqueName, existingApi, pluginType, solutionName, save, allowDeletes, cancellationToken);
         }
 
         var localUniqueNames = customApis.Select(a => $"{prefix}_{a.UniqueName}").ToHashSet();
@@ -389,16 +416,8 @@ public class PluginRegistrationService(IFlowlineOutput output)
             ["plugintypeid"]                    = pluginType.ToEntityReference(),
         };
 
-        Guid apiId;
-        if (!string.IsNullOrEmpty(solutionName))
-        {
-            var req = new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName };
-            apiId = ((CreateResponse)await service.ExecuteAsync(req, cancellationToken)).id;
-        }
-        else
-        {
-            apiId = await service.CreateAsync(entity, cancellationToken);
-        }
+        var req = new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName };
+        var apiId = ((CreateResponse)await service.ExecuteAsync(req, cancellationToken)).id;
 
         foreach (var param in api.RequestParameters)
             await CreateRequestParameterAsync(service, param, apiId, uniqueName, solutionName, cancellationToken);
@@ -413,10 +432,24 @@ public class PluginRegistrationService(IFlowlineOutput output)
         string uniqueName,
         Entity existingApi,
         Entity pluginType,
+        string solutionName,
         bool save,
         bool allowDeletes,
         CancellationToken cancellationToken = default)
     {
+        var customApiComponentType = await GetComponentTypeFromSolutionComponentAsync(service, existingApi.Id, "customapi", cancellationToken);
+
+        await WarnIfComponentExistsInOtherSolutionsAsync(
+            service,
+            customApiComponentType,
+            existingApi.Id,
+            solutionName,
+            "customapi",
+            uniqueName,
+            cancellationToken);
+
+        await EnsureComponentInSolutionAsync(service, "customapi", existingApi.Id, solutionName, cancellationToken);
+
         var immutableChanged =
             (existingApi.GetAttributeValue<OptionSetValue>("bindingtype")?.Value ?? 0) != api.BindingType ||
             existingApi.GetAttributeValue<string>("boundentitylogicalname") != api.BoundEntityLogicalName ||
@@ -430,7 +463,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
                 throw new InvalidOperationException($"Delete required for immutable Custom API changes on '{uniqueName}', but deletes are blocked in phase 3.");
 
             await DeleteCustomApiAsync(service, existingApi.Id, cancellationToken);
-            await CreateCustomApiAsync(service, api, uniqueName, pluginType, solutionName: "", cancellationToken: cancellationToken);
+            await CreateCustomApiAsync(service, api, uniqueName, pluginType, solutionName, cancellationToken);
             return;
         }
 
@@ -441,10 +474,10 @@ public class PluginRegistrationService(IFlowlineOutput output)
         await service.UpdateAsync(existingApi, cancellationToken);
 
         var existingParams = await GetRequestParametersAsync(service, existingApi.Id, cancellationToken);
-        await SyncRequestParametersAsync(service, api.RequestParameters, existingParams, existingApi.Id, uniqueName, save, allowDeletes, cancellationToken);
+        await SyncRequestParametersAsync(service, api.RequestParameters, existingParams, existingApi.Id, uniqueName, solutionName, save, allowDeletes, cancellationToken);
 
         var existingProps = await GetResponsePropertiesAsync(service, existingApi.Id, cancellationToken);
-        await SyncResponsePropertiesAsync(service, api.ResponseProperties, existingProps, existingApi.Id, uniqueName, save, allowDeletes, cancellationToken);
+        await SyncResponsePropertiesAsync(service, api.ResponseProperties, existingProps, existingApi.Id, uniqueName, solutionName, save, allowDeletes, cancellationToken);
     }
 
     async Task SyncRequestParametersAsync(
@@ -453,6 +486,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
         List<Entity> existing,
         Guid apiId,
         string apiUniqueName,
+        string solutionName,
         bool save,
         bool allowDeletes,
         CancellationToken cancellationToken = default)
@@ -463,10 +497,13 @@ public class PluginRegistrationService(IFlowlineOutput output)
         {
             if (!existingByName.TryGetValue(param.UniqueName, out var existingParam))
             {
-                await CreateRequestParameterAsync(service, param, apiId, apiUniqueName, solutionName: "", cancellationToken: cancellationToken);
+                await CreateRequestParameterAsync(service, param, apiId, apiUniqueName, solutionName, cancellationToken);
             }
             else
             {
+                var requestParameterComponentType = await GetComponentTypeFromSolutionComponentAsync(service, existingParam.Id, "customapirequestparameter", cancellationToken);
+                await EnsureComponentInSolutionAsync(service, "customapirequestparameter", existingParam.Id, solutionName, cancellationToken);
+
                 var immutableChanged =
                     (existingParam.GetAttributeValue<OptionSetValue>("type")?.Value ?? 0) != param.Type ||
                     existingParam.GetAttributeValue<bool>("isoptional") != param.IsOptional ||
@@ -479,7 +516,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
 
                     output.Info($"[yellow]Warning:[/] Request parameter '{param.UniqueName}' on '{apiUniqueName}' has immutable field changes — deleting and recreating.");
                     await service.DeleteAsync("customapirequestparameter", existingParam.Id, cancellationToken);
-                    await CreateRequestParameterAsync(service, param, apiId, apiUniqueName, solutionName: "", cancellationToken: cancellationToken);
+                    await CreateRequestParameterAsync(service, param, apiId, apiUniqueName, solutionName, cancellationToken);
                 }
                 else
                 {
@@ -510,6 +547,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
         List<Entity> existing,
         Guid apiId,
         string apiUniqueName,
+        string solutionName,
         bool save,
         bool allowDeletes,
         CancellationToken cancellationToken = default)
@@ -520,10 +558,13 @@ public class PluginRegistrationService(IFlowlineOutput output)
         {
             if (!existingByName.TryGetValue(prop.UniqueName, out var existingProp))
             {
-                await CreateResponsePropertyAsync(service, prop, apiId, apiUniqueName, solutionName: "", cancellationToken: cancellationToken);
+                await CreateResponsePropertyAsync(service, prop, apiId, apiUniqueName, solutionName, cancellationToken);
             }
             else
             {
+                var responsePropertyComponentType = await GetComponentTypeFromSolutionComponentAsync(service, existingProp.Id, "customapiresponseproperty", cancellationToken);
+                await EnsureComponentInSolutionAsync(service, "customapiresponseproperty", existingProp.Id, solutionName, cancellationToken);
+
                 var immutableChanged =
                     (existingProp.GetAttributeValue<OptionSetValue>("type")?.Value ?? 0) != prop.Type ||
                     existingProp.GetAttributeValue<string>("logicalentityname") != prop.EntityName;
@@ -535,7 +576,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
 
                     output.Info($"[yellow]Warning:[/] Response property '{prop.UniqueName}' on '{apiUniqueName}' has immutable field changes — deleting and recreating.");
                     await service.DeleteAsync("customapiresponseproperty", existingProp.Id, cancellationToken);
-                    await CreateResponsePropertyAsync(service, prop, apiId, apiUniqueName, solutionName: "", cancellationToken: cancellationToken);
+                    await CreateResponsePropertyAsync(service, prop, apiId, apiUniqueName, solutionName, cancellationToken);
                 }
                 else
                 {
@@ -580,15 +621,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
             ["customapiid"]       = new EntityReference("customapi", apiId),
         };
 
-        if (!string.IsNullOrEmpty(solutionName))
-        {
-            var req = new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName };
-            await service.ExecuteAsync(req, cancellationToken);
-        }
-        else
-        {
-            await service.CreateAsync(entity, cancellationToken);
-        }
+        await service.ExecuteAsync(new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName }, cancellationToken);
     }
 
     async Task CreateResponsePropertyAsync(
@@ -610,15 +643,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
             ["customapiid"]       = new EntityReference("customapi", apiId),
         };
 
-        if (!string.IsNullOrEmpty(solutionName))
-        {
-            var req = new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName };
-            await service.ExecuteAsync(req, cancellationToken);
-        }
-        else
-        {
-            await service.CreateAsync(entity, cancellationToken);
-        }
+        await service.ExecuteAsync(new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName }, cancellationToken);
     }
 
     async Task DeleteCustomApiAsync(IOrganizationServiceAsync2 service, Guid apiId, CancellationToken cancellationToken = default)
@@ -825,9 +850,114 @@ public class PluginRegistrationService(IFlowlineOutput output)
         }
         else
         {
+            await WarnIfComponentExistsInOtherSolutionsAsync(
+                service,
+                PluginAssemblyComponentType,
+                existing.Id,
+                solutionName,
+                "pluginassembly",
+                existing.GetAttributeValue<string>("name") ?? existing.Id.ToString(),
+                cancellationToken);
+
+            await EnsureComponentInSolutionAsync(service, "pluginassembly", existing.Id, solutionName, cancellationToken);
+
             var storedHash = ParseStoredHash(existing.GetAttributeValue<string>("description"));
             return (existing, storedHash != metadata.Hash);
         }
+    }
+
+    async Task EnsureComponentInSolutionAsync(
+        IOrganizationServiceAsync2 service,
+        string entityLogicalName,
+        Guid componentId,
+        string solutionName,
+        CancellationToken cancellationToken = default)
+    {
+        var componentType = await GetComponentTypeAsync(service, entityLogicalName, componentId, cancellationToken);
+
+        var addComponentRequest = new OrganizationRequest("AddSolutionComponent")
+        {
+            ["ComponentId"] = componentId,
+            ["ComponentType"] = componentType,
+            ["SolutionUniqueName"] = solutionName,
+            ["AddRequiredComponents"] = false,
+            ["DoNotIncludeSubcomponents"] = false
+        };
+
+        await service.ExecuteAsync(addComponentRequest, cancellationToken);
+        output.Verbose($"Added {entityLogicalName} '{componentId}' to solution '{solutionName}'.");
+    }
+
+    async Task<int> GetComponentTypeAsync(
+        IOrganizationServiceAsync2 service,
+        string entityLogicalName,
+        Guid componentId,
+        CancellationToken cancellationToken = default)
+    {
+        if (_componentTypeByEntityLogicalName.TryGetValue(entityLogicalName, out var componentType))
+            return componentType;
+
+        componentType = await GetComponentTypeFromSolutionComponentAsync(service, componentId, entityLogicalName, cancellationToken);
+        _componentTypeByEntityLogicalName[entityLogicalName] = componentType;
+        return componentType;
+    }
+
+    async Task WarnIfComponentExistsInOtherSolutionsAsync(
+        IOrganizationServiceAsync2 service,
+        int componentType,
+        Guid componentId,
+        string currentSolutionName,
+        string entityLogicalName,
+        string componentDisplayName,
+        CancellationToken cancellationToken = default)
+    {
+        var otherSolutions = await GetOtherSolutionUniqueNamesForComponentAsync(service, componentType, componentId, currentSolutionName, cancellationToken);
+        if (otherSolutions.Count == 0)
+            return;
+
+        output.Info($"[yellow]Warning:[/] Updating {entityLogicalName} '{componentDisplayName}' which also exists in other solutions: {string.Join(", ", otherSolutions)}.");
+    }
+
+    async Task<List<string>> GetOtherSolutionUniqueNamesForComponentAsync(
+        IOrganizationServiceAsync2 service,
+        int componentType,
+        Guid componentId,
+        string currentSolutionName,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new QueryExpression("solutioncomponent")
+        {
+            ColumnSet = new ColumnSet(false),
+            Criteria =
+            {
+                Conditions =
+                {
+                    new ConditionExpression("componenttype", ConditionOperator.Equal, componentType),
+                    new ConditionExpression("objectid", ConditionOperator.Equal, componentId)
+                }
+            },
+            LinkEntities =
+            {
+                new LinkEntity("solutioncomponent", "solution", "solutionid", "solutionid", JoinOperator.Inner)
+                {
+                    Columns = new ColumnSet("uniquename"),
+                    EntityAlias = "sol"
+                }
+            }
+        };
+
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken);
+
+        return result.Entities
+            .Select(e => e.GetAttributeValue<AliasedValue>("sol.uniquename")?.Value as string)
+            .Where(name =>
+                !string.IsNullOrWhiteSpace(name) &&
+                !string.Equals(name, currentSolutionName, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(name, DefaultSolutionUniqueName, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .Cast<string>()
+            .ToList();
     }
 
     async Task UpdateAssemblyContentAsync(IOrganizationServiceAsync2 service, Entity existing, PluginAssemblyMetadata metadata, CancellationToken cancellationToken = default)
@@ -837,6 +967,33 @@ public class PluginRegistrationService(IFlowlineOutput output)
         existing["description"] = $"{FlowlineMarker} sha256={metadata.Hash}";
 
         await service.UpdateAsync(existing, cancellationToken);
+    }
+
+    async Task<int> GetComponentTypeFromSolutionComponentAsync(
+        IOrganizationServiceAsync2 service,
+        Guid objectId,
+        string entityLogicalName,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new QueryExpression("solutioncomponent")
+        {
+            TopCount = 1,
+            ColumnSet = new ColumnSet("componenttype"),
+            Criteria =
+            {
+                Conditions =
+                {
+                    new ConditionExpression("objectid", ConditionOperator.Equal, objectId)
+                }
+            }
+        };
+
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken);
+        var componentType = result.Entities.FirstOrDefault()?.GetAttributeValue<OptionSetValue>("componenttype")?.Value;
+        if (componentType.HasValue)
+            return componentType.Value;
+
+        throw new InvalidOperationException($"Could not resolve solution component type for {entityLogicalName} '{objectId}' from 'solutioncomponent'.");
     }
 
     static string? ParseStoredHash(string? description)

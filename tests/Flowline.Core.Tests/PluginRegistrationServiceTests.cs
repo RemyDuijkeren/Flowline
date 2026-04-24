@@ -37,6 +37,46 @@ public class PluginRegistrationServiceTests
             .ReturnsAsync(new EntityCollection());
         _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter"), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new EntityCollection());
+
+        _serviceMock.Setup(x => x.RetrieveMultipleAsync(
+                It.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" && q.Criteria.Conditions.Any(c => c.AttributeName == "objectid")),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((QueryExpression query, CancellationToken _) =>
+            {
+                var objectId = GetGuidConditionValue(query, "objectid");
+                if (!objectId.HasValue)
+                    return new EntityCollection();
+
+                return new EntityCollection(new List<Entity>
+                {
+                    new("solutioncomponent")
+                    {
+                        ["componenttype"] = new OptionSetValue(ResolveComponentTypeFromObjectId(objectId.Value))
+                    }
+                });
+            });
+    }
+
+    private static int ResolveComponentTypeFromObjectId(Guid objectId)
+    {
+        var text = objectId.ToString();
+        if (text.EndsWith("67", StringComparison.OrdinalIgnoreCase))
+            return 10067;
+        if (text.EndsWith("68", StringComparison.OrdinalIgnoreCase))
+            return 10068;
+
+        return 10066;
+    }
+
+    private static Guid? GetGuidConditionValue(QueryExpression query, string attribute)
+    {
+        var condition = query.Criteria.Conditions.FirstOrDefault(c =>
+            string.Equals(c.AttributeName, attribute, StringComparison.OrdinalIgnoreCase));
+
+        if (condition?.Values == null || condition.Values.Count == 0)
+            return null;
+
+        return condition.Values[0] as Guid?;
     }
 
     // -- Helpers --
@@ -111,6 +151,14 @@ public class PluginRegistrationServiceTests
 
     private PluginAssemblyMetadata Metadata(string name = "MyPlugin", string version = "1.0.0.0", string hash = "deadbeef", params PluginTypeMetadata[] plugins) =>
         new(name, $"{name}, Version={version}", new byte[] { 1, 2, 3 }, hash, version, plugins.ToList(), []);
+
+    private static bool HasCondition(QueryExpression query, string attributeName, object value)
+    {
+        return query.Criteria.Conditions.Any(c =>
+            string.Equals(c.AttributeName, attributeName, StringComparison.OrdinalIgnoreCase) &&
+            c.Values.Count > 0 &&
+            Equals(c.Values[0], value));
+    }
 
     // -- Assembly create/update --
 
@@ -321,6 +369,128 @@ public class PluginRegistrationServiceTests
             e.LogicalName == "pluginassembly" &&
             e.GetAttributeValue<string>("description") == "[flowline] sha256=newhash"
         ), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SyncAsync_ExistingAssemblyInOtherSolutions_EmitsWarningWithSolutionNames()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, hash: "oldhash"));
+        SetupPluginTypes();
+
+        _serviceMock.Setup(x => x.RetrieveMultipleAsync(
+                It.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" &&
+                                            HasCondition(q, "componenttype", 91) &&
+                                            HasCondition(q, "objectid", assemblyId)),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EntityCollection(new List<Entity>
+            {
+                new("solutioncomponent") { ["sol.uniquename"] = new AliasedValue("solution", "uniquename", "OtherSolutionA") },
+                new("solutioncomponent") { ["sol.uniquename"] = new AliasedValue("solution", "uniquename", "MySolution") },
+                new("solutioncomponent") { ["sol.uniquename"] = new AliasedValue("solution", "uniquename", "OtherSolutionB") }
+            }));
+
+        await _service.SyncAsync(_serviceMock.Object, Metadata(hash: "newhash"), "MySolution");
+
+        _outputMock.Verify(x => x.Info(It.Is<string>(s =>
+            s.Contains("Updating pluginassembly") &&
+            s.Contains("OtherSolutionA") &&
+            s.Contains("OtherSolutionB") &&
+            !s.Contains("MySolution"))), Times.Once);
+    }
+
+    [Fact]
+    public async Task SyncAsync_ExistingStepInOtherSolutions_EmitsWarning()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId));
+
+        var pluginType = new Entity("plugintype", Guid.NewGuid())
+        {
+            ["typename"] = "MyNamespace.MyPlugin",
+            ["isworkflowactivity"] = false
+        };
+        SetupPluginTypes(pluginType);
+
+        var existingStepId = Guid.NewGuid();
+        SetupSteps(new Entity("sdkmessageprocessingstep", existingStepId)
+        {
+            ["name"] = "MyNamespace.MyPlugin: Update of contact",
+            ["plugintypeid"] = pluginType.ToEntityReference()
+        });
+        SetupImages();
+
+        _serviceMock.Setup(x => x.RetrieveMultipleAsync(
+                It.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" &&
+                                            HasCondition(q, "componenttype", 92) &&
+                                            HasCondition(q, "objectid", existingStepId)),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EntityCollection(new List<Entity>
+            {
+                new("solutioncomponent") { ["sol.uniquename"] = new AliasedValue("solution", "uniquename", "SharedSolution") }
+            }));
+
+        var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of contact", "Update", "contact", 20, 0, 1, null, null, [], []);
+        await _service.SyncAsync(_serviceMock.Object, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", false, [step])), "MySolution");
+
+        _outputMock.Verify(x => x.Info(It.Is<string>(s =>
+            s.Contains("Updating sdkmessageprocessingstep") &&
+            s.Contains("SharedSolution"))), Times.Once);
+    }
+
+    [Fact]
+    public async Task SyncAsync_ExistingCustomApiWithoutOtherSolutions_DoesNotEmitCrossSolutionWarning()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId));
+
+        var pluginType = new Entity("plugintype", Guid.NewGuid())
+        {
+            ["typename"] = "MyNamespace.MyPlugin",
+            ["isworkflowactivity"] = false
+        };
+        SetupPluginTypes(pluginType);
+
+        var solutionEntity = new Entity("solution")
+        {
+            ["pub.customizationprefix"] = new AliasedValue("publisher", "customizationprefix", "abc")
+        };
+        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "solution"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EntityCollection(new List<Entity> { solutionEntity }));
+
+        var existingApiId = Guid.NewGuid();
+        var existingApi = new Entity("customapi", existingApiId)
+        {
+            ["uniquename"] = "abc_MyApi",
+            ["bindingtype"] = new OptionSetValue(0),
+            ["boundentitylogicalname"] = null,
+            ["isfunction"] = false,
+            ["allowedcustomprocessingsteptype"] = new OptionSetValue(0),
+            ["displayname"] = "My Api",
+            ["description"] = "desc",
+            ["isprivate"] = false,
+            ["executeprivilegename"] = null
+        };
+        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "customapi"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EntityCollection(new List<Entity> { existingApi }));
+
+        _serviceMock.Setup(x => x.RetrieveMultipleAsync(
+                It.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" &&
+                                            HasCondition(q, "componenttype", 10066) &&
+                                            HasCondition(q, "objectid", existingApiId)),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EntityCollection(new List<Entity>
+            {
+                new("solutioncomponent") { ["sol.uniquename"] = new AliasedValue("solution", "uniquename", "Default") },
+                new("solutioncomponent") { ["sol.uniquename"] = new AliasedValue("solution", "uniquename", "MySolution") }
+            }));
+
+        var customApi = new CustomApiMetadata("MyApi", "My Api", "desc", 0, null, false, false, 0, null, "MyNamespace.MyPlugin", [], []);
+        var metadata = new PluginAssemblyMetadata("MyPlugin", "MyPlugin, Version=1.0.0.0", new byte[] { 1, 2, 3 }, "hash", "1.0.0.0", [], [customApi]);
+
+        await _service.SyncAsync(_serviceMock.Object, metadata, "MySolution");
+
+        _outputMock.Verify(x => x.Info(It.Is<string>(s => s.Contains("Updating customapi"))), Times.Never);
     }
 
     // -- Save mode: report skipped deletions --
