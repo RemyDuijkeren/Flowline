@@ -45,16 +45,65 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
         var assemblyDir = Path.GetDirectoryName(dllPath);
         if (!string.IsNullOrWhiteSpace(assemblyDir) && Directory.Exists(assemblyDir))
         {
+            foreach (var file in Directory.EnumerateFiles(assemblyDir, "*.dll", SearchOption.AllDirectories))
+                paths.Add(file);
+
             var parentDir = Directory.GetParent(assemblyDir)?.FullName;
             if (parentDir != null && Directory.Exists(parentDir))
             {
-                foreach (var file in Directory.EnumerateFiles(parentDir, "*.dll", SearchOption.AllDirectories))
+                foreach (var file in Directory.EnumerateFiles(parentDir, "*.dll", SearchOption.TopDirectoryOnly))
                     paths.Add(file);
+            }
+
+            // Look for a 'lib' or 'ref' folder in the assembly directory or its parent
+            // This is useful for providing .NET Framework reference assemblies on Linux.
+            string[] libFolderNames = ["lib", "ref", "external"];
+            var searchDirs = new List<string> { assemblyDir };
+            if (parentDir != null) searchDirs.Add(parentDir);
+
+            foreach (var searchDir in searchDirs)
+            {
+                foreach (var libName in libFolderNames)
+                {
+                    var libPath = Path.Combine(searchDir, libName);
+                    if (Directory.Exists(libPath))
+                    {
+                        foreach (var file in Directory.EnumerateFiles(libPath, "*.dll", SearchOption.AllDirectories))
+                            paths.Add(file);
+                    }
+                }
+            }
+        }
+
+        // Include GAC (Global Assembly Cache) for .NET Framework assemblies like System.Activities
+        // This only works on Windows where .NET Framework is installed.
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            var windir = Environment.GetEnvironmentVariable("WINDIR");
+            if (!string.IsNullOrEmpty(windir))
+            {
+                var gacPath = Path.Combine(windir, "Microsoft.NET", "assembly");
+                if (Directory.Exists(gacPath))
+                {
+                    // We don't want to load every single DLL in the GAC as it's huge.
+                    // But we can add common dependencies if they are not already in paths.
+                    string[] commonGacAssemblies = ["System.Activities.dll", "System.Runtime.Serialization.dll", "System.ServiceModel.dll"];
+
+                    foreach (var gacAssemblyName in commonGacAssemblies)
+                    {
+                        if (paths.All(p => !p.Contains(gacAssemblyName, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            var foundPath = Directory.EnumerateFiles(gacPath, gacAssemblyName, SearchOption.AllDirectories).FirstOrDefault();
+                            if (foundPath != null)
+                                paths.Add(foundPath);
+                        }
+                    }
+                }
             }
         }
 
         paths.Add(dllPath);
-        var resolver = new PathAssemblyResolver(paths);
+        var resolver = new PathAssemblyResolver(paths.Distinct());
         using var mlc = new MetadataLoadContext(resolver);
 
         var assembly = mlc.LoadFromAssemblyPath(dllPath);

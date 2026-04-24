@@ -87,9 +87,10 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
         if (settings.Save) AnsiConsole.MarkupLine("[dim]Save mode enabled: Assets not in source control will be preserved.[/]");
         if (settings.Force) AnsiConsole.MarkupLine("[dim]Force mode enabled: Safety checks will be bypassed.[/]");
 
-        var conn = authSrv.ConnectViaPac(profile, devEnv.EnvironmentUrl);
         var metadata = analysisService.Analyze(extensionsDll);
-        await pluginSyncSrv.SyncAsync(conn, metadata, sln.Name, settings.Save);
+
+        var conn = authSrv.ConnectViaPac(profile, devEnv.EnvironmentUrl);
+        await pluginSyncSrv.SyncAsync(conn, metadata, sln.Name, settings.Save, cancellationToken);
 
         AnsiConsole.MarkupLine("[green]All done![/]");
 
