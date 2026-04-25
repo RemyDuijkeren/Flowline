@@ -4,100 +4,134 @@
 [![NuGet](https://img.shields.io/nuget/v/Flowline.svg)](https://www.nuget.org/packages/Flowline)
 [![NuGet](https://img.shields.io/nuget/dt/RemyDuijkeren.Flowline.svg)](https://www.nuget.org/packages/Flowline)
 
-**Flowline** is a lightweight CLI tool that streamlines the deployment of Power Platform solutions while tracking all
-changes in git.
-
-It follows a GitHubFlow-style process to clone, sync, and deploy solutions, offering a flexible alternative to
-Microsoft's rigid Power Platform Pipelines. Unlike Microsoft's approach of moving managed solutions across controlled
-environments, Flowline gives you the freedom to deploy unmanaged solutions where and how you want — keeping you in
-control while maintaining a complete source history in your git repository.
+**Flowline** is a CLI tool for delivering Dataverse solutions with unmanaged packages, Git as the source of truth, and a straightforward DEV → STAGING → PROD workflow.
 
 ---
 
-## 🚀 Why Flowline?
+## Why Flowline?
 
-Power Platform Pipelines only support deploying managed solutions.
-Flowline exists to give you a flexible, developer-friendly alternative:
+**Power Platform Pipelines only support managed solutions.** Flowline exists for teams that choose unmanaged — keeping full control over every environment without locked-down layers or forced upgrade paths.
 
-- ✅ Works with **unmanaged solutions**
-- ✅ Fits naturally into **GitHubFlow and source control workflows**
-- ✅ Simple commands to **clone, sync, and deploy**
-- ✅ No locked-down layers, no forced managed-only structures
+Beyond the unmanaged-vs-managed difference, Flowline brings a few things the other tools don't:
 
-Flowline is inspired by real flowlines: focused, adaptable, and purpose-built to get your solution from *source* to
-*target* — without the unnecessary infrastructure.
-
-Flowline keeps it simple:
-
-- You own your environments.
-- You control your source.
-- You choose unmanaged.
-
-Flowline — _GitHubFlow pipelines for unmanaged Power Platform solutions._
+- **Git is the source of truth.** `clone` bootstraps an existing solution into the repo. `sync` pulls the current state from DEV back into source control. `deploy` packages from the repo and imports into the target — not environment-to-environment.
+- **Separate inner loop for code assets.** `push` syncs your plugin assemblies and web resources directly to DEV without a full solution import. No Plugin Registration Tool, no manual upload, no waiting for a heavy import cycle to iterate on code.
+- **Attribute-driven plugin registration.** Decorate your `IPlugin` classes with `[Entity]`, `[Filter]`, `[PreImage]`, and `[PostImage]` — Flowline reads the compiled assembly and handles all Dataverse registrations. No base class required, no XML config file.
+- **Plugins, workflow activities, and Custom APIs in one assembly.** Other tools require separate DLLs for each type — syncing them in sequence causes one pass to delete the registrations from the previous one. Flowline reads all types from a single assembly in one pass, so everything can live in one `Extensions` project.
+- **Modern auth.** Flowline reuses the PAC CLI token cache. No passwords, no client secrets in scripts, no Windows Credential Manager.
+- **No unnecessary ceremony.** Designed for small teams, not large implementation partners.
 
 ---
 
-## ⚙️ Install
+## Install
 
 ```bash
 dotnet tool install --global Flowline
 ```
 
-## 🛠️ Commands
+**Prerequisites**
 
 ```bash
-flowline clone <solution> --prod <URL>
+winget install Microsoft.PowerAppsCLI
+winget install Git.Git
 ```
-➡ Bootstrap an existing solution from Production into the local repo.
+
+Authenticate with PAC CLI before using Flowline:
 
 ```bash
-flowline provision [dev|staging] --prod <URL>
+pac auth create --environment https://your-org.crm4.dynamics.com
 ```
-➡ Provision a Dev or Staging environment by copying from Production.
+
+---
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `clone <solution>` | Bootstrap an existing solution from production into the repo. Sets up the full project structure: unpacked solution, Extensions (plugins) project, WebResources project. |
+| `push [solution]` | Build and sync local plugin assemblies and web resources to the DEV environment. Fast inner loop — no solution import needed. |
+| `sync [solution]` | Pull the current solution state from DEV, unpack it into the repo. Run `git commit` afterwards to save the checkpoint. |
+| `deploy <target>` | Pack the solution from the repo and import it into a target environment. Target can be `prod`, `staging`, or an explicit URL. |
+| `provision [dev\|staging]` | Provision a DEV or STAGING environment by copying from production. |
+| `status` | Show environment info, Flowline version, and PAC CLI status. |
+
+---
+
+## Typical workflow
 
 ```bash
-flowline push [solution] [--dev <URL>]
-```
-➡ Upload local assets (plugins, web resources) to the Dev environment.
-
-```bash
-flowline sync [solution] [--dev <URL>]
-```
-➡ Pull the current solution from Dev, unpack it, and write it back into the repo.
-
-```bash
-flowline deploy <prod|staging|URL> [--solution <name>]
-```
-➡ Pack and import the solution into a target environment.
-
-```bash
-flowline status
-```
-➡ Show the current Flowline version and PAC CLI status.
-
-```bash
-flowline translations export|import [path] [--solution <name>]
-```
-➡ Export or import solution translations.
-
-🌟 Example workflow
-```bash
+# One-time: bring an existing solution into the repo
 flowline clone ContosoCustomizations --prod https://contoso.crm4.dynamics.com
-flowline push ContosoCustomizations
-flowline sync ContosoCustomizations
-flowline deploy prod --solution ContosoCustomizations
+
+# Daily dev loop
+flowline push                          # sync plugin DLL + web resources to DEV
+flowline sync                          # pull solution state from DEV back into repo
+git commit -m "feat: add validation"   # commit the checkpoint
+
+# Promote
+flowline deploy staging                # import into STAGING from repo
+flowline deploy prod                   # import into PROD from repo
 ```
+
+For fresh environments:
+
+```bash
+flowline provision dev --prod https://contoso.crm4.dynamics.com
+flowline provision staging --prod https://contoso.crm4.dynamics.com
+```
+
+---
+
+## Plugin and Custom API registration
+
+Add the `Flowline.Attributes` NuGet package to your Extensions project:
+
+```xml
+<PackageReference Include="Flowline.Attributes" Version="1.0.0" PrivateAssets="all" />
+```
+
+Decorate your plugin classes — no base class needed:
+
+```csharp
+[Entity("account")]
+[Filter("name", "creditlimit")]
+[PreImage("name", "creditlimit")]
+public class AccountPreUpdatePlugin : IPlugin
+{
+    public void Execute(IServiceProvider sp) { ... }
+}
+```
+
+`flowline push` reads the compiled assembly and creates or updates all plugin types, steps, images, and Custom API registrations in Dataverse automatically.
+
+Full attribute reference: [Flowline.Attributes README](src/Flowline.Attributes/README.md)
+
+---
+
+## Project structure after `clone`
+
+```
+solutions/
+  ContosoCustomizations/
+    SolutionPackage/          # unpacked solution (PAC cdsproj)
+      SolutionPackage.cdsproj
+      Mapping.xml
+    Extensions/               # plugin assembly project
+      Extensions.csproj
+    WebResources/             # web resource files
+      dist/                   # files here are synced to Dataverse by `push`
+    ContosoCustomizations.sln
+.flowline                     # environment URLs and solution config
+```
+
+Web resources placed under `WebResources/dist/` are synced to Dataverse by `flowline push`. Files named `*_nosync.*` are excluded.
+
+---
+
 ## Development
 
 ```bash
 dotnet pack
 dotnet tool uninstall -g Flowline
 dotnet tool install -g Flowline --add-source ./artifacts/nupkg --prerelease
-```
-
-## Dependencies
-
-```bash
-winget install Microsoft.PowerAppsCLI
-winget install Git.Git
 ```

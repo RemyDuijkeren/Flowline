@@ -407,3 +407,29 @@ public class AccountPreUpdatePlugin : AccountSavePlugin { }
 [Entity("contact")]
 public class ContactPreCreatePlugin : AccountSavePlugin { }
 ```
+
+---
+
+## One assembly for everything
+
+Flowline supports `IPlugin` classes, `CodeActivity` workflow activities, and `[CustomApi]` classes all in the same assembly. One `Extensions` project, one `Extensions.dll`, one `flowline push`.
+
+### Why other tools can't do this
+
+Other tools run a separate sync pass per type — first workflows, then plugins (or vice versa). Each pass treats the assembly as its own domain and deletes any registrations it doesn't recognise. The result: syncing plugins after workflow activities wipes the workflow registrations, and syncing workflow activities after plugins wipes the plugin registrations. You end up maintaining separate projects and separate DLLs just to keep the two sync passes from destroying each other.
+
+Flowline reads all types from the assembly in a single pass and registers everything together. There is no ordering problem.
+
+### Why one assembly is better
+
+A DLL is a deployment unit. Plugins and workflow activities are always deployed to the same environment at the same time — splitting them into separate DLLs reflects a historical assumption about project structure, not a technical requirement.
+
+When you consolidate into one assembly you get four concrete benefits:
+
+**No separate early-bound types project.** Early-bound generated classes are shared across plugin steps and workflow activities. With one assembly project, they live there directly. With separate projects you need a third project just for the shared types.
+
+**ILMerge is not needed.** When everything lives in one project, external references are resolved normally by the build. Separate projects often require ILMerge to bundle shared dependencies into each DLL — an extra build step with its own failure modes.
+
+**Maintainability.** At minimum three projects (plugins, workflow activities, early-bound types) collapse into one. Fewer projects means less cognitive overhead for developers, fewer things to go wrong during deployment, and a simpler ALM/DevOps pipeline.
+
+**Performance.** Microsoft's best practices [recommend consolidating plug-ins and custom workflow activities into a single assembly](https://learn.microsoft.com/en-us/power-apps/developer/data-platform/best-practices/business-logic/optimize-assembly-development#consolidate-plug-ins-or-custom-workflow-activities-into-a-single-assembly). [Multiple assemblies cause additional loading and caching work on the server](https://learn.microsoft.com/en-us/power-apps/developer/data-platform/best-practices/business-logic/optimize-assembly-development#multiple-assemblies), which can increase overall execution time.
