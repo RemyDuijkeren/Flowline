@@ -11,5 +11,5 @@ public record CustomApiMetadata(
     int AllowedStepType,
     string? ExecutePrivilege,
     string PluginTypeFullName,
-    List<CustomApiRequestParameterMetadata> RequestParameters,
-    List<CustomApiResponsePropertyMetadata> ResponseProperties);
+    List<RequestParameterMetadata> RequestParameters,
+    List<ResponsePropertyMetadata> ResponseProperties);

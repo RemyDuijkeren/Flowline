@@ -113,46 +113,42 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
 
         output.Info($"Loaded assembly {assemblyName.Name}");
 
-        var plugins = new List<PluginTypeMetadata>();
-        var customApis = new List<CustomApiMetadata>();
-
-        foreach (var type in assembly.GetTypes().Where(t => t is { IsClass: true, IsAbstract: false, IsPublic: true }))
+        var pluginTypes = new List<PluginTypeMetadata>();
+        var potentialPluginTypes = assembly.GetTypes().Where(t => t is { IsClass: true, IsAbstract: false, IsPublic: true });
+        foreach (var type in potentialPluginTypes)
         {
             var isPlugin = IsDerivedFrom(type, "Microsoft.Xrm.Sdk.IPlugin");
             var isWorkflow = IsDerivedFrom(type, "System.Activities.CodeActivity");
 
             if (!isPlugin && !isWorkflow) continue;
 
+            if (isWorkflow)
+            {
+                output.Verbose($"Found Workflow {type.FullName}");
+                pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, Steps: [], CustomApis: null, IsWorkflow: true));
+                continue;
+            }
+
             if (isPlugin)
             {
                 var customApi = TryBuildCustomApi(type);
                 if (customApi != null)
                 {
-                    output.Verbose($"Found custom API {type.FullName}");
-                    customApis.Add(customApi);
-                    // Plugin type still needs to be registered — custom API references it via plugintypeid
-                    plugins.Add(new PluginTypeMetadata(type.Name, type.FullName!, IsWorkflow: false, Steps: [], IsCustomApi: true));
+                    output.Verbose($"Found Custom API {type.FullName}");
+                    pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, Steps: [], CustomApis: [customApi], IsWorkflow: false, IsCustomApi: true));
                     continue;
                 }
-            }
 
-            if (isPlugin) output.Verbose($"Found plugin {type.FullName}");
-            if (isWorkflow) output.Verbose($"Found workflow {type.FullName}");
-
-            var steps = new List<PluginStepMetadata>();
-            if (isPlugin)
-            {
                 var step = TryBuildStep(type);
                 if (step != null)
                 {
-                    output.Verbose($"with plugin step {step.Name}");
-                    foreach (var warning in step.Warnings)
-                        output.Info($"[yellow]Warning:[/] {warning}");
-                    steps.Add(step);
+                    output.Verbose($"Found Plugin {type.FullName} with plugin step {step.Name}");
+                    foreach (var warning in step.Warnings) output.Info($"[yellow]Warning:[/] {warning}");
+
+                    pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, [step], null, isWorkflow));
+                    continue;
                 }
             }
-
-            plugins.Add(new PluginTypeMetadata(type.Name, type.FullName!, isWorkflow, steps));
         }
 
         return new PluginAssemblyMetadata(
@@ -161,8 +157,7 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
             content,
             hash,
             assemblyName.Version!.ToString(),
-            plugins,
-            customApis);
+            pluginTypes);
     }
 
     private CustomApiMetadata? TryBuildCustomApi(Type type)
@@ -238,11 +233,11 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
             requestParams, responseProps);
     }
 
-    private static (List<CustomApiRequestParameterMetadata>, List<CustomApiResponsePropertyMetadata>)
+    private static (List<RequestParameterMetadata>, List<ResponsePropertyMetadata>)
         ReadClassLevelParameters(Type type, string apiBaseName)
     {
-        var requestParams = new List<CustomApiRequestParameterMetadata>();
-        var responseProps = new List<CustomApiResponsePropertyMetadata>();
+        var requestParams = new List<RequestParameterMetadata>();
+        var responseProps = new List<ResponsePropertyMetadata>();
 
         foreach (var attr in type.GetCustomAttributesData())
         {
@@ -266,8 +261,10 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
                 }
 
                 displayName ??= SplitPascalCase(uniqueName);
-                description ??= displayName;
-                requestParams.Add(new(uniqueName, displayName, description, fieldType, isOptional, entityName));
+                var name = $"{apiBaseName}.{uniqueName}";
+                description ??= $"{displayName} ({name})";
+
+                requestParams.Add(new(uniqueName, displayName, name, description, fieldType, isOptional, entityName));
             }
             else if (attr.AttributeType.FullName == "Flowline.Attributes.OutputAttribute" &&
                      attr.ConstructorArguments.Count == 2)
@@ -287,19 +284,21 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
                 }
 
                 displayName ??= SplitPascalCase(uniqueName);
-                description ??= displayName;
-                responseProps.Add(new(uniqueName, displayName, description, fieldType, entityName));
+                var name = $"{apiBaseName}.{uniqueName}";
+                description ??= $"{displayName} ({name})";
+
+                responseProps.Add(new(uniqueName, displayName, name, description, fieldType, entityName));
             }
         }
 
         return (requestParams, responseProps);
     }
 
-    private (List<CustomApiRequestParameterMetadata>, List<CustomApiResponsePropertyMetadata>)
+    private (List<RequestParameterMetadata>, List<ResponsePropertyMetadata>)
         ReadPropertyLevelParameters(Type type, string apiBaseName)
     {
-        var requestParams = new List<CustomApiRequestParameterMetadata>();
-        var responseProps = new List<CustomApiResponsePropertyMetadata>();
+        var requestParams = new List<RequestParameterMetadata>();
+        var responseProps = new List<ResponsePropertyMetadata>();
 
         foreach (var prop in type.GetProperties(BindingFlags.Instance | BindingFlags.Public))
         {
@@ -326,7 +325,8 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
             }
 
             displayName ??= SplitPascalCase(prop.Name);
-            description ??= displayName;
+            var name = $"{apiBaseName}.{uniqueName}";
+            description ??= $"{displayName} ({name})";
 
             if (!FieldTypeMap.TryGetValue(propType.FullName ?? "", out var fieldType))
             {
@@ -339,9 +339,9 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
                 isNullable = IsNullableReferenceType(prop);
 
             if (reqAttr != null)
-                requestParams.Add(new(uniqueName, displayName, description, fieldType, isNullable, entityName));
+                requestParams.Add(new(uniqueName, name, displayName, description, fieldType, isNullable, entityName));
             else
-                responseProps.Add(new(uniqueName, displayName, description, fieldType, entityName));
+                responseProps.Add(new(uniqueName, name, displayName, description, fieldType, entityName));
         }
 
         return (requestParams, responseProps);

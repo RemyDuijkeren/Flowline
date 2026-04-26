@@ -20,15 +20,6 @@ public class PluginRegistrationService(IFlowlineOutput output)
         ["sdkmessageprocessingstep"] = SdkMessageProcessingStepComponentType
     };
 
-    sealed record DeletePlan(
-        IReadOnlyList<EntityReference> Images,
-        IReadOnlyList<EntityReference> Steps,
-        IReadOnlyList<EntityReference> PluginTypes,
-        IReadOnlyList<EntityReference> WorkflowTypes,
-        IReadOnlyList<EntityReference> CustomApis,
-        IReadOnlyList<EntityReference> CustomApiRequestParameters,
-        IReadOnlyList<EntityReference> CustomApiResponseProperties);
-
     static readonly Dictionary<string, string> s_messagePropertyNames = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Assign"]                  = "Target",
@@ -55,744 +46,695 @@ public class PluginRegistrationService(IFlowlineOutput output)
 
         // Phase 1: Get Assembly
         var (assembly, needsUpdate) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, cancellationToken);
+        var context = new RegistrationContext(service, metadata, assembly, solutionName, save, cancellationToken);
         output.Info($"Assembly '{metadata.Name}' ({metadata.Version}) found in solution '{solutionName}'.");
 
-        // Phase 2: Plan + Delete obsolete components
-        if (!save)
-        {
-            var deletesPhase2 = await BuildDeletePlanAsync(service, metadata, assembly.Id, solutionName, cancellationToken);
-            await ExecuteDeletePhase2Async(service, deletesPhase2, cancellationToken);
-            output.Info($"Deleted obsolete components for [bold]{metadata.Name}[/]");
-        }
+        // Phase 2: Plan registration
+        var registrationPlan = await PlanRegistrationAsync(context);
+        output.Info($"Registration plan created");
 
-        // Phase 3: Update Assembly content
+        // Phase 3: Execute deletes
+        await ExecuteDeleteAsync(registrationPlan, context.Save, context.CancellationToken);
+        output.Info($"Deleted obsolete components for [bold]{context.Metadata.Name}[/]");
+
+        // Phase 4: Update Assembly content
         if (needsUpdate)
         {
-            await UpdateAssemblyContentAsync(service, assembly, metadata, cancellationToken);
-            output.Info($"[green]Updated assembly content for [bold]{metadata.Name}[/][/]");
+            await WarnIfComponentExistsInOtherSolutionsAsync(context.Service, context.Assembly.Id, solutionName, "pluginassembly", context.Metadata.Name, context.CancellationToken);
+            context.Assembly["content"] = Convert.ToBase64String(context.Metadata.Content);
+            context.Assembly["version"] = context.Metadata.Version;
+            context.Assembly["description"] = $"{FlowlineMarker} sha256={context.Metadata.Hash}";
+            await context.Service.UpdateAsync(context.Assembly, context.CancellationToken);
+            output.Info($"[green]Updated assembly content for [bold]{context.Metadata.Name}[/][/]");
         }
         else
         {
             output.Skip($"Assembly '{metadata.Name}' is unchanged — skipping upload.");
         }
 
-        // Phase 4: Upsert Plugin Types, Plugin Steps, and Custom APIs
-        output.Verbose("phase=3 wave=plugin-types status=started");
-        var pluginTypeMap = await EnsurePluginTypesAsync(service, metadata, assembly, save, allowDeletes: false, cancellationToken);
-        output.Info("phase=3 wave=plugin-types status=completed");
+        // Phase 5: Execute upserts from plan
+        await ExecuteUpsertAsync(registrationPlan, context.CancellationToken);
 
-        output.Verbose("phase=3 wave=plugin-steps-images status=started");
-        await RegisterPluginsAsync(service, metadata, pluginTypeMap, solutionName, save, allowDeletes: false, cancellationToken);
-        output.Info("phase=3 wave=plugin-steps-images status=completed");
-
-        output.Verbose("phase=3 wave=custom-api-and-params status=started");
-        await RegisterCustomApisAsync(service, metadata, assembly.Id, pluginTypeMap, solutionName, save, allowDeletes: false, cancellationToken);
-        output.Info("phase=3 wave=custom-api-and-params status=completed");
-
-        // Phase 5: Finalize registration
+        // Phase 6: Add components to solution from plan
+        await ExecuteAddSolutionComponentsAsync(registrationPlan, context.CancellationToken);
     }
 
-    async Task<Dictionary<string, Entity>> EnsurePluginTypesAsync(
-        IOrganizationServiceAsync2 service,
-        PluginAssemblyMetadata metadata,
-        Entity assembly,
-        bool save,
-        bool allowDeletes,
-        CancellationToken cancellationToken = default)
+    async Task<RegistrationPlan> PlanRegistrationAsync(RegistrationContext context)
     {
-        var existingTypes = (await GetPluginTypesAsync(service, assembly.Id, cancellationToken)).ToList();
-        var existingTypeNames = existingTypes.ToDictionary(t => t.GetAttributeValue<string>("typename"), t => t);
+        var plan = new RegistrationPlan();
 
-        foreach (var plugin in metadata.Plugins)
+        var registeredPluginTypes = await GetRegisteredPluginTypesAsync(context.Service, context.Assembly.Id, context.CancellationToken);
+        output.Verbose($"Found {registeredPluginTypes.Count} registered plugin types.");
+        foreach (var pluginFullName in registeredPluginTypes.Keys)
         {
+            output.Verbose($"- {pluginFullName}");
+        }
+
+        // Registering plugin types
+        foreach (var asmPluginType in context.Metadata.Plugins)
+        {
+            // Existing types are already registered, so we don't need to register them again.
+            if (registeredPluginTypes.TryGetValue(asmPluginType.FullName, out var pluginTypeEntity)) continue;
+
             // https://learn.microsoft.com/en-us/power-apps/developer/data-platform/reference/entities/plugintype
-            if (!existingTypeNames.TryGetValue(plugin.FullName, out var typeEntity))
+            pluginTypeEntity = new Entity("plugintype", Guid.NewGuid())
             {
-                typeEntity = new Entity("plugintype", Guid.NewGuid())
-                {
-                    ["typename"] = plugin.FullName,
-                    ["name"] = plugin.FullName,
-                    ["friendlyname"] = plugin.Name,
-                    ["pluginassemblyid"] = assembly.ToEntityReference(),
-                    ["description"] = $"{FlowlineMarker} Created at {DateTime.UtcNow:u}"
-                };
+                ["typename"] = asmPluginType.FullName,
+                ["name"] = asmPluginType.FullName,
+                ["friendlyname"] = asmPluginType.Name,
+                ["pluginassemblyid"] = context.Assembly.ToEntityReference(),
+                ["description"] = $"{FlowlineMarker} Created at {DateTime.UtcNow:u}"
+            };
 
-                if (plugin.IsWorkflow)
-                    typeEntity["workflowactivitygroupname"] = $"{metadata.Name} ({metadata.Version})";
+            if (asmPluginType.IsWorkflow)
+                pluginTypeEntity["workflowactivitygroupname"] = $"{context.Metadata.Name} ({context.Metadata.Version})";
 
-                await service.CreateAsync(typeEntity, cancellationToken);
-                existingTypeNames[plugin.FullName] = typeEntity;
+            plan.PluginTypes.Upserts.Add(asmPluginType.Name, () => context.Service.CreateAsync(pluginTypeEntity, context.CancellationToken));
+
+            // No additional steps to register for workflow types.
+            if (asmPluginType.IsWorkflow) continue;
+
+            if (asmPluginType.IsCustomApi)
+            {
+                // CustomApi
+                var actionPlans = await PlanRegisterCustomApiAsync(context, pluginTypeEntity, asmPluginType.CustomApis);
+
+                plan.CustomApis.Add(actionPlans.customApiPlan);
+                plan.RequestParams.Add(actionPlans.requestParamPlan);
+                plan.ResponseProps.Add(actionPlans.responsePropPlan);
+            }
+            else
+            {
+                // Plugin
+                var actionPlans = await PlanRegistrationPluginStepsAsync(context, pluginTypeEntity, asmPluginType.Steps);
+
+                plan.Steps.Add(actionPlans.stepPlan);
+                plan.Images.Add(actionPlans.imagePlan);
             }
         }
 
-        var localNames = metadata.Plugins.Select(p => p.FullName).ToHashSet();
-        var obsoleteTypes = existingTypes.Where(t => !localNames.Contains(t.GetAttributeValue<string>("typename"))).ToList();
-        if (!save && allowDeletes)
+        // Delete obsolete plugin types, steps, images, and Custom APIs.
+        var registeredSteps = await GetRegisteredStepsAsync(context.Service, context.Assembly.Id, context.CancellationToken);
+        var asmPluginTypes = context.Metadata.Plugins.ToDictionary(p => p.FullName, p => p).AsReadOnly();
+        var obsoletePluginTypes = registeredPluginTypes.Where(t => !asmPluginTypes.ContainsKey(t.Key));
+        foreach (var obsoletePluginType in obsoletePluginTypes)
         {
-            foreach (var obsolete in obsoleteTypes)
-            {
-                if (obsolete.GetAttributeValue<bool>("isworkflowactivity"))
-                {
-                    await service.DeleteAsync("plugintype", obsolete.Id, cancellationToken);
-                    continue;
-                }
+            plan.PluginTypes.Deletes.Add(obsoletePluginType.Key, () => context.Service.DeleteAsync("plugintype", obsoletePluginType.Value.Id, context.CancellationToken));
 
-                var steps = await GetStepsAsync(service, obsolete.Id, cancellationToken);
-                foreach (var step in steps)
-                {
-                    if (!IsStageModifiable(step))
-                        continue;
-
-                    await service.DeleteAsync("sdkmessageprocessingstep", step.Id, cancellationToken);
-                }
-
-                if (steps.Any(step => !IsStageModifiable(step)))
-                    continue;
-
-                await service.DeleteAsync("plugintype", obsolete.Id, cancellationToken);
-            }
-        }
-        else
-        {
-            foreach (var obsolete in obsoleteTypes)
-            {
-                if (obsolete.GetAttributeValue<bool>("isworkflowactivity"))
-                    output.Skip($"Workflow activity '{obsolete.GetAttributeValue<string>("typename")}' not in source — kept (--save)");
-                else
-                    output.Skip($"Plugin type '{obsolete.GetAttributeValue<string>("typename")}' not in source — kept (--save)");
-            }
-        }
-
-        return metadata.Plugins.ToDictionary(p => p.FullName, p => existingTypeNames[p.FullName], StringComparer.OrdinalIgnoreCase);
-    }
-
-    async Task RegisterPluginsAsync(
-        IOrganizationServiceAsync2 service,
-        PluginAssemblyMetadata metadata,
-        IReadOnlyDictionary<string, Entity> pluginTypeMap,
-        string solutionName,
-        bool save,
-        bool allowDeletes,
-        CancellationToken cancellationToken = default)
-    {
-        var messageCache = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
-        var filterCache = new Dictionary<(Guid messageId, string entityName, string secondaryEntity), Guid?>();
-
-        foreach (var plugin in metadata.Plugins.Where(p => !p.IsWorkflow))
-        {
-            if (!pluginTypeMap.TryGetValue(plugin.FullName, out var typeEntity))
-            {
-                output.Info($"[yellow]Warning:[/] Plugin type '{plugin.FullName}' not found — skipping step registration.");
+            // Workflow
+            if (obsoletePluginType.Value.GetAttributeValue<bool>("isworkflowactivity"))
                 continue;
+
+            // Plugin
+            var obsoleteSteps = registeredSteps.Where(s =>
+                s.GetAttributeValue<Guid>("plugintypeid") == obsoletePluginType.Value.Id &&
+                s.GetAttributeValue<string>("category") != "CustomAPI").ToList();
+
+            foreach (var obsoleteStep in obsoleteSteps)
+            {
+                // Stage 30 is auto-created for CustomApis and can't be deleted. We already filter them out.
+                if (!IsStageModifiable(obsoleteStep))
+                    continue;
+
+                plan.Steps.Deletes.Add(
+                    obsoleteStep.GetAttributeValue<string>("name"), // TODO can we retrieve 'plugintypeidname'?
+                    () => context.Service.DeleteAsync("sdkmessageprocessingstep", obsoleteStep.Id, context.CancellationToken));
+
+                // Delete images
+                var allRegisteredImages = await GetRegisteredImagesAsync(context.Service, context.Assembly.Id, context.CancellationToken);
+                var obsoleteImages = allRegisteredImages.Where(i => i.GetAttributeValue<Guid>("sdkmessageprocessingstepid") == obsoleteStep.Id);
+                foreach (var obsoleteImage in obsoleteImages)
+                {
+                    plan.Images.Deletes.Add(
+                        obsoleteImage.GetAttributeValue<string>("name"),
+                        () => context.Service.DeleteAsync("sdkmessageprocessingstepimage", obsoleteImage.Id, context.CancellationToken));
+                }
             }
 
-            // Custom API backing types have their steps managed by Dataverse — skip step registration for them.
-            if (!plugin.IsCustomApi)
-                await RegisterPluginStepsAsync(service, typeEntity, plugin.Steps, solutionName, messageCache, filterCache, save, allowDeletes, cancellationToken);
+            // CustomApi
+            var customApiSteps = registeredSteps.Where(s =>
+                s.GetAttributeValue<Guid>("plugintypeid") == obsoletePluginType.Value.Id &&
+                s.GetAttributeValue<string>("category") == "CustomAPI").ToList();
         }
+
+        return plan;
     }
 
-    async Task RegisterPluginStepsAsync(
-        IOrganizationServiceAsync2 service,
+    async Task<(ActionPlan stepPlan, ActionPlan imagePlan)> PlanRegistrationPluginStepsAsync(
+        RegistrationContext context,
         Entity typeEntity,
-        List<PluginStepMetadata> steps,
-        string solutionName,
-        Dictionary<string, Guid> messageCache,
-        Dictionary<(Guid messageId, string entityName, string secondaryEntity), Guid?> filterCache,
-        bool save,
-        bool allowDeletes,
-        CancellationToken cancellationToken = default)
+        List<PluginStepMetadata> asmPluginSteps)
     {
-        var existingSteps = await GetStepsAsync(service, typeEntity.Id, cancellationToken);
-        var stepNames = existingSteps.ToDictionary(s => s.GetAttributeValue<string>("name"), s => s);
+        ActionPlan stepPlan = new();
+        ActionPlan imagesPlan = new();
 
-        foreach (var step in steps)
+        var allRegisteredSteps = await GetRegisteredStepsAsync(context.Service, context.Assembly.Id, context.CancellationToken);
+        var dvSteps = allRegisteredSteps
+                              .Where(s => s.GetAttributeValue<Guid>("plugintypeid") == typeEntity.Id &&
+                                          s.GetAttributeValue<string>("category") != "CustomAPI")
+                              .ToDictionary(s => s.GetAttributeValue<string>("name"), s => s, StringComparer.OrdinalIgnoreCase)
+                              .AsReadOnly();
+
+        output.Verbose($"- Found {dvSteps.Count} registered plugin steps for {typeEntity.GetAttributeValue<string>("name")}.");
+        foreach (var registeredStepName in dvSteps.Keys) output.Verbose($"  - {registeredStepName}");
+
+        // Register plugin steps
+        foreach (var asmStep in asmPluginSteps)
         {
-            if (!stepNames.TryGetValue(step.Name, out var stepEntity))
+            var messageId = await LookupSdkMessageIdAsync(context.Service, asmStep.Message, context.CancellationToken);
+            var filterId = await LookupSdkMessageFilterIdAsync(context.Service, messageId, asmStep.EntityName, asmStep.SecondaryEntity, context.CancellationToken);
+
+            if (dvSteps.TryGetValue(asmStep.Name, out var dvStep))
             {
-                if (!messageCache.TryGetValue(step.Message, out var messageId))
-                {
-                    messageId = await LookupSdkMessageIdAsync(service, step.Message, cancellationToken);
-                    messageCache[step.Message] = messageId;
-                }
+                // Already registered, so update if changed
+                stepPlan.AddSolutionComponents.Add(
+                    asmStep.Name,
+                    () => AddSolutionComponentAsync(context.Service, "sdkmessageprocessingstep", dvStep.Id, context.SolutionName, context.CancellationToken));
 
-                var secondaryEntity = step.SecondaryEntity ?? "none";
-                if (!filterCache.TryGetValue((messageId, step.EntityName, secondaryEntity), out var filterId))
-                {
-                    filterId = await LookupSdkMessageFilterIdAsync(service, messageId, step.EntityName, step.SecondaryEntity, cancellationToken);
-                    filterCache[(messageId, step.EntityName, secondaryEntity)] = filterId;
-                }
+                var changed = dvStep.GetAttributeValue<string>("configuration") != asmStep.Configuration ||
+                              dvStep.GetAttributeValue<string>("filteringattributes") != asmStep.FilteringAttributes ||
+                              dvStep.GetAttributeValue<OptionSetValue>("stage")?.Value != asmStep.Stage ||
+                              dvStep.GetAttributeValue<OptionSetValue>("mode")?.Value != asmStep.Mode ||
+                              dvStep.GetAttributeValue<int?>("rank") != asmStep.Order ||
+                              dvStep.GetAttributeValue<EntityReference?>("sdkmessageid")?.Id != messageId ||
+                              dvStep.GetAttributeValue<EntityReference?>("sdkmessagefilterid")?.Id != filterId;
 
+                if (!changed) continue;
+
+                await WarnIfComponentExistsInOtherSolutionsAsync(context.Service, dvStep.Id, context.SolutionName, "sdkmessageprocessingstep", asmStep.Name, context.CancellationToken);
+
+                dvStep["stage"] = new OptionSetValue(asmStep.Stage);
+                dvStep["mode"] = new OptionSetValue(asmStep.Mode);
+                dvStep["rank"] = asmStep.Order;
+                dvStep["filteringattributes"] = asmStep.FilteringAttributes;
+                dvStep["configuration"] = asmStep.Configuration;
+                dvStep["sdkmessageid"] = new EntityReference("sdkmessage", messageId);
+                if (filterId.HasValue)
+                    dvStep["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId.Value);
+                // impersonatinguserid?
+
+                stepPlan.Upserts.Add(asmStep.Name, () => context.Service.UpdateAsync(dvStep, context.CancellationToken));
+            }
+            else
+            {
+                // Not registered yet, so register it.
                 var entity = new Entity("sdkmessageprocessingstep", Guid.NewGuid())
                 {
-                    ["name"] = step.Name,
+                    ["name"] = asmStep.Name,
                     ["plugintypeid"] = typeEntity.ToEntityReference(),
                     ["sdkmessageid"] = new EntityReference("sdkmessage", messageId),
-                    ["stage"] = new OptionSetValue(step.Stage),
-                    ["mode"] = new OptionSetValue(step.Mode),
-                    ["rank"] = step.Order,
-                    ["filteringattributes"] = step.FilteringAttributes,
-                    ["configuration"] = step.Configuration,
+                    ["stage"] = new OptionSetValue(asmStep.Stage),
+                    ["mode"] = new OptionSetValue(asmStep.Mode),
+                    ["rank"] = asmStep.Order,
+                    ["filteringattributes"] = asmStep.FilteringAttributes,
+                    ["configuration"] = asmStep.Configuration,
                     ["description"] = $"{FlowlineMarker} Created at {DateTime.UtcNow:u}"
                 };
                 if (filterId.HasValue)
                     entity["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId.Value);
 
-                var createStepRequest = new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName };
-                await service.ExecuteAsync(createStepRequest, cancellationToken);
-                stepEntity = entity;
+                var createStepRequest = new CreateRequest { Target = entity, ["SolutionUniqueName"] = context.SolutionName };
+                stepPlan.Upserts.Add(asmStep.Name, () => context.Service.ExecuteAsync(createStepRequest, context.CancellationToken));
+
+                dvStep = entity;
+            }
+
+            // Register Images
+            imagesPlan.Add(await PlanRegistrationImagesAsync(context, dvStep, asmStep.Images, asmStep.Message));
+        }
+
+        // Delete obsolete plugin steps
+        var obsoletePluginSteps = dvSteps.Where(s => asmPluginSteps.All(p => p.Name != s.Key));
+        foreach (var obsoleteStep in obsoletePluginSteps)
+        {
+            // Stage 30 is auto-created for CustomApis and can't be deleted. We already filter them out.
+            if (!IsStageModifiable(obsoleteStep.Value))
+                continue;
+
+            stepPlan.Deletes.Add(
+                obsoleteStep.Value.GetAttributeValue<string>("name"), // TODO can we retrieve 'plugintypeidname'?
+                () => context.Service.DeleteAsync("sdkmessageprocessingstep", obsoleteStep.Value.Id, context.CancellationToken));
+
+            // Delete images
+            var allRegisteredImages = await GetRegisteredImagesAsync(context.Service, context.Assembly.Id, context.CancellationToken);
+            var obsoleteImages = allRegisteredImages.Where(i => i.GetAttributeValue<Guid>("sdkmessageprocessingstepid") == obsoleteStep.Value.Id);
+            foreach (var obsoleteImage in obsoleteImages)
+            {
+                imagesPlan.Deletes.Add(
+                    obsoleteImage.GetAttributeValue<string>("name"),
+                    () => context.Service.DeleteAsync("sdkmessageprocessingstepimage", obsoleteImage.Id, context.CancellationToken));
+            }
+        }
+
+        return (stepPlan, imagesPlan);
+    }
+
+    async Task<ActionPlan> PlanRegistrationImagesAsync(RegistrationContext context, Entity stepEntity, List<PluginImageMetadata> asmImages, string message)
+    {
+        ActionPlan plan = new();
+
+        var allRegisteredImages = await GetRegisteredImagesAsync(context.Service, context.Assembly.Id, context.CancellationToken);
+        var dvImages = allRegisteredImages
+            .Where(i => i.GetAttributeValue<Guid>("sdkmessageprocessingstepid") == stepEntity.Id)
+            .ToDictionary(i => i.GetAttributeValue<string>("name"), i => i, StringComparer.OrdinalIgnoreCase)
+            .AsReadOnly();
+
+        output.Verbose($"  - Found {dvImages.Count} registered plugin steps for {message}.");
+        foreach (var i in dvImages.Keys) output.Verbose($"    - {i}");
+
+        // Register Images
+        foreach (var asmImage in asmImages)
+        {
+            if (dvImages.TryGetValue(asmImage.Name, out var dvImage))
+            {
+                // Already registered, so update if changed
+                var changed =
+                    dvImage.GetAttributeValue<string>("entityalias") != asmImage.Alias ||
+                    (dvImage.GetAttributeValue<OptionSetValue>("imagetype")?.Value ?? 0) != asmImage.ImageType ||
+                    dvImage.GetAttributeValue<string>("attributes") != asmImage.Attributes;
+
+                if (!changed) continue;
+
+                dvImage["name"] = asmImage.Name;
+                dvImage["entityalias"] = asmImage.Alias;
+                dvImage["imagetype"] = new OptionSetValue(asmImage.ImageType);
+                dvImage["attributes"] = asmImage.Attributes;
+
+                plan.Upserts.Add(asmImage.Name, () => context.Service.UpdateAsync(dvImage, context.CancellationToken));
             }
             else
             {
-                await WarnIfComponentExistsInOtherSolutionsAsync(
-                    service,
-                    SdkMessageProcessingStepComponentType,
-                    stepEntity.Id,
-                    solutionName,
-                    "sdkmessageprocessingstep",
-                    step.Name,
-                    cancellationToken);
-
-                await EnsureComponentInSolutionAsync(service, "sdkmessageprocessingstep", stepEntity.Id, solutionName, cancellationToken);
-
-                stepEntity["stage"] = new OptionSetValue(step.Stage);
-                stepEntity["mode"] = new OptionSetValue(step.Mode);
-                stepEntity["rank"] = step.Order;
-                stepEntity["filteringattributes"] = step.FilteringAttributes;
-                stepEntity["configuration"] = step.Configuration;
-
-                await service.UpdateAsync(stepEntity, cancellationToken);
-            }
-
-            await RegisterImagesAsync(service, stepEntity, step.Images, step.Message, save, allowDeletes, cancellationToken);
-        }
-
-        // DLL is the source of truth — delete any step that is no longer in local metadata
-        var localStepNames = steps.Select(s => s.Name).ToHashSet();
-        var obsoleteSteps = existingSteps
-            .Where(s => !localStepNames.Contains(s.GetAttributeValue<string>("name")))
-            .ToList();
-        if (!save && allowDeletes)
-        {
-            foreach (var obsolete in obsoleteSteps)
-            {
-                if (!IsStageModifiable(obsolete))
-                    continue;
-
-                await service.DeleteAsync("sdkmessageprocessingstep", obsolete.Id, cancellationToken);
-            }
-        }
-        else
-        {
-            foreach (var obsolete in obsoleteSteps)
-                output.Skip($"Step '{obsolete.GetAttributeValue<string>("name")}' not in source — kept (--save)");
-        }
-    }
-
-    async Task RegisterImagesAsync(IOrganizationServiceAsync2 service, Entity stepEntity, List<PluginImageMetadata> images, string message, bool save, bool allowDeletes, CancellationToken cancellationToken = default)
-    {
-        var existing = await GetImagesAsync(service, stepEntity.Id, cancellationToken);
-        var existingByName = existing.ToDictionary(e => e.GetAttributeValue<string>("name"), e => e);
-
-        foreach (var image in images)
-        {
-            if (!existingByName.TryGetValue(image.Name, out var imageEntity))
-            {
+                // Not registered yet, so register it.
+                // TODO Check if message supports images => Move to AssemblyAnalysisService
                 if (!s_messagePropertyNames.TryGetValue(message, out var propertyName))
                     throw new InvalidOperationException($"Message '{message}' does not support step images.");
 
                 var entity = new Entity("sdkmessageprocessingstepimage")
                 {
-                    ["name"]                          = image.Name,
-                    ["entityalias"]                   = image.Alias,
-                    ["imagetype"]                     = new OptionSetValue(image.ImageType),
-                    ["attributes"]                    = image.Attributes,
-                    ["messagepropertyname"]           = propertyName,
-                    ["sdkmessageprocessingstepid"]    = stepEntity.ToEntityReference()
+                    ["name"] = asmImage.Name,
+                    ["entityalias"] = asmImage.Alias,
+                    ["imagetype"] = new OptionSetValue(asmImage.ImageType),
+                    ["attributes"] = asmImage.Attributes,
+                    ["messagepropertyname"] = propertyName,
+                    ["sdkmessageprocessingstepid"] = stepEntity.ToEntityReference(),
+                    ["description"] = $"{FlowlineMarker} Created at {DateTime.UtcNow:u}"
                 };
-                await service.CreateAsync(entity, cancellationToken);
-            }
-            else
-            {
-                var changed =
-                    imageEntity.GetAttributeValue<string>("entityalias") != image.Alias ||
-                    (imageEntity.GetAttributeValue<OptionSetValue>("imagetype")?.Value ?? 0) != image.ImageType ||
-                    imageEntity.GetAttributeValue<string>("attributes") != image.Attributes;
 
-                if (changed)
-                {
-                    imageEntity["entityalias"]  = image.Alias;
-                    imageEntity["imagetype"]    = new OptionSetValue(image.ImageType);
-                    imageEntity["attributes"]   = image.Attributes;
-                    await service.UpdateAsync(imageEntity, cancellationToken);
-                }
+                plan.Upserts.Add(asmImage.Name, () => context.Service.CreateAsync(entity, context.CancellationToken));
             }
         }
 
-        var localNames = images.Select(i => i.Name).ToHashSet();
-        var obsolete = existing.Where(e => !localNames.Contains(e.GetAttributeValue<string>("name"))).ToList();
-        if (!save && allowDeletes)
+        // Delete obsolete images
+        var obsoleteImages = dvImages.Where(i => asmImages.All(a => a.Name != i.Key));
+        foreach (var obsoleteImage in obsoleteImages)
         {
-            foreach (var e in obsolete)
-                await service.DeleteAsync("sdkmessageprocessingstepimage", e.Id, cancellationToken);
+            plan.Deletes.Add(obsoleteImage.Key,
+                () => context.Service.DeleteAsync("sdkmessageprocessingstepimage", obsoleteImage.Value.Id, context.CancellationToken));
         }
-        else
-        {
-            foreach (var e in obsolete)
-                output.Skip($"Image '{e.GetAttributeValue<string>("name")}' not in source — kept (--save)");
-        }
+
+        return plan;
     }
 
-    async Task RegisterCustomApisAsync(
-        IOrganizationServiceAsync2 service,
-        PluginAssemblyMetadata metadata,
-        Guid assemblyId,
-        IReadOnlyDictionary<string, Entity> pluginTypeMap,
-        string solutionName,
-        bool save,
-        bool allowDeletes,
-        CancellationToken cancellationToken = default)
+    async Task<(ActionPlan customApiPlan, ActionPlan requestParamPlan, ActionPlan responsePropPlan)> PlanRegisterCustomApiAsync(RegistrationContext context, Entity typeEntity, List<CustomApiMetadata> asmCustomApis)
     {
-        List<CustomApiMetadata> customApis = metadata.CustomApis;
-        if (customApis.Count <= 0)
+        ActionPlan apiPlan = new();
+        ActionPlan paramPlan = new();
+        ActionPlan propPlan = new();
+
+        if (asmCustomApis.Count <= 0)
         {
             output.Info($"No Custom APIs found in metadata.");
-            return;
+            return (apiPlan, paramPlan, propPlan);
         }
 
-        var prefix = await GetPublisherPrefixAsync(service, solutionName, cancellationToken);
+        // Don't filter CustomApis by plugintypeid, because the dependency is reversed
+        // A re-registration of the assembly can trigger a new plugintypeid, but the CustomApi uniquename is still the same.
+        var allRegisteredCustomApis = await GetRegisteredCustomApisAsync(context.Service, context.Assembly.Id, context.CancellationToken);
+        var dvApis = allRegisteredCustomApis
+                                   .ToDictionary(e => e.GetAttributeValue<string>("uniquename"), e => e)
+                                   .AsReadOnly();
 
-        var existing = await GetCustomApisAsync(service, assemblyId, cancellationToken);
-        var existingByUniqueName = existing.ToDictionary(
-            e => e.GetAttributeValue<string>("uniquename"), e => e);
+        output.Verbose($"- Found {dvApis.Count} registered Custom APIs for {typeEntity.GetAttributeValue<string>("name")}.");
+        foreach (var a in dvApis.Keys) output.Verbose($"  - {a}");
 
-        foreach (var api in customApis)
+        // Register CustomApis
+        var prefix = await GetPublisherPrefixAsync(context.Service, context.SolutionName, context.CancellationToken);
+        foreach (var asmApi in asmCustomApis)
         {
-            var uniqueName = $"{prefix}_{api.UniqueName}";
+            var uniqueName = $"{prefix}_{asmApi.UniqueName}";
 
-            if (!pluginTypeMap.TryGetValue(api.PluginTypeFullName, out var pluginType))
+            if (!dvApis.TryGetValue(uniqueName, out var dvApi))
             {
-                output.Info($"[yellow]Warning:[/] Plugin type '{api.PluginTypeFullName}' not found — skipping Custom API '{uniqueName}'.");
+                // Not registered yet, so register it.
+                var newApi = NewCustomApiEntity(uniqueName, asmApi);
+                apiPlan.Upserts.Add(asmApi.UniqueName, () =>
+                    context.Service.ExecuteAsync(new CreateRequest { Target = newApi, ["SolutionUniqueName"] = context.SolutionName }, context.CancellationToken));
+                paramPlan.Add(await PlanRegisterRequestParametersAsync(context, newApi.Id, asmApi.RequestParameters));
+                propPlan.Add(await PlanRegisterResponsePropertiesAsync(context, newApi.Id, asmApi.ResponseProperties));
                 continue;
             }
 
-            if (!existingByUniqueName.TryGetValue(uniqueName, out var existingApi))
-                await CreateCustomApiAsync(service, api, uniqueName, pluginType, solutionName, cancellationToken);
-            else
-                await SyncExistingCustomApiAsync(service, api, uniqueName, existingApi, pluginType, solutionName, save, allowDeletes, cancellationToken);
-        }
+            // Already registered, so update if changed
+            var immutableChanged =
+                (dvApi.GetAttributeValue<OptionSetValue>("bindingtype")?.Value ?? 0) != asmApi.BindingType ||
+                dvApi.GetAttributeValue<string>("boundentitylogicalname") != asmApi.BoundEntityLogicalName ||
+                dvApi.GetAttributeValue<bool>("isfunction") != asmApi.IsFunction ||
+                (dvApi.GetAttributeValue<OptionSetValue>("allowedcustomprocessingsteptype")?.Value ?? 0) != asmApi.AllowedStepType;
 
-        var localUniqueNames = customApis.Select(a => $"{prefix}_{a.UniqueName}").ToHashSet();
-        var obsolete = existing.Where(e => !localUniqueNames.Contains(e.GetAttributeValue<string>("uniquename"))).ToList();
-        if (!save && allowDeletes)
-        {
-            foreach (var e in obsolete)
-                await DeleteCustomApiAsync(service, e.Id, cancellationToken);
-        }
-        else
-        {
-            foreach (var e in obsolete)
-                output.Skip($"Custom API '{e.GetAttributeValue<string>("uniquename")}' not in source — kept (--save)");
-        }
-    }
-
-    async Task CreateCustomApiAsync(
-        IOrganizationServiceAsync2 service,
-        CustomApiMetadata api,
-        string uniqueName,
-        Entity pluginType,
-        string solutionName,
-        CancellationToken cancellationToken = default)
-    {
-        var entity = new Entity("customapi")
-        {
-            ["uniquename"]                      = uniqueName,
-            ["name"]                            = uniqueName,
-            ["displayname"]                     = api.DisplayName,
-            ["description"]                     = api.Description,
-            ["bindingtype"]                     = new OptionSetValue(api.BindingType),
-            ["boundentitylogicalname"]          = api.BoundEntityLogicalName,
-            ["isfunction"]                      = api.IsFunction,
-            ["isprivate"]                       = api.IsPrivate,
-            ["allowedcustomprocessingsteptype"] = new OptionSetValue(api.AllowedStepType),
-            ["executeprivilegename"]            = api.ExecutePrivilege,
-            ["plugintypeid"]                    = pluginType.ToEntityReference(),
-        };
-
-        var req = new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName };
-        var apiId = ((CreateResponse)await service.ExecuteAsync(req, cancellationToken)).id;
-
-        foreach (var param in api.RequestParameters)
-            await CreateRequestParameterAsync(service, param, apiId, uniqueName, solutionName, cancellationToken);
-
-        foreach (var prop in api.ResponseProperties)
-            await CreateResponsePropertyAsync(service, prop, apiId, uniqueName, solutionName, cancellationToken);
-    }
-
-    async Task SyncExistingCustomApiAsync(
-        IOrganizationServiceAsync2 service,
-        CustomApiMetadata api,
-        string uniqueName,
-        Entity existingApi,
-        Entity pluginType,
-        string solutionName,
-        bool save,
-        bool allowDeletes,
-        CancellationToken cancellationToken = default)
-    {
-        var customApiComponentType = await GetComponentTypeFromSolutionComponentAsync(service, existingApi.Id, "customapi", cancellationToken);
-
-        await WarnIfComponentExistsInOtherSolutionsAsync(
-            service,
-            customApiComponentType,
-            existingApi.Id,
-            solutionName,
-            "customapi",
-            uniqueName,
-            cancellationToken);
-
-        await EnsureComponentInSolutionAsync(service, "customapi", existingApi.Id, solutionName, cancellationToken);
-
-        var immutableChanged =
-            (existingApi.GetAttributeValue<OptionSetValue>("bindingtype")?.Value ?? 0) != api.BindingType ||
-            existingApi.GetAttributeValue<string>("boundentitylogicalname") != api.BoundEntityLogicalName ||
-            existingApi.GetAttributeValue<bool>("isfunction") != api.IsFunction ||
-            (existingApi.GetAttributeValue<OptionSetValue>("allowedcustomprocessingsteptype")?.Value ?? 0) != api.AllowedStepType;
-
-        if (immutableChanged)
-        {
-            output.Info($"[yellow]Warning:[/] '{uniqueName}' has immutable field changes — deleting and recreating.");
-            if (!allowDeletes)
-                throw new InvalidOperationException($"Delete required for immutable Custom API changes on '{uniqueName}', but deletes are blocked in phase 3.");
-
-            await DeleteCustomApiAsync(service, existingApi.Id, cancellationToken);
-            await CreateCustomApiAsync(service, api, uniqueName, pluginType, solutionName, cancellationToken);
-            return;
-        }
-
-        existingApi["displayname"]          = api.DisplayName;
-        existingApi["description"]          = api.Description;
-        existingApi["isprivate"]            = api.IsPrivate;
-        existingApi["executeprivilegename"] = api.ExecutePrivilege;
-        await service.UpdateAsync(existingApi, cancellationToken);
-
-        var existingParams = await GetRequestParametersAsync(service, existingApi.Id, cancellationToken);
-        await SyncRequestParametersAsync(service, api.RequestParameters, existingParams, existingApi.Id, uniqueName, solutionName, save, allowDeletes, cancellationToken);
-
-        var existingProps = await GetResponsePropertiesAsync(service, existingApi.Id, cancellationToken);
-        await SyncResponsePropertiesAsync(service, api.ResponseProperties, existingProps, existingApi.Id, uniqueName, solutionName, save, allowDeletes, cancellationToken);
-    }
-
-    async Task SyncRequestParametersAsync(
-        IOrganizationServiceAsync2 service,
-        List<CustomApiRequestParameterMetadata> parameters,
-        List<Entity> existing,
-        Guid apiId,
-        string apiUniqueName,
-        string solutionName,
-        bool save,
-        bool allowDeletes,
-        CancellationToken cancellationToken = default)
-    {
-        var existingByName = existing.ToDictionary(e => e.GetAttributeValue<string>("uniquename"), e => e);
-
-        foreach (var param in parameters)
-        {
-            if (!existingByName.TryGetValue(param.UniqueName, out var existingParam))
+            // If immutable, then don't update it, but delete and re-register.
+            if (immutableChanged)
             {
-                await CreateRequestParameterAsync(service, param, apiId, apiUniqueName, solutionName, cancellationToken);
-            }
-            else
-            {
-                var requestParameterComponentType = await GetComponentTypeFromSolutionComponentAsync(service, existingParam.Id, "customapirequestparameter", cancellationToken);
-                await EnsureComponentInSolutionAsync(service, "customapirequestparameter", existingParam.Id, solutionName, cancellationToken);
+                output.Info($"[yellow]Warning:[/] Custom API '{uniqueName}' has immutable field changes — deleting and recreating.");
 
-                var immutableChanged =
-                    (existingParam.GetAttributeValue<OptionSetValue>("type")?.Value ?? 0) != param.Type ||
-                    existingParam.GetAttributeValue<bool>("isoptional") != param.IsOptional ||
-                    existingParam.GetAttributeValue<string>("logicalentityname") != param.EntityName;
+                // Delete existing CustomApi
+                apiPlan.Deletes.Add(asmApi.UniqueName, () => context.Service.DeleteAsync("customapi", dvApi.Id, context.CancellationToken));
+                paramPlan.Add(await PlanRegisterRequestParametersAsync(context, dvApi.Id, []));
+                propPlan.Add(await PlanRegisterResponsePropertiesAsync(context, dvApi.Id, []));
 
-                if (immutableChanged)
-                {
-                    if (!allowDeletes)
-                        throw new InvalidOperationException($"Delete required for immutable request parameter '{param.UniqueName}' on '{apiUniqueName}', but deletes are blocked in phase 3.");
+                // Re-register CustomApi
+                var newApi = NewCustomApiEntity(uniqueName, asmApi);
+                apiPlan.Upserts.Add(asmApi.UniqueName, () =>
+                    context.Service.ExecuteAsync(new CreateRequest { Target = newApi, ["SolutionUniqueName"] = context.SolutionName }, context.CancellationToken));
+                paramPlan.Add(await PlanRegisterRequestParametersAsync(context, newApi.Id, asmApi.RequestParameters));
+                propPlan.Add(await PlanRegisterResponsePropertiesAsync(context, newApi.Id, asmApi.ResponseProperties));
 
-                    output.Info($"[yellow]Warning:[/] Request parameter '{param.UniqueName}' on '{apiUniqueName}' has immutable field changes — deleting and recreating.");
-                    await service.DeleteAsync("customapirequestparameter", existingParam.Id, cancellationToken);
-                    await CreateRequestParameterAsync(service, param, apiId, apiUniqueName, solutionName, cancellationToken);
-                }
-                else
-                {
-                    existingParam["displayname"] = param.DisplayName;
-                    existingParam["description"] = param.Description;
-                    await service.UpdateAsync(existingParam, cancellationToken);
-                }
-            }
-        }
-
-        var localNames = parameters.Select(p => p.UniqueName).ToHashSet();
-        var obsolete = existing.Where(e => !localNames.Contains(e.GetAttributeValue<string>("uniquename"))).ToList();
-        if (!save && allowDeletes)
-        {
-            foreach (var e in obsolete)
-                await service.DeleteAsync("customapirequestparameter", e.Id, cancellationToken);
-        }
-        else
-        {
-            foreach (var e in obsolete)
-                output.Skip($"Request parameter '{e.GetAttributeValue<string>("uniquename")}' not in source — kept (--save)");
-        }
-    }
-
-    async Task SyncResponsePropertiesAsync(
-        IOrganizationServiceAsync2 service,
-        List<CustomApiResponsePropertyMetadata> properties,
-        List<Entity> existing,
-        Guid apiId,
-        string apiUniqueName,
-        string solutionName,
-        bool save,
-        bool allowDeletes,
-        CancellationToken cancellationToken = default)
-    {
-        var existingByName = existing.ToDictionary(e => e.GetAttributeValue<string>("uniquename"), e => e);
-
-        foreach (var prop in properties)
-        {
-            if (!existingByName.TryGetValue(prop.UniqueName, out var existingProp))
-            {
-                await CreateResponsePropertyAsync(service, prop, apiId, apiUniqueName, solutionName, cancellationToken);
-            }
-            else
-            {
-                var responsePropertyComponentType = await GetComponentTypeFromSolutionComponentAsync(service, existingProp.Id, "customapiresponseproperty", cancellationToken);
-                await EnsureComponentInSolutionAsync(service, "customapiresponseproperty", existingProp.Id, solutionName, cancellationToken);
-
-                var immutableChanged =
-                    (existingProp.GetAttributeValue<OptionSetValue>("type")?.Value ?? 0) != prop.Type ||
-                    existingProp.GetAttributeValue<string>("logicalentityname") != prop.EntityName;
-
-                if (immutableChanged)
-                {
-                    if (!allowDeletes)
-                        throw new InvalidOperationException($"Delete required for immutable response property '{prop.UniqueName}' on '{apiUniqueName}', but deletes are blocked in phase 3.");
-
-                    output.Info($"[yellow]Warning:[/] Response property '{prop.UniqueName}' on '{apiUniqueName}' has immutable field changes — deleting and recreating.");
-                    await service.DeleteAsync("customapiresponseproperty", existingProp.Id, cancellationToken);
-                    await CreateResponsePropertyAsync(service, prop, apiId, apiUniqueName, solutionName, cancellationToken);
-                }
-                else
-                {
-                    existingProp["displayname"] = prop.DisplayName;
-                    existingProp["description"] = prop.Description;
-                    await service.UpdateAsync(existingProp, cancellationToken);
-                }
-            }
-        }
-
-        var localNames = properties.Select(p => p.UniqueName).ToHashSet();
-        var obsolete = existing.Where(e => !localNames.Contains(e.GetAttributeValue<string>("uniquename"))).ToList();
-        if (!save && allowDeletes)
-        {
-            foreach (var e in obsolete)
-                await service.DeleteAsync("customapiresponseproperty", e.Id, cancellationToken);
-        }
-        else
-        {
-            foreach (var e in obsolete)
-                output.Skip($"Response property '{e.GetAttributeValue<string>("uniquename")}' not in source — kept (--save)");
-        }
-    }
-
-    async Task CreateRequestParameterAsync(
-        IOrganizationServiceAsync2 service,
-        CustomApiRequestParameterMetadata param,
-        Guid apiId,
-        string apiUniqueName,
-        string solutionName,
-        CancellationToken cancellationToken = default)
-    {
-        var entity = new Entity("customapirequestparameter")
-        {
-            ["uniquename"]        = param.UniqueName,
-            ["name"]              = $"{apiUniqueName}.{param.UniqueName}",
-            ["displayname"]       = param.DisplayName,
-            ["description"]       = param.Description,
-            ["type"]              = new OptionSetValue(param.Type),
-            ["isoptional"]        = param.IsOptional,
-            ["logicalentityname"] = param.EntityName,
-            ["customapiid"]       = new EntityReference("customapi", apiId),
-        };
-
-        await service.ExecuteAsync(new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName }, cancellationToken);
-    }
-
-    async Task CreateResponsePropertyAsync(
-        IOrganizationServiceAsync2 service,
-        CustomApiResponsePropertyMetadata prop,
-        Guid apiId,
-        string apiUniqueName,
-        string solutionName,
-        CancellationToken cancellationToken = default)
-    {
-        var entity = new Entity("customapiresponseproperty")
-        {
-            ["uniquename"]        = prop.UniqueName,
-            ["name"]              = $"{apiUniqueName}.{prop.UniqueName}",
-            ["displayname"]       = prop.DisplayName ?? prop.UniqueName,
-            ["description"]       = string.IsNullOrWhiteSpace(prop.Description) ? (prop.DisplayName ?? prop.UniqueName) : prop.Description,
-            ["type"]              = new OptionSetValue(prop.Type),
-            ["logicalentityname"] = prop.EntityName,
-            ["customapiid"]       = new EntityReference("customapi", apiId),
-        };
-
-        await service.ExecuteAsync(new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName }, cancellationToken);
-    }
-
-    async Task DeleteCustomApiAsync(IOrganizationServiceAsync2 service, Guid apiId, CancellationToken cancellationToken = default)
-    {
-        foreach (var p in await GetResponsePropertiesAsync(service, apiId, cancellationToken))
-            await service.DeleteAsync("customapiresponseproperty", p.Id, cancellationToken);
-
-        foreach (var p in await GetRequestParametersAsync(service, apiId, cancellationToken))
-            await service.DeleteAsync("customapirequestparameter", p.Id, cancellationToken);
-
-        await service.DeleteAsync("customapi", apiId, cancellationToken);
-    }
-
-    async Task<DeletePlan> BuildDeletePlanAsync(
-        IOrganizationServiceAsync2 service,
-        PluginAssemblyMetadata metadata,
-        Guid assemblyId,
-        string solutionName,
-        CancellationToken cancellationToken)
-    {
-        var existingTypes = await GetPluginTypesAsync(service, assemblyId, cancellationToken);
-        var existingPluginTypes = existingTypes.Where(t => !t.GetAttributeValue<bool>("isworkflowactivity")).ToList();
-        var existingWorkflowTypes = existingTypes.Where(t => t.GetAttributeValue<bool>("isworkflowactivity")).ToList();
-
-        var localPluginTypeNames = metadata.Plugins.Where(p => !p.IsWorkflow).Select(p => p.FullName).ToHashSet();
-        var localWorkflowTypeNames = metadata.Plugins.Where(p => p.IsWorkflow).Select(p => p.FullName).ToHashSet();
-
-        var obsoletePluginTypes = existingPluginTypes
-            .Where(t => !localPluginTypeNames.Contains(t.GetAttributeValue<string>("typename")))
-            .ToList();
-
-        var obsoleteWorkflowTypes = existingWorkflowTypes
-            .Where(t => !localWorkflowTypeNames.Contains(t.GetAttributeValue<string>("typename")))
-            .ToList();
-
-        var allSteps = await GetAllStepsForAssemblyAsync(service, assemblyId, cancellationToken);
-        var stepsByTypeId = allSteps.ToLookup(s => s.GetAttributeValue<EntityReference>("plugintypeid")?.Id ?? Guid.Empty);
-
-        var obsoleteTypeIds = obsoletePluginTypes.Select(t => t.Id).ToHashSet();
-        var localStepsByTypeName = metadata.Plugins
-            .Where(p => !p.IsWorkflow)
-            .ToDictionary(p => p.FullName, p => p.Steps.Select(s => s.Name).ToHashSet());
-
-        var stepDeletes = new List<EntityReference>();
-
-        foreach (var obsoleteType in obsoletePluginTypes)
-        {
-            foreach (var step in stepsByTypeId[obsoleteType.Id])
-            {
-                if (!IsStageModifiable(step))
-                    continue;
-
-                stepDeletes.Add(step.ToEntityReference());
-            }
-        }
-
-        foreach (var existingType in existingPluginTypes.Where(t => !obsoleteTypeIds.Contains(t.Id)))
-        {
-            var existingStepList = stepsByTypeId[existingType.Id].ToList();
-            var typeName = existingType.GetAttributeValue<string>("typename");
-            if (!localStepsByTypeName.TryGetValue(typeName, out var localStepNames))
                 continue;
-
-            foreach (var step in existingStepList.Where(s => !localStepNames.Contains(s.GetAttributeValue<string>("name"))))
-            {
-                if (!IsStageModifiable(step))
-                    continue;
-
-                stepDeletes.Add(step.ToEntityReference());
             }
+
+            apiPlan.AddSolutionComponents.Add(uniqueName, () =>
+                AddSolutionComponentAsync(context.Service, "customapi", dvApi.Id, context.SolutionName, context.CancellationToken));
+
+            paramPlan.Add(await PlanRegisterRequestParametersAsync(context, dvApi.Id, asmApi.RequestParameters));
+            propPlan.Add(await PlanRegisterResponsePropertiesAsync(context, dvApi.Id, asmApi.ResponseProperties));
+
+            var mutableChanged = dvApi.GetAttributeValue<EntityReference>("plugintypeid")?.Id != typeEntity.Id ||
+                                 dvApi.GetAttributeValue<string>("displayname") != asmApi.DisplayName ||
+                                 dvApi.GetAttributeValue<string>("description") != asmApi.Description ||
+                                 dvApi.GetAttributeValue<bool>("isprivate") != asmApi.IsPrivate ||
+                                 dvApi.GetAttributeValue<string>("executeprivilegename") != asmApi.ExecutePrivilege;
+
+            if (!mutableChanged) continue;
+
+            await WarnIfComponentExistsInOtherSolutionsAsync(context.Service, dvApi.Id, context.SolutionName, "customapi", uniqueName, context.CancellationToken);
+
+            dvApi["plugintypeid"] = typeEntity.ToEntityReference();
+            dvApi["displayname"] = asmApi.DisplayName;
+            dvApi["description"] = asmApi.Description;
+            dvApi["isprivate"] = asmApi.IsPrivate;
+            dvApi["executeprivilegename"] = asmApi.ExecutePrivilege;
+            apiPlan.Upserts.Add(asmApi.UniqueName, () => context.Service.UpdateAsync(dvApi, context.CancellationToken));
         }
 
-        var protectedTypeIds = obsoletePluginTypes
-            .Where(t => stepsByTypeId[t.Id].Any(step => !IsStageModifiable(step)))
-            .Select(t => t.Id)
-            .ToHashSet();
-
-        if (protectedTypeIds.Count > 0)
+        // Delete obsolete CustomApis
+        var obsoleteCustomApis = dvApis.Where(a => asmCustomApis.All(c => c.UniqueName != a.Key));
+        foreach (var obsoleteApi in obsoleteCustomApis)
         {
-            obsoletePluginTypes = obsoletePluginTypes
-                .Where(t => !protectedTypeIds.Contains(t.Id))
-                .ToList();
+            apiPlan.Deletes.Add(obsoleteApi.Key, () => context.Service.DeleteAsync("customapi", obsoleteApi.Value.Id, context.CancellationToken));
+            paramPlan.Add(await PlanRegisterRequestParametersAsync(context, obsoleteApi.Value.Id, []));
+            propPlan.Add(await PlanRegisterResponsePropertiesAsync(context, obsoleteApi.Value.Id, []));
         }
 
-        var allImages = await GetAllImagesForAssemblyAsync(service, assemblyId, cancellationToken);
-        var deletedStepIds = stepDeletes.Select(s => s.Id).ToHashSet();
-        var imageDeletes = allImages
-            .Where(i => deletedStepIds.Contains(i.GetAttributeValue<EntityReference>("sdkmessageprocessingstepid")?.Id ?? Guid.Empty))
-            .Select(i => i.ToEntityReference())
-            .ToList();
+        return (apiPlan, paramPlan, propPlan);
 
-        var existingApis = await GetCustomApisAsync(service, assemblyId, cancellationToken);
-        List<Entity> obsoleteApis = [];
-        if (metadata.CustomApis.Count > 0 || existingApis.Count > 0)
-        {
-            var prefix = await GetPublisherPrefixAsync(service, solutionName, cancellationToken);
-            var localApiUniqueNames = metadata.CustomApis.Select(a => $"{prefix}_{a.UniqueName}").ToHashSet();
-            obsoleteApis = existingApis
-                .Where(e => !localApiUniqueNames.Contains(e.GetAttributeValue<string>("uniquename")))
-                .ToList();
-        }
-
-        var allRequestParams = await GetAllRequestParametersForAssemblyAsync(service, assemblyId, cancellationToken);
-        var allResponseProps = await GetAllResponsePropertiesForAssemblyAsync(service, assemblyId, cancellationToken);
-        var obsoleteApiIds = obsoleteApis.Select(a => a.Id).ToHashSet();
-
-        return new DeletePlan(
-            imageDeletes,
-            stepDeletes,
-            obsoletePluginTypes.Select(t => t.ToEntityReference()).ToList(),
-            obsoleteWorkflowTypes.Select(t => t.ToEntityReference()).ToList(),
-            obsoleteApis.Select(a => a.ToEntityReference()).ToList(),
-            allRequestParams.Where(p => obsoleteApiIds.Contains(p.GetAttributeValue<EntityReference>("customapiid")?.Id ?? Guid.Empty)).Select(p => p.ToEntityReference()).ToList(),
-            allResponseProps.Where(p => obsoleteApiIds.Contains(p.GetAttributeValue<EntityReference>("customapiid")?.Id ?? Guid.Empty)).Select(p => p.ToEntityReference()).ToList());
+        // Local functions
+        Entity NewCustomApiEntity(string uniqueName, CustomApiMetadata asmApi) =>
+            new("customapi", Guid.NewGuid())
+            {
+                ["uniquename"]                      = uniqueName,
+                ["name"]                            = uniqueName,
+                ["displayname"]                     = asmApi.DisplayName,
+                ["description"]                     = asmApi.Description,
+                ["bindingtype"]                     = new OptionSetValue(asmApi.BindingType),
+                ["boundentitylogicalname"]          = asmApi.BoundEntityLogicalName,
+                ["isfunction"]                      = asmApi.IsFunction,
+                ["isprivate"]                       = asmApi.IsPrivate,
+                ["allowedcustomprocessingsteptype"] = new OptionSetValue(asmApi.AllowedStepType),
+                ["executeprivilegename"]            = asmApi.ExecutePrivilege,
+                ["plugintypeid"]                    = typeEntity.ToEntityReference(),
+            };
     }
 
-    async Task ExecuteDeletePhase2Async(IOrganizationServiceAsync2 service, DeletePlan plan, CancellationToken cancellationToken)
+    async Task<ActionPlan> PlanRegisterRequestParametersAsync(RegistrationContext context, Guid asmCustomApiId, List<RequestParameterMetadata> asmRequestParams)
     {
-        output.Verbose($"phase=2 wave=images count={plan.Images.Count} status=started");
-        await ExecuteBoundedParallelAsync(plan.Images, MaxParallelism, image => service.DeleteAsync("sdkmessageprocessingstepimage", image.Id, cancellationToken), cancellationToken);
-        output.Verbose("phase=2 wave=images status=completed");
+        ActionPlan plan = new();
 
-        output.Verbose($"phase=2 wave=steps count={plan.Steps.Count} status=started");
-        await ExecuteBoundedParallelAsync(plan.Steps, MaxParallelism, step => service.DeleteAsync("sdkmessageprocessingstep", step.Id, cancellationToken), cancellationToken);
-        output.Verbose("phase=2 wave=steps status=completed");
+        var allRegisteredRequestParams = await GetRegisteredRequestParametersAsync(context.Service, context.Assembly.Id, context.CancellationToken);
+        var dvRequestParams = allRegisteredRequestParams
+            .Where(r => r.GetAttributeValue<EntityReference>("customapiid")?.Id == asmCustomApiId)
+            .ToDictionary(r => r.GetAttributeValue<string>("uniquename"), r => r, StringComparer.OrdinalIgnoreCase)
+            .AsReadOnly();
 
-        output.Verbose($"phase=2 wave=customapi-response-properties count={plan.CustomApiResponseProperties.Count} status=started");
-        await ExecuteBoundedParallelAsync(plan.CustomApiResponseProperties, MaxParallelism, prop => service.DeleteAsync("customapiresponseproperty", prop.Id, cancellationToken), cancellationToken);
-        output.Verbose("phase=2 wave=customapi-response-properties status=completed");
+        output.Verbose($"  - Found {dvRequestParams.Count} registered request parameters for Custom API {asmCustomApiId}.");
+        foreach (var rp in dvRequestParams.Keys) output.Verbose($"    - {rp}");
 
-        output.Verbose($"phase=2 wave=customapi-request-parameters count={plan.CustomApiRequestParameters.Count} status=started");
-        await ExecuteBoundedParallelAsync(plan.CustomApiRequestParameters, MaxParallelism, param => service.DeleteAsync("customapirequestparameter", param.Id, cancellationToken), cancellationToken);
-        output.Verbose("phase=2 wave=customapi-request-parameters status=completed");
+        // Register RequestParameters
+        foreach (var asmParam in asmRequestParams)
+        {
+            if (!dvRequestParams.TryGetValue(asmParam.UniqueName, out var dvParam))
+            {
+                // Not registered yet, so register it.
+                var newParam = NewRequestParameterEntity(asmParam);
+                plan.Upserts.Add(
+                    asmParam.UniqueName,
+                    () => context.Service.ExecuteAsync(new CreateRequest { Target = newParam, ["SolutionUniqueName"] = context.SolutionName }, context.CancellationToken));
+                continue;
+            }
 
-        output.Verbose($"phase=2 wave=types-apis-workflows count={plan.PluginTypes.Count + plan.CustomApis.Count + plan.WorkflowTypes.Count} status=started");
-        await ExecuteBoundedParallelAsync(plan.PluginTypes, MaxParallelism, type => service.DeleteAsync("plugintype", type.Id, cancellationToken), cancellationToken);
-        await ExecuteBoundedParallelAsync(plan.CustomApis, MaxParallelism, api => service.DeleteAsync("customapi", api.Id, cancellationToken), cancellationToken);
-        await ExecuteBoundedParallelAsync(plan.WorkflowTypes, MaxParallelism, type => service.DeleteAsync("plugintype", type.Id, cancellationToken), cancellationToken);
-        output.Verbose("phase=2 wave=types-apis-workflows status=completed");
+            // Already registered, so update if changed
+
+            // TODO: Maybe not immutable, because IsValidForUpdate=true? Check if we can update it.
+            var immutableChanged =
+                (dvParam.GetAttributeValue<OptionSetValue>("type")?.Value ?? 0) != asmParam.Type ||
+                dvParam.GetAttributeValue<bool>("isoptional") != asmParam.IsOptional ||
+                dvParam.GetAttributeValue<string>("logicalentityname") != asmParam.EntityName;
+
+            if (immutableChanged)
+            {
+                // If immutable, then don't update it, but delete and re-register.
+                output.Info($"[yellow]Warning:[/] Request parameter '{asmParam.DisplayName}' has immutable field changes — deleting and recreating.");
+                plan.Deletes.Add(asmParam.UniqueName, () => context.Service.DeleteAsync("customapirequestparameter", dvParam.Id, context.CancellationToken));
+                var newParam = NewRequestParameterEntity(asmParam);
+                plan.Upserts.Add(
+                    asmParam.UniqueName,
+                    () => context.Service.ExecuteAsync(new CreateRequest { Target = newParam, ["SolutionUniqueName"] = context.SolutionName }, context.CancellationToken));
+                continue;
+            }
+
+            plan.AddSolutionComponents.Add(
+                asmParam.UniqueName,
+                () => AddSolutionComponentAsync(context.Service, "customapirequestparameter", dvParam.Id, context.SolutionName, context.CancellationToken));
+
+            var mutableChanged =
+                dvParam.GetAttributeValue<string>("name") != asmParam.Name ||
+                dvParam.GetAttributeValue<string>("displayname") != asmParam.DisplayName ||
+                dvParam.GetAttributeValue<string>("description") != asmParam.Description;
+
+            if (!mutableChanged) continue;
+
+            await WarnIfComponentExistsInOtherSolutionsAsync(context.Service, dvParam.Id, context.SolutionName, "customapirequestparameter", asmParam.UniqueName, context.CancellationToken);
+            dvParam["name"] = asmParam.Name;
+            dvParam["displayname"] = asmParam.DisplayName;
+            dvParam["description"] = asmParam.Description;
+            plan.Upserts.Add(asmParam.UniqueName, () => context.Service.UpdateAsync(dvParam, context.CancellationToken));
+        }
+
+        // Delete obsolete RequestParameters
+        var obsoleteRequestParams = dvRequestParams.Where(r => asmRequestParams.All(p => p.UniqueName != r.Key));
+        foreach (var obsoleteRequestParam in obsoleteRequestParams)
+        {
+            plan.Deletes.Add(
+                obsoleteRequestParam.Value.GetAttributeValue<string>("uniquename"),
+                () => context.Service.DeleteAsync("customapirequestparameter", obsoleteRequestParam.Value.Id, context.CancellationToken));
+        }
+
+        return plan;
+
+        // Local functions
+        Entity NewRequestParameterEntity(RequestParameterMetadata asmParam) =>
+            new("customapirequestparameter")
+            {
+                ["uniquename"]        = asmParam.UniqueName,
+                ["name"]              = asmParam.Name,
+                ["displayname"]       = asmParam.DisplayName,
+                ["description"]       = asmParam.Description,
+                ["type"]              = new OptionSetValue(asmParam.Type),
+                ["isoptional"]        = asmParam.IsOptional,
+                ["logicalentityname"] = asmParam.EntityName,
+                ["customapiid"]       = new EntityReference("customapi", asmCustomApiId),
+            };
     }
 
-    static async Task ExecuteBoundedParallelAsync<T>(
-        IReadOnlyCollection<T> items,
-        int maxParallelism,
-        Func<T, Task> action,
-        CancellationToken cancellationToken)
+    async Task<ActionPlan> PlanRegisterResponsePropertiesAsync(RegistrationContext context, Guid asmCustomApiId,
+        List<ResponsePropertyMetadata> asmResponseProps)
+    {
+        ActionPlan plan = new();
+
+        var allRegisteredResponseProps = await GetRegisteredResponsePropertiesAsync(context.Service, context.Assembly.Id, context.CancellationToken);
+        var dvResponseProps = allRegisteredResponseProps
+            .Where(r => r.GetAttributeValue<EntityReference>("customapiid")?.Id == asmCustomApiId)
+            .ToDictionary(r => r.GetAttributeValue<string>("uniquename"), r => r, StringComparer.OrdinalIgnoreCase)
+            .AsReadOnly();
+
+        output.Verbose($"  - Found {dvResponseProps.Count} registered response properties for Custom API {asmCustomApiId}.");
+        foreach (var rp in dvResponseProps.Keys) output.Verbose($"    - {rp}");
+
+        // Register ResponseProperties
+        foreach (var asmProp in asmResponseProps)
+        {
+            if (!dvResponseProps.TryGetValue(asmProp.UniqueName, out var dvProp))
+            {
+                // No response property found, register new one
+                var newProp = NewResponsePropertyEntity(asmProp);
+                plan.Upserts.Add(
+                    asmProp.UniqueName,
+                    () => context.Service.ExecuteAsync(new CreateRequest { Target = newProp, ["SolutionUniqueName"] = context.SolutionName }, context.CancellationToken));
+                continue;
+            }
+
+            // Already registered, so update if changed
+
+            // TODO: Maybe not immutable, because IsValidForUpdate=true? Check if we can update it.
+            var immutableChanged =
+                (dvProp.GetAttributeValue<OptionSetValue>("type")?.Value ?? 0) != asmProp.Type ||
+                dvProp.GetAttributeValue<string>("logicalentityname") != asmProp.EntityName;
+
+            if (immutableChanged)
+            {
+                // If immutable, then don't update it, but delete and re-register.
+                output.Info($"[yellow]Warning:[/] Response property '{asmProp.DisplayName}' has immutable field changes — deleting and recreating.");
+                plan.Deletes.Add(asmProp.UniqueName, () => context.Service.DeleteAsync("customapiresponseproperty", dvProp.Id, context.CancellationToken));
+                var newProp = NewResponsePropertyEntity(asmProp);
+                plan.Upserts.Add(
+                    asmProp.UniqueName,
+                    () => context.Service.ExecuteAsync(new CreateRequest { Target = newProp, ["SolutionUniqueName"] = context.SolutionName }, context.CancellationToken));
+                continue;
+            }
+
+            plan.AddSolutionComponents.Add(
+                asmProp.UniqueName,
+                () => AddSolutionComponentAsync(context.Service, "customapiresponseproperty", dvProp.Id, context.SolutionName, context.CancellationToken));
+
+            var mutableChanged =
+                dvProp.GetAttributeValue<string>("name") != asmProp.Name ||
+                dvProp.GetAttributeValue<string>("displayname") != asmProp.DisplayName ||
+                dvProp.GetAttributeValue<string>("description") != asmProp.Description;
+
+            if (!mutableChanged) continue;
+
+            await WarnIfComponentExistsInOtherSolutionsAsync(context.Service, dvProp.Id, context.SolutionName, "customapiresponseproperty", asmProp.UniqueName, context.CancellationToken);
+            dvProp["name"] = asmProp.Name;
+            dvProp["displayname"] = asmProp.DisplayName;
+            dvProp["description"] = asmProp.Description;
+            plan.Upserts.Add(asmProp.UniqueName, () => context.Service.UpdateAsync(dvProp, context.CancellationToken));
+        }
+
+        // Delete obsolete ResponseProperties
+        var obsoleteResponseProps = dvResponseProps.Where(r => asmResponseProps.All(p => p.UniqueName != r.Key));
+        foreach (var obsoleteProp in obsoleteResponseProps)
+        {
+            plan.Deletes.Add(
+                obsoleteProp.Value.GetAttributeValue<string>("uniquename"),
+                () => context.Service.DeleteAsync("customapiresponseproperty", obsoleteProp.Value.Id, context.CancellationToken));
+        }
+
+        return plan;
+
+        // Local functions
+        Entity NewResponsePropertyEntity(ResponsePropertyMetadata asmProp) =>
+            new("customapiresponseproperty")
+            {
+                ["uniquename"]        = asmProp.UniqueName,
+                ["name"]              = asmProp.Name,
+                ["displayname"]       = asmProp.DisplayName ?? asmProp.UniqueName,
+                ["description"]       = string.IsNullOrWhiteSpace(asmProp.Description) ? (asmProp.DisplayName ?? asmProp.UniqueName) : asmProp.Description,
+                ["type"]              = new OptionSetValue(asmProp.Type),
+                ["logicalentityname"] = asmProp.EntityName,
+                ["customapiid"]       = new EntityReference("customapi", asmCustomApiId),
+            };
+    }
+
+    async Task ExecuteDeleteAsync(RegistrationPlan plan, bool save, CancellationToken cancellationToken)
+    {
+        // Level 3 - Delete (Images, ResponseProps, RequestParams)
+        if (save)
+        {
+            foreach (var s in plan.Images.Deletes.Keys) output.Skip($"Image '{s}' not in source — kept (--save)");
+            foreach (var s in plan.ResponseProps.Deletes.Keys) output.Skip($"Response property '{s}' not in source — kept (--save)");
+            foreach (var s in plan.RequestParams.Deletes.Keys) output.Skip($"Request parameter '{s}' not in source — kept (--save)");
+        }
+        else
+        {
+            await Task.WhenAll(
+                ExecuteBoundedParallelAsync(plan.Images.Deletes.Values, MaxParallelism, delete => delete(), cancellationToken),
+                ExecuteBoundedParallelAsync(plan.ResponseProps.Deletes.Values, MaxParallelism, delete => delete(), cancellationToken),
+                ExecuteBoundedParallelAsync(plan.RequestParams.Deletes.Values, MaxParallelism, delete => delete(), cancellationToken));
+
+            foreach (var s in plan.Images.Deletes.Keys) output.Verbose($"Images '{s}' not in source — deleted");
+            foreach (var s in plan.ResponseProps.Deletes.Keys) output.Verbose($"Response property '{s}' not in source — deleted");
+            foreach (var s in plan.RequestParams.Deletes.Keys) output.Verbose($"Request Parameter '{s}' not in source — deleted");
+
+            if (plan.Images.Deletes.Count > 0) output.Info($"Deleted {plan.Images.Deletes.Count} Images");
+            if (plan.ResponseProps.Deletes.Count > 0) output.Info($"Deleted {plan.ResponseProps.Deletes.Count} Response Properties");
+            if (plan.RequestParams.Deletes.Count > 0) output.Info($"Deleted {plan.RequestParams.Deletes.Count} Request Parameters");
+        }
+
+        // Level 2 - Delete (Steps, CustomApis)
+        if (save)
+        {
+            foreach (var s in plan.Steps.Deletes.Keys) output.Skip($"Step '{s}' not in source — kept (--save)");
+            foreach (var s in plan.CustomApis.Deletes.Keys) output.Skip($"Custom API '{s}' not in source — kept (--save)");
+        }
+        else
+        {
+            await Task.WhenAll(
+                ExecuteBoundedParallelAsync(plan.Steps.Deletes.Values, MaxParallelism, delete => delete(), cancellationToken),
+                ExecuteBoundedParallelAsync(plan.CustomApis.Deletes.Values, MaxParallelism, delete => delete(), cancellationToken));
+
+            foreach (var s in plan.Steps.Deletes.Keys) output.Verbose($"Step '{s}' not in source — deleted");
+            foreach (var s in plan.CustomApis.Deletes.Keys) output.Verbose($"Custom API '{s}' not in source — deleted");
+
+            if (plan.Steps.Deletes.Count > 0) output.Info($"Deleted {plan.Steps.Deletes.Count} Plugin Steps");
+            if (plan.CustomApis.Deletes.Count > 0) output.Info($"Deleted {plan.CustomApis.Deletes.Count} Custom APIs");
+        }
+
+        // Level 1 - Delete (PluginTypes)
+        if (save)
+        {
+            foreach (var s in plan.PluginTypes.Deletes.Keys) output.Skip($"Plugin type '{s}' not in source — kept (--save)");
+        }
+        else
+        {
+            await ExecuteBoundedParallelAsync(plan.PluginTypes.Deletes.Values, MaxParallelism, delete => delete(), cancellationToken);
+            foreach (var s in plan.PluginTypes.Deletes.Keys) output.Verbose($"Plugin type '{s}' not in source — deleted");
+            if (plan.PluginTypes.Deletes.Count > 0) output.Info($"Deleted {plan.PluginTypes.Deletes.Count} PluginTypes");
+        }
+    }
+
+    async Task ExecuteUpsertAsync(RegistrationPlan plan, CancellationToken cancellationToken)
+    {
+        await ExecuteBoundedParallelAsync(plan.PluginTypes.Upserts.Values, 1, upsert => upsert(), cancellationToken);
+
+        await Task.WhenAll(
+            ExecuteBoundedParallelAsync(plan.Steps.Upserts.Values, MaxParallelism, upsert => upsert(), cancellationToken),
+            ExecuteBoundedParallelAsync(plan.CustomApis.Upserts.Values, MaxParallelism, upsert => upsert(), cancellationToken));
+
+        await Task.WhenAll(
+            ExecuteBoundedParallelAsync(plan.Images.Upserts.Values, MaxParallelism, upsert => upsert(), cancellationToken),
+            ExecuteBoundedParallelAsync(plan.ResponseProps.Upserts.Values, MaxParallelism, upsert => upsert(), cancellationToken),
+            ExecuteBoundedParallelAsync(plan.RequestParams.Upserts.Values, MaxParallelism, upsert => upsert(), cancellationToken));
+    }
+
+    async Task ExecuteAddSolutionComponentsAsync(RegistrationPlan plan, CancellationToken cancellationToken)
+    {
+        if (plan.AddSolutionComponents.Count == 0)
+            return;
+
+        output.Verbose($"phase=5 wave=add-solution-components count={plan.AddSolutionComponents.Count} status=started");
+        await ExecuteBoundedParallelAsync(plan.AddSolutionComponents.Values, MaxParallelism, action => action(), cancellationToken);
+        output.Verbose("phase=5 wave=add-solution-components status=completed");
+    }
+
+    static async Task ExecuteBoundedParallelAsync<T>(IReadOnlyCollection<T> items, int maxParallelism, Func<T, Task> action, CancellationToken cancellationToken)
     {
         if (items.Count == 0) return;
 
@@ -848,32 +790,26 @@ public class PluginRegistrationService(IFlowlineOutput output)
             var response = (CreateResponse)await service.ExecuteAsync(
                 new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName });
 
+            output.Info($"[green]Added assembly for [bold]{metadata.Name}[/][/]");
+
             entity.Id = response.id;
             return (entity, false);
         }
-        else
-        {
-            await WarnIfComponentExistsInOtherSolutionsAsync(
-                service,
-                PluginAssemblyComponentType,
-                existing.Id,
-                solutionName,
-                "pluginassembly",
-                existing.GetAttributeValue<string>("name") ?? existing.Id.ToString(),
-                cancellationToken);
 
-            await EnsureComponentInSolutionAsync(service, "pluginassembly", existing.Id, solutionName, cancellationToken);
-
-            var storedHash = ParseStoredHash(existing.GetAttributeValue<string>("description"));
-            return (existing, storedHash != metadata.Hash);
-        }
+        await AddSolutionComponentAsync(service, "pluginassembly", existing.Id, solutionName, cancellationToken);
+        var storedHash = ParseStoredHash(existing.GetAttributeValue<string>("description"));
+        return (existing, storedHash != metadata.Hash);
     }
 
-    async Task EnsureComponentInSolutionAsync(
-        IOrganizationServiceAsync2 service,
-        string entityLogicalName,
-        Guid componentId,
-        string solutionName,
+    /// <summary>Asynchronously adds a component to a specified solution in Microsoft Dataverse.</summary>
+    /// <remarks>This operation is idempotent, meaning it can be safely retried without changing the result beyond the initial application.</remarks>
+    /// <param name="service">The asynchronous organization service used to execute the request. </param>
+    /// <param name="entityLogicalName">The logical name of the entity representing the component to be added.</param>
+    /// <param name="componentId">The unique identifier of the component to be added.</param>
+    /// <param name="solutionName">The unique name of the solution to which the component will be added.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests, with a default value of <see cref="CancellationToken.None"/>.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
+    async Task AddSolutionComponentAsync(IOrganizationServiceAsync2 service, string entityLogicalName, Guid componentId, string solutionName,
         CancellationToken cancellationToken = default)
     {
         var componentType = await GetComponentTypeAsync(service, entityLogicalName, componentId, cancellationToken);
@@ -891,43 +827,44 @@ public class PluginRegistrationService(IFlowlineOutput output)
         output.Verbose($"Added {entityLogicalName} '{componentId}' to solution '{solutionName}'.");
     }
 
-    async Task<int> GetComponentTypeAsync(
-        IOrganizationServiceAsync2 service,
-        string entityLogicalName,
-        Guid componentId,
-        CancellationToken cancellationToken = default)
+    async Task<int> GetComponentTypeAsync(IOrganizationServiceAsync2 service, string entityLogicalName, Guid componentId, CancellationToken cancellationToken = default)
     {
         if (_componentTypeByEntityLogicalName.TryGetValue(entityLogicalName, out var componentType))
             return componentType;
 
-        componentType = await GetComponentTypeFromSolutionComponentAsync(service, componentId, entityLogicalName, cancellationToken);
-        _componentTypeByEntityLogicalName[entityLogicalName] = componentType;
-        return componentType;
+        var query = new QueryExpression("solutioncomponent")
+        {
+            TopCount = 1,
+            ColumnSet = new ColumnSet("componenttype"),
+            Criteria =
+            {
+                Conditions = { new ConditionExpression("objectid", ConditionOperator.Equal, componentId) }
+            }
+        };
+
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken);
+        var fetchedComponentType = result.Entities.FirstOrDefault()?.GetAttributeValue<OptionSetValue>("componenttype")?.Value;
+        if (!fetchedComponentType.HasValue)
+            throw new InvalidOperationException($"Could not resolve solution component type for {entityLogicalName} '{componentId}' from 'solutioncomponent'.");
+
+        _componentTypeByEntityLogicalName[entityLogicalName] = fetchedComponentType.Value;
+        return fetchedComponentType.Value;
     }
 
-    async Task WarnIfComponentExistsInOtherSolutionsAsync(
-        IOrganizationServiceAsync2 service,
-        int componentType,
-        Guid componentId,
-        string currentSolutionName,
-        string entityLogicalName,
-        string componentDisplayName,
-        CancellationToken cancellationToken = default)
+    /// <summary>Checks if a specified component exists in other solutions within Microsoft Dataverse and logs a warning if found.</summary>
+    /// <remarks>When updating the component, this can have an impact on other solutions, so we issue a warning.</remarks>
+    /// <param name="service">The asynchronous organization service used to execute the operations.</param>
+    /// <param name="componentId">The unique identifier of the component to be validated.</param>
+    /// <param name="currentSolutionName">The name of the currently targeted solution in which the component is being modified.</param>
+    /// <param name="entityLogicalName">The logical name of the entity representing the component.</param>
+    /// <param name="componentDisplayName">The display name of the component being verified, used for logging purposes.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests, with a default value of <see cref="CancellationToken.None"/>.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
+    async Task WarnIfComponentExistsInOtherSolutionsAsync(IOrganizationServiceAsync2 service, Guid componentId, string currentSolutionName,
+        string entityLogicalName, string componentDisplayName, CancellationToken cancellationToken = default)
     {
-        var otherSolutions = await GetOtherSolutionUniqueNamesForComponentAsync(service, componentType, componentId, currentSolutionName, cancellationToken);
-        if (otherSolutions.Count == 0)
-            return;
+        var componentType = await GetComponentTypeAsync(service, entityLogicalName, componentId, cancellationToken);
 
-        output.Info($"[yellow]Warning:[/] Updating {entityLogicalName} '{componentDisplayName}' which also exists in other solutions: {string.Join(", ", otherSolutions)}.");
-    }
-
-    async Task<List<string>> GetOtherSolutionUniqueNamesForComponentAsync(
-        IOrganizationServiceAsync2 service,
-        int componentType,
-        Guid componentId,
-        string currentSolutionName,
-        CancellationToken cancellationToken = default)
-    {
         var query = new QueryExpression("solutioncomponent")
         {
             ColumnSet = new ColumnSet(false),
@@ -950,53 +887,21 @@ public class PluginRegistrationService(IFlowlineOutput output)
         };
 
         var result = await service.RetrieveMultipleAsync(query, cancellationToken);
+        var otherSolutions = result.Entities
+                                   .Select(e => e.GetAttributeValue<AliasedValue>("sol.uniquename")?.Value as string)
+                                   .Where(name =>
+                                       !string.IsNullOrWhiteSpace(name) &&
+                                       !string.Equals(name, currentSolutionName, StringComparison.OrdinalIgnoreCase) &&
+                                       !string.Equals(name, DefaultSolutionUniqueName, StringComparison.OrdinalIgnoreCase))
+                                   .Distinct(StringComparer.OrdinalIgnoreCase)
+                                   .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                                   .Cast<string>()
+                                   .ToList();
 
-        return result.Entities
-            .Select(e => e.GetAttributeValue<AliasedValue>("sol.uniquename")?.Value as string)
-            .Where(name =>
-                !string.IsNullOrWhiteSpace(name) &&
-                !string.Equals(name, currentSolutionName, StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(name, DefaultSolutionUniqueName, StringComparison.OrdinalIgnoreCase))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-            .Cast<string>()
-            .ToList();
-    }
+        if (otherSolutions.Count == 0)
+            return;
 
-    async Task UpdateAssemblyContentAsync(IOrganizationServiceAsync2 service, Entity existing, PluginAssemblyMetadata metadata, CancellationToken cancellationToken = default)
-    {
-        existing["content"] = Convert.ToBase64String(metadata.Content);
-        existing["version"] = metadata.Version;
-        existing["description"] = $"{FlowlineMarker} sha256={metadata.Hash}";
-
-        await service.UpdateAsync(existing, cancellationToken);
-    }
-
-    async Task<int> GetComponentTypeFromSolutionComponentAsync(
-        IOrganizationServiceAsync2 service,
-        Guid objectId,
-        string entityLogicalName,
-        CancellationToken cancellationToken = default)
-    {
-        var query = new QueryExpression("solutioncomponent")
-        {
-            TopCount = 1,
-            ColumnSet = new ColumnSet("componenttype"),
-            Criteria =
-            {
-                Conditions =
-                {
-                    new ConditionExpression("objectid", ConditionOperator.Equal, objectId)
-                }
-            }
-        };
-
-        var result = await service.RetrieveMultipleAsync(query, cancellationToken);
-        var componentType = result.Entities.FirstOrDefault()?.GetAttributeValue<OptionSetValue>("componenttype")?.Value;
-        if (componentType.HasValue)
-            return componentType.Value;
-
-        throw new InvalidOperationException($"Could not resolve solution component type for {entityLogicalName} '{objectId}' from 'solutioncomponent'.");
+        output.Info($"[yellow]Warning:[/] Updating {entityLogicalName} '{componentDisplayName}' which also exists in other solutions: {string.Join(", ", otherSolutions)}.");
     }
 
     static string? ParseStoredHash(string? description)
@@ -1031,7 +936,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
             ?? throw new InvalidOperationException($"Could not read publisher prefix for solution '{solutionName}'.");
     }
 
-    async Task<List<Entity>> GetPluginTypesAsync(IOrganizationServiceAsync2 service, Guid assemblyId, CancellationToken cancellationToken = default)
+    async Task<IReadOnlyDictionary<string, Entity>> GetRegisteredPluginTypesAsync(IOrganizationServiceAsync2 service, Guid assemblyId, CancellationToken cancellationToken = default)
     {
         var query = new QueryExpression("plugintype")
         {
@@ -1042,38 +947,15 @@ public class PluginRegistrationService(IFlowlineOutput output)
             }
         };
 
-        return (await service.RetrieveMultipleAsync(query, cancellationToken)).Entities.ToList();
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken);
+
+        return result.Entities.ToDictionary(
+            t => t.GetAttributeValue<string>("typename"),
+            t => t,
+            StringComparer.OrdinalIgnoreCase).AsReadOnly();
     }
 
-    async Task<List<Entity>> GetStepsAsync(IOrganizationServiceAsync2 service, Guid typeId, CancellationToken cancellationToken = default)
-    {
-        var query = new QueryExpression("sdkmessageprocessingstep")
-        {
-            ColumnSet = new ColumnSet("name", "stage", "mode", "rank", "filteringattributes", "configuration"),
-            Criteria =
-            {
-                Conditions = { new ConditionExpression("plugintypeid", ConditionOperator.Equal, typeId) }
-            }
-        };
-
-        return (await service.RetrieveMultipleAsync(query, cancellationToken)).Entities.ToList();
-    }
-
-    async Task<List<Entity>> GetImagesAsync(IOrganizationServiceAsync2 service, Guid stepId, CancellationToken cancellationToken = default)
-    {
-        var query = new QueryExpression("sdkmessageprocessingstepimage")
-        {
-            ColumnSet = new ColumnSet("name", "entityalias", "imagetype", "attributes"),
-            Criteria =
-            {
-                Conditions = { new ConditionExpression("sdkmessageprocessingstepid", ConditionOperator.Equal, stepId) }
-            }
-        };
-
-        return (await service.RetrieveMultipleAsync(query, cancellationToken)).Entities.ToList();
-    }
-
-    async Task<List<Entity>> GetCustomApisAsync(IOrganizationServiceAsync2 service, Guid assemblyId, CancellationToken cancellationToken = default)
+    async Task<IReadOnlyList<Entity>> GetRegisteredCustomApisAsync(IOrganizationServiceAsync2 service, Guid assemblyId, CancellationToken cancellationToken = default)
     {
         var query = new QueryExpression("customapi")
         {
@@ -1081,96 +963,90 @@ public class PluginRegistrationService(IFlowlineOutput output)
                 "uniquename", "name", "displayname", "description",
                 "bindingtype", "boundentitylogicalname", "isfunction",
                 "isprivate", "allowedcustomprocessingsteptype", "executeprivilegename",
-                "plugintypeid")
-        };
-
-        var typeLink = query.AddLink("plugintype", "plugintypeid", "plugintypeid");
-        typeLink.LinkCriteria.AddCondition("pluginassemblyid", ConditionOperator.Equal, assemblyId);
-
-        return (await service.RetrieveMultipleAsync(query, cancellationToken)).Entities.ToList();
-    }
-
-    async Task<List<Entity>> GetRequestParametersAsync(IOrganizationServiceAsync2 service, Guid apiId, CancellationToken cancellationToken = default)
-    {
-        var query = new QueryExpression("customapirequestparameter")
-        {
-            ColumnSet = new ColumnSet("uniquename", "name", "displayname", "description", "type", "isoptional", "logicalentityname"),
-            Criteria =
+                "plugintypeid"),
+            LinkEntities =
             {
-                Conditions = { new ConditionExpression("customapiid", ConditionOperator.Equal, apiId) }
+                new LinkEntity("customapi", "plugintype", "plugintypeid", "plugintypeid", JoinOperator.Inner)
+                {
+                    LinkCriteria =
+                    {
+                        Conditions = { new ConditionExpression("pluginassemblyid", ConditionOperator.Equal, assemblyId) }
+                    }
+                }
             }
         };
 
-        return (await service.RetrieveMultipleAsync(query,cancellationToken)).Entities.ToList();
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken);
+        return result.Entities.AsReadOnly();
     }
 
-    async Task<List<Entity>> GetAllStepsForAssemblyAsync(IOrganizationServiceAsync2 service, Guid assemblyId, CancellationToken cancellationToken = default)
+    async Task<IReadOnlyList<Entity>> GetRegisteredStepsAsync(IOrganizationServiceAsync2 service, Guid assemblyId, CancellationToken cancellationToken = default)
     {
+        // category, => 'CustomAPI' for custom APIs
+        // stage, => 30 for Custom APIs (can't delete 30!)
         var query = new QueryExpression("sdkmessageprocessingstep")
         {
-            ColumnSet = new ColumnSet("sdkmessageprocessingstepid", "name", "plugintypeid", "stage")
+            ColumnSet = new ColumnSet("sdkmessageprocessingstepid", "name", "description", "plugintypeid", "stage", "mode", "rank",
+                "filteringattributes", "configuration", "asyncautodelete", "statecode", "category", "sdkmessageid", "solutionid"),
+            LinkEntities =
+            {
+                new LinkEntity("sdkmessageprocessingstep", "plugintype", "plugintypeid", "plugintypeid", JoinOperator.Inner)
+                {
+                    LinkCriteria =
+                    {
+                        Conditions = { new ConditionExpression("pluginassemblyid", ConditionOperator.Equal, assemblyId) }
+                    }
+                }
+            }
         };
 
-        var typeLink = query.AddLink("plugintype", "plugintypeid", "plugintypeid");
-        typeLink.LinkCriteria.AddCondition("pluginassemblyid", ConditionOperator.Equal, assemblyId);
-
-        return (await service.RetrieveMultipleAsync(query, cancellationToken)).Entities.ToList();
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken);
+        return result.Entities.AsReadOnly();
     }
 
-    async Task<List<Entity>> GetAllImagesForAssemblyAsync(IOrganizationServiceAsync2 service, Guid assemblyId, CancellationToken cancellationToken = default)
+    async Task<IReadOnlyList<Entity>> GetRegisteredImagesAsync(IOrganizationServiceAsync2 service, Guid assemblyId, CancellationToken cancellationToken = default)
     {
         var query = new QueryExpression("sdkmessageprocessingstepimage")
         {
-            ColumnSet = new ColumnSet("sdkmessageprocessingstepimageid", "sdkmessageprocessingstepid", "name")
+            ColumnSet = new ColumnSet("sdkmessageprocessingstepimageid", "sdkmessageprocessingstepid", "name", "entityalias", "imagetype", "attributes"),
         };
 
         var stepLink = query.AddLink("sdkmessageprocessingstep", "sdkmessageprocessingstepid", "sdkmessageprocessingstepid");
         var typeLink = stepLink.AddLink("plugintype", "plugintypeid", "plugintypeid");
         typeLink.LinkCriteria.AddCondition("pluginassemblyid", ConditionOperator.Equal, assemblyId);
 
-        return (await service.RetrieveMultipleAsync(query, cancellationToken)).Entities.ToList();
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken);
+        return result.Entities.AsReadOnly();
     }
 
-    async Task<List<Entity>> GetAllRequestParametersForAssemblyAsync(IOrganizationServiceAsync2 service, Guid assemblyId, CancellationToken cancellationToken = default)
+    async Task<IReadOnlyList<Entity>> GetRegisteredRequestParametersAsync(IOrganizationServiceAsync2 service, Guid assemblyId, CancellationToken cancellationToken = default)
     {
         var query = new QueryExpression("customapirequestparameter")
         {
-            ColumnSet = new ColumnSet("customapirequestparameterid", "customapiid", "uniquename")
+            ColumnSet = new ColumnSet("customapirequestparameterid", "customapiid", "uniquename", "name", "displayname", "description", "type", "isoptional", "logicalentityname")
         };
 
         var apiLink = query.AddLink("customapi", "customapiid", "customapiid");
         var typeLink = apiLink.AddLink("plugintype", "plugintypeid", "plugintypeid");
         typeLink.LinkCriteria.AddCondition("pluginassemblyid", ConditionOperator.Equal, assemblyId);
 
-        return (await service.RetrieveMultipleAsync(query, cancellationToken)).Entities.ToList();
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken);
+        return result.Entities.AsReadOnly();
     }
 
-    async Task<List<Entity>> GetAllResponsePropertiesForAssemblyAsync(IOrganizationServiceAsync2 service, Guid assemblyId, CancellationToken cancellationToken = default)
+    async Task<IReadOnlyList<Entity>> GetRegisteredResponsePropertiesAsync(IOrganizationServiceAsync2 service, Guid assemblyId, CancellationToken cancellationToken = default)
     {
         var query = new QueryExpression("customapiresponseproperty")
         {
-            ColumnSet = new ColumnSet("customapiresponsepropertyid", "customapiid", "uniquename")
+            ColumnSet = new ColumnSet("customapiresponsepropertyid", "customapiid", "uniquename", "name", "displayname", "description", "type", "logicalentityname")
         };
 
         var apiLink = query.AddLink("customapi", "customapiid", "customapiid");
         var typeLink = apiLink.AddLink("plugintype", "plugintypeid", "plugintypeid");
         typeLink.LinkCriteria.AddCondition("pluginassemblyid", ConditionOperator.Equal, assemblyId);
 
-        return (await service.RetrieveMultipleAsync(query, cancellationToken)).Entities.ToList();
-    }
-
-    async Task<List<Entity>> GetResponsePropertiesAsync(IOrganizationServiceAsync2 service, Guid apiId, CancellationToken cancellationToken = default)
-    {
-        var query = new QueryExpression("customapiresponseproperty")
-        {
-            ColumnSet = new ColumnSet("uniquename", "name", "displayname", "description", "type", "logicalentityname"),
-            Criteria =
-            {
-                Conditions = { new ConditionExpression("customapiid", ConditionOperator.Equal, apiId) }
-            }
-        };
-
-        return (await service.RetrieveMultipleAsync(query, cancellationToken)).Entities.ToList();
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken);
+        return result.Entities.AsReadOnly();
     }
 
     async Task<Guid> LookupSdkMessageIdAsync(IOrganizationServiceAsync2 service, string messageName, CancellationToken cancellationToken = default)

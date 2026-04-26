@@ -1,7 +1,8 @@
 namespace Flowline.Core.Models;
 
-public record CustomApiRequestParameterMetadata(
+public record RequestParameterMetadata(
     string UniqueName,
+    string? Name,
     string? DisplayName,
     string? Description,
     int Type,

@@ -1,7 +1,8 @@
 namespace Flowline.Core.Models;
 
-public record CustomApiResponsePropertyMetadata(
+public record ResponsePropertyMetadata(
     string UniqueName,
+    string? Name,
     string? DisplayName,
     string? Description,
     int Type,

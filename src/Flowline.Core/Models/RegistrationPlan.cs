@@ -12,12 +12,25 @@ public class RegistrationPlan
     public ActionPlan ResponseProps { get; } = new();
 
     // string holds the name of the entity that is being upserted or deleted
+    [Obsolete("Use ActionPlan.AddSolutionComponents")]
     public Dictionary<string, Func<Task>> AddSolutionComponents { get; } = new();
 }
 
 public class ActionPlan
 {
-    // string holds the name of the entity that is being upserted or deleted
+    // string holds the name of the entity that is being upserted or deleted or added to solution
     public Dictionary<string, Func<Task>> Upserts { get; } = new();
     public Dictionary<string, Func<Task>> Deletes { get; } = new();
+    public Dictionary<string, Func<Task>> AddSolutionComponents { get; } = new();
+
+    // Add all actions from another plan to this one
+    public void Add(ActionPlan other)
+    {
+        foreach (var (key, value) in other.Upserts)
+            Upserts[key] = value;
+        foreach (var (key, value) in other.Deletes)
+            Deletes[key] = value;
+        foreach (var (key, value) in other.AddSolutionComponents)
+            AddSolutionComponents[key] = value;
+    }
 }
