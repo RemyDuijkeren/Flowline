@@ -150,7 +150,7 @@ public class PluginRegistrationServiceTests
     }
 
     private PluginAssemblyMetadata Metadata(string name = "MyPlugin", string version = "1.0.0.0", string hash = "deadbeef", params PluginTypeMetadata[] plugins) =>
-        new(name, $"{name}, Version={version}", new byte[] { 1, 2, 3 }, hash, version, plugins.ToList(), []);
+        new(name, $"{name}, Version={version}", new byte[] { 1, 2, 3 }, hash, version, plugins.ToList());
 
     private static bool HasCondition(QueryExpression query, string attributeName, object value)
     {
@@ -260,8 +260,11 @@ public class PluginRegistrationServiceTests
         SetupPluginTypes(obsoleteType);
 
         var stepId = Guid.NewGuid();
-        var obsoleteStep = new Entity("sdkmessageprocessingstep", stepId);
-        obsoleteStep["plugintypeid"] = new EntityReference("plugintype", obsoleteTypeId);
+        var obsoleteStep = new Entity("sdkmessageprocessingstep", stepId)
+        {
+            ["name"] = "Obsolete.Plugin: Update of account",
+            ["plugintypeid"] = new EntityReference("plugintype", obsoleteTypeId)
+        };
         SetupSteps(obsoleteStep);
 
         await _service.SyncAsync(_serviceMock.Object, Metadata(), "MySolution"); // no plugins in assembly
@@ -444,12 +447,12 @@ public class PluginRegistrationServiceTests
         var assemblyId = Guid.NewGuid();
         SetupAssembly(ExistingAssembly(assemblyId));
 
-        var pluginType = new Entity("plugintype", Guid.NewGuid())
+        var pluginTypeEntity = new Entity("plugintype", Guid.NewGuid())
         {
             ["typename"] = "MyNamespace.MyPlugin",
             ["isworkflowactivity"] = false
         };
-        SetupPluginTypes(pluginType);
+        SetupPluginTypes(pluginTypeEntity);
 
         var solutionEntity = new Entity("solution")
         {
@@ -469,7 +472,8 @@ public class PluginRegistrationServiceTests
             ["displayname"] = "My Api",
             ["description"] = "desc",
             ["isprivate"] = false,
-            ["executeprivilegename"] = null
+            ["executeprivilegename"] = null,
+            ["plugintypeid"] = pluginTypeEntity.ToEntityReference()
         };
         _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "customapi"), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new EntityCollection(new List<Entity> { existingApi }));
@@ -486,7 +490,8 @@ public class PluginRegistrationServiceTests
             }));
 
         var customApi = new CustomApiMetadata("MyApi", "My Api", "desc", 0, null, false, false, 0, null, "MyNamespace.MyPlugin", [], []);
-        var metadata = new PluginAssemblyMetadata("MyPlugin", "MyPlugin, Version=1.0.0.0", new byte[] { 1, 2, 3 }, "hash", "1.0.0.0", [], [customApi]);
+        var pluginTypeMetadata = new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [customApi], false, true);
+        var metadata = new PluginAssemblyMetadata("MyPlugin", "MyPlugin, Version=1.0.0.0", new byte[] { 1, 2, 3 }, "hash", "1.0.0.0", [pluginTypeMetadata]);
 
         await _service.SyncAsync(_serviceMock.Object, metadata, "MySolution");
 
@@ -564,33 +569,6 @@ public class PluginRegistrationServiceTests
         var updateIndex = callOrder.IndexOf("update:pluginassembly");
         Assert.True(updateIndex > 0);
         Assert.DoesNotContain(callOrder.Skip(updateIndex + 1), c => c.StartsWith("delete:", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public async Task SyncAsync_EmitsStructuredWaveLogs_ForDeleteBarrierAndUpserts()
-    {
-        var assemblyId = Guid.NewGuid();
-        SetupAssembly(ExistingAssembly(assemblyId, hash: "oldhash"));
-
-        var obsoleteTypeId = Guid.NewGuid();
-        SetupPluginTypes(new Entity("plugintype", obsoleteTypeId)
-        {
-            ["typename"] = "Obsolete.Plugin",
-            ["isworkflowactivity"] = false
-        });
-        SetupSteps(new Entity("sdkmessageprocessingstep", Guid.NewGuid())
-        {
-            ["name"] = "Obsolete.Step",
-            ["plugintypeid"] = new EntityReference("plugintype", obsoleteTypeId)
-        });
-
-        await _service.SyncAsync(_serviceMock.Object, Metadata(hash: "newhash"), "MySolution");
-
-        _outputMock.Verify(x => x.Verbose(It.Is<string>(s => s.Contains("phase=2 wave=images status=completed"))), Times.Once);
-        _outputMock.Verify(x => x.Verbose(It.Is<string>(s => s.Contains("phase=2 wave=steps status=completed"))), Times.Once);
-        _outputMock.Verify(x => x.Verbose(It.Is<string>(s => s.Contains("phase=2 wave=types-apis-workflows status=completed"))), Times.Once);
-        _outputMock.Verify(x => x.Verbose(It.Is<string>(s => s.Contains("phase=3 wave=plugin-types-steps-images status=completed"))), Times.Once);
-        _outputMock.Verify(x => x.Verbose(It.Is<string>(s => s.Contains("phase=3 wave=custom-api-and-params status=completed"))), Times.Once);
     }
 
     [Fact]

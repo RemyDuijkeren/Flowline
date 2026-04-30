@@ -15,7 +15,7 @@ public class TranslationSyncService(IFlowlineOutput output)
             ["SolutionName"] = solutionName
         };
 
-        var response = await service.ExecuteAsync(request);
+        var response = await service.ExecuteAsync(request).ConfigureAwait(false);
         var exportTranslationXml = (string)response["ExportTranslationXml"];
         var compressedTranslations = Convert.FromBase64String(exportTranslationXml);
 
@@ -23,7 +23,7 @@ public class TranslationSyncService(IFlowlineOutput output)
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
             Directory.CreateDirectory(directory);
 
-        await File.WriteAllBytesAsync(exportPath, compressedTranslations);
+        await File.WriteAllBytesAsync(exportPath, compressedTranslations).ConfigureAwait(false);
         output.Info($"[green]Translations exported to [bold]{exportPath}[/][/]");
     }
 
@@ -34,7 +34,7 @@ public class TranslationSyncService(IFlowlineOutput output)
         if (!File.Exists(importPath))
             throw new FileNotFoundException("Translation file not found.", importPath);
 
-        var compressedTranslations = await File.ReadAllBytesAsync(importPath);
+        var compressedTranslations = await File.ReadAllBytesAsync(importPath).ConfigureAwait(false);
         var translationXml = Convert.ToBase64String(compressedTranslations);
 
         var request = new OrganizationRequest("ImportTranslation")
@@ -42,11 +42,11 @@ public class TranslationSyncService(IFlowlineOutput output)
             ["TranslationXml"] = translationXml
         };
 
-        await service.ExecuteAsync(request);
+        await service.ExecuteAsync(request).ConfigureAwait(false);
         output.Info("[green]Translations imported[/]");
 
         output.Verbose("Publishing all changes...");
-        await service.ExecuteAsync(new OrganizationRequest("PublishAllXml"));
+        await service.ExecuteAsync(new OrganizationRequest("PublishAllXml")).ConfigureAwait(false);
         output.Verbose("Changes published");
     }
 }

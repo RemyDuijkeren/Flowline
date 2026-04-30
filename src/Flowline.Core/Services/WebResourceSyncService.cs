@@ -16,16 +16,16 @@ public class WebResourceSyncService(IFlowlineOutput output)
         bool publishAfterSync = true)
     {
         // 1. Get Solution Info
-        var (solutionId, prefix) = await GetSolutionIdAndPrefix(service, solutionName);
-        
+        var (solutionId, prefix) = await GetSolutionIdAndPrefix(service, solutionName).ConfigureAwait(false);
+
         // 2. Get CRM Web Resources
-        var crmWebResources = await GetWebResourcesForSolution(service, solutionId);
-        
+        var crmWebResources = await GetWebResourcesForSolution(service, solutionId).ConfigureAwait(false);
+
         List<Entity> patchWebResources = new();
         if (patchSolutionName != null)
         {
-            var (patchSolutionId, _) = await GetSolutionIdAndPrefix(service, patchSolutionName);
-            patchWebResources = await GetWebResourcesForSolution(service, patchSolutionId);
+            var (patchSolutionId, _) = await GetSolutionIdAndPrefix(service, patchSolutionName).ConfigureAwait(false);
+            patchWebResources = await GetWebResourcesForSolution(service, patchSolutionId).ConfigureAwait(false);
         }
 
         // Combine and resolve overrides (patch over base)
@@ -94,17 +94,17 @@ public class WebResourceSyncService(IFlowlineOutput output)
                 case WebResourceAction.Create:
                     var createReq = new CreateRequest { Target = entity };
                     createReq["SolutionUniqueName"] = patchSolutionName ?? solutionName;
-                    await service.ExecuteAsync(createReq);
+                    await service.ExecuteAsync(createReq).ConfigureAwait(false);
                     output.Info($"[green]Created [bold]{name}[/][/]");
                     break;
 
                 case WebResourceAction.Update:
-                    await service.UpdateAsync(entity);
+                    await service.UpdateAsync(entity).ConfigureAwait(false);
                     output.Info($"[green]Updated [bold]{name}[/][/]");
                     break;
 
                 case WebResourceAction.UpdateAndAddToPatchSolution:
-                    await service.UpdateAsync(entity);
+                    await service.UpdateAsync(entity).ConfigureAwait(false);
                     if (patchSolutionName != null)
                     {
                         var addReq = new OrganizationRequest("AddSolutionComponent");
@@ -112,13 +112,13 @@ public class WebResourceSyncService(IFlowlineOutput output)
                         addReq["ComponentType"] = 61; // WebResource
                         addReq["SolutionUniqueName"] = patchSolutionName;
                         addReq["AddRequiredComponents"] = false;
-                        await service.ExecuteAsync(addReq);
+                        await service.ExecuteAsync(addReq).ConfigureAwait(false);
                     }
                     output.Info($"[green]Updated [bold]{name}[/][/]");
                     break;
 
                 case WebResourceAction.Delete:
-                    await service.DeleteAsync(entity.LogicalName, entity.Id);
+                    await service.DeleteAsync(entity.LogicalName, entity.Id).ConfigureAwait(false);
                     output.Info($"[green]Deleted [bold]{name}[/][/]");
                     break;
             }
@@ -128,7 +128,7 @@ public class WebResourceSyncService(IFlowlineOutput output)
         if (publishAfterSync)
         {
             var pubReq = new OrganizationRequest("PublishAllXml");
-            await service.ExecuteAsync(pubReq);
+            await service.ExecuteAsync(pubReq).ConfigureAwait(false);
         }
     }
 
@@ -140,12 +140,12 @@ public class WebResourceSyncService(IFlowlineOutput output)
             Criteria = new FilterExpression()
         };
         query.Criteria.AddCondition("uniquename", ConditionOperator.Equal, uniqueName);
-        
+
         var linkPublisher = query.AddLink("publisher", "publisherid", "publisherid");
         linkPublisher.Columns.AddColumns("customizationprefix");
         linkPublisher.EntityAlias = "publisher";
 
-        var result = await service.RetrieveMultipleAsync(query);
+        var result = await service.RetrieveMultipleAsync(query).ConfigureAwait(false);
         if (result.Entities.Count == 0)
             throw new Exception($"Solution {uniqueName} not found.");
 
@@ -166,7 +166,7 @@ public class WebResourceSyncService(IFlowlineOutput output)
         linkComponent.LinkCriteria.AddCondition("solutionid", ConditionOperator.Equal, solutionId);
         linkComponent.LinkCriteria.AddCondition("componenttype", ConditionOperator.Equal, 61); // WebResource
 
-        var result = await service.RetrieveMultipleAsync(query);
+        var result = await service.RetrieveMultipleAsync(query).ConfigureAwait(false);
         return result.Entities.ToList();
     }
 

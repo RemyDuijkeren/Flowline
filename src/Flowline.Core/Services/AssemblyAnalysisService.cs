@@ -144,9 +144,12 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
                 {
                     output.Verbose($"Found Plugin {type.FullName} with plugin step {step.Name}");
                     foreach (var warning in step.Warnings) output.Info($"[yellow]Warning:[/] {warning}");
-
                     pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, [step], null, isWorkflow));
-                    continue;
+                }
+                else
+                {
+                    output.Verbose($"Found Plugin {type.FullName} with no parseable step");
+                    pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, [], null, isWorkflow));
                 }
             }
         }
