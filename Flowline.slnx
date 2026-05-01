@@ -20,7 +20,6 @@
     <File Path="tests/Directory.Build.props" />
     <Project Path="tests/Flowline.Core.Tests/Flowline.Core.Tests.csproj" />
     <Project Path="tests/Flowline.Attributes.Tests/Flowline.Attributes.Tests.csproj" />
-    <Project Path="tests/Flowline.SourceGenerators.Tests/Flowline.SourceGenerators.Tests.csproj" />
     <Project Path="tests\Flowline.Tests\Flowline.Tests.csproj" />
   </Folder>
   <Folder Name="/workflows/">

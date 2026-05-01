@@ -31,9 +31,9 @@
       },
       "System.Reflection.MetadataLoadContext": {
         "type": "Direct",
-        "requested": "[10.0.6, )",
-        "resolved": "10.0.6",
-        "contentHash": "cdNpGp5eYZYYUC9s7zZ3srBq2EyTRFDfWrgwWH/pn38d4AazOC4xr8SCn5Dak7lEXGj4k5ktTn1QxUT0kHFX7A=="
+        "requested": "[10.0.7, )",
+        "resolved": "10.0.7",
+        "contentHash": "XDkKntYPUaANhLVdo7AHbrJ+QbUAY5u/T7lG5rHSx5kLxeHceoc3JcIMVAc/vZT+3rbwFYlrdnikxdi6G+2nvA=="
       },
       "Microsoft.Extensions.Caching.Abstractions": {
         "type": "Transitive",

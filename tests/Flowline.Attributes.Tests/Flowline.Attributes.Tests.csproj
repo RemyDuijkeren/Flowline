@@ -4,8 +4,4 @@
     <ProjectReference Include="..\..\src\Flowline.Attributes\Flowline.Attributes.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Microsoft.CrmSdk.CoreAssemblies" />
-  </ItemGroup>
-
 </Project>
