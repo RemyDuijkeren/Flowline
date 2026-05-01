@@ -450,7 +450,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
             .ToDictionary(r => r.GetAttributeValue<string>("uniquename"), r => r, StringComparer.OrdinalIgnoreCase)
             .AsReadOnly();
 
-        output.Verbose($"  - Found {dvRequestParams.Count} registered request parameters for Custom API {asmCustomApiId}.");
+        output.Verbose($"  - Found {dvRequestParams.Count} registered Request Parameters for Custom API {asmCustomApiId}.");
         foreach (var rp in dvRequestParams.Keys) output.Verbose($"    - {rp}");
 
         // Register RequestParameters
@@ -541,7 +541,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
             .ToDictionary(r => r.GetAttributeValue<string>("uniquename"), r => r, StringComparer.OrdinalIgnoreCase)
             .AsReadOnly();
 
-        output.Verbose($"  - Found {dvResponseProps.Count} registered response properties for Custom API {asmCustomApiId}.");
+        output.Verbose($"  - Found {dvResponseProps.Count} registered Response Properties for Custom API {asmCustomApiId}.");
         foreach (var rp in dvResponseProps.Keys) output.Verbose($"    - {rp}");
 
         // Register ResponseProperties
@@ -567,7 +567,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
             if (immutableChanged)
             {
                 // If immutable, then don't update it, but delete and re-register.
-                output.Info($"[yellow]Warning:[/] Response property '{asmProp.DisplayName}' has immutable field changes — deleting and recreating.");
+                output.Info($"[yellow]Warning:[/] Response Property '{asmProp.DisplayName}' has immutable field changes — deleting and recreating.");
                 plan.Deletes.Add(asmProp.UniqueName, () => context.Service.DeleteAsync("customapiresponseproperty", dvProp.Id, context.CancellationToken));
                 var newProp = NewResponsePropertyEntity(asmProp);
                 plan.Upserts.Add(
@@ -625,8 +625,8 @@ public class PluginRegistrationService(IFlowlineOutput output)
         if (save)
         {
             foreach (var s in plan.Images.Deletes.Keys) output.Skip($"Image '{s}' not in source — kept (--save)");
-            foreach (var s in plan.ResponseProps.Deletes.Keys) output.Skip($"Response property '{s}' not in source — kept (--save)");
-            foreach (var s in plan.RequestParams.Deletes.Keys) output.Skip($"Request parameter '{s}' not in source — kept (--save)");
+            foreach (var s in plan.ResponseProps.Deletes.Keys) output.Skip($"Response Property '{s}' not in source — kept (--save)");
+            foreach (var s in plan.RequestParams.Deletes.Keys) output.Skip($"Request Parameter '{s}' not in source — kept (--save)");
         }
         else
         {
@@ -636,7 +636,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
                 ExecuteBoundedParallelAsync(plan.RequestParams.Deletes.Values, MaxParallelism, delete => delete(), cancellationToken)).ConfigureAwait(false);
 
             foreach (var s in plan.Images.Deletes.Keys) output.Verbose($"Images '{s}' not in source — deleted");
-            foreach (var s in plan.ResponseProps.Deletes.Keys) output.Verbose($"Response property '{s}' not in source — deleted");
+            foreach (var s in plan.ResponseProps.Deletes.Keys) output.Verbose($"Response Property '{s}' not in source — deleted");
             foreach (var s in plan.RequestParams.Deletes.Keys) output.Verbose($"Request Parameter '{s}' not in source — deleted");
 
             if (plan.Images.Deletes.Count > 0) output.Info($"Deleted {plan.Images.Deletes.Count} Images");
@@ -666,12 +666,12 @@ public class PluginRegistrationService(IFlowlineOutput output)
         // Level 1 - Delete (PluginTypes)
         if (save)
         {
-            foreach (var s in plan.PluginTypes.Deletes.Keys) output.Skip($"Plugin type '{s}' not in source — kept (--save)");
+            foreach (var s in plan.PluginTypes.Deletes.Keys) output.Skip($"Plugin Type '{s}' not in source — kept (--save)");
         }
         else
         {
             await ExecuteBoundedParallelAsync(plan.PluginTypes.Deletes.Values, MaxParallelism, delete => delete(), cancellationToken).ConfigureAwait(false);
-            foreach (var s in plan.PluginTypes.Deletes.Keys) output.Verbose($"Plugin type '{s}' not in source — deleted");
+            foreach (var s in plan.PluginTypes.Deletes.Keys) output.Verbose($"Plugin Type '{s}' not in source — deleted");
             if (plan.PluginTypes.Deletes.Count > 0) output.Info($"Deleted {plan.PluginTypes.Deletes.Count} PluginTypes");
         }
     }
