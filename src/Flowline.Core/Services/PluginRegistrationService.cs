@@ -34,9 +34,9 @@ public class PluginRegistrationService(IFlowlineOutput output)
         var plan = _planner.Plan(snapshot, metadata, assembly, solutionName);
         output.Info("Registration plan created");
 
-        // Phase 4: Execute deletes first — must precede assembly update and upserts
+        // Phase 4: Execute the deletes first — must precede assembly update and upserts
         await _executor.ExecuteDeletesAsync(service, plan, solutionName, save, cancellationToken).ConfigureAwait(false);
-        output.Info($"Deleted obsolete components for [bold]{metadata.Name}[/]");
+        if (plan.TotalDeletes > 0) output.Info($"Deleted total {plan.TotalDeletes} obsolete components for [bold]{metadata.Name}[/]");
 
         // Phase 5: Update assembly content — must happen before new plugin types are registered
         if (needsUpdate)
@@ -55,6 +55,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
 
         // Phase 6: Execute upserts and add to solution
         await _executor.ExecuteUpsertsAsync(service, plan, solutionName, cancellationToken).ConfigureAwait(false);
+        if (plan.TotalUpserts > 0) output.Info($"Upserted total {plan.TotalUpserts} new components for [bold]{metadata.Name}[/]");
         await _executor.ExecuteAddToSolutionAsync(service, plan, cancellationToken).ConfigureAwait(false);
     }
 

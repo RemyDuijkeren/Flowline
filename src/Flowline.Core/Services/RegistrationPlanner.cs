@@ -121,7 +121,8 @@ public class RegistrationPlanner(IFlowlineOutput output)
                     dvStep.GetAttributeValue<OptionSetValue>("mode")?.Value != asmStep.Mode ||
                     dvStep.GetAttributeValue<int?>("rank") != asmStep.Order ||
                     dvStep.GetAttributeValue<EntityReference?>("sdkmessageid")?.Id != messageId ||
-                    dvStep.GetAttributeValue<EntityReference?>("sdkmessagefilterid")?.Id != filterId;
+                    dvStep.GetAttributeValue<EntityReference?>("sdkmessagefilterid")?.Id != filterId ||
+                    dvStep.GetAttributeValue<bool>("asyncautodelete") != asmStep.AsyncAutoDelete;
 
                 if (!changed)
                 {
@@ -134,6 +135,7 @@ public class RegistrationPlanner(IFlowlineOutput output)
                 dvStep["rank"]                = asmStep.Order;
                 dvStep["filteringattributes"] = asmStep.FilteringAttributes;
                 dvStep["configuration"]       = asmStep.Configuration;
+                dvStep["asyncautodelete"]     = asmStep.AsyncAutoDelete;
                 dvStep["sdkmessageid"]        = new EntityReference("sdkmessage", messageId);
                 if (filterId.HasValue)
                     dvStep["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId.Value);
@@ -152,6 +154,7 @@ public class RegistrationPlanner(IFlowlineOutput output)
                     ["rank"]                = asmStep.Order,
                     ["filteringattributes"] = asmStep.FilteringAttributes,
                     ["configuration"]       = asmStep.Configuration,
+                    ["asyncautodelete"]     = asmStep.AsyncAutoDelete,
                     ["description"]         = $"{FlowlineMarker} Created at {DateTime.UtcNow:u}"
                 };
                 if (filterId.HasValue)

@@ -129,6 +129,18 @@ public sealed class EntityAttribute(string logicalName) : Attribute
     /// </para>
     /// </remarks>
     public string? Configuration { get; set; }
+
+    /// <summary>
+    /// When <see langword="true"/>, Dataverse automatically deletes the
+    /// <c>AsyncOperation</c> (system job) record after this step completes successfully.
+    /// Keeps the job queue clean without a separate cleanup flow.
+    /// </summary>
+    /// <remarks>
+    /// Only applies to asynchronous post-operation steps — those are the only steps that
+    /// create an <c>AsyncOperation</c> record. Setting this on a synchronous step is silently
+    /// ignored by Dataverse; Flowline will emit a warning during <c>flowline push</c>.
+    /// </remarks>
+    public bool DeleteJobOnSuccess { get; set; } = false;
 }
 
 /// <summary>

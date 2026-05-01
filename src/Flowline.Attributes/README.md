@@ -64,6 +64,7 @@ Optional named properties:
 | `Order` | `int` | `1` | Execution order when multiple steps fire on the same event. Lower runs first. |
 | `As` | `ExecuteAs` | `CallingUser` | User identity the plugin runs under (`context.UserId`). |
 | `Configuration` | `string?` | `null` | Passed to the plugin constructor as `unsecureConfig`. |
+| `DeleteJobOnSuccess` | `bool` | `false` | Automatically delete the `AsyncOperation` job record when the step succeeds. Async post-operation steps only. |
 
 Use `ExecuteAs.InitiatingUser` when a Power Automate flow triggers your plugin and you need the human user's identity rather than the flow service account:
 
@@ -88,6 +89,16 @@ public class AccountPostCreatePlugin : IPlugin
 ```
 
 > **Do not store secrets in `Configuration`.** The value is visible in source control and the solution XML. Use environment variables or Azure Key Vault for anything sensitive.
+
+Use `DeleteJobOnSuccess` on async post-operation steps to keep the system job queue clean. Every async step execution creates an `AsyncOperation` record; without this flag those records accumulate indefinitely. Setting it on a synchronous step has no effect — Flowline will emit a warning during `flowline push`:
+
+```csharp
+[Entity("cr07982_invoice", DeleteJobOnSuccess = true)]
+[Filter("cr07982_status")]
+public class InvoicePostUpdateAsyncPlugin : IPlugin { ... }
+```
+
+> `DeleteJobOnSuccess` only applies to asynchronous (post-operation) steps. Flowline warns if you set it on a synchronous step.
 
 ### `[Filter]` — optional, strongly recommended on Update steps
 
@@ -217,7 +228,7 @@ public class AccountPreCreatePlugin : IPlugin
 **Call an external system after the save, in the background:**
 
 ```csharp
-[Entity("cr07982_invoice")]
+[Entity("cr07982_invoice", DeleteJobOnSuccess = true)]
 [Filter("cr07982_status")]
 public class InvoicePostUpdateAsyncPlugin : IPlugin
 {
@@ -225,6 +236,7 @@ public class InvoicePostUpdateAsyncPlugin : IPlugin
     {
         // Runs after the transaction commits — safe to call external APIs here.
         // A failure does not roll back the record.
+        // DeleteJobOnSuccess = true keeps the AsyncOperation job queue clean.
     }
 }
 ```

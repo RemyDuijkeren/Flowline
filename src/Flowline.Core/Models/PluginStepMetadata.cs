@@ -11,4 +11,5 @@ public record PluginStepMetadata(
     string? Configuration,
     List<PluginImageMetadata> Images,
     List<string> Warnings,
-    string? SecondaryEntity = null);
+    string? SecondaryEntity = null,
+    bool AsyncAutoDelete = false);

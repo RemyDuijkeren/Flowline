@@ -359,10 +359,12 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
         var logicalName = (string)entityAttr.ConstructorArguments[0].Value!;
         var order = 1;
         var configuration = (string?)null;
+        var deleteJobOnSuccess = false;
         foreach (var arg in entityAttr.NamedArguments)
         {
             if (arg.MemberName == "Order") order = Convert.ToInt32(arg.TypedValue.Value);
             else if (arg.MemberName == "Configuration") configuration = (string?)arg.TypedValue.Value;
+            else if (arg.MemberName == "DeleteJobOnSuccess") deleteJobOnSuccess = (bool)arg.TypedValue.Value!;
         }
 
         ValidateEntityName(type.Name, logicalName);
@@ -382,12 +384,14 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
         var images = ReadImageAttributes(type);
         ValidateImages(type.Name, message, stage, images);
         var warnings = BuildStepWarnings(type.Name, message, filteringAttributes, secondaryEntity, images);
+        if (deleteJobOnSuccess && mode != (int)ProcessingMode.Asynchronous)
+            warnings.Add($"DeleteJobOnSuccess = true has no effect on synchronous step '{type.Name}'.");
 
         var stepName = secondaryEntity != null
             ? $"{type.FullName}: {message} of {logicalName} with {secondaryEntity}"
             : $"{type.FullName}: {message} of {logicalName}";
 
-        return new PluginStepMetadata(stepName, message, logicalName, stage, mode, order, filteringAttributes, configuration, images, warnings, secondaryEntity);
+        return new PluginStepMetadata(stepName, message, logicalName, stage, mode, order, filteringAttributes, configuration, images, warnings, secondaryEntity, deleteJobOnSuccess);
     }
 
     internal static bool TryParseClassName(string className, out string message, out int stage, out int mode)

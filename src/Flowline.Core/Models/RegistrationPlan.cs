@@ -16,6 +16,12 @@ public class RegistrationPlan
     public ActionPlan CustomApis    { get; } = new();
     public ActionPlan RequestParams { get; } = new();
     public ActionPlan ResponseProps { get; } = new();
+
+    public int TotalDeletes => PluginTypes.Deletes.Count + Steps.Deletes.Count + Images.Deletes.Count
+                             + CustomApis.Deletes.Count + RequestParams.Deletes.Count + ResponseProps.Deletes.Count;
+
+    public int TotalUpserts => PluginTypes.Upserts.Count + Steps.Upserts.Count + Images.Upserts.Count
+                             + CustomApis.Upserts.Count + RequestParams.Upserts.Count + ResponseProps.Upserts.Count;
 }
 
 public class ActionPlan
