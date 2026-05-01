@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using CliWrap;
+using Flowline.Core;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Spectre.Console;
@@ -40,12 +41,20 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
         [CommandOption("--save")]
         [Description("Don't delete assets in development environment that are not in the source control")]
         public bool Save { get; set; } = false;
+
+        [CommandOption("--dry-run")]
+        [Description("Preview what would be pushed without making any changes to Dataverse")]
+        public bool DryRun { get; set; } = false;
     }
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         output.IsVerbose = settings.Verbose;
-        if (settings.Save) AnsiConsole.MarkupLine("[dim]Save mode enabled: Assets not in source control will be preserved.[/]");
+        var runMode = settings.DryRun ? RunMode.DryRun
+                    : settings.Save   ? RunMode.Save
+                    : RunMode.Normal;
+        if (runMode == RunMode.Save)   AnsiConsole.MarkupLine("[dim]Save mode: assets not in source control will be preserved.[/]");
+        if (runMode == RunMode.DryRun) AnsiConsole.MarkupLine("[dim]Dry-run mode: no changes will be made to Dataverse.[/]");
         if (settings.Force) AnsiConsole.MarkupLine("[dim]Force mode enabled: Safety checks will be bypassed.[/]");
 
         // Dev URL is required for push
@@ -107,7 +116,7 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
 
         await AnsiConsole.Status().FlowlineSpinner().StartAsync(
             $"Pushing [bold]{ExtensionsName}.dll[/] to Dataverse...",
-            ctx => pluginSyncSrv.SyncAsync(conn, metadata, sln.Name, settings.Save, cancellationToken));
+            ctx => pluginSyncSrv.SyncAsync(conn, metadata, sln.Name, runMode, cancellationToken));
 
         AnsiConsole.MarkupLine("[green]Assets pushed to Dataverse[/]");
 

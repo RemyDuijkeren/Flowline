@@ -17,14 +17,14 @@ public class PluginRegistrationService(IFlowlineOutput output)
         IOrganizationServiceAsync2 service,
         PluginAssemblyMetadata metadata,
         string solutionName,
-        bool save = false,
+        RunMode runMode = RunMode.Normal,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(solutionName))
             throw new ArgumentException("solutionName is required and cannot be empty.", nameof(solutionName));
 
         // Phase 1: Get or register assembly
-        var (assembly, needsUpdate) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, save, cancellationToken).ConfigureAwait(false);
+        var (assembly, needsUpdate) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
         output.Info($"Assembly '{metadata.Name}' ({metadata.Version}) found in solution '{solutionName}'.");
 
         // Phase 2: Load snapshot (all Dataverse state in parallel)
@@ -34,8 +34,15 @@ public class PluginRegistrationService(IFlowlineOutput output)
         var plan = _planner.Plan(snapshot, metadata, assembly, solutionName);
         output.Info("Registration plan created");
 
+        // Dry-run: print preview and return without making any changes
+        if (runMode == RunMode.DryRun)
+        {
+            WriteDryRunSummary(metadata, needsUpdate, plan);
+            return;
+        }
+
         // Phase 4: Execute the deletes first — must precede assembly update and upserts
-        await _executor.ExecuteDeletesAsync(service, plan, solutionName, save, cancellationToken).ConfigureAwait(false);
+        await _executor.ExecuteDeletesAsync(service, plan, solutionName, runMode == RunMode.Save, cancellationToken).ConfigureAwait(false);
         if (plan.TotalDeletes > 0) output.Info($"Deleted total {plan.TotalDeletes} obsolete components for [bold]{metadata.Name}[/]");
 
         // Phase 5: Update assembly content — must happen before new plugin types are registered
@@ -48,10 +55,6 @@ public class PluginRegistrationService(IFlowlineOutput output)
             await service.UpdateAsync(assembly, cancellationToken).ConfigureAwait(false);
             output.Info($"[green]Updated assembly content for [bold]{metadata.Name}[/][/]");
         }
-        else
-        {
-            output.Skip($"Assembly '{metadata.Name}' is unchanged — skipping upload.");
-        }
 
         // Phase 6: Execute upserts and add to solution
         await _executor.ExecuteUpsertsAsync(service, plan, solutionName, cancellationToken).ConfigureAwait(false);
@@ -60,7 +63,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
     }
 
     async Task<(Entity entity, bool needsUpdate)> GetOrRegisterAssemblyAsync(
-        IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName, bool save, CancellationToken cancellationToken = default)
+        IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName, RunMode runMode, CancellationToken cancellationToken = default)
     {
         var query = new Microsoft.Xrm.Sdk.Query.QueryExpression("pluginassembly")
         {
@@ -77,6 +80,12 @@ public class PluginRegistrationService(IFlowlineOutput output)
 
         if (existing == null)
         {
+            if (runMode == RunMode.DryRun)
+            {
+                output.Skip($"Assembly '{metadata.Name}' — would create");
+                return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false);
+            }
+
             var entity = new Entity("pluginassembly")
             {
                 ["name"]          = metadata.Name,
@@ -111,15 +120,21 @@ public class PluginRegistrationService(IFlowlineOutput output)
             if (majorMinorChanged) reasons.Add($"major/minor version ({registeredVersion} → {metadata.Version})");
             var reason = string.Join(", ", reasons);
 
-            if (save)
+            switch (runMode)
             {
-                output.Info($"[red]Assembly '{metadata.Name}' FQN changed ({reason}) — Dataverse requires delete and recreate. Re-run without --save to apply.[/]");
-                throw new InvalidOperationException($"Assembly '{metadata.Name}' FQN changed ({reason}). Cannot continue in save mode — re-run without --save to apply.");
+                case RunMode.Save:
+                    output.Info($"[red]Assembly '{metadata.Name}' FQN changed ({reason}) — Dataverse requires delete and recreate. Re-run without --save to apply or use --dry-run to preview changes.[/]");
+                    throw new InvalidOperationException($"Assembly '{metadata.Name}' FQN changed ({reason}). Cannot continue in save mode — re-run without --save to apply or use --dry-run to preview changes.");
+                case RunMode.DryRun:
+                    output.Skip($"Assembly '{metadata.Name}' FQN changed ({reason}) — would delete and recreate");
+                    return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false);
+                case RunMode.Normal:
+                    output.Info($"[yellow]Assembly '{metadata.Name}' FQN changed ({reason}) — deleting and recreating all plugin registrations.[/]");
+                    await service.DeleteAsync("pluginassembly", existing.Id, cancellationToken).ConfigureAwait(false);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(runMode), runMode, null);
             }
-
-            output.Info($"[yellow]Assembly '{metadata.Name}' FQN changed ({reason}) — deleting and recreating all plugin registrations.[/]");
-
-            await service.DeleteAsync("pluginassembly", existing.Id, cancellationToken).ConfigureAwait(false);
 
             var freshEntity = new Entity("pluginassembly")
             {
@@ -142,6 +157,36 @@ public class PluginRegistrationService(IFlowlineOutput output)
         await AddSolutionComponentAsync(service, existing.Id, solutionName, cancellationToken).ConfigureAwait(false);
         var storedHash = ParseStoredHash(existing.GetAttributeValue<string>("description"));
         return (existing, storedHash != metadata.Hash);
+    }
+
+    void WriteDryRunSummary(PluginAssemblyMetadata metadata, bool needsUpdate, RegistrationPlan plan)
+    {
+        if (needsUpdate)
+            output.Skip($"Assembly '{metadata.Name} ({metadata.Version})' — would update content");
+
+        foreach (var s in plan.PluginTypes.Deletes.Keys)   output.Skip($"Plugin type '{s}' — would delete");
+        foreach (var s in plan.Steps.Deletes.Keys)         output.Skip($"Step '{s}' — would delete");
+        foreach (var s in plan.Images.Deletes.Keys)        output.Skip($"Image '{s}' — would delete");
+        foreach (var s in plan.CustomApis.Deletes.Keys)    output.Skip($"Custom API '{s}' — would delete");
+        foreach (var s in plan.RequestParams.Deletes.Keys) output.Skip($"Request parameter '{s}' — would delete");
+        foreach (var s in plan.ResponseProps.Deletes.Keys) output.Skip($"Response property '{s}' — would delete");
+
+        foreach (var (s, ups) in plan.PluginTypes.Upserts)   output.Skip($"Plugin type '{s}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var (s, ups) in plan.Steps.Upserts)         output.Skip($"Step '{s}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var (s, ups) in plan.Images.Upserts)        output.Skip($"Image '{s}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var (s, ups) in plan.CustomApis.Upserts)    output.Skip($"Custom API '{s}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var (s, ups) in plan.RequestParams.Upserts) output.Skip($"Request parameter '{s}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var (s, ups) in plan.ResponseProps.Upserts) output.Skip($"Response property '{s}' — would {(ups.IsCreate ? "create" : "update")}");
+
+        var creates = plan.PluginTypes.Upserts.Values.Count(u => u.IsCreate)
+                      + plan.Steps.Upserts.Values.Count(u => u.IsCreate)
+                      + plan.CustomApis.Upserts.Values.Count(u => u.IsCreate)
+                      + plan.Images.Upserts.Values.Count(u => u.IsCreate)
+                      + plan.RequestParams.Upserts.Values.Count(u => u.IsCreate)
+                      + plan.ResponseProps.Upserts.Values.Count(u => u.IsCreate);
+        var updates = plan.TotalUpserts - creates;
+
+        output.Info($"Dry-run summary: {plan.TotalDeletes} delete(s), {creates} create(s), {updates} update(s) — run without --dry-run to apply.");
     }
 
     async Task AddSolutionComponentAsync(IOrganizationServiceAsync2 service, Guid assemblyId, string solutionName, CancellationToken cancellationToken)

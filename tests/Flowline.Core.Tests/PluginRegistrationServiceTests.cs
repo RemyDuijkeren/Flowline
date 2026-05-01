@@ -543,7 +543,7 @@ public class PluginRegistrationServiceTests
         _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter"), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new EntityCollection());
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(plugins: plugin), "MySolution", save: true);
+        await _service.SyncAsync(_serviceMock.Object, Metadata(plugins: plugin), "MySolution", RunMode.Save);
 
         _serviceMock.Verify(x => x.DeleteAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         _outputMock.Verify(x => x.Skip(It.Is<string>(s => s.Contains("Orphaned step"))), Times.AtLeastOnce);
@@ -673,7 +673,7 @@ public class PluginRegistrationServiceTests
         SetupPluginTypes();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            _service.SyncAsync(_serviceMock.Object, Metadata(pkt: "a4d07ffa42de325f"), "MySolution", save: true));
+            _service.SyncAsync(_serviceMock.Object, Metadata(pkt: "a4d07ffa42de325f"), "MySolution", RunMode.Save));
 
         _serviceMock.Verify(x => x.DeleteAsync("pluginassembly", assemblyId, It.IsAny<CancellationToken>()), Times.Never);
         _outputMock.Verify(x => x.Info(It.Is<string>(s => s.Contains("[red]") && s.Contains("Re-run without --save"))), Times.Once);
@@ -751,5 +751,97 @@ public class PluginRegistrationServiceTests
         _serviceMock.Verify(x => x.DeleteAsync("sdkmessageprocessingstep", protectedStepId, It.IsAny<CancellationToken>()), Times.Never);
         // The plugin type itself is obsolete (not in assembly) and is correctly deleted; its stage=30 step cascades
         _serviceMock.Verify(x => x.DeleteAsync("plugintype", obsoleteTypeId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // -- Dry-run mode --
+
+    [Fact]
+    public async Task SyncAsync_DryRun_NewAssembly_NoCreateCalled()
+    {
+        SetupAssembly();
+        SetupPluginTypes();
+
+        await _service.SyncAsync(_serviceMock.Object, Metadata(), "MySolution", RunMode.DryRun);
+
+        _serviceMock.Verify(x => x.ExecuteAsync(It.IsAny<CreateRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+        _outputMock.Verify(x => x.Skip(It.Is<string>(s => s.Contains("would create"))), Times.Once);
+    }
+
+    [Fact]
+    public async Task SyncAsync_DryRun_ExistingUnchanged_NoUpdateCalled()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, hash: "abc123"));
+        SetupPluginTypes();
+
+        await _service.SyncAsync(_serviceMock.Object, Metadata(hash: "abc123"), "MySolution", RunMode.DryRun);
+
+        _serviceMock.Verify(x => x.UpdateAsync(It.IsAny<Entity>(), It.IsAny<CancellationToken>()), Times.Never);
+        _outputMock.Verify(x => x.Skip(It.Is<string>(s => s.Contains("unchanged"))), Times.Once);
+    }
+
+    [Fact]
+    public async Task SyncAsync_DryRun_ExistingChanged_NoUpdateCalled()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, hash: "oldhash"));
+        SetupPluginTypes();
+
+        await _service.SyncAsync(_serviceMock.Object, Metadata(hash: "newhash"), "MySolution", RunMode.DryRun);
+
+        _serviceMock.Verify(x => x.UpdateAsync(It.IsAny<Entity>(), It.IsAny<CancellationToken>()), Times.Never);
+        _outputMock.Verify(x => x.Skip(It.Is<string>(s => s.Contains("would update content"))), Times.Once);
+    }
+
+    [Fact]
+    public async Task SyncAsync_DryRun_WithDeletesInPlan_NoDeleteCalled()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId));
+
+        var obsoleteTypeId = Guid.NewGuid();
+        SetupPluginTypes(new Entity("plugintype", obsoleteTypeId) { ["typename"] = "Obsolete.Plugin", ["isworkflowactivity"] = false });
+        SetupSteps(new Entity("sdkmessageprocessingstep", Guid.NewGuid())
+        {
+            ["name"] = "Obsolete.Plugin: Update of account",
+            ["plugintypeid"] = new EntityReference("plugintype", obsoleteTypeId)
+        });
+
+        await _service.SyncAsync(_serviceMock.Object, Metadata(), "MySolution", RunMode.DryRun);
+
+        _serviceMock.Verify(x => x.DeleteAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _outputMock.Verify(x => x.Skip(It.Is<string>(s => s.Contains("would delete"))), Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task SyncAsync_DryRun_FqnChanged_NoDeleteNoThrow()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, pkt: "df889c1cc53657b7"));
+        SetupPluginTypes();
+
+        await _service.SyncAsync(_serviceMock.Object, Metadata(pkt: "a4d07ffa42de325f"), "MySolution", RunMode.DryRun);
+
+        _serviceMock.Verify(x => x.DeleteAsync("pluginassembly", assemblyId, It.IsAny<CancellationToken>()), Times.Never);
+        _outputMock.Verify(x => x.Skip(It.Is<string>(s => s.Contains("FQN changed") && s.Contains("would delete and recreate"))), Times.Once);
+    }
+
+    [Fact]
+    public async Task SyncAsync_DryRun_OutputsSummaryLine()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId));
+
+        var obsoleteTypeId = Guid.NewGuid();
+        SetupPluginTypes(new Entity("plugintype", obsoleteTypeId) { ["typename"] = "Obsolete.Plugin", ["isworkflowactivity"] = false });
+        SetupSteps(new Entity("sdkmessageprocessingstep", Guid.NewGuid())
+        {
+            ["name"] = "Obsolete.Plugin: Update of account",
+            ["plugintypeid"] = new EntityReference("plugintype", obsoleteTypeId)
+        });
+
+        await _service.SyncAsync(_serviceMock.Object, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], null, false)), "MySolution", RunMode.DryRun);
+
+        _outputMock.Verify(x => x.Info(It.Is<string>(s => s.Contains("Dry-run:"))), Times.Once);
     }
 }

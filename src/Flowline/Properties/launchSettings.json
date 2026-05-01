@@ -10,9 +10,9 @@
       "commandLineArgs": "clone Cr07982",
       "workingDirectory": "E:/Code/TryOut/MyFlowTest"
     },
-    "push": {
+    "push --dry-run": {
       "commandName": "Project",
-      "commandLineArgs": "push --verbose",
+      "commandLineArgs": "push --dry-run",
       "workingDirectory": "E:/Code/TryOut/MyFlowTest"
     },
     "push --verbose": {
