@@ -111,6 +111,12 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
         var content = File.ReadAllBytes(dllPath);
         var hash = Convert.ToHexString(SHA256.HashData(content));
 
+        var pktBytes = assemblyName.GetPublicKeyToken();
+        var publicKeyToken = pktBytes is { Length: > 0 }
+            ? Convert.ToHexString(pktBytes).ToLowerInvariant()
+            : null;
+        var culture = string.IsNullOrEmpty(assemblyName.CultureName) ? "neutral" : assemblyName.CultureName;
+
         output.Info($"Loaded assembly {assemblyName.Name}");
 
         var pluginTypes = new List<PluginTypeMetadata>();
@@ -160,6 +166,8 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
             content,
             hash,
             assemblyName.Version!.ToString(),
+            publicKeyToken,
+            culture,
             pluginTypes);
     }
 

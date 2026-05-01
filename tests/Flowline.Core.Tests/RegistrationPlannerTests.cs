@@ -38,7 +38,7 @@ public class RegistrationPlannerTests
             prefix);
 
     static PluginAssemblyMetadata Metadata(params PluginTypeMetadata[] plugins) =>
-        new("MyPlugin", "MyPlugin, Version=1.0.0.0", [1], "hash", "1.0.0.0", [..plugins]);
+        new("MyPlugin", "MyPlugin, Version=1.0.0.0", [1], "hash", "1.0.0.0", null, "neutral", [..plugins]);
 
     // -- Plugin type planning --
 

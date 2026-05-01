@@ -88,11 +88,14 @@ public class PluginRegistrationServiceTests
 
     // -- Helpers --
 
-    private Entity ExistingAssembly(Guid id, string version = "1.0.0.0", string? hash = null)
+    private Entity ExistingAssembly(Guid id, string version = "1.0.0.0", string? hash = null, string? pkt = null, string culture = "neutral")
     {
         var e = new Entity("pluginassembly", id);
         e["name"] = "MyPlugin";
         e["version"] = version;
+        e["culture"] = culture;
+        if (pkt != null)
+            e["publickeytoken"] = pkt;
         if (hash != null)
             e["description"] = $"[flowline] sha256={hash}";
         return e;
@@ -160,8 +163,8 @@ public class PluginRegistrationServiceTests
             .ReturnsAsync(new EntityCollection(images.ToList()));
     }
 
-    private PluginAssemblyMetadata Metadata(string name = "MyPlugin", string version = "1.0.0.0", string hash = "deadbeef", params PluginTypeMetadata[] plugins) =>
-        new(name, $"{name}, Version={version}", new byte[] { 1, 2, 3 }, hash, version, plugins.ToList());
+    private PluginAssemblyMetadata Metadata(string name = "MyPlugin", string version = "1.0.0.0", string hash = "deadbeef", string? pkt = null, string culture = "neutral", params PluginTypeMetadata[] plugins) =>
+        new(name, $"{name}, Version={version}", new byte[] { 1, 2, 3 }, hash, version, pkt, culture, plugins.ToList());
 
     private static bool HasCondition(QueryExpression query, string attributeName, object value)
     {
@@ -502,7 +505,7 @@ public class PluginRegistrationServiceTests
 
         var customApi = new CustomApiMetadata("MyApi", "My Api", "desc", 0, null, false, false, 0, null, "MyNamespace.MyPlugin", [], []);
         var pluginTypeMetadata = new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [customApi], false, true);
-        var metadata = new PluginAssemblyMetadata("MyPlugin", "MyPlugin, Version=1.0.0.0", new byte[] { 1, 2, 3 }, "hash", "1.0.0.0", [pluginTypeMetadata]);
+        var metadata = new PluginAssemblyMetadata("MyPlugin", "MyPlugin, Version=1.0.0.0", new byte[] { 1, 2, 3 }, "hash", "1.0.0.0", null, "neutral", [pluginTypeMetadata]);
 
         await _service.SyncAsync(_serviceMock.Object, metadata, "MySolution");
 
@@ -580,6 +583,145 @@ public class PluginRegistrationServiceTests
         var updateIndex = callOrder.IndexOf("update:pluginassembly");
         Assert.True(updateIndex > 0);
         Assert.DoesNotContain(callOrder.Skip(updateIndex + 1), c => c.StartsWith("delete:", StringComparison.Ordinal));
+    }
+
+    // -- FQN change: delete + recreate --
+
+    private void SetupFqnChangeExecuteAsync()
+    {
+        var createResponse = new CreateResponse();
+        createResponse.Results["id"] = Guid.NewGuid();
+        _serviceMock.Setup(x => x.ExecuteAsync(It.IsAny<CreateRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(createResponse);
+    }
+
+    [Fact]
+    public async Task SyncAsync_PktChanged_DeletesAndRecreatesAssembly()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, pkt: "df889c1cc53657b7"));
+        SetupPluginTypes();
+        SetupFqnChangeExecuteAsync();
+
+        await _service.SyncAsync(_serviceMock.Object, Metadata(pkt: "a4d07ffa42de325f"), "MySolution");
+
+        _serviceMock.Verify(x => x.DeleteAsync("pluginassembly", assemblyId, It.IsAny<CancellationToken>()), Times.Once);
+        _serviceMock.Verify(x => x.ExecuteAsync(It.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), It.IsAny<CancellationToken>()), Times.Once);
+        _serviceMock.Verify(x => x.UpdateAsync(It.Is<Entity>(e => e.LogicalName == "pluginassembly"), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SyncAsync_CultureChanged_DeletesAndRecreatesAssembly()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, culture: "neutral"));
+        SetupPluginTypes();
+        SetupFqnChangeExecuteAsync();
+
+        await _service.SyncAsync(_serviceMock.Object, Metadata(culture: "en"), "MySolution");
+
+        _serviceMock.Verify(x => x.DeleteAsync("pluginassembly", assemblyId, It.IsAny<CancellationToken>()), Times.Once);
+        _serviceMock.Verify(x => x.ExecuteAsync(It.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SyncAsync_MajorVersionChanged_DeletesAndRecreatesAssembly()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, version: "1.0.0.0"));
+        SetupPluginTypes();
+        SetupFqnChangeExecuteAsync();
+
+        await _service.SyncAsync(_serviceMock.Object, Metadata(version: "2.0.0.0"), "MySolution");
+
+        _serviceMock.Verify(x => x.DeleteAsync("pluginassembly", assemblyId, It.IsAny<CancellationToken>()), Times.Once);
+        _serviceMock.Verify(x => x.ExecuteAsync(It.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SyncAsync_MinorVersionChanged_DeletesAndRecreatesAssembly()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, version: "1.0.0.0"));
+        SetupPluginTypes();
+        SetupFqnChangeExecuteAsync();
+
+        await _service.SyncAsync(_serviceMock.Object, Metadata(version: "1.1.0.0"), "MySolution");
+
+        _serviceMock.Verify(x => x.DeleteAsync("pluginassembly", assemblyId, It.IsAny<CancellationToken>()), Times.Once);
+        _serviceMock.Verify(x => x.ExecuteAsync(It.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SyncAsync_BuildVersionChanged_DoesNotDeleteAssembly()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, version: "1.0.0.0", hash: "oldhash"));
+        SetupPluginTypes();
+
+        await _service.SyncAsync(_serviceMock.Object, Metadata(version: "1.0.5.0", hash: "newhash"), "MySolution");
+
+        _serviceMock.Verify(x => x.DeleteAsync("pluginassembly", assemblyId, It.IsAny<CancellationToken>()), Times.Never);
+        _serviceMock.Verify(x => x.UpdateAsync(It.Is<Entity>(e => e.LogicalName == "pluginassembly"), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SyncAsync_SaveMode_FqnChanged_ThrowsAndDoesNotDelete()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, pkt: "df889c1cc53657b7"));
+        SetupPluginTypes();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.SyncAsync(_serviceMock.Object, Metadata(pkt: "a4d07ffa42de325f"), "MySolution", save: true));
+
+        _serviceMock.Verify(x => x.DeleteAsync("pluginassembly", assemblyId, It.IsAny<CancellationToken>()), Times.Never);
+        _outputMock.Verify(x => x.Info(It.Is<string>(s => s.Contains("[red]") && s.Contains("Re-run without --save"))), Times.Once);
+    }
+
+    [Fact]
+    public async Task SyncAsync_BothPktsNull_DoesNotDeleteAssembly()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, hash: "abc123"));
+        SetupPluginTypes();
+
+        await _service.SyncAsync(_serviceMock.Object, Metadata(hash: "abc123", pkt: null), "MySolution");
+
+        _serviceMock.Verify(x => x.DeleteAsync("pluginassembly", assemblyId, It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SyncAsync_MultipleFqnFieldsChanged_ReasonListsAllFields()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, version: "1.0.0.0", pkt: "aabbccdd11223344"));
+        SetupPluginTypes();
+        SetupFqnChangeExecuteAsync();
+
+        await _service.SyncAsync(_serviceMock.Object, Metadata(version: "2.0.0.0", pkt: "1122334455667788"), "MySolution");
+
+        _outputMock.Verify(x => x.Info(It.Is<string>(s =>
+            s.Contains("public key token") &&
+            s.Contains("major/minor version"))), Times.Once);
+    }
+
+    // -- HasMajorOrMinorVersionChange unit tests --
+
+    [Theory]
+    [InlineData(null, "1.0.0.0", false)]
+    [InlineData("", "1.0.0.0", false)]
+    [InlineData("not-a-version", "1.0.0.0", false)]
+    [InlineData("1.0.0.0", "1.0.0.0", false)]
+    [InlineData("1.0.0.0", "1.0.5.0", false)]
+    [InlineData("1.0.0.0", "1.0.0.3", false)]
+    [InlineData("1.0.0.0", "2.0.0.0", true)]
+    [InlineData("1.0.0.0", "1.1.0.0", true)]
+    [InlineData("2.3.0.0", "3.3.0.0", true)]
+    [InlineData("2.3.0.0", "2.4.0.0", true)]
+    public void HasMajorOrMinorVersionChange_ReturnsExpected(string? registered, string local, bool expected)
+    {
+        Assert.Equal(expected, PluginRegistrationService.HasMajorOrMinorVersionChange(registered, local));
     }
 
     [Fact]

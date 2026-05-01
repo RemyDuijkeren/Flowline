@@ -24,7 +24,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
             throw new ArgumentException("solutionName is required and cannot be empty.", nameof(solutionName));
 
         // Phase 1: Get or register assembly
-        var (assembly, needsUpdate) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, cancellationToken).ConfigureAwait(false);
+        var (assembly, needsUpdate) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, save, cancellationToken).ConfigureAwait(false);
         output.Info($"Assembly '{metadata.Name}' ({metadata.Version}) found in solution '{solutionName}'.");
 
         // Phase 2: Load snapshot (all Dataverse state in parallel)
@@ -60,12 +60,12 @@ public class PluginRegistrationService(IFlowlineOutput output)
     }
 
     async Task<(Entity entity, bool needsUpdate)> GetOrRegisterAssemblyAsync(
-        IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName, CancellationToken cancellationToken = default)
+        IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName, bool save, CancellationToken cancellationToken = default)
     {
         var query = new Microsoft.Xrm.Sdk.Query.QueryExpression("pluginassembly")
         {
             TopCount = 1,
-            ColumnSet = new Microsoft.Xrm.Sdk.Query.ColumnSet("pluginassemblyid", "name", "version", "description"),
+            ColumnSet = new Microsoft.Xrm.Sdk.Query.ColumnSet("pluginassemblyid", "name", "version", "publickeytoken", "culture", "description"),
             Criteria =
             {
                 Conditions = { new Microsoft.Xrm.Sdk.Query.ConditionExpression("name", Microsoft.Xrm.Sdk.Query.ConditionOperator.Equal, metadata.Name) }
@@ -93,6 +93,50 @@ public class PluginRegistrationService(IFlowlineOutput output)
 
             entity.Id = response.id;
             return (entity, false);
+        }
+
+        var registeredPkt     = existing.GetAttributeValue<string>("publickeytoken");
+        var registeredCulture = existing.GetAttributeValue<string>("culture") ?? "neutral";
+        var registeredVersion = existing.GetAttributeValue<string>("version");
+
+        bool pktChanged        = !string.Equals(registeredPkt, metadata.PublicKeyToken, StringComparison.OrdinalIgnoreCase);
+        bool cultureChanged    = !string.Equals(registeredCulture, metadata.Culture, StringComparison.OrdinalIgnoreCase);
+        bool majorMinorChanged = HasMajorOrMinorVersionChange(registeredVersion, metadata.Version);
+
+        if (pktChanged || cultureChanged || majorMinorChanged)
+        {
+            var reasons = new List<string>();
+            if (pktChanged)        reasons.Add($"public key token ({registeredPkt ?? "null"} → {metadata.PublicKeyToken ?? "null"})");
+            if (cultureChanged)    reasons.Add($"culture ({registeredCulture} → {metadata.Culture})");
+            if (majorMinorChanged) reasons.Add($"major/minor version ({registeredVersion} → {metadata.Version})");
+            var reason = string.Join(", ", reasons);
+
+            if (save)
+            {
+                output.Info($"[red]Assembly '{metadata.Name}' FQN changed ({reason}) — Dataverse requires delete and recreate. Re-run without --save to apply.[/]");
+                throw new InvalidOperationException($"Assembly '{metadata.Name}' FQN changed ({reason}). Cannot continue in save mode — re-run without --save to apply.");
+            }
+
+            output.Info($"[yellow]Assembly '{metadata.Name}' FQN changed ({reason}) — deleting and recreating all plugin registrations.[/]");
+
+            await service.DeleteAsync("pluginassembly", existing.Id, cancellationToken).ConfigureAwait(false);
+
+            var freshEntity = new Entity("pluginassembly")
+            {
+                ["name"]          = metadata.Name,
+                ["content"]       = Convert.ToBase64String(metadata.Content),
+                ["version"]       = metadata.Version,
+                ["isolationmode"] = new OptionSetValue(2),
+                ["description"]   = $"{FlowlineMarker} sha256={metadata.Hash}"
+            };
+
+            var response = (CreateResponse)await service.ExecuteAsync(
+                new CreateRequest { Target = freshEntity, ["SolutionUniqueName"] = solutionName },
+                cancellationToken).ConfigureAwait(false);
+
+            freshEntity.Id = response.id;
+            output.Info($"[green]Recreated assembly '{metadata.Name}'.[/]");
+            return (freshEntity, false);
         }
 
         await AddSolutionComponentAsync(service, existing.Id, solutionName, cancellationToken).ConfigureAwait(false);
@@ -157,5 +201,13 @@ public class PluginRegistrationService(IFlowlineOutput output)
         if (description == null) return null;
         var idx = description.IndexOf("sha256=", StringComparison.Ordinal);
         return idx < 0 ? null : description[(idx + 7)..].Split(' ')[0].Trim();
+    }
+
+    internal static bool HasMajorOrMinorVersionChange(string? registered, string local)
+    {
+        if (string.IsNullOrWhiteSpace(registered)) return false;
+        if (!Version.TryParse(registered, out var reg)) return false;
+        if (!Version.TryParse(local, out var loc))      return false;
+        return reg.Major != loc.Major || reg.Minor != loc.Minor;
     }
 }
