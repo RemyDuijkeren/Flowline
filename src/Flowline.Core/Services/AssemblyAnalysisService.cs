@@ -308,7 +308,6 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
             else if (arg.MemberName == "RunAs") runAsString = (string?)arg.TypedValue.Value;
             else if (arg.MemberName == "DeleteJobOnSuccess") deleteJobOnSuccessExplicit = (bool)arg.TypedValue.Value!;
         }
-        var deleteJobOnSuccess = deleteJobOnSuccessExplicit ?? true;
 
         ValidateLogicalName(type.Name, entity);
 
@@ -329,6 +328,8 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
         Guid? runAs = runAsString != null && Guid.TryParse(runAsString, out var parsed) ? parsed : (Guid?)null;
 
         var warnings = BuildStepWarnings(type.Name, message, entity, filteringAttributes, hasSecondaryAttr, secondaryEntity, images);
+
+        var deleteJobOnSuccess = (mode == (int)ProcessingMode.Asynchronous) && (deleteJobOnSuccessExplicit ?? true);
         if (deleteJobOnSuccessExplicit == true && mode != (int)ProcessingMode.Asynchronous)
             warnings.Add($"DeleteJobOnSuccess = true has no effect on synchronous step '{type.Name}'.");
         if (runAsString != null && runAs == null)
