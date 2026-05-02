@@ -82,7 +82,8 @@ public class PluginRegistrationService(IFlowlineOutput output)
         {
             if (runMode == RunMode.DryRun)
             {
-                output.Skip($"Assembly '{metadata.Name}' — would create");
+                output.Info($"Assembly '{metadata.Name}' — would create");
+                // Return a dummy entity so that the caller can continue with the dry-run
                 return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false);
             }
 
@@ -123,13 +124,14 @@ public class PluginRegistrationService(IFlowlineOutput output)
             switch (runMode)
             {
                 case RunMode.Save:
-                    output.Info($"[red]Assembly '{metadata.Name}' FQN changed ({reason}) — Dataverse requires delete and recreate. Re-run without --save to apply or use --dry-run to preview changes.[/]");
-                    throw new InvalidOperationException($"Assembly '{metadata.Name}' FQN changed ({reason}). Cannot continue in save mode — re-run without --save to apply or use --dry-run to preview changes.");
+                    output.Info($"[red]Assembly '{metadata.Name}' identity changed ({reason}) — Dataverse requires delete and recreate. Re-run without --save to apply or use --dry-run to preview changes.[/]");
+                    throw new InvalidOperationException($"Assembly '{metadata.Name}' identity changed ({reason}). Cannot continue in save mode — re-run without --save to apply or use --dry-run to preview changes.");
                 case RunMode.DryRun:
-                    output.Skip($"Assembly '{metadata.Name}' FQN changed ({reason}) — would delete and recreate");
+                    output.Skip($"Assembly '{metadata.Name}' identity changed ({reason}) — would delete and recreate");
+                    // Return a dummy entity so that the caller can continue with the dry-run
                     return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false);
                 case RunMode.Normal:
-                    output.Info($"[yellow]Assembly '{metadata.Name}' FQN changed ({reason}) — deleting and recreating all plugin registrations.[/]");
+                    output.Info($"[yellow]Assembly '{metadata.Name}' identity changed ({reason}) — deleting and recreating all plugin registrations.[/]");
                     await service.DeleteAsync("pluginassembly", existing.Id, cancellationToken).ConfigureAwait(false);
                     break;
                 default:

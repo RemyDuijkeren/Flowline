@@ -591,9 +591,9 @@ public class PluginRegistrationServiceTests
         Assert.DoesNotContain(callOrder.Skip(updateIndex + 1), c => c.StartsWith("delete:", StringComparison.Ordinal));
     }
 
-    // -- FQN change: delete + recreate --
+    // -- Identity change: delete + recreate --
 
-    private void SetupFqnChangeExecuteAsync()
+    private void SetupIdentityChangeExecuteAsync()
     {
         var createResponse = new CreateResponse();
         createResponse.Results["id"] = Guid.NewGuid();
@@ -607,7 +607,7 @@ public class PluginRegistrationServiceTests
         var assemblyId = Guid.NewGuid();
         SetupAssembly(ExistingAssembly(assemblyId, pkt: "df889c1cc53657b7"));
         SetupPluginTypes();
-        SetupFqnChangeExecuteAsync();
+        SetupIdentityChangeExecuteAsync();
 
         await _service.SyncAsync(_serviceMock, Metadata(pkt: "a4d07ffa42de325f"), "MySolution");
 
@@ -622,7 +622,7 @@ public class PluginRegistrationServiceTests
         var assemblyId = Guid.NewGuid();
         SetupAssembly(ExistingAssembly(assemblyId, culture: "neutral"));
         SetupPluginTypes();
-        SetupFqnChangeExecuteAsync();
+        SetupIdentityChangeExecuteAsync();
 
         await _service.SyncAsync(_serviceMock, Metadata(culture: "en"), "MySolution");
 
@@ -636,7 +636,7 @@ public class PluginRegistrationServiceTests
         var assemblyId = Guid.NewGuid();
         SetupAssembly(ExistingAssembly(assemblyId, version: "1.0.0.0"));
         SetupPluginTypes();
-        SetupFqnChangeExecuteAsync();
+        SetupIdentityChangeExecuteAsync();
 
         await _service.SyncAsync(_serviceMock, Metadata(version: "2.0.0.0"), "MySolution");
 
@@ -650,7 +650,7 @@ public class PluginRegistrationServiceTests
         var assemblyId = Guid.NewGuid();
         SetupAssembly(ExistingAssembly(assemblyId, version: "1.0.0.0"));
         SetupPluginTypes();
-        SetupFqnChangeExecuteAsync();
+        SetupIdentityChangeExecuteAsync();
 
         await _service.SyncAsync(_serviceMock, Metadata(version: "1.1.0.0"), "MySolution");
 
@@ -672,7 +672,7 @@ public class PluginRegistrationServiceTests
     }
 
     [Fact]
-    public async Task SyncAsync_SaveMode_FqnChanged_ThrowsAndDoesNotDelete()
+    public async Task SyncAsync_SaveMode_IdentityChanged_ThrowsAndDoesNotDelete()
     {
         var assemblyId = Guid.NewGuid();
         SetupAssembly(ExistingAssembly(assemblyId, pkt: "df889c1cc53657b7"));
@@ -698,12 +698,12 @@ public class PluginRegistrationServiceTests
     }
 
     [Fact]
-    public async Task SyncAsync_MultipleFqnFieldsChanged_ReasonListsAllFields()
+    public async Task SyncAsync_MultipleIdentityFieldsChanged_ReasonListsAllFields()
     {
         var assemblyId = Guid.NewGuid();
         SetupAssembly(ExistingAssembly(assemblyId, version: "1.0.0.0", pkt: "aabbccdd11223344"));
         SetupPluginTypes();
-        SetupFqnChangeExecuteAsync();
+        SetupIdentityChangeExecuteAsync();
 
         await _service.SyncAsync(_serviceMock, Metadata(version: "2.0.0.0", pkt: "1122334455667788"), "MySolution");
 
@@ -819,7 +819,7 @@ public class PluginRegistrationServiceTests
     }
 
     [Fact]
-    public async Task SyncAsync_DryRun_FqnChanged_NoDeleteNoThrow()
+    public async Task SyncAsync_DryRun_IdentityChanged_NoDeleteNoThrow()
     {
         var assemblyId = Guid.NewGuid();
         SetupAssembly(ExistingAssembly(assemblyId, pkt: "df889c1cc53657b7"));
@@ -828,7 +828,7 @@ public class PluginRegistrationServiceTests
         await _service.SyncAsync(_serviceMock, Metadata(pkt: "a4d07ffa42de325f"), "MySolution", RunMode.DryRun);
 
         await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
-        _outputMock.Received(1).Skip(Arg.Is<string>(s => s.Contains("FQN changed") && s.Contains("would delete and recreate")));
+        _outputMock.Received(1).Skip(Arg.Is<string>(s => s.Contains("identity changed") && s.Contains("would delete and recreate")));
     }
 
     [Fact]
