@@ -28,7 +28,7 @@
     </PackageReference>
 
     <PackageReference Include="FluentAssertions" />
-    <PackageReference Include="Moq" />
+    <PackageReference Include="NSubstitute" />
   </ItemGroup>
 
 </Project>

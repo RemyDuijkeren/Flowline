@@ -2,7 +2,7 @@ using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Query;
 using Microsoft.PowerPlatform.Dataverse.Client;
-using Moq;
+using NSubstitute;
 using Flowline.Core.Services;
 using Flowline.Core.Models;
 using Flowline.Core;
@@ -11,56 +11,57 @@ namespace Flowline.Core.Tests;
 
 public class PluginRegistrationServiceTests
 {
-    private readonly Mock<IOrganizationServiceAsync2> _serviceMock;
-    private readonly Mock<IFlowlineOutput> _outputMock;
+    private readonly IOrganizationServiceAsync2 _serviceMock;
+    private readonly IFlowlineOutput _outputMock;
     private readonly PluginRegistrationService _service;
 
     public PluginRegistrationServiceTests()
     {
-        _serviceMock = new Mock<IOrganizationServiceAsync2>();
-        _outputMock = new Mock<IFlowlineOutput>();
-        _service = new PluginRegistrationService(_outputMock.Object);
+        _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
+        _outputMock = Substitute.For<IFlowlineOutput>();
+        _service = new PluginRegistrationService(_outputMock);
 
         // Default empty results for all queries
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.IsAny<QueryExpression>()))
-            .ReturnsAsync(new EntityCollection());
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.IsAny<QueryExpression>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new EntityCollection());
+        _serviceMock.RetrieveMultipleAsync(Arg.Any<QueryExpression>())
+            .Returns(Task.FromResult(new EntityCollection()));
+        _serviceMock.RetrieveMultipleAsync(Arg.Any<QueryExpression>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection()));
 
         var defaultMessage = new Entity("sdkmessage", Guid.NewGuid()) { ["name"] = "Update" };
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessage")))
-            .ReturnsAsync(new EntityCollection([defaultMessage]));
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessage"), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new EntityCollection([defaultMessage]));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessage"))
+            .Returns(Task.FromResult(new EntityCollection([defaultMessage])));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessage"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([defaultMessage])));
 
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter")))
-            .ReturnsAsync(new EntityCollection());
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter"), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new EntityCollection());
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter"))
+            .Returns(Task.FromResult(new EntityCollection()));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection()));
 
         var defaultSolution = new Entity("solution")
         {
             ["pub.customizationprefix"] = new AliasedValue("publisher", "customizationprefix", "abc")
         };
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "solution"), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new EntityCollection(new List<Entity> { defaultSolution }));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "solution"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(new List<Entity> { defaultSolution })));
 
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(
-                It.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" && q.Criteria.Conditions.Any(c => c.AttributeName == "objectid")),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync((QueryExpression query, CancellationToken _) =>
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" && q.Criteria.Conditions.Any(c => c.AttributeName == "objectid")),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
             {
+                var query = callInfo.Arg<QueryExpression>();
                 var objectId = GetGuidConditionValue(query, "objectid");
                 if (!objectId.HasValue)
-                    return new EntityCollection();
+                    return Task.FromResult(new EntityCollection());
 
-                return new EntityCollection(new List<Entity>
+                return Task.FromResult(new EntityCollection(new List<Entity>
                 {
                     new("solutioncomponent")
                     {
                         ["componenttype"] = new OptionSetValue(ResolveComponentTypeFromObjectId(objectId.Value))
                     }
-                });
+                }));
             });
     }
 
@@ -105,32 +106,32 @@ public class PluginRegistrationServiceTests
     {
         if (existing == null)
         {
-            _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "pluginassembly")))
-                .ReturnsAsync(new EntityCollection());
-            _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "pluginassembly"), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new EntityCollection());
+            _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly"))
+                .Returns(Task.FromResult(new EntityCollection()));
+            _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly"), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(new EntityCollection()));
             var createResponse = new CreateResponse();
             createResponse.Results["id"] = Guid.NewGuid();
-            _serviceMock.Setup(x => x.ExecuteAsync(It.IsAny<CreateRequest>()))
-                .ReturnsAsync(createResponse);
-            _serviceMock.Setup(x => x.ExecuteAsync(It.IsAny<CreateRequest>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(createResponse);
+            _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>())
+                .Returns(Task.FromResult<OrganizationResponse>(createResponse));
+            _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<OrganizationResponse>(createResponse));
         }
         else
         {
-            _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "pluginassembly")))
-                .ReturnsAsync(new EntityCollection(new List<Entity> { existing }));
-            _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "pluginassembly"), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new EntityCollection(new List<Entity> { existing }));
+            _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly"))
+                .Returns(Task.FromResult(new EntityCollection(new List<Entity> { existing })));
+            _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly"), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(new EntityCollection(new List<Entity> { existing })));
         }
     }
 
     private void SetupPluginTypes(params Entity[] types)
     {
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "plugintype")))
-            .ReturnsAsync(new EntityCollection(types.ToList()));
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "plugintype"), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new EntityCollection(types.ToList()));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "plugintype"))
+            .Returns(Task.FromResult(new EntityCollection(types.ToList())));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "plugintype"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(types.ToList())));
     }
 
     private void SetupSteps(params Entity[] steps)
@@ -144,10 +145,10 @@ public class PluginRegistrationServiceTests
         }
         // Mirror the real Dataverse query: GetRegisteredStepsAsync excludes stage=30 (internal CustomAPI steps)
         var queryableSteps = steps.Where(s => s.GetAttributeValue<OptionSetValue>("stage")?.Value != 30).ToList();
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep")))
-            .ReturnsAsync(new EntityCollection(queryableSteps));
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep"), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new EntityCollection(queryableSteps));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep"))
+            .Returns(Task.FromResult(new EntityCollection(queryableSteps)));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(queryableSteps)));
     }
 
     private void SetupImages(params Entity[] images)
@@ -157,10 +158,10 @@ public class PluginRegistrationServiceTests
             if (!i.Contains("sdkmessageprocessingstepid"))
                 i["sdkmessageprocessingstepid"] = new EntityReference("sdkmessageprocessingstep", Guid.NewGuid());
         }
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstepimage")))
-            .ReturnsAsync(new EntityCollection(images.ToList()));
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstepimage"), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new EntityCollection(images.ToList()));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstepimage"))
+            .Returns(Task.FromResult(new EntityCollection(images.ToList())));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstepimage"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(images.ToList())));
     }
 
     private PluginAssemblyMetadata Metadata(string name = "MyPlugin", string version = "1.0.0.0", string hash = "deadbeef", string? pkt = null, string culture = "neutral", params PluginTypeMetadata[] plugins) =>
@@ -182,13 +183,13 @@ public class PluginRegistrationServiceTests
         SetupAssembly();
         SetupPluginTypes();
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(), "MySolution");
 
-        _serviceMock.Verify(x => x.ExecuteAsync(It.Is<CreateRequest>(r =>
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r =>
             r.Target.LogicalName == "pluginassembly" &&
             r.Target.GetAttributeValue<string>("name") == "MyPlugin" &&
             r["SolutionUniqueName"].ToString() == "MySolution"
-        ), It.IsAny<CancellationToken>()), Times.Once);
+        ), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -198,13 +199,13 @@ public class PluginRegistrationServiceTests
         SetupAssembly(ExistingAssembly(assemblyId, "1.0.0.0"));
         SetupPluginTypes();
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(version: "1.0.0.1"), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(version: "1.0.0.1"), "MySolution");
 
-        _serviceMock.Verify(x => x.UpdateAsync(It.Is<Entity>(e =>
+        await _serviceMock.Received(1).UpdateAsync(Arg.Is<Entity>(e =>
             e.LogicalName == "pluginassembly" &&
             e.Id == assemblyId &&
             e.GetAttributeValue<string>("version") == "1.0.0.1"
-        ), It.IsAny<CancellationToken>()), Times.Once);
+        ), Arg.Any<CancellationToken>());
     }
 
     // -- Plugin type creation --
@@ -217,13 +218,13 @@ public class PluginRegistrationServiceTests
         SetupPluginTypes();
         SetupSteps();
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], null, false)), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], null, false)), "MySolution");
 
-        _serviceMock.Verify(x => x.CreateAsync(It.Is<Entity>(e =>
+        await _serviceMock.Received(1).CreateAsync(Arg.Is<Entity>(e =>
             e.LogicalName == "plugintype" &&
             e.GetAttributeValue<string>("typename") == "MyNamespace.MyPlugin" &&
             !e.Contains("workflowactivitygroupname")
-        ), It.IsAny<CancellationToken>()), Times.Once);
+        ), Arg.Any<CancellationToken>());
     }
 
     // -- Workflow type creation --
@@ -235,13 +236,13 @@ public class PluginRegistrationServiceTests
         SetupAssembly(ExistingAssembly(assemblyId));
         SetupPluginTypes();
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(plugins: new PluginTypeMetadata("MyActivity", "MyNamespace.MyActivity", [], null, true)), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyActivity", "MyNamespace.MyActivity", [], null, true)), "MySolution");
 
-        _serviceMock.Verify(x => x.CreateAsync(It.Is<Entity>(e =>
+        await _serviceMock.Received(1).CreateAsync(Arg.Is<Entity>(e =>
             e.LogicalName == "plugintype" &&
             e.GetAttributeValue<string>("typename") == "MyNamespace.MyActivity" &&
             e.GetAttributeValue<string>("workflowactivitygroupname") == "MyPlugin (1.0.0.0)"
-        ), It.IsAny<CancellationToken>()), Times.Once);
+        ), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -252,11 +253,11 @@ public class PluginRegistrationServiceTests
         SetupAssembly(ExistingAssembly(assemblyId));
         SetupPluginTypes();
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(plugins: new PluginTypeMetadata("MyActivity", "MyNamespace.MyActivity", [], null, true)), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyActivity", "MyNamespace.MyActivity", [], null, true)), "MySolution");
 
-        _serviceMock.Verify(x => x.RetrieveMultipleAsync(
-            It.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep"),
-            It.IsAny<CancellationToken>()), Times.Once);
+        await _serviceMock.Received(1).RetrieveMultipleAsync(
+            Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep"),
+            Arg.Any<CancellationToken>());
     }
 
     // -- Deletion of obsolete types --
@@ -283,10 +284,10 @@ public class PluginRegistrationServiceTests
         };
         SetupSteps(obsoleteStep);
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(), "MySolution"); // no plugins in assembly
+        await _service.SyncAsync(_serviceMock, Metadata(), "MySolution"); // no plugins in assembly
 
-        _serviceMock.Verify(x => x.DeleteAsync("sdkmessageprocessingstep", stepId, It.IsAny<CancellationToken>()), Times.Once);
-        _serviceMock.Verify(x => x.DeleteAsync("plugintype", obsoleteTypeId, It.IsAny<CancellationToken>()), Times.Once);
+        await _serviceMock.Received(1).DeleteAsync("sdkmessageprocessingstep", stepId, Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).DeleteAsync("plugintype", obsoleteTypeId, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -303,9 +304,9 @@ public class PluginRegistrationServiceTests
         };
         SetupPluginTypes(obsoleteType);
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(), "MySolution");
 
-        _serviceMock.Verify(x => x.DeleteAsync("plugintype", obsoleteTypeId, It.IsAny<CancellationToken>()), Times.Once);
+        await _serviceMock.Received(1).DeleteAsync("plugintype", obsoleteTypeId, Arg.Any<CancellationToken>());
     }
 
     // -- DLL as source of truth: all orphaned steps deleted --
@@ -324,9 +325,9 @@ public class PluginRegistrationServiceTests
         var existingStep = new Entity("sdkmessageprocessingstep", stepId) { ["name"] = "Old step", ["plugintypeid"] = pluginType.ToEntityReference() };
         SetupSteps(existingStep);
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], null, false)), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], null, false)), "MySolution");
 
-        _serviceMock.Verify(x => x.DeleteAsync("sdkmessageprocessingstep", stepId, It.IsAny<CancellationToken>()), Times.Once);
+        await _serviceMock.Received(1).DeleteAsync("sdkmessageprocessingstep", stepId, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -342,20 +343,20 @@ public class PluginRegistrationServiceTests
         SetupSteps(new Entity("sdkmessageprocessingstep", orphanId) { ["name"] = "Orphaned step", ["plugintypeid"] = pluginType.ToEntityReference() });
         SetupImages();
 
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessage")))
-            .ReturnsAsync(new EntityCollection(new List<Entity> { new Entity("sdkmessage", Guid.NewGuid()) { ["name"] = "Update" } }));
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessage"), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new EntityCollection(new List<Entity> { new Entity("sdkmessage", Guid.NewGuid()) { ["name"] = "Update" } }));
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter")))
-            .ReturnsAsync(new EntityCollection());
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter"), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new EntityCollection());
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessage"))
+            .Returns(Task.FromResult(new EntityCollection(new List<Entity> { new Entity("sdkmessage", Guid.NewGuid()) { ["name"] = "Update" } })));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessage"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(new List<Entity> { new Entity("sdkmessage", Guid.NewGuid()) { ["name"] = "Update" } })));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter"))
+            .Returns(Task.FromResult(new EntityCollection()));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection()));
 
         var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of contact", "Update", "contact", 20, 0, 1, null, null, [], []);
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], null, false)), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], null, false)), "MySolution");
 
-        _serviceMock.Verify(x => x.DeleteAsync("sdkmessageprocessingstep", orphanId, It.IsAny<CancellationToken>()), Times.Once);
+        await _serviceMock.Received(1).DeleteAsync("sdkmessageprocessingstep", orphanId, Arg.Any<CancellationToken>());
     }
 
     // -- Hash-based change detection --
@@ -367,9 +368,9 @@ public class PluginRegistrationServiceTests
         SetupAssembly(ExistingAssembly(assemblyId, hash: "abc123"));
         SetupPluginTypes();
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(hash: "abc123"), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(hash: "abc123"), "MySolution");
 
-        _serviceMock.Verify(x => x.UpdateAsync(It.Is<Entity>(e => e.LogicalName == "pluginassembly"), It.IsAny<CancellationToken>()), Times.Never);
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Is<Entity>(e => e.LogicalName == "pluginassembly"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -379,12 +380,12 @@ public class PluginRegistrationServiceTests
         SetupAssembly(ExistingAssembly(assemblyId, hash: "oldhash"));
         SetupPluginTypes();
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(hash: "newhash"), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(hash: "newhash"), "MySolution");
 
-        _serviceMock.Verify(x => x.UpdateAsync(It.Is<Entity>(e =>
+        await _serviceMock.Received(1).UpdateAsync(Arg.Is<Entity>(e =>
             e.LogicalName == "pluginassembly" &&
             e.GetAttributeValue<string>("description") == "[flowline] sha256=newhash"
-        ), It.IsAny<CancellationToken>()), Times.Once);
+        ), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -394,25 +395,25 @@ public class PluginRegistrationServiceTests
         SetupAssembly(ExistingAssembly(assemblyId, hash: "oldhash"));
         SetupPluginTypes();
 
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(
-                It.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" &&
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" &&
                                             HasCondition(q, "componenttype", 91) &&
                                             HasCondition(q, "objectid", assemblyId)),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new EntityCollection(new List<Entity>
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(new List<Entity>
             {
                 new("solutioncomponent") { ["sol.uniquename"] = new AliasedValue("solution", "uniquename", "OtherSolutionA") },
                 new("solutioncomponent") { ["sol.uniquename"] = new AliasedValue("solution", "uniquename", "MySolution") },
                 new("solutioncomponent") { ["sol.uniquename"] = new AliasedValue("solution", "uniquename", "OtherSolutionB") }
-            }));
+            })));
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(hash: "newhash"), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(hash: "newhash"), "MySolution");
 
-        _outputMock.Verify(x => x.Info(It.Is<string>(s =>
+        _outputMock.Received(1).Info(Arg.Is<string>(s =>
             s.Contains("Updating assembly") &&
             s.Contains("OtherSolutionA") &&
             s.Contains("OtherSolutionB") &&
-            !s.Contains("MySolution"))), Times.Once);
+            !s.Contains("MySolution")));
     }
 
     [Fact]
@@ -436,22 +437,22 @@ public class PluginRegistrationServiceTests
         });
         SetupImages();
 
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(
-                It.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" &&
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" &&
                                             HasCondition(q, "componenttype", 92) &&
                                             HasCondition(q, "objectid", existingStepId)),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new EntityCollection(new List<Entity>
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(new List<Entity>
             {
                 new("solutioncomponent") { ["sol.uniquename"] = new AliasedValue("solution", "uniquename", "SharedSolution") }
-            }));
+            })));
 
         var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of contact", "Update", "contact", 20, 0, 1, null, null, [], []);
-        await _service.SyncAsync(_serviceMock.Object, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], null, false)), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], null, false)), "MySolution");
 
-        _outputMock.Verify(x => x.Info(It.Is<string>(s =>
+        _outputMock.Received(1).Info(Arg.Is<string>(s =>
             s.Contains("Updating sdkmessageprocessingstep") &&
-            s.Contains("SharedSolution"))), Times.Once);
+            s.Contains("SharedSolution")));
     }
 
     [Fact]
@@ -471,8 +472,8 @@ public class PluginRegistrationServiceTests
         {
             ["pub.customizationprefix"] = new AliasedValue("publisher", "customizationprefix", "abc")
         };
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "solution"), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new EntityCollection(new List<Entity> { solutionEntity }));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "solution"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(new List<Entity> { solutionEntity })));
 
         var existingApiId = Guid.NewGuid();
         var existingApi = new Entity("customapi", existingApiId)
@@ -488,27 +489,27 @@ public class PluginRegistrationServiceTests
             ["executeprivilegename"] = null,
             ["plugintypeid"] = pluginTypeEntity.ToEntityReference()
         };
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "customapi"), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new EntityCollection(new List<Entity> { existingApi }));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "customapi"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(new List<Entity> { existingApi })));
 
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(
-                It.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" &&
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" &&
                                             HasCondition(q, "componenttype", 10066) &&
                                             HasCondition(q, "objectid", existingApiId)),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new EntityCollection(new List<Entity>
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(new List<Entity>
             {
                 new("solutioncomponent") { ["sol.uniquename"] = new AliasedValue("solution", "uniquename", "Default") },
                 new("solutioncomponent") { ["sol.uniquename"] = new AliasedValue("solution", "uniquename", "MySolution") }
-            }));
+            })));
 
         var customApi = new CustomApiMetadata("MyApi", "My Api", "desc", 0, null, false, false, 0, null, "MyNamespace.MyPlugin", [], []);
         var pluginTypeMetadata = new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [customApi], false, true);
         var metadata = new PluginAssemblyMetadata("MyPlugin", "MyPlugin, Version=1.0.0.0", new byte[] { 1, 2, 3 }, "hash", "1.0.0.0", null, "neutral", [pluginTypeMetadata]);
 
-        await _service.SyncAsync(_serviceMock.Object, metadata, "MySolution");
+        await _service.SyncAsync(_serviceMock, metadata, "MySolution");
 
-        _outputMock.Verify(x => x.Info(It.Is<string>(s => s.Contains("Updating customapi"))), Times.Never);
+        _outputMock.DidNotReceive().Info(Arg.Is<string>(s => s.Contains("Updating customapi")));
     }
 
     // -- Save mode: report skipped deletions --
@@ -533,20 +534,20 @@ public class PluginRegistrationServiceTests
         SetupSteps(new Entity("sdkmessageprocessingstep", existingStepId) { ["name"] = "Orphaned step", ["plugintypeid"] = new EntityReference("plugintype", obsoleteTypeId) });
         SetupImages();
 
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessage")))
-            .ReturnsAsync(new EntityCollection(new List<Entity> { new Entity("sdkmessage", Guid.NewGuid()) { ["name"] = "Update" } }));
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessage"), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new EntityCollection(new List<Entity> { new Entity("sdkmessage", Guid.NewGuid()) { ["name"] = "Update" } }));
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter")))
-            .ReturnsAsync(new EntityCollection());
-        _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter"), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new EntityCollection());
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessage"))
+            .Returns(Task.FromResult(new EntityCollection(new List<Entity> { new Entity("sdkmessage", Guid.NewGuid()) { ["name"] = "Update" } })));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessage"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(new List<Entity> { new Entity("sdkmessage", Guid.NewGuid()) { ["name"] = "Update" } })));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter"))
+            .Returns(Task.FromResult(new EntityCollection()));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection()));
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(plugins: plugin), "MySolution", RunMode.Save);
+        await _service.SyncAsync(_serviceMock, Metadata(plugins: plugin), "MySolution", RunMode.Save);
 
-        _serviceMock.Verify(x => x.DeleteAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
-        _outputMock.Verify(x => x.Skip(It.Is<string>(s => s.Contains("Orphaned step"))), Times.AtLeastOnce);
-        _outputMock.Verify(x => x.Skip(It.Is<string>(s => s.Contains("Obsolete.Plugin"))), Times.AtLeastOnce);
+        await _serviceMock.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        _outputMock.Received().Skip(Arg.Is<string>(s => s.Contains("Orphaned step")));
+        _outputMock.Received().Skip(Arg.Is<string>(s => s.Contains("Obsolete.Plugin")));
     }
 
     [Fact]
@@ -570,14 +571,20 @@ public class PluginRegistrationServiceTests
         });
 
         var callOrder = new List<string>();
-        _serviceMock.Setup(x => x.DeleteAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .Callback<string, Guid, CancellationToken>((logicalName, _, _) => callOrder.Add($"delete:{logicalName}"))
-            .Returns(Task.CompletedTask);
-        _serviceMock.Setup(x => x.UpdateAsync(It.Is<Entity>(e => e.LogicalName == "pluginassembly"), It.IsAny<CancellationToken>()))
-            .Callback<Entity, CancellationToken>((_, _) => callOrder.Add("update:pluginassembly"))
-            .Returns(Task.CompletedTask);
+        _serviceMock.DeleteAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callOrder.Add($"delete:{callInfo.Arg<string>()}");
+                return Task.CompletedTask;
+            });
+        _serviceMock.UpdateAsync(Arg.Is<Entity>(e => e.LogicalName == "pluginassembly"), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callOrder.Add("update:pluginassembly");
+                return Task.CompletedTask;
+            });
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(hash: "newhash"), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(hash: "newhash"), "MySolution");
 
         var updateIndex = callOrder.IndexOf("update:pluginassembly");
         Assert.True(updateIndex > 0);
@@ -590,8 +597,8 @@ public class PluginRegistrationServiceTests
     {
         var createResponse = new CreateResponse();
         createResponse.Results["id"] = Guid.NewGuid();
-        _serviceMock.Setup(x => x.ExecuteAsync(It.IsAny<CreateRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(createResponse);
+        _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(createResponse));
     }
 
     [Fact]
@@ -602,11 +609,11 @@ public class PluginRegistrationServiceTests
         SetupPluginTypes();
         SetupFqnChangeExecuteAsync();
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(pkt: "a4d07ffa42de325f"), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(pkt: "a4d07ffa42de325f"), "MySolution");
 
-        _serviceMock.Verify(x => x.DeleteAsync("pluginassembly", assemblyId, It.IsAny<CancellationToken>()), Times.Once);
-        _serviceMock.Verify(x => x.ExecuteAsync(It.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), It.IsAny<CancellationToken>()), Times.Once);
-        _serviceMock.Verify(x => x.UpdateAsync(It.Is<Entity>(e => e.LogicalName == "pluginassembly"), It.IsAny<CancellationToken>()), Times.Never);
+        await _serviceMock.Received(1).DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Is<Entity>(e => e.LogicalName == "pluginassembly"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -617,10 +624,10 @@ public class PluginRegistrationServiceTests
         SetupPluginTypes();
         SetupFqnChangeExecuteAsync();
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(culture: "en"), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(culture: "en"), "MySolution");
 
-        _serviceMock.Verify(x => x.DeleteAsync("pluginassembly", assemblyId, It.IsAny<CancellationToken>()), Times.Once);
-        _serviceMock.Verify(x => x.ExecuteAsync(It.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), It.IsAny<CancellationToken>()), Times.Once);
+        await _serviceMock.Received(1).DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -631,10 +638,10 @@ public class PluginRegistrationServiceTests
         SetupPluginTypes();
         SetupFqnChangeExecuteAsync();
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(version: "2.0.0.0"), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(version: "2.0.0.0"), "MySolution");
 
-        _serviceMock.Verify(x => x.DeleteAsync("pluginassembly", assemblyId, It.IsAny<CancellationToken>()), Times.Once);
-        _serviceMock.Verify(x => x.ExecuteAsync(It.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), It.IsAny<CancellationToken>()), Times.Once);
+        await _serviceMock.Received(1).DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -645,10 +652,10 @@ public class PluginRegistrationServiceTests
         SetupPluginTypes();
         SetupFqnChangeExecuteAsync();
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(version: "1.1.0.0"), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(version: "1.1.0.0"), "MySolution");
 
-        _serviceMock.Verify(x => x.DeleteAsync("pluginassembly", assemblyId, It.IsAny<CancellationToken>()), Times.Once);
-        _serviceMock.Verify(x => x.ExecuteAsync(It.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), It.IsAny<CancellationToken>()), Times.Once);
+        await _serviceMock.Received(1).DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -658,10 +665,10 @@ public class PluginRegistrationServiceTests
         SetupAssembly(ExistingAssembly(assemblyId, version: "1.0.0.0", hash: "oldhash"));
         SetupPluginTypes();
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(version: "1.0.5.0", hash: "newhash"), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(version: "1.0.5.0", hash: "newhash"), "MySolution");
 
-        _serviceMock.Verify(x => x.DeleteAsync("pluginassembly", assemblyId, It.IsAny<CancellationToken>()), Times.Never);
-        _serviceMock.Verify(x => x.UpdateAsync(It.Is<Entity>(e => e.LogicalName == "pluginassembly"), It.IsAny<CancellationToken>()), Times.Once);
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).UpdateAsync(Arg.Is<Entity>(e => e.LogicalName == "pluginassembly"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -672,10 +679,10 @@ public class PluginRegistrationServiceTests
         SetupPluginTypes();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            _service.SyncAsync(_serviceMock.Object, Metadata(pkt: "a4d07ffa42de325f"), "MySolution", RunMode.Save));
+            _service.SyncAsync(_serviceMock, Metadata(pkt: "a4d07ffa42de325f"), "MySolution", RunMode.Save));
 
-        _serviceMock.Verify(x => x.DeleteAsync("pluginassembly", assemblyId, It.IsAny<CancellationToken>()), Times.Never);
-        _outputMock.Verify(x => x.Info(It.Is<string>(s => s.Contains("[red]") && s.Contains("Re-run without --save"))), Times.Once);
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+        _outputMock.Received(1).Info(Arg.Is<string>(s => s.Contains("[red]") && s.Contains("Re-run without --save")));
     }
 
     [Fact]
@@ -685,9 +692,9 @@ public class PluginRegistrationServiceTests
         SetupAssembly(ExistingAssembly(assemblyId, hash: "abc123"));
         SetupPluginTypes();
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(hash: "abc123", pkt: null), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(hash: "abc123", pkt: null), "MySolution");
 
-        _serviceMock.Verify(x => x.DeleteAsync("pluginassembly", assemblyId, It.IsAny<CancellationToken>()), Times.Never);
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -698,11 +705,11 @@ public class PluginRegistrationServiceTests
         SetupPluginTypes();
         SetupFqnChangeExecuteAsync();
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(version: "2.0.0.0", pkt: "1122334455667788"), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(version: "2.0.0.0", pkt: "1122334455667788"), "MySolution");
 
-        _outputMock.Verify(x => x.Info(It.Is<string>(s =>
+        _outputMock.Received(1).Info(Arg.Is<string>(s =>
             s.Contains("public key token") &&
-            s.Contains("major/minor version"))), Times.Once);
+            s.Contains("major/minor version")));
     }
 
     // -- HasMajorOrMinorVersionChange unit tests --
@@ -744,12 +751,12 @@ public class PluginRegistrationServiceTests
             ["stage"] = new OptionSetValue(30)
         });
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(hash: "newhash"), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(hash: "newhash"), "MySolution");
 
         // Stage=30 (internal) steps are excluded by the Dataverse query — never directly deleted by Flowline
-        _serviceMock.Verify(x => x.DeleteAsync("sdkmessageprocessingstep", protectedStepId, It.IsAny<CancellationToken>()), Times.Never);
+        await _serviceMock.DidNotReceive().DeleteAsync("sdkmessageprocessingstep", protectedStepId, Arg.Any<CancellationToken>());
         // The plugin type itself is obsolete (not in assembly) and is correctly deleted; its stage=30 step cascades
-        _serviceMock.Verify(x => x.DeleteAsync("plugintype", obsoleteTypeId, It.IsAny<CancellationToken>()), Times.Once);
+        await _serviceMock.Received(1).DeleteAsync("plugintype", obsoleteTypeId, Arg.Any<CancellationToken>());
     }
 
     // -- Dry-run mode --
@@ -760,10 +767,10 @@ public class PluginRegistrationServiceTests
         SetupAssembly();
         SetupPluginTypes();
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(), "MySolution", RunMode.DryRun);
+        await _service.SyncAsync(_serviceMock, Metadata(), "MySolution", RunMode.DryRun);
 
-        _serviceMock.Verify(x => x.ExecuteAsync(It.IsAny<CreateRequest>(), It.IsAny<CancellationToken>()), Times.Never);
-        _outputMock.Verify(x => x.Skip(It.Is<string>(s => s.Contains("would create"))), Times.Once);
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>());
+        _outputMock.Received(1).Skip(Arg.Is<string>(s => s.Contains("would create")));
     }
 
     [Fact]
@@ -773,9 +780,9 @@ public class PluginRegistrationServiceTests
         SetupAssembly(ExistingAssembly(assemblyId, hash: "abc123"));
         SetupPluginTypes();
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(hash: "abc123"), "MySolution", RunMode.DryRun);
+        await _service.SyncAsync(_serviceMock, Metadata(hash: "abc123"), "MySolution", RunMode.DryRun);
 
-        _serviceMock.Verify(x => x.UpdateAsync(It.IsAny<Entity>(), It.IsAny<CancellationToken>()), Times.Never);
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -785,10 +792,10 @@ public class PluginRegistrationServiceTests
         SetupAssembly(ExistingAssembly(assemblyId, hash: "oldhash"));
         SetupPluginTypes();
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(hash: "newhash"), "MySolution", RunMode.DryRun);
+        await _service.SyncAsync(_serviceMock, Metadata(hash: "newhash"), "MySolution", RunMode.DryRun);
 
-        _serviceMock.Verify(x => x.UpdateAsync(It.IsAny<Entity>(), It.IsAny<CancellationToken>()), Times.Never);
-        _outputMock.Verify(x => x.Skip(It.Is<string>(s => s.Contains("would update content"))), Times.Once);
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        _outputMock.Received(1).Skip(Arg.Is<string>(s => s.Contains("would update content")));
     }
 
     [Fact]
@@ -805,10 +812,10 @@ public class PluginRegistrationServiceTests
             ["plugintypeid"] = new EntityReference("plugintype", obsoleteTypeId)
         });
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(), "MySolution", RunMode.DryRun);
+        await _service.SyncAsync(_serviceMock, Metadata(), "MySolution", RunMode.DryRun);
 
-        _serviceMock.Verify(x => x.DeleteAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
-        _outputMock.Verify(x => x.Skip(It.Is<string>(s => s.Contains("would delete"))), Times.AtLeastOnce);
+        await _serviceMock.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        _outputMock.Received().Skip(Arg.Is<string>(s => s.Contains("would delete")));
     }
 
     [Fact]
@@ -818,10 +825,10 @@ public class PluginRegistrationServiceTests
         SetupAssembly(ExistingAssembly(assemblyId, pkt: "df889c1cc53657b7"));
         SetupPluginTypes();
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(pkt: "a4d07ffa42de325f"), "MySolution", RunMode.DryRun);
+        await _service.SyncAsync(_serviceMock, Metadata(pkt: "a4d07ffa42de325f"), "MySolution", RunMode.DryRun);
 
-        _serviceMock.Verify(x => x.DeleteAsync("pluginassembly", assemblyId, It.IsAny<CancellationToken>()), Times.Never);
-        _outputMock.Verify(x => x.Skip(It.Is<string>(s => s.Contains("FQN changed") && s.Contains("would delete and recreate"))), Times.Once);
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+        _outputMock.Received(1).Skip(Arg.Is<string>(s => s.Contains("FQN changed") && s.Contains("would delete and recreate")));
     }
 
     [Fact]
@@ -838,8 +845,8 @@ public class PluginRegistrationServiceTests
             ["plugintypeid"] = new EntityReference("plugintype", obsoleteTypeId)
         });
 
-        await _service.SyncAsync(_serviceMock.Object, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], null, false)), "MySolution", RunMode.DryRun);
+        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], null, false)), "MySolution", RunMode.DryRun);
 
-        _outputMock.Verify(x => x.Info(It.Is<string>(s => s.Contains("Dry-run summary:"))), Times.Once);
+        _outputMock.Received(1).Info(Arg.Is<string>(s => s.Contains("Dry-run summary:")));
     }
 }

@@ -1,5 +1,5 @@
 using Microsoft.Xrm.Sdk;
-using Moq;
+using NSubstitute;
 using Flowline.Core.Services;
 using Flowline.Core.Models;
 
@@ -7,13 +7,13 @@ namespace Flowline.Core.Tests;
 
 public class RegistrationPlannerTests
 {
-    private readonly Mock<IFlowlineOutput> _outputMock = new();
+    private readonly IFlowlineOutput _outputMock = Substitute.For<IFlowlineOutput>();
     private readonly RegistrationPlanner _planner;
     private readonly Entity _assembly;
 
     public RegistrationPlannerTests()
     {
-        _planner  = new RegistrationPlanner(_outputMock.Object);
+        _planner  = new RegistrationPlanner(_outputMock);
         _assembly = new Entity("pluginassembly", Guid.NewGuid()) { ["name"] = "MyPlugin" };
     }
 

@@ -1,7 +1,6 @@
 using Flowline.Core.Services;
 using Flowline.Core;
 using Microsoft.Crm.Sdk.Messages;
-using Moq;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Xunit;
 
@@ -65,12 +64,12 @@ public class AuthenticationServiceTests
         if (profile == null) return;
 
         var environmentUrl = "https://test.crm.dynamics.com"; // Use a dummy URL for logic test
-        
+
         // Since it's a dummy URL, it will fail to connect but we test that it attempts with correct parameters
         Assert.ThrowsAny<Exception>(() => _service.ConnectViaPac(profile, environmentUrl));
     }
 
-    [Fact]
+    [Fact(Skip = "Opens a device code flow window in the browser, which is not supported in CI")]
     public void ConnectViaPac_Universal_ShouldConnect_WhenEnvironmentUrlIsProvided()
     {
         // This test requires a valid UNIVERSAL PAC profile to be present on the machine

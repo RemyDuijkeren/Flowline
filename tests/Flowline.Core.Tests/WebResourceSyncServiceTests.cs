@@ -2,7 +2,7 @@ using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Query;
 using Microsoft.PowerPlatform.Dataverse.Client;
-using Moq;
+using NSubstitute;
 using Flowline.Core.Services;
 using Flowline.Core.Models;
 using Flowline.Core;
@@ -11,12 +11,12 @@ namespace Flowline.Core.Tests;
 
 public class WebResourceSyncServiceTests
 {
-    private readonly Mock<IOrganizationServiceAsync2> _serviceMock;
+    private readonly IOrganizationServiceAsync2 _serviceMock;
     private readonly WebResourceSyncService _service;
 
     public WebResourceSyncServiceTests()
     {
-        _serviceMock = new Mock<IOrganizationServiceAsync2>();
+        _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
         _service = new WebResourceSyncService(new NullFlowlineOutput());
     }
 
@@ -32,7 +32,7 @@ public class WebResourceSyncServiceTests
         try
         {
             var solutionId = Guid.NewGuid();
-            
+
             // Mock solution retrieval
             var solutionResult = new EntityCollection(new List<Entity>
             {
@@ -41,21 +41,21 @@ public class WebResourceSyncServiceTests
                     ["publisher.customizationprefix"] = new AliasedValue("publisher", "customizationprefix", prefix)
                 }
             });
-            _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "solution")))
-                .ReturnsAsync(solutionResult);
+            _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "solution"))
+                .Returns(Task.FromResult(solutionResult));
 
             // Mock web resource retrieval (empty CRM)
-            _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "webresource")))
-                .ReturnsAsync(new EntityCollection());
+            _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "webresource"))
+                .Returns(Task.FromResult(new EntityCollection()));
 
             // Act
-            await _service.SyncSolutionAsync(_serviceMock.Object, webresourceRoot, solutionName, publishAfterSync: false);
+            await _service.SyncSolutionAsync(_serviceMock, webresourceRoot, solutionName, publishAfterSync: false);
 
             // Assert
-            _serviceMock.Verify(x => x.ExecuteAsync(It.IsAny<OrganizationRequest>()), Times.Never);
-            _serviceMock.Verify(x => x.CreateAsync(It.IsAny<Entity>()), Times.Never);
-            _serviceMock.Verify(x => x.UpdateAsync(It.IsAny<Entity>()), Times.Never);
-            _serviceMock.Verify(x => x.DeleteAsync(It.IsAny<string>(), It.IsAny<Guid>()), Times.Never);
+            await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<OrganizationRequest>());
+            await _serviceMock.DidNotReceive().CreateAsync(Arg.Any<Entity>());
+            await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>());
+            await _serviceMock.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<Guid>());
         }
         finally
         {
@@ -71,14 +71,14 @@ public class WebResourceSyncServiceTests
         var prefix = "my";
         var webresourceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(webresourceRoot);
-        
+
         var filePath = Path.Combine(webresourceRoot, "test.js");
         File.WriteAllText(filePath, "console.log('test');");
 
         try
         {
             var solutionId = Guid.NewGuid();
-            
+
             // Mock solution retrieval
             var solutionResult = new EntityCollection(new List<Entity>
             {
@@ -87,21 +87,21 @@ public class WebResourceSyncServiceTests
                     ["publisher.customizationprefix"] = new AliasedValue("publisher", "customizationprefix", prefix)
                 }
             });
-            _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "solution")))
-                .ReturnsAsync(solutionResult);
+            _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "solution"))
+                .Returns(Task.FromResult(solutionResult));
 
             // Mock web resource retrieval (empty CRM)
-            _serviceMock.Setup(x => x.RetrieveMultipleAsync(It.Is<QueryExpression>(q => q.EntityName == "webresource")))
-                .ReturnsAsync(new EntityCollection());
+            _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "webresource"))
+                .Returns(Task.FromResult(new EntityCollection()));
 
             // Act
-            await _service.SyncSolutionAsync(_serviceMock.Object, webresourceRoot, solutionName, publishAfterSync: false);
+            await _service.SyncSolutionAsync(_serviceMock, webresourceRoot, solutionName, publishAfterSync: false);
 
             // Assert
-            _serviceMock.Verify(x => x.ExecuteAsync(It.Is<CreateRequest>(r => 
+            await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r =>
                 r.Target.GetAttributeValue<string>("name") == "my_MySolution/test.js" &&
                 r["SolutionUniqueName"].ToString() == solutionName
-            )), Times.Once);
+            ));
         }
         finally
         {
