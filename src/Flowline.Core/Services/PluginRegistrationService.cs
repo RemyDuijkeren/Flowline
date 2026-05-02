@@ -13,7 +13,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
     readonly RegistrationPlanner      _planner  = new(output);
     readonly RegistrationPlanExecutor _executor = new(output);
 
-    public async Task SyncAsync(
+    public async Task SyncSolutionAsync(
         IOrganizationServiceAsync2 service,
         PluginAssemblyMetadata metadata,
         string solutionName,
