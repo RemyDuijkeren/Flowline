@@ -10,7 +10,7 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 
 namespace Flowline.Commands;
 
-public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService analysisService, PluginRegistrationService pluginSyncSrv, AnsiConsoleOutput output)
+public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService analysisService, PluginRegistrationService pluginSyncSrv, WebResourceSyncService webResourceSyncSrv, AnsiConsoleOutput output)
     : FlowlineCommand<PushCommand.Settings>
 {
     [Flags]
@@ -69,29 +69,48 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
         var pushScope = settings.Scopes.Aggregate(PushScope.None, (current, scope) => current | scope);
         AnsiConsole.MarkupLine($"[dim]Scope: {pushScope}[/]");
 
-        // Build the solution in dotnet
-        var extensionsFolder = Path.Combine(RootFolder, AllSolutionsFolderName, sln.Name, ExtensionsName);
-        if (await DotNetUtils.BuildSolutionAsync(extensionsFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
+        var pushPlugins = pushScope.HasFlag(PushScope.Plugins);
+        var pushWebResources = pushScope.HasFlag(PushScope.WebResources);
+
+        PluginAssemblyMetadata? metadata = null;
+        if (pushPlugins)
         {
-            return 1;
+            var extensionsFolder = Path.Combine(RootFolder, AllSolutionsFolderName, sln.Name, ExtensionsName);
+            if (await DotNetUtils.BuildSolutionAsync(extensionsFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
+            {
+                return 1;
+            }
+
+            var extensionsDll = Path.Combine(extensionsFolder, "bin", "Release", "net462", "publish", $"{ExtensionsName}.dll");
+            if (!File.Exists(extensionsDll))
+            {
+                AnsiConsole.MarkupLine("[red]Extensions.dll not found. Build the solution first.[/]");
+                return 1;
+            }
+            AnsiConsole.MarkupLine("[green][bold]Extensions.dll[/] found[/]");
+            output.Verbose($"[dim]{extensionsDll}[/]");
+
+            metadata = AnsiConsole.Status().FlowlineSpinner().Start(
+                "Reading [bold]Extensions.dll[/]...",
+                ctx => analysisService.Analyze(extensionsDll));
+
+            AnsiConsole.MarkupLine("[green]Metadata ready[/]");
         }
 
-        // Find 'Extensions.dll' in bin/Release folder
-        var extensionsDll = Path.Combine(extensionsFolder, "bin", "Release", "net462", "publish", $"{ExtensionsName}.dll");
-        if (!File.Exists(extensionsDll))
+        var webResourcesFolder = Path.Combine(RootFolder, AllSolutionsFolderName, sln.Name, WebResourcesName);
+        var webResourcesDistFolder = Path.Combine(webResourcesFolder, "dist");
+        if (pushWebResources && Directory.Exists(webResourcesFolder))
         {
-            AnsiConsole.MarkupLine("[red]Extensions.dll not found. Build the solution first.[/]");
-            return 1;
+            if (await DotNetUtils.BuildSolutionAsync(webResourcesFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
+            {
+                return 1;
+            }
         }
-        AnsiConsole.MarkupLine("[green][bold]Extensions.dll[/] found[/]");
-        output.Verbose($"[dim]{extensionsDll}[/]");
-
-        // Analyze the assembly
-        var metadata = AnsiConsole.Status().FlowlineSpinner().Start(
-            "Reading [bold]Extensions.dll[/]...",
-            ctx => analysisService.Analyze(extensionsDll));
-
-        AnsiConsole.MarkupLine("[green]Metadata ready[/]");
+        else if (pushWebResources)
+        {
+            AnsiConsole.MarkupLine("[dim]WebResources project not found — skipping[/]");
+            pushWebResources = false;
+        }
 
         // Find PAC profile and connect
         IOrganizationServiceAsync2? conn = AnsiConsole.Status().FlowlineSpinner().Start(
@@ -112,9 +131,19 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
         if (conn == null) return 1;
         AnsiConsole.MarkupLine("[green]Connected[/]");
 
-        await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-            $"Pushing [bold]{ExtensionsName}.dll[/]...",
-            ctx => pluginSyncSrv.SyncAsync(conn, metadata, sln.Name, runMode, cancellationToken));
+        if (pushPlugins && metadata != null)
+        {
+            await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+                $"Pushing [bold]{ExtensionsName}.dll[/]...",
+                ctx => pluginSyncSrv.SyncSolutionAsync(conn, metadata, sln.Name, runMode, cancellationToken));
+        }
+
+        if (pushWebResources)
+        {
+            await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+                "Pushing web resources...",
+                ctx => webResourceSyncSrv.SyncSolutionAsync(conn, webResourcesDistFolder, sln.Name, runMode: runMode, cancellationToken: cancellationToken));
+        }
 
         AnsiConsole.MarkupLine("[green]Assets pushed[/]");
 

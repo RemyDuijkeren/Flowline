@@ -1,5 +1,7 @@
 namespace Flowline.Core.Models;
 
+using Microsoft.Xrm.Sdk;
+
 public enum WebResourceType
 {
     HTML = 1,
@@ -26,7 +28,61 @@ public enum WebResourceAction
     Create,
     Update,
     UpdateAndAddToPatchSolution,
-    Delete
+    Delete,
+    RemoveFromSolution,
+    Skip
 }
 
 public record WebResourceSyncResult(bool Success, string Message);
+
+public record WebResourceSolutionInfo(Guid Id, string UniqueName, string PublisherPrefix);
+
+public record LocalWebResource(
+    string Name,
+    string Path,
+    string DisplayName,
+    int Type,
+    string Content,
+    string? SilverlightVersion = null);
+
+public record DataverseWebResource(
+    Guid Id,
+    string Name,
+    string? DisplayName,
+    int Type,
+    string? Content,
+    bool IsInPatch,
+    Entity Entity,
+    WebResourceOwnership Ownership);
+
+public record WebResourceOwnership(
+    int NonDefaultUnmanagedSolutionCount,
+    bool IsInCurrentUnmanagedSolution,
+    bool IsManagedOnly);
+
+public record WebResourceSyncSnapshot(
+    WebResourceSolutionInfo BaseSolution,
+    WebResourceSolutionInfo? PatchSolution,
+    IReadOnlyDictionary<string, LocalWebResource> LocalResources,
+    IReadOnlyDictionary<string, DataverseWebResource> DataverseResources);
+
+public record WebResourcePlanAction(
+    string Name,
+    WebResourceAction Action,
+    Entity? Entity = null,
+    Guid? Id = null,
+    string? SolutionName = null,
+    string? Reason = null);
+
+public class WebResourceSyncPlan
+{
+    public Dictionary<string, WebResourcePlanAction> Creates { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, WebResourcePlanAction> Updates { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, WebResourcePlanAction> UpdatesAndAddsToPatch { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, WebResourcePlanAction> Deletes { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, WebResourcePlanAction> RemovesFromSolution { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, WebResourcePlanAction> Skips { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public int TotalChanges => Creates.Count + Updates.Count + UpdatesAndAddsToPatch.Count + Deletes.Count + RemovesFromSolution.Count;
+    public int PublishCount => Creates.Count + Updates.Count + UpdatesAndAddsToPatch.Count;
+}

@@ -10,14 +10,14 @@
       "commandLineArgs": "clone Cr07982",
       "workingDirectory": "E:/Code/TryOut/MyFlowTest"
     },
-    "push --dry-run": {
+    "push --scope plugins": {
       "commandName": "Project",
-      "commandLineArgs": "push --dry-run",
+      "commandLineArgs": "push --scope plugins --verbose --dry-run",
       "workingDirectory": "E:/Code/TryOut/MyFlowTest"
     },
-    "push --verbose": {
+    "push --scope webresources": {
       "commandName": "Project",
-      "commandLineArgs": "push --verbose",
+      "commandLineArgs": "push --scope webresources --verbose",
       "workingDirectory": "E:/Code/TryOut/MyFlowTest"
     }
   }
