@@ -409,7 +409,7 @@ public class PluginRegistrationServiceTests
 
         await _service.SyncAsync(_serviceMock, Metadata(hash: "newhash"), "MySolution");
 
-        _outputMock.Received(1).Info(Arg.Is<string>(s =>
+        _outputMock.Received(1).Warning(Arg.Is<string>(s =>
             s.Contains("Updating assembly") &&
             s.Contains("OtherSolutionA") &&
             s.Contains("OtherSolutionB") &&
@@ -450,7 +450,7 @@ public class PluginRegistrationServiceTests
         var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of contact", "Update", "contact", 20, 0, 1, null, null, [], []);
         await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], null, false)), "MySolution");
 
-        _outputMock.Received(1).Info(Arg.Is<string>(s =>
+        _outputMock.Received(1).Warning(Arg.Is<string>(s =>
             s.Contains("Updating sdkmessageprocessingstep") &&
             s.Contains("SharedSolution")));
     }
@@ -682,7 +682,7 @@ public class PluginRegistrationServiceTests
             _service.SyncAsync(_serviceMock, Metadata(pkt: "a4d07ffa42de325f"), "MySolution", RunMode.Save));
 
         await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
-        _outputMock.Received(1).Info(Arg.Is<string>(s => s.Contains("[red]") && s.Contains("Re-run without --save")));
+        _outputMock.Received(1).Error(Arg.Is<string>(s => s.Contains("Re-run without --save")));
     }
 
     [Fact]
@@ -707,7 +707,7 @@ public class PluginRegistrationServiceTests
 
         await _service.SyncAsync(_serviceMock, Metadata(version: "2.0.0.0", pkt: "1122334455667788"), "MySolution");
 
-        _outputMock.Received(1).Info(Arg.Is<string>(s =>
+        _outputMock.Received(1).Warning(Arg.Is<string>(s =>
             s.Contains("public key token") &&
             s.Contains("major/minor version")));
     }
@@ -770,7 +770,7 @@ public class PluginRegistrationServiceTests
         await _service.SyncAsync(_serviceMock, Metadata(), "MySolution", RunMode.DryRun);
 
         await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>());
-        _outputMock.Received(1).Skip(Arg.Is<string>(s => s.Contains("would create")));
+        _outputMock.Received(1).Info(Arg.Is<string>(s => s.Contains("would create")));
     }
 
     [Fact]

@@ -274,7 +274,7 @@ public class RegistrationPlanner(IFlowlineOutput output)
 
             if (immutableChanged)
             {
-                output.Info($"[yellow]Warning:[/] Custom API '{uniqueName}' has immutable field changes — deleting and recreating.");
+                output.Warning($"Custom API '{uniqueName}' has immutable field changes — deleting and recreating.");
 
                 apiPlan.Deletes[asmApi.UniqueName] = new DeleteAction(asmApi.UniqueName, "customapi", dvApi.Id);
                 paramPlan.Add(PlanRequestParameters(snapshot, prefix, dvApi.Id, [], solutionName));
@@ -350,7 +350,7 @@ public class RegistrationPlanner(IFlowlineOutput output)
 
             if (immutableChanged)
             {
-                output.Info($"[yellow]Warning:[/] Request parameter '{asmParam.DisplayName}' has immutable field changes — deleting and recreating.");
+                output.Warning($"Request parameter '{asmParam.DisplayName}' has immutable field changes — deleting and recreating.");
                 plan.Deletes[asmParam.UniqueName] = new DeleteAction(asmParam.UniqueName, "customapirequestparameter", dvParam.Id);
                 plan.Upserts[asmParam.UniqueName] = new UpsertAction(asmParam.UniqueName,
                     NewRequestParameterEntity(asmParam, customApiId), IsCreate: true, SolutionName: solutionName);
@@ -412,7 +412,7 @@ public class RegistrationPlanner(IFlowlineOutput output)
 
             if (immutableChanged)
             {
-                output.Info($"[yellow]Warning:[/] Response Property '{asmProp.DisplayName}' has immutable field changes — deleting and recreating.");
+                output.Warning($"Response Property '{asmProp.DisplayName}' has immutable field changes — deleting and recreating.");
                 plan.Deletes[asmProp.UniqueName] = new DeleteAction(asmProp.UniqueName, "customapiresponseproperty", dvProp.Id);
                 plan.Upserts[asmProp.UniqueName] = new UpsertAction(asmProp.UniqueName,
                     NewResponsePropertyEntity(asmProp, customApiId), IsCreate: true, SolutionName: solutionName);

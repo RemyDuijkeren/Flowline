@@ -253,7 +253,7 @@ public class RegistrationPlanExecutor(IFlowlineOutput output)
         if (otherSolutions.Count == 0)
             return;
 
-        output.Info($"[yellow]Warning:[/] Updating {entityLogicalName} '{componentDisplayName}' which also exists in other solutions: {string.Join(", ", otherSolutions)}.");
+        output.Warning($"Updating {entityLogicalName} '{componentDisplayName}' which also exists in other solutions: {string.Join(", ", otherSolutions)}.");
     }
 
     static async Task ExecuteBoundedParallelAsync<T>(IEnumerable<T> items, int maxParallelism, Func<T, Task> action, CancellationToken cancellationToken)

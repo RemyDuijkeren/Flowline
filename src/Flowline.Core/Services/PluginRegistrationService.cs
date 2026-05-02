@@ -124,14 +124,14 @@ public class PluginRegistrationService(IFlowlineOutput output)
             switch (runMode)
             {
                 case RunMode.Save:
-                    output.Info($"[red]Assembly '{metadata.Name}' identity changed ({reason}) — Dataverse requires delete and recreate. Re-run without --save to apply or use --dry-run to preview changes.[/]");
+                    output.Error($"Assembly '{metadata.Name}' identity changed ({reason}) — Dataverse requires delete and recreate. Re-run without --save to apply or use --dry-run to preview changes.");
                     throw new InvalidOperationException($"Assembly '{metadata.Name}' identity changed ({reason}). Cannot continue in save mode — re-run without --save to apply or use --dry-run to preview changes.");
                 case RunMode.DryRun:
                     output.Skip($"Assembly '{metadata.Name}' identity changed ({reason}) — would delete and recreate");
                     // Return a dummy entity so that the caller can continue with the dry-run
                     return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false);
                 case RunMode.Normal:
-                    output.Info($"[yellow]Assembly '{metadata.Name}' identity changed ({reason}) — deleting and recreating all plugin registrations.[/]");
+                    output.Warning($"Assembly '{metadata.Name}' identity changed ({reason}) — deleting and recreating all plugin registrations.");
                     await service.DeleteAsync("pluginassembly", existing.Id, cancellationToken).ConfigureAwait(false);
                     break;
                 default:
@@ -240,7 +240,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
             .ToList();
 
         if (otherSolutions.Count > 0)
-            output.Info($"[yellow]Warning:[/] Updating assembly '{assemblyName}' which also exists in other solutions: {string.Join(", ", otherSolutions)}.");
+            output.Warning($"Updating assembly '{assemblyName}' which also exists in other solutions: {string.Join(", ", otherSolutions)}.");
     }
 
     static string? ParseStoredHash(string? description)
