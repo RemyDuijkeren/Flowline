@@ -103,17 +103,28 @@ public class WebResourceSyncServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SyncSolutionAsync_ManagedOnlyOrphan_ShouldSkip()
+    public async Task SyncSolutionAsync_UnmanagedOwnershipMissing_ShouldSkipAsUnclear()
     {
         var webResourceId = Guid.NewGuid();
-        SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/managed.js", "old"));
+        SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/unknown.js", "old"));
         SetupOwnership(webResourceId, ("ManagedBase", true));
 
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
 
         await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", webResourceId, Arg.Any<CancellationToken>());
-        _outputMock.Received().Skip(Arg.Is<string>(s => s.Contains("managed solution")));
+        _outputMock.Received().Skip(Arg.Is<string>(s => s.Contains("ownership unclear")));
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_ManagedSolution_ShouldThrow()
+    {
+        SetupSolution("MySolution", "my", isManaged: true);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
+
+        Assert.Contains("managed", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -162,11 +173,12 @@ public class WebResourceSyncServiceTests : IDisposable
             _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
     }
 
-    void SetupSolution(string solutionName, string prefix)
+    void SetupSolution(string solutionName, string prefix, bool isManaged = false)
     {
         var solution = new Entity("solution", Guid.NewGuid())
         {
             ["uniquename"] = solutionName,
+            ["ismanaged"] = isManaged,
             ["publisher.customizationprefix"] = new AliasedValue("publisher", "customizationprefix", prefix)
         };
 

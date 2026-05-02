@@ -15,6 +15,7 @@ public class WebResourceSyncPlanExecutor(IFlowlineOutput output)
         IOrganizationServiceAsync2 service,
         WebResourceSyncPlan plan,
         bool publishAfterSync,
+        bool save,
         CancellationToken cancellationToken = default)
     {
         var publishIds = new List<Guid>();
@@ -23,10 +24,6 @@ public class WebResourceSyncPlanExecutor(IFlowlineOutput output)
         var createdIds = await ExecuteCreatesAsync(service, plan.Creates.Values, cancellationToken).ConfigureAwait(false);
         publishIds.AddRange(createdIds);
 
-        foreach (var name in plan.Creates.Keys) output.Verbose($"Web resource '{name}' created");
-        if (plan.Creates.Count > 0) output.Info($"[green]{plan.Creates.Count} web resource(s) created[/]");
-
-        // Update web resources
         await Task.WhenAll(
             ExecuteBoundedParallelAsync(plan.Updates.Values, MaxParallelism, async action =>
             {
@@ -40,24 +37,16 @@ public class WebResourceSyncPlanExecutor(IFlowlineOutput output)
                 lock (publishIds) publishIds.Add(action.Entity!.Id);
             }, cancellationToken)).ConfigureAwait(false);
 
-        foreach (var name in plan.Updates.Keys) output.Verbose($"Web resource '{name}' updated");
-        if (plan.Updates.Count > 0) output.Info($"[green]{plan.Updates.Count} web resource(s) updated[/]");
-        foreach (var name in plan.UpdatesAndAddsToPatch.Keys) output.Verbose($"Web resource '{name}' updated and added to patch");
-        if (plan.UpdatesAndAddsToPatch.Count > 0) output.Info($"[green]{plan.UpdatesAndAddsToPatch.Count} web resource(s) updated and added to patch[/]");
+        if (!save)
+        {
+            await Task.WhenAll(
+                ExecuteBoundedParallelAsync(plan.RemovesFromSolution.Values, MaxParallelism,
+                    action => RemoveFromSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken), cancellationToken),
+                ExecuteBoundedParallelAsync(plan.Deletes.Values, MaxParallelism,
+                    action => service.DeleteAsync("webresource", action.Id!.Value, cancellationToken), cancellationToken)).ConfigureAwait(false);
+        }
 
-        // Delete or remove web resources
-        await Task.WhenAll(
-            ExecuteBoundedParallelAsync(plan.RemovesFromSolution.Values, MaxParallelism,
-                action => RemoveFromSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken), cancellationToken),
-            ExecuteBoundedParallelAsync(plan.Deletes.Values, MaxParallelism,
-                action => service.DeleteAsync("webresource", action.Id!.Value, cancellationToken), cancellationToken)).ConfigureAwait(false);
-
-        foreach (var name in plan.Deletes.Keys) output.Verbose($"Web resource '{name}' deleted");
-        if (plan.Deletes.Count > 0) output.Info($"[green]{plan.Deletes.Count} web resource(s) deleted[/]");
-        foreach (var name in plan.RemovesFromSolution.Keys) output.Verbose($"Web resource '{name}' removed from solution");
-        if (plan.RemovesFromSolution.Count > 0) output.Info($"[green]{plan.RemovesFromSolution.Count} web resource(s) removed from solution[/]");
-
-        WriteSummary(plan);
+        WriteSummary(plan, save);
 
         if (publishAfterSync && publishIds.Count > 0)
         {
@@ -125,15 +114,34 @@ public class WebResourceSyncPlanExecutor(IFlowlineOutput output)
         return service.ExecuteAsync(request, cancellationToken);
     }
 
-    void WriteSummary(WebResourceSyncPlan plan)
+    void WriteSummary(WebResourceSyncPlan plan, bool save)
     {
         foreach (var s in plan.Skips.Values) output.Skip($"Web resource '{s.Name}' kept ({s.Reason})");
 
+        foreach (var s in plan.Creates.Keys) output.Verbose($"Web resource '{s}' created");
         if (plan.Creates.Count > 0) output.Info($"[green]{plan.Creates.Count} web resource(s) created[/]");
+
+        foreach (var s in plan.Updates.Keys) output.Verbose($"Web resource '{s}' updated");
         if (plan.Updates.Count > 0) output.Info($"[green]{plan.Updates.Count} web resource(s) updated[/]");
+
+        foreach (var s in plan.UpdatesAndAddsToPatch.Keys) output.Verbose($"Web resource '{s}' updated and added to patch");
         if (plan.UpdatesAndAddsToPatch.Count > 0) output.Info($"[green]{plan.UpdatesAndAddsToPatch.Count} web resource(s) updated and added to patch[/]");
-        if (plan.Deletes.Count > 0) output.Info($"[green]{plan.Deletes.Count} web resource(s) deleted[/]");
-        if (plan.RemovesFromSolution.Count > 0) output.Info($"[green]{plan.RemovesFromSolution.Count} web resource(s) removed from solution[/]");
+
+        if (!save)
+        {
+            foreach (var s in plan.Deletes.Keys) output.Verbose($"Web resource '{s}' deleted");
+            if (plan.Deletes.Count > 0) output.Info($"[green]{plan.Deletes.Count} web resource(s) deleted[/]");
+
+            foreach (var s in plan.RemovesFromSolution.Keys) output.Verbose($"Web resource '{s}' removed from solution");
+            if (plan.RemovesFromSolution.Count > 0) output.Info($"[green]{plan.RemovesFromSolution.Count} web resource(s) removed from solution[/]");
+        }
+        else
+        {
+            foreach (var name in plan.Deletes.Keys) output.Skip($"Web resource '{name}' not in source — kept (--save)");
+            if (plan.Deletes.Count > 0)output.Skip($"{plan.Deletes.Count} web resource(s) not in source — kept (--save)");
+            foreach (var name in plan.RemovesFromSolution.Keys) output.Skip($"Web resource '{name}' still in other solution — kept (--save)");
+            if (plan.RemovesFromSolution.Count > 0) output.Skip($"{plan.RemovesFromSolution.Count} web resource(s) still in other solution — kept (--save)");
+        }
     }
 
     static async Task ExecuteBoundedParallelAsync<T>(

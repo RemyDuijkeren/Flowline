@@ -5,7 +5,7 @@ namespace Flowline.Core.Services;
 
 public class WebResourceSyncPlanner(IFlowlineOutput output)
 {
-    public WebResourceSyncPlan Plan(WebResourceSyncSnapshot snapshot, RunMode runMode)
+    public WebResourceSyncPlan Plan(WebResourceSyncSnapshot snapshot)
     {
         var plan = new WebResourceSyncPlan();
         var localNames = snapshot.LocalResources.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -65,18 +65,6 @@ public class WebResourceSyncPlanner(IFlowlineOutput output)
         foreach (var name in dataverseNames.Except(localNames, StringComparer.OrdinalIgnoreCase))
         {
             var remote = snapshot.DataverseResources[name];
-
-            if (runMode == RunMode.Save)
-            {
-                plan.Skips[name] = new WebResourcePlanAction(name, WebResourceAction.Skip, Id: remote.Id, Reason: "--save");
-                continue;
-            }
-
-            if (remote.Ownership.IsManagedOnly)
-            {
-                plan.Skips[name] = new WebResourcePlanAction(name, WebResourceAction.Skip, Id: remote.Id, Reason: "managed solution");
-                continue;
-            }
 
             if (remote.Ownership is { NonDefaultUnmanagedSolutionCount: 1, IsInCurrentUnmanagedSolution: true })
             {

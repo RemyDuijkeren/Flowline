@@ -24,7 +24,7 @@ public class WebResourceSyncService(IFlowlineOutput output)
             throw new ArgumentException("solutionName is required.", nameof(solutionName));
 
         var snapshot = await _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, patchSolutionName, cancellationToken).ConfigureAwait(false);
-        var plan = _planner.Plan(snapshot, runMode);
+        var plan = _planner.Plan(snapshot);
         output.Info("[green]Web resource plan ready[/]");
 
         if (plan.TotalChanges == 0)
@@ -42,7 +42,7 @@ public class WebResourceSyncService(IFlowlineOutput output)
             return;
         }
 
-        await _executor.ExecuteAsync(service, plan, publishAfterSync, cancellationToken).ConfigureAwait(false);
+        await _executor.ExecuteAsync(service, plan, publishAfterSync, runMode == RunMode.Save, cancellationToken).ConfigureAwait(false);
     }
 
     void WriteDryRunSummary(WebResourceSyncPlan plan, bool publishAfterSync)

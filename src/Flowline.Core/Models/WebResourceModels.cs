@@ -1,6 +1,6 @@
-namespace Flowline.Core.Models;
-
 using Microsoft.Xrm.Sdk;
+
+namespace Flowline.Core.Models;
 
 public enum WebResourceType
 {
@@ -35,7 +35,7 @@ public enum WebResourceAction
 
 public record WebResourceSyncResult(bool Success, string Message);
 
-public record WebResourceSolutionInfo(Guid Id, string UniqueName, string PublisherPrefix);
+public record WebResourceSolutionInfo(Guid Id, string UniqueName, string PublisherPrefix, bool IsManaged);
 
 public record LocalWebResource(
     string Name,
@@ -57,8 +57,7 @@ public record DataverseWebResource(
 
 public record WebResourceOwnership(
     int NonDefaultUnmanagedSolutionCount,
-    bool IsInCurrentUnmanagedSolution,
-    bool IsManagedOnly);
+    bool IsInCurrentUnmanagedSolution);
 
 public record WebResourceSyncSnapshot(
     WebResourceSolutionInfo BaseSolution,
