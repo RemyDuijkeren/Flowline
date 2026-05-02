@@ -122,7 +122,8 @@ public class RegistrationPlanner(IFlowlineOutput output)
                     dvStep.GetAttributeValue<int?>("rank") != asmStep.Order ||
                     dvStep.GetAttributeValue<EntityReference?>("sdkmessageid")?.Id != messageId ||
                     dvStep.GetAttributeValue<EntityReference?>("sdkmessagefilterid")?.Id != filterId ||
-                    dvStep.GetAttributeValue<bool>("asyncautodelete") != asmStep.AsyncAutoDelete;
+                    dvStep.GetAttributeValue<bool>("asyncautodelete") != asmStep.AsyncAutoDelete ||
+                    dvStep.GetAttributeValue<EntityReference?>("impersonatinguserid")?.Id != asmStep.RunAs;
 
                 if (!changed)
                 {
@@ -130,13 +131,14 @@ public class RegistrationPlanner(IFlowlineOutput output)
                     continue;
                 }
 
-                dvStep["stage"]               = new OptionSetValue(asmStep.Stage);
-                dvStep["mode"]                = new OptionSetValue(asmStep.Mode);
-                dvStep["rank"]                = asmStep.Order;
-                dvStep["filteringattributes"] = asmStep.FilteringAttributes;
-                dvStep["configuration"]       = asmStep.Configuration;
-                dvStep["asyncautodelete"]     = asmStep.AsyncAutoDelete;
-                dvStep["sdkmessageid"]        = new EntityReference("sdkmessage", messageId);
+                dvStep["stage"]                = new OptionSetValue(asmStep.Stage);
+                dvStep["mode"]                 = new OptionSetValue(asmStep.Mode);
+                dvStep["rank"]                 = asmStep.Order;
+                dvStep["filteringattributes"]  = asmStep.FilteringAttributes;
+                dvStep["configuration"]        = asmStep.Configuration;
+                dvStep["asyncautodelete"]      = asmStep.AsyncAutoDelete;
+                dvStep["impersonatinguserid"]  = asmStep.RunAs.HasValue ? new EntityReference("systemuser", asmStep.RunAs.Value) : null;
+                dvStep["sdkmessageid"]         = new EntityReference("sdkmessage", messageId);
                 if (filterId.HasValue)
                     dvStep["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId.Value);
 
@@ -146,16 +148,17 @@ public class RegistrationPlanner(IFlowlineOutput output)
             {
                 var entity = new Entity("sdkmessageprocessingstep", Guid.NewGuid())
                 {
-                    ["name"]                = asmStep.Name,
-                    ["plugintypeid"]        = typeEntity.ToEntityReference(),
-                    ["sdkmessageid"]        = new EntityReference("sdkmessage", messageId),
-                    ["stage"]               = new OptionSetValue(asmStep.Stage),
-                    ["mode"]                = new OptionSetValue(asmStep.Mode),
-                    ["rank"]                = asmStep.Order,
+                    ["name"]               = asmStep.Name,
+                    ["plugintypeid"]       = typeEntity.ToEntityReference(),
+                    ["sdkmessageid"]       = new EntityReference("sdkmessage", messageId),
+                    ["stage"]              = new OptionSetValue(asmStep.Stage),
+                    ["mode"]               = new OptionSetValue(asmStep.Mode),
+                    ["rank"]               = asmStep.Order,
                     ["filteringattributes"] = asmStep.FilteringAttributes,
-                    ["configuration"]       = asmStep.Configuration,
-                    ["asyncautodelete"]     = asmStep.AsyncAutoDelete,
-                    ["description"]         = $"{FlowlineMarker} Created at {DateTime.UtcNow:u}"
+                    ["configuration"]      = asmStep.Configuration,
+                    ["asyncautodelete"]    = asmStep.AsyncAutoDelete,
+                    ["impersonatinguserid"] = asmStep.RunAs.HasValue ? new EntityReference("systemuser", asmStep.RunAs.Value) : null,
+                    ["description"]        = $"{FlowlineMarker} Created at {DateTime.UtcNow:u}"
                 };
                 if (filterId.HasValue)
                     entity["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId.Value);

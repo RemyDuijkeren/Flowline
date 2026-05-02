@@ -296,11 +296,13 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
             : null;
         var order = 1;
         var configuration = (string?)null;
+        var runAsString = (string?)null;
         bool? deleteJobOnSuccessExplicit = null;
         foreach (var arg in stepAttr.NamedArguments)
         {
             if (arg.MemberName == "Order") order = Convert.ToInt32(arg.TypedValue.Value);
             else if (arg.MemberName == "Configuration") configuration = (string?)arg.TypedValue.Value;
+            else if (arg.MemberName == "RunAs") runAsString = (string?)arg.TypedValue.Value;
             else if (arg.MemberName == "DeleteJobOnSuccess") deleteJobOnSuccessExplicit = (bool)arg.TypedValue.Value!;
         }
         var deleteJobOnSuccess = deleteJobOnSuccessExplicit ?? true;
@@ -322,16 +324,20 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
 
         var images = ReadImageAttributes(type);
         ValidateImages(type.Name, message, stage, images);
+        Guid? runAs = runAsString != null && Guid.TryParse(runAsString, out var parsed) ? parsed : (Guid?)null;
+
         var warnings = BuildStepWarnings(type.Name, message, entity, filteringAttributes, hasSecondaryAttr, secondaryEntity, images);
         if (deleteJobOnSuccessExplicit == true && mode != (int)ProcessingMode.Asynchronous)
             warnings.Add($"DeleteJobOnSuccess = true has no effect on synchronous step '{type.Name}'.");
+        if (runAsString != null && runAs == null)
+            warnings.Add($"RunAs value '{runAsString}' on '{type.Name}' is not a valid GUID — impersonatinguserid will not be set.");
 
         var entityDisplay = entity ?? "any";
         var stepName = secondaryEntity != null
             ? $"{type.FullName}: {message} of {entityDisplay} with {secondaryEntity}"
             : $"{type.FullName}: {message} of {entityDisplay}";
 
-        return new PluginStepMetadata(stepName, message, entity, stage, mode, order, filteringAttributes, configuration, images, warnings, secondaryEntity, deleteJobOnSuccess);
+        return new PluginStepMetadata(stepName, message, entity, stage, mode, order, filteringAttributes, configuration, images, warnings, secondaryEntity, deleteJobOnSuccess, runAs);
     }
 
     internal static bool TryParseClassName(string className, out string message, out int stage, out int mode)

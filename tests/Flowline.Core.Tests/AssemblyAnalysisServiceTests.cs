@@ -400,6 +400,14 @@ public class AssemblyAnalysisServiceTests
     }
 
     [Fact]
+    public void Analyze_PluginWithRunAs_ParsesGuid()
+    {
+        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockRunAsPostCreatePlugin)).Steps);
+
+        Assert.Equal(new Guid("3b36b50c-03e5-4b5f-8882-aabbccddeeff"), step.RunAs);
+    }
+
+    [Fact]
     public void Analyze_PluginWithNoStageKeyword_HasNoSteps()
     {
         var plugin = GetPlugin(Analyze(), nameof(MockNoStagePlugin));
@@ -516,6 +524,12 @@ public class MockPostAssignPlugin : IPlugin
 
 [Step("account", Order = 2, Configuration = "{\"key\":\"value\"}")]
 public class MockPreRetrievePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+[Step("account", RunAs = "3b36b50c-03e5-4b5f-8882-aabbccddeeff")]
+public class MockRunAsPostCreatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }

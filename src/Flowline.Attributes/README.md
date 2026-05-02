@@ -76,16 +76,18 @@ Optional named properties:
 | Property | Type | Default | Description |
 |---|---|---|---|
 | `Order` | `int` | `1` | Execution order when multiple steps fire on the same event. Lower runs first. |
-| `As` | `ExecuteAs` | `CallingUser` | User identity the plugin runs under (`context.UserId`). |
+| `RunAs` | `string?` | `null` | GUID of the Dataverse `systemuser` to impersonate (`impersonatinguserid`). `null` runs as the calling user. |
 | `Configuration` | `string?` | `null` | Passed to the plugin constructor as `unsecureConfig`. |
 | `DeleteJobOnSuccess` | `bool` | `true` | Automatically delete the `AsyncOperation` job record when the step succeeds. Async post-operation steps only. Set to `false` to retain the record for auditing. |
 
-Use `ExecuteAs.InitiatingUser` when a Power Automate flow triggers your plugin and you need the human user's identity rather than the flow service account:
+Use `RunAs` to run the plugin as a specific service account. Pass the string form of the user's GUID:
 
 ```csharp
-[Step("account", As = ExecuteAs.InitiatingUser)]
+[Step("account", RunAs = "3b36b50c-03e5-4b5f-8882-123456789abc")]
 public class AccountPostCreatePlugin : IPlugin { ... }
 ```
+
+> **Use environment-stable GUIDs.** The value is stored in source control and the solution XML. Avoid personal accounts or accounts whose GUID differs between environments.
 
 Use `Configuration` to pass endpoint URLs, feature flags, or JSON settings. Receive the value in a constructor overload that accepts `string unsecureConfig`:
 

@@ -285,6 +285,67 @@ public class RegistrationPlannerTests
         Assert.True(plan.Steps.Upserts[step.Name].Entity.GetAttributeValue<bool>("asyncautodelete"));
     }
 
+    // -- RunAs / impersonatinguserid --
+
+    [Fact]
+    public void Plan_ExistingStep_WithRunAsChange_DetectsChange()
+    {
+        var typeId    = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var stepId    = Guid.NewGuid();
+        var userId    = Guid.NewGuid();
+        const string stepName = "MyNamespace.MyPlugin: Update of account";
+
+        var existingStep = new Entity("sdkmessageprocessingstep", stepId)
+        {
+            ["name"]                 = stepName,
+            ["plugintypeid"]         = new EntityReference("plugintype", typeId),
+            ["stage"]                = new OptionSetValue(20),
+            ["mode"]                 = new OptionSetValue(0),
+            ["rank"]                 = 1,
+            ["sdkmessageid"]         = new EntityReference("sdkmessage", messageId),
+            ["impersonatinguserid"]  = (EntityReference?)null   // no impersonation currently
+        };
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            steps: [existingStep],
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId });
+
+        var step = new PluginStepMetadata(stepName, "Update", "account", 20, 0, 1, null, null, [], [], RunAs: userId);
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], null, false)), _assembly, "MySolution");
+
+        Assert.True(plan.Steps.Upserts.ContainsKey(stepName));
+        Assert.False(plan.Steps.Upserts[stepName].IsCreate);
+        Assert.Equal(userId, plan.Steps.Upserts[stepName].Entity.GetAttributeValue<EntityReference>("impersonatinguserid").Id);
+    }
+
+    [Fact]
+    public void Plan_NewStep_WithRunAs_SetsImpersonatingUserid()
+    {
+        var typeId    = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var userId    = Guid.NewGuid();
+        const string stepName = "MyNamespace.MyPlugin: Update of account";
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId });
+
+        var step = new PluginStepMetadata(stepName, "Update", "account", 20, 0, 1, null, null, [], [], RunAs: userId);
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], null, false)), _assembly, "MySolution");
+
+        Assert.True(plan.Steps.Upserts.ContainsKey(stepName));
+        Assert.True(plan.Steps.Upserts[stepName].IsCreate);
+        Assert.Equal(userId, plan.Steps.Upserts[stepName].Entity.GetAttributeValue<EntityReference>("impersonatinguserid").Id);
+    }
+
     // -- Custom API obsolete-detection bug fix --
 
     [Fact]

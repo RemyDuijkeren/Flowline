@@ -95,15 +95,17 @@ public sealed class StepAttribute(string? entity = null) : Attribute
     public int Order { get; set; } = 1;
 
     /// <summary>
-    /// Specifies which user's identity the plugin runs under, controlling
-    /// <c>context.UserId</c> inside <c>Execute</c>. Default is <see cref="ExecuteAs.CallingUser"/>.
+    /// The GUID of the Dataverse <c>systemuser</c> record to impersonate when this step executes
+    /// (<c>impersonatinguserid</c> on the step registration). <see langword="null"/> runs as the
+    /// calling user, which is correct for almost all plugins.
     /// </summary>
     /// <remarks>
-    /// Use <see cref="ExecuteAs.InitiatingUser"/> when a Power Automate flow or workflow
-    /// triggers your plugin and you need the original human user's identity rather than
-    /// the flow's service account. Most plugins should use the default.
+    /// Pass the string form of the user's GUID, e.g.
+    /// <c>RunAs = "3b36b50c-03e5-4b5f-8882-123456789abc"</c>.
+    /// This value is stored in source control and the solution XML — do not use personal
+    /// accounts or accounts whose GUID differs between environments.
     /// </remarks>
-    public ExecuteAs As { get; set; } = ExecuteAs.CallingUser;
+    public string? RunAs { get; set; }
 
     /// <summary>
     /// An optional string passed to your plugin's constructor as the first parameter
@@ -151,24 +153,3 @@ public sealed class StepAttribute(string? entity = null) : Attribute
     public bool DeleteJobOnSuccess { get; set; } = true;
 }
 
-/// <summary>
-/// Controls which user's identity the plugin runs under, affecting <c>context.UserId</c>
-/// inside <c>Execute</c>.
-/// </summary>
-public enum ExecuteAs
-{
-    /// <summary>
-    /// The plugin runs as the user who directly triggered the Dataverse operation — the
-    /// API caller or the user who submitted the form. This is the default and is correct
-    /// for the vast majority of plugins.
-    /// </summary>
-    CallingUser = 0,
-
-    /// <summary>
-    /// The plugin runs as the user who originally started the chain of events, even if the
-    /// immediate trigger was a service account (e.g. a Power Automate flow).
-    /// Use this when a flow or workflow triggers your plugin and you need the human user's
-    /// identity for auditing or row-level security checks.
-    /// </summary>
-    InitiatingUser = 1,
-}
