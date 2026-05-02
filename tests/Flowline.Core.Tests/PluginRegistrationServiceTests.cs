@@ -218,7 +218,7 @@ public class PluginRegistrationServiceTests
         SetupPluginTypes();
         SetupSteps();
 
-        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], null, false)), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [], false)), "MySolution");
 
         await _serviceMock.Received(1).CreateAsync(Arg.Is<Entity>(e =>
             e.LogicalName == "plugintype" &&
@@ -236,7 +236,7 @@ public class PluginRegistrationServiceTests
         SetupAssembly(ExistingAssembly(assemblyId));
         SetupPluginTypes();
 
-        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyActivity", "MyNamespace.MyActivity", [], null, true)), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyActivity", "MyNamespace.MyActivity", [], [], true)), "MySolution");
 
         await _serviceMock.Received(1).CreateAsync(Arg.Is<Entity>(e =>
             e.LogicalName == "plugintype" &&
@@ -253,7 +253,7 @@ public class PluginRegistrationServiceTests
         SetupAssembly(ExistingAssembly(assemblyId));
         SetupPluginTypes();
 
-        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyActivity", "MyNamespace.MyActivity", [], null, true)), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyActivity", "MyNamespace.MyActivity", [], [], true)), "MySolution");
 
         await _serviceMock.Received(1).RetrieveMultipleAsync(
             Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep"),
@@ -325,7 +325,7 @@ public class PluginRegistrationServiceTests
         var existingStep = new Entity("sdkmessageprocessingstep", stepId) { ["name"] = "Old step", ["plugintypeid"] = pluginType.ToEntityReference() };
         SetupSteps(existingStep);
 
-        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], null, false)), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [], false)), "MySolution");
 
         await _serviceMock.Received(1).DeleteAsync("sdkmessageprocessingstep", stepId, Arg.Any<CancellationToken>());
     }
@@ -354,7 +354,7 @@ public class PluginRegistrationServiceTests
 
         var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of contact", "Update", "contact", 20, 0, 1, null, null, [], []);
 
-        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], null, false)), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), "MySolution");
 
         await _serviceMock.Received(1).DeleteAsync("sdkmessageprocessingstep", orphanId, Arg.Any<CancellationToken>());
     }
@@ -448,7 +448,7 @@ public class PluginRegistrationServiceTests
             })));
 
         var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of contact", "Update", "contact", 20, 0, 1, null, null, [], []);
-        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], null, false)), "MySolution");
+        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), "MySolution");
 
         _outputMock.Received(1).Warning(Arg.Is<string>(s =>
             s.Contains("Updating sdkmessageprocessingstep") &&
@@ -528,7 +528,7 @@ public class PluginRegistrationServiceTests
         });
 
         var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of contact", "Update", "contact", 20, 0, 1, null, null, [], []);
-        var plugin = new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], null, false);
+        var plugin = new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false);
 
         var existingStepId = Guid.NewGuid();
         SetupSteps(new Entity("sdkmessageprocessingstep", existingStepId) { ["name"] = "Orphaned step", ["plugintypeid"] = new EntityReference("plugintype", obsoleteTypeId) });
@@ -845,7 +845,7 @@ public class PluginRegistrationServiceTests
             ["plugintypeid"] = new EntityReference("plugintype", obsoleteTypeId)
         });
 
-        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], null, false)), "MySolution", RunMode.DryRun);
+        await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [], false)), "MySolution", RunMode.DryRun);
 
         _outputMock.Received(1).Info(Arg.Is<string>(s => s.Contains("Dry run:")));
     }

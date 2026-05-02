@@ -46,7 +46,7 @@ public class RegistrationPlannerTests
     public void Plan_NewPluginType_CreatesUpsert()
     {
         var plan = _planner.Plan(Snapshot(), Metadata(
-            new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], null, false)), _assembly, "MySolution");
+            new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [], false)), _assembly, "MySolution");
 
         var (key, action) = Assert.Single(plan.PluginTypes.Upserts);
         Assert.Equal("MyPlugin", key);
@@ -58,7 +58,7 @@ public class RegistrationPlannerTests
     public void Plan_NewWorkflowType_SetsWorkflowActivityGroupName()
     {
         var plan = _planner.Plan(Snapshot(), Metadata(
-            new PluginTypeMetadata("MyActivity", "MyNamespace.MyActivity", [], null, IsWorkflow: true)), _assembly, "MySolution");
+            new PluginTypeMetadata("MyActivity", "MyNamespace.MyActivity", [], [], IsWorkflow: true)), _assembly, "MySolution");
 
         var (_, action) = Assert.Single(plan.PluginTypes.Upserts);
         Assert.Equal("MyPlugin (1.0.0.0)", action.Entity.GetAttributeValue<string>("workflowactivitygroupname"));
@@ -74,7 +74,7 @@ public class RegistrationPlannerTests
         });
 
         var plan = _planner.Plan(snapshot, Metadata(
-            new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], null, false)), _assembly, "MySolution");
+            new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [],[], false)), _assembly, "MySolution");
 
         Assert.Empty(plan.PluginTypes.Upserts);
     }
@@ -125,7 +125,7 @@ public class RegistrationPlannerTests
             messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId });
 
         var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of account", "Update", "account", 20, 0, 1, null, null, [], []);
-        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], null, false)), _assembly, "MySolution");
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
 
         Assert.True(plan.Steps.Upserts.ContainsKey(step.Name));
         var action = plan.Steps.Upserts[step.Name];
@@ -162,7 +162,7 @@ public class RegistrationPlannerTests
             messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId });
 
         var step = new PluginStepMetadata(stepName, "Update", "account", 20, 0, 1, null, null, [], []);
-        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], null, false)), _assembly, "MySolution");
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
 
         Assert.Empty(plan.Steps.Upserts);
         Assert.True(plan.Steps.AddSolutionComponents.ContainsKey(stepName));
@@ -195,7 +195,7 @@ public class RegistrationPlannerTests
             messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId });
 
         var step = new PluginStepMetadata(stepName, "Update", "account", 20, 0, 1, null, null, [], []);
-        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], null, false)), _assembly, "MySolution");
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
 
         Assert.True(plan.Steps.Upserts.ContainsKey(stepName));
         Assert.False(plan.Steps.Upserts[stepName].IsCreate);
@@ -221,7 +221,7 @@ public class RegistrationPlannerTests
             },
             steps: [obsoleteStep]);
 
-        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], null, false)), _assembly, "MySolution");
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [], false)), _assembly, "MySolution");
 
         Assert.True(plan.Steps.Deletes.ContainsKey(stepName));
         Assert.Equal(stepId, plan.Steps.Deletes[stepName].Id);
@@ -258,7 +258,7 @@ public class RegistrationPlannerTests
 
         // Assembly now has DeleteJobOnSuccess = true → AsyncAutoDelete = true
         var step = new PluginStepMetadata(stepName, "Update", "account", 40, 1, 1, null, null, [], [], AsyncAutoDelete: true);
-        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], null, false)), _assembly, "MySolution");
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
 
         Assert.True(plan.Steps.Upserts.ContainsKey(stepName));
         Assert.False(plan.Steps.Upserts[stepName].IsCreate);
@@ -278,7 +278,7 @@ public class RegistrationPlannerTests
             messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId });
 
         var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of account", "Update", "account", 40, 1, 1, null, null, [], [], AsyncAutoDelete: true);
-        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], null, false)), _assembly, "MySolution");
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
 
         Assert.True(plan.Steps.Upserts.ContainsKey(step.Name));
         Assert.True(plan.Steps.Upserts[step.Name].IsCreate);
@@ -316,7 +316,7 @@ public class RegistrationPlannerTests
             messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId });
 
         var step = new PluginStepMetadata(stepName, "Update", "account", 20, 0, 1, null, null, [], [], RunAs: userId);
-        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], null, false)), _assembly, "MySolution");
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
 
         Assert.True(plan.Steps.Upserts.ContainsKey(stepName));
         Assert.False(plan.Steps.Upserts[stepName].IsCreate);
@@ -339,7 +339,7 @@ public class RegistrationPlannerTests
             messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId });
 
         var step = new PluginStepMetadata(stepName, "Update", "account", 20, 0, 1, null, null, [], [], RunAs: userId);
-        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], null, false)), _assembly, "MySolution");
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
 
         Assert.True(plan.Steps.Upserts.ContainsKey(stepName));
         Assert.True(plan.Steps.Upserts[stepName].IsCreate);

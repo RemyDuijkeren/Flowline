@@ -157,7 +157,7 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
                 }
                 else
                 {
-                    output.Verbose($"Found Plugin {type.FullName} with no [Step]");
+                    output.Verbose($"Found Plugin {type.FullName} with no [[Step]]");
                     pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, [], [], isWorkflow));
                 }
             }
@@ -552,25 +552,25 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
 
         if (entity == null)
             warnings.Add(
-                $"{className}: [Step] has no entity — this step will fire for all tables. " +
-                $"If intentional, specify [Step(\"none\")] to suppress this warning.");
+                $"{className}: [[Step]] has no entity — this step will fire for all tables. " +
+                $"If intentional, specify [[Step(\"none\")]] to suppress this warning.");
 
         if (message == "Update" && filteringAttributes == null)
             warnings.Add(
-                $"{className}: Update step has no [Filter] — it will fire on every update to the table, regardless of which columns changed. " +
-                $"Add [Filter] with the columns your plugin cares about. " +
+                $"{className}: Update step has no [[Filter]] — it will fire on every update to the table, regardless of which columns changed. " +
+                $"Add [[Filter]] with the columns your plugin cares about. " +
                 $"See https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#set-filtering-attributes");
 
         if (message is "Associate" or "Disassociate")
         {
             if (!hasSecondaryAttr)
                 warnings.Add(
-                    $"{className}: {message} step has no [SecondaryEntity] — it will fire for any table on the other side of the relationship. " +
-                    $"Add [SecondaryEntity(\"none\")] to make this explicit, or specify the exact secondary table logical name.");
+                    $"{className}: {message} step has no [[SecondaryEntity]] — it will fire for any table on the other side of the relationship. " +
+                    $"Add [[SecondaryEntity(\"none\")]] to make this explicit, or specify the exact secondary table logical name.");
             else if (secondaryEntity == null)
                 warnings.Add(
-                    $"{className}: [SecondaryEntity] has no entity — this step will fire for all secondary tables. " +
-                    $"If intentional, specify [SecondaryEntity(\"none\")] to suppress this warning.");
+                    $"{className}: [[SecondaryEntity]] has no entity — this step will fire for all secondary tables. " +
+                    $"If intentional, specify [[SecondaryEntity(\"none\")]] to suppress this warning.");
         }
 
         foreach (var image in images)
@@ -578,7 +578,7 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
             if (image.Attributes != null) continue;
             var attrName = image.ImageType == (int)ImageType.PreImage ? "PreImage" : "PostImage";
             warnings.Add(
-                $"{className}: [{attrName}] has no attribute filter — all columns will be fetched, which negatively impacts performance. " +
+                $"{className}: [[{attrName}]] has no attribute filter — all columns will be fetched, which negatively impacts performance. " +
                 $"Specify only the columns your plugin requires. " +
                 $"See https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#define-entity-images");
         }
