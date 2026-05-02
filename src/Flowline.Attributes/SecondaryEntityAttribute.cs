@@ -13,18 +13,18 @@ namespace Flowline.Attributes;
 /// an account, or when a team member is removed from a team.
 /// </para>
 /// <para>
-/// These messages always involve two tables. <c>[Entity]</c> specifies the primary table and
+/// These messages always involve two tables. <c>[Step]</c> specifies the primary table and
 /// <c>[SecondaryEntity]</c> specifies the related table. Use <c>"none"</c> on
 /// <c>[SecondaryEntity]</c> to match the message regardless of which table is on the other side.
 /// </para>
 /// <code>
 /// // Fires when ANY record is associated with a contact
-/// [Entity("contact")]
+/// [Step("contact")]
 /// [SecondaryEntity("none")]
 /// public class ContactAssociatePlugin : IPlugin { ... }
 ///
 /// // Fires only when a contact is associated with an account specifically
-/// [Entity("contact")]
+/// [Step("contact")]
 /// [SecondaryEntity("account")]
 /// public class ContactAccountAssociatePlugin : IPlugin { ... }
 /// </code>
@@ -42,16 +42,22 @@ namespace Flowline.Attributes;
 /// omit <c>[SecondaryEntity]</c> entirely. Dataverse uses <c>"none"</c> automatically.
 /// </para>
 /// </remarks>
-/// <param name="logicalName">
+/// <param name="entity">
 /// Logical name of the secondary table, e.g. <c>"account"</c>.
 /// Use <c>"none"</c> to match all secondary tables.
+/// <para>
+/// Omit this argument to register on <b>all secondary tables</b> — Flowline will warn.
+/// To make this intentional and suppress the warning, pass <c>"none"</c> explicitly.
+/// Passing an empty string is an error.
+/// </para>
 /// </param>
 [AttributeUsage(AttributeTargets.Class)]
-public sealed class SecondaryEntityAttribute(string logicalName) : Attribute
+public sealed class SecondaryEntityAttribute(string? entity = null) : Attribute
 {
     /// <summary>
-    /// Logical name of the secondary Dataverse table involved in the relationship operation.
-    /// Use <c>"none"</c> to match any secondary table.
+    /// Logical name of the secondary Dataverse table involved in the relationship operation,
+    /// or <see langword="null"/> when no table was specified. Use <c>"none"</c> to
+    /// intentionally match any secondary table without a warning.
     /// </summary>
-    public string LogicalName { get; } = logicalName;
+    public string? Entity { get; } = entity;
 }

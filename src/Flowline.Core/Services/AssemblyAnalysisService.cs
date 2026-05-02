@@ -287,22 +287,25 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
 
     private static PluginStepMetadata? TryBuildStep(Type type)
     {
-        var entityAttr = type.GetCustomAttributesData()
-            .FirstOrDefault(a => a.AttributeType.FullName == "Flowline.Attributes.EntityAttribute");
-        if (entityAttr == null) return null;
+        var stepAttr = type.GetCustomAttributesData()
+            .FirstOrDefault(a => a.AttributeType.FullName == "Flowline.Attributes.StepAttribute");
+        if (stepAttr == null) return null;
 
-        var logicalName = (string)entityAttr.ConstructorArguments[0].Value!;
+        var entity = stepAttr.ConstructorArguments.Count > 0
+            ? (string?)stepAttr.ConstructorArguments[0].Value
+            : null;
         var order = 1;
         var configuration = (string?)null;
-        var deleteJobOnSuccess = false;
-        foreach (var arg in entityAttr.NamedArguments)
+        bool? deleteJobOnSuccessExplicit = null;
+        foreach (var arg in stepAttr.NamedArguments)
         {
             if (arg.MemberName == "Order") order = Convert.ToInt32(arg.TypedValue.Value);
             else if (arg.MemberName == "Configuration") configuration = (string?)arg.TypedValue.Value;
-            else if (arg.MemberName == "DeleteJobOnSuccess") deleteJobOnSuccess = (bool)arg.TypedValue.Value!;
+            else if (arg.MemberName == "DeleteJobOnSuccess") deleteJobOnSuccessExplicit = (bool)arg.TypedValue.Value!;
         }
+        var deleteJobOnSuccess = deleteJobOnSuccessExplicit ?? true;
 
-        ValidateEntityName(type.Name, logicalName);
+        ValidateLogicalName(type.Name, entity);
 
         if (!TryParseClassName(type.Name, out var message, out var stage, out var mode))
             return null;
@@ -313,20 +316,22 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
         var filteringAttributes = ReadFilterAttributes(type);
         ValidateFilter(type.Name, message, filteringAttributes);
 
-        var secondaryEntity = ReadSecondaryEntityAttribute(type);
-        ValidateSecondaryEntity(type.Name, message, secondaryEntity);
+        var (hasSecondaryAttr, secondaryEntity) = ReadSecondaryEntityAttribute(type);
+        ValidateSecondaryLogicalName(type.Name, secondaryEntity);
+        ValidateSecondaryEntity(type.Name, message, hasSecondaryAttr, secondaryEntity);
 
         var images = ReadImageAttributes(type);
         ValidateImages(type.Name, message, stage, images);
-        var warnings = BuildStepWarnings(type.Name, message, filteringAttributes, secondaryEntity, images);
-        if (deleteJobOnSuccess && mode != (int)ProcessingMode.Asynchronous)
+        var warnings = BuildStepWarnings(type.Name, message, entity, filteringAttributes, hasSecondaryAttr, secondaryEntity, images);
+        if (deleteJobOnSuccessExplicit == true && mode != (int)ProcessingMode.Asynchronous)
             warnings.Add($"DeleteJobOnSuccess = true has no effect on synchronous step '{type.Name}'.");
 
+        var entityDisplay = entity ?? "any";
         var stepName = secondaryEntity != null
-            ? $"{type.FullName}: {message} of {logicalName} with {secondaryEntity}"
-            : $"{type.FullName}: {message} of {logicalName}";
+            ? $"{type.FullName}: {message} of {entityDisplay} with {secondaryEntity}"
+            : $"{type.FullName}: {message} of {entityDisplay}";
 
-        return new PluginStepMetadata(stepName, message, logicalName, stage, mode, order, filteringAttributes, configuration, images, warnings, secondaryEntity, deleteJobOnSuccess);
+        return new PluginStepMetadata(stepName, message, entity, stage, mode, order, filteringAttributes, configuration, images, warnings, secondaryEntity, deleteJobOnSuccess);
     }
 
     internal static bool TryParseClassName(string className, out string message, out int stage, out int mode)
@@ -390,11 +395,20 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
         return normalized.Length > 0 ? string.Join(",", normalized) : null;
     }
 
-    internal static void ValidateEntityName(string className, string logicalName)
+    internal static void ValidateLogicalName(string className, string? entity)
     {
-        if (string.IsNullOrWhiteSpace(logicalName))
+        if (entity is not null && string.IsNullOrWhiteSpace(entity))
             throw new InvalidOperationException(
-                $"{className}: [Entity] logical name cannot be empty. Specify the table's logical name, e.g. [Entity(\"account\")].");
+                $"{className}: [Step] entity cannot be an empty string — use [Step(\"none\")] to register on all tables, " +
+                $"or specify a table logical name e.g. [Step(\"account\")].");
+    }
+
+    internal static void ValidateSecondaryLogicalName(string className, string? entity)
+    {
+        if (entity is not null && string.IsNullOrWhiteSpace(entity))
+            throw new InvalidOperationException(
+                $"{className}: [SecondaryEntity] entity cannot be an empty string — use [SecondaryEntity(\"none\")] to match any secondary table, " +
+                $"or specify a table logical name e.g. [SecondaryEntity(\"account\")].");
     }
 
     internal static void ValidateCustomApiAttributesOnStep(string className, bool hasCustomApiAttributes)
@@ -410,16 +424,20 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
         type.GetCustomAttributesData().Any(a => a.AttributeType.FullName is
             "Flowline.Attributes.InputAttribute" or "Flowline.Attributes.OutputAttribute");
 
-    private static string? ReadSecondaryEntityAttribute(Type type)
+    private static (bool hasAttribute, string? entity) ReadSecondaryEntityAttribute(Type type)
     {
         var attr = type.GetCustomAttributesData()
             .FirstOrDefault(a => a.AttributeType.FullName == "Flowline.Attributes.SecondaryEntityAttribute");
-        return attr == null ? null : (string)attr.ConstructorArguments[0].Value!;
+        if (attr == null) return (false, null);
+        var entity = attr.ConstructorArguments.Count > 0
+            ? (string?)attr.ConstructorArguments[0].Value
+            : null;
+        return (true, entity);
     }
 
-    internal static void ValidateSecondaryEntity(string className, string message, string? secondaryEntity)
+    internal static void ValidateSecondaryEntity(string className, string message, bool hasSecondaryAttr, string? secondaryEntity)
     {
-        if (secondaryEntity != null && message is not ("Associate" or "Disassociate"))
+        if (hasSecondaryAttr && secondaryEntity is not (null or "none") && message is not ("Associate" or "Disassociate"))
             throw new InvalidOperationException(
                 $"{className}: [SecondaryEntity] has no effect on {message} — it only applies to Associate and Disassociate steps. " +
                 $"Remove [SecondaryEntity] or change the step message.");
@@ -474,9 +492,14 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
                 $"See https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#define-entity-images");
     }
 
-    private static List<string> BuildStepWarnings(string className, string message, string? filteringAttributes, string? secondaryEntity, List<PluginImageMetadata> images)
+    private static List<string> BuildStepWarnings(string className, string message, string? entity, string? filteringAttributes, bool hasSecondaryAttr, string? secondaryEntity, List<PluginImageMetadata> images)
     {
         var warnings = new List<string>();
+
+        if (entity == null)
+            warnings.Add(
+                $"{className}: [Step] has no entity — this step will fire for all tables. " +
+                $"If intentional, specify [Step(\"none\")] to suppress this warning.");
 
         if (message == "Update" && filteringAttributes == null)
             warnings.Add(
@@ -484,10 +507,17 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
                 $"Add [Filter] with the columns your plugin cares about. " +
                 $"See https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#set-filtering-attributes");
 
-        if (message is "Associate" or "Disassociate" && secondaryEntity == null)
-            warnings.Add(
-                $"{className}: {message} step has no [SecondaryEntity] — it will fire for any table on the other side of the relationship. " +
-                $"Add [SecondaryEntity(\"none\")] to make this explicit, or specify the exact secondary table logical name.");
+        if (message is "Associate" or "Disassociate")
+        {
+            if (!hasSecondaryAttr)
+                warnings.Add(
+                    $"{className}: {message} step has no [SecondaryEntity] — it will fire for any table on the other side of the relationship. " +
+                    $"Add [SecondaryEntity(\"none\")] to make this explicit, or specify the exact secondary table logical name.");
+            else if (secondaryEntity == null)
+                warnings.Add(
+                    $"{className}: [SecondaryEntity] has no entity — this step will fire for all secondary tables. " +
+                    $"If intentional, specify [SecondaryEntity(\"none\")] to suppress this warning.");
+        }
 
         foreach (var image in images)
         {

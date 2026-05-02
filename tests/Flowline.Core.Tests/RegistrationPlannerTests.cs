@@ -25,7 +25,7 @@ public class RegistrationPlannerTests
         List<Entity>? requestParams      = null,
         List<Entity>? responseProps      = null,
         Dictionary<string, Guid>? messageIds = null,
-        Dictionary<(Guid, string, string?), Guid?>? filterIds = null,
+        Dictionary<(Guid, string?, string?), Guid?>? filterIds = null,
         string prefix = "abc") => new(
             pluginTypes  ?? new Dictionary<string, Entity>(StringComparer.OrdinalIgnoreCase),
             steps        ?? [],
@@ -34,7 +34,7 @@ public class RegistrationPlannerTests
             requestParams ?? [],
             responseProps ?? [],
             messageIds   ?? new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase),
-            filterIds    ?? new Dictionary<(Guid, string, string?), Guid?>(),
+            filterIds    ?? new Dictionary<(Guid, string?, string?), Guid?>(),
             prefix);
 
     static PluginAssemblyMetadata Metadata(params PluginTypeMetadata[] plugins) =>

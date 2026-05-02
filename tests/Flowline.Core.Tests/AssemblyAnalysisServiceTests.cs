@@ -163,25 +163,47 @@ public class AssemblyAnalysisServiceTests
     }
 
     [Fact]
-    public void ValidateEntityName_EmptyName_Throws()
+    public void ValidateLogicalName_EmptyString_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            AssemblyAnalysisService.ValidateEntityName("MockPreCreatePlugin", ""));
-        Assert.Contains("[Entity]", ex.Message);
+            AssemblyAnalysisService.ValidateLogicalName("MockPreCreatePlugin", ""));
+        Assert.Contains("[Step]", ex.Message);
+        Assert.Contains("none", ex.Message);
     }
 
     [Fact]
-    public void ValidateEntityName_WhitespaceName_Throws()
+    public void ValidateLogicalName_WhitespaceString_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            AssemblyAnalysisService.ValidateEntityName("MockPreCreatePlugin", "  "));
-        Assert.Contains("[Entity]", ex.Message);
+            AssemblyAnalysisService.ValidateLogicalName("MockPreCreatePlugin", "  "));
+        Assert.Contains("[Step]", ex.Message);
     }
 
     [Fact]
-    public void ValidateEntityName_ValidName_DoesNotThrow()
+    public void ValidateLogicalName_Null_DoesNotThrow()
     {
-        AssemblyAnalysisService.ValidateEntityName("MockPreCreatePlugin", "account");
+        AssemblyAnalysisService.ValidateLogicalName("MockPreCreatePlugin", null);
+    }
+
+    [Fact]
+    public void ValidateLogicalName_ValidName_DoesNotThrow()
+    {
+        AssemblyAnalysisService.ValidateLogicalName("MockPreCreatePlugin", "account");
+    }
+
+    [Fact]
+    public void ValidateSecondaryLogicalName_EmptyString_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            AssemblyAnalysisService.ValidateSecondaryLogicalName("MockPreAssociatePlugin", ""));
+        Assert.Contains("[SecondaryEntity]", ex.Message);
+        Assert.Contains("none", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateSecondaryLogicalName_Null_DoesNotThrow()
+    {
+        AssemblyAnalysisService.ValidateSecondaryLogicalName("MockPreAssociatePlugin", null);
     }
 
     [Fact]
@@ -203,7 +225,7 @@ public class AssemblyAnalysisServiceTests
     public void ValidateSecondaryEntity_OnNonAssociateMessage_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            AssemblyAnalysisService.ValidateSecondaryEntity("MockPreCreatePlugin", "Create", "account"));
+            AssemblyAnalysisService.ValidateSecondaryEntity("MockPreCreatePlugin", "Create", true, "account"));
         Assert.Contains("[SecondaryEntity]", ex.Message);
         Assert.Contains("Create", ex.Message);
     }
@@ -211,13 +233,13 @@ public class AssemblyAnalysisServiceTests
     [Fact]
     public void ValidateSecondaryEntity_OnAssociate_DoesNotThrow()
     {
-        AssemblyAnalysisService.ValidateSecondaryEntity("MockPreAssociatePlugin", "Associate", "account");
+        AssemblyAnalysisService.ValidateSecondaryEntity("MockPreAssociatePlugin", "Associate", true, "account");
     }
 
     [Fact]
-    public void ValidateSecondaryEntity_NullOnAnyMessage_DoesNotThrow()
+    public void ValidateSecondaryEntity_NoAttributeOnAnyMessage_DoesNotThrow()
     {
-        AssemblyAnalysisService.ValidateSecondaryEntity("MockPreCreatePlugin", "Create", null);
+        AssemblyAnalysisService.ValidateSecondaryEntity("MockPreCreatePlugin", "Create", false, null);
     }
 
     [Fact]
@@ -246,6 +268,36 @@ public class AssemblyAnalysisServiceTests
 
         Assert.Single(step.Warnings);
         Assert.Contains("[SecondaryEntity]", step.Warnings[0]);
+    }
+
+    [Fact]
+    public void Analyze_StepWithNoEntity_ProducesStepWithWarning()
+    {
+        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockNoEntityStepPreCreatePlugin)).Steps);
+
+        Assert.Null(step.EntityName);
+        Assert.Single(step.Warnings);
+        Assert.Contains("[Step]", step.Warnings[0]);
+        Assert.Contains("[Step(\"none\")]", step.Warnings[0]);
+    }
+
+    [Fact]
+    public void Analyze_StepWithNoneEntity_ProducesStepWithNoEntityWarning()
+    {
+        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockNoneEntityPreCreatePlugin)).Steps);
+
+        Assert.Equal("none", step.EntityName);
+        Assert.Empty(step.Warnings);
+    }
+
+    [Fact]
+    public void Analyze_AssociatePluginWithNoArgSecondaryEntity_AddsWarning()
+    {
+        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockNoEntitySecondaryPreAssociatePlugin)).Steps);
+
+        Assert.Single(step.Warnings);
+        Assert.Contains("[SecondaryEntity]", step.Warnings[0]);
+        Assert.Contains("[SecondaryEntity(\"none\")]", step.Warnings[0]);
     }
 
     [Fact]
@@ -402,52 +454,52 @@ public class AssemblyAnalysisServiceTests
 
 // -- Mock plugin types used by the integration tests above --
 
-[Entity("account")]
+[Step("account")]
 public class MockPreCreatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
 
-[Entity("contact")]
+[Step("contact")]
 public class MockPostUpdatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
 
-[Entity("lead")]
+[Step("lead")]
 public class MockPostUpdateAsyncPlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
 
-[Entity("account")]
+[Step("account")]
 public class MockValidationCreatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
 
-[Entity("account")]
+[Step("account")]
 [Filter("name", "telephone1")]
 public class MockPreUpdatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
 
-[Entity("account")]
+[Step("account")]
 [Filter(" name ", " firstname ")]
 public class MockWithWhitespacePreUpdatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
 
-[Entity("account")]
+[Step("account")]
 [PreImage]
 public class MockPostDeletePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
 
-[Entity("account")]
+[Step("account")]
 [PreImage("name")]
 [PostImage("name", "telephone1")]
 public class MockBothImagesPostUpdatePlugin : IPlugin
@@ -455,54 +507,76 @@ public class MockBothImagesPostUpdatePlugin : IPlugin
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
 
-[Entity("account")]
+[Step("account")]
 [PreImage(Alias = "before")]
 public class MockPostAssignPlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
 
-[Entity("account", Order = 2, Configuration = "{\"key\":\"value\"}")]
+[Step("account", Order = 2, Configuration = "{\"key\":\"value\"}")]
 public class MockPreRetrievePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
 
-// No [Entity] — detected as plugin type but produces no step
+// No [Step] — detected as plugin type but produces no step
 public class MockNoEntityPlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
 
-// No stage keyword in class name — has [Entity] but can't parse a step
-[Entity("account")]
+// No stage keyword in class name — has [Step] but can't parse a step
+[Step("account")]
 public class MockNoStagePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
 
 // Abstract — excluded from detection entirely
-[Entity("account")]
+[Step("account")]
 public abstract class MockAbstractPlugin : IPlugin
 {
     public abstract void Execute(IServiceProvider serviceProvider);
 }
 
-[Entity("account")]
+[Step("account")]
 public class MockNoFilterPostUpdatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
 
-[Entity("contact")]
+[Step("contact")]
 [SecondaryEntity("account")]
 public class MockPreAssociatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
 
-[Entity("contact")]
+[Step("contact")]
 public class MockNoSecondaryPreAssociatePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+// [Step] with no entity — should produce a step with a warning
+[Step]
+public class MockNoEntityStepPreCreatePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+// [Step("none")] — intentional any-entity, no warning
+[Step("none")]
+public class MockNoneEntityPreCreatePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+// [SecondaryEntity] with no entity — should produce a warning on Associate
+[Step("contact")]
+[SecondaryEntity]
+public class MockNoEntitySecondaryPreAssociatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }

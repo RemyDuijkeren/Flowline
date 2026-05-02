@@ -26,7 +26,7 @@ namespace Flowline.Attributes;
 /// prefer listing only what your plugin actually reads):
 /// </para>
 /// <code>
-/// [Entity("account")]
+/// [Step("account")]
 /// [PreImage("name", "creditlimit")]          // only these two columns
 /// public class AccountPreUpdatePlugin : IPlugin
 /// {
@@ -91,7 +91,7 @@ public sealed class PreImageAttribute(params string[] columns) : Attribute
 /// prefer listing only what your plugin actually reads):
 /// </para>
 /// <code>
-/// [Entity("account")]
+/// [Step("account")]
 /// [Filter("name")]
 /// [PreImage("name")]
 /// [PostImage("name")]

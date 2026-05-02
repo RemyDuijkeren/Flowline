@@ -3,7 +3,7 @@ namespace Flowline.Core.Models;
 public record PluginStepMetadata(
     string Name,
     string Message,
-    string EntityName,
+    string? EntityName,
     int Stage,
     int Mode,
     int Order,

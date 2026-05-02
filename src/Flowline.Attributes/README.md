@@ -44,18 +44,32 @@ The `Plugin` suffix is optional but recommended. Flowline strips it before parsi
 
 Common messages: `Create`, `Update`, `Delete`, `Retrieve`, `RetrieveMultiple`, `Associate`, `Disassociate`, `Assign`, `SetState`. Names are case-sensitive.
 
-Classes without a recognisable stage keyword or without `[Entity]` are skipped.
+Classes without a recognisable stage keyword or without `[Step]` are skipped.
 
-### `[Entity]` — required
+### `[Step]` — required
 
 Specifies the table logical name. Without it, Flowline ignores the class.
 
 ```csharp
-[Entity("account")]
+[Step("account")]
 public class AccountPostCreatePlugin : IPlugin { ... }
 ```
 
 The logical name is always lowercase and found in the maker portal under **Table → Properties → Name**.
+
+**Registering on all tables:** omit the entity argument to fire on every table. Flowline warns so you don't do this accidentally. Pass `"none"` to suppress the warning and make the intent explicit:
+
+```csharp
+// Warns: "[Step] has no entity — this step will fire for all tables."
+[Step]
+public class GlobalPreCreatePlugin : IPlugin { ... }
+
+// No warning — intentional global registration
+[Step("none")]
+public class GlobalPreCreatePlugin : IPlugin { ... }
+```
+
+Passing an empty string (`[Step("")]`) is an error.
 
 Optional named properties:
 
@@ -64,19 +78,19 @@ Optional named properties:
 | `Order` | `int` | `1` | Execution order when multiple steps fire on the same event. Lower runs first. |
 | `As` | `ExecuteAs` | `CallingUser` | User identity the plugin runs under (`context.UserId`). |
 | `Configuration` | `string?` | `null` | Passed to the plugin constructor as `unsecureConfig`. |
-| `DeleteJobOnSuccess` | `bool` | `false` | Automatically delete the `AsyncOperation` job record when the step succeeds. Async post-operation steps only. |
+| `DeleteJobOnSuccess` | `bool` | `true` | Automatically delete the `AsyncOperation` job record when the step succeeds. Async post-operation steps only. Set to `false` to retain the record for auditing. |
 
 Use `ExecuteAs.InitiatingUser` when a Power Automate flow triggers your plugin and you need the human user's identity rather than the flow service account:
 
 ```csharp
-[Entity("account", As = ExecuteAs.InitiatingUser)]
+[Step("account", As = ExecuteAs.InitiatingUser)]
 public class AccountPostCreatePlugin : IPlugin { ... }
 ```
 
 Use `Configuration` to pass endpoint URLs, feature flags, or JSON settings. Receive the value in a constructor overload that accepts `string unsecureConfig`:
 
 ```csharp
-[Entity("account", Configuration = "{\"endpoint\":\"https://api.example.com\"}")]
+[Step("account", Configuration = "{\"endpoint\":\"https://api.example.com\"}")]
 public class AccountPostCreatePlugin : IPlugin
 {
     private readonly string _endpoint;
@@ -90,15 +104,15 @@ public class AccountPostCreatePlugin : IPlugin
 
 > **Do not store secrets in `Configuration`.** The value is visible in source control and the solution XML. Use environment variables or Azure Key Vault for anything sensitive.
 
-Use `DeleteJobOnSuccess` on async post-operation steps to keep the system job queue clean. Every async step execution creates an `AsyncOperation` record; without this flag those records accumulate indefinitely. Setting it on a synchronous step has no effect — Flowline will emit a warning during `flowline push`:
+`DeleteJobOnSuccess` defaults to `true` — every async step execution creates an `AsyncOperation` record and Flowline deletes it automatically on success, keeping the job queue clean. Set it to `false` explicitly if you need to retain the record for auditing or debugging:
 
 ```csharp
-[Entity("cr07982_invoice", DeleteJobOnSuccess = true)]
+[Step("cr07982_invoice", DeleteJobOnSuccess = false)]
 [Filter("cr07982_status")]
 public class InvoicePostUpdateAsyncPlugin : IPlugin { ... }
 ```
 
-> `DeleteJobOnSuccess` only applies to asynchronous (post-operation) steps. Flowline warns if you set it on a synchronous step.
+> `DeleteJobOnSuccess` only applies to asynchronous (post-operation) steps. Flowline warns if you explicitly set it to `true` on a synchronous step.
 
 ### `[Filter]` — optional, strongly recommended on Update steps
 
@@ -107,7 +121,7 @@ Limits the step to fire only when at least one of the listed columns is included
 Without `[Filter]`, an Update step fires on **every** update to the table, regardless of which columns changed.
 
 ```csharp
-[Entity("account")]
+[Step("account")]
 [Filter("name", "creditlimit")]
 public class AccountPreUpdatePlugin : IPlugin { ... }
 ```
@@ -126,12 +140,12 @@ Scopes the step to a specific secondary table. Use `"none"` to fire on any table
 
 ```csharp
 // Fires when a contact is associated with any record type
-[Entity("contact")]
+[Step("contact")]
 [SecondaryEntity("none")]
 public class ContactPreAssociatePlugin : IPlugin { ... }
 
 // Fires only when a contact is associated with an account
-[Entity("contact")]
+[Step("contact")]
 [SecondaryEntity("account")]
 public class ContactAccountPreAssociatePlugin : IPlugin
 {
@@ -145,7 +159,7 @@ public class ContactAccountPreAssociatePlugin : IPlugin
 }
 ```
 
-Omitting `[SecondaryEntity]` on an Associate or Disassociate step produces a warning during `flowline push`. Using it on any other message (Create, Update, Delete, ...) is an error.
+Omitting `[SecondaryEntity]` on an Associate or Disassociate step produces a warning during `flowline push`. Using `[SecondaryEntity]` with no argument also warns — pass `"none"` explicitly to suppress it. Passing an empty string is an error. Using `[SecondaryEntity]` on any other message (Create, Update, Delete, ...) is an error.
 
 ### `[PreImage]` and `[PostImage]` — optional
 
@@ -164,7 +178,7 @@ Violations are errors — Flowline throws during `flowline push`.
 Specify only the columns your plugin needs. Omitting columns fetches all of them, which negatively impacts performance. Flowline warns when no columns are specified.
 
 ```csharp
-[Entity("account")]
+[Step("account")]
 [Filter("name", "creditlimit")]
 [PreImage("name", "creditlimit")]
 [PostImage("name", "creditlimit")]
@@ -195,7 +209,7 @@ Default aliases are `"preimage"` and `"postimage"`. Override `Alias` when migrat
 **Minimal — reject an operation before anything is written:**
 
 ```csharp
-[Entity("account")]
+[Step("account")]
 [Filter("creditlimit")]
 public class AccountValidationUpdatePlugin : IPlugin
 {
@@ -213,7 +227,7 @@ public class AccountValidationUpdatePlugin : IPlugin
 **Enrich a record before it is saved:**
 
 ```csharp
-[Entity("account")]
+[Step("account")]
 public class AccountPreCreatePlugin : IPlugin
 {
     public void Execute(IServiceProvider sp)
@@ -228,7 +242,7 @@ public class AccountPreCreatePlugin : IPlugin
 **Call an external system after the save, in the background:**
 
 ```csharp
-[Entity("cr07982_invoice", DeleteJobOnSuccess = true)]
+[Step("cr07982_invoice")]
 [Filter("cr07982_status")]
 public class InvoicePostUpdateAsyncPlugin : IPlugin
 {
@@ -236,7 +250,7 @@ public class InvoicePostUpdateAsyncPlugin : IPlugin
     {
         // Runs after the transaction commits — safe to call external APIs here.
         // A failure does not roll back the record.
-        // DeleteJobOnSuccess = true keeps the AsyncOperation job queue clean.
+        // DeleteJobOnSuccess defaults to true — the AsyncOperation record is cleaned up automatically.
     }
 }
 ```
@@ -246,11 +260,11 @@ public class InvoicePostUpdateAsyncPlugin : IPlugin
 Flowline treats the DLL as the source of truth. On every `flowline push`:
 
 - **Plugin types** — created for every public `IPlugin` or `CodeActivity` class; deleted when the class is removed.
-- **Steps** — created or updated for every class with `[Entity]`; deleted when `[Entity]` is removed or the class is deleted.
+- **Steps** — created or updated for every class with `[Step]`; deleted when `[Step]` is removed or the class is deleted.
 
 Steps created by Flowline are stamped with `[flowline]` in their description, visible in Plugin Registration Tool.
 
-**Disabling a step without deleting it:** remove `[Entity]` — Flowline deletes the step but keeps the plugin type registered.
+**Disabling a step without deleting it:** remove `[Step]` — Flowline deletes the step but keeps the plugin type registered.
 
 **`--save` flag:** suppresses all deletions for that run and prints each skipped item — useful as a dry run:
 
@@ -409,14 +423,14 @@ public abstract class AccountSavePlugin : IPlugin
     public void Execute(IServiceProvider sp) { /* shared logic */ }
 }
 
-[Entity("account")]
+[Step("account")]
 public class AccountPreCreatePlugin : AccountSavePlugin { }
 
-[Entity("account")]
+[Step("account")]
 public class AccountPreUpdatePlugin : AccountSavePlugin { }
 
 // Same pattern for multiple entities:
-[Entity("contact")]
+[Step("contact")]
 public class ContactPreCreatePlugin : AccountSavePlugin { }
 ```
 

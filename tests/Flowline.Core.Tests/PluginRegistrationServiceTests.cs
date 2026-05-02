@@ -314,7 +314,7 @@ public class PluginRegistrationServiceTests
     [Fact]
     public async Task SyncSolutionAsync_PluginWithNoSteps_DeletesAllExistingSteps()
     {
-        // [Entity] removed to disable a plugin — Flowline deletes all steps for that type
+        // [Step] removed to disable a plugin — Flowline deletes all steps for that type
         var assemblyId = Guid.NewGuid();
         SetupAssembly(ExistingAssembly(assemblyId));
 

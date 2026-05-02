@@ -16,7 +16,7 @@ Beyond the unmanaged-vs-managed difference, Flowline brings a few things the oth
 
 - **Git is the source of truth.** `clone` bootstraps an existing solution into the repo. `sync` pulls the current state from DEV back into source control. `deploy` packages from the repo and imports into the target — not environment-to-environment.
 - **Separate inner loop for code assets.** `push` syncs your plugin assemblies and web resources directly to DEV without a full solution import. No Plugin Registration Tool, no manual upload, no waiting for a heavy import cycle to iterate on code.
-- **Attribute-driven plugin registration.** Decorate your `IPlugin` classes with `[Entity]`, `[Filter]`, `[PreImage]`, and `[PostImage]` — Flowline reads the compiled assembly and handles all Dataverse registrations. No base class required, no XML config file.
+- **Attribute-driven plugin registration.** Decorate your `IPlugin` classes with `[Step]`, `[Filter]`, `[PreImage]`, and `[PostImage]` — Flowline reads the compiled assembly and handles all Dataverse registrations. No base class required, no XML config file.
 - **Plugins, workflow activities, and Custom APIs in one assembly.** Other tools require separate DLLs for each type — syncing them in sequence causes one pass to delete the registrations from the previous one. Flowline reads all types from a single assembly in one pass, so everything can live in one `Extensions` project.
 - **Modern auth.** Flowline reuses the PAC CLI token cache. No passwords, no client secrets in scripts, no Windows Credential Manager.
 - **No unnecessary ceremony.** Designed for small teams, not large implementation partners.
@@ -93,7 +93,7 @@ Add the `Flowline.Attributes` NuGet package to your Extensions project:
 Decorate your plugin classes — no base class needed:
 
 ```csharp
-[Entity("account")]
+[Step("account")]
 [Filter("name", "creditlimit")]
 [PreImage("name", "creditlimit")]
 public class AccountPreUpdatePlugin : IPlugin

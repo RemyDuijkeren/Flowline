@@ -10,6 +10,6 @@ public sealed record RegistrationSnapshot(
     IReadOnlyList<Entity> RequestParams,
     IReadOnlyList<Entity> ResponseProps,
     IReadOnlyDictionary<string, Guid> SdkMessageIds,
-    IReadOnlyDictionary<(Guid MessageId, string EntityName, string? SecondaryEntity), Guid?> FilterIds,
+    IReadOnlyDictionary<(Guid MessageId, string? EntityName, string? SecondaryEntity), Guid?> FilterIds,
     string PublisherPrefix
 );

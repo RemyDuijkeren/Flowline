@@ -22,7 +22,7 @@ namespace Flowline.Attributes;
 /// Pass the logical names of the columns to watch:
 /// </para>
 /// <code>
-/// [Entity("account")]
+/// [Step("account")]
 /// [Filter("name", "creditlimit")]
 /// public class AccountPreUpdatePlugin : IPlugin { ... }
 /// </code>
@@ -30,7 +30,7 @@ namespace Flowline.Attributes;
 /// Use <c>nameof</c> with early-bound entity classes for compile-time safety:
 /// </para>
 /// <code>
-/// [Entity("account")]
+/// [Step("account")]
 /// [Filter(nameof(Account.name), nameof(Account.creditlimit))]
 /// public class AccountPreUpdatePlugin : IPlugin { ... }
 /// </code>

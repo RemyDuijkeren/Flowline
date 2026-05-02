@@ -69,7 +69,7 @@ public class PluginRegistrationReader
         return results.ToDictionary(r => r.name, r => r.id, StringComparer.OrdinalIgnoreCase).AsReadOnly();
     }
 
-    async Task<IReadOnlyDictionary<(Guid, string, string?), Guid?>> LookupAllFilterIdsAsync(
+    async Task<IReadOnlyDictionary<(Guid, string?, string?), Guid?>> LookupAllFilterIdsAsync(
         IOrganizationServiceAsync2 service,
         PluginAssemblyMetadata metadata,
         IReadOnlyDictionary<string, Guid> messageIds,
@@ -83,12 +83,15 @@ public class PluginRegistrationReader
             .ToList();
 
         if (stepKeys.Count == 0)
-            return new Dictionary<(Guid, string, string?), Guid?>().AsReadOnly();
+            return new Dictionary<(Guid, string?, string?), Guid?>().AsReadOnly();
 
         var tasks = stepKeys.Select(async key =>
         {
             if (!messageIds.TryGetValue(key.Message, out var messageId))
                 return ((Guid.Empty, key.EntityName, key.SecondaryEntity), (Guid?)null);
+            // null EntityName means "any entity" — no message filter exists for it
+            if (key.EntityName == null)
+                return ((messageId, key.EntityName, key.SecondaryEntity), (Guid?)null);
             var filterId = await LookupSdkMessageFilterIdAsync(service, messageId, key.EntityName, key.SecondaryEntity, cancellationToken).ConfigureAwait(false);
             return ((messageId, key.EntityName, key.SecondaryEntity), filterId);
         });

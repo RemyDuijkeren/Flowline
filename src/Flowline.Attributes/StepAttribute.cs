@@ -9,7 +9,7 @@ namespace Flowline.Attributes;
 /// <para>
 /// A <b>plugin step</b> is code that Dataverse calls automatically when a specific operation
 /// (message) happens on a table — for example, when an account record is created, updated, or
-/// deleted. Without <c>[Entity]</c>, Flowline ignores the class entirely.
+/// deleted. Without <c>[Step]</c>, Flowline ignores the class entirely.
 /// </para>
 /// <para>
 /// The table logical name is the only required argument. The message (Create, Update, Delete ...)
@@ -63,18 +63,25 @@ namespace Flowline.Attributes;
 ///   </item>
 /// </list>
 /// </remarks>
-/// <param name="logicalName">
-/// The logical name of the Dataverse table (entity) to register the step on.
+/// <param name="entity">
+/// The logical name of the Dataverse table to register the step on.
 /// Use the schema name in lowercase: <c>"account"</c>, <c>"contact"</c>,
 /// <c>"cr123_invoice"</c>. Found in the maker portal under Table → Properties → Name.
+/// <para>
+/// Omit this argument to register the step on <b>all tables</b> — Flowline will warn that
+/// the step fires globally. To make this intentional and suppress the warning, pass
+/// <c>"none"</c> explicitly. Passing an empty string is an error.
+/// </para>
 /// </param>
 [AttributeUsage(AttributeTargets.Class)]
-public sealed class EntityAttribute(string logicalName) : Attribute
+public sealed class StepAttribute(string? entity = null) : Attribute
 {
     /// <summary>
-    /// Logical name of the Dataverse table this step is registered on.
+    /// Logical name of the Dataverse table this step is registered on, or <see langword="null"/>
+    /// when no table was specified. <c>"none"</c> means the step is intentionally registered on
+    /// all tables (no filter).
     /// </summary>
-    public string LogicalName { get; } = logicalName;
+    public string? Entity { get; } = entity;
 
     /// <summary>
     /// Controls the execution order when multiple plugin steps are registered for the same
@@ -108,7 +115,7 @@ public sealed class EntityAttribute(string logicalName) : Attribute
     /// Retrieve it in a constructor overload that accepts <c>string unsecureConfig</c>:
     /// </para>
     /// <code>
-    /// [Entity("account", Configuration = "{\"endpoint\":\"https://api.example.com\"}")]
+    /// [Step("account", Configuration = "{\"endpoint\":\"https://api.example.com\"}")]
     /// public class AccountPostCreatePlugin : IPlugin
     /// {
     ///     private readonly string _endpoint;
@@ -133,14 +140,15 @@ public sealed class EntityAttribute(string logicalName) : Attribute
     /// <summary>
     /// When <see langword="true"/>, Dataverse automatically deletes the
     /// <c>AsyncOperation</c> (system job) record after this step completes successfully.
-    /// Keeps the job queue clean without a separate cleanup flow.
+    /// Keeps the job queue clean without a separate cleanup flow. Default is <c>true</c>.
     /// </summary>
     /// <remarks>
     /// Only applies to asynchronous post-operation steps — those are the only steps that
     /// create an <c>AsyncOperation</c> record. Setting this on a synchronous step is silently
     /// ignored by Dataverse; Flowline will emit a warning during <c>flowline push</c>.
+    /// Set <c>DeleteJobOnSuccess = false</c> to retain the job record for auditing or debugging.
     /// </remarks>
-    public bool DeleteJobOnSuccess { get; set; } = false;
+    public bool DeleteJobOnSuccess { get; set; } = true;
 }
 
 /// <summary>
