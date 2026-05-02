@@ -12,20 +12,20 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "<solution>")]
-        [Description("The solution to clone into the repo")]
+        [Description("Solution to clone into this repo")]
         public string? Solution { get; set; }
 
         [CommandOption("--prod <URL>")]
-        [Description("The production environment to clone the solution from")]
+        [Description("Production environment URL to clone solution from")]
         public string? ProdUrl { get; set; }
 
         [CommandOption("--managed")]
-        [Description("Also clone managed artifacts in addition to unmanaged")]
+        [Description("Include managed artifacts")]
         [DefaultValue(false)]
         public bool IncludeManaged { get; set; } = false;
 
         [CommandOption("--dev <URL>")]
-        [Description("Override the configured development environment")]
+        [Description("Development environment URL")]
         public string? DevUrl { get; set; }
 
         // - `--dev <url>`: save the development environment URL into `.flowconfig`
@@ -51,7 +51,8 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
         string tempClonedOutputFolder = Path.Combine(slnFolder, sln.Name);
         if (Directory.Exists(tempClonedOutputFolder))
         {
-            AnsiConsole.MarkupLine($"[dim]Removing existing '/{AllSolutionsFolderName}/{sln.Name}/{sln.Name}' temp clone folder...[/]");
+            AnsiConsole.MarkupLine($"[dim]Removing stale temp clone folder[/]");
+            if (settings.Verbose) AnsiConsole.MarkupLine($"[dim]Path: /{AllSolutionsFolderName}/{sln.Name}/{sln.Name}[/]");
             Directory.Delete(tempClonedOutputFolder, true);
         }
 
@@ -89,14 +90,14 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
             // We want 'solutions/SolutionName/SolutionPackage/SolutionPackage.cdsproj'
             if (Directory.Exists(tempClonedOutputFolder))
             {
-                if (settings.Verbose) AnsiConsole.MarkupLine($"[dim]Renaming folder '{tempClonedOutputFolder}' to '{solutionPackageFolder}'...[/]");
+                if (settings.Verbose) AnsiConsole.MarkupLine($"[dim]Renaming {tempClonedOutputFolder} -> {solutionPackageFolder}[/]");
                 Directory.Move(tempClonedOutputFolder, solutionPackageFolder);
             }
 
             var clonedCdsproj = Path.Combine(solutionPackageFolder, $"{sln.Name}.cdsproj");
             if (File.Exists(clonedCdsproj))
             {
-                if (settings.Verbose) AnsiConsole.MarkupLine($"[dim]Renaming file '{clonedCdsproj}' to '{SolutionPackageName}.cdsproj'...[/]");
+                if (settings.Verbose) AnsiConsole.MarkupLine($"[dim]Renaming {clonedCdsproj} -> {SolutionPackageName}.cdsproj[/]");
                 File.Move(clonedCdsproj, Path.Combine(solutionPackageFolder, $"{SolutionPackageName}.cdsproj"));
             }
         }
@@ -164,7 +165,8 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
                 await File.WriteAllTextAsync(slnFilePath, slnContent, cancellationToken);
             }
 
-            AnsiConsole.MarkupLine($"[green]Added '{SolutionPackageName}.cdsproj' to solution file '{slnFilePath}'[/]");
+            AnsiConsole.MarkupLine($"[green][bold]{SolutionPackageName}.cdsproj[/] added to solution file[/]");
+            if (settings.Verbose) AnsiConsole.MarkupLine($"[dim]{slnFilePath}[/]");
         }
         else
         {

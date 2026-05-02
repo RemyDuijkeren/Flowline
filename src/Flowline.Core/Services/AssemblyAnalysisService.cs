@@ -125,13 +125,16 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
         {
             var isPlugin = IsDerivedFrom(type, "Microsoft.Xrm.Sdk.IPlugin");
             var isWorkflow = IsDerivedFrom(type, "System.Activities.CodeActivity");
+            var hasStep = HasStepAttribute(type);
+
+            ValidateStepUsage(type.Name, hasStep, isPlugin);
 
             if (!isPlugin && !isWorkflow) continue;
 
             if (isWorkflow)
             {
                 output.Verbose($"Found Workflow {type.FullName}");
-                pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, Steps: [], CustomApis: null, IsWorkflow: true));
+                pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, Steps: [], CustomApis: [], IsWorkflow: true));
                 continue;
             }
 
@@ -150,12 +153,12 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
                 {
                     output.Verbose($"Found Plugin {type.FullName} with plugin step {step.Name}");
                     foreach (var warning in step.Warnings) output.Warning(warning);
-                    pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, [step], null, isWorkflow));
+                    pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, [step], [], isWorkflow));
                 }
                 else
                 {
-                    output.Verbose($"Found Plugin {type.FullName} with no parseable step");
-                    pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, [], null, isWorkflow));
+                    output.Verbose($"Found Plugin {type.FullName} with no [Step]");
+                    pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, [], [], isWorkflow));
                 }
             }
         }
@@ -309,8 +312,7 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
 
         ValidateLogicalName(type.Name, entity);
 
-        if (!TryParseClassName(type.Name, out var message, out var stage, out var mode))
-            return null;
+        ParseStepClassNameOrThrow(type.Name, out var message, out var stage, out var mode);
 
         ValidateExecutionMode(type.Name, stage, mode);
         ValidateCustomApiAttributesOnStep(type.Name, HasCustomApiAttributes(type));
@@ -338,6 +340,43 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
             : $"{type.FullName}: {message} of {entityDisplay}";
 
         return new PluginStepMetadata(stepName, message, entity, stage, mode, order, filteringAttributes, configuration, images, warnings, secondaryEntity, deleteJobOnSuccess, runAs);
+    }
+
+    internal static void ValidateStepUsage(string className, bool hasStepAttribute, bool isPlugin)
+    {
+        if (!hasStepAttribute || isPlugin) return;
+
+        throw new InvalidOperationException(
+            $"{className}: [Step] can only be used on classes that implement Microsoft.Xrm.Sdk.IPlugin. " +
+            $"Remove [Step] or implement IPlugin.");
+    }
+
+    internal static void ParseStepClassNameOrThrow(string className, out string message, out int stage, out int mode)
+    {
+        if (TryParseClassName(className, out message, out stage, out mode)) return;
+
+        var strippedName = className;
+        if (strippedName.EndsWith("Plugin", StringComparison.Ordinal))
+            strippedName = strippedName[..^6];
+        if (strippedName.EndsWith("Async", StringComparison.Ordinal))
+            strippedName = strippedName[..^5];
+
+        var hasMessage = MessageNames.Any(m => strippedName.EndsWith(m, StringComparison.Ordinal));
+        var hasStage = EndsWithStageKeyword(strippedName);
+
+        var reason = (hasStage, hasMessage) switch
+        {
+            (false, false) => "it does not contain a recognizable stage or message",
+            (false, true)  => "it contains a recognizable message but no stage",
+            (true, false)  => "it contains a recognizable stage but no message",
+            _              => "the stage and message are not in the expected order"
+        };
+
+        throw new InvalidOperationException(
+            $"{className}: [Step] declares that this class should be registered as a plugin step, but {reason}. " +
+            $"Expected pattern: {{Name}}{{Stage}}{{Message}}[Async][Plugin]. " +
+            $"Examples: AccountPreCreatePlugin, AccountPostUpdatePlugin, AccountPostUpdateAsyncPlugin, AccountValidationDeletePlugin. " +
+            $"Valid stages: Validation, Pre, Post. Valid messages come from {nameof(MessageName)}.");
     }
 
     internal static bool TryParseClassName(string className, out string message, out int stage, out int mode)
@@ -388,6 +427,15 @@ public class AssemblyAnalysisService(IFlowlineOutput output)
 
         return false;
     }
+
+    private static bool EndsWithStageKeyword(string name) =>
+        name.EndsWith("Validation", StringComparison.Ordinal) ||
+        name.EndsWith("Pre", StringComparison.Ordinal) ||
+        name.EndsWith("Post", StringComparison.Ordinal);
+
+    private static bool HasStepAttribute(Type type) =>
+        type.GetCustomAttributesData()
+            .Any(a => a.AttributeType.FullName == "Flowline.Attributes.StepAttribute");
 
     private static string? ReadFilterAttributes(Type type)
     {

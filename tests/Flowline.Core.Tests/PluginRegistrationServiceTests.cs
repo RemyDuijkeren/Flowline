@@ -770,7 +770,7 @@ public class PluginRegistrationServiceTests
         await _service.SyncAsync(_serviceMock, Metadata(), "MySolution", RunMode.DryRun);
 
         await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>());
-        _outputMock.Received(1).Info(Arg.Is<string>(s => s.Contains("would create")));
+        _outputMock.Received(1).Skip(Arg.Is<string>(s => s.Contains("would create")));
     }
 
     [Fact]
@@ -847,6 +847,6 @@ public class PluginRegistrationServiceTests
 
         await _service.SyncAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], null, false)), "MySolution", RunMode.DryRun);
 
-        _outputMock.Received(1).Info(Arg.Is<string>(s => s.Contains("Dry-run summary:")));
+        _outputMock.Received(1).Info(Arg.Is<string>(s => s.Contains("Dry run:")));
     }
 }

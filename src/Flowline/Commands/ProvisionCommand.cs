@@ -15,23 +15,23 @@ public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "[role]")]
-        [Description("Choose whether to provision `dev` or `staging` (default: dev)")]
+        [Description("Target role: dev or staging")]
         public Role Role { get; set; } = Role.Dev; // dev|staging
 
         [CommandOption("--prod <URL>")]
-        [Description("The production environment to provision the new environment from")]
+        [Description("Production environment URL to copy from")]
         public string? ProdUrl { get; set; }
 
         [CommandOption("--copy <minimal|full>")]
-        [Description("Provision environment with data (full) or no data (minimal) from production environment (default: minimal for dev, full for staging)")]
+        [Description("Copy with data (full) or no data (minimal) from prod (default: minimal for dev, full for staging)")]
         public CopyType? CopyType { get; set; }
 
         [CommandOption("--suffix <suffix>")]
-        [Description("Override the default suffix used to derive the target url (default: <role name>)")]
+        [Description("Target URL suffix  (default: <role name>)")]
         public string? Suffix { get; set; }
 
         [CommandOption("--allow-overwrite")]
-        [Description("Allow overwriting existing environments (default: false)")]
+        [Description("Overwrite an existing target")]
         public bool AllowOverwrite { get; set; } = false;
     }
 
@@ -70,10 +70,10 @@ public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
         var targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, settings.Verbose, cancellationToken);
         if (targetEnv == null)
         {
-            AnsiConsole.MarkupLine($"Creating [bold]{targetDisplayName}[/]...");
-
             var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-            await Cli.Wrap(cmdName)
+            await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+                $"Creating [bold]{targetDisplayName}[/]...",
+                _ => Cli.Wrap(cmdName)
                      .WithArguments(args => args
                                             .AddIfNotNull(prefixArgs)
                                             .Add("admin")
@@ -84,7 +84,7 @@ public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
                                             .Add("--async"))
                      .WithToolExecutionLog(settings.Verbose)
                      .ExecuteAsync(cancellationToken)
-                     .Task.FlowlineSpinner();
+                     .Task);
 
             targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, true, cancellationToken);
             if (targetEnv == null)
@@ -115,10 +115,11 @@ public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
         // Staging is always a FullCopy
         string copyType = (settings.Role == Role.Staging || settings.CopyType == CopyType.Full) ? "FullCopy" : "MinimalCopy";
 
-        AnsiConsole.MarkupLine($"Copying prod to [bold]{targetDisplayName}[/]...");
         var (cmdNameCopy, prefixArgsCopy, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
 
-        await Cli.Wrap(cmdNameCopy)
+        await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+            $"Copying prod to [bold]{targetDisplayName}[/]...",
+            _ => Cli.Wrap(cmdNameCopy)
                  .WithArguments(args => args
                                         .AddIfNotNull(prefixArgsCopy)
                                         .Add("admin")
@@ -130,7 +131,7 @@ public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
                                         .Add("--async"))
                  .WithToolExecutionLog(settings.Verbose)
                  .ExecuteAsync(cancellationToken)
-                 .Task.FlowlineSpinner();
+                 .Task);
 
         AnsiConsole.MarkupLine($"[bold green]:rocket: Provisioned! See [link]{targetEnv.EnvironmentUrl}[/][/]");
 

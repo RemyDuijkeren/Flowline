@@ -35,7 +35,7 @@ public class ProjectConfig
         {
             if (settings is { Verbose: true })
             {
-                AnsiConsole.MarkupLine($"[dim]Using configured staging environment: [bold]{StagingUrl}[/][/]");
+                AnsiConsole.MarkupLine($"[dim]Staging: [bold]{StagingUrl}[/][/]");
             }
 
             return StagingUrl;
@@ -43,13 +43,13 @@ public class ProjectConfig
 
         if (StagingUrl != inputStagingUrl)
         {
-            AnsiConsole.MarkupLine($"Staging Url found in config: {StagingUrl}");
-            if (!ConsoleHelper.Confirm("[yellow]Do you want to overwrite it?[/]", false, settings))
+            AnsiConsole.MarkupLine($"[yellow]Staging is already set: [bold]{StagingUrl}[/][/]");
+            if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings))
             {
-                AnsiConsole.MarkupLine($"[green]Alright, we keep as-is! See [link]{StagingUrl}[/][/]");
+                AnsiConsole.MarkupLine($"[dim]Keeping staging as-is: [link]{StagingUrl}[/][/]");
                 return StagingUrl;
             }
-            AnsiConsole.MarkupLine("[yellow]Overriding existing environment project configuration.[/]");
+            AnsiConsole.MarkupLine("[green]Staging updated[/]");
         }
 
         StagingUrl = inputStagingUrl;
@@ -70,7 +70,7 @@ public class ProjectConfig
         {
             if (settings is { Verbose: true })
             {
-                AnsiConsole.MarkupLine($"[dim]Using configured develpment environment: [bold]{DevUrl}[/][/]");
+                AnsiConsole.MarkupLine($"[dim]Dev: [bold]{DevUrl}[/][/]");
             }
 
             return DevUrl;
@@ -78,13 +78,13 @@ public class ProjectConfig
 
         if (DevUrl != inputDevUrl)
         {
-            AnsiConsole.MarkupLine($"Development Url found in config: {DevUrl}");
-            if (!ConsoleHelper.Confirm("[yellow]Do you want to overwrite it?[/]", false, settings))
+            AnsiConsole.MarkupLine($"[yellow]Dev is already set: [bold]{DevUrl}[/][/]");
+            if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings))
             {
-                AnsiConsole.MarkupLine($"[green]Alright, we keep as-is! See [link]{DevUrl}[/][/]");
+                AnsiConsole.MarkupLine($"[dim]Keeping dev as-is: [link]{DevUrl}[/][/]");
                 return DevUrl;
             }
-            AnsiConsole.MarkupLine("[yellow]Overriding existing environment project configuration.[/]");
+            AnsiConsole.MarkupLine("[green]Dev updated[/]");
         }
 
         DevUrl = inputDevUrl;
@@ -105,7 +105,7 @@ public class ProjectConfig
         {
             if (settings is { Verbose: true })
             {
-                AnsiConsole.MarkupLine($"[dim]Using configured production environment: [bold]{ProdUrl}[/][/]");
+                AnsiConsole.MarkupLine($"[dim]Prod: [bold]{ProdUrl}[/][/]");
             }
 
             return ProdUrl;
@@ -113,13 +113,13 @@ public class ProjectConfig
 
         if (ProdUrl != inputProdUrl)
         {
-            AnsiConsole.MarkupLine($"Production Url found in config: {ProdUrl}");
-            if (!ConsoleHelper.Confirm("[yellow]Do you want to overwrite it?[/]", false, settings))
+            AnsiConsole.MarkupLine($"[yellow]Prod is already set: [bold]{ProdUrl}[/][/]");
+            if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings))
             {
-                AnsiConsole.MarkupLine($"[green]Alright, we keep as-is! See [link]{ProdUrl}[/][/]");
+                AnsiConsole.MarkupLine($"[dim]Keeping prod as-is: [link]{ProdUrl}[/][/]");
                 return ProdUrl;
             }
-            AnsiConsole.MarkupLine("[yellow]Overriding existing environment project configuration.[/]");
+            AnsiConsole.MarkupLine("[green]Prod updated[/]");
         }
 
         ProdUrl = inputProdUrl;
@@ -164,7 +164,7 @@ public class ProjectConfig
                 var first = Solutions.Single();
                 if (settings is { Verbose: true })
                 {
-                    AnsiConsole.MarkupLine($"[dim]Using configured solution: [bold]{first.Name}[/][/]");
+                    AnsiConsole.MarkupLine($"[dim]Solution: [bold]{first.Name}[/][/]");
                 }
 
                 return first;
@@ -179,14 +179,14 @@ public class ProjectConfig
 
         if (sln.IncludeManaged != includeManaged)
         {
-            AnsiConsole.MarkupLine($"Include Managed mismatch with existing config: {sln.Name} - managed: {sln.IncludeManaged}");
+            AnsiConsole.MarkupLine($"[yellow]{sln.Name} is already set to managed: {sln.IncludeManaged}[/]");
 
-            if (!ConsoleHelper.Confirm("[yellow]Do you want to overwrite it?[/]", false, settings))
+            if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings))
             {
-                AnsiConsole.MarkupLine($"[green]Alright, we keep as-is! See [link]{ProdUrl}[/][/]");
+                AnsiConsole.MarkupLine("[dim]Keeping solution config as-is[/]");
                 return sln;
             }
-            AnsiConsole.MarkupLine("[yellow]Overriding existing environment project configuration.[/]");
+            AnsiConsole.MarkupLine("[green]Solution config updated[/]");
             return AddOrUpdateSolution(name, includeManaged);
         }
 

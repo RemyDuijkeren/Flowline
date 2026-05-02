@@ -24,7 +24,7 @@ public static class DotNetUtils
 
         if (!buildResult.IsSuccess)
         {
-            AnsiConsole.MarkupLine("[red]Build failed — check the output above (- use --verbose)[/]");
+            AnsiConsole.MarkupLine("[red]Build failed — check the output above. Use --verbose for details.[/]");
             return 1;
         }
         else
@@ -52,7 +52,7 @@ public static class DotNetUtils
         }
         catch (Exception)
         {
-            AnsiConsole.MarkupLine("[red].NET SDK (dotnet) is not installed or not in PATH. Please install it from https://dotnet.microsoft.com/download.[/]");
+            AnsiConsole.MarkupLine("[red].NET SDK isn't available. Install it from https://dotnet.microsoft.com/download.[/]");
             Environment.Exit(1);
             return string.Empty;
         }

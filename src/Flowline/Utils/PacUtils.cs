@@ -93,8 +93,8 @@ public static class PacUtils
             }
             else
             {
-                Console.Error.WriteLine("The Power Platform CLI (pac) is not installed or not in PATH.");
-                Console.Error.WriteLine("Please install it using the dotnet tool method (Recommended):");
+                Console.Error.WriteLine("Power Platform CLI (pac) isn't available.");
+                Console.Error.WriteLine("Install the dotnet tool version:");
                 Console.Error.WriteLine("  dotnet tool install -g Microsoft.PowerApps.CLI.Tool");
             }
             Environment.Exit(1);
@@ -139,7 +139,7 @@ public static class PacUtils
             }
 
             // We do NOT fallback to MSI version anymore as it's unreliable
-            throw new Exception("Only the MSI-installed Power Platform CLI was found, but it is not supported by Flowline due to inaccurate exit codes. Please install the dotnet tool version: dotnet tool install -g Microsoft.PowerApps.CLI.Tool");
+            throw new Exception("Only the MSI-installed Power Platform CLI was found. Flowline needs the dotnet tool version: dotnet tool install -g Microsoft.PowerApps.CLI.Tool");
         }
 
         // 3. Check for 'pac.launcher.exe' (explicitly the MSI version)
@@ -156,7 +156,7 @@ public static class PacUtils
                 return _cachedPacCommand.Value;
             }
 
-            throw new Exception("Only the MSI-installed Power Platform CLI was found, but it is not supported by Flowline due to inaccurate exit codes. Please install the dotnet tool version: dotnet tool install -g Microsoft.PowerApps.CLI.Tool");
+            throw new Exception("Only the MSI-installed Power Platform CLI was found. Flowline needs the dotnet tool version: dotnet tool install -g Microsoft.PowerApps.CLI.Tool");
         }
 
         // 4. Fallback to 'dnx microsoft.powerapps.cli.tool' if nothing else worked
@@ -168,7 +168,7 @@ public static class PacUtils
             return _cachedPacCommand.Value;
         }
 
-        throw new Exception("Power Platform CLI is not installed.");
+        throw new Exception("Power Platform CLI isn't available.");
     }
 
     public static async Task<List<EnvironmentInfo>> GetEnvironmentsAsync(bool verbose = true, CancellationToken cancellationToken = default)

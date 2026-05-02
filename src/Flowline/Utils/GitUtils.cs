@@ -33,7 +33,7 @@ public static class GitUtils
         }
         catch (Exception)
         {
-            AnsiConsole.MarkupLine("[red]Git (git) is not installed or not in PATH. Please install: https://git-scm.com/.[/]");
+            AnsiConsole.MarkupLine("[red]Git isn't available. Install it from https://git-scm.com/.[/]");
             Environment.Exit(1);
             return string.Empty; // This line will never be reached due to Environment.Exit
         }
@@ -135,7 +135,7 @@ public static class GitUtils
     {
         if (!await IsRepoCleanAsync(verbose, cancellationToken))
         {
-            AnsiConsole.MarkupLine("[red]Uncommitted changes found in Git repository. Please commit or stash your changes before deploying.[/]");
+            AnsiConsole.MarkupLine("[red]Git has uncommitted changes. Commit or stash them before deploying.[/]");
             Environment.Exit(1);
         }
     }
@@ -144,7 +144,7 @@ public static class GitUtils
     {
         if (!Directory.Exists(Path.Combine(rootFolder, ".git")))
         {
-            AnsiConsole.MarkupLine("[red]No git repository found. Please run 'git init' or 'git clone' first.[/]");
+            AnsiConsole.MarkupLine("[red]No Git repo found. Run 'git init' or 'git clone' first.[/]");
             Environment.Exit(1);
             return;
         }

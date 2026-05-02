@@ -80,7 +80,7 @@ public class PacUtilsTests : IDisposable
         Func<Task> act = async () => await PacUtils.GetBestPacCommandAsync();
 
         // Assert
-        await act.Should().ThrowAsync<Exception>().WithMessage("Only the MSI-installed Power Platform CLI was found, but it is not supported by Flowline due to inaccurate exit codes. Please install the dotnet tool version: dotnet tool install -g Microsoft.PowerApps.CLI.Tool");
+        await act.Should().ThrowAsync<Exception>().WithMessage("Only the MSI-installed Power Platform CLI was found. Flowline needs the dotnet tool version: dotnet tool install -g Microsoft.PowerApps.CLI.Tool");
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public class PacUtilsTests : IDisposable
         Func<Task> act = async () => await PacUtils.GetBestPacCommandAsync();
 
         // Assert
-        await act.Should().ThrowAsync<Exception>().WithMessage("Only the MSI-installed Power Platform CLI was found, but it is not supported by Flowline due to inaccurate exit codes. Please install the dotnet tool version: dotnet tool install -g Microsoft.PowerApps.CLI.Tool");
+        await act.Should().ThrowAsync<Exception>().WithMessage("Only the MSI-installed Power Platform CLI was found. Flowline needs the dotnet tool version: dotnet tool install -g Microsoft.PowerApps.CLI.Tool");
     }
 
     [Fact]
@@ -145,7 +145,7 @@ public class PacUtilsTests : IDisposable
         Func<Task> act = async () => await PacUtils.GetBestPacCommandAsync();
 
         // Assert
-        await act.Should().ThrowAsync<Exception>().WithMessage("Power Platform CLI is not installed.");
+        await act.Should().ThrowAsync<Exception>().WithMessage("Power Platform CLI isn't available.");
     }
 
     [Fact]

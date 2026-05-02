@@ -26,24 +26,24 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "[solution]")]
-        [Description("The name of the solution to push")]
+        [Description("Solution to push")]
         public string? Solution { get; set; }
 
         [CommandOption("-s|--scope <SCOPE>")]
-        [Description("limit the push scope (all|webresources|plugins|pcf). Can be specified multiple times.")]
+        [Description("Limit the push scope: all, webresources, plugins, or pcf. Can be used more than once.")]
         [DefaultValue(new[] { PushScope.All })]
         public PushScope[] Scopes { get; set; } = [PushScope.All];
 
         [CommandOption("--dev <url>")]
-        [Description("Override the configured development environment")]
+        [Description("Use this dev environment URL")]
         public string? DevUrl { get; set; }
 
         [CommandOption("--save")]
-        [Description("Don't delete assets in development environment that are not in the source control")]
+        [Description("Keep Dataverse assets that are missing from source")]
         public bool Save { get; set; } = false;
 
         [CommandOption("--dry-run")]
-        [Description("Preview what would be pushed without making any changes to Dataverse")]
+        [Description("Preview changes without touching Dataverse")]
         public bool DryRun { get; set; } = false;
     }
 
@@ -53,9 +53,9 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
         var runMode = settings.DryRun ? RunMode.DryRun
                     : settings.Save   ? RunMode.Save
                     : RunMode.Normal;
-        if (runMode == RunMode.Save)   AnsiConsole.MarkupLine("[dim]Save mode: assets not in source control will be preserved.[/]");
-        if (runMode == RunMode.DryRun) AnsiConsole.MarkupLine("[dim]Dry-run mode: no changes will be made to Dataverse.[/]");
-        if (settings.Force) AnsiConsole.MarkupLine("[dim]Force mode enabled: Safety checks will be bypassed.[/]");
+        if (runMode == RunMode.Save)   AnsiConsole.MarkupLine("[dim]Save mode: missing source assets stay in Dataverse[/]");
+        if (runMode == RunMode.DryRun) AnsiConsole.MarkupLine("[dim]Dry run: preview only[/]");
+        if (settings.Force) AnsiConsole.MarkupLine("[dim]Force mode: safety checks off[/]");
 
         // Dev URL is required for push
         var devEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, settings.DevUrl, settings, cancellationToken);
@@ -67,10 +67,7 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
 
         // Resolve Scopes into one final scope (PushScope finalScope)
         var pushScope = settings.Scopes.Aggregate(PushScope.None, (current, scope) => current | scope);
-        AnsiConsole.MarkupLine($"[dim]Push scope: {pushScope}[/]");
-
-        // Resolve scopes
-        AnsiConsole.MarkupLine($"Pushing assets [bold]{pushScope}[/] for solution [bold]{sln.Name}[/] to environment [bold]'{devEnv.EnvironmentUrl}'[/]...");
+        AnsiConsole.MarkupLine($"[dim]Scope: {pushScope}[/]");
 
         // Build the solution in dotnet
         var extensionsFolder = Path.Combine(RootFolder, AllSolutionsFolderName, sln.Name, ExtensionsName);
@@ -83,21 +80,22 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
         var extensionsDll = Path.Combine(extensionsFolder, "bin", "Release", "net462", "publish", $"{ExtensionsName}.dll");
         if (!File.Exists(extensionsDll))
         {
-            AnsiConsole.MarkupLine("[red]Extensions.dll not found. Please build the solution first.[/]");
+            AnsiConsole.MarkupLine("[red]Extensions.dll not found. Build the solution first.[/]");
             return 1;
         }
-        AnsiConsole.MarkupLine($"[green]Extensions.dll found: '{extensionsDll}'[/]");
+        AnsiConsole.MarkupLine("[green][bold]Extensions.dll[/] found[/]");
+        output.Verbose($"[dim]{extensionsDll}[/]");
 
         // Analyze the assembly
         var metadata = AnsiConsole.Status().FlowlineSpinner().Start(
-            "Analyzing assembly...",
+            "Reading [bold]Extensions.dll[/]...",
             ctx => analysisService.Analyze(extensionsDll));
 
-        AnsiConsole.MarkupLine("[green]Metadata found[/]");
+        AnsiConsole.MarkupLine("[green]Metadata ready[/]");
 
         // Find PAC profile and connect
         IOrganizationServiceAsync2? conn = AnsiConsole.Status().FlowlineSpinner().Start(
-            "Connecting to environment...",
+            "Connecting to Dataverse...",
             ctx =>
             {
                 var profile = authSrv.GetPacProfiles()
@@ -112,13 +110,13 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
             });
 
         if (conn == null) return 1;
-        AnsiConsole.MarkupLine("[green]Connected to environment[/]");
+        AnsiConsole.MarkupLine("[green]Connected[/]");
 
         await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-            $"Pushing [bold]{ExtensionsName}.dll[/] to Dataverse...",
+            $"Pushing [bold]{ExtensionsName}.dll[/]...",
             ctx => pluginSyncSrv.SyncAsync(conn, metadata, sln.Name, runMode, cancellationToken));
 
-        AnsiConsole.MarkupLine("[green]Assets pushed to Dataverse[/]");
+        AnsiConsole.MarkupLine("[green]Assets pushed[/]");
 
         AnsiConsole.MarkupLine("[bold green]:rocket: Pushed! Use 'sync' to keep it in flow.[/]");
 

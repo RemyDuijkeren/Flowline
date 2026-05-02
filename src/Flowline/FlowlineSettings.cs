@@ -6,14 +6,14 @@ namespace Flowline;
 public class FlowlineSettings : CommandSettings
 {
     [CommandOption("-v|--verbose")]
-    [Description("Enable verbose output")]
+    [Description("Show command details")]
     public bool Verbose { get; set; } = false;
 
     [CommandOption("--json")]
-    [Description("Output machine-readable JSON for agents and CI")]
+    [Description("Write machine-readable JSON")]
     public bool JsonOutput { get; set; } = false;
 
     [CommandOption("-f|--force")]
-    [Description("Force the operation to continue without confirmation")]
+    [Description("Skip confirmation prompts")]
     public bool Force { get; set; } = false;
 }

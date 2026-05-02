@@ -13,15 +13,15 @@ public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "[solution]")]
-        [Description("optional solution override when multiple solutions exist")]
+        [Description("Solution to sync")]
         public string? Solution { get; set; }
 
         [CommandOption("--dev <URL>")]
-        [Description("Override the configured development environment")]
+        [Description("Development environment URL")]
         public string? DevUrl { get; set; }
 
         [CommandOption("--managed")]
-        [Description("Also sync managed artifacts in addition to unmanaged")]
+        [Description("Include managed artifacts")]
         public bool IncludeManaged { get; set; } = false;
 
     }
@@ -46,9 +46,6 @@ public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
             return 1;
         }
 
-        // Perform sync
-        AnsiConsole.MarkupLine($"Syncing [bold]{sln.Name}[/]...");
-
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
         var pacSolutionSyncCmd = Cli.Wrap(cmdName)
             .WithArguments(args => args
@@ -61,10 +58,13 @@ public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
                 .Add("--async"))
             .WithToolExecutionLog();
 
-        var result = await pacSolutionSyncCmd
+        var result = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+            $"Syncing [bold]{sln.Name}[/]...",
+            _ => pacSolutionSyncCmd
                               .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
                               .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
-                              .ExecuteAsync(cancellationToken);
+                              .ExecuteAsync(cancellationToken)
+                              .Task);
 
         if (result.ExitCode != 0)
         {
@@ -72,9 +72,11 @@ public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
             return 1;
         }
 
-        AnsiConsole.MarkupLine($"Building [bold]{sln.Name}[/]...");
+        AnsiConsole.MarkupLine("[green]Synced from Dataverse[/]");
 
-        await Cli.Wrap("dotnet")
+        await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+            $"Building [bold]{sln.Name}[/]...",
+            _ => Cli.Wrap("dotnet")
                  .WithArguments(args => args
                       .Add("build")
                       .Add(packageFolder))
@@ -83,9 +85,11 @@ public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
                  .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]DOTNET: {s}[/]")))
                  .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
                  .WithToolExecutionLog()
-                 .ExecuteAsync(cancellationToken);
+                 .ExecuteAsync(cancellationToken)
+                 .Task);
 
-        AnsiConsole.MarkupLine("[bold green]:white_check_mark: Synced! Run 'git commit' to save a checkpoint.[/]");
+        AnsiConsole.MarkupLine("[green]Build done[/]");
+        AnsiConsole.MarkupLine("[bold green]:rocket: Synced! Run 'git commit' to save a checkpoint.[/]");
 
         return 0;
     }
@@ -108,12 +112,11 @@ public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
 
         if (string.IsNullOrWhiteSpace(statusResult.StandardOutput))
         {
-            AnsiConsole.MarkupLine("[yellow]No changes detected. Skipping commit.[/]");
+            AnsiConsole.MarkupLine("[dim]No changes — skipping commit[/]");
             return;
         }
 
         // Commit the changes
-        AnsiConsole.MarkupLine("Committing changes to local repository...");
         await Cli.Wrap("git")
                  .WithArguments(args => args
                                         .Add("commit")

@@ -408,11 +408,60 @@ public class AssemblyAnalysisServiceTests
     }
 
     [Fact]
-    public void Analyze_PluginWithNoStageKeyword_HasNoSteps()
+    public void Analyze_PluginWithoutStepAttribute_HasNoSteps()
     {
         var plugin = GetPlugin(Analyze(), nameof(MockNoStagePlugin));
 
         Assert.Empty(plugin.Steps);
+    }
+
+    [Fact]
+    public void ParseStepClassNameOrThrow_NoStageKeyword_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            AssemblyAnalysisService.ParseStepClassNameOrThrow("AccountCreatePlugin", out _, out _, out _));
+
+        Assert.Contains("[Step]", ex.Message);
+        Assert.Contains("no stage", ex.Message);
+        Assert.Contains("AccountPreCreatePlugin", ex.Message);
+        Assert.Contains(nameof(MessageName), ex.Message);
+    }
+
+    [Fact]
+    public void ParseStepClassNameOrThrow_NoMessageKeyword_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            AssemblyAnalysisService.ParseStepClassNameOrThrow("AccountPostPlugin", out _, out _, out _));
+
+        Assert.Contains("[Step]", ex.Message);
+        Assert.Contains("no message", ex.Message);
+        Assert.Contains("AccountPostUpdatePlugin", ex.Message);
+    }
+
+    [Fact]
+    public void ParseStepClassNameOrThrow_NoStageOrMessageKeyword_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            AssemblyAnalysisService.ParseStepClassNameOrThrow("AccountPlugin", out _, out _, out _));
+
+        Assert.Contains("[Step]", ex.Message);
+        Assert.Contains("stage or message", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateStepUsage_StepOnNonPlugin_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            AssemblyAnalysisService.ValidateStepUsage("NotAPlugin", hasStepAttribute: true, isPlugin: false));
+
+        Assert.Contains("[Step]", ex.Message);
+        Assert.Contains("IPlugin", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateStepUsage_StepOnPlugin_DoesNotThrow()
+    {
+        AssemblyAnalysisService.ValidateStepUsage("AccountPreCreatePlugin", hasStepAttribute: true, isPlugin: true);
     }
 
     [Fact]
@@ -540,8 +589,7 @@ public class MockNoEntityPlugin : IPlugin
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
 
-// No stage keyword in class name — has [Step] but can't parse a step
-[Step("account")]
+// No [Step] — detected as plugin type but produces no step
 public class MockNoStagePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();

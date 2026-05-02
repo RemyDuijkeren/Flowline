@@ -49,13 +49,13 @@ public class RegistrationPlanExecutor(IFlowlineOutput output)
                 ExecuteBoundedParallelAsync(plan.RequestParams.Deletes.Values, MaxParallelism, a => service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken), cancellationToken)).ConfigureAwait(false);
 
             foreach (var s in plan.Images.Deletes.Keys)         output.Verbose($"Image '{s}' not in source — deleted");
-            if (plan.Images.Deletes.Count > 0)         output.Info($"Deleted {plan.Images.Deletes.Count} Images");
+            if (plan.Images.Deletes.Count > 0)         output.Info($"[green]{plan.Images.Deletes.Count} image(s) deleted[/]");
 
             foreach (var s in plan.ResponseProps.Deletes.Keys)  output.Verbose($"Response Property '{s}' not in source — deleted");
-            if (plan.ResponseProps.Deletes.Count > 0)  output.Info($"Deleted {plan.ResponseProps.Deletes.Count} Response Properties");
+            if (plan.ResponseProps.Deletes.Count > 0)  output.Info($"[green]{plan.ResponseProps.Deletes.Count} response property record(s) deleted[/]");
 
             foreach (var s in plan.RequestParams.Deletes.Keys)  output.Verbose($"Request Parameter '{s}' not in source — deleted");
-            if (plan.RequestParams.Deletes.Count > 0)  output.Info($"Deleted {plan.RequestParams.Deletes.Count} Request Parameters");
+            if (plan.RequestParams.Deletes.Count > 0)  output.Info($"[green]{plan.RequestParams.Deletes.Count} request parameter(s) deleted[/]");
         }
 
         // Level 2 — steps and custom APIs
@@ -71,10 +71,10 @@ public class RegistrationPlanExecutor(IFlowlineOutput output)
                 ExecuteBoundedParallelAsync(plan.CustomApis.Deletes.Values, MaxParallelism, a => service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken), cancellationToken)).ConfigureAwait(false);
 
             foreach (var s in plan.Steps.Deletes.Keys)       output.Verbose($"Step '{s}' not in source — deleted");
-            if (plan.Steps.Deletes.Count > 0)      output.Info($"Deleted {plan.Steps.Deletes.Count} Plugin Steps");
+            if (plan.Steps.Deletes.Count > 0)      output.Info($"[green]{plan.Steps.Deletes.Count} plugin step(s) deleted[/]");
 
             foreach (var s in plan.CustomApis.Deletes.Keys)  output.Verbose($"Custom API '{s}' not in source — deleted");
-            if (plan.CustomApis.Deletes.Count > 0) output.Info($"Deleted {plan.CustomApis.Deletes.Count} Custom APIs");
+            if (plan.CustomApis.Deletes.Count > 0) output.Info($"[green]{plan.CustomApis.Deletes.Count} Custom API(s) deleted[/]");
         }
 
         // Level 1 — plugin types
@@ -86,7 +86,7 @@ public class RegistrationPlanExecutor(IFlowlineOutput output)
         {
             await ExecuteBoundedParallelAsync(plan.PluginTypes.Deletes.Values, MaxParallelism, a => service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken), cancellationToken).ConfigureAwait(false);
             foreach (var s in plan.PluginTypes.Deletes.Keys) output.Verbose($"Plugin Type '{s}' not in source — deleted");
-            if (plan.PluginTypes.Deletes.Count > 0) output.Info($"Deleted {plan.PluginTypes.Deletes.Count} PluginTypes");
+            if (plan.PluginTypes.Deletes.Count > 0) output.Info($"[green]{plan.PluginTypes.Deletes.Count} plugin type(s) deleted[/]");
         }
     }
 
@@ -96,7 +96,7 @@ public class RegistrationPlanExecutor(IFlowlineOutput output)
         // Level 1 — plugin types
         await ExecuteBoundedParallelAsync(plan.PluginTypes.Upserts.Values, 1, a => UpsertAsync(service, a, solutionName, cancellationToken), cancellationToken).ConfigureAwait(false);
         foreach (var s in plan.PluginTypes.Upserts.Keys) output.Verbose($"Plugin type '{s}' upserted");
-        if (plan.PluginTypes.Upserts.Count > 0) output.Info($"Upserted {plan.PluginTypes.Upserts.Count} PluginTypes");
+        if (plan.PluginTypes.Upserts.Count > 0) output.Info($"[green]{plan.PluginTypes.Upserts.Count} plugin type(s) synced[/]");
 
         // Level 2 — steps and custom APIs
         await Task.WhenAll(
@@ -104,10 +104,10 @@ public class RegistrationPlanExecutor(IFlowlineOutput output)
             ExecuteBoundedParallelAsync(plan.CustomApis.Upserts.Values, MaxParallelism, a => UpsertAsync(service, a, solutionName, cancellationToken), cancellationToken)).ConfigureAwait(false);
 
         foreach (var s in plan.Steps.Upserts.Keys)      output.Verbose($"Step '{s}' upserted");
-        if (plan.Steps.Upserts.Count > 0)      output.Info($"Upserted {plan.Steps.Upserts.Count} Plugin Steps");
+        if (plan.Steps.Upserts.Count > 0)      output.Info($"[green]{plan.Steps.Upserts.Count} plugin step(s) synced[/]");
 
         foreach (var s in plan.CustomApis.Upserts.Keys) output.Verbose($"Custom API '{s}' upserted");
-        if (plan.CustomApis.Upserts.Count > 0) output.Info($"Upserted {plan.CustomApis.Upserts.Count} Custom APIs");
+        if (plan.CustomApis.Upserts.Count > 0) output.Info($"[green]{plan.CustomApis.Upserts.Count} Custom API(s) synced[/]");
 
         // Level 3 — leaf items
         await Task.WhenAll(
@@ -116,13 +116,13 @@ public class RegistrationPlanExecutor(IFlowlineOutput output)
             ExecuteBoundedParallelAsync(plan.RequestParams.Upserts.Values, MaxParallelism, a => UpsertAsync(service, a, solutionName, cancellationToken), cancellationToken)).ConfigureAwait(false);
 
         foreach (var s in plan.Images.Upserts.Keys)        output.Verbose($"Image '{s}' upserted");
-        if (plan.Images.Upserts.Count > 0)        output.Info($"Upserted {plan.Images.Upserts.Count} Images");
+        if (plan.Images.Upserts.Count > 0)        output.Info($"[green]{plan.Images.Upserts.Count} image(s) synced[/]");
 
         foreach (var s in plan.ResponseProps.Upserts.Keys)  output.Verbose($"Response property '{s}' upserted");
-        if (plan.ResponseProps.Upserts.Count > 0)  output.Info($"Upserted {plan.ResponseProps.Upserts.Count} Response Properties");
+        if (plan.ResponseProps.Upserts.Count > 0)  output.Info($"[green]{plan.ResponseProps.Upserts.Count} response property record(s) synced[/]");
 
         foreach (var s in plan.RequestParams.Upserts.Keys)  output.Verbose($"Request Parameter '{s}' upserted");
-        if (plan.RequestParams.Upserts.Count > 0)  output.Info($"Upserted {plan.RequestParams.Upserts.Count} Request Parameters");
+        if (plan.RequestParams.Upserts.Count > 0)  output.Info($"[green]{plan.RequestParams.Upserts.Count} request parameter(s) synced[/]");
     }
 
     async Task RunAddSolutionComponentsAsync(
@@ -142,16 +142,16 @@ public class RegistrationPlanExecutor(IFlowlineOutput output)
         await ExecuteBoundedParallelAsync(all, MaxParallelism, a => AddSolutionComponentAsync(service, a.EntityLogicalName, a.Id, a.SolutionName, cancellationToken), cancellationToken).ConfigureAwait(false);
 
         foreach (var s in plan.Steps.AddSolutionComponents.Keys)       output.Verbose($"Step '{s}' added to solution");
-        if (plan.Steps.AddSolutionComponents.Count > 0)        output.Info($"Added {plan.Steps.AddSolutionComponents.Count} Plugin Steps to solution");
+        if (plan.Steps.AddSolutionComponents.Count > 0)        output.Info($"[green]{plan.Steps.AddSolutionComponents.Count} plugin step(s) added to solution[/]");
 
         foreach (var s in plan.CustomApis.AddSolutionComponents.Keys)  output.Verbose($"Custom API '{s}' added to solution");
-        if (plan.CustomApis.AddSolutionComponents.Count > 0)   output.Info($"Added {plan.CustomApis.AddSolutionComponents.Count} Custom APIs to solution");
+        if (plan.CustomApis.AddSolutionComponents.Count > 0)   output.Info($"[green]{plan.CustomApis.AddSolutionComponents.Count} Custom API(s) added to solution[/]");
 
         foreach (var s in plan.ResponseProps.AddSolutionComponents.Keys) output.Verbose($"Response property '{s}' added to solution");
-        if (plan.ResponseProps.AddSolutionComponents.Count > 0) output.Info($"Added {plan.ResponseProps.AddSolutionComponents.Count} Response Properties to solution");
+        if (plan.ResponseProps.AddSolutionComponents.Count > 0) output.Info($"[green]{plan.ResponseProps.AddSolutionComponents.Count} response property record(s) added to solution[/]");
 
         foreach (var s in plan.RequestParams.AddSolutionComponents.Keys) output.Verbose($"Request Parameter '{s}' added to solution");
-        if (plan.RequestParams.AddSolutionComponents.Count > 0) output.Info($"Added {plan.RequestParams.AddSolutionComponents.Count} Request Parameters to solution");
+        if (plan.RequestParams.AddSolutionComponents.Count > 0) output.Info($"[green]{plan.RequestParams.AddSolutionComponents.Count} request parameter(s) added to solution[/]");
     }
 
     async Task UpsertAsync(IOrganizationServiceAsync2 service, UpsertAction action, string solutionName, CancellationToken cancellationToken)

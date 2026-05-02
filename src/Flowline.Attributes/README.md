@@ -44,7 +44,9 @@ The `Plugin` suffix is optional but recommended. Flowline strips it before parsi
 
 Common messages: `Create`, `Update`, `Delete`, `Retrieve`, `RetrieveMultiple`, `Associate`, `Disassociate`, `Assign`, `SetState`. Names are case-sensitive.
 
-Classes without a recognisable stage keyword or without `[Step]` are skipped.
+Classes without `[Step]` are skipped. Classes with `[Step]` must follow the naming convention;
+Flowline fails fast when it cannot parse the stage and message, because `[Step]` is explicit
+intent to register a Dataverse plugin step.
 
 ### `[Step]` — required
 

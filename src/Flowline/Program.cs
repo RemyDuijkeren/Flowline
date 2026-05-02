@@ -15,7 +15,7 @@ Console.CancelKeyPress += (_, e) =>
 {
     e.Cancel = true; // Prevent immediate process termination
     cancellationTokenSource.Cancel();
-    Console.WriteLine("Cancellation requested...");
+    Console.WriteLine("Cancelled.");
 };
 
 // Register services
@@ -42,13 +42,13 @@ app.Configure(config =>
 
     // clone = Clone solution from environment to local folder
     config.AddCommand<CloneCommand>("clone") // init (new repo) or clone (existing repo)
-          .WithDescription("Use for bootstrapping an existing solution into the repo")
+          .WithDescription("Clone an existing solution into this repo")
           .WithExample("clone", "ContosoCustomizations --prod https://contoso.crm4.dynamics.com")
           .WithExample("clone", "ContosoCustomizations --prod https://contoso.crm4.dynamics.com --managed");
 
     // copy/provision = Copy Source environment to destination environment
     config.AddCommand<ProvisionCommand>("provision")
-          .WithDescription("Use to provision a real `dev` or `staging` environment from production.")
+          .WithDescription("Copy prod into dev or staging environment")
           .WithExample("provision")
           .WithExample("provision", "dev")
           .WithExample("provision", "staging")
@@ -59,14 +59,14 @@ app.Configure(config =>
 
     // Push assets to dev environment (upload and push assets to environment: plugins, webresources, pcf controls, etc.)
     config.AddCommand<PushCommand>("push")
-        .WithDescription("Upload assets (webresources, plugins) to a Power Platform environment")
+        .WithDescription("Push plugins and web resources to Dataverse")
         .WithExample("push")
         .WithExample("push", "ContosoCustomizations")
         .WithExample("push", "ContosoCustomizations --dev https://contoso-dev.crm4.dynamics.com/");
 
     // Sync changes to local repo (export solution and unpack)
     config.AddCommand<SyncCommand>("sync")
-          .WithDescription("Use to synchronize the current solution in `dev` environment back into the local repo.")
+          .WithDescription("Pull dev changes back into the repo")
           .WithExample("sync")
           .WithExample("sync", "ContosoCustomizations")
           .WithExample("sync", "ContosoCustomizations --dev https://contoso-dev.crm4.dynamics.com/ --managed")
@@ -74,7 +74,7 @@ app.Configure(config =>
 
     // Deploy (pack and import solution into environment)
     config.AddCommand<DeployCommand>("deploy")
-          .WithDescription("Deploy the current solution in the local repo to an environment")
+          .WithDescription("Deploy solution to staging or prod environment")
           .WithExample("deploy")
           .WithExample("deploy", "prod")
           .WithExample("deploy", "staging")
@@ -83,7 +83,7 @@ app.Configure(config =>
           .WithExample("deploy", "prod --solution ContosoCustomizations --managed");
 
     config.AddCommand<StatusCommand>("status")
-          .WithDescription("Show current environment and the version of Flowline and Power Platform CLI")
+          .WithDescription("Show Flowline, PAC CLI, and project status")
           .WithExample("status");
 
     // Translation sync (export/import translations)

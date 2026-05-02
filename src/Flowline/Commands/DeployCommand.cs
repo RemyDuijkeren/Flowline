@@ -12,15 +12,15 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "<target>")]
-        [Description("Destination environment or role such as `prod`, `staging`, or an explicit URL")]
+        [Description("Target environment: prod, staging, or a URL")]
         public string Target { get; set; } = null!;
 
         [CommandOption("--solution <name>")]
-        [Description("Solution to package and deploy")]
+        [Description("Solution to deploy")]
         public string? Solution { get; set; }
 
         [CommandOption("--managed")]
-        [Description("Deploy the managed package instead of unmanaged")]
+        [Description("Deploy the managed package")]
         public bool Managed { get; set; } = false;
     }
 
@@ -65,8 +65,9 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
         }
 
         // Validate target environment
-        AnsiConsole.MarkupLine($"Checking [bold]'{targetUrl}'[/]...");
-        var targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, settings.Verbose, cancellationToken);
+        var targetEnv = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+            $"Checking [bold]{targetUrl}[/]...",
+            _ => PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, settings.Verbose, cancellationToken));
         if (targetEnv == null)
         {
             AnsiConsole.MarkupLine("[red]Target environment not found. Check the URL or your PAC login.[/]");
@@ -80,7 +81,7 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
         {
             if (!ConsoleHelper.Confirm($"[yellow]Are you sure you want to deploy to PRODUCTION ([bold]{targetEnv.DisplayName}[/])?[/]", false, settings))
             {
-                AnsiConsole.MarkupLine("[dim]Deploy cancelled.[/]");
+            AnsiConsole.MarkupLine("[dim]Deploy cancelled[/]");
                 return 0;
             }
         }
@@ -102,19 +103,22 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
 
         if (!File.Exists(packagePath))
         {
-            AnsiConsole.MarkupLine("[dim]No package found — building first...[/]");
-            var buildResult = await Cli.Wrap("dotnet")
+            AnsiConsole.MarkupLine("[dim]No package found — building first[/]");
+            var buildResult = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+                $"Building [bold]{sln.Name}[/]...",
+                _ => Cli.Wrap("dotnet")
                                      .WithArguments(args => args
                                                           .Add("build")
                                                           .Add(packageFolder))
                                      .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]DOTNET: {s}[/]")))
                                      .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
                                      .WithToolExecutionLog()
-                                     .ExecuteAsync(cancellationToken);
+                                     .ExecuteAsync(cancellationToken)
+                                     .Task);
 
             if (buildResult.ExitCode != 0)
             {
-                AnsiConsole.MarkupLine("[red]Build failed — check the output above (- use --verbose).[/]");
+                AnsiConsole.MarkupLine("[red]Build failed — check the output above. Use --verbose for details.[/]");
                 return 1;
             }
 
@@ -124,8 +128,6 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
                 return 1;
             }
         }
-
-        AnsiConsole.MarkupLine($"Deploying [bold]{sln.Name}[/]{(sln.IncludeManaged ? " (managed)" : "")} → [bold]{targetEnv.DisplayName}[/]...");
 
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
         var pacSolutionImportCmd = Cli.Wrap(cmdName)
@@ -138,10 +140,13 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
                 .Add("--async"))
             .WithToolExecutionLog();
 
-        var importResult = await pacSolutionImportCmd
+        var importResult = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+            $"Deploying [bold]{sln.Name}[/] to [bold]{targetEnv.DisplayName}[/]...",
+            _ => pacSolutionImportCmd
                                     .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
                                     .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
-                                    .ExecuteAsync(cancellationToken);
+                                    .ExecuteAsync(cancellationToken)
+                                    .Task);
 
         if (importResult.ExitCode != 0)
         {

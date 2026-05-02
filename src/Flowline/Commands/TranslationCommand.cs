@@ -12,23 +12,23 @@ namespace Flowline.Commands;
 public class TranslationSettings : FlowlineSettings
 {
     [CommandArgument(0, "<action>")]
-    [Description("Action to perform: 'export' or 'import'")]
+    [Description("export or import")]
     public string Action { get; set; } = string.Empty;
 
     [CommandArgument(1, "[path]")]
-    [Description("Path to the translation zip file")]
+    [Description("Translation ZIP path")]
     public string? Path { get; set; }
 
     [CommandOption("-s|--solution <NAME>")]
-    [Description("The unique name of the solution (required for export)")]
+    [Description("Solution name")]
     public string? Solution { get; set; }
 
     [CommandOption("--pac-profile <NAME>")]
-    [Description("Use a specific PAC authentication profile name or email")]
+    [Description("PAC profile name or email")]
     public string? PacProfile { get; set; }
 
     [CommandOption("--target <TARGET>")]
-    [Description("The target environment URL or alias (e.g., 'dev', 'staging', 'prod')")]
+    [Description("Target URL, dev, staging, or prod")]
     public string? Target { get; set; }
 }
 
@@ -40,14 +40,14 @@ public class TranslationCommand(AuthenticationService authService, TranslationSy
         var action = settings.Action.ToLowerInvariant();
         if (action != "export" && action != "import")
         {
-            AnsiConsole.MarkupLine("[red]Error:[/] Invalid action. Use 'export' or 'import'.");
+            AnsiConsole.MarkupLine("[red]Invalid action. Use 'export' or 'import'.[/]");
             return 1;
         }
 
         var config = ProjectConfig.Load();
         if (config == null)
         {
-            AnsiConsole.MarkupLine("[red]Error:[/] Project configuration is not loaded.");
+            AnsiConsole.MarkupLine("[red].flowline config not found.[/]");
             return 1;
         }
 
@@ -58,10 +58,10 @@ public class TranslationCommand(AuthenticationService authService, TranslationSy
             targetUrl = config.DevUrl;
             if (string.IsNullOrEmpty(targetUrl))
             {
-                AnsiConsole.MarkupLine("[red]Error:[/] Dev URL is not configured in .flowline.");
+                AnsiConsole.MarkupLine("[red]Dev URL isn't configured in .flowline.[/]");
                 return 1;
             }
-            AnsiConsole.MarkupLine($"[grey]No target specified, using default dev URL: {targetUrl}[/]");
+            AnsiConsole.MarkupLine($"[dim]Target: dev ({targetUrl})[/]");
         }
         else
         {
@@ -76,7 +76,7 @@ public class TranslationCommand(AuthenticationService authService, TranslationSy
 
         if (string.IsNullOrEmpty(targetUrl))
         {
-            AnsiConsole.MarkupLine("[red]Error:[/] Target URL is not configured. Use --target or configure it in .flowline.");
+            AnsiConsole.MarkupLine("[red]Target URL isn't configured. Use --target or update .flowline.[/]");
             return 1;
         }
 
@@ -87,13 +87,13 @@ public class TranslationCommand(AuthenticationService authService, TranslationSy
             solutionName = projectSolution?.Name;
             if (solutionName != null)
             {
-                AnsiConsole.MarkupLine($"[grey]No solution specified, using default solution from config: {solutionName}[/]");
+                AnsiConsole.MarkupLine($"[dim]Solution: {solutionName}[/]");
             }
         }
 
         if (action == "export" && string.IsNullOrEmpty(solutionName))
         {
-            AnsiConsole.MarkupLine("[red]Error:[/] Solution name is required for export. Use --solution.");
+            AnsiConsole.MarkupLine("[red]Solution name is required for export. Use --solution.[/]");
             return 1;
         }
 
@@ -118,7 +118,7 @@ public class TranslationCommand(AuthenticationService authService, TranslationSy
 
                 if (profile == null)
                 {
-                    AnsiConsole.MarkupLine($"[red]Error:[/] PAC profile '{settings.PacProfile}' not found.");
+                    AnsiConsole.MarkupLine($"[red]PAC profile '{settings.PacProfile}' not found.[/]");
                     return 1;
                 }
                 
@@ -141,11 +141,11 @@ public class TranslationCommand(AuthenticationService authService, TranslationSy
                 {
                     if (profile.IsUniversal)
                     {
-                        AnsiConsole.MarkupLine($"[grey]Found UNIVERSAL PAC profile, connecting silently to {targetUrl}...[/]");
+                        AnsiConsole.MarkupLine($"[dim]Using universal PAC profile for {targetUrl}[/]");
                     }
                     else
                     {
-                        AnsiConsole.MarkupLine($"[grey]Found matching PAC profile for {targetUrl}, connecting silently...[/]");
+                        AnsiConsole.MarkupLine($"[dim]Using PAC profile for {targetUrl}[/]");
                     }
                     
                     service = authService.ConnectViaPac(profile, targetUrl);
@@ -163,18 +163,20 @@ public class TranslationCommand(AuthenticationService authService, TranslationSy
                 }
             }
 
-            AnsiConsole.MarkupLine($"[yellow]Performing {action} on {targetUrl}...[/]");
-            
             if (action == "export")
             {
-                await translationService.ExportAsync(service, solutionName!, path);
+                await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+                    $"Exporting translations for [bold]{solutionName}[/]...",
+                    _ => translationService.ExportAsync(service, solutionName!, path));
             }
             else
             {
-                await translationService.ImportAsync(service, path);
+                await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+                    $"Importing translations from [bold]{path}[/]...",
+                    _ => translationService.ImportAsync(service, path));
             }
 
-            AnsiConsole.MarkupLine($"[green]Successfully completed {action}![/]");
+            AnsiConsole.MarkupLine($"[green]Translations {action}ed[/]");
             return 0;
         }
         catch (Exception ex)

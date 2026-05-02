@@ -25,14 +25,14 @@ public class PluginRegistrationService(IFlowlineOutput output)
 
         // Phase 1: Get or register assembly
         var (assembly, needsUpdate) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
-        output.Info($"Assembly '{metadata.Name}' ({metadata.Version}) found in solution '{solutionName}'.");
+        output.Info($"[green]Assembly: [bold]{metadata.Name}[/] ({metadata.Version})[/]");
 
         // Phase 2: Load snapshot (all Dataverse state in parallel)
         var snapshot = await _reader.LoadSnapshotAsync(service, assembly.Id, metadata, solutionName, cancellationToken).ConfigureAwait(false);
 
         // Phase 3: Plan registration (pure, synchronous)
         var plan = _planner.Plan(snapshot, metadata, assembly, solutionName);
-        output.Info("Registration plan created");
+        output.Info("[green]Registration plan ready[/]");
 
         // Dry-run: print preview and return without making any changes
         if (runMode == RunMode.DryRun)
@@ -43,7 +43,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
 
         // Phase 4: Execute the deletes first — must precede assembly update and upserts
         await _executor.ExecuteDeletesAsync(service, plan, solutionName, runMode == RunMode.Save, cancellationToken).ConfigureAwait(false);
-        if (plan.TotalDeletes > 0) output.Info($"Deleted total {plan.TotalDeletes} obsolete components for [bold]{metadata.Name}[/]");
+        if (plan.TotalDeletes > 0) output.Info($"[green]{plan.TotalDeletes} stale component(s) deleted[/]");
 
         // Phase 5: Update assembly content — must happen before new plugin types are registered
         if (needsUpdate)
@@ -58,7 +58,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
 
         // Phase 6: Execute upserts and add to solution
         await _executor.ExecuteUpsertsAsync(service, plan, solutionName, cancellationToken).ConfigureAwait(false);
-        if (plan.TotalUpserts > 0) output.Info($"Upserted total {plan.TotalUpserts} new components for [bold]{metadata.Name}[/]");
+        if (plan.TotalUpserts > 0) output.Info($"[green]{plan.TotalUpserts} component(s) synced[/]");
         await _executor.ExecuteAddToSolutionAsync(service, plan, cancellationToken).ConfigureAwait(false);
     }
 
@@ -82,7 +82,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
         {
             if (runMode == RunMode.DryRun)
             {
-                output.Info($"Assembly '{metadata.Name}' — would create");
+                output.Skip($"Assembly '{metadata.Name}' — would create");
                 // Return a dummy entity so that the caller can continue with the dry-run
                 return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false);
             }
@@ -99,7 +99,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
             var response = (CreateResponse)await service.ExecuteAsync(
                 new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName }, cancellationToken).ConfigureAwait(false);
 
-            output.Info($"[green]Added assembly for [bold]{metadata.Name}[/][/]");
+            output.Info($"[green]Assembly [bold]{metadata.Name}[/] added[/]");
 
             entity.Id = response.id;
             return (entity, false);
@@ -116,22 +116,22 @@ public class PluginRegistrationService(IFlowlineOutput output)
         if (pktChanged || cultureChanged || majorMinorChanged)
         {
             var reasons = new List<string>();
-            if (pktChanged)        reasons.Add($"public key token ({registeredPkt ?? "null"} → {metadata.PublicKeyToken ?? "null"})");
-            if (cultureChanged)    reasons.Add($"culture ({registeredCulture} → {metadata.Culture})");
-            if (majorMinorChanged) reasons.Add($"major/minor version ({registeredVersion} → {metadata.Version})");
+            if (pktChanged)        reasons.Add($"public key token ({registeredPkt ?? "null"} -> {metadata.PublicKeyToken ?? "null"})");
+            if (cultureChanged)    reasons.Add($"culture ({registeredCulture} -> {metadata.Culture})");
+            if (majorMinorChanged) reasons.Add($"major/minor version ({registeredVersion} -> {metadata.Version})");
             var reason = string.Join(", ", reasons);
 
             switch (runMode)
             {
                 case RunMode.Save:
-                    output.Error($"Assembly '{metadata.Name}' identity changed ({reason}) — Dataverse requires delete and recreate. Re-run without --save to apply or use --dry-run to preview changes.");
+                    output.Error($"Assembly '{metadata.Name}' identity changed ({reason}) — Dataverse needs a delete and recreate. Re-run without --save to apply it, or use --dry-run to preview.");
                     throw new InvalidOperationException($"Assembly '{metadata.Name}' identity changed ({reason}). Cannot continue in save mode — re-run without --save to apply or use --dry-run to preview changes.");
                 case RunMode.DryRun:
                     output.Skip($"Assembly '{metadata.Name}' identity changed ({reason}) — would delete and recreate");
                     // Return a dummy entity so that the caller can continue with the dry-run
                     return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false);
                 case RunMode.Normal:
-                    output.Warning($"Assembly '{metadata.Name}' identity changed ({reason}) — deleting and recreating all plugin registrations.");
+                    output.Warning($"Assembly '{metadata.Name}' identity changed ({reason}) — deleting and recreating plugin registrations.");
                     await service.DeleteAsync("pluginassembly", existing.Id, cancellationToken).ConfigureAwait(false);
                     break;
                 default:
@@ -152,7 +152,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
                 cancellationToken).ConfigureAwait(false);
 
             freshEntity.Id = response.id;
-            output.Info($"[green]Recreated assembly '{metadata.Name}'.[/]");
+            output.Info($"[green]Assembly [bold]{metadata.Name}[/] recreated[/]");
             return (freshEntity, false);
         }
 
@@ -188,7 +188,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
                       + plan.ResponseProps.Upserts.Values.Count(u => u.IsCreate);
         var updates = plan.TotalUpserts - creates;
 
-        output.Info($"Dry-run summary: {plan.TotalDeletes} delete(s), {creates} create(s), {updates} update(s) — run without --dry-run to apply.");
+        output.Info($"[green]Dry run: {plan.TotalDeletes} delete(s), {creates} create(s), {updates} update(s). Run without --dry-run to apply.[/]");
     }
 
     async Task AddSolutionComponentAsync(IOrganizationServiceAsync2 service, Guid assemblyId, string solutionName, CancellationToken cancellationToken)
