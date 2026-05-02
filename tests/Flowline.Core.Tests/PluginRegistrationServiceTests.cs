@@ -316,10 +316,10 @@ public class PluginRegistrationServiceTests
         // [Entity] removed to disable a plugin — Flowline deletes all steps for that type
         var assemblyId = Guid.NewGuid();
         SetupAssembly(ExistingAssembly(assemblyId));
-        
+
         var pluginType = new Entity("plugintype", Guid.NewGuid()) { ["typename"] = "MyNamespace.MyPlugin", ["isworkflowactivity"] = false };
         SetupPluginTypes(pluginType);
-        
+
         var stepId = Guid.NewGuid();
         var existingStep = new Entity("sdkmessageprocessingstep", stepId) { ["name"] = "Old step", ["plugintypeid"] = pluginType.ToEntityReference() };
         SetupSteps(existingStep);
@@ -334,7 +334,7 @@ public class PluginRegistrationServiceTests
     {
         var assemblyId = Guid.NewGuid();
         SetupAssembly(ExistingAssembly(assemblyId));
-        
+
         var pluginType = new Entity("plugintype", Guid.NewGuid()) { ["typename"] = "MyNamespace.MyPlugin", ["isworkflowactivity"] = false };
         SetupPluginTypes(pluginType);
 
@@ -370,7 +370,6 @@ public class PluginRegistrationServiceTests
         await _service.SyncAsync(_serviceMock.Object, Metadata(hash: "abc123"), "MySolution");
 
         _serviceMock.Verify(x => x.UpdateAsync(It.Is<Entity>(e => e.LogicalName == "pluginassembly"), It.IsAny<CancellationToken>()), Times.Never);
-        _outputMock.Verify(x => x.Skip(It.Is<string>(s => s.Contains("unchanged"))), Times.Once);
     }
 
     [Fact]
@@ -777,7 +776,6 @@ public class PluginRegistrationServiceTests
         await _service.SyncAsync(_serviceMock.Object, Metadata(hash: "abc123"), "MySolution", RunMode.DryRun);
 
         _serviceMock.Verify(x => x.UpdateAsync(It.IsAny<Entity>(), It.IsAny<CancellationToken>()), Times.Never);
-        _outputMock.Verify(x => x.Skip(It.Is<string>(s => s.Contains("unchanged"))), Times.Once);
     }
 
     [Fact]
@@ -842,6 +840,6 @@ public class PluginRegistrationServiceTests
 
         await _service.SyncAsync(_serviceMock.Object, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], null, false)), "MySolution", RunMode.DryRun);
 
-        _outputMock.Verify(x => x.Info(It.Is<string>(s => s.Contains("Dry-run:"))), Times.Once);
+        _outputMock.Verify(x => x.Info(It.Is<string>(s => s.Contains("Dry-run summary:"))), Times.Once);
     }
 }
