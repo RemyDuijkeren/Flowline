@@ -22,6 +22,7 @@ public class RegistrationPlan
 
     public int TotalUpserts => PluginTypes.Upserts.Count + Steps.Upserts.Count + Images.Upserts.Count
                              + CustomApis.Upserts.Count + RequestParams.Upserts.Count + ResponseProps.Upserts.Count;
+    public int TotalChanges => TotalDeletes + TotalUpserts;
 }
 
 public class ActionPlan

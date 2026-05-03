@@ -29,12 +29,6 @@ public class WebResourceSyncPlanExecutor(IFlowlineOutput output)
             {
                 await service.UpdateAsync(action.Entity!, cancellationToken).ConfigureAwait(false);
                 lock (publishIds) publishIds.Add(action.Entity!.Id);
-            }, cancellationToken),
-            ExecuteBoundedParallelAsync(plan.UpdatesAndAddsToPatch.Values, MaxParallelism, async action =>
-            {
-                await service.UpdateAsync(action.Entity!, cancellationToken).ConfigureAwait(false);
-                await AddToSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken).ConfigureAwait(false);
-                lock (publishIds) publishIds.Add(action.Entity!.Id);
             }, cancellationToken)).ConfigureAwait(false);
 
         if (!save)
@@ -73,22 +67,6 @@ public class WebResourceSyncPlanExecutor(IFlowlineOutput output)
         return ids;
     }
 
-    static Task AddToSolutionAsync(
-        IOrganizationServiceAsync2 service,
-        Guid webResourceId,
-        string solutionName,
-        CancellationToken cancellationToken)
-    {
-        var request = new OrganizationRequest("AddSolutionComponent")
-        {
-            ["ComponentId"] = webResourceId,
-            ["ComponentType"] = WebResourceComponentType,
-            ["SolutionUniqueName"] = solutionName,
-            ["AddRequiredComponents"] = false
-        };
-        return service.ExecuteAsync(request, cancellationToken);
-    }
-
     static Task RemoveFromSolutionAsync(
         IOrganizationServiceAsync2 service,
         Guid webResourceId,
@@ -123,9 +101,6 @@ public class WebResourceSyncPlanExecutor(IFlowlineOutput output)
 
         foreach (var s in plan.Updates.Keys) output.Verbose($"Web resource '{s}' updated");
         if (plan.Updates.Count > 0) output.Info($"[green]{plan.Updates.Count} web resource(s) updated[/]");
-
-        foreach (var s in plan.UpdatesAndAddsToPatch.Keys) output.Verbose($"Web resource '{s}' updated and added to patch");
-        if (plan.UpdatesAndAddsToPatch.Count > 0) output.Info($"[green]{plan.UpdatesAndAddsToPatch.Count} web resource(s) updated and added to patch[/]");
 
         if (!save)
         {

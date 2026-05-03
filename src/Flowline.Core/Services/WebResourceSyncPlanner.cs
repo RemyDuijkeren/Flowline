@@ -10,7 +10,7 @@ public class WebResourceSyncPlanner(IFlowlineOutput output)
         var plan = new WebResourceSyncPlan();
         var localNames = snapshot.LocalResources.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var dataverseNames = snapshot.DataverseResources.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var targetSolutionName = snapshot.PatchSolution?.UniqueName ?? snapshot.BaseSolution.UniqueName;
+        var targetSolutionName = snapshot.Solution.UniqueName;
 
         output.Verbose($"Found {snapshot.DataverseResources.Count} web resource(s) in Dataverse.");
         foreach (var name in dataverseNames) output.Verbose($"- {name}");
@@ -40,19 +40,6 @@ public class WebResourceSyncPlanner(IFlowlineOutput output)
             remote.Entity["content"] = local.Content;
             remote.Entity["displayname"] = local.DisplayName;
             remote.Entity["webresourcetype"] = new OptionSetValue(local.Type);
-            if (local.SilverlightVersion != null)
-                remote.Entity["silverlightversion"] = local.SilverlightVersion;
-
-            if (snapshot.PatchSolution != null && !remote.IsInPatch)
-            {
-                plan.UpdatesAndAddsToPatch[name] = new WebResourcePlanAction(
-                    name,
-                    WebResourceAction.UpdateAndAddToPatchSolution,
-                    Entity: remote.Entity,
-                    Id: remote.Id,
-                    SolutionName: snapshot.PatchSolution.UniqueName);
-                continue;
-            }
 
             plan.Updates[name] = new WebResourcePlanAction(
                 name,
@@ -85,19 +72,12 @@ public class WebResourceSyncPlanner(IFlowlineOutput output)
         return plan;
     }
 
-    static Entity ToEntity(LocalWebResource local)
-    {
-        var entity = new Entity("webresource")
+    static Entity ToEntity(LocalWebResource local) =>
+        new("webresource")
         {
             ["name"] = local.Name,
             ["displayname"] = local.DisplayName,
             ["webresourcetype"] = new OptionSetValue(local.Type),
             ["content"] = local.Content
         };
-
-        if (local.SilverlightVersion != null)
-            entity["silverlightversion"] = local.SilverlightVersion;
-
-        return entity;
-    }
 }

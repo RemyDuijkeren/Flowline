@@ -12,6 +12,7 @@ public class PluginRegistrationService(IFlowlineOutput output)
     readonly PluginRegistrationReader _reader   = new();
     readonly RegistrationPlanner      _planner  = new(output);
     readonly RegistrationPlanExecutor _executor = new(output);
+    readonly DataverseSolutionReader  _solutionReader = new();
 
     public async Task SyncSolutionAsync(
         IOrganizationServiceAsync2 service,
@@ -23,12 +24,15 @@ public class PluginRegistrationService(IFlowlineOutput output)
         if (string.IsNullOrWhiteSpace(solutionName))
             throw new ArgumentException("solutionName is required and cannot be empty.", nameof(solutionName));
 
+        await _solutionReader.GetSupportedSolutionInfoAsync(service, solutionName, cancellationToken).ConfigureAwait(false);
+
         // Phase 1: Get or register assembly
         var (assembly, needsUpdate) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
         output.Info($"[green]Assembly: [bold]{metadata.Name}[/] ({metadata.Version})[/]");
 
         // Phase 2: Load snapshot (all Dataverse state in parallel)
         var snapshot = await _reader.LoadSnapshotAsync(service, assembly.Id, metadata, solutionName, cancellationToken).ConfigureAwait(false);
+        output.Info("[green]Snapshot loaded[/]");
 
         // Phase 3: Plan registration (pure, synchronous)
         var plan = _planner.Plan(snapshot, metadata, assembly, solutionName);

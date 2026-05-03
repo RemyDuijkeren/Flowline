@@ -13,7 +13,6 @@ public class WebResourceSyncService(IFlowlineOutput output)
         IOrganizationServiceAsync2 service,
         string webresourceRoot,
         string solutionName,
-        string? patchSolutionName = null,
         bool publishAfterSync = true,
         RunMode runMode = RunMode.Normal,
         CancellationToken cancellationToken = default)
@@ -23,7 +22,11 @@ public class WebResourceSyncService(IFlowlineOutput output)
         if (string.IsNullOrWhiteSpace(solutionName))
             throw new ArgumentException("solutionName is required.", nameof(solutionName));
 
-        var snapshot = await _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, patchSolutionName, cancellationToken).ConfigureAwait(false);
+        // Phase 1: Load snapshot (all Dataverse state in parallel)
+        var snapshot = await _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, cancellationToken).ConfigureAwait(false);
+        output.Info("[green]Snapshot loaded[/]");
+
+        // Phase 2: Plan registration (pure, synchronous)
         var plan = _planner.Plan(snapshot);
         output.Info("[green]Web resource plan ready[/]");
 
@@ -36,12 +39,14 @@ public class WebResourceSyncService(IFlowlineOutput output)
             return;
         }
 
+        // Dry-run: print preview and return without making any changes
         if (runMode == RunMode.DryRun)
         {
             WriteDryRunSummary(plan, publishAfterSync);
             return;
         }
 
+        // Phase 3: Execute the plan
         await _executor.ExecuteAsync(service, plan, publishAfterSync, runMode == RunMode.Save, cancellationToken).ConfigureAwait(false);
     }
 
@@ -49,7 +54,6 @@ public class WebResourceSyncService(IFlowlineOutput output)
     {
         foreach (var a in plan.Creates.Values) output.Skip($"Web resource '{a.Name}' — would create");
         foreach (var a in plan.Updates.Values) output.Skip($"Web resource '{a.Name}' — would update");
-        foreach (var a in plan.UpdatesAndAddsToPatch.Values) output.Skip($"Web resource '{a.Name}' — would update and add to patch");
         foreach (var a in plan.Deletes.Values) output.Skip($"Web resource '{a.Name}' — would delete");
         foreach (var a in plan.RemovesFromSolution.Values) output.Skip($"Web resource '{a.Name}' — would remove from solution");
         foreach (var a in plan.Skips.Values) output.Skip($"Web resource '{a.Name}' — kept ({a.Reason})");
@@ -58,6 +62,6 @@ public class WebResourceSyncService(IFlowlineOutput output)
         if (publishCount > 0)
             output.Skip($"{publishCount} web resource(s) — would publish");
 
-        output.Info($"[green]Dry run: {plan.Deletes.Count} delete(s), {plan.RemovesFromSolution.Count} remove(s), {plan.Creates.Count} create(s), {plan.Updates.Count + plan.UpdatesAndAddsToPatch.Count} update(s), {plan.Skips.Count} skip(s). Run without --dry-run to apply.[/]");
+        output.Info($"[green]Dry run: {plan.Deletes.Count} delete(s), {plan.RemovesFromSolution.Count} remove(s), {plan.Creates.Count} create(s), {plan.Updates.Count} update(s), {plan.Skips.Count} skip(s). Run without --dry-run to apply.[/]");
     }
 }

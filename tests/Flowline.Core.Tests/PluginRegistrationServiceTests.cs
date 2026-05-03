@@ -40,7 +40,8 @@ public class PluginRegistrationServiceTests
 
         var defaultSolution = new Entity("solution")
         {
-            ["pub.customizationprefix"] = new AliasedValue("publisher", "customizationprefix", "abc")
+            ["pub.customizationprefix"] = new AliasedValue("publisher", "customizationprefix", "abc"),
+            ["publisher.customizationprefix"] = new AliasedValue("publisher", "customizationprefix", "abc")
         };
         _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "solution"), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(new List<Entity> { defaultSolution })));
@@ -63,6 +64,27 @@ public class PluginRegistrationServiceTests
                     }
                 }));
             });
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_PatchSolution_ShouldThrowBeforeMutating()
+    {
+        var patchSolution = new Entity("solution", Guid.NewGuid())
+        {
+            ["pub.customizationprefix"] = new AliasedValue("publisher", "customizationprefix", "abc"),
+            ["publisher.customizationprefix"] = new AliasedValue("publisher", "customizationprefix", "abc"),
+            ["parentsolutionid"] = new EntityReference("solution", Guid.NewGuid())
+        };
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "solution"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([patchSolution])));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, Metadata(), "MySolution"));
+
+        Assert.Contains("patch solution", ex.Message);
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<OrganizationRequest>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 
     private static int ResolveComponentTypeFromObjectId(Guid objectId)
@@ -470,7 +492,8 @@ public class PluginRegistrationServiceTests
 
         var solutionEntity = new Entity("solution")
         {
-            ["pub.customizationprefix"] = new AliasedValue("publisher", "customizationprefix", "abc")
+            ["pub.customizationprefix"] = new AliasedValue("publisher", "customizationprefix", "abc"),
+            ["publisher.customizationprefix"] = new AliasedValue("publisher", "customizationprefix", "abc")
         };
         _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "solution"), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(new List<Entity> { solutionEntity })));

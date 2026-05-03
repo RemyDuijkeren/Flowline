@@ -4,46 +4,47 @@ namespace Flowline.Core.Models;
 
 public enum WebResourceType
 {
-    HTML = 1,
-    HTM = 1,
-    CSS = 2,
-    JS = 3,
-    XML = 4,
-    XAML = 4,
-    XSD = 4,
-    PNG = 5,
-    JPG = 6,
-    JPEG = 6,
-    GIF = 7,
-    XAP = 8,
-    XSL = 9,
-    XSLT = 9,
-    ICO = 10,
-    SVG = 11, // D365 only
-    RESX = 12 // D365 only
+    // Cloud-relevant model-driven app web resources.
+    Html = 1,
+    Htm = 1,
+    Css = 2,
+    Js = 3,
+    Xml = 4,
+
+    // Same Dataverse type as XML; supported but uncommon for modern cloud customizations.
+    Xaml = 4,
+    Xsd = 4,
+
+    // Cloud-relevant image web resources.
+    Png = 5,
+    Jpg = 6,
+    Jpeg = 6,
+    Gif = 7,
+
+    // Legacy Silverlight web resource. Silverlight was deprecated in Dynamics 365 v9
+    // and does not work in Unified Interface.
+    Xap = 8,
+
+    // Supported Dataverse type but niche/legacy for modern model-driven apps.
+    Xsl = 9,
+    Xslt = 9,
+
+    // Cloud-relevant image/localization web resources.
+    Ico = 10,
+    Svg = 11,
+    Resx = 12
 }
 
 public enum WebResourceAction
 {
     Create,
     Update,
-    UpdateAndAddToPatchSolution,
     Delete,
     RemoveFromSolution,
     Skip
 }
 
-public record WebResourceSyncResult(bool Success, string Message);
-
-public record WebResourceSolutionInfo(Guid Id, string UniqueName, string PublisherPrefix, bool IsManaged);
-
-public record LocalWebResource(
-    string Name,
-    string Path,
-    string DisplayName,
-    int Type,
-    string Content,
-    string? SilverlightVersion = null);
+public record LocalWebResource(string Name, string Path, string DisplayName, int Type, string Content);
 
 public record DataverseWebResource(
     Guid Id,
@@ -51,17 +52,13 @@ public record DataverseWebResource(
     string? DisplayName,
     int Type,
     string? Content,
-    bool IsInPatch,
     Entity Entity,
     WebResourceOwnership Ownership);
 
-public record WebResourceOwnership(
-    int NonDefaultUnmanagedSolutionCount,
-    bool IsInCurrentUnmanagedSolution);
+public record WebResourceOwnership(int NonDefaultUnmanagedSolutionCount, bool IsInCurrentUnmanagedSolution);
 
 public record WebResourceSyncSnapshot(
-    WebResourceSolutionInfo BaseSolution,
-    WebResourceSolutionInfo? PatchSolution,
+    DataverseSolutionInfo Solution,
     IReadOnlyDictionary<string, LocalWebResource> LocalResources,
     IReadOnlyDictionary<string, DataverseWebResource> DataverseResources);
 
@@ -77,11 +74,12 @@ public class WebResourceSyncPlan
 {
     public Dictionary<string, WebResourcePlanAction> Creates { get; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, WebResourcePlanAction> Updates { get; } = new(StringComparer.OrdinalIgnoreCase);
-    public Dictionary<string, WebResourcePlanAction> UpdatesAndAddsToPatch { get; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, WebResourcePlanAction> Deletes { get; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, WebResourcePlanAction> RemovesFromSolution { get; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, WebResourcePlanAction> Skips { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-    public int TotalChanges => Creates.Count + Updates.Count + UpdatesAndAddsToPatch.Count + Deletes.Count + RemovesFromSolution.Count;
-    public int PublishCount => Creates.Count + Updates.Count + UpdatesAndAddsToPatch.Count;
+    public int TotalDeletes => Deletes.Count + RemovesFromSolution.Count;
+    public int TotalUpserts => Creates.Count + Updates.Count;
+    public int TotalChanges => TotalDeletes + TotalUpserts;
+    public int PublishCount => Creates.Count + Updates.Count;
 }

@@ -9,74 +9,33 @@ public class WebResourceSyncReader
 {
     const int WebResourceComponentType = 61;
     const string DefaultSolutionUniqueName = "Default";
+    readonly DataverseSolutionReader _solutionReader = new();
 
     public async Task<WebResourceSyncSnapshot> LoadSnapshotAsync(
         IOrganizationServiceAsync2 service,
         string webresourceRoot,
         string solutionName,
-        string? patchSolutionName,
         CancellationToken cancellationToken = default)
     {
-        var baseSolution = await GetSolutionInfoAsync(service, solutionName, cancellationToken).ConfigureAwait(false);
-
-        WebResourceSolutionInfo? patchSolution = null;
-        Task<IReadOnlyList<Entity>> patchResourcesTask = Task.FromResult<IReadOnlyList<Entity>>([]);
-        if (!string.IsNullOrWhiteSpace(patchSolutionName))
-        {
-            patchSolution = await GetSolutionInfoAsync(service, patchSolutionName, cancellationToken).ConfigureAwait(false);
-            patchResourcesTask = GetWebResourcesForSolutionAsync(service, patchSolution.Id, cancellationToken);
-        }
+        var baseSolution = await _solutionReader.GetSupportedSolutionInfoAsync(service, solutionName, cancellationToken).ConfigureAwait(false);
 
         var baseResourcesTask = GetWebResourcesForSolutionAsync(service, baseSolution.Id, cancellationToken);
         var localResourcesTask = Task.Run(() => GetLocalWebResources(webresourceRoot, $"{baseSolution.PublisherPrefix}_{solutionName}"), cancellationToken);
 
-        await Task.WhenAll(baseResourcesTask, patchResourcesTask, localResourcesTask).ConfigureAwait(false);
+        await Task.WhenAll(baseResourcesTask, localResourcesTask).ConfigureAwait(false);
 
-        var patchResources = patchResourcesTask.Result;
-        var patchIds = patchResources.Select(e => e.Id).ToHashSet();
-        var combined = patchResources
-            .Select(e => (Entity: e, IsInPatch: true))
-            .Concat(baseResourcesTask.Result.Where(e => !patchIds.Contains(e.Id)).Select(e => (Entity: e, IsInPatch: false)))
-            .ToList();
-
-        var targetSolutionName = patchSolution?.UniqueName ?? solutionName;
-        var ownershipTasks = combined.Select(async item =>
+        var ownershipTasks = baseResourcesTask.Result.Select(async entity =>
         {
-            var ownership = await GetOwnershipAsync(service, item.Entity.Id, targetSolutionName, cancellationToken).ConfigureAwait(false);
-            return ToDataverseWebResource(item.Entity, item.IsInPatch, ownership);
+            var ownership = await GetOwnershipAsync(service, entity.Id, solutionName, cancellationToken).ConfigureAwait(false);
+            return ToDataverseWebResource(entity, ownership);
         });
 
         var dataverseResources = await Task.WhenAll(ownershipTasks).ConfigureAwait(false);
 
         return new WebResourceSyncSnapshot(
             baseSolution,
-            patchSolution,
             localResourcesTask.Result,
             dataverseResources.ToDictionary(r => r.Name, r => r, StringComparer.OrdinalIgnoreCase).AsReadOnly());
-    }
-
-    async Task<WebResourceSolutionInfo> GetSolutionInfoAsync(
-        IOrganizationServiceAsync2 service, string uniqueName, CancellationToken cancellationToken)
-    {
-        var query = new QueryExpression("solution")
-        {
-            TopCount = 1,
-            ColumnSet = new ColumnSet("solutionid", "uniquename", "ismanaged"),
-            Criteria = { Conditions = { new ConditionExpression("uniquename", ConditionOperator.Equal, uniqueName) } }
-        };
-
-        var linkPublisher = query.AddLink("publisher", "publisherid", "publisherid");
-        linkPublisher.Columns.AddColumns("customizationprefix");
-        linkPublisher.EntityAlias = "publisher";
-
-        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
-        var solution = result.Entities.FirstOrDefault()
-            ?? throw new InvalidOperationException($"Solution '{uniqueName}' not found in Dataverse.");
-
-        var prefix = GetAliasedValue<string>(solution, "publisher.customizationprefix")
-            ?? throw new InvalidOperationException($"Could not read publisher prefix for solution '{uniqueName}'.");
-
-        return new WebResourceSolutionInfo(solution.Id, uniqueName, prefix, solution.GetAttributeValue<bool>("ismanaged"));
     }
 
     async Task<IReadOnlyList<Entity>> GetWebResourcesForSolutionAsync(
@@ -131,14 +90,13 @@ public class WebResourceSyncReader
         return new WebResourceOwnership(unmanaged.Count, isInCurrent);
     }
 
-    static DataverseWebResource ToDataverseWebResource(Entity entity, bool isInPatch, WebResourceOwnership ownership) =>
+    static DataverseWebResource ToDataverseWebResource(Entity entity, WebResourceOwnership ownership) =>
         new(
             entity.Id,
             entity.GetAttributeValue<string>("name"),
             entity.GetAttributeValue<string>("displayname"),
             entity.GetAttributeValue<OptionSetValue>("webresourcetype")?.Value ?? 0,
             entity.GetAttributeValue<string>("content"),
-            isInPatch,
             entity,
             ownership);
 
@@ -163,18 +121,20 @@ public class WebResourceSyncReader
 
     static LocalWebResource LocalResourceFromFile(string path, string name)
     {
-        var ext = Path.GetExtension(path).TrimStart('.').ToUpperInvariant();
-        if (!Enum.TryParse<WebResourceType>(ext, out var type))
-            throw new InvalidOperationException($"Unsupported web resource extension '.{ext.ToLowerInvariant()}' for '{path}'.");
+        var ext = Path.GetExtension(path).TrimStart('.');
+        if (!Enum.TryParse<WebResourceType>(ext, true, out var type))
+            throw new InvalidOperationException($"Unsupported web resource extension '.{ext}' for '{path}'.");
 
-        var silverlightVersion = type == WebResourceType.XAP ? "4.0" : null;
+        // Silverlight/XAP is deprecated: https://learn.microsoft.com/en-us/dynamics365/customerengagement/on-premises/developer/silverlight-xap-web-resources?view=op-9-1
+        if (type == WebResourceType.Xap)
+            throw new InvalidOperationException($"Deprecated Silverlight/XAP web resource '{path}'. See https://learn.microsoft.com/en-us/dynamics365/customerengagement/on-premises/developer/silverlight-xap-web-resources?view=op-9-1");
+
         return new LocalWebResource(
             name,
             path,
             Path.GetFileName(name),
             (int)type,
-            Convert.ToBase64String(File.ReadAllBytes(path)),
-            silverlightVersion);
+            Convert.ToBase64String(File.ReadAllBytes(path)));
     }
 
     static T? GetAliasedValue<T>(Entity entity, string attributeName)

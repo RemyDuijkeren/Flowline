@@ -127,6 +127,21 @@ public class WebResourceSyncServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SyncSolutionAsync_PatchSolution_ShouldThrowBeforeMutating()
+    {
+        SetupSolution("MySolution", "my", parentSolutionId: Guid.NewGuid());
+        File.WriteAllText(Path.Combine(_webresourceRoot, "test.js"), "console.log('test');");
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
+
+        Assert.Contains("patch solution", ex.Message);
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<OrganizationRequest>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task SyncSolutionAsync_CurrentSolutionOnlyOrphan_ShouldDelete()
     {
         var webResourceId = Guid.NewGuid();
@@ -172,7 +187,7 @@ public class WebResourceSyncServiceTests : IDisposable
             _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
     }
 
-    void SetupSolution(string solutionName, string prefix, bool isManaged = false)
+    void SetupSolution(string solutionName, string prefix, bool isManaged = false, Guid? parentSolutionId = null)
     {
         var solution = new Entity("solution", Guid.NewGuid())
         {
@@ -180,6 +195,8 @@ public class WebResourceSyncServiceTests : IDisposable
             ["ismanaged"] = isManaged,
             ["publisher.customizationprefix"] = new AliasedValue("publisher", "customizationprefix", prefix)
         };
+        if (parentSolutionId.HasValue)
+            solution["parentsolutionid"] = new EntityReference("solution", parentSolutionId.Value);
 
         _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "solution"), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([solution])));
@@ -198,7 +215,7 @@ public class WebResourceSyncServiceTests : IDisposable
             ["name"] = name,
             ["displayname"] = Path.GetFileName(name),
             ["content"] = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(content)),
-            ["webresourcetype"] = new OptionSetValue((int)WebResourceType.JS)
+            ["webresourcetype"] = new OptionSetValue((int)WebResourceType.Js)
         };
         return entity;
     }
