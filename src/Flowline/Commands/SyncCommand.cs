@@ -33,11 +33,16 @@ public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
         if (devEnv == null) return 1;
 
         // Solution name is required
-        var sln = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken);
-        if (sln == null) return 1;
+        (ProjectSolution? projectSln, SolutionInfo? slnInfo) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken);
+        if (projectSln == null || slnInfo == null) return 1;
+        if (slnInfo.IsManaged)
+        {
+            AnsiConsole.MarkupLine("[red]Managed solutions are not supported for sync.[/]");
+            return 1;
+        }
 
         // Validate that we have an initialized project
-        var slnFolder = Path.Combine(RootFolder, "solutions", sln.Name);
+        var slnFolder = Path.Combine(RootFolder, "solutions", projectSln.Name);
         var packageFolder = Path.Combine(slnFolder, "SolutionPackage");
         var cdsprojPath = Path.Combine(packageFolder, "SolutionPackage.cdsproj");
         if (!File.Exists(cdsprojPath))
@@ -54,12 +59,12 @@ public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
                 .Add("sync")
                 .Add("--solution-folder").Add(packageFolder)
                 .Add("--environment").Add(devEnv.EnvironmentUrl!)
-                .Add("--packagetype").Add(sln.IncludeManaged ? "Both" : "Unmanaged")
+                .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
                 .Add("--async"))
             .WithToolExecutionLog();
 
         var result = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-            $"Syncing [bold]{sln.Name}[/]...",
+            $"Syncing [bold]{projectSln.Name}[/]...",
             _ => pacSolutionSyncCmd
                               .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
                               .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
@@ -75,7 +80,7 @@ public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
         AnsiConsole.MarkupLine("[green]Synced from Dataverse[/]");
 
         await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-            $"Building [bold]{sln.Name}[/]...",
+            $"Building [bold]{projectSln.Name}[/]...",
             _ => Cli.Wrap("dotnet")
                  .WithArguments(args => args
                       .Add("build")

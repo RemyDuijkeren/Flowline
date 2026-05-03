@@ -98,34 +98,33 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
         return env;
     }
 
-    protected async Task<ProjectSolution?> GetAndCheckSolutionAsync(string? inputName, string environmentUrl, bool includeManaged, TSettings settings, CancellationToken cancellationToken)
+    protected async Task<(ProjectSolution? projectSolution, SolutionInfo? solutionInfo)> GetAndCheckSolutionAsync(
+        string? inputName,
+        string environmentUrl,
+        bool includeManaged,
+        TSettings settings,
+        CancellationToken cancellationToken)
     {
-        var sln = Config!.GetOrUpdateSolution(inputName, includeManaged, settings);
-        if (sln == null)
+        var projectSln = Config!.GetOrUpdateSolution(inputName, includeManaged, settings);
+        if (projectSln == null)
         {
             AnsiConsole.MarkupLine("[red]Solution name is required — pass it as an argument or use --solution <name>.[/]");
-            return null;
+            return (null, null);
         }
 
         List<SolutionInfo> solutions = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-            $"Looking up [bold]{sln.Name}[/]...",
+            $"Looking up [bold]{projectSln.Name}[/]...",
             ctx => PacUtils.GetSolutionsAsync(environmentUrl, settings.Verbose, cancellationToken));
 
-        var remoteSolution = solutions.FirstOrDefault(s => s.SolutionUniqueName?.Equals(sln.Name, StringComparison.OrdinalIgnoreCase) == true);
-        if (remoteSolution == null)
+        var remoteSln = solutions.FirstOrDefault(s => s.SolutionUniqueName?.Equals(projectSln.Name, StringComparison.OrdinalIgnoreCase) == true);
+        if (remoteSln == null)
         {
-            AnsiConsole.MarkupLine($"[red]'{sln.Name}' not found in that environment.[/]");
-            return null;
+            AnsiConsole.MarkupLine($"[red]'{projectSln.Name}' not found in that environment.[/]");
+            return (projectSln, null);
         }
 
-        if (remoteSolution.IsManaged && !sln.IncludeManaged)
-        {
-            AnsiConsole.MarkupLine($"[red][bold]{sln.Name}[/] is managed — add --managed to include managed artifacts.[/]");
-            return null;
-        }
+        AnsiConsole.MarkupLine($"[green]Solution: [bold]{projectSln.Name}[/] (managed: {remoteSln.IsManaged})[/]");
 
-        AnsiConsole.MarkupLine($"[green]Solution: [bold]{sln.Name}[/] (managed: {remoteSolution.IsManaged})[/]");
-
-        return sln;
+        return (projectSln, remoteSln);
     }
 }

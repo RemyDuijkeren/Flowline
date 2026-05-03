@@ -18,14 +18,12 @@ public class WebResourceSyncReader
         CancellationToken cancellationToken = default)
     {
         var baseSolution = await GetSolutionInfoAsync(service, solutionName, cancellationToken).ConfigureAwait(false);
-        ThrowIfManagedSolution(baseSolution);
 
         WebResourceSolutionInfo? patchSolution = null;
         Task<IReadOnlyList<Entity>> patchResourcesTask = Task.FromResult<IReadOnlyList<Entity>>([]);
         if (!string.IsNullOrWhiteSpace(patchSolutionName))
         {
             patchSolution = await GetSolutionInfoAsync(service, patchSolutionName, cancellationToken).ConfigureAwait(false);
-            ThrowIfManagedSolution(patchSolution);
             patchResourcesTask = GetWebResourcesForSolutionAsync(service, patchSolution.Id, cancellationToken);
         }
 
@@ -79,12 +77,6 @@ public class WebResourceSyncReader
             ?? throw new InvalidOperationException($"Could not read publisher prefix for solution '{uniqueName}'.");
 
         return new WebResourceSolutionInfo(solution.Id, uniqueName, prefix, solution.GetAttributeValue<bool>("ismanaged"));
-    }
-
-    static void ThrowIfManagedSolution(WebResourceSolutionInfo solution)
-    {
-        if (solution.IsManaged)
-            throw new InvalidOperationException($"Solution '{solution.UniqueName}' is managed. Flowline can only push web resources to unmanaged solutions.");
     }
 
     async Task<IReadOnlyList<Entity>> GetWebResourcesForSolutionAsync(

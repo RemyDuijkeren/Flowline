@@ -117,14 +117,13 @@ public class WebResourceSyncServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SyncSolutionAsync_ManagedSolution_ShouldThrow()
+    public async Task SyncSolutionAsync_ManagedSolutionMetadata_ShouldStillReadSnapshot()
     {
         SetupSolution("MySolution", "my", isManaged: true);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
 
-        Assert.Contains("managed", ex.Message, StringComparison.OrdinalIgnoreCase);
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<OrganizationRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

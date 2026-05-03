@@ -38,8 +38,13 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
         if (prodEnv == null) return 1;
 
         // Solution name is required
-        var sln = await GetAndCheckSolutionAsync(settings.Solution, prodEnv.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken);
-        if (sln == null) return 1;
+        (ProjectSolution? projectSln, SolutionInfo? slnInfo) = await GetAndCheckSolutionAsync(settings.Solution, prodEnv.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken);
+        if (projectSln == null || slnInfo == null) return 1;
+        if (slnInfo.IsManaged)
+        {
+            AnsiConsole.MarkupLine("[red]Managed solutions are not supported yet.[/]");
+            return 1;
+        }
 
         // Save the configuration
         Config?.Save();
@@ -47,12 +52,12 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
             AnsiConsole.MarkupLine($"[dim]Project configuration saved to {ProjectConfig.s_configFileName}.[/]");
 
         // Cleanup if existing cloned output folder exists, so we download into a clean folder
-        var slnFolder = Path.Combine(RootFolder, AllSolutionsFolderName, sln.Name);
-        string tempClonedOutputFolder = Path.Combine(slnFolder, sln.Name);
+        var slnFolder = Path.Combine(RootFolder, AllSolutionsFolderName, projectSln.Name);
+        string tempClonedOutputFolder = Path.Combine(slnFolder, projectSln.Name);
         if (Directory.Exists(tempClonedOutputFolder))
         {
             AnsiConsole.MarkupLine($"[dim]Removing stale temp clone folder[/]");
-            if (settings.Verbose) AnsiConsole.MarkupLine($"[dim]Path: /{AllSolutionsFolderName}/{sln.Name}/{sln.Name}[/]");
+            if (settings.Verbose) AnsiConsole.MarkupLine($"[dim]Path: /{AllSolutionsFolderName}/{projectSln.Name}/{projectSln.Name}[/]");
             Directory.Delete(tempClonedOutputFolder, true);
         }
 
@@ -64,15 +69,15 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
             // Clone solution from Dataverse
             var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
             CommandResult result = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-                $"Cloning [bold]{sln.Name}[/] from Dataverse...",
+                $"Cloning [bold]{projectSln.Name}[/] from Dataverse...",
                 ctx => Cli.Wrap(cmdName)
                           .WithArguments(args => args
                               .AddIfNotNull(prefixArgs)
                               .Add("solution")
                               .Add("clone")
-                              .Add("--name").Add(sln.Name)
+                              .Add("--name").Add(projectSln.Name)
                               .Add("--environment").Add(Config!.ProdUrl!)
-                              .Add("--packagetype").Add(sln.IncludeManaged ? "Both" : "Unmanaged")
+                              .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
                               .Add("--outputDirectory").Add(slnFolder) // will create <sln.Name> folder under this given folder
                               .Add("--async"))
                           .WithValidation(CommandResultValidation.None)
@@ -94,7 +99,7 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
                 Directory.Move(tempClonedOutputFolder, solutionPackageFolder);
             }
 
-            var clonedCdsproj = Path.Combine(solutionPackageFolder, $"{sln.Name}.cdsproj");
+            var clonedCdsproj = Path.Combine(solutionPackageFolder, $"{projectSln.Name}.cdsproj");
             if (File.Exists(clonedCdsproj))
             {
                 if (settings.Verbose) AnsiConsole.MarkupLine($"[dim]Renaming {clonedCdsproj} -> {SolutionPackageName}.cdsproj[/]");
@@ -107,14 +112,14 @@ public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
         }
 
         // Create Solution file if it doesn't exist (use sln for now because slnx can't handle .cdsproj yet)
-        var slnFilePath = Path.Combine(slnFolder, $"{sln.Name}.sln");
+        var slnFilePath = Path.Combine(slnFolder, $"{projectSln.Name}.sln");
         if (!File.Exists(slnFilePath))
         {
             var result = await Cli.Wrap("dotnet")
                                   .WithArguments(args => args
                                                          .Add("new")
                                                          .Add("sln")
-                                                         .Add("--name").Add(sln.Name)
+                                                         .Add("--name").Add(projectSln.Name)
                                                          .Add("--format").Add("sln"))
                                   .WithWorkingDirectory(slnFolder)
                                   .WithToolExecutionLog(settings.Verbose)

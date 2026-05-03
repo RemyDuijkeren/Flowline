@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using CliWrap;
+using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
@@ -62,8 +63,13 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
         if (devEnv == null) return 1;
 
         // Resolve solution
-        var sln = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, false, settings, cancellationToken);
-        if (sln == null) return 1;
+        var (projectSln, slnInfo) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, false, settings, cancellationToken);
+        if (projectSln == null || slnInfo == null) return 1;
+        if (slnInfo.IsManaged)
+        {
+            AnsiConsole.MarkupLine("[red]Managed solutions are not supported for push.[/]");
+            return 1;
+        }
 
         // Resolve Scopes into one final scope (PushScope finalScope)
         var pushScope = settings.Scopes.Aggregate(PushScope.None, (current, scope) => current | scope);
@@ -75,7 +81,7 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
         PluginAssemblyMetadata? metadata = null;
         if (pushPlugins)
         {
-            var extensionsFolder = Path.Combine(RootFolder, AllSolutionsFolderName, sln.Name, ExtensionsName);
+            var extensionsFolder = Path.Combine(RootFolder, AllSolutionsFolderName, projectSln.Name, ExtensionsName);
             if (await DotNetUtils.BuildSolutionAsync(extensionsFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
             {
                 return 1;
@@ -97,7 +103,7 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
             AnsiConsole.MarkupLine("[green]Metadata ready[/]");
         }
 
-        var webResourcesFolder = Path.Combine(RootFolder, AllSolutionsFolderName, sln.Name, WebResourcesName);
+        var webResourcesFolder = Path.Combine(RootFolder, AllSolutionsFolderName, projectSln.Name, WebResourcesName);
         var webResourcesDistFolder = Path.Combine(webResourcesFolder, "dist");
         if (pushWebResources && Directory.Exists(webResourcesFolder))
         {
@@ -135,14 +141,14 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
         {
             await AnsiConsole.Status().FlowlineSpinner().StartAsync(
                 $"Pushing [bold]{ExtensionsName}.dll[/]...",
-                ctx => pluginSyncSrv.SyncSolutionAsync(conn, metadata, sln.Name, runMode, cancellationToken));
+                ctx => pluginSyncSrv.SyncSolutionAsync(conn, metadata, projectSln.Name, runMode, cancellationToken));
         }
 
         if (pushWebResources)
         {
             await AnsiConsole.Status().FlowlineSpinner().StartAsync(
                 "Pushing web resources...",
-                ctx => webResourceSyncSrv.SyncSolutionAsync(conn, webResourcesDistFolder, sln.Name, runMode: runMode, cancellationToken: cancellationToken));
+                ctx => webResourceSyncSrv.SyncSolutionAsync(conn, webResourcesDistFolder, projectSln.Name, runMode: runMode, cancellationToken: cancellationToken));
         }
 
         AnsiConsole.MarkupLine("[green]Assets pushed[/]");
