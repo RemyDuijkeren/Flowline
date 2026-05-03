@@ -38,6 +38,56 @@ public class AuthenticationServiceTests
     }
 
     [Fact]
+    public void GetCurrentResourceSpecificPacProfile_WithOneCurrentResourceProfile_ShouldReturnProfile()
+    {
+        var profile = new PacProfile { Kind = "DATAVERSE", Resource = "https://contoso.crm4.dynamics.com" };
+        var profiles = new PacAuthProfiles
+        {
+            Current = new Dictionary<string, PacProfile>
+            {
+                ["default"] = profile
+            }
+        };
+
+        var result = AuthenticationService.GetCurrentResourceSpecificPacProfile(profiles);
+
+        Assert.Same(profile, result);
+    }
+
+    [Fact]
+    public void GetCurrentResourceSpecificPacProfile_WithUniversalProfile_ShouldReturnNull()
+    {
+        var profiles = new PacAuthProfiles
+        {
+            Current = new Dictionary<string, PacProfile>
+            {
+                ["default"] = new() { Kind = "UNIVERSAL", Resource = "https://contoso.crm4.dynamics.com" }
+            }
+        };
+
+        var result = AuthenticationService.GetCurrentResourceSpecificPacProfile(profiles);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void GetCurrentResourceSpecificPacProfile_WithMultipleResourceProfiles_ShouldReturnNull()
+    {
+        var profiles = new PacAuthProfiles
+        {
+            Current = new Dictionary<string, PacProfile>
+            {
+                ["one"] = new() { Kind = "DATAVERSE", Resource = "https://one.crm4.dynamics.com" },
+                ["two"] = new() { Kind = "DATAVERSE", Resource = "https://two.crm4.dynamics.com" }
+            }
+        };
+
+        var result = AuthenticationService.GetCurrentResourceSpecificPacProfile(profiles);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
     public void ConnectViaPac_ShouldThrow_WhenProfileIsNull()
     {
         // Act & Assert

@@ -66,25 +66,46 @@ public class AuthenticationService(IFlowlineOutput output)
 
     public IEnumerable<PacProfile> GetPacProfiles()
     {
+        var profiles = LoadPacAuthProfiles();
+        return profiles?.Profiles ?? Enumerable.Empty<PacProfile>();
+    }
+
+    public PacProfile? GetCurrentResourceSpecificPacProfile()
+    {
+        var profiles = LoadPacAuthProfiles();
+        return GetCurrentResourceSpecificPacProfile(profiles);
+    }
+
+    internal static PacProfile? GetCurrentResourceSpecificPacProfile(PacAuthProfiles? profiles)
+    {
+        var currentProfiles = profiles?.Current?.Values
+            .Where(p => !p.IsUniversal && !string.IsNullOrWhiteSpace(p.Resource))
+            .DistinctBy(p => p.Resource?.TrimEnd('/'), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return currentProfiles is { Count: 1 } ? currentProfiles[0] : null;
+    }
+
+    PacAuthProfiles? LoadPacAuthProfiles()
+    {
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var authProfilesPath = Path.Combine(localAppData, "Microsoft", "PowerAppsCLI", "authprofiles_v2.json");
 
         if (!File.Exists(authProfilesPath))
         {
             output.Verbose($"PAC auth profiles file not found: {authProfilesPath}");
-            return Enumerable.Empty<PacProfile>();
+            return null;
         }
 
         try
         {
             var json = File.ReadAllText(authProfilesPath);
-            var profiles = JsonSerializer.Deserialize<PacAuthProfiles>(json);
-            return profiles?.Profiles ?? Enumerable.Empty<PacProfile>();
+            return JsonSerializer.Deserialize<PacAuthProfiles>(json);
         }
         catch (Exception ex)
         {
             output.Verbose($"Failed to read PAC auth profiles: {ex.Message}");
-            return Enumerable.Empty<PacProfile>();
+            return null;
         }
     }
 }
