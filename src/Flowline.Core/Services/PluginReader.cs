@@ -29,9 +29,10 @@ public class PluginReader
         var requestParamsTask = GetRegisteredRequestParametersAsync(service, prefix, cancellationToken);
         var responsePropsTask = GetRegisteredResponsePropertiesAsync(service, prefix, cancellationToken);
         var filterIdsTask     = LookupAllFilterIdsAsync(service, metadata, messageIds, cancellationToken);
+        var systemUserIdsTask = LookupAllSystemUserIdsAsync(service, metadata, cancellationToken);
 
         await Task.WhenAll(pluginTypesTask, stepsTask, imagesTask,
-            customApisTask, requestParamsTask, responsePropsTask, filterIdsTask).ConfigureAwait(false);
+            customApisTask, requestParamsTask, responsePropsTask, filterIdsTask, systemUserIdsTask).ConfigureAwait(false);
 
         return new RegistrationSnapshot(
             pluginTypesTask.Result,
@@ -42,6 +43,7 @@ public class PluginReader
             responsePropsTask.Result,
             messageIds,
             filterIdsTask.Result,
+            systemUserIdsTask.Result,
             prefix);
     }
 
@@ -66,7 +68,10 @@ public class PluginReader
             return (name, id);
         });
         var results = await Task.WhenAll(tasks).ConfigureAwait(false);
-        return results.ToDictionary(r => r.name, r => r.id, StringComparer.OrdinalIgnoreCase).AsReadOnly();
+        return results
+            .Where(r => r.id.HasValue)
+            .ToDictionary(r => r.name, r => r.id!.Value, StringComparer.OrdinalIgnoreCase)
+            .AsReadOnly();
     }
 
     async Task<IReadOnlyDictionary<(Guid, string?, string?), Guid?>> LookupAllFilterIdsAsync(
@@ -90,13 +95,38 @@ public class PluginReader
             if (!messageIds.TryGetValue(key.Message, out var messageId))
                 return ((Guid.Empty, key.EntityName, key.SecondaryEntity), (Guid?)null);
             // null EntityName means "any entity" — no message filter exists for it
-            if (key.EntityName == null)
+            if (key.EntityName == null || string.Equals(key.EntityName, "none", StringComparison.OrdinalIgnoreCase))
                 return ((messageId, key.EntityName, key.SecondaryEntity), (Guid?)null);
             var filterId = await LookupSdkMessageFilterIdAsync(service, messageId, key.EntityName, key.SecondaryEntity, cancellationToken).ConfigureAwait(false);
             return ((messageId, key.EntityName, key.SecondaryEntity), filterId);
         });
         var results = await Task.WhenAll(tasks).ConfigureAwait(false);
         return results.ToDictionary(r => r.Item1, r => r.Item2).AsReadOnly();
+    }
+
+    async Task<IReadOnlySet<Guid>> LookupAllSystemUserIdsAsync(
+        IOrganizationServiceAsync2 service,
+        PluginAssemblyMetadata metadata,
+        CancellationToken cancellationToken)
+    {
+        var runAsIds = metadata.Plugins
+            .Where(p => !p.IsWorkflow && !p.IsCustomApi)
+            .SelectMany(p => p.Steps)
+            .Select(s => s.RunAs)
+            .OfType<Guid>()
+            .Distinct()
+            .ToList();
+
+        if (runAsIds.Count == 0)
+            return new HashSet<Guid>();
+
+        var tasks = runAsIds.Select(async id =>
+            await SystemUserExistsAsync(service, id, cancellationToken).ConfigureAwait(false)
+                ? (Guid?)id
+                : null);
+
+        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+        return results.OfType<Guid>().ToHashSet();
     }
 
     async Task<IReadOnlyDictionary<string, Entity>> GetRegisteredPluginTypesAsync(
@@ -239,7 +269,7 @@ public class PluginReader
             ?? throw new InvalidOperationException($"Could not read publisher prefix for solution '{solutionName}'.");
     }
 
-    async Task<Guid> LookupSdkMessageIdAsync(
+    async Task<Guid?> LookupSdkMessageIdAsync(
         IOrganizationServiceAsync2 service, string messageName, CancellationToken cancellationToken = default)
     {
         var query = new QueryExpression("sdkmessage")
@@ -252,8 +282,7 @@ public class PluginReader
         };
 
         var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
-        return result.Entities.FirstOrDefault()?.Id
-            ?? throw new InvalidOperationException($"Dataverse message '{messageName}' not found in sdkmessage.");
+        return result.Entities.FirstOrDefault()?.Id;
     }
 
     async Task<Guid?> LookupSdkMessageFilterIdAsync(
@@ -277,5 +306,24 @@ public class PluginReader
 
         var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
         return result.Entities.FirstOrDefault()?.Id;
+    }
+
+    async Task<bool> SystemUserExistsAsync(
+        IOrganizationServiceAsync2 service,
+        Guid systemUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new QueryExpression("systemuser")
+        {
+            TopCount = 1,
+            ColumnSet = new ColumnSet(false),
+            Criteria =
+            {
+                Conditions = { new ConditionExpression("systemuserid", ConditionOperator.Equal, systemUserId) }
+            }
+        };
+
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
+        return result.Entities.Count > 0;
     }
 }

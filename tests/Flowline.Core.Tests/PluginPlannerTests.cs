@@ -26,6 +26,7 @@ public class PluginPlannerTests
         List<Entity>? responseProps      = null,
         Dictionary<string, Guid>? messageIds = null,
         Dictionary<(Guid, string?, string?), Guid?>? filterIds = null,
+        HashSet<Guid>? systemUserIds = null,
         string prefix = "abc") => new(
             pluginTypes  ?? new Dictionary<string, Entity>(StringComparer.OrdinalIgnoreCase),
             steps        ?? [],
@@ -34,8 +35,25 @@ public class PluginPlannerTests
             requestParams ?? [],
             responseProps ?? [],
             messageIds   ?? new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase),
-            filterIds    ?? new Dictionary<(Guid, string?, string?), Guid?>(),
+            filterIds    ?? DefaultFilterIds(messageIds),
+            systemUserIds ?? [],
             prefix);
+
+    static Dictionary<(Guid, string?, string?), Guid?> DefaultFilterIds(Dictionary<string, Guid>? messageIds)
+    {
+        var result = new Dictionary<(Guid, string?, string?), Guid?>();
+        if (messageIds == null)
+            return result;
+
+        foreach (var messageId in messageIds.Values)
+        {
+            result[(messageId, "account", null)] = Guid.NewGuid();
+            result[(messageId, "contact", null)] = Guid.NewGuid();
+            result[(messageId, "lead", null)] = Guid.NewGuid();
+        }
+
+        return result;
+    }
 
     static PluginAssemblyMetadata Metadata(params PluginTypeMetadata[] plugins) =>
         new("MyPlugin", "MyPlugin, Version=1.0.0.0", [1], "hash", "1.0.0.0", null, "neutral", [..plugins]);
@@ -134,10 +152,167 @@ public class PluginPlannerTests
     }
 
     [Fact]
+    public void Plan_InvalidMessage_ThrowsClearException()
+    {
+        var typeId = Guid.NewGuid();
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            messageIds: new(StringComparer.OrdinalIgnoreCase));
+
+        var step = new PluginStepMetadata("MyNamespace.MyPlugin: Foo of account", "Foo", "account", 20, 0, 1, null, null, [], []);
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution"));
+
+        Assert.Contains("Foo", ex.Message);
+        Assert.Contains("MyNamespace.MyPlugin", ex.Message);
+        Assert.Contains("[Step]", ex.Message);
+    }
+
+    [Fact]
+    public void Plan_InvalidEntityOnCreate_ThrowsClearException()
+    {
+        var typeId = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            filterIds: []);
+
+        var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of acount", "Update", "acount", 20, 0, 1, null, null, [], []);
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution"));
+
+        Assert.Contains("acount", ex.Message);
+        Assert.Contains("Update", ex.Message);
+        Assert.Contains("MyNamespace.MyPlugin", ex.Message);
+    }
+
+    [Fact]
+    public void Plan_InvalidEntityOnUpdate_ThrowsClearException()
+    {
+        var typeId = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        const string stepName = "MyNamespace.MyPlugin: Update of acount";
+        var existingStep = new Entity("sdkmessageprocessingstep", Guid.NewGuid())
+        {
+            ["name"] = stepName,
+            ["plugintypeid"] = new EntityReference("plugintype", typeId),
+            ["sdkmessageid"] = new EntityReference("sdkmessage", messageId)
+        };
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            steps: [existingStep],
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            filterIds: []);
+
+        var step = new PluginStepMetadata(stepName, "Update", "acount", 20, 0, 1, null, null, [], []);
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution"));
+
+        Assert.Contains("acount", ex.Message);
+        Assert.Contains("Update", ex.Message);
+    }
+
+    [Fact]
+    public void Plan_ValidEntity_SetsSdkMessageFilterId()
+    {
+        var typeId = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var filterId = Guid.NewGuid();
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            filterIds: new() { [(messageId, "account", null)] = filterId });
+
+        var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of account", "Update", "account", 20, 0, 1, null, null, [], []);
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
+
+        Assert.Equal(filterId, plan.Steps.Upserts[step.Name].Entity.GetAttributeValue<EntityReference>("sdkmessagefilterid").Id);
+    }
+
+    [Fact]
+    public void Plan_AllEntitiesNull_DoesNotRequireFilter()
+    {
+        var typeId = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Create"] = messageId },
+            filterIds: []);
+
+        var step = new PluginStepMetadata("MyNamespace.MyPlugin: Create of any", "Create", null, 20, 0, 1, null, null, [], []);
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
+
+        Assert.False(plan.Steps.Upserts[step.Name].Entity.Contains("sdkmessagefilterid"));
+    }
+
+    [Fact]
+    public void Plan_AllEntitiesNone_DoesNotRequireFilter()
+    {
+        var typeId = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Create"] = messageId },
+            filterIds: []);
+
+        var step = new PluginStepMetadata("MyNamespace.MyPlugin: Create of none", "Create", "none", 20, 0, 1, null, null, [], []);
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
+
+        Assert.False(plan.Steps.Upserts[step.Name].Entity.Contains("sdkmessagefilterid"));
+    }
+
+    [Fact]
+    public void Plan_UnsupportedMessageForImage_ThrowsClearException()
+    {
+        var typeId = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Retrieve"] = messageId });
+
+        var image = new PluginImageMetadata("Pre Image", "preimage", 0, "name");
+        var step = new PluginStepMetadata("MyNamespace.MyPlugin: Retrieve of any", "Retrieve", null, 20, 0, 1, null, null, [image], []);
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution"));
+
+        Assert.Contains("Pre Image", ex.Message);
+        Assert.Contains("Retrieve", ex.Message);
+        Assert.Contains("Supported messages", ex.Message);
+        Assert.Contains("Update", ex.Message);
+    }
+
+    [Fact]
     public void Plan_ExistingUnchangedStep_OnlyAddsToSolution()
     {
         var typeId    = Guid.NewGuid();
         var messageId = Guid.NewGuid();
+        var filterId  = Guid.NewGuid();
         var stepId    = Guid.NewGuid();
         const string stepName = "MyNamespace.MyPlugin: Update of account";
 
@@ -150,7 +325,8 @@ public class PluginPlannerTests
             ["rank"]                = 1,
             ["filteringattributes"] = (string?)null,
             ["configuration"]       = (string?)null,
-            ["sdkmessageid"]        = new EntityReference("sdkmessage", messageId)
+            ["sdkmessageid"]        = new EntityReference("sdkmessage", messageId),
+            ["sdkmessagefilterid"]  = new EntityReference("sdkmessagefilter", filterId)
         };
 
         var snapshot = Snapshot(
@@ -159,7 +335,8 @@ public class PluginPlannerTests
                 ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
             },
             steps: [existingStep],
-            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId });
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            filterIds: new() { [(messageId, "account", null)] = filterId });
 
         var step = new PluginStepMetadata(stepName, "Update", "account", 20, 0, 1, null, null, [], []);
         var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
@@ -313,7 +490,8 @@ public class PluginPlannerTests
                 ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
             },
             steps: [existingStep],
-            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId });
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            systemUserIds: [userId]);
 
         var step = new PluginStepMetadata(stepName, "Update", "account", 20, 0, 1, null, null, [], [], RunAs: userId);
         var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
@@ -336,7 +514,8 @@ public class PluginPlannerTests
             {
                 ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
             },
-            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId });
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            systemUserIds: [userId]);
 
         var step = new PluginStepMetadata(stepName, "Update", "account", 20, 0, 1, null, null, [], [], RunAs: userId);
         var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
@@ -344,6 +523,32 @@ public class PluginPlannerTests
         Assert.True(plan.Steps.Upserts.ContainsKey(stepName));
         Assert.True(plan.Steps.Upserts[stepName].IsCreate);
         Assert.Equal(userId, plan.Steps.Upserts[stepName].Entity.GetAttributeValue<EntityReference>("impersonatinguserid").Id);
+    }
+
+    [Fact]
+    public void Plan_NewStep_WithMissingRunAsUser_ThrowsClearException()
+    {
+        var typeId = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        const string stepName = "MyNamespace.MyPlugin: Update of account";
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId });
+
+        var step = new PluginStepMetadata(stepName, "Update", "account", 20, 0, 1, null, null, [], [], RunAs: userId);
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution"));
+
+        Assert.Contains(stepName, ex.Message);
+        Assert.Contains(userId.ToString(), ex.Message);
+        Assert.Contains("system user", ex.Message);
+        Assert.Contains("RunAs", ex.Message);
     }
 
     // -- Custom API obsolete-detection bug fix --

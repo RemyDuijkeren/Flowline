@@ -34,9 +34,9 @@ public class PluginServiceTests
             .Returns(Task.FromResult(new EntityCollection([defaultMessage])));
 
         _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter"))
-            .Returns(Task.FromResult(new EntityCollection()));
+            .Returns(Task.FromResult(new EntityCollection([new Entity("sdkmessagefilter", Guid.NewGuid())])));
         _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter"), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new EntityCollection()));
+            .Returns(Task.FromResult(new EntityCollection([new Entity("sdkmessagefilter", Guid.NewGuid())])));
 
         var defaultSolution = new Entity("solution")
         {
@@ -282,6 +282,39 @@ public class PluginServiceTests
             Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task SyncSolutionAsync_StepWithMissingRunAsUser_ThrowsClearException()
+    {
+        var assemblyId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId));
+        SetupPluginTypes();
+        SetupSteps();
+
+        var step = new PluginStepMetadata(
+            "MyNamespace.MyPlugin: Update of account",
+            "Update",
+            "account",
+            20,
+            0,
+            1,
+            null,
+            null,
+            [],
+            [],
+            RunAs: userId);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.SyncSolutionAsync(
+                _serviceMock,
+                Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)),
+                "MySolution"));
+
+        Assert.Contains("RunAs", ex.Message);
+        Assert.Contains(userId.ToString(), ex.Message);
+        Assert.Contains("system user", ex.Message);
+    }
+
     // -- Deletion of obsolete types --
 
     [Fact]
@@ -370,9 +403,9 @@ public class PluginServiceTests
         _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessage"), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(new List<Entity> { new Entity("sdkmessage", Guid.NewGuid()) { ["name"] = "Update" } })));
         _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter"))
-            .Returns(Task.FromResult(new EntityCollection()));
+            .Returns(Task.FromResult(new EntityCollection([new Entity("sdkmessagefilter", Guid.NewGuid())])));
         _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter"), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new EntityCollection()));
+            .Returns(Task.FromResult(new EntityCollection([new Entity("sdkmessagefilter", Guid.NewGuid())])));
 
         var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of contact", "Update", "contact", 20, 0, 1, null, null, [], []);
 
@@ -562,9 +595,9 @@ public class PluginServiceTests
         _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessage"), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(new List<Entity> { new Entity("sdkmessage", Guid.NewGuid()) { ["name"] = "Update" } })));
         _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter"))
-            .Returns(Task.FromResult(new EntityCollection()));
+            .Returns(Task.FromResult(new EntityCollection([new Entity("sdkmessagefilter", Guid.NewGuid())])));
         _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter"), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new EntityCollection()));
+            .Returns(Task.FromResult(new EntityCollection([new Entity("sdkmessagefilter", Guid.NewGuid())])));
 
         await _service.SyncSolutionAsync(_serviceMock, Metadata(plugins: plugin), "MySolution", RunMode.Save);
 

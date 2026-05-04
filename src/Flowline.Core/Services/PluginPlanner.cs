@@ -59,7 +59,7 @@ public class PluginPlanner(IFlowlineOutput output)
             }
             else
             {
-                var (stepPlan, imagePlan) = PlanPluginSteps(snapshot, dvPluginType, asmPluginType.Steps, solutionName);
+                var (stepPlan, imagePlan) = PlanPluginSteps(snapshot, dvPluginType, asmPluginType, solutionName);
                 plan.Steps.Add(stepPlan);
                 plan.Images.Add(imagePlan);
             }
@@ -80,7 +80,13 @@ public class PluginPlanner(IFlowlineOutput output)
             plan.RequestParams.Add(requestParamPlan);
             plan.ResponseProps.Add(responsePropPlan);
 
-            var (stepPlan, imagePlan) = PlanPluginSteps(snapshot, obsoletePluginType.Value, [], solutionName);
+            var obsoleteMetadata = new PluginTypeMetadata(
+                obsoletePluginType.Value.GetAttributeValue<string>("name") ?? obsoletePluginType.Key,
+                obsoletePluginType.Key,
+                [],
+                [],
+                false);
+            var (stepPlan, imagePlan) = PlanPluginSteps(snapshot, obsoletePluginType.Value, obsoleteMetadata, solutionName);
             plan.Steps.Add(stepPlan);
             plan.Images.Add(imagePlan);
 
@@ -91,10 +97,11 @@ public class PluginPlanner(IFlowlineOutput output)
     }
 
     (ActionPlan stepPlan, ActionPlan imagePlan) PlanPluginSteps(
-        RegistrationSnapshot snapshot, Entity typeEntity, List<PluginStepMetadata> asmPluginSteps, string solutionName)
+        RegistrationSnapshot snapshot, Entity typeEntity, PluginTypeMetadata asmPluginType, string solutionName)
     {
         ActionPlan stepPlan = new();
         ActionPlan imagesPlan = new();
+        var asmPluginSteps = asmPluginType.Steps;
 
         var dvSteps = snapshot.Steps
             .Where(s => (s.GetAttributeValue<EntityReference>("plugintypeid")?.Id ?? Guid.Empty) == typeEntity.Id)
@@ -106,8 +113,24 @@ public class PluginPlanner(IFlowlineOutput output)
 
         foreach (var asmStep in asmPluginSteps)
         {
-            var messageId = snapshot.SdkMessageIds[asmStep.Message];
+            if (!snapshot.SdkMessageIds.TryGetValue(asmStep.Message, out var messageId))
+                throw new InvalidOperationException(
+                    $"Step '{asmStep.Name}' references message '{asmStep.Message}' which does not exist in this environment. " +
+                    $"Check the message name on [Step] for '{asmPluginType.FullName}'.");
+
             snapshot.FilterIds.TryGetValue((messageId, asmStep.EntityName, asmStep.SecondaryEntity), out var filterId);
+
+            var entityRequested = !string.IsNullOrEmpty(asmStep.EntityName) &&
+                                  !string.Equals(asmStep.EntityName, "none", StringComparison.OrdinalIgnoreCase);
+            if (entityRequested && !filterId.HasValue)
+                throw new InvalidOperationException(
+                    $"Step '{asmStep.Name}' references entity '{asmStep.EntityName}' which is not supported for message '{asmStep.Message}' in this environment. " +
+                    $"Check the entity name on [Step] for '{asmPluginType.FullName}'.");
+
+            if (asmStep.RunAs.HasValue && !snapshot.SystemUserIds.Contains(asmStep.RunAs.Value))
+                throw new InvalidOperationException(
+                    $"Step '{asmStep.Name}' references RunAs system user '{asmStep.RunAs.Value}' which does not exist in this environment. " +
+                    $"Check RunAs on [Step] for '{asmPluginType.FullName}'.");
 
             if (dvSteps.TryGetValue(asmStep.Name, out var dvStep))
             {
@@ -139,8 +162,7 @@ public class PluginPlanner(IFlowlineOutput output)
                 dvStep["asyncautodelete"]      = asmStep.AsyncAutoDelete;
                 dvStep["impersonatinguserid"]  = asmStep.RunAs.HasValue ? new EntityReference("systemuser", asmStep.RunAs.Value) : null;
                 dvStep["sdkmessageid"]         = new EntityReference("sdkmessage", messageId);
-                if (filterId.HasValue)
-                    dvStep["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId.Value);
+                dvStep["sdkmessagefilterid"]   = filterId.HasValue ? new EntityReference("sdkmessagefilter", filterId.Value) : null;
 
                 stepPlan.Upserts[asmStep.Name] = new UpsertAction(asmStep.Name, dvStep, IsCreate: false);
             }
@@ -218,7 +240,9 @@ public class PluginPlanner(IFlowlineOutput output)
             else
             {
                 if (!s_messagePropertyNames.TryGetValue(message, out var propertyName))
-                    throw new InvalidOperationException($"Message '{message}' does not support step images.");
+                    throw new InvalidOperationException(
+                        $"Image '{asmImage.Name}' cannot be registered — message '{message}' does not support step images. " +
+                        $"Supported messages: {string.Join(", ", s_messagePropertyNames.Keys)}.");
 
                 var entity = new Entity("sdkmessageprocessingstepimage")
                 {
