@@ -6,21 +6,24 @@ using NSubstitute;
 using Flowline.Core.Services;
 using Flowline.Core.Models;
 using Flowline.Core;
+using Spectre.Console.Testing;
 
 namespace Flowline.Core.Tests;
 
 public class WebResourceServiceTests : IDisposable
 {
     readonly IOrganizationServiceAsync2 _serviceMock;
-    readonly IFlowlineOutput _outputMock;
+    readonly TestConsole _console;
+    readonly FlowlineRuntimeOptions _runtimeOptions;
     readonly WebResourceService _service;
     readonly string _webresourceRoot;
 
     public WebResourceServiceTests()
     {
         _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
-        _outputMock = Substitute.For<IFlowlineOutput>();
-        _service = new WebResourceService(_outputMock);
+        _console = new TestConsole();
+        _runtimeOptions = new FlowlineRuntimeOptions();
+        _service = new WebResourceService(_console, _runtimeOptions);
         _webresourceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(_webresourceRoot);
 
@@ -80,7 +83,7 @@ public class WebResourceServiceTests : IDisposable
         await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<OrganizationRequest>(), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
-        _outputMock.Received().Skip(Arg.Is<string>(s => s.Contains("would create")));
+        Assert.Contains("would create", _console.Output);
     }
 
     [Fact]
@@ -113,7 +116,7 @@ public class WebResourceServiceTests : IDisposable
 
         await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", webResourceId, Arg.Any<CancellationToken>());
-        _outputMock.Received().Skip(Arg.Is<string>(s => s.Contains("ownership unclear")));
+        Assert.Contains("ownership unclear", _console.Output);
     }
 
     [Fact]
@@ -163,7 +166,7 @@ public class WebResourceServiceTests : IDisposable
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false, runMode: RunMode.Save);
 
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", webResourceId, Arg.Any<CancellationToken>());
-        _outputMock.Received().Skip(Arg.Is<string>(s => s.Contains("--save")));
+        Assert.Contains("--save", _console.Output);
     }
 
     [Fact]

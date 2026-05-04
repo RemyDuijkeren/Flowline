@@ -1,13 +1,14 @@
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Flowline.Core.Models;
+using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class WebResourceService(IFlowlineOutput output)
+public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 {
     readonly WebResourceReader _reader = new();
-    readonly WebResourcePlanner _planner = new(output);
-    readonly WebResourceExecutor _executor = new(output);
+    readonly WebResourcePlanner _planner = new(output, opt);
+    readonly WebResourceExecutor _executor = new(output, opt);
 
     public async Task SyncSolutionAsync(
         IOrganizationServiceAsync2 service,
@@ -23,7 +24,9 @@ public class WebResourceService(IFlowlineOutput output)
             throw new ArgumentException("solutionName is required.", nameof(solutionName));
 
         // Phase 1: Load snapshot (all Dataverse state in parallel)
-        var snapshot = await _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, cancellationToken).ConfigureAwait(false);
+        var snapshot = await output.Status()
+            .StartAsync("Loading web resource snapshot...", _ => _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, cancellationToken))
+            .ConfigureAwait(false);
         output.Info("[green]Snapshot loaded[/]");
 
         // Phase 2: Plan registration (pure, synchronous)
@@ -47,7 +50,38 @@ public class WebResourceService(IFlowlineOutput output)
         }
 
         // Phase 3: Execute the plan
-        await _executor.ExecuteAsync(service, plan, publishAfterSync, runMode == RunMode.Save, cancellationToken).ConfigureAwait(false);
+        await output.Progress()
+            .StartAsync(async ctx =>
+            {
+                var createsTask = plan.Creates.Count > 0
+                    ? ctx.AddTask("Creating web resources", maxValue: plan.Creates.Count)
+                    : null;
+                var updatesTask = plan.Updates.Count > 0
+                    ? ctx.AddTask("Updating web resources", maxValue: plan.Updates.Count)
+                    : null;
+                var removesTask = runMode != RunMode.Save && plan.RemovesFromSolution.Count > 0
+                    ? ctx.AddTask("Removing web resources from solution", maxValue: plan.RemovesFromSolution.Count)
+                    : null;
+                var deletesTask = runMode != RunMode.Save && plan.Deletes.Count > 0
+                    ? ctx.AddTask("Deleting web resources", maxValue: plan.Deletes.Count)
+                    : null;
+                var publishTask = publishAfterSync && plan.PublishCount > 0
+                    ? ctx.AddTask("Publishing web resources", maxValue: plan.PublishCount)
+                    : null;
+
+                await _executor.ExecuteAsync(
+                    service,
+                    plan,
+                    publishAfterSync,
+                    runMode == RunMode.Save,
+                    cancellationToken,
+                    createsTask,
+                    updatesTask,
+                    removesTask,
+                    deletesTask,
+                    publishTask).ConfigureAwait(false);
+            })
+            .ConfigureAwait(false);
     }
 
     void WriteDryRunSummary(WebResourceSyncPlan plan, bool publishAfterSync)

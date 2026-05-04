@@ -2,6 +2,7 @@ using Flowline.Core.Services;
 using Flowline.Core;
 using Microsoft.Crm.Sdk.Messages;
 using Microsoft.PowerPlatform.Dataverse.Client;
+using Spectre.Console.Testing;
 using Xunit;
 
 namespace Flowline.Core.Tests;
@@ -12,7 +13,7 @@ public class DataverseConnectorTests
 
     public DataverseConnectorTests()
     {
-        _service = new DataverseConnector(new NullFlowlineOutput());
+        _service = new DataverseConnector(new TestConsole(), new FlowlineRuntimeOptions());
     }
 
     [Fact]

@@ -9,7 +9,7 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 
 namespace Flowline.Commands;
 
-public class PushCommand(DataverseConnector dataverseConnector, PluginService pluginService, WebResourceService webResourceService, AnsiConsoleOutput output)
+public class PushCommand(DataverseConnector dataverseConnector, PluginService pluginService, WebResourceService webResourceService, FlowlineRuntimeOptions runtimeOptions)
     : FlowlineCommand<PushCommand.Settings>
 {
     [Flags]
@@ -80,7 +80,9 @@ public class PushCommand(DataverseConnector dataverseConnector, PluginService pl
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        output.IsVerbose = settings.Verbose;
+        runtimeOptions.IsVerbose = settings.Verbose;
+        runtimeOptions.JsonOutput = settings.JsonOutput;
+        runtimeOptions.Force = settings.Force;
         var standaloneMode = IsStandaloneMode(settings);
 
         if (standaloneMode && !ValidateStandaloneMode(settings, RootFolder)) return 1;
@@ -183,7 +185,7 @@ public class PushCommand(DataverseConnector dataverseConnector, PluginService pl
                 return 1;
             }
             AnsiConsole.MarkupLine($"[green][bold]{Path.GetFileName(extensionsDll)}[/] found[/]");
-            output.Verbose($"[dim]{extensionsDll}[/]");
+            if (runtimeOptions.IsVerbose) AnsiConsole.MarkupLine($"[dim]{extensionsDll}[/]");
         }
 
         string? webResourcesSyncFolder = null;
@@ -230,16 +232,12 @@ public class PushCommand(DataverseConnector dataverseConnector, PluginService pl
 
         if (pushPlugins && extensionsDll != null)
         {
-            await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-                $"Pushing [bold]{Path.GetFileName(extensionsDll)}[/]...",
-                ctx => pluginService.SyncSolutionAsync(conn, extensionsDll, solutionName!, runMode, cancellationToken));
+            await pluginService.SyncSolutionAsync(conn, extensionsDll, solutionName!, runMode, cancellationToken).ConfigureAwait(false);
         }
 
         if (pushWebResources)
         {
-            await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-                "Pushing web resources...",
-                ctx => webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder!, solutionName!, runMode: runMode, cancellationToken: cancellationToken));
+            await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder!, solutionName!, runMode: runMode, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
         AnsiConsole.MarkupLine("[green]Assets pushed[/]");

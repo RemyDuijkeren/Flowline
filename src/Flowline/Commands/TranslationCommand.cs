@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using Flowline.Config;
+using Flowline.Core;
 using Flowline.Core.Services;
 using Flowline.Utils;
 using Microsoft.PowerPlatform.Dataverse.Client;
@@ -32,11 +33,15 @@ public class TranslationSettings : FlowlineSettings
     public string? Target { get; set; }
 }
 
-public class TranslationCommand(DataverseConnector dataverseConnector, TranslationService translationService)
+public class TranslationCommand(DataverseConnector dataverseConnector, TranslationService translationService, FlowlineRuntimeOptions runtimeOptions)
     : AsyncCommand<TranslationSettings>
 {
     protected override async Task<int> ExecuteAsync([NotNull] CommandContext context, [NotNull] TranslationSettings settings, CancellationToken cancellationToken)
     {
+        runtimeOptions.IsVerbose = settings.Verbose;
+        runtimeOptions.JsonOutput = settings.JsonOutput;
+        runtimeOptions.Force = settings.Force;
+
         var action = settings.Action.ToLowerInvariant();
         if (action != "export" && action != "import")
         {

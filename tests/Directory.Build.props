@@ -29,6 +29,7 @@
 
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Spectre.Console.Testing" />
   </ItemGroup>
 
 </Project>

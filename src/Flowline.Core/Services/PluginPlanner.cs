@@ -1,9 +1,10 @@
 using Microsoft.Xrm.Sdk;
 using Flowline.Core.Models;
+using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class PluginPlanner(IFlowlineOutput output)
+public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
 {
     const string FlowlineMarker = "[flowline]";
 
@@ -26,8 +27,8 @@ public class PluginPlanner(IFlowlineOutput output)
     {
         var plan = new RegistrationPlan();
 
-        output.Verbose($"Found {snapshot.PluginTypes.Count} registered plugin types.");
-        foreach (var p in snapshot.PluginTypes.Keys) output.Verbose($"- {p}");
+        output.Verbose($"Found {snapshot.PluginTypes.Count} registered plugin types.", opt);
+        foreach (var p in snapshot.PluginTypes.Keys) output.Verbose($"- {p}", opt);
 
         foreach (var asmPluginType in metadata.Plugins)
         {
@@ -108,8 +109,8 @@ public class PluginPlanner(IFlowlineOutput output)
             .ToDictionary(s => s.GetAttributeValue<string>("name"), s => s, StringComparer.OrdinalIgnoreCase)
             .AsReadOnly();
 
-        output.Verbose($"- Found {dvSteps.Count} registered steps for {typeEntity.GetAttributeValue<string>("name")}.");
-        foreach (var name in dvSteps.Keys) output.Verbose($"  - {name}");
+        output.Verbose($"- Found {dvSteps.Count} registered steps for {typeEntity.GetAttributeValue<string>("name")}.", opt);
+        foreach (var name in dvSteps.Keys) output.Verbose($"  - {name}", opt);
 
         foreach (var asmStep in asmPluginSteps)
         {
@@ -216,8 +217,8 @@ public class PluginPlanner(IFlowlineOutput output)
             .ToDictionary(i => i.GetAttributeValue<string>("name"), i => i, StringComparer.OrdinalIgnoreCase)
             .AsReadOnly();
 
-        output.Verbose($"  - Found {dvImages.Count} registered images for message {message}.");
-        foreach (var i in dvImages.Keys) output.Verbose($"    - {i}");
+        output.Verbose($"  - Found {dvImages.Count} registered images for message {message}.", opt);
+        foreach (var i in dvImages.Keys) output.Verbose($"    - {i}", opt);
 
         foreach (var asmImage in asmImages)
         {
@@ -277,8 +278,8 @@ public class PluginPlanner(IFlowlineOutput output)
             .ToDictionary(e => e.GetAttributeValue<string>("uniquename"), e => e)
             .AsReadOnly();
 
-        output.Verbose($"- Found {dvApis.Count} registered Custom APIs for {typeEntity.GetAttributeValue<string>("name")}.");
-        foreach (var a in dvApis.Keys) output.Verbose($"  - {a}");
+        output.Verbose($"- Found {dvApis.Count} registered Custom APIs for {typeEntity.GetAttributeValue<string>("name")}.", opt);
+        foreach (var a in dvApis.Keys) output.Verbose($"  - {a}", opt);
 
         foreach (var asmApi in asmCustomApis)
         {
@@ -357,8 +358,8 @@ public class PluginPlanner(IFlowlineOutput output)
             .ToDictionary(r => r.GetAttributeValue<string>("uniquename"), r => r, StringComparer.OrdinalIgnoreCase)
             .AsReadOnly();
 
-        output.Verbose($"  - Found {dvRequestParams.Count} registered Request Parameters for Custom API {customApiName}.");
-        foreach (var rp in dvRequestParams.Keys) output.Verbose($"    - {rp}");
+        output.Verbose($"  - Found {dvRequestParams.Count} registered Request Parameters for Custom API {customApiName}.", opt);
+        foreach (var rp in dvRequestParams.Keys) output.Verbose($"    - {rp}", opt);
 
         foreach (var asmParam in asmRequestParams)
         {
@@ -422,8 +423,8 @@ public class PluginPlanner(IFlowlineOutput output)
             .ToDictionary(r => r.GetAttributeValue<string>("uniquename"), r => r, StringComparer.OrdinalIgnoreCase)
             .AsReadOnly();
 
-        output.Verbose($"  - Found {dvResponseProps.Count} registered Response Properties for Custom API {customApiName}.");
-        foreach (var rp in dvResponseProps.Keys) output.Verbose($"    - {rp}");
+        output.Verbose($"  - Found {dvResponseProps.Count} registered Response Properties for Custom API {customApiName}.", opt);
+        foreach (var rp in dvResponseProps.Keys) output.Verbose($"    - {rp}", opt);
 
         foreach (var asmProp in asmResponseProps)
         {

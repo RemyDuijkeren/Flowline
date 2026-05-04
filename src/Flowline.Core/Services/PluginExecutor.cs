@@ -3,10 +3,11 @@ using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Query;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Flowline.Core.Models;
+using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class PluginExecutor(IFlowlineOutput output)
+public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
 {
     const int MaxParallelism = 8;
     const string DefaultSolutionUniqueName = "Default";
@@ -20,20 +21,22 @@ public class PluginExecutor(IFlowlineOutput output)
     };
 
     public Task ExecuteDeletesAsync(
-        IOrganizationServiceAsync2 service, RegistrationPlan plan, string solutionName, bool save, CancellationToken cancellationToken) =>
-        RunDeletesAsync(service, plan, solutionName, save, cancellationToken);
+        IOrganizationServiceAsync2 service, RegistrationPlan plan, string solutionName, bool save, CancellationToken cancellationToken, ProgressTask? progressTask = null) =>
+        RunDeletesAsync(service, plan, solutionName, save, cancellationToken, progressTask);
 
     public Task ExecuteUpsertsAsync(
-        IOrganizationServiceAsync2 service, RegistrationPlan plan, string solutionName, CancellationToken cancellationToken) =>
-        RunUpsertsAsync(service, plan, solutionName, cancellationToken);
+        IOrganizationServiceAsync2 service, RegistrationPlan plan, string solutionName, CancellationToken cancellationToken, ProgressTask? progressTask = null) =>
+        RunUpsertsAsync(service, plan, solutionName, cancellationToken, progressTask);
 
     public Task ExecuteAddToSolutionAsync(
-        IOrganizationServiceAsync2 service, RegistrationPlan plan, CancellationToken cancellationToken) =>
-        RunAddSolutionComponentsAsync(service, plan, cancellationToken);
+        IOrganizationServiceAsync2 service, RegistrationPlan plan, CancellationToken cancellationToken, ProgressTask? progressTask = null) =>
+        RunAddSolutionComponentsAsync(service, plan, cancellationToken, progressTask);
 
     async Task RunDeletesAsync(
-        IOrganizationServiceAsync2 service, RegistrationPlan plan, string solutionName, bool save, CancellationToken cancellationToken)
+        IOrganizationServiceAsync2 service, RegistrationPlan plan, string solutionName, bool save, CancellationToken cancellationToken, ProgressTask? progressTask)
     {
+        var progressLock = new object();
+
         // Level 3 — delete leaf items first
         if (save)
         {
@@ -44,17 +47,17 @@ public class PluginExecutor(IFlowlineOutput output)
         else
         {
             await Task.WhenAll(
-                ExecuteBoundedParallelAsync(plan.Images.Deletes.Values,        MaxParallelism, a => service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken), cancellationToken),
-                ExecuteBoundedParallelAsync(plan.ResponseProps.Deletes.Values, MaxParallelism, a => service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken), cancellationToken),
-                ExecuteBoundedParallelAsync(plan.RequestParams.Deletes.Values, MaxParallelism, a => service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken), cancellationToken)).ConfigureAwait(false);
+                ExecuteBoundedParallelAsync(plan.Images.Deletes.Values,        MaxParallelism, a => service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken), cancellationToken, progressTask, progressLock),
+                ExecuteBoundedParallelAsync(plan.ResponseProps.Deletes.Values, MaxParallelism, a => service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken), cancellationToken, progressTask, progressLock),
+                ExecuteBoundedParallelAsync(plan.RequestParams.Deletes.Values, MaxParallelism, a => service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken), cancellationToken, progressTask, progressLock)).ConfigureAwait(false);
 
-            foreach (var s in plan.Images.Deletes.Keys)         output.Verbose($"Image '{s}' not in source — deleted");
+            foreach (var s in plan.Images.Deletes.Keys)         output.Verbose($"Image '{s}' not in source — deleted", opt);
             if (plan.Images.Deletes.Count > 0)         output.Info($"[green]{plan.Images.Deletes.Count} image(s) deleted[/]");
 
-            foreach (var s in plan.ResponseProps.Deletes.Keys)  output.Verbose($"Response Property '{s}' not in source — deleted");
+            foreach (var s in plan.ResponseProps.Deletes.Keys)  output.Verbose($"Response Property '{s}' not in source — deleted", opt);
             if (plan.ResponseProps.Deletes.Count > 0)  output.Info($"[green]{plan.ResponseProps.Deletes.Count} response property record(s) deleted[/]");
 
-            foreach (var s in plan.RequestParams.Deletes.Keys)  output.Verbose($"Request Parameter '{s}' not in source — deleted");
+            foreach (var s in plan.RequestParams.Deletes.Keys)  output.Verbose($"Request Parameter '{s}' not in source — deleted", opt);
             if (plan.RequestParams.Deletes.Count > 0)  output.Info($"[green]{plan.RequestParams.Deletes.Count} request parameter(s) deleted[/]");
         }
 
@@ -67,13 +70,13 @@ public class PluginExecutor(IFlowlineOutput output)
         else
         {
             await Task.WhenAll(
-                ExecuteBoundedParallelAsync(plan.Steps.Deletes.Values,      MaxParallelism, a => service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken), cancellationToken),
-                ExecuteBoundedParallelAsync(plan.CustomApis.Deletes.Values, MaxParallelism, a => service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken), cancellationToken)).ConfigureAwait(false);
+                ExecuteBoundedParallelAsync(plan.Steps.Deletes.Values,      MaxParallelism, a => service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken), cancellationToken, progressTask, progressLock),
+                ExecuteBoundedParallelAsync(plan.CustomApis.Deletes.Values, MaxParallelism, a => service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken), cancellationToken, progressTask, progressLock)).ConfigureAwait(false);
 
-            foreach (var s in plan.Steps.Deletes.Keys)       output.Verbose($"Step '{s}' not in source — deleted");
+            foreach (var s in plan.Steps.Deletes.Keys)       output.Verbose($"Step '{s}' not in source — deleted", opt);
             if (plan.Steps.Deletes.Count > 0)      output.Info($"[green]{plan.Steps.Deletes.Count} plugin step(s) deleted[/]");
 
-            foreach (var s in plan.CustomApis.Deletes.Keys)  output.Verbose($"Custom API '{s}' not in source — deleted");
+            foreach (var s in plan.CustomApis.Deletes.Keys)  output.Verbose($"Custom API '{s}' not in source — deleted", opt);
             if (plan.CustomApis.Deletes.Count > 0) output.Info($"[green]{plan.CustomApis.Deletes.Count} Custom API(s) deleted[/]");
         }
 
@@ -84,49 +87,51 @@ public class PluginExecutor(IFlowlineOutput output)
         }
         else
         {
-            await ExecuteBoundedParallelAsync(plan.PluginTypes.Deletes.Values, MaxParallelism, a => service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken), cancellationToken).ConfigureAwait(false);
-            foreach (var s in plan.PluginTypes.Deletes.Keys) output.Verbose($"Plugin Type '{s}' not in source — deleted");
+            await ExecuteBoundedParallelAsync(plan.PluginTypes.Deletes.Values, MaxParallelism, a => service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken), cancellationToken, progressTask, progressLock).ConfigureAwait(false);
+            foreach (var s in plan.PluginTypes.Deletes.Keys) output.Verbose($"Plugin Type '{s}' not in source — deleted", opt);
             if (plan.PluginTypes.Deletes.Count > 0) output.Info($"[green]{plan.PluginTypes.Deletes.Count} plugin type(s) deleted[/]");
         }
     }
 
     async Task RunUpsertsAsync(
-        IOrganizationServiceAsync2 service, RegistrationPlan plan, string solutionName, CancellationToken cancellationToken)
+        IOrganizationServiceAsync2 service, RegistrationPlan plan, string solutionName, CancellationToken cancellationToken, ProgressTask? progressTask)
     {
+        var progressLock = new object();
+
         // Level 1 — plugin types
-        await ExecuteBoundedParallelAsync(plan.PluginTypes.Upserts.Values, 1, a => UpsertAsync(service, a, solutionName, cancellationToken), cancellationToken).ConfigureAwait(false);
-        foreach (var s in plan.PluginTypes.Upserts.Keys) output.Verbose($"Plugin type '{s}' upserted");
+        await ExecuteBoundedParallelAsync(plan.PluginTypes.Upserts.Values, 1, a => UpsertAsync(service, a, solutionName, cancellationToken), cancellationToken, progressTask, progressLock).ConfigureAwait(false);
+        foreach (var s in plan.PluginTypes.Upserts.Keys) output.Verbose($"Plugin type '{s}' upserted", opt);
         if (plan.PluginTypes.Upserts.Count > 0) output.Info($"[green]{plan.PluginTypes.Upserts.Count} plugin type(s) synced[/]");
 
         // Level 2 — steps and custom APIs
         await Task.WhenAll(
-            ExecuteBoundedParallelAsync(plan.Steps.Upserts.Values,      MaxParallelism, a => UpsertAsync(service, a, solutionName, cancellationToken), cancellationToken),
-            ExecuteBoundedParallelAsync(plan.CustomApis.Upserts.Values, MaxParallelism, a => UpsertAsync(service, a, solutionName, cancellationToken), cancellationToken)).ConfigureAwait(false);
+            ExecuteBoundedParallelAsync(plan.Steps.Upserts.Values,      MaxParallelism, a => UpsertAsync(service, a, solutionName, cancellationToken), cancellationToken, progressTask, progressLock),
+            ExecuteBoundedParallelAsync(plan.CustomApis.Upserts.Values, MaxParallelism, a => UpsertAsync(service, a, solutionName, cancellationToken), cancellationToken, progressTask, progressLock)).ConfigureAwait(false);
 
-        foreach (var s in plan.Steps.Upserts.Keys)      output.Verbose($"Step '{s}' upserted");
+        foreach (var s in plan.Steps.Upserts.Keys)      output.Verbose($"Step '{s}' upserted", opt);
         if (plan.Steps.Upserts.Count > 0)      output.Info($"[green]{plan.Steps.Upserts.Count} plugin step(s) synced[/]");
 
-        foreach (var s in plan.CustomApis.Upserts.Keys) output.Verbose($"Custom API '{s}' upserted");
+        foreach (var s in plan.CustomApis.Upserts.Keys) output.Verbose($"Custom API '{s}' upserted", opt);
         if (plan.CustomApis.Upserts.Count > 0) output.Info($"[green]{plan.CustomApis.Upserts.Count} Custom API(s) synced[/]");
 
         // Level 3 — leaf items
         await Task.WhenAll(
-            ExecuteBoundedParallelAsync(plan.Images.Upserts.Values,       MaxParallelism, a => UpsertAsync(service, a, solutionName, cancellationToken), cancellationToken),
-            ExecuteBoundedParallelAsync(plan.ResponseProps.Upserts.Values, MaxParallelism, a => UpsertAsync(service, a, solutionName, cancellationToken), cancellationToken),
-            ExecuteBoundedParallelAsync(plan.RequestParams.Upserts.Values, MaxParallelism, a => UpsertAsync(service, a, solutionName, cancellationToken), cancellationToken)).ConfigureAwait(false);
+            ExecuteBoundedParallelAsync(plan.Images.Upserts.Values,       MaxParallelism, a => UpsertAsync(service, a, solutionName, cancellationToken), cancellationToken, progressTask, progressLock),
+            ExecuteBoundedParallelAsync(plan.ResponseProps.Upserts.Values, MaxParallelism, a => UpsertAsync(service, a, solutionName, cancellationToken), cancellationToken, progressTask, progressLock),
+            ExecuteBoundedParallelAsync(plan.RequestParams.Upserts.Values, MaxParallelism, a => UpsertAsync(service, a, solutionName, cancellationToken), cancellationToken, progressTask, progressLock)).ConfigureAwait(false);
 
-        foreach (var s in plan.Images.Upserts.Keys)        output.Verbose($"Image '{s}' upserted");
+        foreach (var s in plan.Images.Upserts.Keys)        output.Verbose($"Image '{s}' upserted", opt);
         if (plan.Images.Upserts.Count > 0)        output.Info($"[green]{plan.Images.Upserts.Count} image(s) synced[/]");
 
-        foreach (var s in plan.ResponseProps.Upserts.Keys)  output.Verbose($"Response property '{s}' upserted");
+        foreach (var s in plan.ResponseProps.Upserts.Keys)  output.Verbose($"Response property '{s}' upserted", opt);
         if (plan.ResponseProps.Upserts.Count > 0)  output.Info($"[green]{plan.ResponseProps.Upserts.Count} response property record(s) synced[/]");
 
-        foreach (var s in plan.RequestParams.Upserts.Keys)  output.Verbose($"Request Parameter '{s}' upserted");
+        foreach (var s in plan.RequestParams.Upserts.Keys)  output.Verbose($"Request Parameter '{s}' upserted", opt);
         if (plan.RequestParams.Upserts.Count > 0)  output.Info($"[green]{plan.RequestParams.Upserts.Count} request parameter(s) synced[/]");
     }
 
     async Task RunAddSolutionComponentsAsync(
-        IOrganizationServiceAsync2 service, RegistrationPlan plan, CancellationToken cancellationToken)
+        IOrganizationServiceAsync2 service, RegistrationPlan plan, CancellationToken cancellationToken, ProgressTask? progressTask)
     {
         var all = plan.PluginTypes.AddSolutionComponents.Values
             .Concat(plan.Steps.AddSolutionComponents.Values)
@@ -139,18 +144,19 @@ public class PluginExecutor(IFlowlineOutput output)
         if (all.Count == 0)
             return;
 
-        await ExecuteBoundedParallelAsync(all, MaxParallelism, a => AddSolutionComponentAsync(service, a.EntityLogicalName, a.Id, a.SolutionName, cancellationToken), cancellationToken).ConfigureAwait(false);
+        var progressLock = new object();
+        await ExecuteBoundedParallelAsync(all, MaxParallelism, a => AddSolutionComponentAsync(service, a.EntityLogicalName, a.Id, a.SolutionName, cancellationToken), cancellationToken, progressTask, progressLock).ConfigureAwait(false);
 
-        foreach (var s in plan.Steps.AddSolutionComponents.Keys)       output.Verbose($"Step '{s}' added to solution");
+        foreach (var s in plan.Steps.AddSolutionComponents.Keys)       output.Verbose($"Step '{s}' added to solution", opt);
         if (plan.Steps.AddSolutionComponents.Count > 0)        output.Info($"[green]{plan.Steps.AddSolutionComponents.Count} plugin step(s) added to solution[/]");
 
-        foreach (var s in plan.CustomApis.AddSolutionComponents.Keys)  output.Verbose($"Custom API '{s}' added to solution");
+        foreach (var s in plan.CustomApis.AddSolutionComponents.Keys)  output.Verbose($"Custom API '{s}' added to solution", opt);
         if (plan.CustomApis.AddSolutionComponents.Count > 0)   output.Info($"[green]{plan.CustomApis.AddSolutionComponents.Count} Custom API(s) added to solution[/]");
 
-        foreach (var s in plan.ResponseProps.AddSolutionComponents.Keys) output.Verbose($"Response property '{s}' added to solution");
+        foreach (var s in plan.ResponseProps.AddSolutionComponents.Keys) output.Verbose($"Response property '{s}' added to solution", opt);
         if (plan.ResponseProps.AddSolutionComponents.Count > 0) output.Info($"[green]{plan.ResponseProps.AddSolutionComponents.Count} response property record(s) added to solution[/]");
 
-        foreach (var s in plan.RequestParams.AddSolutionComponents.Keys) output.Verbose($"Request Parameter '{s}' added to solution");
+        foreach (var s in plan.RequestParams.AddSolutionComponents.Keys) output.Verbose($"Request Parameter '{s}' added to solution", opt);
         if (plan.RequestParams.AddSolutionComponents.Count > 0) output.Info($"[green]{plan.RequestParams.AddSolutionComponents.Count} request parameter(s) added to solution[/]");
     }
 
@@ -184,7 +190,7 @@ public class PluginExecutor(IFlowlineOutput output)
         };
 
         await service.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
-        output.Verbose($"Added {entityLogicalName} '{componentId}' to solution '{solutionName}'.");
+        output.Verbose($"Added {entityLogicalName} '{componentId}' to solution '{solutionName}'.", opt);
     }
 
     async Task<int> GetComponentTypeAsync(IOrganizationServiceAsync2 service, string entityLogicalName, Guid componentId, CancellationToken cancellationToken = default)
@@ -256,7 +262,13 @@ public class PluginExecutor(IFlowlineOutput output)
         output.Warning($"Updating {entityLogicalName} '{componentDisplayName}' which also exists in other solutions: {string.Join(", ", otherSolutions)}.");
     }
 
-    static async Task ExecuteBoundedParallelAsync<T>(IEnumerable<T> items, int maxParallelism, Func<T, Task> action, CancellationToken cancellationToken)
+    static async Task ExecuteBoundedParallelAsync<T>(
+        IEnumerable<T> items,
+        int maxParallelism,
+        Func<T, Task> action,
+        CancellationToken cancellationToken,
+        ProgressTask? progressTask = null,
+        object? progressLock = null)
     {
         var list = items as ICollection<T> ?? items.ToList();
         if (list.Count == 0) return;
@@ -265,10 +277,29 @@ public class PluginExecutor(IFlowlineOutput output)
         var tasks = list.Select(async item =>
         {
             await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try   { await action(item).ConfigureAwait(false); }
+            try
+            {
+                await action(item).ConfigureAwait(false);
+                IncrementProgress(progressTask, progressLock);
+            }
             finally { gate.Release(); }
         }).ToList();
 
         await Task.WhenAll(tasks).ConfigureAwait(false);
+    }
+
+    static void IncrementProgress(ProgressTask? progressTask, object? progressLock)
+    {
+        if (progressTask == null)
+            return;
+
+        if (progressLock == null)
+        {
+            progressTask.Increment(1);
+            return;
+        }
+
+        lock (progressLock)
+            progressTask.Increment(1);
     }
 }

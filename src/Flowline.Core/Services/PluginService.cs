@@ -2,18 +2,19 @@ using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Flowline.Core.Models;
+using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class PluginService(IFlowlineOutput output)
+public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 {
     const string FlowlineMarker = "[flowline]";
 
     readonly PluginReader _reader   = new();
-    readonly PluginPlanner      _planner  = new(output);
-    readonly PluginExecutor _executor = new(output);
+    readonly PluginPlanner      _planner  = new(output, opt);
+    readonly PluginExecutor _executor = new(output, opt);
     readonly SolutionReader  _solutionReader = new();
-    readonly PluginAssemblyReader _assemblyReader = new(output);
+    readonly PluginAssemblyReader _assemblyReader = new(output, opt);
 
     public async Task SyncSolutionAsync(
         IOrganizationServiceAsync2 service,
@@ -25,7 +26,7 @@ public class PluginService(IFlowlineOutput output)
         if (string.IsNullOrWhiteSpace(dllPath))
             throw new ArgumentException("dllPath is required and cannot be empty.", nameof(dllPath));
 
-        var metadata = _assemblyReader.Analyze(dllPath);
+        var metadata = output.Status().Start("Analyzing plugin assembly...", ctx => _assemblyReader.Analyze(dllPath));
         await SyncSolutionAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
     }
 
@@ -39,14 +40,18 @@ public class PluginService(IFlowlineOutput output)
         if (string.IsNullOrWhiteSpace(solutionName))
             throw new ArgumentException("solutionName is required and cannot be empty.", nameof(solutionName));
 
-        await _solutionReader.GetSupportedSolutionInfoAsync(service, solutionName, cancellationToken).ConfigureAwait(false);
+        await output.Status()
+            .StartAsync($"Looking up solution [bold]{solutionName}[/]...", _ => _solutionReader.GetSupportedSolutionInfoAsync(service, solutionName, cancellationToken))
+            .ConfigureAwait(false);
 
         // Phase 1: Get or register assembly
         var (assembly, needsUpdate) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
         output.Info($"[green]Assembly: [bold]{metadata.Name}[/] ({metadata.Version})[/]");
 
         // Phase 2: Load snapshot (all Dataverse state in parallel)
-        var snapshot = await _reader.LoadSnapshotAsync(service, assembly.Id, metadata, solutionName, cancellationToken).ConfigureAwait(false);
+        var snapshot = await output.Status()
+            .StartAsync("Loading plugin registration snapshot...", _ => _reader.LoadSnapshotAsync(service, assembly.Id, metadata, solutionName, cancellationToken))
+            .ConfigureAwait(false);
         output.Info("[green]Snapshot loaded[/]");
 
         // Phase 3: Plan registration (pure, synchronous)
@@ -61,24 +66,72 @@ public class PluginService(IFlowlineOutput output)
         }
 
         // Phase 4: Execute the deletes first — must precede assembly update and upserts
-        await _executor.ExecuteDeletesAsync(service, plan, solutionName, runMode == RunMode.Save, cancellationToken).ConfigureAwait(false);
+        if (runMode == RunMode.Save || plan.TotalDeletes == 0)
+        {
+            await _executor.ExecuteDeletesAsync(service, plan, solutionName, runMode == RunMode.Save, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await output.Progress()
+                .StartAsync(async ctx =>
+                {
+                    var task = ctx.AddTask("Deleting stale plugin components", maxValue: plan.TotalDeletes);
+                    await _executor.ExecuteDeletesAsync(service, plan, solutionName, false, cancellationToken, task).ConfigureAwait(false);
+                })
+                .ConfigureAwait(false);
+        }
         if (plan.TotalDeletes > 0) output.Info($"[green]{plan.TotalDeletes} stale component(s) deleted[/]");
 
         // Phase 5: Update assembly content — must happen before new plugin types are registered
         if (needsUpdate)
         {
-            await WarnIfAssemblyInOtherSolutionsAsync(service, assembly.Id, solutionName, metadata.Name, cancellationToken).ConfigureAwait(false);
-            assembly["content"]     = Convert.ToBase64String(metadata.Content);
-            assembly["version"]     = metadata.Version;
-            assembly["description"] = $"{FlowlineMarker} sha256={metadata.Hash}";
-            await service.UpdateAsync(assembly, cancellationToken).ConfigureAwait(false);
+            await output.Progress()
+                .StartAsync(async ctx =>
+                {
+                    var task = ctx.AddTask("Updating plugin assembly", maxValue: 1);
+                    await WarnIfAssemblyInOtherSolutionsAsync(service, assembly.Id, solutionName, metadata.Name, cancellationToken).ConfigureAwait(false);
+                    assembly["content"]     = Convert.ToBase64String(metadata.Content);
+                    assembly["version"]     = metadata.Version;
+                    assembly["description"] = $"{FlowlineMarker} sha256={metadata.Hash}";
+                    await service.UpdateAsync(assembly, cancellationToken).ConfigureAwait(false);
+                    task.Increment(1);
+                })
+                .ConfigureAwait(false);
             output.Info($"[green]Updated assembly content for [bold]{metadata.Name}[/][/]");
         }
 
         // Phase 6: Execute upserts and add to solution
-        await _executor.ExecuteUpsertsAsync(service, plan, solutionName, cancellationToken).ConfigureAwait(false);
+        if (plan.TotalUpserts > 0)
+        {
+            await output.Progress()
+                .StartAsync(async ctx =>
+                {
+                    var task = ctx.AddTask("Syncing plugin components", maxValue: plan.TotalUpserts);
+                    await _executor.ExecuteUpsertsAsync(service, plan, solutionName, cancellationToken, task).ConfigureAwait(false);
+                })
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            await _executor.ExecuteUpsertsAsync(service, plan, solutionName, cancellationToken).ConfigureAwait(false);
+        }
         if (plan.TotalUpserts > 0) output.Info($"[green]{plan.TotalUpserts} component(s) synced[/]");
-        await _executor.ExecuteAddToSolutionAsync(service, plan, cancellationToken).ConfigureAwait(false);
+
+        var addToSolutionCount = CountAddToSolutionComponents(plan);
+        if (addToSolutionCount > 0)
+        {
+            await output.Progress()
+                .StartAsync(async ctx =>
+                {
+                    var task = ctx.AddTask("Adding plugin components to solution", maxValue: addToSolutionCount);
+                    await _executor.ExecuteAddToSolutionAsync(service, plan, cancellationToken, task).ConfigureAwait(false);
+                })
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            await _executor.ExecuteAddToSolutionAsync(service, plan, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     async Task<(Entity entity, bool needsUpdate)> GetOrRegisterAssemblyAsync(
@@ -276,4 +329,12 @@ public class PluginService(IFlowlineOutput output)
         if (!Version.TryParse(local, out var loc))      return false;
         return reg.Major != loc.Major || reg.Minor != loc.Minor;
     }
+
+    static int CountAddToSolutionComponents(RegistrationPlan plan) =>
+        plan.PluginTypes.AddSolutionComponents.Count
+        + plan.Steps.AddSolutionComponents.Count
+        + plan.Images.AddSolutionComponents.Count
+        + plan.CustomApis.AddSolutionComponents.Count
+        + plan.RequestParams.AddSolutionComponents.Count
+        + plan.ResponseProps.AddSolutionComponents.Count;
 }

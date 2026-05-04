@@ -4,6 +4,7 @@ using Flowline.Core.Services;
 using Flowline.Core;
 using NSubstitute;
 using Microsoft.PowerPlatform.Dataverse.Client;
+using Spectre.Console.Testing;
 
 namespace Flowline.Core.Tests;
 
@@ -15,7 +16,7 @@ public class TranslationServiceTests
     public TranslationServiceTests()
     {
         _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
-        _service = new TranslationService(new NullFlowlineOutput());
+        _service = new TranslationService(new TestConsole(), new FlowlineRuntimeOptions());
     }
 
     [Fact]

@@ -1,14 +1,15 @@
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.PowerPlatform.Dataverse.Client;
+using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class TranslationService(IFlowlineOutput output)
+public class TranslationService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 {
     public async Task ExportAsync(IOrganizationServiceAsync2 service, string solutionName, string exportPath)
     {
-        output.Verbose($"Exporting translations for solution {solutionName}...");
+        output.Verbose($"Exporting translations for solution {solutionName}...", opt);
 
         var request = new OrganizationRequest("ExportTranslation")
         {
@@ -29,7 +30,7 @@ public class TranslationService(IFlowlineOutput output)
 
     public async Task ImportAsync(IOrganizationServiceAsync2 service, string importPath)
     {
-        output.Verbose($"Importing translations from {importPath}...");
+        output.Verbose($"Importing translations from {importPath}...", opt);
 
         if (!File.Exists(importPath))
             throw new FileNotFoundException("Translation file not found.", importPath);
@@ -45,8 +46,8 @@ public class TranslationService(IFlowlineOutput output)
         await service.ExecuteAsync(request).ConfigureAwait(false);
         output.Info("[green]Translations imported[/]");
 
-        output.Verbose("Publishing all changes...");
+        output.Verbose("Publishing all changes...", opt);
         await service.ExecuteAsync(new OrganizationRequest("PublishAllXml")).ConfigureAwait(false);
-        output.Verbose("Changes published");
+        output.Verbose("Changes published", opt);
     }
 }

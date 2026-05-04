@@ -4,6 +4,7 @@ using Flowline.Core;
 using Flowline.Core.Services;
 using Flowline.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
+using Spectre.Console;
 using Spectre.Console.Cli;
 using System.Reflection;
 
@@ -20,8 +21,8 @@ Console.CancelKeyPress += (_, e) =>
 
 // Register services
 var services = new ServiceCollection();
-services.AddSingleton<AnsiConsoleOutput>();
-services.AddSingleton<IFlowlineOutput>(sp => sp.GetRequiredService<AnsiConsoleOutput>());
+services.AddSingleton<IAnsiConsole>(AnsiConsole.Console);
+services.AddSingleton<FlowlineRuntimeOptions>();
 services.AddSingleton<DataverseConnector>();
 services.AddSingleton<PluginService>();
 services.AddSingleton<WebResourceService>();

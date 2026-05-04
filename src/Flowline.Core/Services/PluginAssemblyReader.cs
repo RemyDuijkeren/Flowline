@@ -2,10 +2,11 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using Flowline.Core.Models;
+using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class PluginAssemblyReader(IFlowlineOutput output)
+public class PluginAssemblyReader(IAnsiConsole output, FlowlineRuntimeOptions opt)
 {
     private static readonly string[] MessageNames =
         Enum.GetNames<MessageName>().OrderByDescending(n => n.Length).ToArray();
@@ -133,7 +134,7 @@ public class PluginAssemblyReader(IFlowlineOutput output)
 
             if (isWorkflow)
             {
-                output.Verbose($"Found Workflow {type.FullName}");
+                output.Verbose($"Found Workflow {type.FullName}", opt);
                 pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, Steps: [], CustomApis: [], IsWorkflow: true));
                 continue;
             }
@@ -143,7 +144,7 @@ public class PluginAssemblyReader(IFlowlineOutput output)
                 var customApi = TryBuildCustomApi(type);
                 if (customApi != null)
                 {
-                    output.Verbose($"Found Custom API {type.FullName}");
+                    output.Verbose($"Found Custom API {type.FullName}", opt);
                     pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, Steps: [], CustomApis: [customApi], IsWorkflow: false, IsCustomApi: true));
                     continue;
                 }
@@ -151,13 +152,13 @@ public class PluginAssemblyReader(IFlowlineOutput output)
                 var step = TryBuildStep(type);
                 if (step != null)
                 {
-                    output.Verbose($"Found Plugin {type.FullName} with plugin step {step.Name}");
+                    output.Verbose($"Found Plugin {type.FullName} with plugin step {step.Name}", opt);
                     foreach (var warning in step.Warnings) output.Warning(warning);
                     pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, [step], [], isWorkflow));
                 }
                 else
                 {
-                    output.Verbose($"Found Plugin {type.FullName} with no [[Step]]");
+                    output.Verbose($"Found Plugin {type.FullName} with no [[Step]]", opt);
                     pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, [], [], isWorkflow));
                 }
             }

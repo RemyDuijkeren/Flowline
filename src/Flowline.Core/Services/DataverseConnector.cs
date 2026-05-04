@@ -1,14 +1,15 @@
 using Microsoft.PowerPlatform.Dataverse.Client;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class DataverseConnector(IFlowlineOutput output)
+public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
 {
     public IOrganizationServiceAsync2 Connect(string connectionString)
     {
-        output.Verbose("Connecting to Dataverse...");
+        output.Verbose("Connecting to Dataverse...", opt);
 
         var client = new ServiceClient(connectionString);
 
@@ -20,7 +21,7 @@ public class DataverseConnector(IFlowlineOutput output)
             throw new Exception($"Failed to connect to Dataverse: {lastError}", lastException);
         }
 
-        output.Verbose($"Connected to {client.ConnectedOrgUriActual}");
+        output.Verbose($"Connected to {client.ConnectedOrgUriActual}", opt);
 
         return client;
     }
@@ -34,7 +35,7 @@ public class DataverseConnector(IFlowlineOutput output)
 
         var targetUrl = environmentUrl;
 
-        output.Verbose($"Connecting via PAC profile for {profile.User} at {targetUrl}...");
+        output.Verbose($"Connecting via PAC profile for {profile.User} at {targetUrl}...", opt);
 
         // PAC CLI Client ID
         const string pacClientId = "51f81489-12ee-4a9e-aaae-a2591f45987d";
@@ -93,7 +94,7 @@ public class DataverseConnector(IFlowlineOutput output)
 
         if (!File.Exists(authProfilesPath))
         {
-            output.Verbose($"PAC auth profiles file not found: {authProfilesPath}");
+            output.Verbose($"PAC auth profiles file not found: {authProfilesPath}", opt);
             return null;
         }
 
@@ -104,7 +105,7 @@ public class DataverseConnector(IFlowlineOutput output)
         }
         catch (Exception ex)
         {
-            output.Verbose($"Failed to read PAC auth profiles: {ex.Message}");
+            output.Verbose($"Failed to read PAC auth profiles: {ex.Message}", opt);
             return null;
         }
     }

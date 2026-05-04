@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.PowerPlatform.Dataverse.Client" />
+    <PackageReference Include="Spectre.Console" />
     <PackageReference Include="System.Reflection.MetadataLoadContext" />
     <PackageReference Include="MinVer" PrivateAssets="All" />
   </ItemGroup>

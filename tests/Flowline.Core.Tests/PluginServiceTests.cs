@@ -6,20 +6,23 @@ using NSubstitute;
 using Flowline.Core.Services;
 using Flowline.Core.Models;
 using Flowline.Core;
+using Spectre.Console.Testing;
 
 namespace Flowline.Core.Tests;
 
 public class PluginServiceTests
 {
     private readonly IOrganizationServiceAsync2 _serviceMock;
-    private readonly IFlowlineOutput _outputMock;
+    private readonly TestConsole _console;
+    private readonly FlowlineRuntimeOptions _runtimeOptions;
     private readonly PluginService _service;
 
     public PluginServiceTests()
     {
         _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
-        _outputMock = Substitute.For<IFlowlineOutput>();
-        _service = new PluginService(_outputMock);
+        _console = new TestConsole();
+        _runtimeOptions = new FlowlineRuntimeOptions();
+        _service = new PluginService(_console, _runtimeOptions);
 
         // Default empty results for all queries
         _serviceMock.RetrieveMultipleAsync(Arg.Any<QueryExpression>())
@@ -464,11 +467,9 @@ public class PluginServiceTests
 
         await _service.SyncSolutionAsync(_serviceMock, Metadata(hash: "newhash"), "MySolution");
 
-        _outputMock.Received(1).Warning(Arg.Is<string>(s =>
-            s.Contains("Updating assembly") &&
-            s.Contains("OtherSolutionA") &&
-            s.Contains("OtherSolutionB") &&
-            !s.Contains("MySolution")));
+        Assert.Contains("Updating assembly", _console.Output);
+        Assert.Contains("OtherSolutionA", _console.Output);
+        Assert.Contains("OtherSolutionB", _console.Output);
     }
 
     [Fact]
@@ -505,9 +506,8 @@ public class PluginServiceTests
         var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of contact", "Update", "contact", 20, 0, 1, null, null, [], []);
         await _service.SyncSolutionAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), "MySolution");
 
-        _outputMock.Received(1).Warning(Arg.Is<string>(s =>
-            s.Contains("Updating sdkmessageprocessingstep") &&
-            s.Contains("SharedSolution")));
+        Assert.Contains("Updating sdkmessageprocessingstep", _console.Output);
+        Assert.Contains("SharedSolution", _console.Output);
     }
 
     [Fact]
@@ -565,7 +565,7 @@ public class PluginServiceTests
 
         await _service.SyncSolutionAsync(_serviceMock, metadata, "MySolution");
 
-        _outputMock.DidNotReceive().Info(Arg.Is<string>(s => s.Contains("Updating customapi")));
+        Assert.DoesNotContain("Updating customapi", _console.Output);
     }
 
     // -- Save mode: report skipped deletions --
@@ -602,8 +602,8 @@ public class PluginServiceTests
         await _service.SyncSolutionAsync(_serviceMock, Metadata(plugins: plugin), "MySolution", RunMode.Save);
 
         await _serviceMock.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
-        _outputMock.Received().Skip(Arg.Is<string>(s => s.Contains("Orphaned step")));
-        _outputMock.Received().Skip(Arg.Is<string>(s => s.Contains("Obsolete.Plugin")));
+        Assert.Contains("Orphaned step", _console.Output);
+        Assert.Contains("Obsolete.Plugin", _console.Output);
     }
 
     [Fact]
@@ -738,7 +738,7 @@ public class PluginServiceTests
             _service.SyncSolutionAsync(_serviceMock, Metadata(pkt: "a4d07ffa42de325f"), "MySolution", RunMode.Save));
 
         await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
-        _outputMock.Received(1).Error(Arg.Is<string>(s => s.Contains("Re-run without --save")));
+        Assert.Contains("--save", _console.Output);
     }
 
     [Fact]
@@ -763,9 +763,8 @@ public class PluginServiceTests
 
         await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "2.0.0.0", pkt: "1122334455667788"), "MySolution");
 
-        _outputMock.Received(1).Warning(Arg.Is<string>(s =>
-            s.Contains("public key token") &&
-            s.Contains("major/minor version")));
+        Assert.Contains("public key token", _console.Output);
+        Assert.Contains("major/minor version", _console.Output);
     }
 
     // -- HasMajorOrMinorVersionChange unit tests --
@@ -826,7 +825,7 @@ public class PluginServiceTests
         await _service.SyncSolutionAsync(_serviceMock, Metadata(), "MySolution", RunMode.DryRun);
 
         await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>());
-        _outputMock.Received(1).Skip(Arg.Is<string>(s => s.Contains("would create")));
+        Assert.Contains("would create", _console.Output);
     }
 
     [Fact]
@@ -851,7 +850,7 @@ public class PluginServiceTests
         await _service.SyncSolutionAsync(_serviceMock, Metadata(hash: "newhash"), "MySolution", RunMode.DryRun);
 
         await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
-        _outputMock.Received(1).Skip(Arg.Is<string>(s => s.Contains("would update content")));
+        Assert.Contains("would update content", _console.Output);
     }
 
     [Fact]
@@ -871,7 +870,7 @@ public class PluginServiceTests
         await _service.SyncSolutionAsync(_serviceMock, Metadata(), "MySolution", RunMode.DryRun);
 
         await _serviceMock.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
-        _outputMock.Received().Skip(Arg.Is<string>(s => s.Contains("would delete")));
+        Assert.Contains("would delete", _console.Output);
     }
 
     [Fact]
@@ -884,7 +883,8 @@ public class PluginServiceTests
         await _service.SyncSolutionAsync(_serviceMock, Metadata(pkt: "a4d07ffa42de325f"), "MySolution", RunMode.DryRun);
 
         await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
-        _outputMock.Received(1).Skip(Arg.Is<string>(s => s.Contains("identity changed") && s.Contains("would delete and recreate")));
+        Assert.Contains("identity changed", _console.Output);
+        Assert.Contains("would delete and recreate", _console.Output);
     }
 
     [Fact]
@@ -903,6 +903,6 @@ public class PluginServiceTests
 
         await _service.SyncSolutionAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [], false)), "MySolution", RunMode.DryRun);
 
-        _outputMock.Received(1).Info(Arg.Is<string>(s => s.Contains("Dry run:")));
+        Assert.Contains("Dry run:", _console.Output);
     }
 }

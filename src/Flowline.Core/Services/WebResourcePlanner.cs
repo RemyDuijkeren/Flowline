@@ -1,9 +1,10 @@
 using Microsoft.Xrm.Sdk;
 using Flowline.Core.Models;
+using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class WebResourcePlanner(IFlowlineOutput output)
+public class WebResourcePlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
 {
     public WebResourceSyncPlan Plan(WebResourceSyncSnapshot snapshot)
     {
@@ -12,10 +13,10 @@ public class WebResourcePlanner(IFlowlineOutput output)
         var dataverseNames = snapshot.DataverseResources.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var targetSolutionName = snapshot.Solution.UniqueName;
 
-        output.Verbose($"Found {snapshot.DataverseResources.Count} web resource(s) in Dataverse.");
-        foreach (var name in dataverseNames) output.Verbose($"- {name}");
-        output.Verbose($"Found {snapshot.LocalResources.Count} local web resource(s).");
-        foreach (var name in localNames) output.Verbose($"- {name}");
+        output.Verbose($"Found {snapshot.DataverseResources.Count} web resource(s) in Dataverse.", opt);
+        foreach (var name in dataverseNames) output.Verbose($"- {name}", opt);
+        output.Verbose($"Found {snapshot.LocalResources.Count} local web resource(s).", opt);
+        foreach (var name in localNames) output.Verbose($"- {name}", opt);
 
         // Don't exist in Dataverse, create them
         foreach (var name in localNames.Except(dataverseNames, StringComparer.OrdinalIgnoreCase))
