@@ -5,7 +5,7 @@ using Flowline.Core.Models;
 
 namespace Flowline.Core.Services;
 
-public class AssemblyAnalysisService(IFlowlineOutput output)
+public class PluginAssemblyReader(IFlowlineOutput output)
 {
     private static readonly string[] MessageNames =
         Enum.GetNames<MessageName>().OrderByDescending(n => n.Length).ToArray();

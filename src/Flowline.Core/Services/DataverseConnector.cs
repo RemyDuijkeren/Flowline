@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace Flowline.Core.Services;
 
-public class AuthenticationService(IFlowlineOutput output)
+public class DataverseConnector(IFlowlineOutput output)
 {
     public IOrganizationServiceAsync2 Connect(string connectionString)
     {

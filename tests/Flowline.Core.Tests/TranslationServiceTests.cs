@@ -7,15 +7,15 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 
 namespace Flowline.Core.Tests;
 
-public class TranslationSyncServiceTests
+public class TranslationServiceTests
 {
     private readonly IOrganizationServiceAsync2 _serviceMock;
-    private readonly TranslationSyncService _service;
+    private readonly TranslationService _service;
 
-    public TranslationSyncServiceTests()
+    public TranslationServiceTests()
     {
         _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
-        _service = new TranslationSyncService(new NullFlowlineOutput());
+        _service = new TranslationService(new NullFlowlineOutput());
     }
 
     [Fact]

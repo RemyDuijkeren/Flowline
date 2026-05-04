@@ -6,7 +6,7 @@ using Flowline.Core.Models;
 
 namespace Flowline.Core.Services;
 
-public class WebResourceSyncPlanExecutor(IFlowlineOutput output)
+public class WebResourceExecutor(IFlowlineOutput output)
 {
     const int MaxParallelism = 8;
     const int WebResourceComponentType = 61;

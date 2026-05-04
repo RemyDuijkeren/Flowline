@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using Flowline.Config;
 using Flowline.Core;
-using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -10,7 +9,7 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 
 namespace Flowline.Commands;
 
-public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService analysisService, PluginRegistrationService pluginSyncSrv, WebResourceSyncService webResourceSyncSrv, AnsiConsoleOutput output)
+public class PushCommand(DataverseConnector dataverseConnector, PluginService pluginService, WebResourceService webResourceService, AnsiConsoleOutput output)
     : FlowlineCommand<PushCommand.Settings>
 {
     [Flags]
@@ -119,7 +118,7 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
         string environmentUrl;
         if (standaloneMode)
         {
-            environmentUrl = ResolveStandaloneEnvironmentUrl(settings, authSrv) ?? "";
+            environmentUrl = ResolveStandaloneEnvironmentUrl(settings, dataverseConnector) ?? "";
             if (string.IsNullOrWhiteSpace(environmentUrl)) return 1;
 
             devEnv = await GetAndCheckStandaloneEnvironmentAsync(environmentUrl, settings, cancellationToken).ConfigureAwait(false);
@@ -160,10 +159,10 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
         var pushPlugins = pushScope.HasFlag(PushScope.Plugins);
         var pushWebResources = pushScope.HasFlag(PushScope.WebResources);
 
-        PluginAssemblyMetadata? metadata = null;
+        string? extensionsDll = null;
         if (pushPlugins)
         {
-            var extensionsDll = standaloneMode ? standaloneDllPath : null;
+            extensionsDll = standaloneMode ? standaloneDllPath : null;
 
             if (!standaloneMode)
             {
@@ -180,17 +179,11 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
             {
                 AnsiConsole.MarkupLine(standaloneMode
                     ? $"[red]DLL not found: {settings.Dll}[/]"
-                    : "[red]Extensions.dll not found. Build the solution first.[/]");
+                    : $"[red]{ExtensionsName}.dll not found. Build the solution first.[/]");
                 return 1;
             }
             AnsiConsole.MarkupLine($"[green][bold]{Path.GetFileName(extensionsDll)}[/] found[/]");
             output.Verbose($"[dim]{extensionsDll}[/]");
-
-            metadata = AnsiConsole.Status().FlowlineSpinner().Start(
-                $"Reading [bold]{Path.GetFileName(extensionsDll)}[/]...",
-                ctx => analysisService.Analyze(extensionsDll));
-
-            AnsiConsole.MarkupLine("[green]Metadata ready[/]");
         }
 
         string? webResourcesSyncFolder = null;
@@ -221,11 +214,11 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
             "Connecting to Dataverse...",
             ctx =>
             {
-                var profile = authSrv.GetPacProfiles()
+                var profile = dataverseConnector.GetPacProfiles()
                                      .FirstOrDefault(p => p.Resource?.TrimEnd('/').Equals(environmentUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase) == true)
-                              ?? authSrv.GetPacProfiles().FirstOrDefault(p => p.IsUniversal);
+                              ?? dataverseConnector.GetPacProfiles().FirstOrDefault(p => p.IsUniversal);
 
-                if (profile != null) return authSrv.ConnectViaPac(profile, environmentUrl);
+                if (profile != null) return dataverseConnector.ConnectViaPac(profile, environmentUrl);
 
                 AnsiConsole.MarkupLine("[red]No PAC profile found — run 'pac auth create' first.[/]");
                 return null;
@@ -235,18 +228,18 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
         if (conn == null) return 1;
         AnsiConsole.MarkupLine("[green]Connected[/]");
 
-        if (pushPlugins && metadata != null)
+        if (pushPlugins && extensionsDll != null)
         {
             await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-                $"Pushing [bold]{metadata.Name}.dll[/]...",
-                ctx => pluginSyncSrv.SyncSolutionAsync(conn, metadata, solutionName!, runMode, cancellationToken));
+                $"Pushing [bold]{Path.GetFileName(extensionsDll)}[/]...",
+                ctx => pluginService.SyncSolutionAsync(conn, extensionsDll, solutionName!, runMode, cancellationToken));
         }
 
         if (pushWebResources)
         {
             await AnsiConsole.Status().FlowlineSpinner().StartAsync(
                 "Pushing web resources...",
-                ctx => webResourceSyncSrv.SyncSolutionAsync(conn, webResourcesSyncFolder!, solutionName!, runMode: runMode, cancellationToken: cancellationToken));
+                ctx => webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder!, solutionName!, runMode: runMode, cancellationToken: cancellationToken));
         }
 
         AnsiConsole.MarkupLine("[green]Assets pushed[/]");
@@ -298,12 +291,12 @@ public class PushCommand(AuthenticationService authSrv, AssemblyAnalysisService 
         return null;
     }
 
-    internal static string? ResolveStandaloneEnvironmentUrl(Settings settings, AuthenticationService authService)
+    internal static string? ResolveStandaloneEnvironmentUrl(Settings settings, DataverseConnector dataverseConnector)
     {
         if (!string.IsNullOrWhiteSpace(settings.DevUrl))
             return settings.DevUrl.Trim();
 
-        var profile = authService.GetCurrentResourceSpecificPacProfile();
+        var profile = dataverseConnector.GetCurrentResourceSpecificPacProfile();
         if (!string.IsNullOrWhiteSpace(profile?.Resource))
             return profile.Resource.Trim();
 

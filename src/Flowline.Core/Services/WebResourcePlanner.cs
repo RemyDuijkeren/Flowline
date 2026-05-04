@@ -3,7 +3,7 @@ using Flowline.Core.Models;
 
 namespace Flowline.Core.Services;
 
-public class WebResourceSyncPlanner(IFlowlineOutput output)
+public class WebResourcePlanner(IFlowlineOutput output)
 {
     public WebResourceSyncPlan Plan(WebResourceSyncSnapshot snapshot)
     {

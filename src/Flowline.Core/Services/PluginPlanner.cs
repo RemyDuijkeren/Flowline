@@ -3,7 +3,7 @@ using Flowline.Core.Models;
 
 namespace Flowline.Core.Services;
 
-public class RegistrationPlanner(IFlowlineOutput output)
+public class PluginPlanner(IFlowlineOutput output)
 {
     const string FlowlineMarker = "[flowline]";
 

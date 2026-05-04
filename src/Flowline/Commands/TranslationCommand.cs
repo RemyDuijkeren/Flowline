@@ -32,7 +32,7 @@ public class TranslationSettings : FlowlineSettings
     public string? Target { get; set; }
 }
 
-public class TranslationCommand(AuthenticationService authService, TranslationSyncService translationService)
+public class TranslationCommand(DataverseConnector dataverseConnector, TranslationService translationService)
     : AsyncCommand<TranslationSettings>
 {
     protected override async Task<int> ExecuteAsync([NotNull] CommandContext context, [NotNull] TranslationSettings settings, CancellationToken cancellationToken)
@@ -111,7 +111,7 @@ public class TranslationCommand(AuthenticationService authService, TranslationSy
             
             if (!string.IsNullOrEmpty(settings.PacProfile))
             {
-                var profiles = authService.GetPacProfiles();
+                var profiles = dataverseConnector.GetPacProfiles();
                 var profile = profiles.FirstOrDefault(p => 
                     p.Name?.Equals(settings.PacProfile, StringComparison.OrdinalIgnoreCase) == true ||
                     p.User?.Equals(settings.PacProfile, StringComparison.OrdinalIgnoreCase) == true);
@@ -122,12 +122,12 @@ public class TranslationCommand(AuthenticationService authService, TranslationSy
                     return 1;
                 }
                 
-                service = authService.ConnectViaPac(profile, targetUrl);
+                service = dataverseConnector.ConnectViaPac(profile, targetUrl);
             }
             else
             {
                 // Fallback to target URL with PAC silent auth if possible, or explicit connection string
-                var profiles = authService.GetPacProfiles().ToList();
+                var profiles = dataverseConnector.GetPacProfiles().ToList();
                 
                 // 1. Try environment-specific profile (matched by URL if possible)
                 // Note: PAC profiles might not always have Resource filled or it might not match our targetUrl perfectly
@@ -148,7 +148,7 @@ public class TranslationCommand(AuthenticationService authService, TranslationSy
                         AnsiConsole.MarkupLine($"[dim]Using PAC profile for {targetUrl}[/]");
                     }
                     
-                    service = authService.ConnectViaPac(profile, targetUrl);
+                    service = dataverseConnector.ConnectViaPac(profile, targetUrl);
                 }
                 else
                 {
@@ -159,7 +159,7 @@ public class TranslationCommand(AuthenticationService authService, TranslationSy
                     var connectionString = Environment.GetEnvironmentVariable("DATAVERSE_CONNECTION") 
                                            ?? $"AuthType=OAuth;Url={targetUrl};ClientId=51f81489-12ee-4a9e-aaae-a2591f45987d;RedirectUri=http://localhost;TokenCacheStorePath={tokenCachePath};LoginPrompt=Auto";
                     
-                    service = authService.Connect(connectionString);
+                    service = dataverseConnector.Connect(connectionString);
                 }
             }
 

@@ -5,7 +5,7 @@ using Flowline.Core.Models;
 
 namespace Flowline.Core.Services;
 
-public class PluginRegistrationReader
+public class PluginReader
 {
     public async Task<RegistrationSnapshot> LoadSnapshotAsync(
         IOrganizationServiceAsync2 service,

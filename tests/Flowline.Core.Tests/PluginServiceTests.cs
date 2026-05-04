@@ -9,17 +9,17 @@ using Flowline.Core;
 
 namespace Flowline.Core.Tests;
 
-public class PluginRegistrationServiceTests
+public class PluginServiceTests
 {
     private readonly IOrganizationServiceAsync2 _serviceMock;
     private readonly IFlowlineOutput _outputMock;
-    private readonly PluginRegistrationService _service;
+    private readonly PluginService _service;
 
-    public PluginRegistrationServiceTests()
+    public PluginServiceTests()
     {
         _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
         _outputMock = Substitute.For<IFlowlineOutput>();
-        _service = new PluginRegistrationService(_outputMock);
+        _service = new PluginService(_outputMock);
 
         // Default empty results for all queries
         _serviceMock.RetrieveMultipleAsync(Arg.Any<QueryExpression>())
@@ -750,7 +750,7 @@ public class PluginRegistrationServiceTests
     [InlineData("2.3.0.0", "2.4.0.0", true)]
     public void HasMajorOrMinorVersionChange_ReturnsExpected(string? registered, string local, bool expected)
     {
-        Assert.Equal(expected, PluginRegistrationService.HasMajorOrMinorVersionChange(registered, local));
+        Assert.Equal(expected, PluginService.HasMajorOrMinorVersionChange(registered, local));
     }
 
     [Fact]

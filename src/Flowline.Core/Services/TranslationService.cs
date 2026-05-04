@@ -4,7 +4,7 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 
 namespace Flowline.Core.Services;
 
-public class TranslationSyncService(IFlowlineOutput output)
+public class TranslationService(IFlowlineOutput output)
 {
     public async Task ExportAsync(IOrganizationServiceAsync2 service, string solutionName, string exportPath)
     {

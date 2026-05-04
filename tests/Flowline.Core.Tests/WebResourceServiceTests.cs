@@ -9,18 +9,18 @@ using Flowline.Core;
 
 namespace Flowline.Core.Tests;
 
-public class WebResourceSyncServiceTests : IDisposable
+public class WebResourceServiceTests : IDisposable
 {
     readonly IOrganizationServiceAsync2 _serviceMock;
     readonly IFlowlineOutput _outputMock;
-    readonly WebResourceSyncService _service;
+    readonly WebResourceService _service;
     readonly string _webresourceRoot;
 
-    public WebResourceSyncServiceTests()
+    public WebResourceServiceTests()
     {
         _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
         _outputMock = Substitute.For<IFlowlineOutput>();
-        _service = new WebResourceSyncService(_outputMock);
+        _service = new WebResourceService(_outputMock);
         _webresourceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(_webresourceRoot);
 

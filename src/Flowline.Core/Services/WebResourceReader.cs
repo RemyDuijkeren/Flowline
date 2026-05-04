@@ -5,11 +5,11 @@ using Flowline.Core.Models;
 
 namespace Flowline.Core.Services;
 
-public class WebResourceSyncReader
+public class WebResourceReader
 {
     const int WebResourceComponentType = 61;
     const string DefaultSolutionUniqueName = "Default";
-    readonly DataverseSolutionReader _solutionReader = new();
+    readonly SolutionReader _solutionReader = new();
 
     public async Task<WebResourceSyncSnapshot> LoadSnapshotAsync(
         IOrganizationServiceAsync2 service,

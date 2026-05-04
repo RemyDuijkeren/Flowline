@@ -6,7 +6,7 @@ using Flowline.Core.Models;
 
 namespace Flowline.Core.Services;
 
-public class RegistrationPlanExecutor(IFlowlineOutput output)
+public class PluginExecutor(IFlowlineOutput output)
 {
     const int MaxParallelism = 8;
     const string DefaultSolutionUniqueName = "Default";

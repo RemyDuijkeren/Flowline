@@ -3,11 +3,11 @@ using Flowline.Core.Models;
 
 namespace Flowline.Core.Services;
 
-public class WebResourceSyncService(IFlowlineOutput output)
+public class WebResourceService(IFlowlineOutput output)
 {
-    readonly WebResourceSyncReader _reader = new();
-    readonly WebResourceSyncPlanner _planner = new(output);
-    readonly WebResourceSyncPlanExecutor _executor = new(output);
+    readonly WebResourceReader _reader = new();
+    readonly WebResourcePlanner _planner = new(output);
+    readonly WebResourceExecutor _executor = new(output);
 
     public async Task SyncSolutionAsync(
         IOrganizationServiceAsync2 service,

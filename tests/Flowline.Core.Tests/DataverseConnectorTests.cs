@@ -6,13 +6,13 @@ using Xunit;
 
 namespace Flowline.Core.Tests;
 
-public class AuthenticationServiceTests
+public class DataverseConnectorTests
 {
-    private readonly AuthenticationService _service;
+    private readonly DataverseConnector _service;
 
-    public AuthenticationServiceTests()
+    public DataverseConnectorTests()
     {
-        _service = new AuthenticationService(new NullFlowlineOutput());
+        _service = new DataverseConnector(new NullFlowlineOutput());
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public class AuthenticationServiceTests
             }
         };
 
-        var result = AuthenticationService.GetCurrentResourceSpecificPacProfile(profiles);
+        var result = DataverseConnector.GetCurrentResourceSpecificPacProfile(profiles);
 
         Assert.Same(profile, result);
     }
@@ -65,7 +65,7 @@ public class AuthenticationServiceTests
             }
         };
 
-        var result = AuthenticationService.GetCurrentResourceSpecificPacProfile(profiles);
+        var result = DataverseConnector.GetCurrentResourceSpecificPacProfile(profiles);
 
         Assert.Null(result);
     }
@@ -82,7 +82,7 @@ public class AuthenticationServiceTests
             }
         };
 
-        var result = AuthenticationService.GetCurrentResourceSpecificPacProfile(profiles);
+        var result = DataverseConnector.GetCurrentResourceSpecificPacProfile(profiles);
 
         Assert.Null(result);
     }

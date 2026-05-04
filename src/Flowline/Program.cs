@@ -1,4 +1,4 @@
-﻿using Flowline;
+using Flowline;
 using Flowline.Commands;
 using Flowline.Core;
 using Flowline.Core.Services;
@@ -22,11 +22,10 @@ Console.CancelKeyPress += (_, e) =>
 var services = new ServiceCollection();
 services.AddSingleton<AnsiConsoleOutput>();
 services.AddSingleton<IFlowlineOutput>(sp => sp.GetRequiredService<AnsiConsoleOutput>());
-services.AddSingleton<AssemblyAnalysisService>();
-services.AddSingleton<AuthenticationService>();
-services.AddSingleton<PluginRegistrationService>();
-services.AddSingleton<WebResourceSyncService>();
-services.AddSingleton<TranslationSyncService>();
+services.AddSingleton<DataverseConnector>();
+services.AddSingleton<PluginService>();
+services.AddSingleton<WebResourceService>();
+services.AddSingleton<TranslationService>();
 
 // Configure and run the app
 var app = new CommandApp(new TypeRegistrar(services));

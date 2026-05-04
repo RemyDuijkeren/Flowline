@@ -590,7 +590,7 @@ context class shows as a compile error rather than a silent registration mismatc
 [Image("Pre Image", "preimage", ImageType.PreImage, nameof(Account.name))]
 ```
 
-Flowline's `AssemblyAnalysisService` reads both forms identically via `MetadataLoadContext` —
+Flowline's `PluginAssemblyReader` reads both forms identically via `MetadataLoadContext` —
 `nameof` resolves to a string at compile time, so the IL contains plain strings either way.
 
 ### Full usage example
@@ -622,7 +622,7 @@ public class InvoicePostUpdateAsyncPlugin : IPlugin { ... }
 | `IsolationMode` enum | Keep as-is |
 | `PluginAssemblyMetadata` record | Keep as-is |
 | `PluginTypeMetadata` record | Keep as-is |
-| `PluginStepMetadata` record | Keep — internal model, populated by `AssemblyAnalysisService` |
+| `PluginStepMetadata` record | Keep — internal model, populated by `PluginAssemblyReader` |
 | `PluginImageMetadata` record | Keep — update `ImageType` field from `int` to `ImageType` enum |
 
 ---

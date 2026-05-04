@@ -346,7 +346,7 @@ public sealed record EndpointStepMetadata(
 
 ## Reader Changes
 
-Extend `PluginRegistrationReader` or add a dedicated `EndpointRegistrationReader`.
+Extend `PluginReader` or add a dedicated `EndpointRegistrationReader`.
 
 Read existing `serviceendpoint` records for the solution:
 

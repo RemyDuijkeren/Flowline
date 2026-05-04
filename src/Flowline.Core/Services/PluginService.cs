@@ -5,16 +5,31 @@ using Flowline.Core.Models;
 
 namespace Flowline.Core.Services;
 
-public class PluginRegistrationService(IFlowlineOutput output)
+public class PluginService(IFlowlineOutput output)
 {
     const string FlowlineMarker = "[flowline]";
 
-    readonly PluginRegistrationReader _reader   = new();
-    readonly RegistrationPlanner      _planner  = new(output);
-    readonly RegistrationPlanExecutor _executor = new(output);
-    readonly DataverseSolutionReader  _solutionReader = new();
+    readonly PluginReader _reader   = new();
+    readonly PluginPlanner      _planner  = new(output);
+    readonly PluginExecutor _executor = new(output);
+    readonly SolutionReader  _solutionReader = new();
+    readonly PluginAssemblyReader _assemblyReader = new(output);
 
     public async Task SyncSolutionAsync(
+        IOrganizationServiceAsync2 service,
+        string dllPath,
+        string solutionName,
+        RunMode runMode = RunMode.Normal,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(dllPath))
+            throw new ArgumentException("dllPath is required and cannot be empty.", nameof(dllPath));
+
+        var metadata = _assemblyReader.Analyze(dllPath);
+        await SyncSolutionAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task SyncSolutionAsync(
         IOrganizationServiceAsync2 service,
         PluginAssemblyMetadata metadata,
         string solutionName,

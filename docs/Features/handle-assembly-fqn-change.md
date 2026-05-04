@@ -1,4 +1,4 @@
-﻿# Change Request: Handle Assembly FQN Change (Delete + Recreate)
+# Change Request: Handle Assembly FQN Change (Delete + Recreate)
 
 ## Problem
 
@@ -51,7 +51,7 @@ public record PluginAssemblyMetadata(
     List<PluginTypeMetadata> Plugins);
 ```
 
-### 2. `src/Flowline.Core/Services/AssemblyAnalysisService.cs`
+### 2. `src/Flowline.Core/Services/PluginAssemblyReader.cs`
 
 In the `Analyze` method, extract the public key token from the loaded assembly name and pass it
 to `PluginAssemblyMetadata`. Add this after `var assemblyName = assembly.GetName();`:
@@ -79,7 +79,7 @@ return new PluginAssemblyMetadata(
     pluginTypes);
 ```
 
-### 3. `src/Flowline.Core/Services/PluginRegistrationService.cs`
+### 3. `src/Flowline.Core/Services/PluginService.cs`
 
 #### 3a. Extend the query in `GetOrRegisterAssemblyAsync`
 
@@ -148,7 +148,7 @@ var storedHash = ParseStoredHash(existing.GetAttributeValue<string>("description
 return (existing, storedHash != metadata.Hash);
 ```
 
-#### 3c. Add helper method `HasMajorOrMinorVersionChange` to `PluginRegistrationService`
+#### 3c. Add helper method `HasMajorOrMinorVersionChange` to `PluginService`
 
 Add this private static method alongside `ParseStoredHash`:
 
@@ -181,7 +181,7 @@ assembly entity (with `needsUpdate = false`), the rest of `SyncAsync` proceeds u
 
 ## Tests to add
 
-In `PluginRegistrationServiceTests.cs` (or a new test class), add tests for:
+In `PluginServiceTests.cs` (or a new test class), add tests for:
 
 1. **PKT changed** — existing assembly has a different `publickeytoken` → service deletes old, creates new, returns `needsUpdate = false`
 2. **Culture changed** — e.g. `neutral` → `en` → same delete+create path (rare in practice, but part of FQN)

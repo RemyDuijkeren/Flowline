@@ -5,7 +5,7 @@ using Flowline.Core.Models;
 
 namespace Flowline.Core.Services;
 
-public class DataverseSolutionReader
+public class SolutionReader
 {
     public async Task<DataverseSolutionInfo> GetSolutionInfoAsync(
         IOrganizationServiceAsync2 service,
@@ -38,15 +38,12 @@ public class DataverseSolutionReader
             solution.GetAttributeValue<EntityReference>("parentsolutionid"));
     }
 
-    public async Task<DataverseSolutionInfo> GetSupportedSolutionInfoAsync(
-        IOrganizationServiceAsync2 service,
-        string uniqueName,
-        CancellationToken cancellationToken = default)
+    public async Task<DataverseSolutionInfo> GetSupportedSolutionInfoAsync(IOrganizationServiceAsync2 service, string uniqueName, CancellationToken cancellationToken = default)
     {
         var solution = await GetSolutionInfoAsync(service, uniqueName, cancellationToken).ConfigureAwait(false);
         if (solution.ParentSolution != null)
             throw new InvalidOperationException(
-                $"Solution '{uniqueName}' is a patch solution. Flowline does not support Dataverse patch solutions; use a Git branch, bump the solution version, and deploy a normal solution update.");
+                $"Dataverse patch solution '{uniqueName}' is not supported. Avoid patches with source-controlled solutions. See https://learn.microsoft.com/en-us/power-platform/alm/update-solutions-alm#create-solution-patches");
 
         return solution;
     }
