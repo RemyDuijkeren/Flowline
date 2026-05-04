@@ -189,6 +189,30 @@ public class PluginServiceTests
             .Returns(Task.FromResult(new EntityCollection(images.ToList())));
     }
 
+    private void SetupCustomApis(params Entity[] customApis)
+    {
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "customapi"))
+            .Returns(Task.FromResult(new EntityCollection(customApis.ToList())));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "customapi"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(customApis.ToList())));
+    }
+
+    private void SetupRequestParameters(params Entity[] parameters)
+    {
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "customapirequestparameter"))
+            .Returns(Task.FromResult(new EntityCollection(parameters.ToList())));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "customapirequestparameter"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(parameters.ToList())));
+    }
+
+    private void SetupResponseProperties(params Entity[] properties)
+    {
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "customapiresponseproperty"))
+            .Returns(Task.FromResult(new EntityCollection(properties.ToList())));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "customapiresponseproperty"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(properties.ToList())));
+    }
+
     private PluginAssemblyMetadata Metadata(string name = "MyPlugin", string version = "1.0.0.0", string hash = "deadbeef", string? pkt = null, string culture = "neutral", params PluginTypeMetadata[] plugins) =>
         new(name, $"{name}, Version={version}", new byte[] { 1, 2, 3 }, hash, version, pkt, culture, plugins.ToList());
 
@@ -283,6 +307,134 @@ public class PluginServiceTests
         await _serviceMock.Received(1).RetrieveMultipleAsync(
             Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep"),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_NonVerbose_DoesNotOutputSnapshotContents()
+    {
+        var assemblyId = Guid.NewGuid();
+        var pluginTypeId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId));
+        SetupPluginTypes(new Entity("plugintype", pluginTypeId)
+        {
+            ["typename"] = "MyNamespace.MyPlugin",
+            ["isworkflowactivity"] = false
+        });
+        SetupSteps(new Entity("sdkmessageprocessingstep", Guid.NewGuid())
+        {
+            ["name"] = "MyNamespace.MyPlugin: Update of account",
+            ["plugintypeid"] = new EntityReference("plugintype", pluginTypeId)
+        });
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(), "MySolution", RunMode.DryRun);
+
+        Assert.DoesNotContain("Dataverse snapshot", _console.Output);
+        Assert.DoesNotContain("Plugin types (1)", _console.Output);
+        Assert.DoesNotContain("Summary:", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_Verbose_OutputsSnapshotContentsAsHierarchy()
+    {
+        _runtimeOptions.IsVerbose = true;
+        var assemblyId = Guid.NewGuid();
+        var pluginTypeId = Guid.NewGuid();
+        var stepId = Guid.NewGuid();
+        var customApiId = Guid.NewGuid();
+
+        SetupAssembly(ExistingAssembly(assemblyId));
+        SetupPluginTypes(new Entity("plugintype", pluginTypeId)
+        {
+            ["typename"] = "MyNamespace.MyPlugin",
+            ["isworkflowactivity"] = false
+        });
+        SetupSteps(new Entity("sdkmessageprocessingstep", stepId)
+        {
+            ["name"] = "MyNamespace.MyPlugin: Update of account",
+            ["description"] = "Existing update step",
+            ["plugintypeid"] = new EntityReference("plugintype", pluginTypeId),
+            ["stage"] = new OptionSetValue(20),
+            ["mode"] = new OptionSetValue(0),
+            ["rank"] = 1,
+            ["filteringattributes"] = "name,emailaddress1"
+        });
+        SetupImages(new Entity("sdkmessageprocessingstepimage", Guid.NewGuid())
+        {
+            ["name"] = "PreImage",
+            ["sdkmessageprocessingstepid"] = new EntityReference("sdkmessageprocessingstep", stepId),
+            ["entityalias"] = "pre",
+            ["imagetype"] = new OptionSetValue(0),
+            ["attributes"] = "name"
+        });
+        SetupCustomApis(new Entity("customapi", customApiId)
+        {
+            ["uniquename"] = "abc_MyApi",
+            ["plugintypeid"] = new EntityReference("plugintype", pluginTypeId),
+            ["bindingtype"] = new OptionSetValue(0),
+            ["isfunction"] = false,
+            ["isprivate"] = false
+        });
+        SetupRequestParameters(new Entity("customapirequestparameter", Guid.NewGuid())
+        {
+            ["uniquename"] = "abc_Input",
+            ["customapiid"] = new EntityReference("customapi", customApiId),
+            ["type"] = new OptionSetValue(10),
+            ["isoptional"] = true,
+            ["logicalentityname"] = "account"
+        });
+        SetupResponseProperties(new Entity("customapiresponseproperty", Guid.NewGuid())
+        {
+            ["uniquename"] = "abc_Output",
+            ["customapiid"] = new EntityReference("customapi", customApiId),
+            ["type"] = new OptionSetValue(10),
+            ["logicalentityname"] = "account"
+        });
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(), "MySolution", RunMode.DryRun);
+
+        Assert.Contains("Dataverse snapshot", _console.Output);
+        Assert.Contains("Publisher prefix: abc", _console.Output);
+        Assert.Contains("Plugin types (1)", _console.Output);
+        Assert.Contains("MyNamespace.MyPlugin", _console.Output);
+        Assert.Contains("Steps (1)", _console.Output);
+        Assert.Contains("MyNamespace.MyPlugin: Update of account", _console.Output);
+        Assert.Contains("Images (1)", _console.Output);
+        Assert.Contains("PreImage", _console.Output);
+        Assert.Contains("Custom APIs (1)", _console.Output);
+        Assert.Contains("abc_MyApi", _console.Output);
+        Assert.Contains("Request parameters (1)", _console.Output);
+        Assert.Contains("abc_Input", _console.Output);
+        Assert.Contains("Response properties (1)", _console.Output);
+        Assert.Contains("abc_Output", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_Verbose_OutputsPlanContentsAsHierarchy()
+    {
+        _runtimeOptions.IsVerbose = true;
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId));
+        SetupPluginTypes();
+
+        var metadata = Metadata(plugins: new PluginTypeMetadata(
+            "MyPlugin",
+            "MyNamespace.MyPlugin",
+            [],
+            [],
+            false));
+
+        await _service.SyncSolutionAsync(_serviceMock, metadata, "MySolution", RunMode.DryRun);
+
+        Assert.Contains("Registration plan", _console.Output);
+        Assert.Contains("Summary: 0 delete(s), 1 upsert(s), 0 add-to-solution action(s)", _console.Output);
+        Assert.Contains("Plugin types", _console.Output);
+        Assert.Contains("Upserts (1)", _console.Output);
+        Assert.Contains("MyPlugin create plugintype", _console.Output);
+        Assert.Contains("Attributes", _console.Output);
+        Assert.Contains("typename = MyNamespace.MyPlugin", _console.Output);
+        Assert.Contains("Steps", _console.Output);
+        Assert.Contains("Deletes (0)", _console.Output);
+        Assert.Contains("Add to solution (0)", _console.Output);
     }
 
     [Fact]

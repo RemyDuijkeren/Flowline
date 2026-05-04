@@ -90,9 +90,6 @@ public class PushCommand(DataverseConnector dataverseConnector, PluginService pl
         var runMode = settings.DryRun ? RunMode.DryRun
                     : settings.Save   ? RunMode.Save
                     : RunMode.Normal;
-        if (runMode == RunMode.Save)   AnsiConsole.MarkupLine("[dim]Save mode: missing source assets stay in Dataverse[/]");
-        if (runMode == RunMode.DryRun) AnsiConsole.MarkupLine("[dim]Dry run: preview only[/]");
-        if (settings.Force) AnsiConsole.MarkupLine("[dim]Force mode: safety checks off[/]");
 
         var solutionName = standaloneMode
             ? ResolveStandaloneSolutionName(settings)

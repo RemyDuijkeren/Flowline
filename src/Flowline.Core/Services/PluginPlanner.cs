@@ -27,9 +27,6 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
     {
         var plan = new RegistrationPlan();
 
-        output.Verbose($"Found {snapshot.PluginTypes.Count} registered plugin types.", opt);
-        foreach (var p in snapshot.PluginTypes.Keys) output.Verbose($"- {p}", opt);
-
         foreach (var asmPluginType in metadata.Plugins)
         {
             if (!snapshot.PluginTypes.TryGetValue(asmPluginType.FullName, out var dvPluginType))
@@ -108,9 +105,6 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
             .Where(s => (s.GetAttributeValue<EntityReference>("plugintypeid")?.Id ?? Guid.Empty) == typeEntity.Id)
             .ToDictionary(s => s.GetAttributeValue<string>("name"), s => s, StringComparer.OrdinalIgnoreCase)
             .AsReadOnly();
-
-        output.Verbose($"- Found {dvSteps.Count} registered steps for {typeEntity.GetAttributeValue<string>("name")}.", opt);
-        foreach (var name in dvSteps.Keys) output.Verbose($"  - {name}", opt);
 
         foreach (var asmStep in asmPluginSteps)
         {
@@ -217,9 +211,6 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
             .ToDictionary(i => i.GetAttributeValue<string>("name"), i => i, StringComparer.OrdinalIgnoreCase)
             .AsReadOnly();
 
-        output.Verbose($"  - Found {dvImages.Count} registered images for message {message}.", opt);
-        foreach (var i in dvImages.Keys) output.Verbose($"    - {i}", opt);
-
         foreach (var asmImage in asmImages)
         {
             if (dvImages.TryGetValue(asmImage.Name, out var dvImage))
@@ -277,9 +268,6 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
         var dvApis = snapshot.CustomApis
             .ToDictionary(e => e.GetAttributeValue<string>("uniquename"), e => e)
             .AsReadOnly();
-
-        output.Verbose($"- Found {dvApis.Count} registered Custom APIs for {typeEntity.GetAttributeValue<string>("name")}.", opt);
-        foreach (var a in dvApis.Keys) output.Verbose($"  - {a}", opt);
 
         foreach (var asmApi in asmCustomApis)
         {
@@ -358,9 +346,6 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
             .ToDictionary(r => r.GetAttributeValue<string>("uniquename"), r => r, StringComparer.OrdinalIgnoreCase)
             .AsReadOnly();
 
-        output.Verbose($"  - Found {dvRequestParams.Count} registered Request Parameters for Custom API {customApiName}.", opt);
-        foreach (var rp in dvRequestParams.Keys) output.Verbose($"    - {rp}", opt);
-
         foreach (var asmParam in asmRequestParams)
         {
             var parameterKey = $"{customApiName}.{asmParam.UniqueName}";
@@ -422,9 +407,6 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
             .Where(r => r.GetAttributeValue<EntityReference>("customapiid")?.Id == customApiId)
             .ToDictionary(r => r.GetAttributeValue<string>("uniquename"), r => r, StringComparer.OrdinalIgnoreCase)
             .AsReadOnly();
-
-        output.Verbose($"  - Found {dvResponseProps.Count} registered Response Properties for Custom API {customApiName}.", opt);
-        foreach (var rp in dvResponseProps.Keys) output.Verbose($"    - {rp}", opt);
 
         foreach (var asmProp in asmResponseProps)
         {

@@ -99,7 +99,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         var progressLock = new object();
 
         // Level 1 — plugin types
-        await ExecuteBoundedParallelAsync(plan.PluginTypes.Upserts.Values, 1, a => UpsertAsync(service, a, solutionName, cancellationToken), cancellationToken, progressTask, progressLock).ConfigureAwait(false);
+        await ExecuteBoundedParallelAsync(plan.PluginTypes.Upserts.Values, MaxParallelism, a => UpsertAsync(service, a, solutionName, cancellationToken), cancellationToken, progressTask, progressLock).ConfigureAwait(false);
         foreach (var s in plan.PluginTypes.Upserts.Keys) output.Verbose($"Plugin type '{s}' upserted", opt);
         if (plan.PluginTypes.Upserts.Count > 0) output.Info($"[green]{plan.PluginTypes.Upserts.Count} plugin type(s) synced[/]");
 

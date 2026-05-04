@@ -118,7 +118,7 @@ public class PluginAssemblyReader(IAnsiConsole output, FlowlineRuntimeOptions op
             : null;
         var culture = string.IsNullOrEmpty(assemblyName.CultureName) ? "neutral" : assemblyName.CultureName;
 
-        output.Info($"Loaded assembly {assemblyName.Name}");
+        output.Info($"Assembly {assemblyName.Name} loaded");
 
         var pluginTypes = new List<PluginTypeMetadata>();
         var potentialPluginTypes = assembly.GetTypes().Where(t => t is { IsClass: true, IsAbstract: false, IsPublic: true });
@@ -158,7 +158,7 @@ public class PluginAssemblyReader(IAnsiConsole output, FlowlineRuntimeOptions op
                 }
                 else
                 {
-                    output.Verbose($"Found Plugin {type.FullName} with no [[Step]]", opt);
+                    output.Verbose($"Found Plugin {type.FullName} with no [[Step]] or [[Custom API]]", opt);
                     pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, [], [], isWorkflow));
                 }
             }
