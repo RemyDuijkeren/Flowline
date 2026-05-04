@@ -282,14 +282,14 @@ public class PluginPlanner(IFlowlineOutput output)
 
         foreach (var asmApi in asmCustomApis)
         {
-            var uniqueName = $"{prefix}_{asmApi.UniqueName}";
+            var fullApiName = $"{prefix}_{asmApi.UniqueName}";
 
-            if (!dvApis.TryGetValue(uniqueName, out var dvApi))
+            if (!dvApis.TryGetValue(fullApiName, out var dvApi))
             {
-                var newApi = NewCustomApiEntity(uniqueName, asmApi, typeEntity);
+                var newApi = NewCustomApiEntity(fullApiName, asmApi, typeEntity);
                 apiPlan.Upserts[asmApi.UniqueName] = new UpsertAction(asmApi.UniqueName, newApi, IsCreate: true, SolutionName: solutionName);
-                paramPlan.Add(PlanRequestParameters(snapshot, prefix, newApi.Id, asmApi.RequestParameters, solutionName));
-                propPlan.Add(PlanResponseProperties(snapshot, prefix, newApi.Id, asmApi.ResponseProperties, solutionName));
+                paramPlan.Add(PlanRequestParameters(snapshot, prefix, newApi.Id, asmApi.UniqueName, asmApi.RequestParameters, solutionName));
+                propPlan.Add(PlanResponseProperties(snapshot, prefix, newApi.Id, asmApi.UniqueName, asmApi.ResponseProperties, solutionName));
                 continue;
             }
 
@@ -301,22 +301,22 @@ public class PluginPlanner(IFlowlineOutput output)
 
             if (immutableChanged)
             {
-                output.Warning($"Custom API '{uniqueName}' has immutable field changes — deleting and recreating.");
+                output.Warning($"Custom API '{fullApiName}' has immutable field changes — deleting and recreating.");
 
                 apiPlan.Deletes[asmApi.UniqueName] = new DeleteAction(asmApi.UniqueName, "customapi", dvApi.Id);
-                paramPlan.Add(PlanRequestParameters(snapshot, prefix, dvApi.Id, [], solutionName));
-                propPlan.Add(PlanResponseProperties(snapshot, prefix, dvApi.Id, [], solutionName));
+                paramPlan.Add(PlanRequestParameters(snapshot, prefix, dvApi.Id, fullApiName, [], solutionName));
+                propPlan.Add(PlanResponseProperties(snapshot, prefix, dvApi.Id, fullApiName, [], solutionName));
 
-                var newApi = NewCustomApiEntity(uniqueName, asmApi, typeEntity);
+                var newApi = NewCustomApiEntity(fullApiName, asmApi, typeEntity);
                 apiPlan.Upserts[asmApi.UniqueName] = new UpsertAction(asmApi.UniqueName, newApi, IsCreate: true, SolutionName: solutionName);
-                paramPlan.Add(PlanRequestParameters(snapshot, prefix, newApi.Id, asmApi.RequestParameters, solutionName));
-                propPlan.Add(PlanResponseProperties(snapshot, prefix, newApi.Id, asmApi.ResponseProperties, solutionName));
+                paramPlan.Add(PlanRequestParameters(snapshot, prefix, newApi.Id, fullApiName, asmApi.RequestParameters, solutionName));
+                propPlan.Add(PlanResponseProperties(snapshot, prefix, newApi.Id, fullApiName, asmApi.ResponseProperties, solutionName));
                 continue;
             }
 
-            apiPlan.AddSolutionComponents[uniqueName] = new AddToSolutionAction(uniqueName, "customapi", dvApi.Id, solutionName);
-            paramPlan.Add(PlanRequestParameters(snapshot, prefix, dvApi.Id, asmApi.RequestParameters, solutionName));
-            propPlan.Add(PlanResponseProperties(snapshot, prefix, dvApi.Id, asmApi.ResponseProperties, solutionName));
+            apiPlan.AddSolutionComponents[fullApiName] = new AddToSolutionAction(fullApiName, "customapi", dvApi.Id, solutionName);
+            paramPlan.Add(PlanRequestParameters(snapshot, prefix, dvApi.Id, fullApiName, asmApi.RequestParameters, solutionName));
+            propPlan.Add(PlanResponseProperties(snapshot, prefix, dvApi.Id, fullApiName, asmApi.ResponseProperties, solutionName));
 
             var mutableChanged =
                 dvApi.GetAttributeValue<EntityReference>("plugintypeid")?.Id != typeEntity.Id ||
@@ -339,15 +339,15 @@ public class PluginPlanner(IFlowlineOutput output)
         foreach (var obsoleteApi in dvApis.Where(a => asmCustomApis.All(c => $"{prefix}_{c.UniqueName}" != a.Key)))
         {
             apiPlan.Deletes[obsoleteApi.Key] = new DeleteAction(obsoleteApi.Key, "customapi", obsoleteApi.Value.Id);
-            paramPlan.Add(PlanRequestParameters(snapshot, prefix, obsoleteApi.Value.Id, [], solutionName));
-            propPlan.Add(PlanResponseProperties(snapshot, prefix, obsoleteApi.Value.Id, [], solutionName));
+            paramPlan.Add(PlanRequestParameters(snapshot, prefix, obsoleteApi.Value.Id, obsoleteApi.Key, [], solutionName));
+            propPlan.Add(PlanResponseProperties(snapshot, prefix, obsoleteApi.Value.Id, obsoleteApi.Key, [], solutionName));
         }
 
         return (apiPlan, paramPlan, propPlan);
     }
 
     ActionPlan PlanRequestParameters(
-        RegistrationSnapshot snapshot, string prefix, Guid customApiId,
+        RegistrationSnapshot snapshot, string prefix, Guid customApiId, string customApiName,
         List<RequestParameterMetadata> asmRequestParams, string solutionName)
     {
         ActionPlan plan = new();
@@ -357,14 +357,16 @@ public class PluginPlanner(IFlowlineOutput output)
             .ToDictionary(r => r.GetAttributeValue<string>("uniquename"), r => r, StringComparer.OrdinalIgnoreCase)
             .AsReadOnly();
 
-        output.Verbose($"  - Found {dvRequestParams.Count} registered Request Parameters for Custom API {customApiId}.");
+        output.Verbose($"  - Found {dvRequestParams.Count} registered Request Parameters for Custom API {customApiName}.");
         foreach (var rp in dvRequestParams.Keys) output.Verbose($"    - {rp}");
 
         foreach (var asmParam in asmRequestParams)
         {
+            var parameterKey = $"{customApiName}.{asmParam.UniqueName}";
+
             if (!dvRequestParams.TryGetValue(asmParam.UniqueName, out var dvParam))
             {
-                plan.Upserts[asmParam.UniqueName] = new UpsertAction(asmParam.UniqueName,
+                plan.Upserts[parameterKey] = new UpsertAction(asmParam.UniqueName,
                     NewRequestParameterEntity(asmParam, customApiId), IsCreate: true, SolutionName: solutionName);
                 continue;
             }
@@ -378,13 +380,13 @@ public class PluginPlanner(IFlowlineOutput output)
             if (immutableChanged)
             {
                 output.Warning($"Request parameter '{asmParam.DisplayName}' has immutable field changes — deleting and recreating.");
-                plan.Deletes[asmParam.UniqueName] = new DeleteAction(asmParam.UniqueName, "customapirequestparameter", dvParam.Id);
-                plan.Upserts[asmParam.UniqueName] = new UpsertAction(asmParam.UniqueName,
+                plan.Deletes[parameterKey] = new DeleteAction(asmParam.UniqueName, "customapirequestparameter", dvParam.Id);
+                plan.Upserts[parameterKey] = new UpsertAction(asmParam.UniqueName,
                     NewRequestParameterEntity(asmParam, customApiId), IsCreate: true, SolutionName: solutionName);
                 continue;
             }
 
-            plan.AddSolutionComponents[asmParam.UniqueName] =
+            plan.AddSolutionComponents[parameterKey] =
                 new AddToSolutionAction(asmParam.UniqueName, "customapirequestparameter", dvParam.Id, solutionName);
 
             var mutableChanged =
@@ -397,7 +399,7 @@ public class PluginPlanner(IFlowlineOutput output)
             dvParam["name"]        = asmParam.Name;
             dvParam["displayname"] = asmParam.DisplayName;
             dvParam["description"] = asmParam.Description;
-            plan.Upserts[asmParam.UniqueName] = new UpsertAction(asmParam.UniqueName, dvParam, IsCreate: false);
+            plan.Upserts[parameterKey] = new UpsertAction(asmParam.UniqueName, dvParam, IsCreate: false);
         }
 
         foreach (var obsoleteParam in dvRequestParams.Where(r => asmRequestParams.All(p => p.UniqueName != r.Key)))
@@ -410,7 +412,7 @@ public class PluginPlanner(IFlowlineOutput output)
     }
 
     ActionPlan PlanResponseProperties(
-        RegistrationSnapshot snapshot, string prefix, Guid customApiId,
+        RegistrationSnapshot snapshot, string prefix, Guid customApiId, string customApiName,
         List<ResponsePropertyMetadata> asmResponseProps, string solutionName)
     {
         ActionPlan plan = new();
@@ -420,14 +422,16 @@ public class PluginPlanner(IFlowlineOutput output)
             .ToDictionary(r => r.GetAttributeValue<string>("uniquename"), r => r, StringComparer.OrdinalIgnoreCase)
             .AsReadOnly();
 
-        output.Verbose($"  - Found {dvResponseProps.Count} registered Response Properties for Custom API {customApiId}.");
+        output.Verbose($"  - Found {dvResponseProps.Count} registered Response Properties for Custom API {customApiName}.");
         foreach (var rp in dvResponseProps.Keys) output.Verbose($"    - {rp}");
 
         foreach (var asmProp in asmResponseProps)
         {
+            var propertyKey = $"{customApiName}.{asmProp.UniqueName}";
+
             if (!dvResponseProps.TryGetValue(asmProp.UniqueName, out var dvProp))
             {
-                plan.Upserts[asmProp.UniqueName] = new UpsertAction(asmProp.UniqueName,
+                plan.Upserts[propertyKey] = new UpsertAction(asmProp.UniqueName,
                     NewResponsePropertyEntity(asmProp, customApiId), IsCreate: true, SolutionName: solutionName);
                 continue;
             }
@@ -440,13 +444,13 @@ public class PluginPlanner(IFlowlineOutput output)
             if (immutableChanged)
             {
                 output.Warning($"Response Property '{asmProp.DisplayName}' has immutable field changes — deleting and recreating.");
-                plan.Deletes[asmProp.UniqueName] = new DeleteAction(asmProp.UniqueName, "customapiresponseproperty", dvProp.Id);
-                plan.Upserts[asmProp.UniqueName] = new UpsertAction(asmProp.UniqueName,
+                plan.Deletes[propertyKey] = new DeleteAction(asmProp.UniqueName, "customapiresponseproperty", dvProp.Id);
+                plan.Upserts[propertyKey] = new UpsertAction(asmProp.UniqueName,
                     NewResponsePropertyEntity(asmProp, customApiId), IsCreate: true, SolutionName: solutionName);
                 continue;
             }
 
-            plan.AddSolutionComponents[asmProp.UniqueName] =
+            plan.AddSolutionComponents[propertyKey] =
                 new AddToSolutionAction(asmProp.UniqueName, "customapiresponseproperty", dvProp.Id, solutionName);
 
             var mutableChanged =
@@ -459,7 +463,7 @@ public class PluginPlanner(IFlowlineOutput output)
             dvProp["name"]        = asmProp.Name;
             dvProp["displayname"] = asmProp.DisplayName;
             dvProp["description"] = asmProp.Description;
-            plan.Upserts[asmProp.UniqueName] = new UpsertAction(asmProp.UniqueName, dvProp, IsCreate: false);
+            plan.Upserts[propertyKey] = new UpsertAction(asmProp.UniqueName, dvProp, IsCreate: false);
         }
 
         foreach (var obsoleteProp in dvResponseProps.Where(r => asmResponseProps.All(p => p.UniqueName != r.Key)))
