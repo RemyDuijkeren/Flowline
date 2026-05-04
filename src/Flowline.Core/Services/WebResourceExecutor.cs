@@ -65,14 +65,19 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
         object progressLock)
     {
         var ids = new List<Guid>();
-        await ExecuteBoundedParallelAsync(creates, MaxParallelism, async action =>
+
+        // Sequential — CreateRequest+SolutionUniqueName triggers GrantInheritedAccess collisions
+        // in Dataverse when multiple creates run in parallel. Web resource creates are rare (0-5
+        // per warm run); sequential execution has no observable performance impact. Do not change
+        // back to parallel without addressing the Dataverse collision first.
+        foreach (var action in creates)
         {
             var response = (CreateResponse)await service.ExecuteAsync(
                 new CreateRequest { Target = action.Entity!, ["SolutionUniqueName"] = action.SolutionName },
                 cancellationToken).ConfigureAwait(false);
-
-            lock (ids) ids.Add(response.id);
-        }, cancellationToken, progressTask, progressLock).ConfigureAwait(false);
+            ids.Add(response.id);
+            IncrementProgress(progressTask, progressLock);
+        }
 
         return ids;
     }
