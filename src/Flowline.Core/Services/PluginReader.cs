@@ -226,7 +226,7 @@ public class PluginReader
         var query = new QueryExpression("sdkmessageprocessingstep")
         {
             ColumnSet = new ColumnSet("sdkmessageprocessingstepid", "name", "description", "plugintypeid", "stage", "mode", "rank",
-                "filteringattributes", "configuration", "asyncautodelete", "impersonatinguserid", "statecode", "category", "sdkmessageid", "solutionid"),
+                "filteringattributes", "configuration", "asyncautodelete", "impersonatinguserid", "statecode", "category", "sdkmessageid", "sdkmessagefilterid", "solutionid"),
             Criteria =
             {
                 Conditions =
