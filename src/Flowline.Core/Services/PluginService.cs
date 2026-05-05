@@ -447,42 +447,39 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         output.Verbose("Registration plan", opt);
         output.Verbose($"  Summary: {plan.TotalDeletes} delete(s), {plan.TotalUpserts} upsert(s), {addToSolutionCount} add-to-solution action(s)", opt);
 
-        WriteActionPlanVerbose("Plugin types", plan.PluginTypes);
-        WriteActionPlanVerbose("Steps", plan.Steps);
-        WriteActionPlanVerbose("Images", plan.Images);
-        WriteActionPlanVerbose("Custom APIs", plan.CustomApis);
-        WriteActionPlanVerbose("Request parameters", plan.RequestParams);
-        WriteActionPlanVerbose("Response properties", plan.ResponseProps);
+        WriteActionPlanVerbose("Plugin types", plan.PluginTypes,
+            e => $"workflow={BoolValue(e, "isworkflowactivity")}");
+        WriteActionPlanVerbose("Steps", plan.Steps,
+            e => $"stage={OptionValue(e, "stage")} mode={OptionValue(e, "mode")} rank={OptionValue(e, "rank")}");
+        WriteActionPlanVerbose("Images", plan.Images,
+            e => $"alias={Safe(e.GetAttributeValue<string>("entityalias") ?? "(none)")} type={OptionValue(e, "imagetype")} attributes={Safe(e.GetAttributeValue<string>("attributes") ?? "(all)")}");
+        WriteActionPlanVerbose("Custom APIs", plan.CustomApis,
+            e => $"binding={OptionValue(e, "bindingtype")} function={BoolValue(e, "isfunction")} private={BoolValue(e, "isprivate")}");
+        WriteActionPlanVerbose("Request parameters", plan.RequestParams,
+            e => $"type={OptionValue(e, "type")} optional={BoolValue(e, "isoptional")} entity={Safe(e.GetAttributeValue<string>("logicalentityname") ?? "(none)")}");
+        WriteActionPlanVerbose("Response properties", plan.ResponseProps,
+            e => $"type={OptionValue(e, "type")} entity={Safe(e.GetAttributeValue<string>("logicalentityname") ?? "(none)")}");
     }
 
-    void WriteActionPlanVerbose(string title, ActionPlan actionPlan)
+    void WriteActionPlanVerbose(string title, ActionPlan actionPlan, Func<Entity, string> entityDetail)
     {
         output.Verbose($"  {title}", opt);
 
         output.Verbose($"    Deletes ({actionPlan.Deletes.Count})", opt);
         foreach (var action in actionPlan.Deletes.Values.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-            output.Verbose($"      - {Safe(action.Name)} {Safe(action.EntityLogicalName)} {action.Id}", opt);
+            output.Verbose($"      - {Safe(action.Name)}", opt);
 
         output.Verbose($"    Upserts ({actionPlan.Upserts.Count})", opt);
         foreach (var action in actionPlan.Upserts.Values.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
         {
-            output.Verbose(
-                $"      - {Safe(action.Name)} {(action.IsCreate ? "create" : "update")} {Safe(action.Entity.LogicalName)} {action.Entity.Id}" +
-                $"{(string.IsNullOrWhiteSpace(action.SolutionName) ? "" : $" solution={Safe(action.SolutionName)}")}",
-                opt);
-            WriteEntityAttributesVerbose(action.Entity, "        ");
+            var detail = entityDetail(action.Entity);
+            var solution = string.IsNullOrWhiteSpace(action.SolutionName) ? "" : $" solution={Safe(action.SolutionName)}";
+            output.Verbose($"      - {Safe(action.Name)} [[{(action.IsCreate ? "create" : "update")}]] {detail}{solution}", opt);
         }
 
         output.Verbose($"    Add to solution ({actionPlan.AddSolutionComponents.Count})", opt);
         foreach (var action in actionPlan.AddSolutionComponents.Values.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-            output.Verbose($"      - {Safe(action.Name)} {Safe(action.EntityLogicalName)} {action.Id} solution={Safe(action.SolutionName)} componenttype={action.ComponentType}", opt);
-    }
-
-    void WriteEntityAttributesVerbose(Entity entity, string indent)
-    {
-        output.Verbose($"{indent}Attributes ({entity.Attributes.Count})", opt);
-        foreach (var (name, value) in entity.Attributes.OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
-            output.Verbose($"{indent}  - {Safe(name)} = {FormatValue(value)}", opt);
+            output.Verbose($"      - {Safe(action.Name)} solution={Safe(action.SolutionName)} componenttype={action.ComponentType}", opt);
     }
 
     async Task AddSolutionComponentAsync(IOrganizationServiceAsync2 service, Guid assemblyId, string solutionName, CancellationToken cancellationToken)
@@ -547,18 +544,6 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
     static bool BoolValue(Entity entity, string attribute) =>
         entity.Attributes.TryGetValue(attribute, out var value) && value is bool boolean && boolean;
-
-    static string FormatValue(object? value) =>
-        value switch
-        {
-            null => "(null)",
-            OptionSetValue option => option.Value.ToString(),
-            EntityReference reference => $"{Safe(reference.LogicalName)}:{reference.Id}",
-            AliasedValue aliased => FormatValue(aliased.Value),
-            byte[] bytes => $"<byte[{bytes.Length}]>",
-            string text => Safe(text),
-            _ => Safe(value.ToString() ?? string.Empty)
-        };
 
     static string Safe(string value) => Markup.Escape(value);
 }
