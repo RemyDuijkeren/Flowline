@@ -26,12 +26,12 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
     {
         if (save)
         {
-            foreach (var s in plan.Images.Deletes.Keys)        output.Skip($"Image '{s}' not in source — kept (--save)");
-            foreach (var s in plan.ResponseProps.Deletes.Keys) output.Skip($"Response Property '{s}' not in source — kept (--save)");
-            foreach (var s in plan.RequestParams.Deletes.Keys) output.Skip($"Request Parameter '{s}' not in source — kept (--save)");
-            foreach (var s in plan.Steps.Deletes.Keys)         output.Skip($"Step '{s}' not in source — kept (--save)");
-            foreach (var s in plan.CustomApis.Deletes.Keys)    output.Skip($"Custom API '{s}' not in source — kept (--save)");
-            foreach (var s in plan.PluginTypes.Deletes.Keys)   output.Skip($"Plugin Type '{s}' not in source — kept (--save)");
+            foreach (var a in plan.Images.Deletes)        output.Skip($"Image '{a.Name}' not in source — kept (--save)");
+            foreach (var a in plan.ResponseProps.Deletes) output.Skip($"Response Property '{a.Name}' not in source — kept (--save)");
+            foreach (var a in plan.RequestParams.Deletes) output.Skip($"Request Parameter '{a.Name}' not in source — kept (--save)");
+            foreach (var a in plan.Steps.Deletes)         output.Skip($"Step '{a.Name}' not in source — kept (--save)");
+            foreach (var a in plan.CustomApis.Deletes)    output.Skip($"Custom API '{a.Name}' not in source — kept (--save)");
+            foreach (var a in plan.PluginTypes.Deletes)   output.Skip($"Plugin Type '{a.Name}' not in source — kept (--save)");
             return;
         }
 
@@ -40,7 +40,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         // Do not change back to parallel without good reason and testing.
 
         // Level 3 — delete leaf items first
-        foreach (var a in plan.Images.Deletes.Values)
+        foreach (var a in plan.Images.Deletes)
         {
             await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
@@ -48,7 +48,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         }
         if (plan.Images.Deletes.Count > 0) output.Info($"[green]{plan.Images.Deletes.Count} image(s) deleted[/]");
 
-        foreach (var a in plan.ResponseProps.Deletes.Values)
+        foreach (var a in plan.ResponseProps.Deletes)
         {
             await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
@@ -56,7 +56,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         }
         if (plan.ResponseProps.Deletes.Count > 0) output.Info($"[green]{plan.ResponseProps.Deletes.Count} response property record(s) deleted[/]");
 
-        foreach (var a in plan.RequestParams.Deletes.Values)
+        foreach (var a in plan.RequestParams.Deletes)
         {
             await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
@@ -65,7 +65,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         if (plan.RequestParams.Deletes.Count > 0) output.Info($"[green]{plan.RequestParams.Deletes.Count} request parameter(s) deleted[/]");
 
         // Level 2 — steps and custom APIs
-        foreach (var a in plan.Steps.Deletes.Values)
+        foreach (var a in plan.Steps.Deletes)
         {
             await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
@@ -73,7 +73,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         }
         if (plan.Steps.Deletes.Count > 0) output.Info($"[green]{plan.Steps.Deletes.Count} plugin step(s) deleted[/]");
 
-        foreach (var a in plan.CustomApis.Deletes.Values)
+        foreach (var a in plan.CustomApis.Deletes)
         {
             await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
@@ -82,7 +82,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         if (plan.CustomApis.Deletes.Count > 0) output.Info($"[green]{plan.CustomApis.Deletes.Count} Custom API(s) deleted[/]");
 
         // Level 1 — plugin types
-        foreach (var a in plan.PluginTypes.Deletes.Values)
+        foreach (var a in plan.PluginTypes.Deletes)
         {
             await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
@@ -103,7 +103,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         // separate requests (Create+AddSolutionComponent) but it is not worth the extra complexity for these low numbers.
 
         // Level 1 — plugin types
-        foreach (var a in plan.PluginTypes.Upserts.Values)
+        foreach (var a in plan.PluginTypes.Upserts)
         {
             await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
@@ -112,7 +112,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         if (plan.PluginTypes.Upserts.Count > 0) output.Info($"[green]{plan.PluginTypes.Upserts.Count} plugin type(s) synced[/]");
 
         // Level 2 — steps and custom APIs
-        foreach (var a in plan.Steps.Upserts.Values)
+        foreach (var a in plan.Steps.Upserts)
         {
             await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
@@ -120,7 +120,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         }
         if (plan.Steps.Upserts.Count > 0) output.Info($"[green]{plan.Steps.Upserts.Count} plugin step(s) synced[/]");
 
-        foreach (var a in plan.CustomApis.Upserts.Values)
+        foreach (var a in plan.CustomApis.Upserts)
         {
             await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
@@ -129,7 +129,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         if (plan.CustomApis.Upserts.Count > 0) output.Info($"[green]{plan.CustomApis.Upserts.Count} Custom API(s) synced[/]");
 
         // Level 3 — leaf items
-        foreach (var a in plan.Images.Upserts.Values)
+        foreach (var a in plan.Images.Upserts)
         {
             await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
@@ -137,7 +137,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         }
         if (plan.Images.Upserts.Count > 0) output.Info($"[green]{plan.Images.Upserts.Count} image(s) synced[/]");
 
-        foreach (var a in plan.ResponseProps.Upserts.Values)
+        foreach (var a in plan.ResponseProps.Upserts)
         {
             await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
@@ -145,7 +145,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         }
         if (plan.ResponseProps.Upserts.Count > 0) output.Info($"[green]{plan.ResponseProps.Upserts.Count} response property record(s) synced[/]");
 
-        foreach (var a in plan.RequestParams.Upserts.Values)
+        foreach (var a in plan.RequestParams.Upserts)
         {
             await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
@@ -157,12 +157,12 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
     async Task RunAddSolutionComponentsAsync(
         IOrganizationServiceAsync2 service, RegistrationPlan plan, CancellationToken cancellationToken, ProgressTask? progressTask)
     {
-        var all = plan.PluginTypes.AddSolutionComponents.Values
-            .Concat(plan.Steps.AddSolutionComponents.Values)
-            .Concat(plan.CustomApis.AddSolutionComponents.Values)
-            .Concat(plan.RequestParams.AddSolutionComponents.Values)
-            .Concat(plan.ResponseProps.AddSolutionComponents.Values)
-            .Concat(plan.Images.AddSolutionComponents.Values)
+        var all = plan.PluginTypes.AddSolutionComponents
+            .Concat(plan.Steps.AddSolutionComponents)
+            .Concat(plan.CustomApis.AddSolutionComponents)
+            .Concat(plan.RequestParams.AddSolutionComponents)
+            .Concat(plan.ResponseProps.AddSolutionComponents)
+            .Concat(plan.Images.AddSolutionComponents)
             .ToList();
 
         if (all.Count == 0)
@@ -176,16 +176,16 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
             progressTask?.Increment(1);
         }
 
-        foreach (var s in plan.Steps.AddSolutionComponents.Keys)         output.Verbose($"Step '{s}' added to solution", opt);
+        foreach (var a in plan.Steps.AddSolutionComponents)         output.Verbose($"Step '{a.Name}' added to solution", opt);
         if (plan.Steps.AddSolutionComponents.Count > 0)        output.Info($"[green]{plan.Steps.AddSolutionComponents.Count} plugin step(s) added to solution[/]");
 
-        foreach (var s in plan.CustomApis.AddSolutionComponents.Keys)    output.Verbose($"Custom API '{s}' added to solution", opt);
+        foreach (var a in plan.CustomApis.AddSolutionComponents)    output.Verbose($"Custom API '{a.Name}' added to solution", opt);
         if (plan.CustomApis.AddSolutionComponents.Count > 0)   output.Info($"[green]{plan.CustomApis.AddSolutionComponents.Count} Custom API(s) added to solution[/]");
 
-        foreach (var s in plan.ResponseProps.AddSolutionComponents.Keys) output.Verbose($"Response property '{s}' added to solution", opt);
+        foreach (var a in plan.ResponseProps.AddSolutionComponents) output.Verbose($"Response property '{a.Name}' added to solution", opt);
         if (plan.ResponseProps.AddSolutionComponents.Count > 0) output.Info($"[green]{plan.ResponseProps.AddSolutionComponents.Count} response property record(s) added to solution[/]");
 
-        foreach (var s in plan.RequestParams.AddSolutionComponents.Keys) output.Verbose($"Request Parameter '{s}' added to solution", opt);
+        foreach (var a in plan.RequestParams.AddSolutionComponents) output.Verbose($"Request Parameter '{a.Name}' added to solution", opt);
         if (plan.RequestParams.AddSolutionComponents.Count > 0) output.Info($"[green]{plan.RequestParams.AddSolutionComponents.Count} request parameter(s) added to solution[/]");
     }
 

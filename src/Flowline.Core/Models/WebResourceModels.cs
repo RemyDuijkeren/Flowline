@@ -72,11 +72,11 @@ public record WebResourcePlanAction(
 
 public class WebResourceSyncPlan
 {
-    public Dictionary<string, WebResourcePlanAction> Creates { get; } = new(StringComparer.OrdinalIgnoreCase);
-    public Dictionary<string, WebResourcePlanAction> Updates { get; } = new(StringComparer.OrdinalIgnoreCase);
-    public Dictionary<string, WebResourcePlanAction> Deletes { get; } = new(StringComparer.OrdinalIgnoreCase);
-    public Dictionary<string, WebResourcePlanAction> RemovesFromSolution { get; } = new(StringComparer.OrdinalIgnoreCase);
-    public Dictionary<string, WebResourcePlanAction> Skips { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public List<WebResourcePlanAction> Creates { get; } = [];
+    public List<WebResourcePlanAction> Updates { get; } = [];
+    public List<WebResourcePlanAction> Deletes { get; } = [];
+    public List<WebResourcePlanAction> RemovesFromSolution { get; } = [];
+    public List<WebResourcePlanAction> Skips { get; } = [];
 
     public int TotalDeletes => Deletes.Count + RemovesFromSolution.Count;
     public int TotalUpserts => Creates.Count + Updates.Count;

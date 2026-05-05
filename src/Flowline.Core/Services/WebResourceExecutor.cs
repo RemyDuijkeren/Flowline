@@ -28,11 +28,11 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
         var progressLock = new object();
 
         // Create web resources — sequential, so no lock needed for progress
-        var createdIds = await ExecuteCreatesAsync(service, plan.Creates.Values, cancellationToken, createsTask, null).ConfigureAwait(false);
+        var createdIds = await ExecuteCreatesAsync(service, plan.Creates, cancellationToken, createsTask, null).ConfigureAwait(false);
         publishIds.AddRange(createdIds);
 
         await Task.WhenAll(
-            ExecuteBoundedParallelAsync(plan.Updates.Values, MaxParallelism, async action =>
+            ExecuteBoundedParallelAsync(plan.Updates, MaxParallelism, async action =>
             {
                 await service.UpdateAsync(action.Entity!, cancellationToken).ConfigureAwait(false);
                 lock (publishIds) publishIds.Add(action.Entity!.Id);
@@ -41,9 +41,9 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
         if (!save)
         {
             await Task.WhenAll(
-                ExecuteBoundedParallelAsync(plan.RemovesFromSolution.Values, MaxParallelism,
+                ExecuteBoundedParallelAsync(plan.RemovesFromSolution, MaxParallelism,
                     action => RemoveFromSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken), cancellationToken, removesTask, progressLock),
-                ExecuteBoundedParallelAsync(plan.Deletes.Values, MaxParallelism,
+                ExecuteBoundedParallelAsync(plan.Deletes, MaxParallelism,
                     action => service.DeleteAsync("webresource", action.Id!.Value, cancellationToken), cancellationToken, deletesTask, progressLock)).ConfigureAwait(false);
         }
 
@@ -109,27 +109,27 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
 
     void WriteSummary(WebResourceSyncPlan plan, bool save)
     {
-        foreach (var s in plan.Skips.Values) output.Skip($"Web resource '{s.Name}' kept ({s.Reason})");
+        foreach (var a in plan.Skips) output.Skip($"Web resource '{a.Name}' kept ({a.Reason})");
 
-        foreach (var s in plan.Creates.Keys) output.Verbose($"Web resource '{s}' created", opt);
+        foreach (var a in plan.Creates) output.Verbose($"Web resource '{a.Name}' created", opt);
         if (plan.Creates.Count > 0) output.Info($"[green]{plan.Creates.Count} web resource(s) created[/]");
 
-        foreach (var s in plan.Updates.Keys) output.Verbose($"Web resource '{s}' updated", opt);
+        foreach (var a in plan.Updates) output.Verbose($"Web resource '{a.Name}' updated", opt);
         if (plan.Updates.Count > 0) output.Info($"[green]{plan.Updates.Count} web resource(s) updated[/]");
 
         if (!save)
         {
-            foreach (var s in plan.Deletes.Keys) output.Verbose($"Web resource '{s}' deleted", opt);
+            foreach (var a in plan.Deletes) output.Verbose($"Web resource '{a.Name}' deleted", opt);
             if (plan.Deletes.Count > 0) output.Info($"[green]{plan.Deletes.Count} web resource(s) deleted[/]");
 
-            foreach (var s in plan.RemovesFromSolution.Keys) output.Verbose($"Web resource '{s}' removed from solution", opt);
+            foreach (var a in plan.RemovesFromSolution) output.Verbose($"Web resource '{a.Name}' removed from solution", opt);
             if (plan.RemovesFromSolution.Count > 0) output.Info($"[green]{plan.RemovesFromSolution.Count} web resource(s) removed from solution[/]");
         }
         else
         {
-            foreach (var name in plan.Deletes.Keys) output.Skip($"Web resource '{name}' not in source — kept (--save)");
-            if (plan.Deletes.Count > 0)output.Skip($"{plan.Deletes.Count} web resource(s) not in source — kept (--save)");
-            foreach (var name in plan.RemovesFromSolution.Keys) output.Skip($"Web resource '{name}' still in other solution — kept (--save)");
+            foreach (var a in plan.Deletes) output.Skip($"Web resource '{a.Name}' not in source — kept (--save)");
+            if (plan.Deletes.Count > 0) output.Skip($"{plan.Deletes.Count} web resource(s) not in source — kept (--save)");
+            foreach (var a in plan.RemovesFromSolution) output.Skip($"Web resource '{a.Name}' still in other solution — kept (--save)");
             if (plan.RemovesFromSolution.Count > 0) output.Skip($"{plan.RemovesFromSolution.Count} web resource(s) still in other solution — kept (--save)");
         }
     }

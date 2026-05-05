@@ -22,11 +22,11 @@ public class WebResourcePlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
         foreach (var name in localNames.Except(dataverseNames, StringComparer.OrdinalIgnoreCase))
         {
             var local = snapshot.LocalResources[name];
-            plan.Creates[name] = new WebResourcePlanAction(
+            plan.Creates.Add(new WebResourcePlanAction(
                 name,
                 WebResourceAction.Create,
                 Entity: ToEntity(local),
-                SolutionName: targetSolutionName);
+                SolutionName: targetSolutionName));
         }
 
         // Exist in both, update them if needed
@@ -42,11 +42,11 @@ public class WebResourcePlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
             remote.Entity["displayname"] = local.DisplayName;
             remote.Entity["webresourcetype"] = new OptionSetValue(local.Type);
 
-            plan.Updates[name] = new WebResourcePlanAction(
+            plan.Updates.Add(new WebResourcePlanAction(
                 name,
                 WebResourceAction.Update,
                 Entity: remote.Entity,
-                Id: remote.Id);
+                Id: remote.Id));
         }
 
         // Exist in Dataverse, but not in local, delete or remove them
@@ -56,18 +56,18 @@ public class WebResourcePlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
             if (remote.Ownership is { NonDefaultUnmanagedSolutionCount: 1, IsInCurrentUnmanagedSolution: true })
             {
-                plan.Deletes[name] = new WebResourcePlanAction(name, WebResourceAction.Delete, Id: remote.Id);
+                plan.Deletes.Add(new WebResourcePlanAction(name, WebResourceAction.Delete, Id: remote.Id));
                 continue;
             }
 
             if (remote.Ownership.NonDefaultUnmanagedSolutionCount > 1)
             {
-                plan.RemovesFromSolution[name] =
-                    new WebResourcePlanAction(name, WebResourceAction.RemoveFromSolution, Id: remote.Id, SolutionName: targetSolutionName);
+                plan.RemovesFromSolution.Add(
+                    new WebResourcePlanAction(name, WebResourceAction.RemoveFromSolution, Id: remote.Id, SolutionName: targetSolutionName));
                 continue;
             }
 
-            plan.Skips[name] = new WebResourcePlanAction(name, WebResourceAction.Skip, Id: remote.Id, Reason: "ownership unclear");
+            plan.Skips.Add(new WebResourcePlanAction(name, WebResourceAction.Skip, Id: remote.Id, Reason: "ownership unclear"));
         }
 
         return plan;

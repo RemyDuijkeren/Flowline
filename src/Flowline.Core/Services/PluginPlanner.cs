@@ -43,7 +43,7 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 if (asmPluginType.IsWorkflow)
                     dvPluginType["workflowactivitygroupname"] = $"{metadata.Name} ({metadata.Version})";
 
-                plan.PluginTypes.Upserts[asmPluginType.Name] = new UpsertAction(asmPluginType.Name, dvPluginType, IsCreate: true);
+                plan.PluginTypes.Upserts.Add(new UpsertAction(asmPluginType.Name, dvPluginType, IsCreate: true));
             }
 
             if (asmPluginType.IsWorkflow) continue;
@@ -68,7 +68,7 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
         {
             if (obsoletePluginType.Value.GetAttributeValue<bool>("isworkflowactivity"))
             {
-                plan.PluginTypes.Deletes[obsoletePluginType.Key] = new DeleteAction(obsoletePluginType.Key, "plugintype", obsoletePluginType.Value.Id);
+                plan.PluginTypes.Deletes.Add(new DeleteAction(obsoletePluginType.Key, "plugintype", obsoletePluginType.Value.Id));
                 continue;
             }
 
@@ -88,7 +88,7 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
             plan.Steps.Add(stepPlan);
             plan.Images.Add(imagePlan);
 
-            plan.PluginTypes.Deletes[obsoletePluginType.Key] = new DeleteAction(obsoletePluginType.Key, "plugintype", obsoletePluginType.Value.Id);
+            plan.PluginTypes.Deletes.Add(new DeleteAction(obsoletePluginType.Key, "plugintype", obsoletePluginType.Value.Id));
         }
 
         AddCrossSolutionWarnings(plan, snapshot, solutionName);
@@ -98,11 +98,11 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
     static void AddCrossSolutionWarnings(RegistrationPlan plan, RegistrationSnapshot snapshot, string solutionName)
     {
-        var updates = plan.Steps.Upserts.Values
-            .Concat(plan.Images.Upserts.Values)
-            .Concat(plan.CustomApis.Upserts.Values)
-            .Concat(plan.RequestParams.Upserts.Values)
-            .Concat(plan.ResponseProps.Upserts.Values)
+        var updates = plan.Steps.Upserts
+            .Concat(plan.Images.Upserts)
+            .Concat(plan.CustomApis.Upserts)
+            .Concat(plan.RequestParams.Upserts)
+            .Concat(plan.ResponseProps.Upserts)
             .Where(a => !a.IsCreate);
 
         foreach (var action in updates)
@@ -157,9 +157,9 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
             if (dvSteps.TryGetValue(asmStep.Name, out var dvStep))
             {
-                stepPlan.AddSolutionComponents[asmStep.Name] =
+                stepPlan.AddSolutionComponents.Add(
                     new AddToSolutionAction(asmStep.Name, "sdkmessageprocessingstep", dvStep.Id, solutionName,
-                        snapshot.ComponentTypeById.GetValueOrDefault(dvStep.Id, 92));
+                        snapshot.ComponentTypeById.GetValueOrDefault(dvStep.Id, 92)));
 
                 var changed =
                     dvStep.GetAttributeValue<string>("configuration") != asmStep.Configuration ||
@@ -188,7 +188,7 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 dvStep["sdkmessageid"]         = new EntityReference("sdkmessage", messageId);
                 dvStep["sdkmessagefilterid"]   = filterId.HasValue ? new EntityReference("sdkmessagefilter", filterId.Value) : null;
 
-                stepPlan.Upserts[asmStep.Name] = new UpsertAction(asmStep.Name, dvStep, IsCreate: false);
+                stepPlan.Upserts.Add(new UpsertAction(asmStep.Name, dvStep, IsCreate: false));
             }
             else
             {
@@ -209,7 +209,7 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 if (filterId.HasValue)
                     entity["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId.Value);
 
-                stepPlan.Upserts[asmStep.Name] = new UpsertAction(asmStep.Name, entity, IsCreate: true, SolutionName: solutionName);
+                stepPlan.Upserts.Add(new UpsertAction(asmStep.Name, entity, IsCreate: true, SolutionName: solutionName));
                 dvStep = entity;
             }
 
@@ -219,12 +219,12 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
         foreach (var obsoleteStep in dvSteps.Where(s => asmPluginSteps.All(p => p.Name != s.Key)))
         {
             var stepName = obsoleteStep.Value.GetAttributeValue<string>("name");
-            stepPlan.Deletes[stepName] = new DeleteAction(stepName, "sdkmessageprocessingstep", obsoleteStep.Value.Id);
+            stepPlan.Deletes.Add(new DeleteAction(stepName, "sdkmessageprocessingstep", obsoleteStep.Value.Id));
 
             foreach (var obsoleteImage in snapshot.Images.Where(i => (i.GetAttributeValue<EntityReference>("sdkmessageprocessingstepid")?.Id ?? Guid.Empty) == obsoleteStep.Value.Id))
             {
                 var imageName = obsoleteImage.GetAttributeValue<string>("name");
-                imagesPlan.Deletes[imageName] = new DeleteAction(imageName, "sdkmessageprocessingstepimage", obsoleteImage.Id);
+                imagesPlan.Deletes.Add(new DeleteAction(imageName, "sdkmessageprocessingstepimage", obsoleteImage.Id));
             }
         }
 
@@ -256,7 +256,7 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 dvImage["imagetype"]   = new OptionSetValue(asmImage.ImageType);
                 dvImage["attributes"]  = asmImage.Attributes;
 
-                plan.Upserts[asmImage.Name] = new UpsertAction(asmImage.Name, dvImage, IsCreate: false);
+                plan.Upserts.Add(new UpsertAction(asmImage.Name, dvImage, IsCreate: false));
             }
             else
             {
@@ -276,12 +276,12 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
                     ["description"]                = $"{FlowlineMarker} Created at {DateTime.UtcNow:u}"
                 };
 
-                plan.Upserts[asmImage.Name] = new UpsertAction(asmImage.Name, entity, IsCreate: true);
+                plan.Upserts.Add(new UpsertAction(asmImage.Name, entity, IsCreate: true));
             }
         }
 
         foreach (var obsoleteImage in dvImages.Where(i => asmImages.All(a => a.Name != i.Key)))
-            plan.Deletes[obsoleteImage.Key] = new DeleteAction(obsoleteImage.Key, "sdkmessageprocessingstepimage", obsoleteImage.Value.Id);
+            plan.Deletes.Add(new DeleteAction(obsoleteImage.Key, "sdkmessageprocessingstepimage", obsoleteImage.Value.Id));
 
         return plan;
     }
@@ -305,7 +305,7 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
             if (!dvApis.TryGetValue(fullApiName, out var dvApi))
             {
                 var newApi = NewCustomApiEntity(fullApiName, asmApi, typeEntity);
-                apiPlan.Upserts[asmApi.UniqueName] = new UpsertAction(asmApi.UniqueName, newApi, IsCreate: true, SolutionName: solutionName);
+                apiPlan.Upserts.Add(new UpsertAction(asmApi.UniqueName, newApi, IsCreate: true, SolutionName: solutionName));
                 paramPlan.Add(PlanRequestParameters(snapshot, prefix, newApi.Id, asmApi.UniqueName, asmApi.RequestParameters, solutionName));
                 propPlan.Add(PlanResponseProperties(snapshot, prefix, newApi.Id, asmApi.UniqueName, asmApi.ResponseProperties, solutionName));
                 continue;
@@ -321,19 +321,19 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
             {
                 output.Warning($"Custom API '{fullApiName}' has immutable field changes — deleting and recreating.");
 
-                apiPlan.Deletes[asmApi.UniqueName] = new DeleteAction(asmApi.UniqueName, "customapi", dvApi.Id);
+                apiPlan.Deletes.Add(new DeleteAction(asmApi.UniqueName, "customapi", dvApi.Id));
                 paramPlan.Add(PlanRequestParameters(snapshot, prefix, dvApi.Id, fullApiName, [], solutionName));
                 propPlan.Add(PlanResponseProperties(snapshot, prefix, dvApi.Id, fullApiName, [], solutionName));
 
                 var newApi = NewCustomApiEntity(fullApiName, asmApi, typeEntity);
-                apiPlan.Upserts[asmApi.UniqueName] = new UpsertAction(asmApi.UniqueName, newApi, IsCreate: true, SolutionName: solutionName);
+                apiPlan.Upserts.Add(new UpsertAction(asmApi.UniqueName, newApi, IsCreate: true, SolutionName: solutionName));
                 paramPlan.Add(PlanRequestParameters(snapshot, prefix, newApi.Id, fullApiName, asmApi.RequestParameters, solutionName));
                 propPlan.Add(PlanResponseProperties(snapshot, prefix, newApi.Id, fullApiName, asmApi.ResponseProperties, solutionName));
                 continue;
             }
 
-            apiPlan.AddSolutionComponents[fullApiName] = new AddToSolutionAction(fullApiName, "customapi", dvApi.Id, solutionName,
-                snapshot.ComponentTypeById[dvApi.Id]);
+            apiPlan.AddSolutionComponents.Add(new AddToSolutionAction(fullApiName, "customapi", dvApi.Id, solutionName,
+                snapshot.ComponentTypeById[dvApi.Id]));
             paramPlan.Add(PlanRequestParameters(snapshot, prefix, dvApi.Id, fullApiName, asmApi.RequestParameters, solutionName));
             propPlan.Add(PlanResponseProperties(snapshot, prefix, dvApi.Id, fullApiName, asmApi.ResponseProperties, solutionName));
 
@@ -351,13 +351,13 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
             dvApi["description"]        = asmApi.Description;
             dvApi["isprivate"]          = asmApi.IsPrivate;
             dvApi["executeprivilegename"] = asmApi.ExecutePrivilege;
-            apiPlan.Upserts[asmApi.UniqueName] = new UpsertAction(asmApi.UniqueName, dvApi, IsCreate: false);
+            apiPlan.Upserts.Add(new UpsertAction(asmApi.UniqueName, dvApi, IsCreate: false));
         }
 
         // Fix: compare with prefix-qualified name so only truly absent APIs are treated as obsolete
         foreach (var obsoleteApi in dvApis.Where(a => asmCustomApis.All(c => $"{prefix}_{c.UniqueName}" != a.Key)))
         {
-            apiPlan.Deletes[obsoleteApi.Key] = new DeleteAction(obsoleteApi.Key, "customapi", obsoleteApi.Value.Id);
+            apiPlan.Deletes.Add(new DeleteAction(obsoleteApi.Key, "customapi", obsoleteApi.Value.Id));
             paramPlan.Add(PlanRequestParameters(snapshot, prefix, obsoleteApi.Value.Id, obsoleteApi.Key, [], solutionName));
             propPlan.Add(PlanResponseProperties(snapshot, prefix, obsoleteApi.Value.Id, obsoleteApi.Key, [], solutionName));
         }
@@ -378,12 +378,10 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
         foreach (var asmParam in asmRequestParams)
         {
-            var parameterKey = $"{customApiName}.{asmParam.UniqueName}";
-
             if (!dvRequestParams.TryGetValue(asmParam.UniqueName, out var dvParam))
             {
-                plan.Upserts[parameterKey] = new UpsertAction(asmParam.UniqueName,
-                    NewRequestParameterEntity(asmParam, customApiId), IsCreate: true, SolutionName: solutionName);
+                plan.Upserts.Add(new UpsertAction(asmParam.UniqueName,
+                    NewRequestParameterEntity(asmParam, customApiId), IsCreate: true, SolutionName: solutionName));
                 continue;
             }
 
@@ -396,15 +394,15 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
             if (immutableChanged)
             {
                 output.Warning($"Request parameter '{asmParam.DisplayName}' has immutable field changes — deleting and recreating.");
-                plan.Deletes[parameterKey] = new DeleteAction(asmParam.UniqueName, "customapirequestparameter", dvParam.Id);
-                plan.Upserts[parameterKey] = new UpsertAction(asmParam.UniqueName,
-                    NewRequestParameterEntity(asmParam, customApiId), IsCreate: true, SolutionName: solutionName);
+                plan.Deletes.Add(new DeleteAction(asmParam.UniqueName, "customapirequestparameter", dvParam.Id));
+                plan.Upserts.Add(new UpsertAction(asmParam.UniqueName,
+                    NewRequestParameterEntity(asmParam, customApiId), IsCreate: true, SolutionName: solutionName));
                 continue;
             }
 
-            plan.AddSolutionComponents[parameterKey] =
+            plan.AddSolutionComponents.Add(
                 new AddToSolutionAction(asmParam.UniqueName, "customapirequestparameter", dvParam.Id, solutionName,
-                    snapshot.ComponentTypeById[dvParam.Id]);
+                    snapshot.ComponentTypeById[dvParam.Id]));
 
             var mutableChanged =
                 dvParam.GetAttributeValue<string>("name") != asmParam.Name ||
@@ -416,13 +414,13 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
             dvParam["name"]        = asmParam.Name;
             dvParam["displayname"] = asmParam.DisplayName;
             dvParam["description"] = asmParam.Description;
-            plan.Upserts[parameterKey] = new UpsertAction(asmParam.UniqueName, dvParam, IsCreate: false);
+            plan.Upserts.Add(new UpsertAction(asmParam.UniqueName, dvParam, IsCreate: false));
         }
 
         foreach (var obsoleteParam in dvRequestParams.Where(r => asmRequestParams.All(p => p.UniqueName != r.Key)))
         {
             var name = obsoleteParam.Value.GetAttributeValue<string>("uniquename");
-            plan.Deletes[name] = new DeleteAction(name, "customapirequestparameter", obsoleteParam.Value.Id);
+            plan.Deletes.Add(new DeleteAction(name, "customapirequestparameter", obsoleteParam.Value.Id));
         }
 
         return plan;
@@ -441,12 +439,10 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
         foreach (var asmProp in asmResponseProps)
         {
-            var propertyKey = $"{customApiName}.{asmProp.UniqueName}";
-
             if (!dvResponseProps.TryGetValue(asmProp.UniqueName, out var dvProp))
             {
-                plan.Upserts[propertyKey] = new UpsertAction(asmProp.UniqueName,
-                    NewResponsePropertyEntity(asmProp, customApiId), IsCreate: true, SolutionName: solutionName);
+                plan.Upserts.Add(new UpsertAction(asmProp.UniqueName,
+                    NewResponsePropertyEntity(asmProp, customApiId), IsCreate: true, SolutionName: solutionName));
                 continue;
             }
 
@@ -458,15 +454,15 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
             if (immutableChanged)
             {
                 output.Warning($"Response Property '{asmProp.DisplayName}' has immutable field changes — deleting and recreating.");
-                plan.Deletes[propertyKey] = new DeleteAction(asmProp.UniqueName, "customapiresponseproperty", dvProp.Id);
-                plan.Upserts[propertyKey] = new UpsertAction(asmProp.UniqueName,
-                    NewResponsePropertyEntity(asmProp, customApiId), IsCreate: true, SolutionName: solutionName);
+                plan.Deletes.Add(new DeleteAction(asmProp.UniqueName, "customapiresponseproperty", dvProp.Id));
+                plan.Upserts.Add(new UpsertAction(asmProp.UniqueName,
+                    NewResponsePropertyEntity(asmProp, customApiId), IsCreate: true, SolutionName: solutionName));
                 continue;
             }
 
-            plan.AddSolutionComponents[propertyKey] =
+            plan.AddSolutionComponents.Add(
                 new AddToSolutionAction(asmProp.UniqueName, "customapiresponseproperty", dvProp.Id, solutionName,
-                    snapshot.ComponentTypeById[dvProp.Id]);
+                    snapshot.ComponentTypeById[dvProp.Id]));
 
             var mutableChanged =
                 dvProp.GetAttributeValue<string>("name") != asmProp.Name ||
@@ -478,13 +474,13 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
             dvProp["name"]        = asmProp.Name;
             dvProp["displayname"] = asmProp.DisplayName;
             dvProp["description"] = asmProp.Description;
-            plan.Upserts[propertyKey] = new UpsertAction(asmProp.UniqueName, dvProp, IsCreate: false);
+            plan.Upserts.Add(new UpsertAction(asmProp.UniqueName, dvProp, IsCreate: false));
         }
 
         foreach (var obsoleteProp in dvResponseProps.Where(r => asmResponseProps.All(p => p.UniqueName != r.Key)))
         {
             var name = obsoleteProp.Value.GetAttributeValue<string>("uniquename");
-            plan.Deletes[name] = new DeleteAction(name, "customapiresponseproperty", obsoleteProp.Value.Id);
+            plan.Deletes.Add(new DeleteAction(name, "customapiresponseproperty", obsoleteProp.Value.Id));
         }
 
         return plan;

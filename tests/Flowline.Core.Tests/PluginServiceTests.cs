@@ -436,12 +436,10 @@ public class PluginServiceTests
         Assert.Contains("Summary: 0 delete(s), 1 upsert(s), 0 add-to-solution action(s)", _console.Output);
         Assert.Contains("Plugin types", _console.Output);
         Assert.Contains("Upserts (1)", _console.Output);
-        Assert.Contains("MyPlugin create plugintype", _console.Output);
-        Assert.Contains("Attributes", _console.Output);
-        Assert.Contains("typename = MyNamespace.MyPlugin", _console.Output);
+        Assert.Contains("MyPlugin", _console.Output);
+        Assert.Contains("[create]", _console.Output);
+        Assert.Contains("workflow=False", _console.Output);
         Assert.Contains("Steps", _console.Output);
-        Assert.Contains("Deletes (0)", _console.Output);
-        Assert.Contains("Add to solution (0)", _console.Output);
     }
 
     [Fact]

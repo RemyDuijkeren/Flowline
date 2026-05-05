@@ -73,8 +73,8 @@ public class PluginPlannerTests
         var plan = _planner.Plan(Snapshot(), Metadata(
             new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [], false)), _assembly, "MySolution");
 
-        var (key, action) = Assert.Single(plan.PluginTypes.Upserts);
-        Assert.Equal("MyPlugin", key);
+        var action = Assert.Single(plan.PluginTypes.Upserts);
+        Assert.Equal("MyPlugin", action.Name);
         Assert.True(action.IsCreate);
         Assert.Equal("MyNamespace.MyPlugin", action.Entity.GetAttributeValue<string>("typename"));
     }
@@ -85,7 +85,7 @@ public class PluginPlannerTests
         var plan = _planner.Plan(Snapshot(), Metadata(
             new PluginTypeMetadata("MyActivity", "MyNamespace.MyActivity", [], [], IsWorkflow: true)), _assembly, "MySolution");
 
-        var (_, action) = Assert.Single(plan.PluginTypes.Upserts);
+        var action = Assert.Single(plan.PluginTypes.Upserts);
         Assert.Equal("MyPlugin (1.0.0.0)", action.Entity.GetAttributeValue<string>("workflowactivitygroupname"));
     }
 
@@ -115,8 +115,8 @@ public class PluginPlannerTests
 
         var plan = _planner.Plan(snapshot, Metadata(), _assembly, "MySolution");
 
-        Assert.True(plan.PluginTypes.Deletes.ContainsKey("Obsolete.Plugin"));
-        Assert.Equal(typeId, plan.PluginTypes.Deletes["Obsolete.Plugin"].Id);
+        Assert.Contains(plan.PluginTypes.Deletes, a => a.Name == "Obsolete.Plugin");
+        Assert.Equal(typeId, plan.PluginTypes.Deletes.Single(a => a.Name == "Obsolete.Plugin").Id);
     }
 
     [Fact]
@@ -130,7 +130,7 @@ public class PluginPlannerTests
 
         var plan = _planner.Plan(snapshot, Metadata(), _assembly, "MySolution");
 
-        Assert.True(plan.PluginTypes.Deletes.ContainsKey("Obsolete.Activity"));
+        Assert.Contains(plan.PluginTypes.Deletes, a => a.Name == "Obsolete.Activity");
         Assert.Empty(plan.Steps.Deletes);
         Assert.Empty(plan.CustomApis.Deletes);
     }
@@ -152,8 +152,8 @@ public class PluginPlannerTests
         var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of account", "Update", "account", 20, 0, 1, null, null, [], []);
         var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
 
-        Assert.True(plan.Steps.Upserts.ContainsKey(step.Name));
-        var action = plan.Steps.Upserts[step.Name];
+        Assert.Contains(plan.Steps.Upserts, a => a.Name == step.Name);
+        var action = plan.Steps.Upserts.Single(a => a.Name == step.Name);
         Assert.True(action.IsCreate);
         Assert.Equal("MySolution", action.SolutionName);
     }
@@ -249,7 +249,7 @@ public class PluginPlannerTests
         var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of account", "Update", "account", 20, 0, 1, null, null, [], []);
         var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
 
-        Assert.Equal(filterId, plan.Steps.Upserts[step.Name].Entity.GetAttributeValue<EntityReference>("sdkmessagefilterid").Id);
+        Assert.Equal(filterId, plan.Steps.Upserts.Single(a => a.Name == step.Name).Entity.GetAttributeValue<EntityReference>("sdkmessagefilterid").Id);
     }
 
     [Fact]
@@ -268,7 +268,7 @@ public class PluginPlannerTests
         var step = new PluginStepMetadata("MyNamespace.MyPlugin: Create of any", "Create", null, 20, 0, 1, null, null, [], []);
         var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
 
-        Assert.False(plan.Steps.Upserts[step.Name].Entity.Contains("sdkmessagefilterid"));
+        Assert.False(plan.Steps.Upserts.Single(a => a.Name == step.Name).Entity.Contains("sdkmessagefilterid"));
     }
 
     [Fact]
@@ -287,7 +287,7 @@ public class PluginPlannerTests
         var step = new PluginStepMetadata("MyNamespace.MyPlugin: Create of none", "Create", "none", 20, 0, 1, null, null, [], []);
         var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
 
-        Assert.False(plan.Steps.Upserts[step.Name].Entity.Contains("sdkmessagefilterid"));
+        Assert.False(plan.Steps.Upserts.Single(a => a.Name == step.Name).Entity.Contains("sdkmessagefilterid"));
     }
 
     [Fact]
@@ -349,7 +349,7 @@ public class PluginPlannerTests
         var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
 
         Assert.Empty(plan.Steps.Upserts);
-        Assert.True(plan.Steps.AddSolutionComponents.ContainsKey(stepName));
+        Assert.Contains(plan.Steps.AddSolutionComponents, a => a.Name == stepName);
     }
 
     [Fact]
@@ -381,8 +381,8 @@ public class PluginPlannerTests
         var step = new PluginStepMetadata(stepName, "Update", "account", 20, 0, 1, null, null, [], []);
         var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
 
-        Assert.True(plan.Steps.Upserts.ContainsKey(stepName));
-        Assert.False(plan.Steps.Upserts[stepName].IsCreate);
+        Assert.Contains(plan.Steps.Upserts, a => a.Name == stepName);
+        Assert.False(plan.Steps.Upserts.Single(a => a.Name == stepName).IsCreate);
     }
 
     [Fact]
@@ -485,8 +485,8 @@ public class PluginPlannerTests
 
         var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [], false)), _assembly, "MySolution");
 
-        Assert.True(plan.Steps.Deletes.ContainsKey(stepName));
-        Assert.Equal(stepId, plan.Steps.Deletes[stepName].Id);
+        Assert.Contains(plan.Steps.Deletes, a => a.Name == stepName);
+        Assert.Equal(stepId, plan.Steps.Deletes.Single(a => a.Name == stepName).Id);
     }
 
     // -- asyncautodelete / DeleteJobOnSuccess --
@@ -522,9 +522,9 @@ public class PluginPlannerTests
         var step = new PluginStepMetadata(stepName, "Update", "account", 40, 1, 1, null, null, [], [], AsyncAutoDelete: true);
         var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
 
-        Assert.True(plan.Steps.Upserts.ContainsKey(stepName));
-        Assert.False(plan.Steps.Upserts[stepName].IsCreate);
-        Assert.True(plan.Steps.Upserts[stepName].Entity.GetAttributeValue<bool>("asyncautodelete"));
+        Assert.Contains(plan.Steps.Upserts, a => a.Name == stepName);
+        Assert.False(plan.Steps.Upserts.Single(a => a.Name == stepName).IsCreate);
+        Assert.True(plan.Steps.Upserts.Single(a => a.Name == stepName).Entity.GetAttributeValue<bool>("asyncautodelete"));
     }
 
     [Fact]
@@ -542,9 +542,9 @@ public class PluginPlannerTests
         var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of account", "Update", "account", 40, 1, 1, null, null, [], [], AsyncAutoDelete: true);
         var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
 
-        Assert.True(plan.Steps.Upserts.ContainsKey(step.Name));
-        Assert.True(plan.Steps.Upserts[step.Name].IsCreate);
-        Assert.True(plan.Steps.Upserts[step.Name].Entity.GetAttributeValue<bool>("asyncautodelete"));
+        Assert.Contains(plan.Steps.Upserts, a => a.Name == step.Name);
+        Assert.True(plan.Steps.Upserts.Single(a => a.Name == step.Name).IsCreate);
+        Assert.True(plan.Steps.Upserts.Single(a => a.Name == step.Name).Entity.GetAttributeValue<bool>("asyncautodelete"));
     }
 
     // -- RunAs / impersonatinguserid --
@@ -581,9 +581,9 @@ public class PluginPlannerTests
         var step = new PluginStepMetadata(stepName, "Update", "account", 20, 0, 1, null, null, [], [], RunAs: userId);
         var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
 
-        Assert.True(plan.Steps.Upserts.ContainsKey(stepName));
-        Assert.False(plan.Steps.Upserts[stepName].IsCreate);
-        Assert.Equal(userId, plan.Steps.Upserts[stepName].Entity.GetAttributeValue<EntityReference>("impersonatinguserid").Id);
+        Assert.Contains(plan.Steps.Upserts, a => a.Name == stepName);
+        Assert.False(plan.Steps.Upserts.Single(a => a.Name == stepName).IsCreate);
+        Assert.Equal(userId, plan.Steps.Upserts.Single(a => a.Name == stepName).Entity.GetAttributeValue<EntityReference>("impersonatinguserid").Id);
     }
 
     [Fact]
@@ -605,9 +605,9 @@ public class PluginPlannerTests
         var step = new PluginStepMetadata(stepName, "Update", "account", 20, 0, 1, null, null, [], [], RunAs: userId);
         var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
 
-        Assert.True(plan.Steps.Upserts.ContainsKey(stepName));
-        Assert.True(plan.Steps.Upserts[stepName].IsCreate);
-        Assert.Equal(userId, plan.Steps.Upserts[stepName].Entity.GetAttributeValue<EntityReference>("impersonatinguserid").Id);
+        Assert.Contains(plan.Steps.Upserts, a => a.Name == stepName);
+        Assert.True(plan.Steps.Upserts.Single(a => a.Name == stepName).IsCreate);
+        Assert.Equal(userId, plan.Steps.Upserts.Single(a => a.Name == stepName).Entity.GetAttributeValue<EntityReference>("impersonatinguserid").Id);
     }
 
     [Fact]
@@ -700,8 +700,8 @@ public class PluginPlannerTests
         // Assembly has no Custom APIs — obsolete one should be deleted
         var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [], false, IsCustomApi: true)), _assembly, "MySolution");
 
-        Assert.True(plan.CustomApis.Deletes.ContainsKey("abc_ObsoleteApi"));
-        Assert.Equal(apiId, plan.CustomApis.Deletes["abc_ObsoleteApi"].Id);
+        Assert.Contains(plan.CustomApis.Deletes, a => a.Name == "abc_ObsoleteApi");
+        Assert.Equal(apiId, plan.CustomApis.Deletes.Single(a => a.Name == "abc_ObsoleteApi").Id);
     }
 
     [Fact]
@@ -718,8 +718,8 @@ public class PluginPlannerTests
         var customApi = new CustomApiMetadata("MyApi", "My Api", "desc", 0, null, false, false, 0, null, "MyNamespace.MyPlugin", [], []);
         var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [customApi], false, IsCustomApi: true)), _assembly, "MySolution");
 
-        Assert.True(plan.CustomApis.Upserts.ContainsKey("MyApi"));
-        var action = plan.CustomApis.Upserts["MyApi"];
+        Assert.Contains(plan.CustomApis.Upserts, a => a.Name == "MyApi");
+        var action = plan.CustomApis.Upserts.Single(a => a.Name == "MyApi");
         Assert.True(action.IsCreate);
         Assert.Equal("MySolution", action.SolutionName);
         Assert.Equal("abc_MyApi", action.Entity.GetAttributeValue<string>("uniquename"));

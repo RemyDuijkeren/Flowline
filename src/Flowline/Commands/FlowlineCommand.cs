@@ -1,3 +1,4 @@
+using System.Reflection;
 using Flowline.Config;
 using Flowline.Utils;
 using Spectre.Console;
@@ -19,11 +20,24 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
 
     protected override async Task<int> ExecuteAsync(CommandContext context, TSettings settings, CancellationToken cancellationToken)
     {
+        WelcomeScreen();
+
         await CheckSetupAsync(settings, cancellationToken);
 
         Config = ProjectConfig.Load(RootFolder) ?? new ProjectConfig();
 
         return await ExecuteFlowlineAsync(context, settings, cancellationToken);
+    }
+
+    static void WelcomeScreen()
+    {
+        var appName = new FigletText("Flowline").Color(Color.Green);
+        var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version;
+        var versionText = new Text($"Version {version}", new Style(Color.Green));
+
+        AnsiConsole.Write(appName);
+        AnsiConsole.Write(versionText);
+        AnsiConsole.WriteLine();
     }
 
     protected abstract Task<int> ExecuteFlowlineAsync(CommandContext context, TSettings settings, CancellationToken cancellationToken);

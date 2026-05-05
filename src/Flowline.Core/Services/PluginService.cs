@@ -258,26 +258,26 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         if (needsUpdate)
             output.Skip($"Assembly '{metadata.Name} ({metadata.Version})' — would update content");
 
-        foreach (var s in plan.PluginTypes.Deletes.Keys)   output.Skip($"Plugin type '{s}' — would delete");
-        foreach (var s in plan.Steps.Deletes.Keys)         output.Skip($"Step '{s}' — would delete");
-        foreach (var s in plan.Images.Deletes.Keys)        output.Skip($"Image '{s}' — would delete");
-        foreach (var s in plan.CustomApis.Deletes.Keys)    output.Skip($"Custom API '{s}' — would delete");
-        foreach (var s in plan.RequestParams.Deletes.Keys) output.Skip($"Request parameter '{s}' — would delete");
-        foreach (var s in plan.ResponseProps.Deletes.Keys) output.Skip($"Response property '{s}' — would delete");
+        foreach (var a in plan.PluginTypes.Deletes)   output.Skip($"Plugin type '{a.Name}' — would delete");
+        foreach (var a in plan.Steps.Deletes)         output.Skip($"Step '{a.Name}' — would delete");
+        foreach (var a in plan.Images.Deletes)        output.Skip($"Image '{a.Name}' — would delete");
+        foreach (var a in plan.CustomApis.Deletes)    output.Skip($"Custom API '{a.Name}' — would delete");
+        foreach (var a in plan.RequestParams.Deletes) output.Skip($"Request parameter '{a.Name}' — would delete");
+        foreach (var a in plan.ResponseProps.Deletes) output.Skip($"Response property '{a.Name}' — would delete");
 
-        foreach (var (s, ups) in plan.PluginTypes.Upserts)   output.Skip($"Plugin type '{s}' — would {(ups.IsCreate ? "create" : "update")}");
-        foreach (var (s, ups) in plan.Steps.Upserts)         output.Skip($"Step '{s}' — would {(ups.IsCreate ? "create" : "update")}");
-        foreach (var (s, ups) in plan.Images.Upserts)        output.Skip($"Image '{s}' — would {(ups.IsCreate ? "create" : "update")}");
-        foreach (var (s, ups) in plan.CustomApis.Upserts)    output.Skip($"Custom API '{s}' — would {(ups.IsCreate ? "create" : "update")}");
-        foreach (var (s, ups) in plan.RequestParams.Upserts) output.Skip($"Request parameter '{s}' — would {(ups.IsCreate ? "create" : "update")}");
-        foreach (var (s, ups) in plan.ResponseProps.Upserts) output.Skip($"Response property '{s}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var ups in plan.PluginTypes.Upserts)   output.Skip($"Plugin type '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var ups in plan.Steps.Upserts)         output.Skip($"Step '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var ups in plan.Images.Upserts)        output.Skip($"Image '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var ups in plan.CustomApis.Upserts)    output.Skip($"Custom API '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var ups in plan.RequestParams.Upserts) output.Skip($"Request parameter '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var ups in plan.ResponseProps.Upserts) output.Skip($"Response property '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
 
-        var creates = plan.PluginTypes.Upserts.Values.Count(u => u.IsCreate)
-                      + plan.Steps.Upserts.Values.Count(u => u.IsCreate)
-                      + plan.CustomApis.Upserts.Values.Count(u => u.IsCreate)
-                      + plan.Images.Upserts.Values.Count(u => u.IsCreate)
-                      + plan.RequestParams.Upserts.Values.Count(u => u.IsCreate)
-                      + plan.ResponseProps.Upserts.Values.Count(u => u.IsCreate);
+        var creates = plan.PluginTypes.Upserts.Count(u => u.IsCreate)
+                      + plan.Steps.Upserts.Count(u => u.IsCreate)
+                      + plan.CustomApis.Upserts.Count(u => u.IsCreate)
+                      + plan.Images.Upserts.Count(u => u.IsCreate)
+                      + plan.RequestParams.Upserts.Count(u => u.IsCreate)
+                      + plan.ResponseProps.Upserts.Count(u => u.IsCreate);
         var updates = plan.TotalUpserts - creates;
 
         output.Info($"[green]Dry run: {plan.TotalDeletes} delete(s), {creates} create(s), {updates} update(s). Run without --dry-run to apply.[/]");
@@ -492,14 +492,14 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         if (actionPlan.Deletes.Count > 0)
         {
             output.Verbose($"    Deletes ({actionPlan.Deletes.Count})", opt);
-            foreach (var action in actionPlan.Deletes.Values.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
+            foreach (var action in actionPlan.Deletes.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
                 output.Verbose($"      - {Safe(action.Name)}", opt);
         }
 
         if (actionPlan.Upserts.Count > 0)
         {
             output.Verbose($"    Upserts ({actionPlan.Upserts.Count})", opt);
-            foreach (var action in actionPlan.Upserts.Values.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
+            foreach (var action in actionPlan.Upserts.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
             {
                 var detail = entityDetail(action.Entity);
                 var solution = string.IsNullOrWhiteSpace(action.SolutionName) ? "" : $" solution={Safe(action.SolutionName)}";
@@ -510,7 +510,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         if (actionPlan.AddSolutionComponents.Count > 0)
         {
             output.Verbose($"    Add to solution ({actionPlan.AddSolutionComponents.Count})", opt);
-            foreach (var action in actionPlan.AddSolutionComponents.Values.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
+            foreach (var action in actionPlan.AddSolutionComponents.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
                 output.Verbose($"      - {Safe(action.Name)} solution={Safe(action.SolutionName)} componenttype={action.ComponentType}", opt);
         }
     }

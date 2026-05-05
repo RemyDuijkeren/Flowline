@@ -35,7 +35,7 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
         if (plan.TotalChanges == 0)
         {
-            foreach (var a in plan.Skips.Values)
+            foreach (var a in plan.Skips)
                 output.Skip($"Web resource '{a.Name}' kept ({a.Reason})");
 
             output.Skip("Web resources already up to date — skipping");
@@ -86,11 +86,11 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
     void WriteDryRunSummary(WebResourceSyncPlan plan, bool publishAfterSync)
     {
-        foreach (var a in plan.Creates.Values) output.Skip($"Web resource '{a.Name}' — would create");
-        foreach (var a in plan.Updates.Values) output.Skip($"Web resource '{a.Name}' — would update");
-        foreach (var a in plan.Deletes.Values) output.Skip($"Web resource '{a.Name}' — would delete");
-        foreach (var a in plan.RemovesFromSolution.Values) output.Skip($"Web resource '{a.Name}' — would remove from solution");
-        foreach (var a in plan.Skips.Values) output.Skip($"Web resource '{a.Name}' — kept ({a.Reason})");
+        foreach (var a in plan.Creates) output.Skip($"Web resource '{a.Name}' — would create");
+        foreach (var a in plan.Updates) output.Skip($"Web resource '{a.Name}' — would update");
+        foreach (var a in plan.Deletes) output.Skip($"Web resource '{a.Name}' — would delete");
+        foreach (var a in plan.RemovesFromSolution) output.Skip($"Web resource '{a.Name}' — would remove from solution");
+        foreach (var a in plan.Skips) output.Skip($"Web resource '{a.Name}' — kept ({a.Reason})");
 
         var publishCount = publishAfterSync ? plan.PublishCount : 0;
         if (publishCount > 0)

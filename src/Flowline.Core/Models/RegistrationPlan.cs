@@ -29,14 +29,14 @@ public class RegistrationPlan
 
 public class ActionPlan
 {
-    public Dictionary<string, UpsertAction> Upserts { get; } = new(StringComparer.OrdinalIgnoreCase);
-    public Dictionary<string, DeleteAction> Deletes { get; } = new(StringComparer.OrdinalIgnoreCase);
-    public Dictionary<string, AddToSolutionAction> AddSolutionComponents { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public List<UpsertAction> Upserts { get; } = [];
+    public List<DeleteAction> Deletes { get; } = [];
+    public List<AddToSolutionAction> AddSolutionComponents { get; } = [];
 
     public void Add(ActionPlan other)
     {
-        foreach (var (key, value) in other.Upserts) Upserts[key] = value;
-        foreach (var (key, value) in other.Deletes) Deletes[key] = value;
-        foreach (var (key, value) in other.AddSolutionComponents) AddSolutionComponents[key] = value;
+        Upserts.AddRange(other.Upserts);
+        Deletes.AddRange(other.Deletes);
+        AddSolutionComponents.AddRange(other.AddSolutionComponents);
     }
 }
