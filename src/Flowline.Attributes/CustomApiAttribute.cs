@@ -1,6 +1,7 @@
 using System;
 
-namespace Flowline.Attributes;
+namespace Flowline.Attributes
+{
 
 /// <summary>
 /// Marks an <c>IPlugin</c> class as a Dataverse Custom API.
@@ -55,25 +56,37 @@ namespace Flowline.Attributes;
 /// public partial class BulkApproveApi : IPlugin { ... }
 /// </code>
 /// </remarks>
-/// <param name="entity">
-/// Logical name of the table to bind this API to. Omit for a global (unbound) API.
-/// </param>
 [AttributeUsage(AttributeTargets.Class)]
-public sealed class CustomApiAttribute(string? entity = null) : Attribute
+public sealed class CustomApiAttribute : Attribute
 {
+    /// <summary>Marks a class as a Dataverse Custom API.</summary>
+    public CustomApiAttribute()
+        : this(null)
+    {
+    }
+
+    /// <summary>Marks a class as a Dataverse Custom API.</summary>
+    /// <param name="entity">
+    /// Logical name of the table to bind this API to. Omit for a global (unbound) API.
+    /// </param>
+    public CustomApiAttribute(string entity)
+    {
+        Entity = entity;
+    }
+
     /// <summary>
     /// Logical name of the table this API is bound to, e.g. <c>"account"</c> or <c>"cr123_invoice"</c>.
     /// When set, Dataverse automatically provides a <c>Target</c> EntityReference parameter containing
     /// the record the API was invoked on. Omit for a global (unbound) API.
     /// </summary>
-    public string? Entity { get; } = entity;
+    public string Entity { get; }
 
     /// <summary>
     /// Logical name of the table for entity collection binding.
     /// Use instead of <see cref="Entity"/> when the API operates on a set of records rather than
     /// a single record. Dataverse provides a <c>Target</c> EntityCollection parameter.
     /// </summary>
-    public string? EntityCollection { get; set; }
+    public string EntityCollection { get; set; }
 
     /// <summary>
     /// When <c>true</c>, this API is a Function: it must return a value and has no side effects.
@@ -99,15 +112,16 @@ public sealed class CustomApiAttribute(string? entity = null) : Attribute
     /// Display name shown in the solution explorer and API catalog.
     /// Defaults to the class name (without suffix) split on PascalCase boundaries if omitted.
     /// </summary>
-    public string? DisplayName { get; set; }
+    public string DisplayName { get; set; }
 
     /// <summary>Description shown in the solution explorer and API catalog.</summary>
-    public string? Description { get; set; }
+    public string Description { get; set; }
 
     /// <summary>
     /// Name of the Dataverse privilege required to call this API.
     /// When set, only users with this privilege can invoke the API.
     /// Omit allowing any authenticated user.
     /// </summary>
-    public string? ExecutePrivilege { get; set; }
+    public string ExecutePrivilege { get; set; }
+}
 }

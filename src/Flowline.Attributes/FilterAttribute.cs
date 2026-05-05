@@ -1,6 +1,7 @@
 using System;
 
-namespace Flowline.Attributes;
+namespace Flowline.Attributes
+{
 
 /// <summary>
 /// Limits this plugin step to fire only when at least one of the listed columns is included
@@ -40,11 +41,22 @@ namespace Flowline.Attributes;
 /// </para>
 /// </remarks>
 [AttributeUsage(AttributeTargets.Class)]
-public sealed class FilterAttribute(params string[] columns) : Attribute
+public sealed class FilterAttribute : Attribute
 {
+    /// <summary>
+    /// Limits this plugin step to fire only when at least one of the listed columns is included
+    /// in the operation.
+    /// </summary>
+    /// <param name="columns">Logical names of the columns to watch.</param>
+    public FilterAttribute(params string[] columns)
+    {
+        Columns = columns;
+    }
+
     /// <summary>
     /// Logical names of the columns that trigger this step.
     /// The step fires when the operation includes at least one of these columns.
     /// </summary>
-    public string[] Columns { get; } = columns;
+    public string[] Columns { get; }
+}
 }

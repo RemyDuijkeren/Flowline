@@ -1,6 +1,7 @@
 using System;
 
-namespace Flowline.Attributes;
+namespace Flowline.Attributes
+{
 
 /// <summary>
 /// Declares a return value of a Dataverse Custom API for Flowline registration.
@@ -36,34 +37,50 @@ namespace Flowline.Attributes;
 /// </para>
 /// </remarks>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
-public sealed class OutputAttribute(string name, FieldType type) : Attribute
+public sealed class OutputAttribute : Attribute
 {
+    /// <summary>
+    /// Specifies the output metadata for a class. This attribute can be applied to a class
+    /// to define the name and type of an output.
+    /// </summary>
+    /// <remarks>
+    /// This attribute allows multiple usages on a single class.
+    /// </remarks>
+    /// <param name="name">The name of the output.</param>
+    /// <param name="type">The type of the output.</param>
+    public OutputAttribute(string name, FieldType type)
+    {
+        Name = name;
+        Type = type;
+    }
+
     /// <summary>
     /// The name used to identify this return value in Dataverse and in
     /// <c>context.OutputParameters</c>. Must be unique within the Custom API.
     /// Convention is camelCase: <c>"riskScore"</c>, <c>"errorMessage"</c>.
     /// </summary>
-    public string Name { get; } = name;
+    public string Name { get; }
 
     /// <summary>
     /// The Dataverse field type of this return value.
     /// See <see cref="FieldType"/> for the full C# ↔ Dataverse type mapping.
     /// </summary>
-    public FieldType Type { get; } = type;
+    public FieldType Type { get; }
 
     /// <summary>
     /// Logical name of the Dataverse table this return value references.
     /// Required when <see cref="Type"/> is <see cref="FieldType.EntityReference"/> or
     /// <see cref="FieldType.Entity"/>. Example: <c>"account"</c>, <c>"cr123_invoice"</c>.
     /// </summary>
-    public string? Entity { get; set; }
+    public string Entity { get; set; }
 
     /// <summary>
     /// Display name shown in the solution explorer and API catalog.
     /// Defaults to <see cref="Name"/> split on camelCase boundaries if omitted.
     /// </summary>
-    public string? DisplayName { get; set; }
+    public string DisplayName { get; set; }
 
     /// <summary>Description shown in the solution explorer.</summary>
-    public string? Description { get; set; }
+    public string Description { get; set; }
+}
 }

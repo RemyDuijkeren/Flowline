@@ -1,6 +1,7 @@
 using System;
 
-namespace Flowline.Attributes;
+namespace Flowline.Attributes
+{
 
 /// <summary>
 /// Registers a pre-image on this plugin step — a snapshot of the record's column values
@@ -44,8 +45,18 @@ namespace Flowline.Attributes;
 /// </para>
 /// </remarks>
 [AttributeUsage(AttributeTargets.Class)]
-public sealed class PreImageAttribute(params string[] columns) : Attribute
+public sealed class PreImageAttribute : Attribute
 {
+    /// <summary>
+    /// Specifies an attribute to define a pre-image for a specific entity.
+    /// This is commonly utilized in plugins to capture the state of an entity prior to an operation or event execution.
+    /// </summary>
+    /// <param name="columns">The logical names of the columns to include in the snapshot.</param>
+    public PreImageAttribute(params string[] columns)
+    {
+        Columns = columns;
+    }
+
     /// <summary>
     /// The key used to retrieve this image from <c>context.PreEntityImages</c>.
     /// Default is <c>"preimage"</c>. Override only when migrating from a manually registered
@@ -60,7 +71,7 @@ public sealed class PreImageAttribute(params string[] columns) : Attribute
     /// Logical names of the columns to include in the snapshot.
     /// Omit to include all columns (use sparingly — fetch only what you need).
     /// </summary>
-    public string[] Columns { get; } = columns;
+    public string[] Columns { get; }
 }
 
 /// <summary>
@@ -114,8 +125,13 @@ public sealed class PreImageAttribute(params string[] columns) : Attribute
 /// </para>
 /// </remarks>
 [AttributeUsage(AttributeTargets.Class)]
-public sealed class PostImageAttribute(params string[] columns) : Attribute
+public sealed class PostImageAttribute : Attribute
 {
+    public PostImageAttribute(params string[] columns)
+    {
+        Columns = columns;
+    }
+
     /// <summary>
     /// The key used to retrieve this image from <c>context.PostEntityImages</c>.
     /// Default is <c>"postimage"</c>. Override only when migrating from a manually registered
@@ -130,5 +146,6 @@ public sealed class PostImageAttribute(params string[] columns) : Attribute
     /// Logical names of the columns to include in the snapshot.
     /// Omit to include all columns (use sparingly — fetch only what you need).
     /// </summary>
-    public string[] Columns { get; } = columns;
+    public string[] Columns { get; }
+}
 }

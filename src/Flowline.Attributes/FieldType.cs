@@ -1,6 +1,7 @@
 using System;
 
-namespace Flowline.Attributes;
+namespace Flowline.Attributes
+{
 
 /// <summary>
 /// The field type of a Custom API input parameter or output value, used for Flowline registration.
@@ -74,4 +75,5 @@ public enum FieldType
 
     /// <summary>A unique identifier. Maps to C# <c>Guid</c>.</summary>
     Guid             = 12,
+}
 }

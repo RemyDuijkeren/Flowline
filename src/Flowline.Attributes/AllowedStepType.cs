@@ -1,6 +1,7 @@
 using System;
 
-namespace Flowline.Attributes;
+namespace Flowline.Attributes
+{
 
 /// <summary>
 /// Controls whether third-party developers can extend a Custom API by registering their own
@@ -30,4 +31,5 @@ public enum AllowedStepType
     /// Synchronous steps run within the same transaction as your implementation.
     /// </summary>
     SyncAndAsync = 2,
+}
 }

@@ -1,6 +1,7 @@
 using System;
 
-namespace Flowline.Attributes;
+namespace Flowline.Attributes
+{
 
 /// <summary>
 /// Registers this <c>IPlugin</c> class as a Dataverse plugin step on the specified table.
@@ -63,25 +64,37 @@ namespace Flowline.Attributes;
 ///   </item>
 /// </list>
 /// </remarks>
-/// <param name="entity">
-/// The logical name of the Dataverse table to register the step on.
-/// Use the schema name in lowercase: <c>"account"</c>, <c>"contact"</c>,
-/// <c>"cr123_invoice"</c>. Found in the maker portal under Table → Properties → Name.
-/// <para>
-/// Omit this argument to register the step on <b>all tables</b> — Flowline will warn that
-/// the step fires globally. To make this intentional and suppress the warning, pass
-/// <c>"none"</c> explicitly. Passing an empty string is an error.
-/// </para>
-/// </param>
 [AttributeUsage(AttributeTargets.Class)]
-public sealed class StepAttribute(string? entity = null) : Attribute
+public sealed class StepAttribute : Attribute
 {
+    /// <summary>Marks a class as a Dataverse plugin step on all tables.</summary>
+    public StepAttribute()
+        : this(null)
+    {
+    }
+
+    /// <summary>Marks a class as a Dataverse plugin step.</summary>
+    /// <param name="entity">
+    /// The logical name of the Dataverse table to register the step on.
+    /// Use the schema name in lowercase: <c>"account"</c>, <c>"contact"</c>,
+    /// <c>"cr123_invoice"</c>. Found in the maker portal under Table → Properties → Name.
+    /// <para>
+    /// Omit this argument to register the step on <b>all tables</b> — Flowline will warn that
+    /// the step fires globally. To make this intentional and suppress the warning, pass
+    /// <c>"none"</c> explicitly. Passing an empty string is an error.
+    /// </para>
+    /// </param>
+    public StepAttribute(string entity)
+    {
+        Entity = entity;
+    }
+
     /// <summary>
     /// Logical name of the Dataverse table this step is registered on, or <see langword="null"/>
     /// when no table was specified. <c>"none"</c> means the step is intentionally registered on
     /// all tables (no filter).
     /// </summary>
-    public string? Entity { get; } = entity;
+    public string Entity { get; }
 
     /// <summary>
     /// Controls the execution order when multiple plugin steps are registered for the same
@@ -105,7 +118,7 @@ public sealed class StepAttribute(string? entity = null) : Attribute
     /// This value is stored in source control and the solution XML — do not use personal
     /// accounts or accounts whose GUID differs between environments.
     /// </remarks>
-    public string? RunAs { get; set; }
+    public string RunAs { get; set; }
 
     /// <summary>
     /// An optional string passed to your plugin's constructor as the first parameter
@@ -137,7 +150,7 @@ public sealed class StepAttribute(string? entity = null) : Attribute
     /// it encourages storing secrets in source control, which Flowline avoids by design.
     /// </para>
     /// </remarks>
-    public string? Configuration { get; set; }
+    public string Configuration { get; set; }
 
     /// <summary>
     /// When <see langword="true"/>, Dataverse automatically deletes the
@@ -152,4 +165,4 @@ public sealed class StepAttribute(string? entity = null) : Attribute
     /// </remarks>
     public bool DeleteJobOnSuccess { get; set; } = true;
 }
-
+}

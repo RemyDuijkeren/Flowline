@@ -1,6 +1,7 @@
 using System;
 
-namespace Flowline.Attributes;
+namespace Flowline.Attributes
+{
 
 /// <summary>
 /// Specifies the secondary table for plugin steps that involve two records, such as
@@ -42,22 +43,35 @@ namespace Flowline.Attributes;
 /// omit <c>[SecondaryEntity]</c> entirely. Dataverse uses <c>"none"</c> automatically.
 /// </para>
 /// </remarks>
-/// <param name="entity">
-/// Logical name of the secondary table, e.g. <c>"account"</c>.
-/// Use <c>"none"</c> to match all secondary tables.
-/// <para>
-/// Omit this argument to register on <b>all secondary tables</b> — Flowline will warn.
-/// To make this intentional and suppress the warning, pass <c>"none"</c> explicitly.
-/// Passing an empty string is an error.
-/// </para>
-/// </param>
 [AttributeUsage(AttributeTargets.Class)]
-public sealed class SecondaryEntityAttribute(string? entity = null) : Attribute
+public sealed class SecondaryEntityAttribute : Attribute
 {
+    /// <summary>Specifies the secondary table for plugin steps that involve two records.</summary>
+    public SecondaryEntityAttribute()
+        : this(null)
+    {
+    }
+
+    /// <summary>Specifies the secondary table for plugin steps that involve two records.</summary>
+    /// <param name="entity">
+    /// Logical name of the secondary table, e.g. <c>"account"</c>.
+    /// Use <c>"none"</c> to match all secondary tables.
+    /// <para>
+    /// Omit this argument to register on <b>all secondary tables</b> — Flowline will warn.
+    /// To make this intentional and suppress the warning, pass <c>"none"</c> explicitly.
+    /// Passing an empty string is an error.
+    /// </para>
+    /// </param>
+    public SecondaryEntityAttribute(string entity)
+    {
+        Entity = entity;
+    }
+
     /// <summary>
     /// Logical name of the secondary Dataverse table involved in the relationship operation,
     /// or <see langword="null"/> when no table was specified. Use <c>"none"</c> to
     /// intentionally match any secondary table without a warning.
     /// </summary>
-    public string? Entity { get; } = entity;
+    public string Entity { get; }
+}
 }

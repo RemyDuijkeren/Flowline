@@ -2,6 +2,9 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
+    <!-- Source-only package: consumers may be C# 7.3 / net462 Dataverse plugin projects -->
+    <LangVersion>7.3</LangVersion>
+    <Nullable>disable</Nullable>
     <!-- Source-only package: no implicit usings -->
     <ImplicitUsings>disable</ImplicitUsings>
     <!-- Source-only package: no compiled DLL output in the package -->
