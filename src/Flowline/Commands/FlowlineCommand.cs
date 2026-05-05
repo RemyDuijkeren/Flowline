@@ -18,7 +18,7 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
 
     protected string RootFolder { get; private set; } = Directory.GetCurrentDirectory();
     protected ProjectConfig? Config { get; private set; }
-    protected virtual bool ShowWelcome => false;
+    protected virtual bool ShowWelcome => true;
 
     protected override async Task<int> ExecuteAsync(CommandContext context, TSettings settings, CancellationToken cancellationToken)
     {

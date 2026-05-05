@@ -9,6 +9,9 @@
     <PackageReference Include="Spectre.Console" />
     <PackageReference Include="System.Reflection.MetadataLoadContext" />
     <PackageReference Include="MinVer" PrivateAssets="All" />
+    
+    <!-- https://github.com/advisories/GHSA-37gx-xxp4-5rgx -->
+    <PackageReference Include="System.Security.Cryptography.Xml" />
   </ItemGroup>
 
   <ItemGroup>
