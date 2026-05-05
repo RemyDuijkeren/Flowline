@@ -9,6 +9,8 @@ namespace Flowline.Commands;
 
 public class CloneCommand : FlowlineCommand<CloneCommand.Settings>
 {
+    protected override bool ShowWelcome => true;
+
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "<solution>")]

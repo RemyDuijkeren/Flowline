@@ -1,6 +1,7 @@
 using System.Reflection;
 using Flowline.Config;
 using Flowline.Utils;
+using Flowline.Validation;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -17,10 +18,12 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
 
     protected string RootFolder { get; private set; } = Directory.GetCurrentDirectory();
     protected ProjectConfig? Config { get; private set; }
+    protected virtual bool ShowWelcome => false;
 
     protected override async Task<int> ExecuteAsync(CommandContext context, TSettings settings, CancellationToken cancellationToken)
     {
-        WelcomeScreen();
+        if (ShowWelcome && !settings.JsonOutput)
+            WelcomeScreen();
 
         await CheckSetupAsync(settings, cancellationToken);
 
@@ -46,10 +49,10 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
     {
         await AnsiConsole.Status().FlowlineSpinner().StartAsync("Checking your setup...", async ctx =>
         {
-            await DotNetUtils.AssertDotNetInstalledAsync(settings.Verbose, cancellationToken);
-            await PacUtils.AssertPacCliInstalledAsync(settings.Verbose, cancellationToken);
-            await GitUtils.AssertGitInstalledAsync(settings.Verbose, cancellationToken);
-            await GitUtils.AssertGitRepoAsync(RootFolder, settings.Verbose, cancellationToken);
+            await FlowlineValidator.Default.EnsureDotNetAsync(settings, cancellationToken);
+            await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
+            await FlowlineValidator.Default.EnsureGitAsync(settings, cancellationToken);
+            await FlowlineValidator.Default.EnsureGitRepoAsync(RootFolder, settings, cancellationToken);
         });
 
         AnsiConsole.MarkupLine("[green]All good, let's go![/]");
@@ -88,7 +91,7 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
 
         EnvironmentInfo? env = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
             $"Checking {label.ToLower()} [bold]{url}[/]...",
-            ctx => PacUtils.GetEnvironmentInfoByUrlAsync(url, settings.Verbose, cancellationToken));
+            ctx => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(url, settings, cancellationToken));
 
         if (env == null)
         {
@@ -126,11 +129,9 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
             return (null, null);
         }
 
-        List<SolutionInfo> solutions = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+        SolutionInfo? remoteSln = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
             $"Looking up [bold]{projectSln.Name}[/]...",
-            ctx => PacUtils.GetSolutionsAsync(environmentUrl, settings.Verbose, cancellationToken));
-
-        var remoteSln = solutions.FirstOrDefault(s => s.SolutionUniqueName?.Equals(projectSln.Name, StringComparison.OrdinalIgnoreCase) == true);
+            ctx => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, projectSln.Name, includeManaged, settings, cancellationToken));
         if (remoteSln == null)
         {
             AnsiConsole.MarkupLine($"[red]'{projectSln.Name}' not found in that environment.[/]");

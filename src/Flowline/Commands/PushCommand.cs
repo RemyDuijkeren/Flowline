@@ -5,6 +5,7 @@ using Flowline.Core.Services;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using Flowline.Utils;
+using Flowline.Validation;
 using Microsoft.PowerPlatform.Dataverse.Client;
 
 namespace Flowline.Commands;
@@ -72,7 +73,7 @@ public class PushCommand(DataverseConnector dataverseConnector, PluginService pl
 
         await AnsiConsole.Status().FlowlineSpinner().StartAsync("Checking your setup...", async ctx =>
         {
-            await PacUtils.AssertPacCliInstalledAsync(settings.Verbose, cancellationToken);
+            await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
         });
 
         AnsiConsole.MarkupLine("[green]All good, let's go![/]");
@@ -341,11 +342,9 @@ public class PushCommand(DataverseConnector dataverseConnector, PluginService pl
         Settings settings,
         CancellationToken cancellationToken)
     {
-        List<SolutionInfo> solutions = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+        SolutionInfo? remoteSln = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
             $"Looking up [bold]{solutionName}[/]...",
-            ctx => PacUtils.GetSolutionsAsync(environmentUrl, settings.Verbose, cancellationToken));
-
-        var remoteSln = solutions.FirstOrDefault(s => s.SolutionUniqueName?.Equals(solutionName, StringComparison.OrdinalIgnoreCase) == true);
+            ctx => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, solutionName, includeManaged: false, settings, cancellationToken));
         if (remoteSln == null)
         {
             AnsiConsole.MarkupLine($"[red]'{solutionName}' not found in that environment.[/]");
@@ -363,7 +362,7 @@ public class PushCommand(DataverseConnector dataverseConnector, PluginService pl
     {
         EnvironmentInfo? env = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
             $"Checking dev [bold]{environmentUrl}[/]...",
-            ctx => PacUtils.GetEnvironmentInfoByUrlAsync(environmentUrl, settings.Verbose, cancellationToken));
+            ctx => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(environmentUrl, settings, cancellationToken));
 
         if (env == null)
         {

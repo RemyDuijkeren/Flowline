@@ -16,4 +16,8 @@ public class FlowlineSettings : CommandSettings
     [CommandOption("-f|--force")]
     [Description("Skip confirmation prompts")]
     public bool Force { get; set; } = false;
+
+    [CommandOption("--no-cache")]
+    [Description("Refresh validation checks instead of using the local validation cache")]
+    public bool NoCache { get; set; } = false;
 }

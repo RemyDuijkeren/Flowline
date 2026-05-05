@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using CliWrap;
 using Flowline.Utils;
+using Flowline.Validation;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -67,7 +68,7 @@ public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
         }
 
         // Validate target environment
-        var targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, settings.Verbose, cancellationToken);
+        var targetEnv = await FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, settings, cancellationToken);
         if (targetEnv == null)
         {
             var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
@@ -86,7 +87,7 @@ public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
                      .ExecuteAsync(cancellationToken)
                      .Task);
 
-            targetEnv = await PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, true, cancellationToken);
+            targetEnv = await FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, settings, cancellationToken);
             if (targetEnv == null)
             {
                 AnsiConsole.MarkupLine("[red]Environment created but not found — check the Power Platform admin center.[/]");

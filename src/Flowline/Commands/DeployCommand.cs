@@ -2,6 +2,7 @@ using System.ComponentModel;
 using CliWrap;
 using Flowline.Config;
 using Flowline.Utils;
+using Flowline.Validation;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -26,12 +27,12 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
 
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        await DotNetUtils.AssertDotNetInstalledAsync(settings.Verbose, cancellationToken);
-        await PacUtils.AssertPacCliInstalledAsync(settings.Verbose, cancellationToken);
-        await GitUtils.AssertGitInstalledAsync(settings.Verbose, cancellationToken);
+        await FlowlineValidator.Default.EnsureDotNetAsync(settings, cancellationToken);
+        await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
+        await FlowlineValidator.Default.EnsureGitAsync(settings, cancellationToken);
 
         var rootFolder = Directory.GetCurrentDirectory();
-        await GitUtils.AssertGitRepoAsync(rootFolder, settings.Verbose, cancellationToken);
+        await FlowlineValidator.Default.EnsureGitRepoAsync(rootFolder, settings, cancellationToken);
         await GitUtils.AssertRepoCleanAsync(settings.Verbose, cancellationToken);
 
         // Load or create the project configuration
@@ -67,7 +68,7 @@ public class DeployCommand : AsyncCommand<DeployCommand.Settings>
         // Validate target environment
         var targetEnv = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{targetUrl}[/]...",
-            _ => PacUtils.GetEnvironmentInfoByUrlAsync(targetUrl, settings.Verbose, cancellationToken));
+            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, settings, cancellationToken));
         if (targetEnv == null)
         {
             AnsiConsole.MarkupLine("[red]Target environment not found. Check the URL or your PAC login.[/]");
