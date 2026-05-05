@@ -122,6 +122,10 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
         }
     }
 
+    static bool IsInSolution(RegistrationSnapshot snapshot, Guid componentId, string solutionName) =>
+        snapshot.ComponentSolutionMembership.TryGetValue(componentId, out var solutions) &&
+        solutions.Any(s => string.Equals(s, solutionName, StringComparison.OrdinalIgnoreCase));
+
     (ActionPlan stepPlan, ActionPlan imagePlan) PlanPluginSteps(
         RegistrationSnapshot snapshot, Entity typeEntity, PluginTypeMetadata asmPluginType, string solutionName)
     {
@@ -157,9 +161,12 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
             if (dvSteps.TryGetValue(asmStep.Name, out var dvStep))
             {
-                stepPlan.AddSolutionComponents.Add(
-                    new AddToSolutionAction(asmStep.Name, "sdkmessageprocessingstep", dvStep.Id, solutionName,
-                        snapshot.ComponentTypeById.GetValueOrDefault(dvStep.Id, 92)));
+                if (!IsInSolution(snapshot, dvStep.Id, solutionName))
+                {
+                    stepPlan.AddSolutionComponents.Add(
+                        new AddToSolutionAction(asmStep.Name, "sdkmessageprocessingstep", dvStep.Id, solutionName,
+                            snapshot.ComponentTypeById.GetValueOrDefault(dvStep.Id, 92)));
+                }
 
                 var changed =
                     dvStep.GetAttributeValue<string>("configuration") != asmStep.Configuration ||
@@ -332,8 +339,11 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 continue;
             }
 
-            apiPlan.AddSolutionComponents.Add(new AddToSolutionAction(fullApiName, "customapi", dvApi.Id, solutionName,
-                snapshot.ComponentTypeById[dvApi.Id]));
+            if (!IsInSolution(snapshot, dvApi.Id, solutionName))
+            {
+                apiPlan.AddSolutionComponents.Add(new AddToSolutionAction(fullApiName, "customapi", dvApi.Id, solutionName,
+                    snapshot.ComponentTypeById[dvApi.Id]));
+            }
             paramPlan.Add(PlanRequestParameters(snapshot, prefix, dvApi.Id, fullApiName, asmApi.RequestParameters, solutionName));
             propPlan.Add(PlanResponseProperties(snapshot, prefix, dvApi.Id, fullApiName, asmApi.ResponseProperties, solutionName));
 
@@ -400,9 +410,12 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 continue;
             }
 
-            plan.AddSolutionComponents.Add(
-                new AddToSolutionAction(asmParam.UniqueName, "customapirequestparameter", dvParam.Id, solutionName,
-                    snapshot.ComponentTypeById[dvParam.Id]));
+            if (!IsInSolution(snapshot, dvParam.Id, solutionName))
+            {
+                plan.AddSolutionComponents.Add(
+                    new AddToSolutionAction(asmParam.UniqueName, "customapirequestparameter", dvParam.Id, solutionName,
+                        snapshot.ComponentTypeById[dvParam.Id]));
+            }
 
             var mutableChanged =
                 dvParam.GetAttributeValue<string>("name") != asmParam.Name ||
@@ -460,9 +473,12 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 continue;
             }
 
-            plan.AddSolutionComponents.Add(
-                new AddToSolutionAction(asmProp.UniqueName, "customapiresponseproperty", dvProp.Id, solutionName,
-                    snapshot.ComponentTypeById[dvProp.Id]));
+            if (!IsInSolution(snapshot, dvProp.Id, solutionName))
+            {
+                plan.AddSolutionComponents.Add(
+                    new AddToSolutionAction(asmProp.UniqueName, "customapiresponseproperty", dvProp.Id, solutionName,
+                        snapshot.ComponentTypeById[dvProp.Id]));
+            }
 
             var mutableChanged =
                 dvProp.GetAttributeValue<string>("name") != asmProp.Name ||

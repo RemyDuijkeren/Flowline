@@ -353,6 +353,45 @@ public class PluginPlannerTests
     }
 
     [Fact]
+    public void Plan_ExistingUnchangedStepAlreadyInSolution_DoesNotAddToSolution()
+    {
+        var typeId    = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var filterId  = Guid.NewGuid();
+        var stepId    = Guid.NewGuid();
+        const string stepName = "MyNamespace.MyPlugin: Update of account";
+
+        var existingStep = new Entity("sdkmessageprocessingstep", stepId)
+        {
+            ["name"]                = stepName,
+            ["plugintypeid"]        = new EntityReference("plugintype", typeId),
+            ["stage"]               = new OptionSetValue(20),
+            ["mode"]                = new OptionSetValue(0),
+            ["rank"]                = 1,
+            ["filteringattributes"] = (string?)null,
+            ["configuration"]       = (string?)null,
+            ["sdkmessageid"]        = new EntityReference("sdkmessage", messageId),
+            ["sdkmessagefilterid"]  = new EntityReference("sdkmessagefilter", filterId)
+        };
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            steps: [existingStep],
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            filterIds: new() { [(messageId, "account", null)] = filterId },
+            componentMembership: new() { [stepId] = ["MySolution"] });
+
+        var step = new PluginStepMetadata(stepName, "Update", "account", 20, 0, 1, null, null, [], []);
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
+
+        Assert.Empty(plan.Steps.Upserts);
+        Assert.Empty(plan.Steps.AddSolutionComponents);
+    }
+
+    [Fact]
     public void Plan_ExistingChangedStep_CreatesUpdate()
     {
         var typeId    = Guid.NewGuid();
@@ -723,5 +762,75 @@ public class PluginPlannerTests
         Assert.True(action.IsCreate);
         Assert.Equal("MySolution", action.SolutionName);
         Assert.Equal("abc_MyApi", action.Entity.GetAttributeValue<string>("uniquename"));
+    }
+
+    [Fact]
+    public void Plan_ExistingCustomApiComponentsAlreadyInSolution_DoesNotAddToSolution()
+    {
+        var typeId  = Guid.NewGuid();
+        var apiId   = Guid.NewGuid();
+        var paramId = Guid.NewGuid();
+        var propId  = Guid.NewGuid();
+
+        var existingApi = new Entity("customapi", apiId)
+        {
+            ["uniquename"]                      = "abc_MyApi",
+            ["name"]                            = "abc_MyApi",
+            ["displayname"]                     = "My Api",
+            ["description"]                     = "desc",
+            ["bindingtype"]                     = new OptionSetValue(0),
+            ["isfunction"]                      = false,
+            ["isprivate"]                       = false,
+            ["allowedcustomprocessingsteptype"] = new OptionSetValue(0),
+            ["plugintypeid"]                    = new EntityReference("plugintype", typeId)
+        };
+        var existingParam = new Entity("customapirequestparameter", paramId)
+        {
+            ["customapiid"]       = new EntityReference("customapi", apiId),
+            ["uniquename"]        = "Input",
+            ["name"]              = "Input",
+            ["displayname"]       = "Input",
+            ["description"]       = "input desc",
+            ["type"]              = new OptionSetValue(10),
+            ["isoptional"]        = true,
+            ["logicalentityname"] = (string?)null
+        };
+        var existingProp = new Entity("customapiresponseproperty", propId)
+        {
+            ["customapiid"]       = new EntityReference("customapi", apiId),
+            ["uniquename"]        = "Output",
+            ["name"]              = "Output",
+            ["displayname"]       = "Output",
+            ["description"]       = "output desc",
+            ["type"]              = new OptionSetValue(10),
+            ["logicalentityname"] = (string?)null
+        };
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            customApis: [existingApi],
+            requestParams: [existingParam],
+            responseProps: [existingProp],
+            prefix: "abc",
+            componentMembership: new()
+            {
+                [apiId] = ["MySolution"],
+                [paramId] = ["MySolution"],
+                [propId] = ["MySolution"]
+            });
+
+        var customApi = new CustomApiMetadata(
+            "MyApi", "My Api", "desc", 0, null, false, false, 0, null, "MyNamespace.MyPlugin",
+            [new RequestParameterMetadata("Input", "Input", "Input", "input desc", 10, true, null)],
+            [new ResponsePropertyMetadata("Output", "Output", "Output", "output desc", 10, null)]);
+
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [customApi], false, IsCustomApi: true)), _assembly, "MySolution");
+
+        Assert.Empty(plan.CustomApis.AddSolutionComponents);
+        Assert.Empty(plan.RequestParams.AddSolutionComponents);
+        Assert.Empty(plan.ResponseProps.AddSolutionComponents);
     }
 }
