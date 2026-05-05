@@ -49,7 +49,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
         // Phase 1: Get or register assembly
         var (assembly, needsUpdate) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
-        output.Info($"[green]Assembly: [bold]{metadata.Name}[/] ({metadata.Version})[/]");
+        output.Info($"[green]Assembly registered [bold]{metadata.Name}[/] ({metadata.Version})[/]");
 
         // Phase 2: Load snapshot (all Dataverse state in parallel)
         var snapshot = await output.Status()
@@ -62,6 +62,22 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         var plan = _planner.Plan(snapshot, metadata, assembly, solutionName);
         WritePlanVerbose(plan);
         output.Info("[green]Registration plan ready[/]");
+
+        // Output cross-solution warnings before execution
+        foreach (var warning in plan.Warnings)
+            output.Warning(warning);
+
+        if (needsUpdate && snapshot.ComponentSolutionMembership.TryGetValue(assembly.Id, out var assemblyMembership))
+        {
+            var otherSolutions = assemblyMembership
+                .Where(s => !string.Equals(s, solutionName, StringComparison.OrdinalIgnoreCase)
+                         && !string.Equals(s, "Default", StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (otherSolutions.Count > 0)
+                output.Warning($"Updating assembly '{metadata.Name}' which also exists in other solutions: {string.Join(", ", otherSolutions)}.");
+        }
 
         // Dry-run: print preview and return without making any changes
         if (runMode == RunMode.DryRun)
@@ -94,7 +110,6 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 .StartAsync(async ctx =>
                 {
                     var task = ctx.AddTask("Updating plugin assembly", maxValue: 1);
-                    await WarnIfAssemblyInOtherSolutionsAsync(service, assembly.Id, solutionName, metadata.Name, cancellationToken).ConfigureAwait(false);
                     assembly["content"]     = Convert.ToBase64String(metadata.Content);
                     assembly["version"]     = metadata.Version;
                     assembly["description"] = $"{FlowlineMarker} sha256={metadata.Hash}";
@@ -460,7 +475,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
         output.Verbose($"    Add to solution ({actionPlan.AddSolutionComponents.Count})", opt);
         foreach (var action in actionPlan.AddSolutionComponents.Values.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-            output.Verbose($"      - {Safe(action.Name)} {Safe(action.EntityLogicalName)} {action.Id} solution={Safe(action.SolutionName)}", opt);
+            output.Verbose($"      - {Safe(action.Name)} {Safe(action.EntityLogicalName)} {action.Id} solution={Safe(action.SolutionName)} componenttype={action.ComponentType}", opt);
     }
 
     void WriteEntityAttributesVerbose(Entity entity, string indent)
@@ -481,45 +496,6 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             ["DoNotIncludeSubcomponents"] = false
         };
         await service.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
-    }
-
-    async Task WarnIfAssemblyInOtherSolutionsAsync(IOrganizationServiceAsync2 service, Guid assemblyId, string currentSolutionName, string assemblyName, CancellationToken cancellationToken)
-    {
-        var query = new Microsoft.Xrm.Sdk.Query.QueryExpression("solutioncomponent")
-        {
-            ColumnSet = new Microsoft.Xrm.Sdk.Query.ColumnSet(false),
-            Criteria =
-            {
-                Conditions =
-                {
-                    new Microsoft.Xrm.Sdk.Query.ConditionExpression("componenttype", Microsoft.Xrm.Sdk.Query.ConditionOperator.Equal, 91),
-                    new Microsoft.Xrm.Sdk.Query.ConditionExpression("objectid", Microsoft.Xrm.Sdk.Query.ConditionOperator.Equal, assemblyId)
-                }
-            },
-            LinkEntities =
-            {
-                new Microsoft.Xrm.Sdk.Query.LinkEntity("solutioncomponent", "solution", "solutionid", "solutionid", Microsoft.Xrm.Sdk.Query.JoinOperator.Inner)
-                {
-                    Columns = new Microsoft.Xrm.Sdk.Query.ColumnSet("uniquename"),
-                    EntityAlias = "sol"
-                }
-            }
-        };
-
-        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
-        var otherSolutions = result.Entities
-            .Select(e => e.GetAttributeValue<AliasedValue>("sol.uniquename")?.Value as string)
-            .Where(name =>
-                !string.IsNullOrWhiteSpace(name) &&
-                !string.Equals(name, currentSolutionName, StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(name, "Default", StringComparison.OrdinalIgnoreCase))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-            .Cast<string>()
-            .ToList();
-
-        if (otherSolutions.Count > 0)
-            output.Warning($"Updating assembly '{assemblyName}' which also exists in other solutions: {string.Join(", ", otherSolutions)}.");
     }
 
     static string? ParseStoredHash(string? description)

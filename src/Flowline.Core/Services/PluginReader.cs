@@ -34,6 +34,17 @@ public class PluginReader
         await Task.WhenAll(pluginTypesTask, stepsTask, imagesTask,
             customApisTask, requestParamsTask, responsePropsTask, filterIdsTask, systemUserIdsTask).ConfigureAwait(false);
 
+        // Round 3: one bulk query for solution membership + component types, using all known IDs
+        var allComponentIds = new[] { assemblyId }
+            .Concat(pluginTypesTask.Result.Values.Select(e => e.Id))
+            .Concat(stepsTask.Result.Select(e => e.Id))
+            .Concat(imagesTask.Result.Select(e => e.Id))
+            .Concat(customApisTask.Result.Select(e => e.Id))
+            .Concat(requestParamsTask.Result.Select(e => e.Id))
+            .Concat(responsePropsTask.Result.Select(e => e.Id));
+
+        var (membership, componentTypes) = await GetComponentSolutionMembershipAsync(service, allComponentIds, cancellationToken).ConfigureAwait(false);
+
         return new RegistrationSnapshot(
             pluginTypesTask.Result,
             stepsTask.Result,
@@ -44,7 +55,68 @@ public class PluginReader
             messageIds,
             filterIdsTask.Result,
             systemUserIdsTask.Result,
-            prefix);
+            prefix,
+            membership,
+            componentTypes);
+    }
+
+    async Task<(IReadOnlyDictionary<Guid, IReadOnlyList<string>> Membership, IReadOnlyDictionary<Guid, int> ComponentTypes)>
+        GetComponentSolutionMembershipAsync(
+            IOrganizationServiceAsync2 service,
+            IEnumerable<Guid> componentIds,
+            CancellationToken cancellationToken)
+    {
+        var ids = componentIds.Distinct().Where(id => id != Guid.Empty).ToList();
+        if (ids.Count == 0)
+            return (new Dictionary<Guid, IReadOnlyList<string>>().AsReadOnly(), new Dictionary<Guid, int>().AsReadOnly());
+
+        var query = new QueryExpression("solutioncomponent")
+        {
+            ColumnSet = new ColumnSet("objectid", "componenttype"),
+            Criteria =
+            {
+                Conditions = { new ConditionExpression("objectid", ConditionOperator.In, ids.Select(id => (object)id).ToArray()) }
+            },
+            LinkEntities =
+            {
+                new LinkEntity("solutioncomponent", "solution", "solutionid", "solutionid", JoinOperator.Inner)
+                {
+                    Columns = new ColumnSet("uniquename"),
+                    EntityAlias = "sol"
+                }
+            }
+        };
+
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
+
+        var membership    = new Dictionary<Guid, List<string>>();
+        var componentTypes = new Dictionary<Guid, int>();
+
+        foreach (var entity in result.Entities)
+        {
+            var objectId = entity.GetAttributeValue<Guid>("objectid");
+            if (objectId == Guid.Empty) continue;
+
+            var solutionName = entity.GetAttributeValue<AliasedValue>("sol.uniquename")?.Value as string;
+            if (!string.IsNullOrEmpty(solutionName))
+            {
+                if (!membership.TryGetValue(objectId, out var sols))
+                    membership[objectId] = sols = [];
+                sols.Add(solutionName);
+            }
+
+            if (!componentTypes.ContainsKey(objectId))
+            {
+                var ct = entity.GetAttributeValue<OptionSetValue>("componenttype")?.Value;
+                if (ct.HasValue)
+                    componentTypes[objectId] = ct.Value;
+            }
+        }
+
+        return (
+            membership.ToDictionary(kvp => kvp.Key, kvp => (IReadOnlyList<string>)kvp.Value.AsReadOnly()).AsReadOnly(),
+            componentTypes.AsReadOnly()
+        );
     }
 
     async Task<IReadOnlyDictionary<string, Guid>> LookupAllSdkMessageIdsAsync(

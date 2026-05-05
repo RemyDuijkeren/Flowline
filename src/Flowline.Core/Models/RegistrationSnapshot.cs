@@ -12,5 +12,7 @@ public sealed record RegistrationSnapshot(
     IReadOnlyDictionary<string, Guid> SdkMessageIds,
     IReadOnlyDictionary<(Guid MessageId, string? EntityName, string? SecondaryEntity), Guid?> FilterIds,
     IReadOnlySet<Guid> SystemUserIds,
-    string PublisherPrefix
+    string PublisherPrefix,
+    IReadOnlyDictionary<Guid, IReadOnlyList<string>> ComponentSolutionMembership,
+    IReadOnlyDictionary<Guid, int> ComponentTypeById
 );

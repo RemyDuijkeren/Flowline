@@ -91,7 +91,35 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
             plan.PluginTypes.Deletes[obsoletePluginType.Key] = new DeleteAction(obsoletePluginType.Key, "plugintype", obsoletePluginType.Value.Id);
         }
 
+        AddCrossSolutionWarnings(plan, snapshot, solutionName);
+
         return plan;
+    }
+
+    static void AddCrossSolutionWarnings(RegistrationPlan plan, RegistrationSnapshot snapshot, string solutionName)
+    {
+        var updates = plan.Steps.Upserts.Values
+            .Concat(plan.Images.Upserts.Values)
+            .Concat(plan.CustomApis.Upserts.Values)
+            .Concat(plan.RequestParams.Upserts.Values)
+            .Concat(plan.ResponseProps.Upserts.Values)
+            .Where(a => !a.IsCreate);
+
+        foreach (var action in updates)
+        {
+            if (!snapshot.ComponentSolutionMembership.TryGetValue(action.Entity.Id, out var solutions))
+                continue;
+
+            var others = solutions
+                .Where(s => !string.Equals(s, solutionName, StringComparison.OrdinalIgnoreCase)
+                         && !string.Equals(s, "Default", StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (others.Count > 0)
+                plan.Warnings.Add($"Updating {action.Entity.LogicalName} '{action.Name}' which also exists in other solutions: {string.Join(", ", others)}.");
+        }
     }
 
     (ActionPlan stepPlan, ActionPlan imagePlan) PlanPluginSteps(
@@ -130,7 +158,8 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
             if (dvSteps.TryGetValue(asmStep.Name, out var dvStep))
             {
                 stepPlan.AddSolutionComponents[asmStep.Name] =
-                    new AddToSolutionAction(asmStep.Name, "sdkmessageprocessingstep", dvStep.Id, solutionName);
+                    new AddToSolutionAction(asmStep.Name, "sdkmessageprocessingstep", dvStep.Id, solutionName,
+                        snapshot.ComponentTypeById.GetValueOrDefault(dvStep.Id, 92));
 
                 var changed =
                     dvStep.GetAttributeValue<string>("configuration") != asmStep.Configuration ||
@@ -303,7 +332,8 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 continue;
             }
 
-            apiPlan.AddSolutionComponents[fullApiName] = new AddToSolutionAction(fullApiName, "customapi", dvApi.Id, solutionName);
+            apiPlan.AddSolutionComponents[fullApiName] = new AddToSolutionAction(fullApiName, "customapi", dvApi.Id, solutionName,
+                snapshot.ComponentTypeById[dvApi.Id]);
             paramPlan.Add(PlanRequestParameters(snapshot, prefix, dvApi.Id, fullApiName, asmApi.RequestParameters, solutionName));
             propPlan.Add(PlanResponseProperties(snapshot, prefix, dvApi.Id, fullApiName, asmApi.ResponseProperties, solutionName));
 
@@ -373,7 +403,8 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
             }
 
             plan.AddSolutionComponents[parameterKey] =
-                new AddToSolutionAction(asmParam.UniqueName, "customapirequestparameter", dvParam.Id, solutionName);
+                new AddToSolutionAction(asmParam.UniqueName, "customapirequestparameter", dvParam.Id, solutionName,
+                    snapshot.ComponentTypeById[dvParam.Id]);
 
             var mutableChanged =
                 dvParam.GetAttributeValue<string>("name") != asmParam.Name ||
@@ -434,7 +465,8 @@ public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
             }
 
             plan.AddSolutionComponents[propertyKey] =
-                new AddToSolutionAction(asmProp.UniqueName, "customapiresponseproperty", dvProp.Id, solutionName);
+                new AddToSolutionAction(asmProp.UniqueName, "customapiresponseproperty", dvProp.Id, solutionName,
+                    snapshot.ComponentTypeById[dvProp.Id]);
 
             var mutableChanged =
                 dvProp.GetAttributeValue<string>("name") != asmProp.Name ||

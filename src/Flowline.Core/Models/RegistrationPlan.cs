@@ -4,7 +4,7 @@ namespace Flowline.Core.Models;
 
 public record UpsertAction(string Name, Entity Entity, bool IsCreate, string? SolutionName = null);
 public record DeleteAction(string Name, string EntityLogicalName, Guid Id);
-public record AddToSolutionAction(string Name, string EntityLogicalName, Guid Id, string SolutionName);
+public record AddToSolutionAction(string Name, string EntityLogicalName, Guid Id, string SolutionName, int ComponentType);
 
 // Delete order: Images | ResponseProps | RequestParams, CustomApis | Steps, PluginTypes
 // Upsert order: PluginTypes, Steps | CustomApis, Images | ResponseProps | RequestParams, AddSolutionComponents
@@ -16,6 +16,8 @@ public class RegistrationPlan
     public ActionPlan CustomApis    { get; } = new();
     public ActionPlan RequestParams { get; } = new();
     public ActionPlan ResponseProps { get; } = new();
+
+    public List<string> Warnings { get; } = new();
 
     public int TotalDeletes => PluginTypes.Deletes.Count + Steps.Deletes.Count + Images.Deletes.Count
                              + CustomApis.Deletes.Count + RequestParams.Deletes.Count + ResponseProps.Deletes.Count;

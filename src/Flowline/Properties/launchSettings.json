@@ -12,7 +12,7 @@
     },
     "push --scope plugins": {
       "commandName": "Project",
-      "commandLineArgs": "push --scope plugins --verbose --dry-run",
+      "commandLineArgs": "push --scope plugins --verbose",
       "workingDirectory": "E:/Code/TryOut/MyFlowTest"
     },
     "push --scope webresources": {

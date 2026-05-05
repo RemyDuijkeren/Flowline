@@ -55,17 +55,9 @@ public class PluginServiceTests
             .Returns(callInfo =>
             {
                 var query = callInfo.Arg<QueryExpression>();
-                var objectId = GetGuidConditionValue(query, "objectid");
-                if (!objectId.HasValue)
-                    return Task.FromResult(new EntityCollection());
-
-                return Task.FromResult(new EntityCollection(new List<Entity>
-                {
-                    new("solutioncomponent")
-                    {
-                        ["componenttype"] = new OptionSetValue(ResolveComponentTypeFromObjectId(objectId.Value))
-                    }
-                }));
+                var ids = GetAllGuidConditionValues(query, "objectid");
+                var entities = ids.Select(id => SolutionComponentEntity(id, ResolveComponentTypeFromObjectId(id), "MySolution")).ToList();
+                return Task.FromResult(new EntityCollection(entities));
             });
     }
 
@@ -111,6 +103,21 @@ public class PluginServiceTests
 
         return condition.Values[0] as Guid?;
     }
+
+    private static List<Guid> GetAllGuidConditionValues(QueryExpression query, string attribute)
+    {
+        var condition = query.Criteria.Conditions.FirstOrDefault(c =>
+            string.Equals(c.AttributeName, attribute, StringComparison.OrdinalIgnoreCase));
+        return condition?.Values.OfType<Guid>().ToList() ?? [];
+    }
+
+    private static Entity SolutionComponentEntity(Guid objectId, int componentType, string solutionName) =>
+        new("solutioncomponent")
+        {
+            ["objectid"]       = objectId,
+            ["componenttype"]  = new OptionSetValue(componentType),
+            ["sol.uniquename"] = new AliasedValue("solution", "uniquename", solutionName)
+        };
 
     // -- Helpers --
 
@@ -606,16 +613,21 @@ public class PluginServiceTests
         SetupPluginTypes();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" &&
-                                            HasCondition(q, "componenttype", 91) &&
-                                            HasCondition(q, "objectid", assemblyId)),
+                Arg.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" && q.Criteria.Conditions.Any(c => c.AttributeName == "objectid")),
                 Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new EntityCollection(new List<Entity>
+            .Returns(callInfo =>
             {
-                new("solutioncomponent") { ["sol.uniquename"] = new AliasedValue("solution", "uniquename", "OtherSolutionA") },
-                new("solutioncomponent") { ["sol.uniquename"] = new AliasedValue("solution", "uniquename", "MySolution") },
-                new("solutioncomponent") { ["sol.uniquename"] = new AliasedValue("solution", "uniquename", "OtherSolutionB") }
-            })));
+                var ids = GetAllGuidConditionValues(callInfo.Arg<QueryExpression>(), "objectid");
+                var entities = ids.SelectMany(id => id == assemblyId
+                    ? (IEnumerable<Entity>)
+                    [
+                        SolutionComponentEntity(id, 91, "MySolution"),
+                        SolutionComponentEntity(id, 91, "OtherSolutionA"),
+                        SolutionComponentEntity(id, 91, "OtherSolutionB")
+                    ]
+                    : [SolutionComponentEntity(id, ResolveComponentTypeFromObjectId(id), "MySolution")]).ToList();
+                return Task.FromResult(new EntityCollection(entities));
+            });
 
         await _service.SyncSolutionAsync(_serviceMock, Metadata(hash: "newhash"), "MySolution");
 
@@ -646,14 +658,20 @@ public class PluginServiceTests
         SetupImages();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" &&
-                                            HasCondition(q, "componenttype", 92) &&
-                                            HasCondition(q, "objectid", existingStepId)),
+                Arg.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" && q.Criteria.Conditions.Any(c => c.AttributeName == "objectid")),
                 Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new EntityCollection(new List<Entity>
+            .Returns(callInfo =>
             {
-                new("solutioncomponent") { ["sol.uniquename"] = new AliasedValue("solution", "uniquename", "SharedSolution") }
-            })));
+                var ids = GetAllGuidConditionValues(callInfo.Arg<QueryExpression>(), "objectid");
+                var entities = ids.SelectMany(id => id == existingStepId
+                    ? (IEnumerable<Entity>)
+                    [
+                        SolutionComponentEntity(id, 92, "MySolution"),
+                        SolutionComponentEntity(id, 92, "SharedSolution")
+                    ]
+                    : [SolutionComponentEntity(id, ResolveComponentTypeFromObjectId(id), "MySolution")]).ToList();
+                return Task.FromResult(new EntityCollection(entities));
+            });
 
         var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of contact", "Update", "contact", 20, 0, 1, null, null, [], []);
         await _service.SyncSolutionAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), "MySolution");
@@ -700,16 +718,7 @@ public class PluginServiceTests
         _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "customapi"), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(new List<Entity> { existingApi })));
 
-        _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" &&
-                                            HasCondition(q, "componenttype", 10066) &&
-                                            HasCondition(q, "objectid", existingApiId)),
-                Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new EntityCollection(new List<Entity>
-            {
-                new("solutioncomponent") { ["sol.uniquename"] = new AliasedValue("solution", "uniquename", "Default") },
-                new("solutioncomponent") { ["sol.uniquename"] = new AliasedValue("solution", "uniquename", "MySolution") }
-            })));
+        // Default mock returns only MySolution — no cross-solution warning expected
 
         var customApi = new CustomApiMetadata("MyApi", "My Api", "desc", 0, null, false, false, 0, null, "MyNamespace.MyPlugin", [], []);
         var pluginTypeMetadata = new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [customApi], false, true);

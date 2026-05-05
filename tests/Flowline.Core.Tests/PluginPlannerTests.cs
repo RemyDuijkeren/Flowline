@@ -30,7 +30,9 @@ public class PluginPlannerTests
         Dictionary<string, Guid>? messageIds = null,
         Dictionary<(Guid, string?, string?), Guid?>? filterIds = null,
         HashSet<Guid>? systemUserIds = null,
-        string prefix = "abc") => new(
+        string prefix = "abc",
+        Dictionary<Guid, IReadOnlyList<string>>? componentMembership = null,
+        Dictionary<Guid, int>? componentTypeById = null) => new(
             pluginTypes  ?? new Dictionary<string, Entity>(StringComparer.OrdinalIgnoreCase),
             steps        ?? [],
             images       ?? [],
@@ -40,7 +42,9 @@ public class PluginPlannerTests
             messageIds   ?? new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase),
             filterIds    ?? DefaultFilterIds(messageIds),
             systemUserIds ?? [],
-            prefix);
+            prefix,
+            componentMembership ?? new Dictionary<Guid, IReadOnlyList<string>>(),
+            componentTypeById   ?? new Dictionary<Guid, int>());
 
     static Dictionary<(Guid, string?, string?), Guid?> DefaultFilterIds(Dictionary<string, Guid>? messageIds)
     {
@@ -382,6 +386,84 @@ public class PluginPlannerTests
     }
 
     [Fact]
+    public void Plan_UpdatedStepInOtherSolution_AddsWarning()
+    {
+        var typeId    = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var stepId    = Guid.NewGuid();
+        const string stepName = "MyNamespace.MyPlugin: Update of account";
+
+        var existingStep = new Entity("sdkmessageprocessingstep", stepId)
+        {
+            ["name"]         = stepName,
+            ["plugintypeid"] = new EntityReference("plugintype", typeId),
+            ["stage"]        = new OptionSetValue(10), // will change to 20
+            ["mode"]         = new OptionSetValue(0),
+            ["rank"]         = 1,
+            ["sdkmessageid"] = new EntityReference("sdkmessage", messageId)
+        };
+
+        var membership = new Dictionary<Guid, IReadOnlyList<string>>
+        {
+            [stepId] = ["MySolution", "OtherSolution"]
+        };
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            steps: [existingStep],
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            componentMembership: membership);
+
+        var step = new PluginStepMetadata(stepName, "Update", "account", 20, 0, 1, null, null, [], []);
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
+
+        Assert.Single(plan.Warnings);
+        Assert.Contains("OtherSolution", plan.Warnings[0]);
+        Assert.Contains(stepName, plan.Warnings[0]);
+    }
+
+    [Fact]
+    public void Plan_UpdatedStepInCurrentSolutionOnly_NoWarning()
+    {
+        var typeId    = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var stepId    = Guid.NewGuid();
+        const string stepName = "MyNamespace.MyPlugin: Update of account";
+
+        var existingStep = new Entity("sdkmessageprocessingstep", stepId)
+        {
+            ["name"]         = stepName,
+            ["plugintypeid"] = new EntityReference("plugintype", typeId),
+            ["stage"]        = new OptionSetValue(10),
+            ["mode"]         = new OptionSetValue(0),
+            ["rank"]         = 1,
+            ["sdkmessageid"] = new EntityReference("sdkmessage", messageId)
+        };
+
+        var membership = new Dictionary<Guid, IReadOnlyList<string>>
+        {
+            [stepId] = ["MySolution", "Default"]
+        };
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            steps: [existingStep],
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            componentMembership: membership);
+
+        var step = new PluginStepMetadata(stepName, "Update", "account", 20, 0, 1, null, null, [], []);
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
+
+        Assert.Empty(plan.Warnings);
+    }
+
+    [Fact]
     public void Plan_ObsoleteStep_CreatesDelete()
     {
         var typeId  = Guid.NewGuid();
@@ -582,7 +664,8 @@ public class PluginPlannerTests
                 ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
             },
             customApis: [existingApi],
-            prefix: "abc");
+            prefix: "abc",
+            componentTypeById: new Dictionary<Guid, int> { [apiId] = 400 });
 
         var customApi = new CustomApiMetadata("MyApi", "My Api", "desc", 0, null, false, false, 0, null, "MyNamespace.MyPlugin", [], []);
         var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [customApi], false, IsCustomApi: true)), _assembly, "MySolution");

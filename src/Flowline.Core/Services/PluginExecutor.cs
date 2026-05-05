@@ -1,6 +1,5 @@
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
-using Microsoft.Xrm.Sdk.Query;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Flowline.Core.Models;
 using Spectre.Console;
@@ -9,15 +8,6 @@ namespace Flowline.Core.Services;
 
 public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
 {
-    const string DefaultSolutionUniqueName = "Default";
-    const int PluginAssemblyComponentType = 91;
-    const int SdkMessageProcessingStepComponentType = 92;
-
-    readonly Dictionary<string, int> _componentTypeByEntityLogicalName = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["pluginassembly"] = PluginAssemblyComponentType,
-        ["sdkmessageprocessingstep"] = SdkMessageProcessingStepComponentType
-    };
 
     public Task ExecuteDeletesAsync(
         IOrganizationServiceAsync2 service, RegistrationPlan plan, string solutionName, bool save, CancellationToken cancellationToken, ProgressTask? progressTask = null) =>
@@ -182,7 +172,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         // addressing the Dataverse GrantInheritedAccess collision on CreateRequest+SolutionUniqueName.
         foreach (var a in all)
         {
-            await AddSolutionComponentAsync(service, a.EntityLogicalName, a.Id, a.SolutionName, cancellationToken).ConfigureAwait(false);
+            await AddSolutionComponentAsync(service, a.EntityLogicalName, a.Id, a.ComponentType, a.SolutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
         }
 
@@ -203,7 +193,6 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
     {
         if (!action.IsCreate)
         {
-            await WarnIfComponentExistsInOtherSolutionsAsync(service, action.Entity.Id, solutionName, action.Entity.LogicalName, action.Name, cancellationToken).ConfigureAwait(false);
             await service.UpdateAsync(action.Entity, cancellationToken).ConfigureAwait(false);
             return;
         }
@@ -215,10 +204,8 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
     }
 
     /// <summary>Idempotent — safe to call multiple times for the same component.</summary>
-    async Task AddSolutionComponentAsync(IOrganizationServiceAsync2 service, string entityLogicalName, Guid componentId, string solutionName, CancellationToken cancellationToken = default)
+    async Task AddSolutionComponentAsync(IOrganizationServiceAsync2 service, string entityLogicalName, Guid componentId, int componentType, string solutionName, CancellationToken cancellationToken = default)
     {
-        var componentType = await GetComponentTypeAsync(service, entityLogicalName, componentId, cancellationToken).ConfigureAwait(false);
-
         var request = new OrganizationRequest("AddSolutionComponent")
         {
             ["ComponentId"]               = componentId,
@@ -230,74 +217,5 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
         await service.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
         output.Verbose($"Added {entityLogicalName} '{componentId}' to solution '{solutionName}'.", opt);
-    }
-
-    async Task<int> GetComponentTypeAsync(IOrganizationServiceAsync2 service, string entityLogicalName, Guid componentId, CancellationToken cancellationToken = default)
-    {
-        if (_componentTypeByEntityLogicalName.TryGetValue(entityLogicalName, out var componentType))
-            return componentType;
-
-        var query = new QueryExpression("solutioncomponent")
-        {
-            TopCount = 1,
-            ColumnSet = new ColumnSet("componenttype"),
-            Criteria =
-            {
-                Conditions = { new ConditionExpression("objectid", ConditionOperator.Equal, componentId) }
-            }
-        };
-
-        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
-        var fetchedComponentType = result.Entities.FirstOrDefault()?.GetAttributeValue<OptionSetValue>("componenttype")?.Value;
-        if (!fetchedComponentType.HasValue)
-            throw new InvalidOperationException($"Could not resolve solution component type for {entityLogicalName} '{componentId}' from 'solutioncomponent'.");
-
-        _componentTypeByEntityLogicalName[entityLogicalName] = fetchedComponentType.Value;
-        return fetchedComponentType.Value;
-    }
-
-    /// <summary>Logs a warning when a component being updated is also part of other solutions.</summary>
-    async Task WarnIfComponentExistsInOtherSolutionsAsync(IOrganizationServiceAsync2 service, Guid componentId, string currentSolutionName,
-        string entityLogicalName, string componentDisplayName, CancellationToken cancellationToken = default)
-    {
-        var componentType = await GetComponentTypeAsync(service, entityLogicalName, componentId, cancellationToken).ConfigureAwait(false);
-
-        var query = new QueryExpression("solutioncomponent")
-        {
-            ColumnSet = new ColumnSet(false),
-            Criteria =
-            {
-                Conditions =
-                {
-                    new ConditionExpression("componenttype", ConditionOperator.Equal, componentType),
-                    new ConditionExpression("objectid", ConditionOperator.Equal, componentId)
-                }
-            },
-            LinkEntities =
-            {
-                new LinkEntity("solutioncomponent", "solution", "solutionid", "solutionid", JoinOperator.Inner)
-                {
-                    Columns = new ColumnSet("uniquename"),
-                    EntityAlias = "sol"
-                }
-            }
-        };
-
-        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
-        var otherSolutions = result.Entities
-            .Select(e => e.GetAttributeValue<AliasedValue>("sol.uniquename")?.Value as string)
-            .Where(name =>
-                !string.IsNullOrWhiteSpace(name) &&
-                !string.Equals(name, currentSolutionName, StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(name, DefaultSolutionUniqueName, StringComparison.OrdinalIgnoreCase))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-            .Cast<string>()
-            .ToList();
-
-        if (otherSolutions.Count == 0)
-            return;
-
-        output.Warning($"Updating {entityLogicalName} '{componentDisplayName}' which also exists in other solutions: {string.Join(", ", otherSolutions)}.");
     }
 }
