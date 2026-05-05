@@ -303,40 +303,46 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 .Where(step => SameReference(step.GetAttributeValue<EntityReference>("plugintypeid"), pluginTypeId))
                 .OrderBy(step => step.GetAttributeValue<string>("name"), StringComparer.OrdinalIgnoreCase)
                 .ToList();
-            output.Verbose($"      Steps ({steps.Count})", opt);
-            foreach (var step in steps)
+            if (steps.Count > 0)
             {
-                var stepId = step.Id;
-                output.Verbose(
-                    $"        - {Safe(step.GetAttributeValue<string>("name") ?? stepId.ToString())} " +
-                    $"stage={OptionValue(step, "stage")} mode={OptionValue(step, "mode")} rank={OptionValue(step, "rank")}",
-                    opt);
-
-                var description = step.GetAttributeValue<string>("description");
-                if (!string.IsNullOrWhiteSpace(description))
-                    output.Verbose($"          Description: {Safe(description)}", opt);
-
-                var filteringAttributes = step.GetAttributeValue<string>("filteringattributes");
-                if (!string.IsNullOrWhiteSpace(filteringAttributes))
-                    output.Verbose($"          Filtering attributes: {Safe(filteringAttributes)}", opt);
-
-                var impersonatingUser = step.GetAttributeValue<EntityReference>("impersonatinguserid");
-                if (impersonatingUser != null)
-                    output.Verbose($"          Run as: {impersonatingUser.Id}", opt);
-
-                var images = snapshot.Images
-                    .Where(image => SameReference(image.GetAttributeValue<EntityReference>("sdkmessageprocessingstepid"), stepId))
-                    .OrderBy(image => image.GetAttributeValue<string>("name"), StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-                output.Verbose($"          Images ({images.Count})", opt);
-                foreach (var image in images)
+                output.Verbose($"      Steps ({steps.Count})", opt);
+                foreach (var step in steps)
                 {
+                    var stepId = step.Id;
                     output.Verbose(
-                        $"            - {Safe(image.GetAttributeValue<string>("name") ?? image.Id.ToString())} " +
-                        $"alias={Safe(image.GetAttributeValue<string>("entityalias") ?? "(none)")} " +
-                        $"type={OptionValue(image, "imagetype")} " +
-                        $"attributes={Safe(image.GetAttributeValue<string>("attributes") ?? "(all)")}",
+                        $"        - {Safe(step.GetAttributeValue<string>("name") ?? stepId.ToString())} " +
+                        $"stage={OptionValue(step, "stage")} mode={OptionValue(step, "mode")} rank={OptionValue(step, "rank")}",
                         opt);
+
+                    var description = step.GetAttributeValue<string>("description");
+                    if (!string.IsNullOrWhiteSpace(description))
+                        output.Verbose($"          Description: {Safe(description)}", opt);
+
+                    var filteringAttributes = step.GetAttributeValue<string>("filteringattributes");
+                    if (!string.IsNullOrWhiteSpace(filteringAttributes))
+                        output.Verbose($"          Filtering attributes: {Safe(filteringAttributes)}", opt);
+
+                    var impersonatingUser = step.GetAttributeValue<EntityReference>("impersonatinguserid");
+                    if (impersonatingUser != null)
+                        output.Verbose($"          Run as: {impersonatingUser.Id}", opt);
+
+                    var images = snapshot.Images
+                        .Where(image => SameReference(image.GetAttributeValue<EntityReference>("sdkmessageprocessingstepid"), stepId))
+                        .OrderBy(image => image.GetAttributeValue<string>("name"), StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                    if (images.Count > 0)
+                    {
+                        output.Verbose($"          Images ({images.Count})", opt);
+                        foreach (var image in images)
+                        {
+                            output.Verbose(
+                                $"            - {Safe(image.GetAttributeValue<string>("name") ?? image.Id.ToString())} " +
+                                $"alias={Safe(image.GetAttributeValue<string>("entityalias") ?? "(none)")} " +
+                                $"type={OptionValue(image, "imagetype")} " +
+                                $"attributes={Safe(image.GetAttributeValue<string>("attributes") ?? "(all)")}",
+                                opt);
+                        }
+                    }
                 }
             }
 
@@ -344,44 +350,53 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 .Where(api => SameReference(api.GetAttributeValue<EntityReference>("plugintypeid"), pluginTypeId))
                 .OrderBy(api => api.GetAttributeValue<string>("uniquename"), StringComparer.OrdinalIgnoreCase)
                 .ToList();
-            output.Verbose($"      Custom APIs ({customApis.Count})", opt);
-            foreach (var api in customApis)
+            if (customApis.Count > 0)
             {
-                var apiId = api.Id;
-                output.Verbose(
-                    $"        - {Safe(api.GetAttributeValue<string>("uniquename") ?? apiId.ToString())} " +
-                    $"binding={OptionValue(api, "bindingtype")} function={BoolValue(api, "isfunction")} private={BoolValue(api, "isprivate")}",
-                    opt);
-
-                var boundEntity = api.GetAttributeValue<string>("boundentitylogicalname");
-                if (!string.IsNullOrWhiteSpace(boundEntity))
-                    output.Verbose($"          Bound entity: {Safe(boundEntity)}", opt);
-
-                var requestParams = snapshot.RequestParams
-                    .Where(param => SameReference(param.GetAttributeValue<EntityReference>("customapiid"), apiId))
-                    .OrderBy(param => param.GetAttributeValue<string>("uniquename"), StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-                output.Verbose($"          Request parameters ({requestParams.Count})", opt);
-                foreach (var param in requestParams)
+                output.Verbose($"      Custom APIs ({customApis.Count})", opt);
+                foreach (var api in customApis)
                 {
+                    var apiId = api.Id;
                     output.Verbose(
-                        $"            - {Safe(param.GetAttributeValue<string>("uniquename") ?? param.Id.ToString())} " +
-                        $"type={OptionValue(param, "type")} optional={BoolValue(param, "isoptional")} " +
-                        $"entity={Safe(param.GetAttributeValue<string>("logicalentityname") ?? "(none)")}",
+                        $"        - {Safe(api.GetAttributeValue<string>("uniquename") ?? apiId.ToString())} " +
+                        $"binding={OptionValue(api, "bindingtype")} function={BoolValue(api, "isfunction")} private={BoolValue(api, "isprivate")}",
                         opt);
-                }
 
-                var responseProps = snapshot.ResponseProps
-                    .Where(prop => SameReference(prop.GetAttributeValue<EntityReference>("customapiid"), apiId))
-                    .OrderBy(prop => prop.GetAttributeValue<string>("uniquename"), StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-                output.Verbose($"          Response properties ({responseProps.Count})", opt);
-                foreach (var prop in responseProps)
-                {
-                    output.Verbose(
-                        $"            - {Safe(prop.GetAttributeValue<string>("uniquename") ?? prop.Id.ToString())} " +
-                        $"type={OptionValue(prop, "type")} entity={Safe(prop.GetAttributeValue<string>("logicalentityname") ?? "(none)")}",
-                        opt);
+                    var boundEntity = api.GetAttributeValue<string>("boundentitylogicalname");
+                    if (!string.IsNullOrWhiteSpace(boundEntity))
+                        output.Verbose($"          Bound entity: {Safe(boundEntity)}", opt);
+
+                    var requestParams = snapshot.RequestParams
+                        .Where(param => SameReference(param.GetAttributeValue<EntityReference>("customapiid"), apiId))
+                        .OrderBy(param => param.GetAttributeValue<string>("uniquename"), StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                    if (requestParams.Count > 0)
+                    {
+                        output.Verbose($"          Request parameters ({requestParams.Count})", opt);
+                        foreach (var param in requestParams)
+                        {
+                            output.Verbose(
+                                $"            - {Safe(param.GetAttributeValue<string>("uniquename") ?? param.Id.ToString())} " +
+                                $"type={OptionValue(param, "type")} optional={BoolValue(param, "isoptional")} " +
+                                $"entity={Safe(param.GetAttributeValue<string>("logicalentityname") ?? "(none)")}",
+                                opt);
+                        }
+                    }
+
+                    var responseProps = snapshot.ResponseProps
+                        .Where(prop => SameReference(prop.GetAttributeValue<EntityReference>("customapiid"), apiId))
+                        .OrderBy(prop => prop.GetAttributeValue<string>("uniquename"), StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                    if (responseProps.Count > 0)
+                    {
+                        output.Verbose($"          Response properties ({responseProps.Count})", opt);
+                        foreach (var prop in responseProps)
+                        {
+                            output.Verbose(
+                                $"            - {Safe(prop.GetAttributeValue<string>("uniquename") ?? prop.Id.ToString())} " +
+                                $"type={OptionValue(prop, "type")} entity={Safe(prop.GetAttributeValue<string>("logicalentityname") ?? "(none)")}",
+                                opt);
+                        }
+                    }
                 }
             }
         }
@@ -402,17 +417,26 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             e => e.GetAttributeValue<EntityReference>("plugintypeid"),
             snapshot.PluginTypes.Values.Select(e => e.Id).ToHashSet());
 
-        output.Verbose($"  SDK messages ({snapshot.SdkMessageIds.Count})", opt);
-        foreach (var (name, id) in snapshot.SdkMessageIds.OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
-            output.Verbose($"    - {Safe(name)}: {id}", opt);
+        if (snapshot.SdkMessageIds.Count > 0)
+        {
+            output.Verbose($"  SDK messages ({snapshot.SdkMessageIds.Count})", opt);
+            foreach (var (name, id) in snapshot.SdkMessageIds.OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
+                output.Verbose($"    - {Safe(name)}: {id}", opt);
+        }
 
-        output.Verbose($"  SDK message filters ({snapshot.FilterIds.Count})", opt);
-        foreach (var (key, id) in snapshot.FilterIds.OrderBy(kvp => $"{kvp.Key.MessageId}:{kvp.Key.EntityName}:{kvp.Key.SecondaryEntity}", StringComparer.OrdinalIgnoreCase))
-            output.Verbose($"    - message={key.MessageId} entity={Safe(key.EntityName ?? "(any)")} secondary={Safe(key.SecondaryEntity ?? "(none)")}: {id?.ToString() ?? "(none)"}", opt);
+        if (snapshot.FilterIds.Count > 0)
+        {
+            output.Verbose($"  SDK message filters ({snapshot.FilterIds.Count})", opt);
+            foreach (var (key, id) in snapshot.FilterIds.OrderBy(kvp => $"{kvp.Key.MessageId}:{kvp.Key.EntityName}:{kvp.Key.SecondaryEntity}", StringComparer.OrdinalIgnoreCase))
+                output.Verbose($"    - message={key.MessageId} entity={Safe(key.EntityName ?? "(any)")} secondary={Safe(key.SecondaryEntity ?? "(none)")}: {id?.ToString() ?? "(none)"}", opt);
+        }
 
-        output.Verbose($"  System users ({snapshot.SystemUserIds.Count})", opt);
-        foreach (var id in snapshot.SystemUserIds.OrderBy(id => id))
-            output.Verbose($"    - {id}", opt);
+        if (snapshot.SystemUserIds.Count > 0)
+        {
+            output.Verbose($"  System users ({snapshot.SystemUserIds.Count})", opt);
+            foreach (var id in snapshot.SystemUserIds.OrderBy(id => id))
+                output.Verbose($"    - {id}", opt);
+        }
     }
 
     void WriteUnlinkedSnapshotItems(
@@ -465,21 +489,30 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
     {
         output.Verbose($"  {title}", opt);
 
-        output.Verbose($"    Deletes ({actionPlan.Deletes.Count})", opt);
-        foreach (var action in actionPlan.Deletes.Values.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-            output.Verbose($"      - {Safe(action.Name)}", opt);
-
-        output.Verbose($"    Upserts ({actionPlan.Upserts.Count})", opt);
-        foreach (var action in actionPlan.Upserts.Values.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
+        if (actionPlan.Deletes.Count > 0)
         {
-            var detail = entityDetail(action.Entity);
-            var solution = string.IsNullOrWhiteSpace(action.SolutionName) ? "" : $" solution={Safe(action.SolutionName)}";
-            output.Verbose($"      - {Safe(action.Name)} [[{(action.IsCreate ? "create" : "update")}]] {detail}{solution}", opt);
+            output.Verbose($"    Deletes ({actionPlan.Deletes.Count})", opt);
+            foreach (var action in actionPlan.Deletes.Values.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
+                output.Verbose($"      - {Safe(action.Name)}", opt);
         }
 
-        output.Verbose($"    Add to solution ({actionPlan.AddSolutionComponents.Count})", opt);
-        foreach (var action in actionPlan.AddSolutionComponents.Values.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-            output.Verbose($"      - {Safe(action.Name)} solution={Safe(action.SolutionName)} componenttype={action.ComponentType}", opt);
+        if (actionPlan.Upserts.Count > 0)
+        {
+            output.Verbose($"    Upserts ({actionPlan.Upserts.Count})", opt);
+            foreach (var action in actionPlan.Upserts.Values.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                var detail = entityDetail(action.Entity);
+                var solution = string.IsNullOrWhiteSpace(action.SolutionName) ? "" : $" solution={Safe(action.SolutionName)}";
+                output.Verbose($"      - {Safe(action.Name)} [[{(action.IsCreate ? "create" : "update")}]] {detail}{solution}", opt);
+            }
+        }
+
+        if (actionPlan.AddSolutionComponents.Count > 0)
+        {
+            output.Verbose($"    Add to solution ({actionPlan.AddSolutionComponents.Count})", opt);
+            foreach (var action in actionPlan.AddSolutionComponents.Values.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
+                output.Verbose($"      - {Safe(action.Name)} solution={Safe(action.SolutionName)} componenttype={action.ComponentType}", opt);
+        }
     }
 
     async Task AddSolutionComponentAsync(IOrganizationServiceAsync2 service, Guid assemblyId, string solutionName, CancellationToken cancellationToken)
