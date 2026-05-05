@@ -27,8 +27,8 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
         var publishIds = new List<Guid>();
         var progressLock = new object();
 
-        // Create web resources
-        var createdIds = await ExecuteCreatesAsync(service, plan.Creates.Values, cancellationToken, createsTask, progressLock).ConfigureAwait(false);
+        // Create web resources — sequential, so no lock needed for progress
+        var createdIds = await ExecuteCreatesAsync(service, plan.Creates.Values, cancellationToken, createsTask, null).ConfigureAwait(false);
         publishIds.AddRange(createdIds);
 
         await Task.WhenAll(
@@ -62,7 +62,7 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
         IEnumerable<WebResourcePlanAction> creates,
         CancellationToken cancellationToken,
         ProgressTask? progressTask,
-        object progressLock)
+        object? progressLock)
     {
         var ids = new List<Guid>();
 
