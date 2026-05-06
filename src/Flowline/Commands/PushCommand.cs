@@ -81,75 +81,20 @@ public class PushCommand(DataverseConnector dataverseConnector, PluginService pl
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        runtimeOptions.IsVerbose = settings.Verbose;
-        runtimeOptions.JsonOutput = settings.JsonOutput;
-        runtimeOptions.Force = settings.Force;
+        InitializeRuntimeOptions(settings);
         var standaloneMode = IsStandaloneMode(settings);
 
         if (standaloneMode && !ValidateStandaloneMode(settings, RootFolder)) return 1;
 
-        var runMode = settings.DryRun ? RunMode.DryRun
-                    : settings.Save   ? RunMode.Save
-                    : RunMode.Normal;
+        var runMode = ResolveRunMode(settings);
+        var standaloneParams = await ResolveStandaloneParametersAsync(settings, standaloneMode, cancellationToken);
+        if (standaloneParams == null) return 1;
 
-        var solutionName = standaloneMode
-            ? ResolveStandaloneSolutionName(settings)
-            : null;
-        if (standaloneMode && solutionName == null) return 1;
+        var environmentUrl = standaloneMode ? (ResolveStandaloneEnvironmentUrl(settings, dataverseConnector) ?? "") : "";
+        if (string.IsNullOrWhiteSpace(environmentUrl)) return 1;
 
-        var standaloneDllPath = (string?)null;
-        var standaloneWebResourcesPath = (string?)null;
-        if (standaloneMode)
-        {
-            if (!string.IsNullOrWhiteSpace(settings.Dll))
-            {
-                standaloneDllPath = ResolveStandaloneDllPath(settings);
-                if (standaloneDllPath == null) return 1;
-            }
-
-            if (!string.IsNullOrWhiteSpace(settings.WebResources))
-            {
-                standaloneWebResourcesPath = ResolveStandaloneWebResourcesPath(settings);
-                if (standaloneWebResourcesPath == null) return 1;
-            }
-        }
-
-        EnvironmentInfo? devEnv = null;
-        string environmentUrl;
-        if (standaloneMode)
-        {
-            environmentUrl = ResolveStandaloneEnvironmentUrl(settings, dataverseConnector) ?? "";
-            if (string.IsNullOrWhiteSpace(environmentUrl)) return 1;
-
-            devEnv = await GetAndCheckStandaloneEnvironmentAsync(environmentUrl, settings, cancellationToken).ConfigureAwait(false);
-            if (devEnv == null) return 1;
-        }
-        else
-        {
-            devEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, settings.DevUrl, settings, cancellationToken);
-            if (devEnv == null) return 1;
-            environmentUrl = devEnv.EnvironmentUrl!;
-        }
-
-        ProjectSolution? projectSln = null;
-        SolutionInfo? slnInfo;
-        if (standaloneMode)
-        {
-            slnInfo = await GetAndCheckStandaloneSolutionAsync(solutionName!, environmentUrl, settings, cancellationToken).ConfigureAwait(false);
-            if (slnInfo == null) return 1;
-        }
-        else
-        {
-            (projectSln, slnInfo) = await GetAndCheckSolutionAsync(settings.Solution, environmentUrl, false, settings, cancellationToken);
-            if (projectSln == null || slnInfo == null) return 1;
-            solutionName = projectSln.Name;
-        }
-
-        if (slnInfo.IsManaged)
-        {
-            AnsiConsole.MarkupLine("[red]Managed solutions are not supported for push.[/]");
-            return 1;
-        }
+        var (devEnv, solutionName) = await ResolveEnvironmentAndSolutionAsync(settings, standaloneMode, environmentUrl, standaloneParams, cancellationToken);
+        if (devEnv == null || solutionName == null) return 1;
 
         var pushScope = standaloneMode
             ? ResolveStandaloneScope(settings)
@@ -159,57 +104,176 @@ public class PushCommand(DataverseConnector dataverseConnector, PluginService pl
         var pushPlugins = pushScope.HasFlag(PushScope.Plugins);
         var pushWebResources = pushScope.HasFlag(PushScope.WebResources);
 
-        string? extensionsDll = null;
-        if (pushPlugins)
+        var extensionsDll = await PreparePluginsForPushAsync(pushPlugins, standaloneMode, settings, solutionName, standaloneParams, cancellationToken);
+        if (pushPlugins && extensionsDll == null) return 1;
+
+        var (webResourcesSyncFolder, actuallyPushWebResources) = await PrepareWebResourcesForPushAsync(pushWebResources, standaloneMode, settings, solutionName, standaloneParams, cancellationToken);
+        if (pushWebResources && string.IsNullOrWhiteSpace(webResourcesSyncFolder)) return 1;
+
+        var conn = ConnectToDataverse(environmentUrl);
+        if (conn == null) return 1;
+
+        if (pushPlugins && extensionsDll != null)
         {
-            extensionsDll = standaloneMode ? standaloneDllPath : null;
-
-            if (!standaloneMode)
-            {
-                var extensionsFolder = Path.Combine(RootFolder, AllSolutionsFolderName, solutionName!, ExtensionsName);
-                if (await DotNetUtils.BuildSolutionAsync(extensionsFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
-                {
-                    return 1;
-                }
-
-                extensionsDll = Path.Combine(extensionsFolder, "bin", "Release", "net462", "publish", $"{ExtensionsName}.dll");
-            }
-
-            if (extensionsDll == null || !File.Exists(extensionsDll))
-            {
-                AnsiConsole.MarkupLine(standaloneMode
-                    ? $"[red]DLL not found: {settings.Dll}[/]"
-                    : $"[red]{ExtensionsName}.dll not found. Build the solution first.[/]");
-                return 1;
-            }
-            AnsiConsole.MarkupLine($"[green][bold]{Path.GetFileName(extensionsDll)}[/] found[/]");
-            if (runtimeOptions.IsVerbose) AnsiConsole.MarkupLine($"[dim]{extensionsDll}[/]");
+            await pluginService.SyncSolutionAsync(conn, extensionsDll, solutionName, runMode, cancellationToken).ConfigureAwait(false);
         }
 
-        string? webResourcesSyncFolder = null;
-        if (pushWebResources && standaloneMode)
+        if (actuallyPushWebResources)
         {
-            webResourcesSyncFolder = standaloneWebResourcesPath;
-        }
-        else if (pushWebResources)
-        {
-            var webResourcesFolder = Path.Combine(RootFolder, AllSolutionsFolderName, solutionName!, WebResourcesName);
-            webResourcesSyncFolder = Path.Combine(webResourcesFolder, "dist");
-            if (Directory.Exists(webResourcesFolder))
-            {
-                if (await DotNetUtils.BuildSolutionAsync(webResourcesFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
-                {
-                    return 1;
-                }
-            }
-            else
-            {
-                AnsiConsole.MarkupLine("[dim]WebResources project not found — skipping[/]");
-                pushWebResources = false;
-            }
+            await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder!, solutionName, runMode: runMode, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
-        // Find PAC profile and connect
+        AnsiConsole.MarkupLine("[green]Assets pushed[/]");
+        AnsiConsole.MarkupLine("[bold green]:rocket: Pushed! Use 'sync' to keep it in flow.[/]");
+
+        return 0;
+    }
+
+    private void InitializeRuntimeOptions(Settings settings)
+    {
+        runtimeOptions.IsVerbose = settings.Verbose;
+        runtimeOptions.JsonOutput = settings.JsonOutput;
+        runtimeOptions.Force = settings.Force;
+    }
+
+    private static RunMode ResolveRunMode(Settings settings) =>
+        settings.DryRun ? RunMode.DryRun
+            : settings.Save ? RunMode.Save
+            : RunMode.Normal;
+
+    private async Task<StandaloneParams?> ResolveStandaloneParametersAsync(Settings settings, bool standaloneMode, CancellationToken cancellationToken)
+    {
+        if (!standaloneMode) return new StandaloneParams();
+
+        var solutionName = ResolveStandaloneSolutionName(settings);
+        if (solutionName == null) return null;
+
+        var dllPath = !string.IsNullOrWhiteSpace(settings.Dll)
+            ? ResolveStandaloneDllPath(settings)
+            : null;
+        if (!string.IsNullOrWhiteSpace(settings.Dll) && dllPath == null) return null;
+
+        var webResourcesPath = !string.IsNullOrWhiteSpace(settings.WebResources)
+            ? ResolveStandaloneWebResourcesPath(settings)
+            : null;
+        if (!string.IsNullOrWhiteSpace(settings.WebResources) && webResourcesPath == null) return null;
+
+        return new StandaloneParams { SolutionName = solutionName, DllPath = dllPath, WebResourcesPath = webResourcesPath };
+    }
+
+    private async Task<(EnvironmentInfo?, string?)> ResolveEnvironmentAndSolutionAsync(
+        Settings settings,
+        bool standaloneMode,
+        string environmentUrl,
+        StandaloneParams standaloneParams,
+        CancellationToken cancellationToken)
+    {
+        EnvironmentInfo? devEnv;
+        string? solutionName;
+        SolutionInfo? slnInfo;
+
+        if (standaloneMode)
+        {
+            devEnv = await GetAndCheckStandaloneEnvironmentAsync(environmentUrl, settings, cancellationToken).ConfigureAwait(false);
+            if (devEnv == null) return (null, null);
+
+            slnInfo = await GetAndCheckStandaloneSolutionAsync(standaloneParams.SolutionName!, environmentUrl, settings, cancellationToken).ConfigureAwait(false);
+            if (slnInfo == null) return (null, null);
+
+            solutionName = standaloneParams.SolutionName;
+        }
+        else
+        {
+            devEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, settings.DevUrl, settings, cancellationToken);
+            if (devEnv == null) return (null, null);
+
+            var (projectSln, slnInfoResult) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, false, settings, cancellationToken);
+            if (projectSln == null || slnInfoResult == null) return (null, null);
+
+            slnInfo = slnInfoResult;
+            solutionName = projectSln.Name;
+        }
+
+        if (slnInfo.IsManaged)
+        {
+            AnsiConsole.MarkupLine("[red]Managed solutions are not supported for push.[/]");
+            return (null, null);
+        }
+
+        return (devEnv, solutionName);
+    }
+
+    private async Task<string?> PreparePluginsForPushAsync(
+        bool pushPlugins,
+        bool standaloneMode,
+        Settings settings,
+        string solutionName,
+        StandaloneParams standaloneParams,
+        CancellationToken cancellationToken)
+    {
+        if (!pushPlugins) return null;
+
+        string? extensionsDll = standaloneMode ? standaloneParams.DllPath : null;
+
+        if (!standaloneMode)
+        {
+            var extensionsFolder = Path.Combine(RootFolder, AllSolutionsFolderName, solutionName, ExtensionsName);
+            if (await DotNetUtils.BuildSolutionAsync(extensionsFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
+            {
+                return null;
+            }
+
+            extensionsDll = Path.Combine(extensionsFolder, "bin", "Release", "net462", "publish", $"{ExtensionsName}.dll");
+        }
+
+        if (extensionsDll == null || !File.Exists(extensionsDll))
+        {
+            AnsiConsole.MarkupLine(standaloneMode
+                ? $"[red]DLL not found: {settings.Dll}[/]"
+                : $"[red]{ExtensionsName}.dll not found. Build the solution first.[/]");
+            return null;
+        }
+
+        AnsiConsole.MarkupLine($"[green][bold]{Path.GetFileName(extensionsDll)}[/] found[/]");
+        if (runtimeOptions.IsVerbose) AnsiConsole.MarkupLine($"[dim]{extensionsDll}[/]");
+
+        return extensionsDll;
+    }
+
+    private async Task<(string?, bool)> PrepareWebResourcesForPushAsync(
+        bool pushWebResources,
+        bool standaloneMode,
+        Settings settings,
+        string solutionName,
+        StandaloneParams standaloneParams,
+        CancellationToken cancellationToken)
+    {
+        if (!pushWebResources) return (null, false);
+
+        if (standaloneMode)
+        {
+            return (standaloneParams.WebResourcesPath, true);
+        }
+
+        var webResourcesFolder = Path.Combine(RootFolder, AllSolutionsFolderName, solutionName, WebResourcesName);
+        var webResourcesSyncFolder = Path.Combine(webResourcesFolder, "dist");
+
+        if (!Directory.Exists(webResourcesFolder))
+        {
+            AnsiConsole.MarkupLine("[dim]WebResources project not found — skipping[/]");
+            return (null, false);
+        }
+
+        if (await DotNetUtils.BuildSolutionAsync(webResourcesFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
+        {
+            return (null, false);
+        }
+
+        return (webResourcesSyncFolder, true);
+    }
+
+    private IOrganizationServiceAsync2? ConnectToDataverse(string environmentUrl)
+    {
         IOrganizationServiceAsync2? conn = AnsiConsole.Status().FlowlineSpinner().Start(
             "Connecting to Dataverse...",
             ctx =>
@@ -222,27 +286,19 @@ public class PushCommand(DataverseConnector dataverseConnector, PluginService pl
 
                 AnsiConsole.MarkupLine("[red]No PAC profile found — run 'pac auth create' first.[/]");
                 return null;
-
             });
 
-        if (conn == null) return 1;
-        AnsiConsole.MarkupLine("[green]Connected[/]");
+        if (conn != null)
+            AnsiConsole.MarkupLine("[green]Connected[/]");
 
-        if (pushPlugins && extensionsDll != null)
-        {
-            await pluginService.SyncSolutionAsync(conn, extensionsDll, solutionName!, runMode, cancellationToken).ConfigureAwait(false);
-        }
+        return conn;
+    }
 
-        if (pushWebResources)
-        {
-            await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder!, solutionName!, runMode: runMode, cancellationToken: cancellationToken).ConfigureAwait(false);
-        }
-
-        AnsiConsole.MarkupLine("[green]Assets pushed[/]");
-
-        AnsiConsole.MarkupLine("[bold green]:rocket: Pushed! Use 'sync' to keep it in flow.[/]");
-
-        return 0;
+    private class StandaloneParams
+    {
+        public string? SolutionName { get; set; }
+        public string? DllPath { get; set; }
+        public string? WebResourcesPath { get; set; }
     }
 
     internal static bool IsStandaloneMode(Settings settings) =>
