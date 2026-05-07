@@ -31,6 +31,7 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
         // Phase 2: Plan registration (pure, synchronous)
         var plan = _planner.Plan(snapshot);
+        WritePlanVerbose(plan);
         output.Info("[green]Web resource plan ready[/]");
 
         if (plan.TotalChanges == 0)
@@ -50,42 +51,58 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         }
 
         // Phase 3: Execute the plan
-        await output.Progress()
-            .StartAsync(async ctx =>
-            {
-                var createsTask = plan.Creates.Count > 0
-                    ? ctx.AddTask("Creating web resources", maxValue: plan.Creates.Count)
-                    : null;
-                var updatesTask = plan.Updates.Count > 0
-                    ? ctx.AddTask("Updating web resources", maxValue: plan.Updates.Count)
-                    : null;
-                var addsTask = plan.AddsToSolution.Count > 0
-                    ? ctx.AddTask("Adding web resources to solution", maxValue: plan.AddsToSolution.Count)
-                    : null;
-                var removesTask = runMode != RunMode.Save && plan.RemovesFromSolution.Count > 0
-                    ? ctx.AddTask("Removing web resources from solution", maxValue: plan.RemovesFromSolution.Count)
-                    : null;
-                var deletesTask = runMode != RunMode.Save && plan.Deletes.Count > 0
-                    ? ctx.AddTask("Deleting web resources", maxValue: plan.Deletes.Count)
-                    : null;
-                var publishTask = publishAfterSync && plan.PublishCount > 0
-                    ? ctx.AddTask("Publishing web resources", maxValue: plan.PublishCount)
-                    : null;
+        await _executor.ExecuteAsync(service, plan, publishAfterSync, runMode == RunMode.Save, cancellationToken).ConfigureAwait(false);
+    }
 
-                await _executor.ExecuteAsync(
-                    service,
-                    plan,
-                    publishAfterSync,
-                    runMode == RunMode.Save,
-                    cancellationToken,
-                    createsTask,
-                    updatesTask,
-                    addsTask,
-                    removesTask,
-                    deletesTask,
-                    publishTask).ConfigureAwait(false);
-            })
-            .ConfigureAwait(false);
+    void WritePlanVerbose(WebResourceSyncPlan plan)
+    {
+        if (!opt.IsVerbose)
+            return;
+
+        output.Verbose("Web resource plan", opt);
+        output.Verbose($"  Summary: {plan.TotalDeletes} delete(s), {plan.TotalUpserts} upsert(s), {plan.AddsToSolution.Count} add-to-solution action(s)", opt);
+
+        if (plan.Creates.Count > 0)
+        {
+            output.Verbose($"  Creates ({plan.Creates.Count})", opt);
+            foreach (var a in plan.Creates.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
+                output.Verbose($"    - {a.Name}", opt);
+        }
+
+        if (plan.Updates.Count > 0)
+        {
+            output.Verbose($"  Updates ({plan.Updates.Count})", opt);
+            foreach (var a in plan.Updates.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
+                output.Verbose($"    - {a.Name}", opt);
+        }
+
+        if (plan.AddsToSolution.Count > 0)
+        {
+            output.Verbose($"  Add to solution ({plan.AddsToSolution.Count})", opt);
+            foreach (var a in plan.AddsToSolution.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
+                output.Verbose($"    - {a.Name}", opt);
+        }
+
+        if (plan.Deletes.Count > 0)
+        {
+            output.Verbose($"  Deletes ({plan.Deletes.Count})", opt);
+            foreach (var a in plan.Deletes.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
+                output.Verbose($"    - {a.Name}", opt);
+        }
+
+        if (plan.RemovesFromSolution.Count > 0)
+        {
+            output.Verbose($"  Remove from solution ({plan.RemovesFromSolution.Count})", opt);
+            foreach (var a in plan.RemovesFromSolution.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
+                output.Verbose($"    - {a.Name}", opt);
+        }
+
+        if (plan.Skips.Count > 0)
+        {
+            output.Verbose($"  Skips ({plan.Skips.Count})", opt);
+            foreach (var a in plan.Skips.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
+                output.Verbose($"    - {a.Name} ({a.Reason})", opt);
+        }
     }
 
     void WriteDryRunSummary(WebResourceSyncPlan plan, bool publishAfterSync)
