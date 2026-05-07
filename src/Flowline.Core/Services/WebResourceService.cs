@@ -24,9 +24,9 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             throw new ArgumentException("solutionName is required.", nameof(solutionName));
 
         // Phase 1: Load snapshot (all Dataverse state in parallel)
-        var snapshot = await output.Status()
-            .StartAsync("Loading web resource snapshot...", _ => _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, cancellationToken))
-            .ConfigureAwait(false);
+        var snapshot = await output.Status().StartAsync("Loading web resource snapshot...", _ =>
+            _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, cancellationToken)).ConfigureAwait(false);
+        WriteSnapshotVerbose(snapshot);
         output.Info("[green]Snapshot loaded[/]");
 
         // Phase 2: Plan registration (pure, synchronous)
@@ -52,6 +52,50 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
         // Phase 3: Execute the plan
         await _executor.ExecuteAsync(service, plan, publishAfterSync, runMode == RunMode.Save, cancellationToken).ConfigureAwait(false);
+    }
+
+    void WriteSnapshotVerbose(WebResourceSyncSnapshot snapshot)
+    {
+        if (!opt.IsVerbose) return;
+
+        output.Write(BuildResourceTree($"Dataverse ({snapshot.DataverseResources.Count})", snapshot.DataverseResources.Keys));
+        output.Write(BuildResourceTree($"Local ({snapshot.LocalResources.Count})", snapshot.LocalResources.Keys));
+    }
+
+    static Tree BuildResourceTree(string label, IEnumerable<string> names)
+    {
+        var tree = new Tree(label) { Style = Style.Parse("dim") };
+
+        foreach (var group in names
+            .Select(n => n.Split('/'))
+            .GroupBy(p => p[0], StringComparer.OrdinalIgnoreCase)
+            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var folderNode = tree.AddNode($"{group.Key}");
+            AddTreeChildren(folderNode, group.Select(p => p[1..]).Where(p => p.Length > 0).ToList());
+        }
+
+        return tree;
+    }
+
+    static void AddTreeChildren(TreeNode parent, List<string[]> paths)
+    {
+        foreach (var folder in paths
+            .Where(p => p.Length > 1)
+            .GroupBy(p => p[0], StringComparer.OrdinalIgnoreCase)
+            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var node = parent.AddNode($"{folder.Key}");
+            AddTreeChildren(node, folder.Select(p => p[1..]).ToList());
+        }
+
+        foreach (var file in paths
+            .Where(p => p.Length == 1)
+            .Select(p => p[0])
+            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase))
+        {
+            parent.AddNode($"{file}");
+        }
     }
 
     void WritePlanVerbose(WebResourceSyncPlan plan)

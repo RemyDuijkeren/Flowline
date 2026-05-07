@@ -18,11 +18,6 @@ public class WebResourcePlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
         var dataverseNames = snapshot.DataverseResources.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var targetSolutionName = snapshot.Solution.UniqueName;
 
-        output.Verbose($"Found {snapshot.DataverseResources.Count} web resource(s) in Dataverse.", opt);
-        foreach (var name in dataverseNames) output.Verbose($"- {name}", opt);
-        output.Verbose($"Found {snapshot.LocalResources.Count} local web resource(s).", opt);
-        foreach (var name in localNames) output.Verbose($"- {name}", opt);
-
         // Don't exist in this solution — create, or add to solution if already in Dataverse globally
         foreach (var name in localNames.Except(dataverseNames, StringComparer.OrdinalIgnoreCase))
         {
