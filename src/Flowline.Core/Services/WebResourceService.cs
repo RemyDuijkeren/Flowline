@@ -59,6 +59,9 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 var updatesTask = plan.Updates.Count > 0
                     ? ctx.AddTask("Updating web resources", maxValue: plan.Updates.Count)
                     : null;
+                var addsTask = plan.AddsToSolution.Count > 0
+                    ? ctx.AddTask("Adding web resources to solution", maxValue: plan.AddsToSolution.Count)
+                    : null;
                 var removesTask = runMode != RunMode.Save && plan.RemovesFromSolution.Count > 0
                     ? ctx.AddTask("Removing web resources from solution", maxValue: plan.RemovesFromSolution.Count)
                     : null;
@@ -77,6 +80,7 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                     cancellationToken,
                     createsTask,
                     updatesTask,
+                    addsTask,
                     removesTask,
                     deletesTask,
                     publishTask).ConfigureAwait(false);
@@ -88,6 +92,7 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
     {
         foreach (var a in plan.Creates) output.Skip($"Web resource '{a.Name}' — would create");
         foreach (var a in plan.Updates) output.Skip($"Web resource '{a.Name}' — would update");
+        foreach (var a in plan.AddsToSolution) output.Skip($"Web resource '{a.Name}' — would add to solution");
         foreach (var a in plan.Deletes) output.Skip($"Web resource '{a.Name}' — would delete");
         foreach (var a in plan.RemovesFromSolution) output.Skip($"Web resource '{a.Name}' — would remove from solution");
         foreach (var a in plan.Skips) output.Skip($"Web resource '{a.Name}' — kept ({a.Reason})");
@@ -96,6 +101,6 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         if (publishCount > 0)
             output.Skip($"{publishCount} web resource(s) — would publish");
 
-        output.Info($"[green]Dry run: {plan.Deletes.Count} delete(s), {plan.RemovesFromSolution.Count} remove(s), {plan.Creates.Count} create(s), {plan.Updates.Count} update(s), {plan.Skips.Count} skip(s). Run without --dry-run to apply.[/]");
+        output.Info($"[green]Dry run: {plan.Deletes.Count} delete(s), {plan.RemovesFromSolution.Count} remove(s), {plan.Creates.Count} create(s), {plan.Updates.Count} update(s), {plan.AddsToSolution.Count} add(s), {plan.Skips.Count} skip(s). Run without --dry-run to apply.[/]");
     }
 }

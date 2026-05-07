@@ -43,6 +43,7 @@ public enum WebResourceAction
     Update,
     Delete,
     RemoveFromSolution,
+    AddToSolution,
     Skip
 }
 
@@ -62,7 +63,8 @@ public record WebResourceOwnership(int NonDefaultUnmanagedSolutionCount, bool Is
 public record WebResourceSyncSnapshot(
     DataverseSolutionInfo Solution,
     IReadOnlyDictionary<string, LocalWebResource> LocalResources,
-    IReadOnlyDictionary<string, DataverseWebResource> DataverseResources);
+    IReadOnlyDictionary<string, DataverseWebResource> DataverseResources,
+    IReadOnlyDictionary<string, DataverseWebResource> GlobalOrphans);
 
 public record WebResourcePlanAction(
     string Name,
@@ -78,10 +80,11 @@ public class WebResourceSyncPlan
     public List<WebResourcePlanAction> Updates { get; } = [];
     public List<WebResourcePlanAction> Deletes { get; } = [];
     public List<WebResourcePlanAction> RemovesFromSolution { get; } = [];
+    public List<WebResourcePlanAction> AddsToSolution { get; } = [];
     public List<WebResourcePlanAction> Skips { get; } = [];
 
     public int TotalDeletes => Deletes.Count + RemovesFromSolution.Count;
     public int TotalUpserts => Creates.Count + Updates.Count;
-    public int TotalChanges => TotalDeletes + TotalUpserts;
+    public int TotalChanges => TotalDeletes + TotalUpserts + AddsToSolution.Count;
     public int PublishCount => Creates.Count + Updates.Count;
 }

@@ -289,6 +289,49 @@ public class WebResourceServiceTests : IDisposable
             r["ParameterXml"].ToString()!.Contains(id2.ToString())), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task SyncSolutionAsync_ExistsInOtherSolutionWithDifferentContent_ShouldUpdateAndAddToSolution()
+    {
+        var webResourceId = Guid.NewGuid();
+        File.WriteAllText(Path.Combine(_webresourceRoot, "shared.js"), "new content");
+        SetupGlobalOrphans(RemoteWebResource(webResourceId, "my_MySolution/shared.js", "old content"));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        await _serviceMock.Received(1).UpdateAsync(
+            Arg.Is<Entity>(e => e.Id == webResourceId), Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is<OrganizationRequest>(r =>
+                r.RequestName == "AddSolutionComponent" &&
+                (Guid)r["ComponentId"] == webResourceId &&
+                r["SolutionUniqueName"].ToString() == "MySolution"),
+            Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is<OrganizationRequest>(r =>
+                r.RequestName == "PublishXml" &&
+                r["ParameterXml"].ToString()!.Contains(webResourceId.ToString())),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_ExistsInOtherSolutionWithSameContent_ShouldAddToSolutionWithoutUpdate()
+    {
+        var webResourceId = Guid.NewGuid();
+        var contentBytes = System.Text.Encoding.UTF8.GetBytes("same content");
+        File.WriteAllBytes(Path.Combine(_webresourceRoot, "shared.js"), contentBytes);
+        SetupGlobalOrphans(RemoteWebResource(webResourceId, "my_MySolution/shared.js", "same content"));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is<OrganizationRequest>(r =>
+                r.RequestName == "AddSolutionComponent" &&
+                (Guid)r["ComponentId"] == webResourceId &&
+                r["SolutionUniqueName"].ToString() == "MySolution"),
+            Arg.Any<CancellationToken>());
+    }
+
     void SetupSolution(string solutionName, string prefix, bool isManaged = false, Guid? parentSolutionId = null)
     {
         var solution = new Entity("solution", Guid.NewGuid())
@@ -306,7 +349,17 @@ public class WebResourceServiceTests : IDisposable
 
     void SetupWebResources(params Entity[] webResources)
     {
-        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "webresource"), Arg.Any<CancellationToken>())
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "webresource" && q.LinkEntities.Count > 0),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(webResources.ToList())));
+    }
+
+    void SetupGlobalOrphans(params Entity[] webResources)
+    {
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "webresource" && q.LinkEntities.Count == 0),
+                Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(webResources.ToList())));
     }
 

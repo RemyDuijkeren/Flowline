@@ -31,11 +31,25 @@ public class WebResourceReader
         });
 
         var dataverseResources = await Task.WhenAll(ownershipTasks).ConfigureAwait(false);
+        var dataverseResourcesDict = dataverseResources
+            .ToDictionary(r => r.Name, r => r, StringComparer.OrdinalIgnoreCase)
+            .AsReadOnly();
+
+        // Local files not in this solution may exist globally under a different solution — look them up
+        // to plan AddToSolution instead of Create (Dataverse enforces global name uniqueness).
+        var orphanNames = localResourcesTask.Result.Keys
+            .Where(n => !dataverseResourcesDict.ContainsKey(n))
+            .ToList();
+
+        var globalOrphans = orphanNames.Count > 0
+            ? await GetGlobalWebResourcesByNameAsync(service, orphanNames, cancellationToken).ConfigureAwait(false)
+            : new Dictionary<string, DataverseWebResource>(StringComparer.OrdinalIgnoreCase).AsReadOnly();
 
         return new WebResourceSyncSnapshot(
             baseSolution,
             localResourcesTask.Result,
-            dataverseResources.ToDictionary(r => r.Name, r => r, StringComparer.OrdinalIgnoreCase).AsReadOnly());
+            dataverseResourcesDict,
+            globalOrphans);
     }
 
     async Task<IReadOnlyList<Entity>> GetWebResourcesForSolutionAsync(
@@ -99,6 +113,24 @@ public class WebResourceReader
             entity.GetAttributeValue<string>("content"),
             entity,
             ownership);
+
+    async Task<IReadOnlyDictionary<string, DataverseWebResource>> GetGlobalWebResourcesByNameAsync(
+        IOrganizationServiceAsync2 service,
+        IEnumerable<string> names,
+        CancellationToken cancellationToken)
+    {
+        var query = new QueryExpression("webresource")
+        {
+            ColumnSet = new ColumnSet("name", "content", "displayname", "webresourcetype")
+        };
+        query.Criteria.AddCondition("name", ConditionOperator.In, names.Cast<object>().ToArray());
+
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
+        return result.Entities
+            .Select(e => ToDataverseWebResource(e, new WebResourceOwnership(0, false)))
+            .ToDictionary(r => r.Name, r => r, StringComparer.OrdinalIgnoreCase)
+            .AsReadOnly();
+    }
 
     static IReadOnlyDictionary<string, LocalWebResource> GetLocalWebResources(string root, string prefix)
     {

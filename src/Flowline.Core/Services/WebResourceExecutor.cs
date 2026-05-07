@@ -21,6 +21,7 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
         CancellationToken cancellationToken = default,
         ProgressTask? createsTask = null,
         ProgressTask? updatesTask = null,
+        ProgressTask? addsTask = null,
         ProgressTask? removesTask = null,
         ProgressTask? deletesTask = null,
         ProgressTask? publishTask = null)
@@ -42,7 +43,12 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
                     lock (publishIds) publishIds.Add(action.Entity!.Id);
                 }
                 catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
-            }, cancellationToken, updatesTask, progressLock)).ConfigureAwait(false);
+            }, cancellationToken, updatesTask, progressLock),
+            ExecuteBoundedParallelAsync(plan.AddsToSolution, MaxParallelism, async action =>
+            {
+                try { await AddToSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken).ConfigureAwait(false); }
+                catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
+            }, cancellationToken, addsTask, progressLock)).ConfigureAwait(false);
 
         if (!save)
         {
@@ -106,6 +112,22 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
         return ids;
     }
 
+    static Task AddToSolutionAsync(
+        IOrganizationServiceAsync2 service,
+        Guid webResourceId,
+        string solutionName,
+        CancellationToken cancellationToken)
+    {
+        var request = new OrganizationRequest("AddSolutionComponent")
+        {
+            ["ComponentId"] = webResourceId,
+            ["ComponentType"] = WebResourceComponentType,
+            ["SolutionUniqueName"] = solutionName,
+            ["AddRequiredComponents"] = false
+        };
+        return service.ExecuteAsync(request, cancellationToken);
+    }
+
     static Task RemoveFromSolutionAsync(
         IOrganizationServiceAsync2 service,
         Guid webResourceId,
@@ -140,6 +162,9 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
 
         foreach (var a in plan.Updates) output.Verbose($"Web resource '{a.Name}' updated", opt);
         if (plan.Updates.Count > 0) output.Info($"[green]{plan.Updates.Count} web resource(s) updated[/]");
+
+        foreach (var a in plan.AddsToSolution) output.Verbose($"Web resource '{a.Name}' added to solution", opt);
+        if (plan.AddsToSolution.Count > 0) output.Info($"[green]{plan.AddsToSolution.Count} web resource(s) added to solution[/]");
 
         if (!save)
         {

@@ -23,10 +23,24 @@ public class WebResourcePlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
         output.Verbose($"Found {snapshot.LocalResources.Count} local web resource(s).", opt);
         foreach (var name in localNames) output.Verbose($"- {name}", opt);
 
-        // Don't exist in Dataverse, create them
+        // Don't exist in this solution — create, or add to solution if already in Dataverse globally
         foreach (var name in localNames.Except(dataverseNames, StringComparer.OrdinalIgnoreCase))
         {
             var local = snapshot.LocalResources[name];
+
+            if (snapshot.GlobalOrphans.TryGetValue(name, out var existing))
+            {
+                if (existing.Content != local.Content || existing.DisplayName != local.DisplayName)
+                {
+                    existing.Entity["content"] = local.Content;
+                    existing.Entity["displayname"] = local.DisplayName;
+                    existing.Entity["webresourcetype"] = new OptionSetValue((int)local.Type);
+                    plan.Updates.Add(new WebResourcePlanAction(name, WebResourceAction.Update, Entity: existing.Entity, Id: existing.Id));
+                }
+                plan.AddsToSolution.Add(new WebResourcePlanAction(name, WebResourceAction.AddToSolution, Id: existing.Id, SolutionName: targetSolutionName));
+                continue;
+            }
+
             plan.Creates.Add(new WebResourcePlanAction(
                 name,
                 WebResourceAction.Create,
