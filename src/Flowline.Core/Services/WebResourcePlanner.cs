@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.Xrm.Sdk;
 using Flowline.Core.Models;
 using Spectre.Console;
@@ -6,8 +7,12 @@ namespace Flowline.Core.Services;
 
 public class WebResourcePlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
 {
+    static readonly Regex ValidFilePathRegex = new(@"^[a-zA-Z0-9_.\-]+(/[a-zA-Z0-9_.\-]+)*$", RegexOptions.Compiled);
+
     public WebResourceSyncPlan Plan(WebResourceSyncSnapshot snapshot)
     {
+        ValidateWebResourceFiles(snapshot);
+
         var plan = new WebResourceSyncPlan();
         var localNames = snapshot.LocalResources.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var dataverseNames = snapshot.DataverseResources.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -40,7 +45,7 @@ public class WebResourcePlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
             remote.Entity["content"] = local.Content;
             remote.Entity["displayname"] = local.DisplayName;
-            remote.Entity["webresourcetype"] = new OptionSetValue(local.Type);
+            remote.Entity["webresourcetype"] = new OptionSetValue((int)local.Type);
 
             plan.Updates.Add(new WebResourcePlanAction(
                 name,
@@ -73,12 +78,47 @@ public class WebResourcePlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
         return plan;
     }
 
+    void ValidateWebResourceFiles(WebResourceSyncSnapshot snapshot)
+    {
+        var unknownFiles = snapshot.LocalResources.Values
+                                   .Where(r => r.Type == WebResourceType.Unknown)
+                                   .Select(r => r.RelativePath)
+                                   .OrderBy(p => p)
+                                   .ToList();
+
+        // Web resource names may only include letters, numbers, periods, and nonconsecutive forward slash characters.
+        var invalidNames = snapshot.LocalResources.Values
+                                   .Where(r => !ValidFilePathRegex.IsMatch(r.RelativePath))
+                                   .Select(r => r.RelativePath)
+                                   .OrderBy(p => p)
+                                   .ToList();
+
+        // Silverlight/XAP is deprecated: https://learn.microsoft.com/en-us/dynamics365/customerengagement/on-premises/developer/silverlight-xap-web-resources?view=op-9-1
+        var xapFiles = snapshot.LocalResources.Values
+                               .Where(r => r.Type == WebResourceType.Xap)
+                               .Select(r => r.RelativePath)
+                               .OrderBy(p => p)
+                               .ToList();
+
+        var errorCount = unknownFiles.Count + invalidNames.Count + xapFiles.Count;
+        if (errorCount <= 0) return;
+
+        foreach (var filePath in unknownFiles)
+            output.Error($"Unsupported file extension: '{filePath}'");
+        foreach (var filePath in invalidNames)
+            output.Error($"Invalid file name: '{filePath}'");
+        foreach (var filePath in xapFiles)
+            output.Error($"Silverlight/XAP is deprecated: '{filePath}'");
+
+        throw new InvalidOperationException($"{errorCount} web resource file(s) cannot be synced.");
+    }
+
     static Entity ToEntity(LocalWebResource local) =>
         new("webresource")
         {
             ["name"] = local.Name,
             ["displayname"] = local.DisplayName,
-            ["webresourcetype"] = new OptionSetValue(local.Type),
+            ["webresourcetype"] = new OptionSetValue((int)local.Type),
             ["content"] = local.Content
         };
 }

@@ -4,6 +4,8 @@ namespace Flowline.Core.Models;
 
 public enum WebResourceType
 {
+    Unknown = 0,
+
     // Cloud-relevant model-driven app web resources.
     Html = 1,
     Htm = 1,
@@ -44,13 +46,13 @@ public enum WebResourceAction
     Skip
 }
 
-public record LocalWebResource(string Name, string Path, string DisplayName, int Type, string Content);
+public record LocalWebResource(string Name, string RelativePath, string Path, string DisplayName, WebResourceType Type, string Content);
 
 public record DataverseWebResource(
     Guid Id,
     string Name,
     string? DisplayName,
-    int Type,
+    WebResourceType Type,
     string? Content,
     Entity Entity,
     WebResourceOwnership Ownership);

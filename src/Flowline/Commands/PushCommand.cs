@@ -90,11 +90,18 @@ public class PushCommand(DataverseConnector dataverseConnector, PluginService pl
         var standaloneParams = await ResolveStandaloneParametersAsync(settings, standaloneMode, cancellationToken);
         if (standaloneParams == null) return 1;
 
-        var environmentUrl = standaloneMode ? (ResolveStandaloneEnvironmentUrl(settings, dataverseConnector) ?? "") : "";
-        if (string.IsNullOrWhiteSpace(environmentUrl)) return 1;
+        var environmentUrl = "";
+        if (standaloneMode)
+        {
+            environmentUrl = ResolveStandaloneEnvironmentUrl(settings, dataverseConnector) ?? "";
+            if (string.IsNullOrWhiteSpace(environmentUrl)) return 1;
+        }
 
         var (devEnv, solutionName) = await ResolveEnvironmentAndSolutionAsync(settings, standaloneMode, environmentUrl, standaloneParams, cancellationToken);
         if (devEnv == null || solutionName == null) return 1;
+
+        if (!standaloneMode)
+            environmentUrl = devEnv.EnvironmentUrl!;
 
         var pushScope = standaloneMode
             ? ResolveStandaloneScope(settings)

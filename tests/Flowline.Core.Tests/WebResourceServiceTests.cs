@@ -190,6 +190,104 @@ public class WebResourceServiceTests : IDisposable
             _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
     }
 
+    [Fact]
+    public async Task SyncSolutionAsync_XapFile_ShouldAbortBeforeMutating()
+    {
+        File.WriteAllBytes(Path.Combine(_webresourceRoot, "legacy.xap"), []);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
+
+        Assert.Contains("cannot be synced", ex.Message);
+        Assert.Contains("legacy.xap", _console.Output);
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<OrganizationRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_InvalidWebResourceName_ShouldAbortBeforeMutating()
+    {
+        File.WriteAllText(Path.Combine(_webresourceRoot, "my file.js"), "console.log('test');");
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
+
+        Assert.Contains("cannot be synced", ex.Message);
+        Assert.Contains("my file.js", _console.Output);
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<OrganizationRequest>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_MultipleInvalidNames_ShouldListAllInError()
+    {
+        File.WriteAllText(Path.Combine(_webresourceRoot, "my file.js"), "console.log('test');");
+        File.WriteAllText(Path.Combine(_webresourceRoot, "other file.css"), "body {}");
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
+
+        Assert.Contains("2 web resource", ex.Message);
+        Assert.Contains("my file.js", _console.Output);
+        Assert.Contains("other file.css", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_CreateFails_ShouldContinueOtherCreatesAndPublishSucceeded()
+    {
+        File.WriteAllText(Path.Combine(_webresourceRoot, "a.js"), "let a = 1;");
+        File.WriteAllText(Path.Combine(_webresourceRoot, "b.js"), "let b = 2;");
+
+        var succeededId = Guid.NewGuid();
+        var createResponse = new CreateResponse();
+        createResponse.Results["id"] = succeededId;
+
+        _serviceMock.ExecuteAsync(
+                Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_MySolution/b.js"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(createResponse));
+        _serviceMock.ExecuteAsync(
+                Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_MySolution/a.js"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<OrganizationResponse>(new Exception("Dataverse error")));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution"));
+
+        Assert.Contains("1 web resource", ex.Message);
+        Assert.Contains("my_MySolution/a.js", _console.Output);
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<OrganizationRequest>(r =>
+            r.RequestName == "PublishXml" &&
+            r["ParameterXml"].ToString()!.Contains(succeededId.ToString())), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_UpdateFails_ShouldPublishSucceededAndThrow()
+    {
+        var id1 = Guid.NewGuid();
+        var id2 = Guid.NewGuid();
+
+        SetupWebResources(
+            RemoteWebResource(id1, "my_MySolution/a.js", "old"),
+            RemoteWebResource(id2, "my_MySolution/b.js", "old"));
+
+        File.WriteAllText(Path.Combine(_webresourceRoot, "a.js"), "new content");
+        File.WriteAllText(Path.Combine(_webresourceRoot, "b.js"), "new content");
+
+        _serviceMock.UpdateAsync(Arg.Is<Entity>(e => e.Id == id1), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new Exception("Dataverse update error")));
+        _serviceMock.UpdateAsync(Arg.Is<Entity>(e => e.Id == id2), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution"));
+
+        Assert.Contains("1 web resource", ex.Message);
+        Assert.Contains("my_MySolution/a.js", _console.Output);
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<OrganizationRequest>(r =>
+            r.RequestName == "PublishXml" &&
+            r["ParameterXml"].ToString()!.Contains(id2.ToString())), Arg.Any<CancellationToken>());
+    }
+
     void SetupSolution(string solutionName, string prefix, bool isManaged = false, Guid? parentSolutionId = null)
     {
         var solution = new Entity("solution", Guid.NewGuid())

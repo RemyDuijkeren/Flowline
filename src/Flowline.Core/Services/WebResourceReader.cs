@@ -95,7 +95,7 @@ public class WebResourceReader
             entity.Id,
             entity.GetAttributeValue<string>("name"),
             entity.GetAttributeValue<string>("displayname"),
-            entity.GetAttributeValue<OptionSetValue>("webresourcetype")?.Value ?? 0,
+            (WebResourceType)(entity.GetAttributeValue<OptionSetValue>("webresourcetype")?.Value ?? 0),
             entity.GetAttributeValue<string>("content"),
             entity,
             ownership);
@@ -113,27 +113,24 @@ public class WebResourceReader
 
             var relativePath = Path.GetRelativePath(root, file).Replace("\\", "/");
             var name = $"{prefix}/{relativePath}";
-            result[name] = LocalResourceFromFile(file, name);
+            result[name] = LocalResourceFromFile(file, name, relativePath);
         }
 
         return result.AsReadOnly();
     }
 
-    static LocalWebResource LocalResourceFromFile(string path, string name)
+    static LocalWebResource LocalResourceFromFile(string path, string name, string relativePath)
     {
         var ext = Path.GetExtension(path).TrimStart('.');
         if (!Enum.TryParse<WebResourceType>(ext, true, out var type))
-            throw new InvalidOperationException($"Unsupported web resource extension '.{ext}' for '{path}'.");
-
-        // Silverlight/XAP is deprecated: https://learn.microsoft.com/en-us/dynamics365/customerengagement/on-premises/developer/silverlight-xap-web-resources?view=op-9-1
-        if (type == WebResourceType.Xap)
-            throw new InvalidOperationException($"Deprecated Silverlight/XAP web resource '{path}'. See https://learn.microsoft.com/en-us/dynamics365/customerengagement/on-premises/developer/silverlight-xap-web-resources?view=op-9-1");
+            type = WebResourceType.Unknown;
 
         return new LocalWebResource(
             name,
+            relativePath,
             path,
             Path.GetFileName(name),
-            (int)type,
+            type,
             Convert.ToBase64String(File.ReadAllBytes(path)));
     }
 

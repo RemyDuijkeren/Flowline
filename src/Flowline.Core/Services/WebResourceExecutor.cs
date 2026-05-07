@@ -25,26 +25,37 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
         ProgressTask? publishTask = null)
     {
         var publishIds = new List<Guid>();
+        var failures = new List<(string Name, Exception Error)>();
         var progressLock = new object();
 
         // Create web resources — sequential, so no lock needed for progress
-        var createdIds = await ExecuteCreatesAsync(service, plan.Creates, cancellationToken, createsTask, null).ConfigureAwait(false);
+        var createdIds = await ExecuteCreatesAsync(service, plan.Creates, failures, cancellationToken, createsTask, progressLock).ConfigureAwait(false);
         publishIds.AddRange(createdIds);
 
         await Task.WhenAll(
             ExecuteBoundedParallelAsync(plan.Updates, MaxParallelism, async action =>
             {
-                await service.UpdateAsync(action.Entity!, cancellationToken).ConfigureAwait(false);
-                lock (publishIds) publishIds.Add(action.Entity!.Id);
+                try
+                {
+                    await service.UpdateAsync(action.Entity!, cancellationToken).ConfigureAwait(false);
+                    lock (publishIds) publishIds.Add(action.Entity!.Id);
+                }
+                catch (Exception ex) { lock (failures) failures.Add((action.Name, ex)); }
             }, cancellationToken, updatesTask, progressLock)).ConfigureAwait(false);
 
         if (!save)
         {
             await Task.WhenAll(
-                ExecuteBoundedParallelAsync(plan.RemovesFromSolution, MaxParallelism,
-                    action => RemoveFromSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken), cancellationToken, removesTask, progressLock),
-                ExecuteBoundedParallelAsync(plan.Deletes, MaxParallelism,
-                    action => service.DeleteAsync("webresource", action.Id!.Value, cancellationToken), cancellationToken, deletesTask, progressLock)).ConfigureAwait(false);
+                ExecuteBoundedParallelAsync(plan.RemovesFromSolution, MaxParallelism, async action =>
+                {
+                    try { await RemoveFromSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken).ConfigureAwait(false); }
+                    catch (Exception ex) { lock (failures) failures.Add((action.Name, ex)); }
+                }, cancellationToken, removesTask, progressLock),
+                ExecuteBoundedParallelAsync(plan.Deletes, MaxParallelism, async action =>
+                {
+                    try { await service.DeleteAsync("webresource", action.Id!.Value, cancellationToken).ConfigureAwait(false); }
+                    catch (Exception ex) { lock (failures) failures.Add((action.Name, ex)); }
+                }, cancellationToken, deletesTask, progressLock)).ConfigureAwait(false);
         }
 
         WriteSummary(plan, save);
@@ -55,11 +66,19 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
             IncrementProgress(publishTask, progressLock, publishIds.Count);
             output.Info($"[green]{publishIds.Count} web resource(s) published[/]");
         }
+
+        if (failures.Count > 0)
+        {
+            foreach (var (name, ex) in failures)
+                output.Error($"'{name}' — {ex.Message}");
+            throw new InvalidOperationException($"{failures.Count} web resource operation(s) failed.");
+        }
     }
 
     async Task<List<Guid>> ExecuteCreatesAsync(
         IOrganizationServiceAsync2 service,
         IEnumerable<WebResourcePlanAction> creates,
+        List<(string Name, Exception Error)> failures,
         CancellationToken cancellationToken,
         ProgressTask? progressTask,
         object? progressLock)
@@ -72,10 +91,14 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
         // back to parallel without addressing the Dataverse collision first.
         foreach (var action in creates)
         {
-            var response = (CreateResponse)await service.ExecuteAsync(
-                new CreateRequest { Target = action.Entity!, ["SolutionUniqueName"] = action.SolutionName },
-                cancellationToken).ConfigureAwait(false);
-            ids.Add(response.id);
+            try
+            {
+                var response = (CreateResponse)await service.ExecuteAsync(
+                    new CreateRequest { Target = action.Entity!, ["SolutionUniqueName"] = action.SolutionName },
+                    cancellationToken).ConfigureAwait(false);
+                ids.Add(response.id);
+            }
+            catch (Exception ex) { failures.Add((action.Name, ex)); }
             IncrementProgress(progressTask, progressLock);
         }
 
