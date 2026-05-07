@@ -1,4 +1,5 @@
 using System.Security;
+using System.ServiceModel;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
@@ -40,7 +41,7 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
                     await service.UpdateAsync(action.Entity!, cancellationToken).ConfigureAwait(false);
                     lock (publishIds) publishIds.Add(action.Entity!.Id);
                 }
-                catch (Exception ex) { lock (failures) failures.Add((action.Name, ex)); }
+                catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
             }, cancellationToken, updatesTask, progressLock)).ConfigureAwait(false);
 
         if (!save)
@@ -49,12 +50,12 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
                 ExecuteBoundedParallelAsync(plan.RemovesFromSolution, MaxParallelism, async action =>
                 {
                     try { await RemoveFromSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken).ConfigureAwait(false); }
-                    catch (Exception ex) { lock (failures) failures.Add((action.Name, ex)); }
+                    catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                 }, cancellationToken, removesTask, progressLock),
                 ExecuteBoundedParallelAsync(plan.Deletes, MaxParallelism, async action =>
                 {
                     try { await service.DeleteAsync("webresource", action.Id!.Value, cancellationToken).ConfigureAwait(false); }
-                    catch (Exception ex) { lock (failures) failures.Add((action.Name, ex)); }
+                    catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                 }, cancellationToken, deletesTask, progressLock)).ConfigureAwait(false);
         }
 
@@ -98,7 +99,7 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
                     cancellationToken).ConfigureAwait(false);
                 ids.Add(response.id);
             }
-            catch (Exception ex) { failures.Add((action.Name, ex)); }
+            catch (FaultException<OrganizationServiceFault> ex) { failures.Add((action.Name, ex)); }
             IncrementProgress(progressTask, progressLock);
         }
 

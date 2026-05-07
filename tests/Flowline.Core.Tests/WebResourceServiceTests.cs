@@ -1,3 +1,4 @@
+using System.ServiceModel;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Query;
@@ -248,7 +249,7 @@ public class WebResourceServiceTests : IDisposable
         _serviceMock.ExecuteAsync(
                 Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_MySolution/a.js"),
                 Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<OrganizationResponse>(new Exception("Dataverse error")));
+            .Returns(Task.FromException<OrganizationResponse>(new FaultException<OrganizationServiceFault>(new OrganizationServiceFault(), "Dataverse error")));
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution"));
@@ -274,7 +275,7 @@ public class WebResourceServiceTests : IDisposable
         File.WriteAllText(Path.Combine(_webresourceRoot, "b.js"), "new content");
 
         _serviceMock.UpdateAsync(Arg.Is<Entity>(e => e.Id == id1), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException(new Exception("Dataverse update error")));
+            .Returns(Task.FromException(new FaultException<OrganizationServiceFault>(new OrganizationServiceFault(), "Dataverse update error")));
         _serviceMock.UpdateAsync(Arg.Is<Entity>(e => e.Id == id2), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
