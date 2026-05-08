@@ -106,7 +106,6 @@ public class PushCommand(DataverseConnector dataverseConnector, PluginService pl
         var pushScope = standaloneMode
             ? ResolveStandaloneScope(settings)
             : ResolveProjectScope(settings);
-        AnsiConsole.MarkupLine($"[dim]Scope: {pushScope}[/]");
 
         var pushPlugins = pushScope.HasFlag(PushScope.Plugins);
         var pushWebResources = pushScope.HasFlag(PushScope.WebResources);
@@ -130,8 +129,7 @@ public class PushCommand(DataverseConnector dataverseConnector, PluginService pl
             await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder!, solutionName, runMode: runMode, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
-        AnsiConsole.MarkupLine("[green]Assets pushed[/]");
-        AnsiConsole.MarkupLine("[bold green]:rocket: Pushed! Use 'sync' to keep it in flow.[/]");
+        AnsiConsole.MarkupLine("[bold green]:rocket: Assets pushed! Use 'sync' to keep it in flow.[/]");
 
         return 0;
     }
@@ -241,7 +239,7 @@ public class PushCommand(DataverseConnector dataverseConnector, PluginService pl
             return null;
         }
 
-        AnsiConsole.MarkupLine($"[green][bold]{Path.GetFileName(extensionsDll)}[/] found[/]");
+        AnsiConsole.MarkupLine($"[bold]{Path.GetFileName(extensionsDll)}[/] found");
         if (runtimeOptions.IsVerbose) AnsiConsole.MarkupLine($"[dim]{extensionsDll}[/]");
 
         return extensionsDll;

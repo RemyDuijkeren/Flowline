@@ -12,8 +12,10 @@ public static class DotNetUtils
 
     public static async Task<int> BuildSolutionAsync(string workingDirectory, DotnetBuild configuration, bool verbose = true, CancellationToken cancellationToken = default)
     {
+        var relativeWorkingDirectory = ConsolePath.FormatRelativePath(workingDirectory);
+
         // Build the solution in dotnet to validate it
-        var buildResult = await AnsiConsole.Status().FlowlineSpinner().StartAsync("Building...", ctx =>
+        var buildResult = await AnsiConsole.Status().FlowlineSpinner().StartAsync($"Building {relativeWorkingDirectory}...", ctx =>
             Cli.Wrap("dotnet")
                .WithArguments(args => args.Add("build")
                                           .Add("--configuration").Add(configuration.ToString()))
@@ -29,7 +31,7 @@ public static class DotNetUtils
         }
         else
         {
-            AnsiConsole.MarkupLine("[green]Build done[/]");
+            AnsiConsole.MarkupLine($"Build {relativeWorkingDirectory} done");
             return 0;
         }
     }

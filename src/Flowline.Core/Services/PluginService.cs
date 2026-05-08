@@ -45,23 +45,23 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                     .StartAsync($"Looking up solution [bold]{solutionName}[/]...",
                         _ => _solutionReader.GetSupportedSolutionInfoAsync(service, solutionName, cancellationToken))
                     .ConfigureAwait(false);
-        output.Info("[green]Solution found and supported[/]");
+        output.Info("Solution found and supported");
 
         // Phase 1: Get or register assembly
         var (assembly, needsUpdate) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
-        output.Info($"[green]Assembly registered [bold]{metadata.Name}[/] ({metadata.Version})[/]");
+        output.Done($"Assembly registered [bold]{metadata.Name}[/] ({metadata.Version})");
 
         // Phase 2: Load snapshot (all Dataverse state in parallel)
         var snapshot = await output.Status()
             .StartAsync("Loading plugin registration snapshot...", _ => _reader.LoadSnapshotAsync(service, assembly.Id, metadata, solutionName, cancellationToken))
             .ConfigureAwait(false);
         WriteSnapshotVerbose(snapshot);
-        output.Info("[green]Snapshot loaded[/]");
+        output.Info("Snapshot plugins loaded");
 
         // Phase 3: Plan registration (pure, synchronous)
         var plan = _planner.Plan(snapshot, metadata, assembly, solutionName);
         WritePlanVerbose(plan);
-        output.Info("[green]Registration plan ready[/]");
+        output.Info("Registration plan ready");
 
         // Output cross-solution warnings before execution
         foreach (var warning in plan.Warnings)
@@ -86,6 +86,12 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             return;
         }
 
+        if (!needsUpdate && plan.TotalChanges == 0)
+        {
+            output.Done("Plugins already up to date — skipping");
+            return;
+        }
+
         // Phase 4: Execute the deletes first — must precede assembly update and upserts
         if (runMode == RunMode.Save || plan.TotalDeletes == 0)
         {
@@ -101,7 +107,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 })
                 .ConfigureAwait(false);
         }
-        if (plan.TotalDeletes > 0) output.Info($"[green]{plan.TotalDeletes} stale component(s) deleted[/]");
+        if (plan.TotalDeletes > 0) output.Done($"{plan.TotalDeletes} stale component(s) deleted");
 
         // Phase 5: Update assembly content — must happen before new plugin types are registered
         if (needsUpdate)
@@ -117,7 +123,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                     task.Increment(1);
                 })
                 .ConfigureAwait(false);
-            output.Info($"[green]Updated assembly content for [bold]{metadata.Name}[/][/]");
+            output.Done($"Updated assembly content for [bold]{metadata.Name}[/]");
         }
 
         // Phase 6: Execute upserts and add to solution
@@ -191,7 +197,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             var response = (CreateResponse)await service.ExecuteAsync(
                 new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName }, cancellationToken).ConfigureAwait(false);
 
-            output.Info($"[green]Assembly [bold]{metadata.Name}[/] added[/]");
+            output.Done($"Assembly [bold]{metadata.Name}[/] added");
 
             entity.Id = response.id;
             return (entity, false);
@@ -244,7 +250,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 cancellationToken).ConfigureAwait(false);
 
             freshEntity.Id = response.id;
-            output.Info($"[green]Assembly [bold]{metadata.Name}[/] recreated[/]");
+            output.Done($"Assembly [bold]{metadata.Name}[/] recreated");
             return (freshEntity, false);
         }
 
@@ -256,21 +262,21 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
     void WriteDryRunSummary(PluginAssemblyMetadata metadata, bool needsUpdate, RegistrationPlan plan)
     {
         if (needsUpdate)
-            output.Skip($"Assembly '{metadata.Name} ({metadata.Version})' — would update content");
+            output.Info($"Assembly '{metadata.Name} ({metadata.Version})' — would update content");
 
-        foreach (var a in plan.PluginTypes.Deletes)   output.Skip($"Plugin type '{a.Name}' — would delete");
-        foreach (var a in plan.Steps.Deletes)         output.Skip($"Step '{a.Name}' — would delete");
-        foreach (var a in plan.Images.Deletes)        output.Skip($"Image '{a.Name}' — would delete");
-        foreach (var a in plan.CustomApis.Deletes)    output.Skip($"Custom API '{a.Name}' — would delete");
-        foreach (var a in plan.RequestParams.Deletes) output.Skip($"Request parameter '{a.Name}' — would delete");
-        foreach (var a in plan.ResponseProps.Deletes) output.Skip($"Response property '{a.Name}' — would delete");
+        foreach (var a in plan.PluginTypes.Deletes)   output.Info($"Plugin type '{a.Name}' — would delete");
+        foreach (var a in plan.Steps.Deletes)         output.Info($"Step '{a.Name}' — would delete");
+        foreach (var a in plan.Images.Deletes)        output.Info($"Image '{a.Name}' — would delete");
+        foreach (var a in plan.CustomApis.Deletes)    output.Info($"Custom API '{a.Name}' — would delete");
+        foreach (var a in plan.RequestParams.Deletes) output.Info($"Request parameter '{a.Name}' — would delete");
+        foreach (var a in plan.ResponseProps.Deletes) output.Info($"Response property '{a.Name}' — would delete");
 
-        foreach (var ups in plan.PluginTypes.Upserts)   output.Skip($"Plugin type '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
-        foreach (var ups in plan.Steps.Upserts)         output.Skip($"Step '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
-        foreach (var ups in plan.Images.Upserts)        output.Skip($"Image '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
-        foreach (var ups in plan.CustomApis.Upserts)    output.Skip($"Custom API '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
-        foreach (var ups in plan.RequestParams.Upserts) output.Skip($"Request parameter '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
-        foreach (var ups in plan.ResponseProps.Upserts) output.Skip($"Response property '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var ups in plan.PluginTypes.Upserts)   output.Info($"Plugin type '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var ups in plan.Steps.Upserts)         output.Info($"Step '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var ups in plan.Images.Upserts)        output.Info($"Image '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var ups in plan.CustomApis.Upserts)    output.Info($"Custom API '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var ups in plan.RequestParams.Upserts) output.Info($"Request parameter '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var ups in plan.ResponseProps.Upserts) output.Info($"Response property '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
 
         var creates = plan.PluginTypes.Upserts.Count(u => u.IsCreate)
                       + plan.Steps.Upserts.Count(u => u.IsCreate)
@@ -280,7 +286,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                       + plan.ResponseProps.Upserts.Count(u => u.IsCreate);
         var updates = plan.TotalUpserts - creates;
 
-        output.Info($"[green]Dry run: {plan.TotalDeletes} delete(s), {creates} create(s), {updates} update(s). Run without --dry-run to apply.[/]");
+        output.Done($"Dry run: {plan.TotalDeletes} delete(s), {creates} create(s), {updates} update(s). Run without --dry-run to apply.");
     }
 
     void WriteSnapshotVerbose(RegistrationSnapshot snapshot)

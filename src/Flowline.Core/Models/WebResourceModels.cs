@@ -47,7 +47,7 @@ public enum WebResourceAction
     Skip
 }
 
-public record LocalWebResource(string Name, string RelativePath, string Path, string DisplayName, WebResourceType Type, string Content);
+public record LocalWebResource(string Name, string RelativePath, string Path, string DisplayName, WebResourceType Type, string? Content);
 
 public record DataverseWebResource(
     Guid Id,

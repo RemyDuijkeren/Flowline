@@ -157,13 +157,17 @@ public class WebResourceReader
         if (!Enum.TryParse<WebResourceType>(ext, true, out var type))
             type = WebResourceType.Unknown;
 
+        var content = Convert.ToBase64String(File.ReadAllBytes(path));
+        if (string.IsNullOrEmpty(content))
+            content = null;
+
         return new LocalWebResource(
             name,
             relativePath,
             path,
             Path.GetFileName(name),
             type,
-            Convert.ToBase64String(File.ReadAllBytes(path)));
+            content);
     }
 
     static T? GetAliasedValue<T>(Entity entity, string attributeName)

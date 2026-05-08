@@ -27,19 +27,19 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         var snapshot = await output.Status().StartAsync("Loading web resource snapshot...", _ =>
             _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, cancellationToken)).ConfigureAwait(false);
         WriteSnapshotVerbose(snapshot);
-        output.Info("[green]Snapshot loaded[/]");
+        output.Info("Snapshot web resources loaded");
 
         // Phase 2: Plan registration (pure, synchronous)
         var plan = _planner.Plan(snapshot);
         WritePlanVerbose(plan);
-        output.Info("[green]Web resource plan ready[/]");
+        output.Info("Web resource plan ready");
 
         if (plan.TotalChanges == 0)
         {
             foreach (var a in plan.Skips)
                 output.Skip($"Web resource '{a.Name}' kept ({a.Reason})");
 
-            output.Skip("Web resources already up to date — skipping");
+            output.Done("Web resources already up to date — skipping");
             return;
         }
 
@@ -151,17 +151,17 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
     void WriteDryRunSummary(WebResourceSyncPlan plan, bool publishAfterSync)
     {
-        foreach (var a in plan.Creates) output.Skip($"Web resource '{a.Name}' — would create");
-        foreach (var a in plan.Updates) output.Skip($"Web resource '{a.Name}' — would update");
-        foreach (var a in plan.AddsToSolution) output.Skip($"Web resource '{a.Name}' — would add to solution");
-        foreach (var a in plan.Deletes) output.Skip($"Web resource '{a.Name}' — would delete");
-        foreach (var a in plan.RemovesFromSolution) output.Skip($"Web resource '{a.Name}' — would remove from solution");
-        foreach (var a in plan.Skips) output.Skip($"Web resource '{a.Name}' — kept ({a.Reason})");
+        foreach (var a in plan.Creates) output.Info($"Web resource '{a.Name}' — would create");
+        foreach (var a in plan.Updates) output.Info($"Web resource '{a.Name}' — would update");
+        foreach (var a in plan.AddsToSolution) output.Info($"Web resource '{a.Name}' — would add to solution");
+        foreach (var a in plan.Deletes) output.Info($"Web resource '{a.Name}' — would delete");
+        foreach (var a in plan.RemovesFromSolution) output.Info($"Web resource '{a.Name}' — would remove from solution");
+        foreach (var a in plan.Skips) output.Info($"Web resource '{a.Name}' — kept ({a.Reason})");
 
         var publishCount = publishAfterSync ? plan.PublishCount : 0;
         if (publishCount > 0)
-            output.Skip($"{publishCount} web resource(s) — would publish");
+            output.Info($"{publishCount} web resource(s) — would publish");
 
-        output.Info($"[green]Dry run: {plan.Deletes.Count} delete(s), {plan.RemovesFromSolution.Count} remove(s), {plan.Creates.Count} create(s), {plan.Updates.Count} update(s), {plan.AddsToSolution.Count} add(s), {plan.Skips.Count} skip(s). Run without --dry-run to apply.[/]");
+        output.Done($"Dry run: {plan.Deletes.Count} delete(s), {plan.RemovesFromSolution.Count} remove(s), {plan.Creates.Count} create(s), {plan.Updates.Count} update(s), {plan.AddsToSolution.Count} add(s), {plan.Skips.Count} skip(s). Run without --dry-run to apply.");
     }
 }

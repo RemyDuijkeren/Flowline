@@ -4,6 +4,7 @@ namespace Flowline.Core;
 
 internal static class FlowlineConsoleExtensions
 {
+    public static void Done(this IAnsiConsole console, string message) => console.MarkupLine($"[green]{message}[/]");
     public static void Info(this IAnsiConsole console, string message) => console.MarkupLine(message);
 
     public static void Skip(this IAnsiConsole console, string message) => console.MarkupLine($"[dim]{message}[/]");
