@@ -1,6 +1,10 @@
 # Flowline.Attributes
 
-Source-only NuGet package that provides attributes for registering Dataverse plugin steps and Custom APIs with the Flowline CLI.
+![CI](https://github.com/RemyDuijkeren/Flowline/workflows/CI/badge.svg)
+[![NuGet](https://img.shields.io/nuget/v/Flowline.Attributes.svg)](https://www.nuget.org/packages/Flowline.Attributes)
+[![NuGet](https://img.shields.io/nuget/dt/RemyDuijkeren.Flowline.Attributes.svg)](https://www.nuget.org/packages/Flowline.Attributes)
+
+Source-only NuGet package that provides attributes for registering Dataverse plugin steps and Custom APIs with the [Flowline CLI](https://github.com/RemyDuijkeren/Flowline).
 
 Run `flowline push` and Flowline inspects your plugin assembly and automatically creates or updates all registrations in Dataverse — no Plugin Registration Tool needed.
 
@@ -16,7 +20,7 @@ Run `flowline push` and Flowline inspects your plugin assembly and automatically
 
 ## Plugin steps
 
-Each `IPlugin` class registers **exactly one** plugin step. The message, stage, and processing mode come from the class name; the table and options come from attributes. This keeps each `Execute` body focused on one thing and makes log entries self-describing.
+Each `IPlugin` class registers **[exactly one](#why-one-class-per-step)** plugin step. The message, stage, and processing mode come from the class name; the table and options come from attributes. This keeps each `Execute` body focused on one thing and makes log entries self-describing.
 
 ### The pipeline
 
