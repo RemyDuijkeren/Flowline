@@ -2,76 +2,75 @@ using System;
 
 namespace Flowline.Attributes
 {
-
-/// <summary>
-/// Specifies the secondary table for plugin steps that involve two records, such as
-/// <c>Associate</c> and <c>Disassociate</c> messages.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The <c>Associate</c> and <c>Disassociate</c> messages fire when a many-to-many relationship
-/// between two records is created or removed — for example, when a contact is associated with
-/// an account, or when a team member is removed from a team.
-/// </para>
-/// <para>
-/// These messages always involve two tables. <c>[Step]</c> specifies the primary table and
-/// <c>[SecondaryEntity]</c> specifies the related table. Use <c>"none"</c> on
-/// <c>[SecondaryEntity]</c> to match the message regardless of which table is on the other side.
-/// </para>
-/// <code>
-/// // Fires when ANY record is associated with a contact
-/// [Step("contact")]
-/// [SecondaryEntity("none")]
-/// public class ContactAssociatePlugin : IPlugin { ... }
-///
-/// // Fires only when a contact is associated with an account specifically
-/// [Step("contact")]
-/// [SecondaryEntity("account")]
-/// public class ContactAccountAssociatePlugin : IPlugin { ... }
-/// </code>
-/// <para>
-/// Inside <c>Execute</c>, read the relationship details from the plugin context:
-/// </para>
-/// <code>
-/// var ctx          = (IPluginExecutionContext)sp.GetService(typeof(IPluginExecutionContext));
-/// var target       = (EntityReference)ctx.InputParameters["Target"];       // primary record
-/// var relatedEntities = (EntityReferenceCollection)ctx.InputParameters["RelatedEntities"];
-/// var relationship = (Relationship)ctx.InputParameters["Relationship"];
-/// </code>
-/// <para>
-/// For all other messages (Create, Update, Delete, ...) where only one table is involved,
-/// omit <c>[SecondaryEntity]</c> entirely. Dataverse uses <c>"none"</c> automatically.
-/// </para>
-/// </remarks>
-[AttributeUsage(AttributeTargets.Class)]
-public sealed class SecondaryEntityAttribute : Attribute
-{
-    /// <summary>Specifies the secondary table for plugin steps that involve two records.</summary>
-    public SecondaryEntityAttribute()
-        : this(null)
-    {
-    }
-
-    /// <summary>Specifies the secondary table for plugin steps that involve two records.</summary>
-    /// <param name="entity">
-    /// Logical name of the secondary table, e.g. <c>"account"</c>.
-    /// Use <c>"none"</c> to match all secondary tables.
-    /// <para>
-    /// Omit this argument to register on <b>all secondary tables</b> — Flowline will warn.
-    /// To make this intentional and suppress the warning, pass <c>"none"</c> explicitly.
-    /// Passing an empty string is an error.
-    /// </para>
-    /// </param>
-    public SecondaryEntityAttribute(string entity)
-    {
-        Entity = entity;
-    }
-
     /// <summary>
-    /// Logical name of the secondary Dataverse table involved in the relationship operation,
-    /// or <see langword="null"/> when no table was specified. Use <c>"none"</c> to
-    /// intentionally match any secondary table without a warning.
+    /// Specifies the secondary table for plugin steps that involve two records, such as
+    /// <c>Associate</c> and <c>Disassociate</c> messages.
     /// </summary>
-    public string Entity { get; }
-}
+    /// <remarks>
+    /// <para>
+    /// The <c>Associate</c> and <c>Disassociate</c> messages fire when a many-to-many relationship
+    /// between two records is created or removed — for example, when a contact is associated with
+    /// an account, or when a team member is removed from a team.
+    /// </para>
+    /// <para>
+    /// These messages always involve two tables. <c>[Step]</c> specifies the primary table and
+    /// <c>[SecondaryEntity]</c> specifies the related table. Use <c>"none"</c> on
+    /// <c>[SecondaryEntity]</c> to match the message regardless of which table is on the other side.
+    /// </para>
+    /// <code>
+    /// // Fires when ANY record is associated with a contact
+    /// [Step("contact")]
+    /// [SecondaryEntity("none")]
+    /// public class ContactAssociatePlugin : IPlugin { ... }
+    ///
+    /// // Fires only when a contact is associated with an account specifically
+    /// [Step("contact")]
+    /// [SecondaryEntity("account")]
+    /// public class ContactAccountAssociatePlugin : IPlugin { ... }
+    /// </code>
+    /// <para>
+    /// Inside <c>Execute</c>, read the relationship details from the plugin context:
+    /// </para>
+    /// <code>
+    /// var ctx          = (IPluginExecutionContext)sp.GetService(typeof(IPluginExecutionContext));
+    /// var target       = (EntityReference)ctx.InputParameters["Target"];       // primary record
+    /// var relatedEntities = (EntityReferenceCollection)ctx.InputParameters["RelatedEntities"];
+    /// var relationship = (Relationship)ctx.InputParameters["Relationship"];
+    /// </code>
+    /// <para>
+    /// For all other messages (Create, Update, Delete, ...) where only one table is involved,
+    /// omit <c>[SecondaryEntity]</c> entirely. Dataverse uses <c>"none"</c> automatically.
+    /// </para>
+    /// </remarks>
+    [AttributeUsage(AttributeTargets.Class)]
+    public sealed class SecondaryEntityAttribute : Attribute
+    {
+        /// <summary>Specifies the secondary table for plugin steps that involve two records.</summary>
+        public SecondaryEntityAttribute()
+            : this(null)
+        {
+        }
+
+        /// <summary>Specifies the secondary table for plugin steps that involve two records.</summary>
+        /// <param name="entity">
+        /// Logical name of the secondary table, e.g. <c>"account"</c>.
+        /// Use <c>"none"</c> to match all secondary tables.
+        /// <para>
+        /// Omit this argument to register on <b>all secondary tables</b> — Flowline will warn.
+        /// To make this intentional and suppress the warning, pass <c>"none"</c> explicitly.
+        /// Passing an empty string is an error.
+        /// </para>
+        /// </param>
+        public SecondaryEntityAttribute(string entity)
+        {
+            Entity = entity;
+        }
+
+        /// <summary>
+        /// Logical name of the secondary Dataverse table involved in the relationship operation,
+        /// or <see langword="null"/> when no table was specified. Use <c>"none"</c> to
+        /// intentionally match any secondary table without a warning.
+        /// </summary>
+        public string Entity { get; }
+    }
 }

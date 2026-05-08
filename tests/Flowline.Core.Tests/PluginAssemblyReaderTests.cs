@@ -572,7 +572,7 @@ public class MockPostAssignPlugin : IPlugin
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
 
-[Step("account", Order = 2, Configuration = "{\"key\":\"value\"}")]
+[Step("account", Order = 2, Config = "{\"key\":\"value\"}")]
 public class MockPreRetrievePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
