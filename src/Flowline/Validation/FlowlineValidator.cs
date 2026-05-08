@@ -7,8 +7,8 @@ public sealed class FlowlineValidator
 {
     static readonly TimeSpan ToolTtl = TimeSpan.FromDays(7);
     static readonly TimeSpan GitRepoTtl = TimeSpan.FromDays(1);
-    static readonly TimeSpan EnvironmentTtl = TimeSpan.FromHours(1);
-    static readonly TimeSpan SolutionTtl = TimeSpan.FromHours(1);
+    static readonly TimeSpan EnvironmentTtl = TimeSpan.FromHours(12);
+    static readonly TimeSpan SolutionTtl = TimeSpan.FromHours(4);
 
     readonly ValidationCacheStore _store;
     readonly ValidationProbes _probes;
