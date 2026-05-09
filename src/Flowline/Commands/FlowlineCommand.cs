@@ -34,11 +34,14 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
 
     static void WelcomeScreen()
     {
-        var appName = new FigletText("Flowline").Color(Color.Green);
+        // var appName = new FigletText("Flowline").Color(Color.Green);
         var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version;
         var versionText = new Text($"Version {version}", new Style(Color.Green));
 
-        AnsiConsole.Write(appName);
+        // AnsiConsole.Write(appName);
+        AnsiConsole.MarkupLine("[green]____ _    ____ _ _ _ _    _ _  _ ____[/]");
+        AnsiConsole.MarkupLine("[green]|___ |    |  | | | | |    | |\\ | |___[/]");
+        AnsiConsole.MarkupLine("[green]|    |___ |__| |_|_| |___ | | \\| |___[/]");
         AnsiConsole.Write(versionText);
         AnsiConsole.WriteLine();
     }
