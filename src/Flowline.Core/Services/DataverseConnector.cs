@@ -1,3 +1,5 @@
+using Microsoft.Identity.Client;
+using Microsoft.Identity.Client.Extensions.Msal;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -26,49 +28,162 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
         return client;
     }
 
-    public IOrganizationServiceAsync2 ConnectViaPac(PacProfile profile, string? environmentUrl = null)
+    /// <summary>
+    /// Connects to Dataverse by re-using the token that PAC CLI already acquired.
+    /// PAC CLI writes its token cache in MSAL Extensions v3 (DPAPI-encrypted) format,
+    /// which is incompatible with ServiceClient's own TokenCacheStorePath serialisation.
+    /// We read that cache via MsalCacheHelper, acquire the token silently (no browser),
+    /// then hand it to ServiceClient through its token-provider callback constructor.
+    /// Supports both user (UNIVERSAL/DATAVERSE) and service principal profiles.
+    /// </summary>
+    public async Task<IOrganizationServiceAsync2> ConnectViaPacAsync(
+        PacProfile profile,
+        string environmentUrl,
+        CancellationToken cancellationToken = default)
     {
         if (profile == null) throw new ArgumentNullException(nameof(profile));
-
         if (string.IsNullOrWhiteSpace(environmentUrl))
             throw new ArgumentException("Environment URL is required for connecting via PAC profile.", nameof(environmentUrl));
 
-        var targetUrl = environmentUrl;
+        var resourceUrl = environmentUrl.TrimEnd('/');
+        var serviceUri  = new Uri(resourceUrl + "/");
 
-        output.Verbose($"Connecting via PAC profile for {profile.User} at {targetUrl}...", opt);
-
-        // PAC CLI Client ID
-        const string pacClientId = "51f81489-12ee-4a9e-aaae-a2591f45987d";
-        const string redirectUri = "http://localhost";
-
-        // Construct connection string for silent auth via PAC shared cache
-        // We point TokenCacheStorePath to the .IdentityService folder where PAC stores its MSAL cache
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var tokenCachePath = Path.Combine(localAppData, ".IdentityService");
+        output.Verbose($"Connecting via PAC profile '{profile.Name ?? profile.User}' at {resourceUrl}...", opt);
 
         var authority = string.IsNullOrWhiteSpace(profile.Authority)
             ? "https://login.microsoftonline.com/organizations"
-            : profile.Authority;
+            : profile.Authority.TrimEnd('/');
 
-        // Ensure authority doesn't end with a slash for the connection string if it's explicitly provided
-        authority = authority.TrimEnd('/');
+        // Platform storage backends:
+        //   Windows — DPAPI encryption, transparent via MsalCacheHelper
+        //   Linux/macOS — Secret Service / Keychain when available; unprotected file fallback for
+        //                 headless environments (CI, Docker, WSL) where no keyring is running
+        var storagePropsBuilder = new StorageCreationPropertiesBuilder(
+            cacheFileName: "tokencache_msalv3.dat",
+            cacheDirectory: GetPacCliDataDirectory());
 
-        var connectionString = $"AuthType=OAuth;" +
-                               $"Url={targetUrl};" +
-                               $"ClientId={pacClientId};" +
-                               $"RedirectUri={redirectUri};" +
-                               $"TokenCacheStorePath={tokenCachePath};" +
-                               $"Authority={authority};" +
-                               $"LoginPrompt=Never;" +
-                               $"RequireNewInstance=True";
+        if (!OperatingSystem.IsWindows())
+            storagePropsBuilder.WithLinuxUnprotectedFile();
 
-        return Connect(connectionString);
+        MsalCacheHelper cacheHelper;
+        try { cacheHelper = await MsalCacheHelper.CreateAsync(storagePropsBuilder.Build()); }
+        catch (MsalCachePersistenceException ex)
+        {
+            throw new InvalidOperationException(
+                "Could not open the PAC CLI token cache. " +
+                "Ensure 'pac auth create' has been run and the cache file is accessible. " +
+                $"Detail: {ex.Message}", ex);
+        }
+
+        return profile.IsServicePrincipal
+            ? await ConnectServicePrincipalAsync(profile, authority, resourceUrl, serviceUri, cacheHelper, cancellationToken)
+            : await ConnectUserAsync(profile, authority, resourceUrl, serviceUri, cacheHelper, cancellationToken);
+    }
+
+    async Task<IOrganizationServiceAsync2> ConnectServicePrincipalAsync(
+        PacProfile profile, string authority, string resourceUrl, Uri serviceUri,
+        MsalCacheHelper cacheHelper, CancellationToken cancellationToken)
+    {
+        var appId = profile.ApplicationId
+            ?? throw new InvalidOperationException(
+                $"Service principal profile '{profile.Name}' is missing ApplicationId.");
+
+        // Service principal authority must be tenant-specific, not 'organizations'
+        var tenantAuthority = !string.IsNullOrWhiteSpace(profile.TenantId)
+            ? $"https://login.microsoftonline.com/{profile.TenantId}"
+            : authority;
+
+        var scopes = new[] { $"{resourceUrl}/.default" };
+
+        // The assertion is only sent to AAD on cache miss. On a cache hit (< 1 hour since
+        // 'pac auth create --kind ServicePrincipal'), MSAL returns the stored app token directly.
+        var app = ConfidentialClientApplicationBuilder
+            .Create(appId)
+            .WithAuthority(tenantAuthority)
+            .WithClientAssertion("cache-only")
+            .Build();
+
+        cacheHelper.RegisterCache(app.AppTokenCache);
+
+        AuthenticationResult initialToken;
+        try
+        {
+            initialToken = await app.AcquireTokenForClient(scopes).ExecuteAsync(cancellationToken);
+        }
+        catch (MsalException ex)
+        {
+            throw new InvalidOperationException(
+                $"No cached token for service principal '{appId}' at {resourceUrl}. " +
+                $"Run 'pac auth create --kind ServicePrincipal --applicationId {appId} ...' to authenticate first.", ex);
+        }
+
+        output.Verbose($"Token acquired for app '{appId}' (expires {initialToken.ExpiresOn:HH:mm})", opt);
+
+        return new ServiceClient(serviceUri, async _ =>
+        {
+            var result = await app.AcquireTokenForClient(scopes).ExecuteAsync(cancellationToken);
+            return result.AccessToken;
+        });
+    }
+
+    async Task<IOrganizationServiceAsync2> ConnectUserAsync(
+        PacProfile profile, string authority, string resourceUrl, Uri serviceUri,
+        MsalCacheHelper cacheHelper, CancellationToken cancellationToken)
+    {
+        // must match PAC CLI's client registration
+        const string pacClientId = "51f81489-12ee-4a9e-aaae-a2591f45987d";
+        const string redirectUri = "http://localhost";
+
+        var scopes = new[] { $"{resourceUrl}/.default" };
+
+        var app = PublicClientApplicationBuilder
+            .Create(pacClientId)
+            .WithAuthority(authority)
+            .WithRedirectUri(redirectUri)
+            .Build();
+
+        cacheHelper.RegisterCache(app.UserTokenCache);
+
+        var accounts = await app.GetAccountsAsync();
+        var account  = (!string.IsNullOrWhiteSpace(profile.User)
+                ? accounts.FirstOrDefault(a => string.Equals(a.Username, profile.User, StringComparison.OrdinalIgnoreCase))
+                : null)
+            ?? accounts.FirstOrDefault();
+
+        // throws a clear error instead of opening the browser unexpectedly
+        AuthenticationResult initialToken;
+        try
+        {
+            initialToken = await app.AcquireTokenSilent(scopes, account).ExecuteAsync(cancellationToken);
+        }
+        catch (MsalUiRequiredException ex)
+        {
+            throw new InvalidOperationException(
+                $"No cached token found for '{profile.User ?? "unknown"}' at {resourceUrl}. " +
+                $"Run 'pac auth create --environment {resourceUrl}' to authenticate first.", ex);
+        }
+
+        output.Verbose($"Token acquired silently for {initialToken.Account.Username} (expires {initialToken.ExpiresOn:HH:mm})", opt);
+
+        var tokenAccount = initialToken.Account;
+        return new ServiceClient(serviceUri, async _ =>
+        {
+            var result = await app.AcquireTokenSilent(scopes, tokenAccount).ExecuteAsync(cancellationToken);
+            return result.AccessToken;
+        });
     }
 
     public IEnumerable<PacProfile> GetPacProfiles()
     {
         var profiles = LoadPacAuthProfiles();
         return profiles?.Profiles ?? Enumerable.Empty<PacProfile>();
+    }
+
+    public PacProfile? FindBestProfile(string environmentUrl)
+    {
+        var profiles = GetPacProfiles().ToList();
+        return profiles.FirstOrDefault(p => p.Resource?.TrimEnd('/').Equals(environmentUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase) == true)
+            ?? profiles.FirstOrDefault(p => p.IsUniversal);
     }
 
     public PacProfile? GetCurrentResourceSpecificPacProfile()
@@ -87,10 +202,15 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
         return currentProfiles is { Count: 1 } ? currentProfiles[0] : null;
     }
 
-    PacAuthProfiles? LoadPacAuthProfiles()
+    internal static string GetPacCliDataDirectory()
     {
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var authProfilesPath = Path.Combine(localAppData, "Microsoft", "PowerAppsCLI", "authprofiles_v2.json");
+        return Path.Combine(localAppData, "Microsoft", "PowerAppsCLI");
+    }
+
+    PacAuthProfiles? LoadPacAuthProfiles()
+    {
+        var authProfilesPath = Path.Combine(GetPacCliDataDirectory(), "authprofiles_v2.json");
 
         if (!File.Exists(authProfilesPath))
         {
@@ -119,6 +239,9 @@ public record PacProfile
     [JsonPropertyName("User")]
     public string? User { get; init; }
 
+    [JsonPropertyName("ApplicationId")]
+    public string? ApplicationId { get; init; }
+
     [JsonPropertyName("AadObjectId")]
     public string? AadObjectId { get; init; }
 
@@ -145,6 +268,9 @@ public record PacProfile
 
     [JsonIgnore]
     public bool IsUniversal => string.Equals(Kind, "UNIVERSAL", StringComparison.OrdinalIgnoreCase);
+
+    [JsonIgnore]
+    public bool IsServicePrincipal => string.Equals(Kind, "ServicePrincipal", StringComparison.OrdinalIgnoreCase);
 }
 
 public record PacAuthProfiles

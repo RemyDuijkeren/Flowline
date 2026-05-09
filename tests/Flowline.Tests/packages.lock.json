@@ -206,25 +206,16 @@
       },
       "Microsoft.Identity.Client": {
         "type": "Transitive",
-        "resolved": "4.66.1",
-        "contentHash": "mE+m3pZ7zSKocSubKXxwZcUrCzLflC86IdLxrVjS8tialy0b1L+aECBqRBC/ykcPlB4y7skg49TaTiA+O2UfDw==",
+        "resolved": "4.84.0",
+        "contentHash": "Ac2pabU2W+p9yxPaILnoKhjj3HYefuJpKHcngJSljs8LVS05I19UtsJvbIrphG4fbJSdUcwpnpNzhARz/98SCA==",
         "dependencies": {
-          "Microsoft.IdentityModel.Abstractions": "6.35.0"
-        }
-      },
-      "Microsoft.Identity.Client.Extensions.Msal": {
-        "type": "Transitive",
-        "resolved": "4.66.1",
-        "contentHash": "osgt1J9Rve3LO7wXqpWoFx9UFjl0oeqoUMK/xEru7dvafQ28RgV1A17CoCGCCRSUbgDQ4Arg5FgGK2lQ3lXR4A==",
-        "dependencies": {
-          "Microsoft.Identity.Client": "4.66.1",
-          "System.Security.Cryptography.ProtectedData": "4.5.0"
+          "Microsoft.IdentityModel.Abstractions": "8.14.0"
         }
       },
       "Microsoft.IdentityModel.Abstractions": {
         "type": "Transitive",
-        "resolved": "6.35.0",
-        "contentHash": "xuR8E4Rd96M41CnUSCiOJ2DBh+z+zQSmyrYHdYhD6K4fXBcQGVnRCFQ0efROUYpP+p0zC1BLKr0JRpVuujTZSg=="
+        "resolved": "8.14.0",
+        "contentHash": "iwbCpSjD3ehfTwBhtSNEtKPK0ICun6ov7Ibx6ISNA9bfwIyzI2Siwyi9eJFCJBwxowK9xcA1mj+jBWiigeqgcQ=="
       },
       "Microsoft.TestPlatform.ObjectModel": {
         "type": "Transitive",
@@ -389,6 +380,7 @@
         "type": "Project",
         "dependencies": {
           "Flowline.Attributes": "[1.0.0, )",
+          "Microsoft.Identity.Client.Extensions.Msal": "[4.84.0, )",
           "Microsoft.PowerPlatform.Dataverse.Client": "[1.2.10, )",
           "Spectre.Console": "[0.55.2, )",
           "System.Reflection.MetadataLoadContext": "[10.0.7, )",
@@ -412,6 +404,16 @@
           "Microsoft.Extensions.Logging.Abstractions": "10.0.7",
           "Microsoft.Extensions.Logging.Configuration": "10.0.7",
           "Microsoft.Extensions.Options": "10.0.7"
+        }
+      },
+      "Microsoft.Identity.Client.Extensions.Msal": {
+        "type": "CentralTransitive",
+        "requested": "[4.84.0, )",
+        "resolved": "4.84.0",
+        "contentHash": "gObHIqgy4OF4yQy36b9xcrwsd6ZMuhqWP+04lCs4owP2gVCY0gyoUmDEDL4j1yY5GphXBOh2rdRhT0ZF2dvcrg==",
+        "dependencies": {
+          "Microsoft.Identity.Client": "4.84.0",
+          "System.Security.Cryptography.ProtectedData": "4.5.0"
         }
       },
       "Microsoft.PowerPlatform.Dataverse.Client": {

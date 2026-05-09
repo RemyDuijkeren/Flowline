@@ -127,20 +127,11 @@ public class TranslationCommand(DataverseConnector dataverseConnector, Translati
                     return 1;
                 }
                 
-                service = dataverseConnector.ConnectViaPac(profile, targetUrl);
+                service = await dataverseConnector.ConnectViaPacAsync(profile, targetUrl, cancellationToken);
             }
             else
             {
-                // Fallback to target URL with PAC silent auth if possible, or explicit connection string
-                var profiles = dataverseConnector.GetPacProfiles().ToList();
-                
-                // 1. Try environment-specific profile (matched by URL if possible)
-                // Note: PAC profiles might not always have Resource filled or it might not match our targetUrl perfectly
-                var profile = profiles.FirstOrDefault(p => 
-                    p.Resource?.TrimEnd('/').Equals(targetUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase) == true);
-
-                // 2. Try UNIVERSAL profile
-                profile ??= profiles.FirstOrDefault(p => p.IsUniversal);
+                var profile = dataverseConnector.FindBestProfile(targetUrl);
 
                 if (profile != null)
                 {
@@ -152,18 +143,19 @@ public class TranslationCommand(DataverseConnector dataverseConnector, Translati
                     {
                         AnsiConsole.MarkupLine($"[dim]Using PAC profile for {targetUrl}[/]");
                     }
-                    
-                    service = dataverseConnector.ConnectViaPac(profile, targetUrl);
+
+                    service = await dataverseConnector.ConnectViaPacAsync(profile, targetUrl, cancellationToken);
                 }
                 else
                 {
-                    // If no PAC profile matches, we might need a connection string from environment
-                    var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                    var tokenCachePath = Path.Combine(localAppData, ".IdentityService");
-                    
-                    var connectionString = Environment.GetEnvironmentVariable("DATAVERSE_CONNECTION") 
-                                           ?? $"AuthType=OAuth;Url={targetUrl};ClientId=51f81489-12ee-4a9e-aaae-a2591f45987d;RedirectUri=http://localhost;TokenCacheStorePath={tokenCachePath};LoginPrompt=Auto";
-                    
+                    // No PAC profile — fall back to DATAVERSE_CONNECTION env var or prompt
+                    var connectionString = Environment.GetEnvironmentVariable("DATAVERSE_CONNECTION");
+                    if (string.IsNullOrWhiteSpace(connectionString))
+                    {
+                        AnsiConsole.MarkupLine("[red]No PAC profile found and DATAVERSE_CONNECTION is not set. Run 'pac auth create' first.[/]");
+                        return 1;
+                    }
+
                     service = dataverseConnector.Connect(connectionString);
                 }
             }

@@ -89,24 +89,35 @@ public class DataverseConnectorTests
     }
 
     [Fact]
-    public void ConnectViaPac_ShouldThrow_WhenProfileIsNull()
+    public async Task ConnectViaPacAsync_ServicePrincipal_ShouldThrow_WhenApplicationIdIsMissing()
     {
-        // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => _service.ConnectViaPac(null!, "https://test.crm.dynamics.com"));
+        var profile = new PacProfile { Kind = "ServicePrincipal", TenantId = "tenant-id" };
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.ConnectViaPacAsync(profile, "https://test.crm.dynamics.com"));
+
+        Assert.Contains("ApplicationId", ex.Message);
     }
 
     [Fact]
-    public void ConnectViaPac_ShouldThrow_WhenEnvironmentUrlIsNull()
+    public async Task ConnectViaPacAsync_ShouldThrow_WhenProfileIsNull()
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentNullException>(() => _service.ConnectViaPacAsync(null!, "https://test.crm.dynamics.com"));
+    }
+
+    [Fact]
+    public async Task ConnectViaPacAsync_ShouldThrow_WhenEnvironmentUrlIsNull()
     {
         // Arrange
         var profile = new PacProfile { User = "test@test.com" };
 
         // Act & Assert
-        Assert.Throws<ArgumentException>(() => _service.ConnectViaPac(profile, null));
+        await Assert.ThrowsAsync<ArgumentException>(() => _service.ConnectViaPacAsync(profile, null));
     }
 
     [Fact(Skip = "Failing with 'Need a non-empty authority' error in current environment")]
-    public void ConnectViaPac_ShouldConnect_WhenRealEnvironmentUrlIsProvided()
+    public async Task ConnectViaPacAsync_ShouldConnect_WhenRealEnvironmentUrlIsProvided()
     {
         // This test requires a valid PAC profile to be present on the machine
         var profiles = _service.GetPacProfiles();
@@ -117,11 +128,11 @@ public class DataverseConnectorTests
         var environmentUrl = "https://test.crm.dynamics.com"; // Use a dummy URL for logic test
 
         // Since it's a dummy URL, it will fail to connect but we test that it attempts with correct parameters
-        Assert.ThrowsAny<Exception>(() => _service.ConnectViaPac(profile, environmentUrl));
+        await Assert.ThrowsAnyAsync<Exception>(() => _service.ConnectViaPacAsync(profile, environmentUrl));
     }
 
     [Fact(Skip = "Opens a device code flow window in the browser, which is not supported in CI")]
-    public void ConnectViaPac_Universal_ShouldConnect_WhenEnvironmentUrlIsProvided()
+    public async Task ConnectViaPacAsync_Universal_ShouldConnect_WhenEnvironmentUrlIsProvided()
     {
         // This test requires a valid UNIVERSAL PAC profile to be present on the machine
         var profiles = _service.GetPacProfiles();
@@ -130,7 +141,7 @@ public class DataverseConnectorTests
 
         if (profile != null && environmentUrl != null)
         {
-            var client = _service.ConnectViaPac(profile, environmentUrl);
+            var client = await _service.ConnectViaPacAsync(profile, environmentUrl);
             Assert.NotNull(client);
             if (client is ServiceClient sc)
             {

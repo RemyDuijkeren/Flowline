@@ -116,7 +116,7 @@ public class PushCommand(DataverseConnector dataverseConnector, PluginService pl
         var (webResourcesSyncFolder, actuallyPushWebResources) = await PrepareWebResourcesForPushAsync(pushWebResources, standaloneMode, settings, solutionName, standaloneParams, cancellationToken);
         if (pushWebResources && string.IsNullOrWhiteSpace(webResourcesSyncFolder)) return 1;
 
-        var conn = ConnectToDataverse(environmentUrl);
+        var conn = await ConnectToDataverseAsync(environmentUrl, cancellationToken);
         if (conn == null) return 1;
 
         if (pushPlugins && extensionsDll != null)
@@ -277,21 +277,29 @@ public class PushCommand(DataverseConnector dataverseConnector, PluginService pl
         return (webResourcesSyncFolder, true);
     }
 
-    private IOrganizationServiceAsync2? ConnectToDataverse(string environmentUrl)
+    private async Task<IOrganizationServiceAsync2?> ConnectToDataverseAsync(string environmentUrl, CancellationToken cancellationToken)
     {
-        IOrganizationServiceAsync2? conn = AnsiConsole.Status().FlowlineSpinner().Start(
-            "Connecting to Dataverse...",
-            ctx =>
+        IOrganizationServiceAsync2? conn = null;
+
+        await AnsiConsole.Status().FlowlineSpinner().StartAsync("Connecting to Dataverse...", async ctx =>
+        {
+            var profile = dataverseConnector.FindBestProfile(environmentUrl);
+
+            if (profile == null)
             {
-                var profile = dataverseConnector.GetPacProfiles()
-                                     .FirstOrDefault(p => p.Resource?.TrimEnd('/').Equals(environmentUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase) == true)
-                              ?? dataverseConnector.GetPacProfiles().FirstOrDefault(p => p.IsUniversal);
-
-                if (profile != null) return dataverseConnector.ConnectViaPac(profile, environmentUrl);
-
                 AnsiConsole.MarkupLine("[red]No PAC profile found — run 'pac auth create' first.[/]");
-                return null;
-            });
+                return;
+            }
+
+            try
+            {
+                conn = await dataverseConnector.ConnectViaPacAsync(profile, environmentUrl, cancellationToken);
+            }
+            catch (InvalidOperationException ex)
+            {
+                AnsiConsole.MarkupLine($"[red]{ex.Message}[/]");
+            }
+        });
 
         if (conn != null)
             AnsiConsole.MarkupLine("[green]Connected[/]");
