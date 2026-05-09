@@ -112,9 +112,10 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
         }
         catch (MsalException ex)
         {
+            var tenantArg = !string.IsNullOrWhiteSpace(profile.TenantId) ? $" --tenant {profile.TenantId}" : "";
             throw new InvalidOperationException(
                 $"No cached token for service principal '{appId}' at {resourceUrl}. " +
-                $"Run 'pac auth create --kind ServicePrincipal --applicationId {appId} ...' to authenticate first.", ex);
+                $"Run 'pac auth create --kind ServicePrincipal --applicationId {appId} --clientSecret <secret>{tenantArg}' to authenticate.", ex);
         }
 
         output.Verbose($"Token acquired for app '{appId}' (expires {initialToken.ExpiresOn:HH:mm})", opt);
@@ -158,9 +159,10 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
         }
         catch (MsalUiRequiredException ex)
         {
+            var user = profile.User ?? "unknown";
             throw new InvalidOperationException(
-                $"No cached token found for '{profile.User ?? "unknown"}' at {resourceUrl}. " +
-                $"Run 'pac auth create --environment {resourceUrl}' to authenticate first.", ex);
+                $"Session expired for '{user}' at {resourceUrl}. " +
+                $"Run 'pac auth create --url {resourceUrl}' to re-authenticate.", ex);
         }
 
         output.Verbose($"Token acquired silently for {initialToken.Account.Username} (expires {initialToken.ExpiresOn:HH:mm})", opt);

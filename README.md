@@ -28,7 +28,7 @@ Beyond the unmanaged-vs-managed difference, Flowline brings a few things the oth
 dotnet tool install --global Flowline
 ```
 
-Prerequisites:
+Prerequisites (PAC CLI and Git):
 
 ```bash
 winget install Microsoft.PowerAppsCLI
@@ -39,6 +39,13 @@ Authenticate with PAC CLI before using Flowline:
 
 ```bash
 pac auth create --environment https://your-org.crm4.dynamics.com
+```
+
+Authenticating in CI/CD pipelines:
+
+```yaml
+- run: pac auth create --kind ServicePrincipal --applicationId $CLIENT_ID --clientSecret $CLIENT_SECRET --tenant $TENANT_ID
+- run: flowline deploy prod
 ```
 
 ---

@@ -1,0 +1,51 @@
+# Authentication
+
+Flowline delegates all auth to PAC CLI. There are no credentials in Flowline config files.
+
+## How it works
+
+When Flowline needs a Dataverse connection, it reads PAC CLI's token cache from
+`%LOCALAPPDATA%\Microsoft\PowerAppsCLI\tokencache_msalv3.dat` and acquires a token
+silently — no browser, no password prompt.
+
+Profile selection order:
+1. A resource-specific profile whose URL matches the target environment
+2. A UNIVERSAL profile (the active session from `pac auth create` without `--url`)
+
+## Developer setup
+
+Authenticate once with PAC CLI. Flowline reuses the session automatically.
+
+```
+pac auth create --url https://yourorg.crm.dynamics.com
+```
+
+To work across multiple environments, create a profile per environment and select as needed:
+
+```
+pac auth create --url https://dev.crm.dynamics.com
+pac auth create --url https://staging.crm.dynamics.com
+pac auth list
+pac auth select --index 2
+```
+
+Sessions are cached and refreshed automatically. Re-authenticate when the token expires
+(typically after a password change or 90 days of inactivity):
+
+```
+pac auth create --url https://yourorg.crm.dynamics.com
+```
+
+## CI/CD pipelines
+
+PAC CLI is a hard requirement — Flowline will not run without it. Add it to your container
+image and authenticate with a service principal before running any Flowline commands:
+
+```yaml
+# GitHub Actions / Azure Pipelines
+- run: pac auth create --kind ServicePrincipal --applicationId $CLIENT_ID --clientSecret $CLIENT_SECRET --tenant $TENANT_ID
+- run: flowline deploy --prod https://yourorg.crm.dynamics.com
+```
+
+Store `CLIENT_ID`, `CLIENT_SECRET`, and `TENANT_ID` as pipeline secret variables. Never
+commit credentials to the repo or the `.flowline` config file.
