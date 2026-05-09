@@ -24,10 +24,6 @@ public class TranslationSettings : FlowlineSettings
     [Description("Solution name")]
     public string? Solution { get; set; }
 
-    [CommandOption("--pac-profile <NAME>")]
-    [Description("PAC profile name or email")]
-    public string? PacProfile { get; set; }
-
     [CommandOption("--target <TARGET>")]
     [Description("Target URL, dev, staging, or prod")]
     public string? Target { get; set; }
@@ -112,53 +108,29 @@ public class TranslationCommand(DataverseConnector dataverseConnector, Translati
 
         try
         {
-            IOrganizationServiceAsync2 service;
-            
-            if (!string.IsNullOrEmpty(settings.PacProfile))
-            {
-                var profiles = dataverseConnector.GetPacProfiles();
-                var profile = profiles.FirstOrDefault(p => 
-                    p.Name?.Equals(settings.PacProfile, StringComparison.OrdinalIgnoreCase) == true ||
-                    p.User?.Equals(settings.PacProfile, StringComparison.OrdinalIgnoreCase) == true);
+            IOrganizationServiceAsync2? service = null;
 
-                if (profile == null)
-                {
-                    AnsiConsole.MarkupLine($"[red]PAC profile '{settings.PacProfile}' not found.[/]");
-                    return 1;
-                }
-                
-                service = await dataverseConnector.ConnectViaPacAsync(profile, targetUrl, cancellationToken);
-            }
-            else
+            await AnsiConsole.Status().FlowlineSpinner().StartAsync("Connecting to Dataverse...", async ctx =>
             {
                 var profile = dataverseConnector.FindBestProfile(targetUrl);
-
-                if (profile != null)
+                if (profile == null)
                 {
-                    if (profile.IsUniversal)
-                    {
-                        AnsiConsole.MarkupLine($"[dim]Using universal PAC profile for {targetUrl}[/]");
-                    }
-                    else
-                    {
-                        AnsiConsole.MarkupLine($"[dim]Using PAC profile for {targetUrl}[/]");
-                    }
+                    AnsiConsole.MarkupLine("[red]No PAC profile found — run 'pac auth create' first.[/]");
+                    return;
+                }
 
+                try
+                {
                     service = await dataverseConnector.ConnectViaPacAsync(profile, targetUrl, cancellationToken);
                 }
-                else
+                catch (InvalidOperationException ex)
                 {
-                    // No PAC profile — fall back to DATAVERSE_CONNECTION env var or prompt
-                    var connectionString = Environment.GetEnvironmentVariable("DATAVERSE_CONNECTION");
-                    if (string.IsNullOrWhiteSpace(connectionString))
-                    {
-                        AnsiConsole.MarkupLine("[red]No PAC profile found and DATAVERSE_CONNECTION is not set. Run 'pac auth create' first.[/]");
-                        return 1;
-                    }
-
-                    service = dataverseConnector.Connect(connectionString);
+                    AnsiConsole.MarkupLine($"[red]{ex.Message}[/]");
                 }
-            }
+            });
+
+            if (service == null) return 1;
+            AnsiConsole.MarkupLine("[green]Connected[/]");
 
             if (action == "export")
             {

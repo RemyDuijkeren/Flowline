@@ -17,17 +17,6 @@ public class DataverseConnectorTests
     }
 
     [Fact]
-    public void Connect_ShouldThrowException_WhenConnectionStringIsInvalid()
-    {
-        // Arrange
-        var connectionString = "AuthType=ClientSecret;Url=https://invalid.crm.dynamics.com;ClientId=id;ClientSecret=secret";
-
-        // Act & Assert
-        // ServiceClient constructor will attempt to connect and fail, which we expect to be wrapped in an Exception by Connect method
-        Assert.ThrowsAny<Exception>(() => _service.Connect(connectionString));
-    }
-
-    [Fact]
     public void GetPacProfiles_ShouldReturnProfiles_WhenFileExists()
     {
         // Act
@@ -113,7 +102,7 @@ public class DataverseConnectorTests
         var profile = new PacProfile { User = "test@test.com" };
 
         // Act & Assert
-        await Assert.ThrowsAsync<ArgumentException>(() => _service.ConnectViaPacAsync(profile, null));
+        await Assert.ThrowsAsync<ArgumentException>(() => _service.ConnectViaPacAsync(profile, null!));
     }
 
     [Fact(Skip = "Failing with 'Need a non-empty authority' error in current environment")]

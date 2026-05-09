@@ -9,25 +9,6 @@ namespace Flowline.Core.Services;
 
 public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
 {
-    public IOrganizationServiceAsync2 Connect(string connectionString)
-    {
-        output.Verbose("Connecting to Dataverse...", opt);
-
-        var client = new ServiceClient(connectionString);
-
-        if (!client.IsReady)
-        {
-            var lastError = client.LastError;
-            var lastException = client.LastException;
-            client.Dispose();
-            throw new Exception($"Failed to connect to Dataverse: {lastError}", lastException);
-        }
-
-        output.Verbose($"Connected to {client.ConnectedOrgUriActual}", opt);
-
-        return client;
-    }
-
     /// <summary>
     /// Connects to Dataverse by re-using the token that PAC CLI already acquired.
     /// PAC CLI writes its token cache in MSAL Extensions v3 (DPAPI-encrypted) format,
