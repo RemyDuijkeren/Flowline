@@ -5,6 +5,7 @@ using Flowline.Config;
 using Flowline.Utils;
 using Spectre.Console;
 using Spectre.Console.Cli;
+using Command = CliWrap.Command;
 
 namespace Flowline.Commands;
 
@@ -51,49 +52,38 @@ public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
             return 1;
         }
 
+        // Sync solution from Dataverse
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-        var pacSolutionSyncCmd = Cli.Wrap(cmdName)
-            .WithArguments(args => args
-                .AddIfNotNull(prefixArgs)
-                .Add("solution")
-                .Add("sync")
-                .Add("--solution-folder").Add(packageFolder)
-                .Add("--environment").Add(devEnv.EnvironmentUrl!)
-                .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
-                .Add("--async"))
-            .WithToolExecutionLog();
+        CommandResult result = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+            $"Syncing solution [bold]{projectSln.Name}[/]...",
+            ctx => Cli.Wrap(cmdName)
+                    .WithArguments(args => args
+                         .AddIfNotNull(prefixArgs)
+                         .Add("solution")
+                         .Add("sync")
+                         .Add("--solution-folder").Add(packageFolder)
+                         .Add("--environment").Add(devEnv.EnvironmentUrl!)
+                         .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
+                         .Add("--async"))
+                    .WithValidation(CommandResultValidation.None)
+                    .WithToolExecutionLog(settings.Verbose, ctx)
+                    .ExecuteAsync(cancellationToken)
+                    .Task);
 
-        var result = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-            $"Syncing [bold]{projectSln.Name}[/]...",
-            _ => pacSolutionSyncCmd
-                              .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
-                              .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
-                              .ExecuteAsync(cancellationToken)
-                              .Task);
-
-        if (result.ExitCode != 0)
+        if (!result.IsSuccess)
         {
             AnsiConsole.MarkupLine("[red]Sync failed — check the environment and your PAC login.[/]");
             return 1;
         }
 
-        AnsiConsole.MarkupLine("[green]Synced from Dataverse[/]");
+        AnsiConsole.MarkupLine("[green]Solution synced from Dataverse[/]");
 
-        await AnsiConsole.Status().FlowlineSpinner().StartAsync(
-            $"Building [bold]{projectSln.Name}[/]...",
-            _ => Cli.Wrap("dotnet")
-                 .WithArguments(args => args
-                      .Add("build")
-                      .Add(packageFolder))
-                      //.Add("--configuration").Add("Release")) // Release for Managed solution
-                      //.Add("--output").Add(Path.Combine(rootFolder, "artifacts")))
-                 .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]DOTNET: {s}[/]")))
-                 .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
-                 .WithToolExecutionLog()
-                 .ExecuteAsync(cancellationToken)
-                 .Task);
+        // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
+        if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken) != 0)
+        {
+            return 1;
+        }
 
-        AnsiConsole.MarkupLine("[green]Build done[/]");
         AnsiConsole.MarkupLine("[bold green]:rocket: Synced! Run 'git commit' to save a checkpoint.[/]");
 
         return 0;
