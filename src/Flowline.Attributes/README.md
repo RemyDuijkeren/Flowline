@@ -20,7 +20,9 @@ Run `flowline push` and Flowline inspects your plugin assembly and automatically
 
 ## Plugin steps
 
-Each `IPlugin` class registers **[exactly one](#why-one-class-per-step)** plugin step. The message, stage, and processing mode come from the class name; the table and options come from attributes. This keeps each `Execute` body focused on one thing and makes log entries self-describing.
+Flowline registers **[exactly one](#why-one-class-per-step)** plugin step per `IPlugin` class.
+
+The _message, stage, and processing mode_ come from the **class name**; the _table and options_ come from **attributes**. This keeps each `Execute` body focused on one thing and makes log entries self-describing.
 
 ### The pipeline
 
@@ -34,8 +36,16 @@ Each `IPlugin` class registers **[exactly one](#why-one-class-per-step)** plugin
 ### Class naming
 
 ```
-{DescriptiveName}{Stage}{Message}[Async][Plugin]
+{DescriptiveName}{Stage keyword}{Message}[Async][Plugin]
 ```
+
+For the `DescriptiveName` you can use any name you like to describe the plugin.
+
+The `Stage keyword` is `Validation`, `Pre` or `Post` (see the pipeline above).
+
+The `Message` is the action that the plugin should trigger on. Common messages: `Create`, `Update`, `Delete`, `Retrieve`, `RetrieveMultiple`, `Associate`, `Disassociate`, `Assign`, `SetState`. Names are case-sensitive.
+
+For post-operation steps, you can add optional `Async` to make the operation asynchronous which is recommended.
 
 The `Plugin` suffix is optional but recommended. Flowline strips it before parsing.
 
@@ -45,8 +55,6 @@ The `Plugin` suffix is optional but recommended. Flowline strips it before parsi
 | `InvoicePreUpdatePlugin` | Update | PreOperation | Synchronous |
 | `ContactValidationDeletePlugin` | Delete | PreValidation | Synchronous |
 | `OrderPostUpdateAsyncPlugin` | Update | PostOperation | Asynchronous |
-
-Common messages: `Create`, `Update`, `Delete`, `Retrieve`, `RetrieveMultiple`, `Associate`, `Disassociate`, `Assign`, `SetState`. Names are case-sensitive.
 
 Classes without `[Step]` are skipped. Classes with `[Step]` must follow the naming convention;
 Flowline fails fast when it cannot parse the stage and message, because `[Step]` is explicit
@@ -83,7 +91,7 @@ Optional named properties:
 |---|---|---|---|
 | `Order` | `int` | `1` | Execution order when multiple steps fire on the same event. Lower runs first. |
 | `RunAs` | `string?` | `null` | GUID of the Dataverse `systemuser` to impersonate (`impersonatinguserid`). `null` runs as the calling user. |
-| `Configuration` | `string?` | `null` | Passed to the plugin constructor as `unsecureConfig`. |
+| `Config` | `string?` | `null` | Passed to the plugin constructor as `unsecureConfig`. |
 | `DeleteJobOnSuccess` | `bool` | `true` | Automatically delete the `AsyncOperation` job record when the step succeeds. Async post-operation steps only. Set to `false` to retain the record for auditing. |
 
 Use `RunAs` to run the plugin as a specific service account. Pass the string form of the user's GUID:
@@ -95,7 +103,7 @@ public class AccountPostCreatePlugin : IPlugin { ... }
 
 > **Use environment-stable GUIDs.** The value is stored in source control and the solution XML. Avoid personal accounts or accounts whose GUID differs between environments.
 
-Use `Configuration` to pass endpoint URLs, feature flags, or JSON settings. Receive the value in a constructor overload that accepts `string unsecureConfig`:
+Use `Config` to pass endpoint URLs, feature flags, or JSON settings. Receive the value in a constructor overload that accepts `string unsecureConfig`:
 
 ```csharp
 [Step("account", Configuration = "{\"endpoint\":\"https://api.example.com\"}")]
@@ -110,9 +118,9 @@ public class AccountPostCreatePlugin : IPlugin
 }
 ```
 
-> **Do not store secrets in `Configuration`.** The value is visible in source control and the solution XML. Use environment variables or Azure Key Vault for anything sensitive.
+> **Do not store secrets in `Config`.** The value is visible in source control and the solution XML. Use environment variables or Azure Key Vault for anything sensitive.
 
-`DeleteJobOnSuccess` defaults to `true` — every async step execution creates an `AsyncOperation` record and Flowline deletes it automatically on success, keeping the job queue clean. Set it to `false` explicitly if you need to retain the record for auditing or debugging:
+`DeleteJobOnSuccess` defaults to `true` — every async step execution creates an `AsyncOperation` record and Dataverse deletes it automatically on success, keeping the job queue clean. Set it to `false` explicitly if you need to retain the record for auditing or debugging:
 
 ```csharp
 [Step("cr07982_invoice", DeleteJobOnSuccess = false)]
@@ -126,7 +134,7 @@ public class InvoicePostUpdateAsyncPlugin : IPlugin { ... }
 
 Limits the step to fire only when at least one of the listed columns is included in the operation. Dataverse evaluates the filter before invoking your plugin — a filtered step that doesn't match costs almost nothing.
 
-Without `[Filter]`, an Update step fires on **every** update to the table, regardless of which columns changed.
+Without `[Filter]`, an Update step fires on **every** update to the table, regardless of which columns changed. Flowline warns if you omit `[Filter]` on an Update step.
 
 ```csharp
 [Step("account")]
@@ -274,10 +282,16 @@ Steps created by Flowline are stamped with `[flowline]` in their description, vi
 
 **Disabling a step without deleting it:** remove `[Step]` — Flowline deletes the step but keeps the plugin type registered.
 
-**`--save` flag:** suppresses all deletions for that run and prints each skipped item — useful as a dry run:
+**`--save` flag:** suppresses all deletions for that run and prints each skipped item:
 
 ```bash
 flowline push MySolution --save
+```
+
+**`--dry-run` flag:** prints the changes that would be made without actually making them:
+
+```bash
+flowline push MySolution --dry-run
 ```
 
 ---

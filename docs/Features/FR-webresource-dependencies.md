@@ -6,6 +6,9 @@ Dataverse supports defining **dependencies between web resources**. When a web r
 loaded at runtime (e.g. a JavaScript file on a form), any web resources registered as its
 dependencies are automatically loaded by the platform alongside it.
 
+For the naming convention that determines CRM names and how shared web resources are pushed
+and owned, see [FR-webresource-naming.md](FR-webresource-naming.md).
+
 Two dependency scenarios are required for correct runtime behaviour:
 
 1. **RESX → JS**: Localisation string files that must be loaded alongside the JS that uses
@@ -144,6 +147,10 @@ Flowline comment convention:
 - The path must be the full web resource logical name (with publisher prefix)
 - Multiple `flowline:depends` lines are allowed
 - Flowline registers each named resource as a dependency of the JS file being pushed
+- The target CRM name can be in any namespace: the current solution
+  (`av_MySolution/lib/jquery.js`), the publisher-shared namespace (`av_/lib/jquery.js`),
+  or another solution entirely — see [FR-webresource-naming.md](FR-webresource-naming.md)
+  for the shared namespace convention
 
 This approach keeps the dependency declaration version-controlled alongside the code that
 requires it, with no separate config file.
@@ -218,6 +225,41 @@ During `flowline push`, after all web resources are created/updated:
 Dependency sync always runs after web resource sync since both ends of the dependency must
 exist in Dataverse before the relationship can be written. Dependencies do not take effect
 until the parent web resource is published.
+
+---
+
+## Orphan Cleanup Integration
+
+A web resource added to the solution's components via dependency resolution has no local
+file in the web resource root. Without special handling, the orphan cleanup step would see
+it as an orphan on the next push and attempt to delete or remove it.
+
+**Rule**: before running orphan cleanup, Flowline builds the **dependency set** — all CRM
+names referenced in `// flowline:depends` and `<!-- flowline:depends -->` annotations across
+**all** local files in the web resource root. A CRM record with no local file is exempt from
+orphan cleanup if and only if it appears in the dependency set.
+
+| CRM record state | In dependency set | Action |
+|---|---|---|
+| Has local file | — | Normal sync (create / update / skip) |
+| No local file | Yes | Preserve — skip orphan handling |
+| No local file | No | Normal orphan handling (delete / remove / skip by ownership) |
+
+The dependency set must be built from all local files in the root, not only the files
+changed in the current push. A partial push — where only some files are updated — must not
+incorrectly mark dependency targets as orphans because their consumer was not part of the
+current run.
+
+**Removing a dependency**: when a developer removes a `// flowline:depends` annotation, the
+target drops out of the dependency set on the next full push. It becomes a genuine orphan
+and is subject to normal ownership-aware cleanup. The annotation is the declaration of
+intent in both directions — add it to preserve, remove it to allow cleanup.
+
+Note: the cross-solution `solutioncomponent` ownership check from `FR-orphan-cleanup.md`
+still applies after the dependency-set exemption. A non-local file that is both in the
+dependency set AND in another solution's components would already be exempt via the
+cross-solution check; the dependency-set check provides an earlier, cheaper exemption that
+does not require a Dataverse query.
 
 ---
 
@@ -306,8 +348,10 @@ dependencies set by other tools or the maker portal.
 | RESX → JS (localisation) | Auto-detect by base name matching |
 | RESX → JS (ambiguous/override) | `flowline:depends` annotation in JS |
 | JS → JS (shared libraries, e.g. jQuery) | `flowline:depends` annotation in JS |
+| JS → JS (cross-solution or shared namespace) | `flowline:depends` annotation — target can be in any CRM namespace |
 | HTML → JS/CSS (solution integrity only) | `<!-- flowline:depends -->` annotation in HTML — optional, not needed for runtime |
 | Remove stale dependencies on push | ✅ |
+| Non-local dependency targets exempt from orphan cleanup | ✅ Dependency set built from all local annotations before orphan pass |
 | `flowline deploy` (pac solution import) | ✅ Already works — dependencies survive in solution XML |
 
 ---
@@ -329,6 +373,7 @@ dependencies set by other tools or the maker portal.
 
 ## References
 
+- [FR-webresource-naming.md](FR-webresource-naming.md) — Web resource naming convention and shared namespace
 - [Web resource dependencies — Microsoft Learn](https://learn.microsoft.com/en-us/power-apps/developer/model-driven-apps/web-resource-dependencies)
 - [Web resource dependencies (on-premises, confirms load order behaviour) — Microsoft Learn](https://learn.microsoft.com/en-us/dynamics365/customerengagement/on-premises/developer/web-resource-dependencies?view=op-9-1)
 - [String (RESX) web resources — Microsoft Learn](https://learn.microsoft.com/en-us/power-apps/developer/model-driven-apps/resx-web-resources)
