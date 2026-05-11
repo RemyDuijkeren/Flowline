@@ -16,7 +16,7 @@ public class PluginPlannerTests
 
     public PluginPlannerTests()
     {
-        _planner  = new PluginPlanner(_console, _runtimeOptions);
+        _planner  = new PluginPlanner(_console, isVerbose: false);
         _assembly = new Entity("pluginassembly", Guid.NewGuid()) { ["name"] = "MyPlugin" };
     }
 

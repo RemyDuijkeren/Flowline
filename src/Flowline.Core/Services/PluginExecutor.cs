@@ -6,7 +6,7 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
+public class PluginExecutor(IAnsiConsole output, bool isVerbose)
 {
 
     public Task ExecuteDeletesAsync(
@@ -44,7 +44,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         {
             await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Verbose($"Image '{a.Name}' not in source — deleted", opt);
+            output.Info($"Image '{a.Name}' not in source — deleted");
         }
         if (plan.Images.Deletes.Count > 0) output.Info($"[green]{plan.Images.Deletes.Count} image(s) deleted[/]");
 
@@ -52,7 +52,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         {
             await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Verbose($"Response Property '{a.Name}' not in source — deleted", opt);
+            output.Info($"Response Property '{a.Name}' not in source — deleted");
         }
         if (plan.ResponseProps.Deletes.Count > 0) output.Info($"[green]{plan.ResponseProps.Deletes.Count} response property record(s) deleted[/]");
 
@@ -60,7 +60,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         {
             await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Verbose($"Request Parameter '{a.Name}' not in source — deleted", opt);
+            output.Info($"Request Parameter '{a.Name}' not in source — deleted");
         }
         if (plan.RequestParams.Deletes.Count > 0) output.Info($"[green]{plan.RequestParams.Deletes.Count} request parameter(s) deleted[/]");
 
@@ -69,7 +69,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         {
             await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Verbose($"Step '{a.Name}' not in source — deleted", opt);
+            output.Info($"Step '{a.Name}' not in source — deleted");
         }
         if (plan.Steps.Deletes.Count > 0) output.Info($"[green]{plan.Steps.Deletes.Count} plugin step(s) deleted[/]");
 
@@ -77,7 +77,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         {
             await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Verbose($"Custom API '{a.Name}' not in source — deleted", opt);
+            output.Info($"Custom API '{a.Name}' not in source — deleted");
         }
         if (plan.CustomApis.Deletes.Count > 0) output.Info($"[green]{plan.CustomApis.Deletes.Count} Custom API(s) deleted[/]");
 
@@ -86,7 +86,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         {
             await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Verbose($"Plugin Type '{a.Name}' not in source — deleted", opt);
+            output.Info($"Plugin Type '{a.Name}' not in source — deleted");
         }
         if (plan.PluginTypes.Deletes.Count > 0) output.Info($"[green]{plan.PluginTypes.Deletes.Count} plugin type(s) deleted[/]");
     }
@@ -107,7 +107,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         {
             await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Verbose($"Plugin type '{a.Name}' upserted", opt);
+            output.Info($"Plugin type '{a.Name}' upserted");
         }
         if (plan.PluginTypes.Upserts.Count > 0) output.Info($"[green]{plan.PluginTypes.Upserts.Count} plugin type(s) synced[/]");
 
@@ -116,7 +116,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         {
             await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Verbose($"Step '{a.Name}' upserted", opt);
+            output.Info($"Step '{a.Name}' upserted");
         }
         if (plan.Steps.Upserts.Count > 0) output.Info($"[green]{plan.Steps.Upserts.Count} plugin step(s) synced[/]");
 
@@ -124,7 +124,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         {
             await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Verbose($"Custom API '{a.Name}' upserted", opt);
+            output.Info($"Custom API '{a.Name}' upserted");
         }
         if (plan.CustomApis.Upserts.Count > 0) output.Info($"[green]{plan.CustomApis.Upserts.Count} Custom API(s) synced[/]");
 
@@ -133,7 +133,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         {
             await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Verbose($"Image '{a.Name}' upserted", opt);
+            output.Info($"Image '{a.Name}' upserted");
         }
         if (plan.Images.Upserts.Count > 0) output.Info($"[green]{plan.Images.Upserts.Count} image(s) synced[/]");
 
@@ -141,7 +141,7 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         {
             await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Verbose($"Response property '{a.Name}' upserted", opt);
+            output.Info($"Response property '{a.Name}' upserted");
         }
         if (plan.ResponseProps.Upserts.Count > 0) output.Info($"[green]{plan.ResponseProps.Upserts.Count} response property record(s) synced[/]");
 
@@ -149,24 +149,22 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         {
             await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Verbose($"Request Parameter '{a.Name}' upserted", opt);
+            output.Info($"Request Parameter '{a.Name}' upserted");
         }
         if (plan.RequestParams.Upserts.Count > 0) output.Info($"[green]{plan.RequestParams.Upserts.Count} request parameter(s) synced[/]");
     }
 
-    async Task RunAddSolutionComponentsAsync(
-        IOrganizationServiceAsync2 service, RegistrationPlan plan, CancellationToken cancellationToken, ProgressTask? progressTask)
+    async Task RunAddSolutionComponentsAsync(IOrganizationServiceAsync2 service, RegistrationPlan plan, CancellationToken cancellationToken, ProgressTask? progressTask)
     {
-        var all = plan.PluginTypes.AddSolutionComponents
-            .Concat(plan.Steps.AddSolutionComponents)
-            .Concat(plan.CustomApis.AddSolutionComponents)
-            .Concat(plan.RequestParams.AddSolutionComponents)
-            .Concat(plan.ResponseProps.AddSolutionComponents)
-            .Concat(plan.Images.AddSolutionComponents)
-            .ToList();
-
-        if (all.Count == 0)
-            return;
+        List<AddToSolutionAction> all =
+        [
+            ..plan.PluginTypes.AddSolutionComponents,
+            ..plan.Steps.AddSolutionComponents,
+            ..plan.CustomApis.AddSolutionComponents,
+            ..plan.RequestParams.AddSolutionComponents,
+            ..plan.ResponseProps.AddSolutionComponents,
+            ..plan.Images.AddSolutionComponents,
+        ];
 
         // Sequential — see RunUpsertsAsync for rationale. Do not change back to parallel without
         // addressing the Dataverse GrantInheritedAccess collision on CreateRequest+SolutionUniqueName.
@@ -174,19 +172,9 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         {
             await AddSolutionComponentAsync(service, a.EntityLogicalName, a.Id, a.ComponentType, a.SolutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
+            output.Info($"{a.EntityLogicalName} '{a.Id}' added to solution");
         }
-
-        foreach (var a in plan.Steps.AddSolutionComponents)         output.Verbose($"Step '{a.Name}' added to solution", opt);
-        if (plan.Steps.AddSolutionComponents.Count > 0)        output.Info($"[green]{plan.Steps.AddSolutionComponents.Count} plugin step(s) added to solution[/]");
-
-        foreach (var a in plan.CustomApis.AddSolutionComponents)    output.Verbose($"Custom API '{a.Name}' added to solution", opt);
-        if (plan.CustomApis.AddSolutionComponents.Count > 0)   output.Info($"[green]{plan.CustomApis.AddSolutionComponents.Count} Custom API(s) added to solution[/]");
-
-        foreach (var a in plan.ResponseProps.AddSolutionComponents) output.Verbose($"Response property '{a.Name}' added to solution", opt);
-        if (plan.ResponseProps.AddSolutionComponents.Count > 0) output.Info($"[green]{plan.ResponseProps.AddSolutionComponents.Count} response property record(s) added to solution[/]");
-
-        foreach (var a in plan.RequestParams.AddSolutionComponents) output.Verbose($"Request Parameter '{a.Name}' added to solution", opt);
-        if (plan.RequestParams.AddSolutionComponents.Count > 0) output.Info($"[green]{plan.RequestParams.AddSolutionComponents.Count} request parameter(s) added to solution[/]");
+        if (all.Count > 0) output.Success($"{all.Count} component(s) added to solution");
     }
 
     async Task UpsertAsync(IOrganizationServiceAsync2 service, UpsertAction action, string solutionName, CancellationToken cancellationToken)
@@ -216,6 +204,6 @@ public class PluginExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
         };
 
         await service.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
-        output.Verbose($"Added {entityLogicalName} '{componentId}' to solution '{solutionName}'.", opt);
+        output.Info($"Added {entityLogicalName} '{componentId}' to solution '{solutionName}'.");
     }
 }

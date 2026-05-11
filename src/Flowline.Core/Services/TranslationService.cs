@@ -9,7 +9,7 @@ public class TranslationService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 {
     public async Task ExportAsync(IOrganizationServiceAsync2 service, string solutionName, string exportPath)
     {
-        output.Verbose($"Exporting translations for solution {solutionName}...", opt);
+        output.Verbose($"Exporting translations for solution {solutionName}...", opt.IsVerbose);
 
         var request = new OrganizationRequest("ExportTranslation")
         {
@@ -30,7 +30,7 @@ public class TranslationService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
     public async Task ImportAsync(IOrganizationServiceAsync2 service, string importPath)
     {
-        output.Verbose($"Importing translations from {importPath}...", opt);
+        output.Verbose($"Importing translations from {importPath}...", opt.IsVerbose);
 
         if (!File.Exists(importPath))
             throw new FileNotFoundException("Translation file not found.", importPath);
@@ -46,8 +46,8 @@ public class TranslationService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         await service.ExecuteAsync(request).ConfigureAwait(false);
         output.Info("[green]Translations imported[/]");
 
-        output.Verbose("Publishing all changes...", opt);
+        output.Verbose("Publishing all changes...", opt.IsVerbose);
         await service.ExecuteAsync(new OrganizationRequest("PublishAllXml")).ConfigureAwait(false);
-        output.Verbose("Changes published", opt);
+        output.Verbose("Changes published", opt.IsVerbose);
     }
 }

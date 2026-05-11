@@ -2,6 +2,7 @@ using System.ComponentModel;
 using CliWrap;
 using CliWrap.Buffered;
 using Flowline.Config;
+using Flowline.Core;
 using Flowline.Utils;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -9,7 +10,7 @@ using Command = CliWrap.Command;
 
 namespace Flowline.Commands;
 
-public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
+public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions) : FlowlineCommand<SyncCommand.Settings>(console, runtimeOptions)
 {
     public sealed class Settings : FlowlineSettings
     {
@@ -38,7 +39,7 @@ public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
         if (projectSln == null || slnInfo == null) return 1;
         if (slnInfo.IsManaged)
         {
-            AnsiConsole.MarkupLine("[red]Managed solutions are not supported for sync.[/]");
+            Console.Error("Managed solutions are not supported for sync");
             return 1;
         }
 
@@ -48,13 +49,13 @@ public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
         var cdsprojPath = Path.Combine(packageFolder, "SolutionPackage.cdsproj");
         if (!File.Exists(cdsprojPath))
         {
-            AnsiConsole.MarkupLine($"[red]No solution found at '{cdsprojPath}' — run 'clone' first.[/]");
+            Console.Error($"No solution found at '{cdsprojPath}' — run 'clone' first");
             return 1;
         }
 
         // Sync solution from Dataverse
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-        CommandResult result = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+        CommandResult result = await Console.Status().FlowlineSpinner().StartAsync(
             $"Syncing solution [bold]{projectSln.Name}[/]...",
             ctx => Cli.Wrap(cmdName)
                     .WithArguments(args => args
@@ -72,11 +73,11 @@ public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
 
         if (!result.IsSuccess)
         {
-            AnsiConsole.MarkupLine("[red]Sync failed — check the environment and your PAC login.[/]");
+            Console.Error("Sync failed — check the environment and your PAC login");
             return 1;
         }
 
-        AnsiConsole.MarkupLine("[green]Solution synced from Dataverse[/]");
+        Console.Success("Solution synced from Dataverse");
 
         // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
         if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken) != 0)
@@ -84,18 +85,18 @@ public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
             return 1;
         }
 
-        AnsiConsole.MarkupLine("[bold green]:rocket: Synced! Run 'git commit' to save a checkpoint.[/]");
+        Console.Success("[bold]:rocket: Synced! Run 'git commit' to save a checkpoint.[/]");
 
         return 0;
     }
 
-    static async Task GitCommitChanges(CancellationToken cancellationToken)
+    static async Task GitCommitChanges(IAnsiConsole console, CancellationToken cancellationToken)
     {
         // Add all files to the git staging area
         await Cli.Wrap("git")
                  .WithArguments("add -A")
-                 .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
-                 .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
+                 .WithStandardOutputPipe(PipeTarget.ToDelegate(s => console.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
+                 .WithStandardErrorPipe(PipeTarget.ToDelegate(System.Console.Error.WriteLine))
                  .WithToolExecutionLog()
                  .ExecuteAsync(cancellationToken);
 
@@ -107,7 +108,7 @@ public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
 
         if (string.IsNullOrWhiteSpace(statusResult.StandardOutput))
         {
-            AnsiConsole.MarkupLine("[dim]No changes — skipping commit[/]");
+            console.Skip("No changes — skipping commit");
             return;
         }
 
@@ -116,8 +117,8 @@ public class SyncCommand : FlowlineCommand<SyncCommand.Settings>
                  .WithArguments(args => args
                                         .Add("commit")
                                         .Add("-m").Add("flowline: sync solution"))
-                 .WithStandardOutputPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
-                 .WithStandardErrorPipe(PipeTarget.ToDelegate(Console.Error.WriteLine))
+                 .WithStandardOutputPipe(PipeTarget.ToDelegate(s => console.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
+                 .WithStandardErrorPipe(PipeTarget.ToDelegate(System.Console.Error.WriteLine))
                  .WithToolExecutionLog()
                  .ExecuteAsync(cancellationToken);
     }

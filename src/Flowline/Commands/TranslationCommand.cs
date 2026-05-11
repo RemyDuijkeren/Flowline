@@ -29,9 +29,11 @@ public class TranslationSettings : FlowlineSettings
     public string? Target { get; set; }
 }
 
-public class TranslationCommand(DataverseConnector dataverseConnector, TranslationService translationService, FlowlineRuntimeOptions runtimeOptions)
+public class TranslationCommand(IAnsiConsole console, DataverseConnector dataverseConnector, TranslationService translationService, FlowlineRuntimeOptions runtimeOptions)
     : AsyncCommand<TranslationSettings>
 {
+    private readonly IAnsiConsole Console = console;
+
     protected override async Task<int> ExecuteAsync([NotNull] CommandContext context, [NotNull] TranslationSettings settings, CancellationToken cancellationToken)
     {
         runtimeOptions.IsVerbose = settings.Verbose;
@@ -41,14 +43,14 @@ public class TranslationCommand(DataverseConnector dataverseConnector, Translati
         var action = settings.Action.ToLowerInvariant();
         if (action != "export" && action != "import")
         {
-            AnsiConsole.MarkupLine("[red]Invalid action. Use 'export' or 'import'.[/]");
+            Console.Error("Invalid action. Use 'export' or 'import'");
             return 1;
         }
 
         var config = ProjectConfig.Load();
         if (config == null)
         {
-            AnsiConsole.MarkupLine("[red].flowline config not found.[/]");
+            Console.Error(".flowline config not found");
             return 1;
         }
 
@@ -59,10 +61,10 @@ public class TranslationCommand(DataverseConnector dataverseConnector, Translati
             targetUrl = config.DevUrl;
             if (string.IsNullOrEmpty(targetUrl))
             {
-                AnsiConsole.MarkupLine("[red]Dev URL isn't configured in .flowline.[/]");
+                Console.Error("Dev URL isn't configured in .flowline");
                 return 1;
             }
-            AnsiConsole.MarkupLine($"[dim]Target: dev ({targetUrl})[/]");
+            Console.Verbose($"Target: dev ({targetUrl})", settings.Verbose);
         }
         else
         {
@@ -77,7 +79,7 @@ public class TranslationCommand(DataverseConnector dataverseConnector, Translati
 
         if (string.IsNullOrEmpty(targetUrl))
         {
-            AnsiConsole.MarkupLine("[red]Target URL isn't configured. Use --target or update .flowline.[/]");
+            Console.Error("Target URL isn't configured. Use --target or update .flowline");
             return 1;
         }
 
@@ -88,21 +90,21 @@ public class TranslationCommand(DataverseConnector dataverseConnector, Translati
             solutionName = projectSolution?.Name;
             if (solutionName != null)
             {
-                AnsiConsole.MarkupLine($"[dim]Solution: {solutionName}[/]");
+                Console.Verbose($"Solution: {solutionName}", settings.Verbose);
             }
         }
 
         if (action == "export" && string.IsNullOrEmpty(solutionName))
         {
-            AnsiConsole.MarkupLine("[red]Solution name is required for export. Use --solution.[/]");
+            Console.Error("Solution name is required for export. Use --solution");
             return 1;
         }
 
         var path = settings.Path;
         if (string.IsNullOrEmpty(path))
         {
-            path = action == "export" 
-                ? $"{solutionName}_translations.zip" 
+            path = action == "export"
+                ? $"{solutionName}_translations.zip"
                 : "translations.zip";
         }
 
@@ -110,12 +112,12 @@ public class TranslationCommand(DataverseConnector dataverseConnector, Translati
         {
             IOrganizationServiceAsync2? service = null;
 
-            await AnsiConsole.Status().FlowlineSpinner().StartAsync("Connecting to Dataverse...", async ctx =>
+            await Console.Status().FlowlineSpinner().StartAsync("Connecting to Dataverse...", async ctx =>
             {
                 var profile = dataverseConnector.FindBestProfile(targetUrl);
                 if (profile == null)
                 {
-                    AnsiConsole.MarkupLine("[red]No PAC profile found — run 'pac auth create' first.[/]");
+                    Console.Error("No PAC profile found — run 'pac auth create' first");
                     return;
                 }
 
@@ -125,32 +127,32 @@ public class TranslationCommand(DataverseConnector dataverseConnector, Translati
                 }
                 catch (InvalidOperationException ex)
                 {
-                    AnsiConsole.MarkupLine($"[red]{ex.Message}[/]");
+                    Console.Error(ex);
                 }
             });
 
             if (service == null) return 1;
-            AnsiConsole.MarkupLine("[green]Connected[/]");
+            Console.Success("Connected");
 
             if (action == "export")
             {
-                await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+                await Console.Status().FlowlineSpinner().StartAsync(
                     $"Exporting translations for [bold]{solutionName}[/]...",
                     _ => translationService.ExportAsync(service, solutionName!, path));
             }
             else
             {
-                await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+                await Console.Status().FlowlineSpinner().StartAsync(
                     $"Importing translations from [bold]{path}[/]...",
                     _ => translationService.ImportAsync(service, path));
             }
 
-            AnsiConsole.MarkupLine($"[green]Translations {action}ed[/]");
+            Console.Success($"Translations {action}ed");
             return 0;
         }
         catch (Exception ex)
         {
-            AnsiConsole.WriteException(ex);
+            Console.WriteException(ex);
             return 1;
         }
     }

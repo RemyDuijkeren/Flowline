@@ -13,7 +13,7 @@ public class PluginAssemblyReaderTests
     private static string DllPath => typeof(PluginAssemblyReaderTests).Assembly.Location;
 
     private static PluginAssemblyMetadata Analyze() =>
-        new PluginAssemblyReader(new TestConsole(), new FlowlineRuntimeOptions()).Analyze(DllPath);
+        new PluginAssemblyReader(new TestConsole(), isVerbose: false).Analyze(DllPath);
 
     private static PluginTypeMetadata GetPlugin(PluginAssemblyMetadata meta, string name) =>
         meta.Plugins.Single(p => p.Name == name);

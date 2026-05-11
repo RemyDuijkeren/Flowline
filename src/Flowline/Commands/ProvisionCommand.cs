@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using CliWrap;
+using Flowline.Core;
 using Flowline.Utils;
 using Flowline.Validation;
 using Spectre.Console;
@@ -11,7 +12,7 @@ public enum Role { Dev, Staging }
 
 public enum CopyType { Minimal, Full }
 
-public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
+public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions) : FlowlineCommand<ProvisionCommand.Settings>(console, runtimeOptions)
 {
     public sealed class Settings : FlowlineSettings
     {
@@ -51,8 +52,8 @@ public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
         var targetUrl = $"https://{urlParts.Organization}-{suffix.ToLower()}.{urlParts.Host}/";
 
         // TODO: verify if the target environment url is given, is in the same region. Is this needed?
-        // if <org> already ends with your suffix, don’t duplicate.
-        // If your prod org is named contoso-prod, add a config “swap map” so -prod → -dev/-stg instead of appending.
+        // if <org> already ends with your suffix, don't duplicate.
+        // If your prod org is named contoso-prod, add a config "swap map" so -prod → -dev/-stg instead of appending.
 
         string? url = settings.Role switch
         {
@@ -63,7 +64,7 @@ public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
 
         if (url == null)
         {
-            AnsiConsole.MarkupLine("[red]Couldn't build a valid target URL — check your .flowline config.[/]");
+            Console.Error("Couldn't build a valid target URL — check your .flowline config");
             return 1;
         }
 
@@ -72,7 +73,7 @@ public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
         if (targetEnv == null)
         {
             var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-            await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+            await Console.Status().FlowlineSpinner().StartAsync(
                 $"Creating [bold]{targetDisplayName}[/]...",
                 _ => Cli.Wrap(cmdName)
                      .WithArguments(args => args
@@ -90,24 +91,24 @@ public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
             targetEnv = await FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, settings, cancellationToken);
             if (targetEnv == null)
             {
-                AnsiConsole.MarkupLine("[red]Environment created but not found — check the Power Platform admin center.[/]");
+                Console.Error("Environment created but not found — check the Power Platform admin center");
                 return 1;
             }
         }
         else
         {
-            AnsiConsole.MarkupLine($"[dim]Environment already exists — [link]{targetEnv.EnvironmentUrl}[/][/]");
+            Console.Skip($"Environment already exists — [link]{targetEnv.EnvironmentUrl}[/]");
         }
 
         if (targetEnv.Type == "Production")
         {
-            AnsiConsole.MarkupLine("[red]Can't overwrite a Production environment.[/]");
+            Console.Error("Can't overwrite a Production environment");
             return 1;
         }
 
         if (!settings.AllowOverwrite)
         {
-            AnsiConsole.MarkupLine($"[yellow]'{targetEnv.DisplayName}' already exists — use --allow-overwrite to overwrite.[/]");
+            Console.Warning($"[bold]{targetEnv.DisplayName}[/] already exists — use --allow-overwrite to overwrite");
             return 0;
         }
         // reset: empty env with factory settings (https://learn.microsoft.com/en-us/power-platform/admin/reset-environment)?
@@ -118,7 +119,7 @@ public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
 
         var (cmdNameCopy, prefixArgsCopy, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
 
-        await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+        await Console.Status().FlowlineSpinner().StartAsync(
             $"Copying prod to [bold]{targetDisplayName}[/]...",
             _ => Cli.Wrap(cmdNameCopy)
                  .WithArguments(args => args
@@ -134,10 +135,8 @@ public class ProvisionCommand : FlowlineCommand<ProvisionCommand.Settings>
                  .ExecuteAsync(cancellationToken)
                  .Task);
 
-        AnsiConsole.MarkupLine($"[bold green]:rocket: Provisioned! See [link]{targetEnv.EnvironmentUrl}[/][/]");
-
         Config!.Save();
-        AnsiConsole.MarkupLine("[dim]Config saved — you can now run 'clone' or 'sync'.[/]");
+        Console.Success($"[bold]:rocket: Provisioned! See [link]{targetEnv.EnvironmentUrl}[/]. You can now run 'clone' or 'sync'");
 
         return 0;
 

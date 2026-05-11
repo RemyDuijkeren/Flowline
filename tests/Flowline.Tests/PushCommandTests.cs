@@ -1,5 +1,6 @@
 using Flowline.Commands;
 using FluentAssertions;
+using Spectre.Console;
 
 namespace Flowline.Tests;
 
@@ -59,7 +60,7 @@ public class PushCommandTests : IDisposable
             Scopes = [PushCommand.PushScope.Plugins]
         };
 
-        PushCommand.ValidateStandaloneMode(settings, _root).Should().BeFalse();
+        PushCommand.ValidateStandaloneMode(AnsiConsole.Console, settings, _root).Should().BeFalse();
     }
 
     [Fact]
@@ -68,7 +69,7 @@ public class PushCommandTests : IDisposable
         File.WriteAllText(Path.Combine(_root, ".flowline"), "{}");
         var settings = new PushCommand.Settings { Dll = "plugins.dll" };
 
-        PushCommand.ValidateStandaloneMode(settings, _root).Should().BeFalse();
+        PushCommand.ValidateStandaloneMode(AnsiConsole.Console, settings, _root).Should().BeFalse();
     }
 
     [Fact]
@@ -76,7 +77,7 @@ public class PushCommandTests : IDisposable
     {
         var settings = new PushCommand.Settings { Dll = "plugins.dll" };
 
-        PushCommand.ResolveStandaloneSolutionName(settings).Should().BeNull();
+        PushCommand.ResolveStandaloneSolutionName(AnsiConsole.Console, settings).Should().BeNull();
     }
 
     [Fact]
@@ -86,7 +87,7 @@ public class PushCommandTests : IDisposable
         File.WriteAllText(dll, "");
         var settings = new PushCommand.Settings { Dll = dll };
 
-        PushCommand.ResolveStandaloneDllPath(settings).Should().Be(Path.GetFullPath(dll));
+        PushCommand.ResolveStandaloneDllPath(AnsiConsole.Console, settings).Should().Be(Path.GetFullPath(dll));
     }
 
     [Fact]
@@ -96,7 +97,7 @@ public class PushCommandTests : IDisposable
         File.WriteAllText(file, "");
         var settings = new PushCommand.Settings { Dll = file };
 
-        PushCommand.ResolveStandaloneDllPath(settings).Should().BeNull();
+        PushCommand.ResolveStandaloneDllPath(AnsiConsole.Console, settings).Should().BeNull();
     }
 
     [Fact]
@@ -106,6 +107,6 @@ public class PushCommandTests : IDisposable
         Directory.CreateDirectory(folder);
         var settings = new PushCommand.Settings { WebResources = folder };
 
-        PushCommand.ResolveStandaloneWebResourcesPath(settings).Should().Be(Path.GetFullPath(folder));
+        PushCommand.ResolveStandaloneWebResourcesPath(AnsiConsole.Console, settings).Should().Be(Path.GetFullPath(folder));
     }
 }

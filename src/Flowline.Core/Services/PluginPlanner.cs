@@ -4,7 +4,7 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class PluginPlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
+public class PluginPlanner(IAnsiConsole output, bool isVerbose)
 {
     const string FlowlineMarker = "[flowline]";
 

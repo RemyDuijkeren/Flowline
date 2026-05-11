@@ -7,8 +7,8 @@ namespace Flowline.Core.Services;
 public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 {
     readonly WebResourceReader _reader = new();
-    readonly WebResourcePlanner _planner = new(output, opt);
-    readonly WebResourceExecutor _executor = new(output, opt);
+    readonly WebResourcePlanner _planner = new(output, opt.IsVerbose);
+    readonly WebResourceExecutor _executor = new(output, opt.IsVerbose);
 
     public async Task SyncSolutionAsync(
         IOrganizationServiceAsync2 service,
@@ -39,7 +39,7 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             foreach (var a in plan.Skips)
                 output.Skip($"Web resource '{a.Name}' kept ({a.Reason})");
 
-            output.Done("Web resources already up to date — skipping");
+            output.Success("Web resources already up to date — skipping");
             return;
         }
 
@@ -103,49 +103,49 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         if (!opt.IsVerbose)
             return;
 
-        output.Verbose("Web resource plan", opt);
-        output.Verbose($"  Summary: {plan.TotalDeletes} delete(s), {plan.TotalUpserts} upsert(s), {plan.AddsToSolution.Count} add-to-solution action(s)", opt);
+        output.Verbose("Web resource plan", opt.IsVerbose);
+        output.Verbose($"  Summary: {plan.TotalDeletes} delete(s), {plan.TotalUpserts} upsert(s), {plan.AddsToSolution.Count} add-to-solution action(s)", opt.IsVerbose);
 
         if (plan.Creates.Count > 0)
         {
-            output.Verbose($"  Creates ({plan.Creates.Count})", opt);
+            output.Verbose($"  Creates ({plan.Creates.Count})", opt.IsVerbose);
             foreach (var a in plan.Creates.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-                output.Verbose($"    - {a.Name}", opt);
+                output.Verbose($"    - {a.Name}", opt.IsVerbose);
         }
 
         if (plan.Updates.Count > 0)
         {
-            output.Verbose($"  Updates ({plan.Updates.Count})", opt);
+            output.Verbose($"  Updates ({plan.Updates.Count})", opt.IsVerbose);
             foreach (var a in plan.Updates.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-                output.Verbose($"    - {a.Name}", opt);
+                output.Verbose($"    - {a.Name}", opt.IsVerbose);
         }
 
         if (plan.AddsToSolution.Count > 0)
         {
-            output.Verbose($"  Add to solution ({plan.AddsToSolution.Count})", opt);
+            output.Verbose($"  Add to solution ({plan.AddsToSolution.Count})", opt.IsVerbose);
             foreach (var a in plan.AddsToSolution.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-                output.Verbose($"    - {a.Name}", opt);
+                output.Verbose($"    - {a.Name}", opt.IsVerbose);
         }
 
         if (plan.Deletes.Count > 0)
         {
-            output.Verbose($"  Deletes ({plan.Deletes.Count})", opt);
+            output.Verbose($"  Deletes ({plan.Deletes.Count})", opt.IsVerbose);
             foreach (var a in plan.Deletes.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-                output.Verbose($"    - {a.Name}", opt);
+                output.Verbose($"    - {a.Name}", opt.IsVerbose);
         }
 
         if (plan.RemovesFromSolution.Count > 0)
         {
-            output.Verbose($"  Remove from solution ({plan.RemovesFromSolution.Count})", opt);
+            output.Verbose($"  Remove from solution ({plan.RemovesFromSolution.Count})", opt.IsVerbose);
             foreach (var a in plan.RemovesFromSolution.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-                output.Verbose($"    - {a.Name}", opt);
+                output.Verbose($"    - {a.Name}", opt.IsVerbose);
         }
 
         if (plan.Skips.Count > 0)
         {
-            output.Verbose($"  Skips ({plan.Skips.Count})", opt);
+            output.Verbose($"  Skips ({plan.Skips.Count})", opt.IsVerbose);
             foreach (var a in plan.Skips.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-                output.Verbose($"    - {a.Name} ({a.Reason})", opt);
+                output.Verbose($"    - {a.Name} ({a.Reason})", opt.IsVerbose);
         }
     }
 
@@ -162,6 +162,6 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         if (publishCount > 0)
             output.Info($"{publishCount} web resource(s) — would publish");
 
-        output.Done($"Dry run: {plan.Deletes.Count} delete(s), {plan.RemovesFromSolution.Count} remove(s), {plan.Creates.Count} create(s), {plan.Updates.Count} update(s), {plan.AddsToSolution.Count} add(s), {plan.Skips.Count} skip(s). Run without --dry-run to apply.");
+        output.Success($"Dry run: {plan.Deletes.Count} delete(s), {plan.RemovesFromSolution.Count} remove(s), {plan.Creates.Count} create(s), {plan.Updates.Count} update(s), {plan.AddsToSolution.Count} add(s), {plan.Skips.Count} skip(s). Run without --dry-run to apply.");
     }
 }

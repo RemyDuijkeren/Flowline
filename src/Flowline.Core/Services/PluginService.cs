@@ -11,10 +11,10 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
     const string FlowlineMarker = "[flowline]";
 
     readonly PluginReader _reader   = new();
-    readonly PluginPlanner      _planner  = new(output, opt);
-    readonly PluginExecutor _executor = new(output, opt);
+    readonly PluginPlanner      _planner  = new(output, opt.IsVerbose);
+    readonly PluginExecutor _executor = new(output, opt.IsVerbose);
     readonly SolutionReader  _solutionReader = new();
-    readonly PluginAssemblyReader _assemblyReader = new(output, opt);
+    readonly PluginAssemblyReader _assemblyReader = new(output, opt.IsVerbose);
 
     public async Task SyncSolutionAsync(
         IOrganizationServiceAsync2 service,
@@ -49,7 +49,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
         // Phase 1: Get or register assembly
         var (assembly, needsUpdate) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
-        output.Done($"Assembly registered [bold]{metadata.Name}[/] ({metadata.Version})");
+        output.Success($"Assembly registered [bold]{metadata.Name}[/] ({metadata.Version})");
 
         // Phase 2: Load snapshot (all Dataverse state in parallel)
         var snapshot = await output.Status()
@@ -88,7 +88,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
         if (!needsUpdate && plan.TotalChanges == 0)
         {
-            output.Done("Plugins already up to date — skipping");
+            output.Success("Plugins already up to date — skipping");
             return;
         }
 
@@ -107,7 +107,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 })
                 .ConfigureAwait(false);
         }
-        if (plan.TotalDeletes > 0) output.Done($"{plan.TotalDeletes} stale component(s) deleted");
+        if (plan.TotalDeletes > 0) output.Success($"{plan.TotalDeletes} stale component(s) deleted");
 
         // Phase 5: Update assembly content — must happen before new plugin types are registered
         if (needsUpdate)
@@ -123,7 +123,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                     task.Increment(1);
                 })
                 .ConfigureAwait(false);
-            output.Done($"Updated assembly content for [bold]{metadata.Name}[/]");
+            output.Success($"Updated assembly content for [bold]{metadata.Name}[/]");
         }
 
         // Phase 6: Execute upserts and add to solution
@@ -197,7 +197,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             var response = (CreateResponse)await service.ExecuteAsync(
                 new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName }, cancellationToken).ConfigureAwait(false);
 
-            output.Done($"Assembly [bold]{metadata.Name}[/] added");
+            output.Success($"Assembly [bold]{metadata.Name}[/] added");
 
             entity.Id = response.id;
             return (entity, false);
@@ -250,7 +250,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 cancellationToken).ConfigureAwait(false);
 
             freshEntity.Id = response.id;
-            output.Done($"Assembly [bold]{metadata.Name}[/] recreated");
+            output.Success($"Assembly [bold]{metadata.Name}[/] recreated");
             return (freshEntity, false);
         }
 
@@ -286,7 +286,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                       + plan.ResponseProps.Upserts.Count(u => u.IsCreate);
         var updates = plan.TotalUpserts - creates;
 
-        output.Done($"Dry run: {plan.TotalDeletes} delete(s), {creates} create(s), {updates} update(s). Run without --dry-run to apply.");
+        output.Success($"Dry run: {plan.TotalDeletes} delete(s), {creates} create(s), {updates} update(s). Run without --dry-run to apply.");
     }
 
     void WriteSnapshotVerbose(RegistrationSnapshot snapshot)
@@ -454,8 +454,8 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             return;
 
         var addToSolutionCount = CountAddToSolutionComponents(plan);
-        output.Verbose("Registration plan", opt);
-        output.Verbose($"  Summary: {plan.TotalDeletes} delete(s), {plan.TotalUpserts} upsert(s), {addToSolutionCount} add-to-solution action(s)", opt);
+        output.Verbose("Registration plan", opt.IsVerbose);
+        output.Verbose($"  Summary: {plan.TotalDeletes} delete(s), {plan.TotalUpserts} upsert(s), {addToSolutionCount} add-to-solution action(s)", opt.IsVerbose);
 
         WriteActionPlanVerbose("Plugin types", plan.PluginTypes,
             e => $"workflow={BoolValue(e, "isworkflowactivity")}");
@@ -473,31 +473,31 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
     void WriteActionPlanVerbose(string title, ActionPlan actionPlan, Func<Entity, string> entityDetail)
     {
-        output.Verbose($"  {title}", opt);
+        output.Verbose($"  {title}", opt.IsVerbose);
 
         if (actionPlan.Deletes.Count > 0)
         {
-            output.Verbose($"    Deletes ({actionPlan.Deletes.Count})", opt);
+            output.Verbose($"    Deletes ({actionPlan.Deletes.Count})", opt.IsVerbose);
             foreach (var action in actionPlan.Deletes.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-                output.Verbose($"      - {Safe(action.Name)}", opt);
+                output.Verbose($"      - {Safe(action.Name)}", opt.IsVerbose);
         }
 
         if (actionPlan.Upserts.Count > 0)
         {
-            output.Verbose($"    Upserts ({actionPlan.Upserts.Count})", opt);
+            output.Verbose($"    Upserts ({actionPlan.Upserts.Count})", opt.IsVerbose);
             foreach (var action in actionPlan.Upserts.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
             {
                 var detail = entityDetail(action.Entity);
                 var solution = string.IsNullOrWhiteSpace(action.SolutionName) ? "" : $" solution={Safe(action.SolutionName)}";
-                output.Verbose($"      - {Safe(action.Name)} [[{(action.IsCreate ? "create" : "update")}]] {detail}{solution}", opt);
+                output.Verbose($"      - {Safe(action.Name)} [[{(action.IsCreate ? "create" : "update")}]] {detail}{solution}", opt.IsVerbose);
             }
         }
 
         if (actionPlan.AddSolutionComponents.Count > 0)
         {
-            output.Verbose($"    Add to solution ({actionPlan.AddSolutionComponents.Count})", opt);
+            output.Verbose($"    Add to solution ({actionPlan.AddSolutionComponents.Count})", opt.IsVerbose);
             foreach (var action in actionPlan.AddSolutionComponents.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-                output.Verbose($"      - {Safe(action.Name)} solution={Safe(action.SolutionName)} componenttype={action.ComponentType}", opt);
+                output.Verbose($"      - {Safe(action.Name)} solution={Safe(action.SolutionName)} componenttype={action.ComponentType}", opt.IsVerbose);
         }
     }
 

@@ -5,7 +5,7 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class WebResourcePlanner(IAnsiConsole output, FlowlineRuntimeOptions opt)
+public class WebResourcePlanner(IAnsiConsole output, bool isVerbose)
 {
     static readonly Regex ValidFilePathRegex = new(@"^[a-zA-Z0-9_.\-]+(/[a-zA-Z0-9_.\-]+)*$", RegexOptions.Compiled);
 

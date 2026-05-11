@@ -6,7 +6,7 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class PluginAssemblyReader(IAnsiConsole output, FlowlineRuntimeOptions opt)
+public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
 {
     private static readonly string[] MessageNames =
         Enum.GetNames<MessageName>().OrderByDescending(n => n.Length).ToArray();
@@ -134,7 +134,7 @@ public class PluginAssemblyReader(IAnsiConsole output, FlowlineRuntimeOptions op
 
             if (isWorkflow)
             {
-                output.Verbose($"Found Workflow {type.FullName}", opt);
+                output.Verbose($"Found Workflow {type.FullName}", isVerbose);
                 pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, Steps: [], CustomApis: [], IsWorkflow: true));
                 continue;
             }
@@ -144,7 +144,7 @@ public class PluginAssemblyReader(IAnsiConsole output, FlowlineRuntimeOptions op
                 var customApi = TryBuildCustomApi(type);
                 if (customApi != null)
                 {
-                    output.Verbose($"Found Custom API {type.FullName}", opt);
+                    output.Verbose($"Found Custom API {type.FullName}", isVerbose);
                     pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, Steps: [], CustomApis: [customApi], IsWorkflow: false, IsCustomApi: true));
                     continue;
                 }
@@ -152,13 +152,13 @@ public class PluginAssemblyReader(IAnsiConsole output, FlowlineRuntimeOptions op
                 var step = TryBuildStep(type);
                 if (step != null)
                 {
-                    output.Verbose($"Found Plugin {type.FullName} with plugin step {step.Name}", opt);
+                    output.Verbose($"Found Plugin {type.FullName} with plugin step {step.Name}", isVerbose);
                     foreach (var warning in step.Warnings) output.Warning(warning);
                     pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, [step], [], isWorkflow));
                 }
                 else
                 {
-                    output.Verbose($"Found Plugin {type.FullName} with no [[Step]] or [[Custom API]]", opt);
+                    output.Verbose($"Found Plugin {type.FullName} with no [[Step]] or [[Custom API]]", isVerbose);
                     pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, [], [], isWorkflow));
                 }
             }
@@ -305,7 +305,7 @@ public class PluginAssemblyReader(IAnsiConsole output, FlowlineRuntimeOptions op
         foreach (var arg in stepAttr.NamedArguments)
         {
             if (arg.MemberName == "Order") order = Convert.ToInt32(arg.TypedValue.Value);
-            else if (arg.MemberName == "Configuration") configuration = (string?)arg.TypedValue.Value;
+            else if (arg.MemberName == "Config") configuration = (string?)arg.TypedValue.Value;
             else if (arg.MemberName == "RunAs") runAsString = (string?)arg.TypedValue.Value;
             else if (arg.MemberName == "DeleteJobOnSuccess") deleteJobOnSuccessExplicit = (bool)arg.TypedValue.Value!;
         }

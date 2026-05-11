@@ -8,7 +8,7 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt)
+public class WebResourceExecutor(IAnsiConsole output, bool isVerbose)
 {
     const int MaxParallelism = 8;
     const int WebResourceComponentType = 61;
@@ -31,8 +31,8 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
             publishIds.AddRange(await output.Progress().StartAsync(ctx =>
                 ExecuteCreatesAsync(service, plan.Creates, failures,
                     ctx.AddTask("Creating web resources", maxValue: plan.Creates.Count), cancellationToken)).ConfigureAwait(false));
-            foreach (var a in plan.Creates) output.Verbose($"Web resource '{a.Name}' created", opt);
-            output.Done($"{plan.Creates.Count} web resource(s) created");
+            foreach (var a in plan.Creates) output.Verbose($"Web resource '{a.Name}' created", isVerbose);
+            output.Success($"{plan.Creates.Count} web resource(s) created");
         }
 
         // Update web resources — parallel, so lock needed for progress
@@ -48,8 +48,8 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
                     }
                     catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                 }, ctx.AddTask("Updating web resources", maxValue: plan.Updates.Count), cancellationToken)).ConfigureAwait(false);
-            foreach (var a in plan.Updates) output.Verbose($"Web resource '{a.Name}' updated", opt);
-            output.Done($"{plan.Updates.Count} web resource(s) updated");
+            foreach (var a in plan.Updates) output.Verbose($"Web resource '{a.Name}' updated", isVerbose);
+            output.Success($"{plan.Updates.Count} web resource(s) updated");
         }
 
         // Add web resources to solution — parallel, so lock needed for progress
@@ -61,8 +61,8 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
                     try { await AddToSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken).ConfigureAwait(false); }
                     catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                 }, ctx.AddTask("Adding web resources to solution", maxValue: plan.AddsToSolution.Count), cancellationToken)).ConfigureAwait(false);
-            foreach (var a in plan.AddsToSolution) output.Verbose($"Web resource '{a.Name}' added to solution", opt);
-            output.Done($"{plan.AddsToSolution.Count} web resource(s) added to solution");
+            foreach (var a in plan.AddsToSolution) output.Verbose($"Web resource '{a.Name}' added to solution", isVerbose);
+            output.Success($"{plan.AddsToSolution.Count} web resource(s) added to solution");
         }
 
         if (!save)
@@ -76,8 +76,8 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
                         try { await service.DeleteAsync("webresource", action.Id!.Value, cancellationToken).ConfigureAwait(false); }
                         catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                     }, ctx.AddTask("Deleting web resources", maxValue: plan.Deletes.Count), cancellationToken)).ConfigureAwait(false);
-                foreach (var a in plan.Deletes) output.Verbose($"Web resource '{a.Name}' deleted", opt);
-                output.Done($"{plan.Deletes.Count} web resource(s) deleted");
+                foreach (var a in plan.Deletes) output.Verbose($"Web resource '{a.Name}' deleted", isVerbose);
+                output.Success($"{plan.Deletes.Count} web resource(s) deleted");
             }
 
             // Remove web resources from solution — parallel, so lock needed for progress
@@ -89,8 +89,8 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
                         try { await RemoveFromSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken).ConfigureAwait(false); }
                         catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                     }, ctx.AddTask("Removing web resources from solution", maxValue: plan.RemovesFromSolution.Count), cancellationToken)).ConfigureAwait(false);
-                foreach (var a in plan.RemovesFromSolution) output.Verbose($"Web resource '{a.Name}' removed from solution", opt);
-                output.Done($"{plan.RemovesFromSolution.Count} web resource(s) removed from solution");
+                foreach (var a in plan.RemovesFromSolution) output.Verbose($"Web resource '{a.Name}' removed from solution", isVerbose);
+                output.Success($"{plan.RemovesFromSolution.Count} web resource(s) removed from solution");
             }
         }
         else
@@ -107,7 +107,7 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
             await output.Status()
                         .StartAsync("Publishing web resources", ctx => PublishAsync(service, distinctIds, cancellationToken))
                         .ConfigureAwait(false);
-            output.Done($"{distinctIds.Count} web resource(s) published");
+            output.Success($"{distinctIds.Count} web resource(s) published");
         }
 
         if (failures.Count > 0)

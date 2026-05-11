@@ -1,5 +1,6 @@
 using System.Reflection;
 using Flowline.Config;
+using Flowline.Core;
 using Flowline.Utils;
 using Flowline.Validation;
 using Spectre.Console;
@@ -16,12 +17,30 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
     protected const string WebResourcesName = "WebResources";
     protected const string ExtensionsName = "Extensions";
 
+    protected readonly IAnsiConsole Console;
+    protected FlowlineRuntimeOptions RuntimeOptions { get; }
+
+    protected FlowlineCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions)
+    {
+        Console = console;
+        RuntimeOptions = runtimeOptions;
+    }
+
     protected string RootFolder { get; private set; } = Directory.GetCurrentDirectory();
     protected ProjectConfig? Config { get; private set; }
     protected virtual bool ShowWelcome => true;
 
+    protected void InitializeRuntimeOptions(TSettings settings)
+    {
+        RuntimeOptions.IsVerbose = settings.Verbose;
+        RuntimeOptions.JsonOutput = settings.JsonOutput;
+        RuntimeOptions.Force = settings.Force;
+    }
+
     protected override async Task<int> ExecuteAsync(CommandContext context, TSettings settings, CancellationToken cancellationToken)
     {
+        InitializeRuntimeOptions(settings);
+
         if (ShowWelcome && !settings.JsonOutput)
             WelcomeScreen();
 
@@ -32,25 +51,23 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
         return await ExecuteFlowlineAsync(context, settings, cancellationToken);
     }
 
-    static void WelcomeScreen()
+    void WelcomeScreen()
     {
-        // var appName = new FigletText("Flowline").Color(Color.Green);
         var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version;
         var versionText = new Text($"Version {version}", new Style(Color.Green));
 
-        // AnsiConsole.Write(appName);
-        AnsiConsole.MarkupLine("[green]____ _    ____ _ _ _ _    _ _  _ ____[/]");
-        AnsiConsole.MarkupLine("[green]|___ |    |  | | | | |    | |\\ | |___[/]");
-        AnsiConsole.MarkupLine("[green]|    |___ |__| |_|_| |___ | | \\| |___[/]");
-        AnsiConsole.Write(versionText);
-        AnsiConsole.WriteLine();
+        Console.MarkupLine("[green]____ _    ____ _ _ _ _    _ _  _ ____[/]");
+        Console.MarkupLine("[green]|___ |    |  | | | | |    | |\\ | |___[/]");
+        Console.MarkupLine("[green]|    |___ |__| |_|_| |___ | | \\| |___[/]");
+        Console.Write(versionText);
+        Console.WriteLine();
     }
 
     protected abstract Task<int> ExecuteFlowlineAsync(CommandContext context, TSettings settings, CancellationToken cancellationToken);
 
     protected virtual async Task CheckSetupAsync(TSettings settings, CancellationToken cancellationToken)
     {
-        await AnsiConsole.Status().FlowlineSpinner().StartAsync("Checking your setup...", async ctx =>
+        await Console.Status().FlowlineSpinner().StartAsync("Checking your setup...", async ctx =>
         {
             await FlowlineValidator.Default.EnsureDotNetAsync(settings, cancellationToken);
             await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
@@ -58,7 +75,7 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
             await FlowlineValidator.Default.EnsureGitRepoAsync(RootFolder, settings, cancellationToken);
         });
 
-        AnsiConsole.MarkupLine("[green]All good, let's go![/]");
+        Console.Success("All good, let's go!");
     }
 
     protected async Task<EnvironmentInfo?> GetAndCheckEnvironmentInfoAsync(EnvironmentRole role, string? inputUrl, TSettings settings, CancellationToken cancellationToken)
@@ -88,33 +105,33 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
 
         if (string.IsNullOrEmpty(url))
         {
-            AnsiConsole.MarkupLine($"[red]{label} URL is required — use {flag} <URL>.[/]");
+            Console.Error($"{label} URL is required — use {flag} <URL>.");
             return null;
         }
 
-        EnvironmentInfo? env = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+        EnvironmentInfo? env = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking {label.ToLower()} [bold]{url}[/]...",
             ctx => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(url, settings, cancellationToken));
 
         if (env == null)
         {
-            AnsiConsole.MarkupLine($"[red]{label} environment not found — check the URL or your PAC login.[/]");
+            Console.Error($"{label} environment not found — check the URL or your PAC login.");
             return null;
         }
 
         if (role == EnvironmentRole.Prod && env.Type != "Production")
         {
-            AnsiConsole.MarkupLine("[red]That environment isn't Production type.[/]");
+            Console.Error("That environment isn't Production type.");
             return null;
         }
 
         if (role != EnvironmentRole.Prod && env.Type == "Production")
         {
-            AnsiConsole.MarkupLine("[red]That's a Production environment — use a sandbox or dev instead.[/]");
+            Console.Error("That's a Production environment — use a sandbox or dev instead.");
             return null;
         }
 
-        AnsiConsole.MarkupLine($"[green]{label}: [bold]{env.DisplayName}[/] ({env.EnvironmentUrl})[/]");
+        Console.Success($"{label}: [bold]{env.DisplayName}[/] ({env.EnvironmentUrl})");
         return env;
     }
 
@@ -128,20 +145,20 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
         var projectSln = Config!.GetOrUpdateSolution(inputName, includeManaged, settings);
         if (projectSln == null)
         {
-            AnsiConsole.MarkupLine("[red]Solution name is required — pass it as an argument or use --solution <name>.[/]");
+            Console.Error("Solution name is required — pass it as an argument or use --solution <name>.");
             return (null, null);
         }
 
-        SolutionInfo? remoteSln = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+        SolutionInfo? remoteSln = await Console.Status().FlowlineSpinner().StartAsync(
             $"Looking up [bold]{projectSln.Name}[/]...",
             ctx => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, projectSln.Name, includeManaged, settings, cancellationToken));
         if (remoteSln == null)
         {
-            AnsiConsole.MarkupLine($"[red]'{projectSln.Name}' not found in that environment.[/]");
+            Console.Error($"[bold]{projectSln.Name}[/] not found in that environment.");
             return (projectSln, null);
         }
 
-        AnsiConsole.MarkupLine($"[green]Solution: [bold]{projectSln.Name}[/] (managed: {remoteSln.IsManaged})[/]");
+        Console.Success($"Solution: [bold]{projectSln.Name}[/] (managed: {remoteSln.IsManaged})");
 
         return (projectSln, remoteSln);
     }

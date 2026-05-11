@@ -29,7 +29,7 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
         var resourceUrl = environmentUrl.TrimEnd('/');
         var serviceUri  = new Uri(resourceUrl + "/");
 
-        output.Verbose($"Connecting via PAC profile '{profile.Name ?? profile.User}' at {resourceUrl}...", opt);
+        output.Verbose($"Connecting via PAC profile '{profile.Name ?? profile.User}' at {resourceUrl}...", opt.IsVerbose);
 
         var authority = string.IsNullOrWhiteSpace(profile.Authority)
             ? "https://login.microsoftonline.com/organizations"
@@ -99,7 +99,7 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 $"Run 'pac auth create --kind ServicePrincipal --applicationId {appId} --clientSecret <secret>{tenantArg}' to authenticate.", ex);
         }
 
-        output.Verbose($"Token acquired for app '{appId}' (expires {initialToken.ExpiresOn:HH:mm})", opt);
+        output.Verbose($"Token acquired for app '{appId}' (expires {initialToken.ExpiresOn:HH:mm})", opt.IsVerbose);
 
         return new ServiceClient(serviceUri, async _ =>
         {
@@ -146,7 +146,7 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 $"Run 'pac auth create --url {resourceUrl}' to re-authenticate.", ex);
         }
 
-        output.Verbose($"Token acquired silently for {initialToken.Account.Username} (expires {initialToken.ExpiresOn:HH:mm})", opt);
+        output.Verbose($"Token acquired silently for {initialToken.Account.Username} (expires {initialToken.ExpiresOn:HH:mm})", opt.IsVerbose);
 
         var tokenAccount = initialToken.Account;
         return new ServiceClient(serviceUri, async _ =>
@@ -197,7 +197,7 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
         if (!File.Exists(authProfilesPath))
         {
-            output.Verbose($"PAC auth profiles file not found: {authProfilesPath}", opt);
+            output.Verbose($"PAC auth profiles file not found: {authProfilesPath}", opt.IsVerbose);
             return null;
         }
 
@@ -208,7 +208,7 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
         }
         catch (Exception ex)
         {
-            output.Verbose($"Failed to read PAC auth profiles: {ex.Message}", opt);
+            output.Verbose($"Failed to read PAC auth profiles: {ex.Message}", opt.IsVerbose);
             return null;
         }
     }

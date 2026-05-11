@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Reflection;
 using Flowline.Config;
 using Flowline.Utils;
@@ -8,34 +8,36 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class StatusCommand : AsyncCommand<StatusCommand.Settings>
+public class StatusCommand(IAnsiConsole console) : AsyncCommand<StatusCommand.Settings>
 {
+    private readonly IAnsiConsole Console = console;
+
     public sealed class Settings : FlowlineSettings
     {
     }
 
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        AnsiConsole.MarkupLine(
+        Console.MarkupLine(
             $"[bold]Flowline[/] version: [green]{Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version}[/]");
 
         try
         {
             var dotNet = await FlowlineValidator.Default.EnsureDotNetAsync(settings, cancellationToken);
-            AnsiConsole.MarkupLine($"[bold].NET SDK[/] version: [green]{dotNet.Version}[/]");
+            Console.MarkupLine($"[bold].NET SDK[/] version: [green]{dotNet.Version}[/]");
 
             var pac = await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
-            AnsiConsole.MarkupLine($"[bold]Power Platform CLI[/] version: [green]{pac.Version}[/] ({pac.InstallType})");
+            Console.MarkupLine($"[bold]Power Platform CLI[/] version: [green]{pac.Version}[/] ({pac.InstallType})");
 
             var git = await FlowlineValidator.Default.EnsureGitAsync(settings, cancellationToken);
-            AnsiConsole.MarkupLine($"[bold]Git[/] version: [green]{git.Version}[/]");
+            Console.MarkupLine($"[bold]Git[/] version: [green]{git.Version}[/]");
 
             if (settings.Verbose)
             {
-                AnsiConsole.MarkupLine("\n[bold]Environment Information:[/]");
-                AnsiConsole.MarkupLine($"Operating System: [green]{Environment.OSVersion}[/]");
-                AnsiConsole.MarkupLine($".NET Runtime: [green]{Environment.Version}[/]");
-                AnsiConsole.MarkupLine($"64-bit OS: [green]{Environment.Is64BitOperatingSystem}[/]");
+                Console.MarkupLine("\n[bold]Environment Information:[/]");
+                Console.MarkupLine($"Operating System: [green]{Environment.OSVersion}[/]");
+                Console.MarkupLine($".NET Runtime: [green]{Environment.Version}[/]");
+                Console.MarkupLine($"64-bit OS: [green]{Environment.Is64BitOperatingSystem}[/]");
             }
         }
         catch
@@ -45,28 +47,28 @@ public class StatusCommand : AsyncCommand<StatusCommand.Settings>
 
         // Show the current configuration
         var config = ProjectConfig.Load();
-        AnsiConsole.MarkupLine("\n[bold]Configuration[/]");
+        Console.MarkupLine("\n[bold]Configuration[/]");
 
         if (config is not null)
         {
             if (!string.IsNullOrEmpty(config.ProdUrl))
-                AnsiConsole.MarkupLine($"  Production: [blue]{config.ProdUrl}[/]");
+                Console.MarkupLine($"  Production: [blue]{config.ProdUrl}[/]");
             else
-                AnsiConsole.MarkupLine("  Production: [gray]Not configured[/]");
+                Console.MarkupLine("  Production: [gray]Not configured[/]");
 
             if (!string.IsNullOrEmpty(config.StagingUrl))
-                AnsiConsole.MarkupLine($"  Staging: [blue]{config.StagingUrl}[/]");
+                Console.MarkupLine($"  Staging: [blue]{config.StagingUrl}[/]");
             else
-                AnsiConsole.MarkupLine("  Staging: [gray]Not configured[/]");
+                Console.MarkupLine("  Staging: [gray]Not configured[/]");
 
             if (!string.IsNullOrEmpty(config.DevUrl))
-                AnsiConsole.MarkupLine($"  Development: [blue]{config.DevUrl}[/]");
+                Console.MarkupLine($"  Development: [blue]{config.DevUrl}[/]");
             else
-                AnsiConsole.MarkupLine("  Development: [gray]Not configured[/]");
+                Console.MarkupLine("  Development: [gray]Not configured[/]");
         }
         else
         {
-            AnsiConsole.MarkupLine("  [yellow]No .flowline config found[/]");
+            Console.MarkupLine("  [yellow]No .flowline config found[/]");
         }
 
         return 0;
