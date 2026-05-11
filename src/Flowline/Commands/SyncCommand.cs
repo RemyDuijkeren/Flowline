@@ -63,6 +63,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
                          .Add("solution")
                          .Add("sync")
                          .Add("--solution-folder").Add(packageFolder)
+                         //.Add("--map").Add(@"E:\Code\TryOut\MyFlowTest\solutions\Cr07982\SolutionPackage\Mapping.xml")
                          .Add("--environment").Add(devEnv.EnvironmentUrl!)
                          .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
                          .Add("--async"))

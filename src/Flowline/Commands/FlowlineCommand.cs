@@ -150,11 +150,11 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
         }
 
         SolutionInfo? remoteSln = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Looking up [bold]{projectSln.Name}[/]...",
+            $"Looking up solution [bold]{projectSln.Name}[/]...",
             ctx => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, projectSln.Name, includeManaged, settings, cancellationToken));
         if (remoteSln == null)
         {
-            Console.Error($"[bold]{projectSln.Name}[/] not found in that environment.");
+            Console.Error($"Solution [bold]{projectSln.Name}[/] not found in that environment.");
             return (projectSln, null);
         }
 
