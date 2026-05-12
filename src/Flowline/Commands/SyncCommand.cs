@@ -45,8 +45,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         // Validate that we have an initialized project
         var slnFolder = Path.Combine(RootFolder, "solutions", projectSln.Name);
-        var packageFolder = Path.Combine(slnFolder, "SolutionPackage");
-        var cdsprojPath = Path.Combine(packageFolder, "SolutionPackage.cdsproj");
+        var cdsprojPath = Path.Combine(slnFolder, $"{projectSln.Name}.cdsproj");
         if (!File.Exists(cdsprojPath))
         {
             Console.Error($"No solution found at '{cdsprojPath}' — run 'clone' first");
@@ -62,7 +61,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
                          .AddIfNotNull(prefixArgs)
                          .Add("solution")
                          .Add("sync")
-                         .Add("--solution-folder").Add(packageFolder)
+                         .Add("--solution-folder").Add(slnFolder)
                          .Add("--map").Add(Path.Combine(slnFolder, "mapping-pac.xml"))
                          .Add("--environment").Add(devEnv.EnvironmentUrl!)
                          .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")

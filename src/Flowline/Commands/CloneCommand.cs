@@ -54,14 +54,13 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         Console.Verbose($"Project configuration saved to {ProjectConfig.s_configFileName}", settings.Verbose);
 
         var slnFolder = Path.Combine(RootFolder, AllSolutionsFolderName, projectSln.Name);
-        var solutionPackageFolder = Path.Combine(slnFolder, SolutionPackageName);
-        var cdsprojPath = Path.Combine(solutionPackageFolder, $"{SolutionPackageName}.cdsproj");
+        var cdsprojPath = Path.Combine(slnFolder, $"{projectSln.Name}.cdsproj");
         var slnFilePath = Path.Combine(slnFolder, $"{projectSln.Name}.sln");
 
         var buildMapFile = Path.Combine(slnFolder, "mapping-build.xml");
 
         if (await WriteMappingFilesAsync(slnFolder, cancellationToken) != 0) return 1;
-        if (await CloneSolutionFromDataverseAsync(projectSln, slnFolder, solutionPackageFolder, cdsprojPath, settings, cancellationToken) != 0) return 1;
+        if (await CloneSolutionFromDataverseAsync(projectSln, slnFolder, cdsprojPath, settings, cancellationToken) != 0) return 1;
         if (await CreateSolutionFileAsync(projectSln, slnFolder, slnFilePath, cdsprojPath, settings, cancellationToken) != 0) return 1;
         if (await SetupPluginsProjectAsync(slnFolder, settings, cancellationToken) != 0) return 1;
         if (await SetupWebResourcesProjectAsync(slnFolder, slnFilePath, settings, cancellationToken) != 0) return 1;
@@ -79,23 +78,16 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         return 0;
     }
 
-    private async Task<int> CloneSolutionFromDataverseAsync(ProjectSolution projectSln, string slnFolder, string solutionPackageFolder, string cdsprojPath, Settings settings, CancellationToken cancellationToken)
+    private async Task<int> CloneSolutionFromDataverseAsync(ProjectSolution projectSln, string slnFolder, string cdsprojPath, Settings settings, CancellationToken cancellationToken)
     {
-        // Cleanup if existing cloned output folder exists, so we download into a clean folder
-        string tempClonedOutputFolder = Path.Combine(slnFolder, projectSln.Name);
-        if (Directory.Exists(tempClonedOutputFolder))
-        {
-            Console.Info($"Removing stale temp clone folder");
-            Console.Verbose($"[dim]Path: /{AllSolutionsFolderName}/{projectSln.Name}/{projectSln.Name}[/]", settings.Verbose);
-            Directory.Delete(tempClonedOutputFolder, true);
-        }
-
-        if (Directory.Exists(solutionPackageFolder) && File.Exists(cdsprojPath))
+        if (File.Exists(cdsprojPath))
         {
             Console.Skip($"Solution already cloned — skipping");
             return 0;
         }
 
+        // PAC creates outputDirectory/SolutionName/ directly — no rename needed
+        var allSolutionsFolder = Path.Combine(RootFolder, AllSolutionsFolderName);
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
         CommandResult result = await Console.Status().FlowlineSpinner().StartAsync(
             $"Cloning solution [bold]{projectSln.Name}[/] from Dataverse...",
@@ -107,7 +99,7 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
                           .Add("--name").Add(projectSln.Name)
                           .Add("--environment").Add(Config!.ProdUrl!)
                           .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
-                          .Add("--outputDirectory").Add(slnFolder) // will create <sln.Name> folder under this given folder
+                          .Add("--outputDirectory").Add(allSolutionsFolder)
                           .Add("--map").Add(Path.Combine(slnFolder, "mapping-pac.xml"))
                           .Add("--async"))
                       .WithValidation(CommandResultValidation.None)
@@ -119,21 +111,6 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         {
             Console.Error("Clone failed — check the environment and your PAC login.");
             return 1;
-        }
-
-        // PAC creates tempClonedOutput folder 'solutions/SolutionName/SolutionName/SolutionName.cdsproj'
-        // We want 'solutions/SolutionName/SolutionPackage/SolutionPackage.cdsproj'
-        if (Directory.Exists(tempClonedOutputFolder))
-        {
-            Console.Verbose($"Renaming {tempClonedOutputFolder} -> {solutionPackageFolder}", settings.Verbose);
-            Directory.Move(tempClonedOutputFolder, solutionPackageFolder);
-        }
-
-        var clonedCdsproj = Path.Combine(solutionPackageFolder, $"{projectSln.Name}.cdsproj");
-        if (File.Exists(clonedCdsproj))
-        {
-            Console.Verbose($"Renaming {clonedCdsproj} -> {SolutionPackageName}.cdsproj", settings.Verbose);
-            File.Move(clonedCdsproj, Path.Combine(solutionPackageFolder, $"{SolutionPackageName}.cdsproj"));
         }
 
         Console.Success($"Solution [bold]{projectSln.Name}[/] cloned");
@@ -168,7 +145,6 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
 
         Console.Success("Solution file created");
 
-        // Add SolutionPackage.cdsproj to the solution
         // NOTE: 'dotnet sln add' doesn't support .cdsproj directly.
         // We'll rename it to .csproj, add it, then rename it back and fix the .sln file.
         var csprojPath = Path.ChangeExtension(cdsprojPath, ".csproj");
@@ -200,11 +176,11 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         {
             Console.Verbose("Fixing XML in .sln file...", settings.Verbose);
             var slnContent = await File.ReadAllTextAsync(slnFilePath, cancellationToken);
-            slnContent = slnContent.Replace($"{SolutionPackageName}.csproj", $"{SolutionPackageName}.cdsproj");
+            slnContent = slnContent.Replace($"{projectSln.Name}.csproj", $"{projectSln.Name}.cdsproj");
             await File.WriteAllTextAsync(slnFilePath, slnContent, cancellationToken);
         }
 
-        Console.Success($"[bold]{SolutionPackageName}.cdsproj[/] added to solution file");
+        Console.Success($"[bold]{projectSln.Name}.cdsproj[/] added to solution file");
         Console.Verbose($"[dim]{slnFilePath}[/]", settings.Verbose);
         return 0;
     }
@@ -358,10 +334,9 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
             """
             <?xml version="1.0" encoding="utf-8"?>
             <Mapping>
-                <!-- pac solution clone / sync: paths relative to SolutionPackage\ (2 levels up to solution root) -->
-                <FileToFile map="PluginAssemblies\**\Plugins.dll" to="..\..\Plugins\bin\Release\net462\Plugins.dll" />
-                <FileToPath map="WebResources\*.*"     to="..\..\..\WebResources\dist\**" />
-                <FileToPath map="WebResources\**\*.*"  to="..\..\WebResources\dist\**" />
+                <!-- pac solution clone / sync: paths relative to solutions\SolutionName\ (1 level up to solutions root) -->
+                <FileToFile map="PluginAssemblies\**\Plugins.dll" to="..\Plugins\bin\Release\net462\Plugins.dll" />
+                <FileToPath map="WebResources\**\*.*"  to="..\WebResources\dist\**" />
             </Mapping>
             """, cancellationToken).FlowlineSpinner();
 
@@ -369,10 +344,9 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
             """
             <?xml version="1.0" encoding="utf-8"?>
             <Mapping>
-                <!-- dotnet build (SolutionPackagerTask via MSBuild): paths relative to obj\Debug\Metadata\ (4 levels up) -->
-                <FileToFile map="PluginAssemblies\**\Plugins.dll" to="..\..\..\..\Plugins\bin\Release\net462\Plugins.dll" />
-                <FileToPath map="WebResources\*.*"     to="..\..\..\..\WebResources\dist\**" />
-                <FileToPath map="WebResources\**\*.*"  to="..\..\..\..\WebResources\dist\**" />
+                <!-- dotnet build (SolutionPackagerTask via MSBuild): paths relative to obj\Debug\Metadata\ (3 levels up) -->
+                <FileToFile map="PluginAssemblies\**\Plugins.dll" to="..\..\..\Plugins\bin\Release\net462\Plugins.dll" />
+                <FileToPath map="WebResources\**\*.*"  to="..\..\..\WebResources\dist\**" />
             </Mapping>
             """, cancellationToken).FlowlineSpinner();
 

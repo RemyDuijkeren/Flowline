@@ -54,7 +54,7 @@ Green, bold for the named thing. Drop redundant metadata (don't repeat what was 
 ### "Already there, skipping" *(idempotent steps)*
 Dim — not a success, not an error. No "Skip creation" — just state what's true.
 ```
-[dim]SolutionPackage already cloned — skipping[/]
+[dim]Solution already cloned — skipping[/]
 [dim]Solution file already there — skipping[/]
 [dim]Plugins project already there — skipping[/]
 ```
@@ -117,7 +117,7 @@ Prod: ByteValue (https://...)
 Solution: CrO7982 (managed: false)
 
                                           ← ACT 3: work steps
-SolutionPackage already cloned — skipping    [dim]
+Solution already cloned — skipping           [dim]
 Solution file already there — skipping       [dim]
 Plugins project ready                     [green]
 WebResources project ready                   [green]
@@ -168,12 +168,7 @@ output should feel complete without it.
    [dim]Git version: 2.44.0[/]
    ```
 
-6. **Paths for internal file operations** (renames, moves):
-   ```
-   [dim]Renaming CrO7982.cdsproj → SolutionPackage.cdsproj[/]
-   ```
-
-7. **Verbose never changes the structure.** Acts, spinners, and the finish line are identical —
+6. **Verbose never changes the structure.** Acts, spinners, and the finish line are identical —
    verbose only inserts `[dim]` lines in between.
 
 ---

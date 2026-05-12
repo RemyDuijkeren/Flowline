@@ -56,7 +56,7 @@ Flowline can be used in two ways.
 
 ### Full Project Workflow
 
-Use this when Flowline owns the local solution structure. `clone` creates `.flowline`, the unpacked solution, an `Extensions` project, and a `WebResources` project.
+Use this when Flowline owns the local solution structure. `clone` creates `.flowline`, the unpacked solution, an `Plugins` project, and a `WebResources` project.
 
 ```bash
 # Create a Git repo for the Flowline project
@@ -89,9 +89,8 @@ Project mode expects this structure:
 ```text
 solutions/
   ContosoCustomizations/
-    SolutionPackage/          # unpacked solution (PAC cdsproj)
-      SolutionPackage.cdsproj
-      Mapping.xml
+    ContosoCustomizations.cdsproj  # cdsproj + unpacked solution XML in src/
+    src/
     Plugins/                  # plugin assembly project
       Plugins.csproj
     WebResources/             # web resource files

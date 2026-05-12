@@ -90,8 +90,7 @@ public class DeployCommand(IAnsiConsole console) : AsyncCommand<DeployCommand.Se
         }
 
         var slnFolder = Path.Combine(rootFolder, "solutions", sln.Name);
-        var packageFolder = Path.Combine(slnFolder, "SolutionPackage");
-        var cdsprojPath = Path.Combine(packageFolder, "SolutionPackage.cdsproj");
+        var cdsprojPath = Path.Combine(slnFolder, $"{sln.Name}.cdsproj");
         if (!File.Exists(cdsprojPath))
         {
             Console.MarkupLine($"[red]No solution found at '{cdsprojPath}' — run 'clone' first.[/]");
@@ -100,9 +99,9 @@ public class DeployCommand(IAnsiConsole console) : AsyncCommand<DeployCommand.Se
 
         // Standard Dataverse solution build produces zip in bin/Debug for unmanaged or bin/Release for managed.
         // We assume Debug for simplicity, or we should check for built artifacts.
-        // SyncCommand uses dotnet build <packageFolder> which defaults to Debug.
+        // SyncCommand uses dotnet build <slnFolder> which defaults to Debug.
         var buildType = "Debug";
-        var packagePath = Path.Combine(packageFolder, "bin", buildType, $"{sln.Name}{(sln.IncludeManaged ? "_managed" : "")}.zip");
+        var packagePath = Path.Combine(slnFolder, "bin", buildType, $"{sln.Name}{(sln.IncludeManaged ? "_managed" : "")}.zip");
 
         if (!File.Exists(packagePath))
         {
@@ -112,7 +111,7 @@ public class DeployCommand(IAnsiConsole console) : AsyncCommand<DeployCommand.Se
                 _ => Cli.Wrap("dotnet")
                                      .WithArguments(args => args
                                                           .Add("build")
-                                                          .Add(packageFolder))
+                                                          .Add(slnFolder))
                                      .WithStandardOutputPipe(PipeTarget.ToDelegate(s => Console.MarkupLineInterpolated($"[dim]DOTNET: {s}[/]")))
                                      .WithStandardErrorPipe(PipeTarget.ToDelegate(System.Console.Error.WriteLine))
                                      .WithToolExecutionLog()

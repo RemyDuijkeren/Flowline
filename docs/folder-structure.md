@@ -13,9 +13,10 @@ ProjectRoot/
 └── solutions/
     ├── SolutionName_A/
     │   ├── SolutionName_A.sln           <-- Root solution file
-    │   ├── SolutionPackage/             <-- .cdsproj & Solution Source
-    │   │   ├── SolutionPackage.cdsproj
-    │   │   └── src/
+    │   ├── SolutionName_A.cdsproj       <-- .cdsproj & Solution Source
+    │   ├── src/                         <-- Unpacked solution XML
+    │   ├── mapping-pac.xml              <-- Mapping for pac solution clone/sync
+    │   ├── mapping-build.xml            <-- Mapping for dotnet build
     │   ├── Plugins/                  <-- .csproj (Plugins, Workflows, Custom APIs)
     │   │   └── Plugins.csproj
     │   └── WebResources/                <-- .csproj & Web assets (JS, CSS, HTML)
@@ -25,15 +26,18 @@ ProjectRoot/
     │       └── dist/                    <-- Build output (to be synced to Dataverse)
     └── SolutionName_B/                  <-- Second solution
         ├── SolutionName_B.sln
-        ├── SolutionPackage/
+        ├── SolutionName_B.cdsproj
+        ├── src/
+        ├── mapping-pac.xml
+        ├── mapping-build.xml
         ├── Plugins/
         └── WebResources/
 ```
 
 #### 2. Component Breakdown
 
-- **Root `.sln` File**: Located at `solutions/<SolutionName>/<SolutionName>.sln`. This allows developers to open a single file in Visual Studio or JetBrains Rider to manage the `SolutionPackage`, `Plugins`, and `WebResources` projects simultaneously.
-- **`SolutionPackage/`**: Contains the `SolutionPackage.cdsproj` file and the unpacked XML source files (from `pac solution clone`). This folder acts as the "orchestrator" that packages the metadata and the output of the other projects into the final Dataverse solution `.zip`.
+- **Root `.sln` File**: Located at `solutions/<SolutionName>/<SolutionName>.sln`. This allows developers to open a single file in Visual Studio or JetBrains Rider to manage the cdsproj, `Plugins`, and `WebResources` projects simultaneously.
+- **`<SolutionName>.cdsproj`**: Located at `solutions/<SolutionName>/<SolutionName>.cdsproj`. Contains the unpacked XML source files in `src/` (from `pac solution clone`). This project acts as the "orchestrator" that packages the metadata and the output of the other projects into the final Dataverse solution `.zip`.
 - **`Plugins/`**: The home for all server-side logic (`Plugins.csproj`), including Plugins, Workflow Activities, Custom Actions, and Custom APIs. Using a single project for these components simplifies dependency management and deployment.
 - **`WebResources/`**: A dedicated folder for web assets and its corresponding `.NET` project (`WebResources.csproj`). This allows web assets to be part of the solution and easily managed through the build pipeline.
     - **`src/`**: Contains the source files for web development (e.g., TypeScript, SCSS, ES6 JavaScript).
