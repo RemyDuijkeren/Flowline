@@ -95,7 +95,7 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         // Write a temp pac mapping outside slnFolder so PAC doesn't see a non-empty output subfolder.
         var allSolutionsFolder = Path.Combine(RootFolder, AllSolutionsFolderName);
         Directory.CreateDirectory(allSolutionsFolder);
-        var tempPacMap = Path.Combine(allSolutionsFolder, $"{projectSln.Name}.mapping-pac-temp.xml");
+        var tempPacMap = Path.Combine(allSolutionsFolder, $"{projectSln.Name}.MappingPac-temp.xml");
         await File.WriteAllTextAsync(tempPacMap, PacMappingContent, cancellationToken);
 
         CommandResult result;
@@ -347,7 +347,7 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         if (content.Contains("SolutionPackageMapFilePath")) return 0;
 
         content = content.Replace("</Project>",
-            $"  <PropertyGroup>\n    <SolutionPackageMapFilePath>$(MSBuildProjectDirectory)\\mapping-build.xml</SolutionPackageMapFilePath>\n  </PropertyGroup>\n</Project>");
+            $"  <PropertyGroup>\n    <SolutionPackageMapFilePath>$(MSBuildProjectDirectory)\\{MappingBuildFileName}</SolutionPackageMapFilePath>\n  </PropertyGroup>\n</Project>");
         await File.WriteAllTextAsync(cdsprojPath, content, cancellationToken);
         return 0;
     }
@@ -374,8 +374,8 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
 
     private async Task<int> WriteMappingFilesAsync(string slnFolder, CancellationToken cancellationToken)
     {
-        var pacMapFile   = Path.Combine(slnFolder, "mapping-pac.xml");
-        var buildMapFile = Path.Combine(slnFolder, "mapping-build.xml");
+        var pacMapFile   = Path.Combine(slnFolder, MappingPacFileName);
+        var buildMapFile = Path.Combine(slnFolder, MappingBuildFileName);
 
         if (File.Exists(pacMapFile) && File.Exists(buildMapFile))
         {

@@ -15,6 +15,8 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
     protected const string AllSolutionsFolderName = "solutions";
     protected const string WebResourcesName = "WebResources";
     protected const string PluginsName = "Plugins";
+    protected const string MappingPacFileName = "MappingPac.xml";
+    protected const string MappingBuildFileName = "MappingBuild.xml";
 
     protected readonly IAnsiConsole Console;
     protected FlowlineRuntimeOptions RuntimeOptions { get; }
