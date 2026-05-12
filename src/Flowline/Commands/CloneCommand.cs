@@ -58,17 +58,19 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         var cdsprojPath = Path.Combine(solutionPackageFolder, $"{SolutionPackageName}.cdsproj");
         var slnFilePath = Path.Combine(slnFolder, $"{projectSln.Name}.sln");
 
+        var buildMapFile = Path.Combine(slnFolder, "mapping-build.xml");
+
+        if (await WriteMappingFilesAsync(slnFolder, cancellationToken) != 0) return 1;
         if (await CloneSolutionFromDataverseAsync(projectSln, slnFolder, solutionPackageFolder, cdsprojPath, settings, cancellationToken) != 0) return 1;
         if (await CreateSolutionFileAsync(projectSln, slnFolder, slnFilePath, cdsprojPath, settings, cancellationToken) != 0) return 1;
         if (await SetupExtensionsProjectAsync(slnFolder, settings, cancellationToken) != 0) return 1;
         if (await SetupWebResourcesProjectAsync(slnFolder, slnFilePath, settings, cancellationToken) != 0) return 1;
-        if (await WriteMappingFileAsync(solutionPackageFolder, cancellationToken) != 0) return 1;
         if (await CloneWebResourcesFromDataverseAsync(projectSln, prodEnv.EnvironmentUrl!, slnFolder, settings, cancellationToken) != 0) return 1;
 
         // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
-        if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken) != 0) return 1;
+        if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken, buildMapFile) != 0) return 1;
         if (settings.IncludeManaged &&
-            await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
+            await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Release, settings.Verbose, cancellationToken, buildMapFile) != 0)
         {
             return 1;
         }
@@ -106,6 +108,7 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
                           .Add("--environment").Add(Config!.ProdUrl!)
                           .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
                           .Add("--outputDirectory").Add(slnFolder) // will create <sln.Name> folder under this given folder
+                          .Add("--map").Add(Path.Combine(slnFolder, "mapping-pac.xml"))
                           .Add("--async"))
                       .WithValidation(CommandResultValidation.None)
                       .WithToolExecutionLog(settings.Verbose, ctx)
@@ -338,29 +341,42 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         return conn;
     }
 
-    private async Task<int> WriteMappingFileAsync(string solutionPackageFolder, CancellationToken cancellationToken)
+    private async Task<int> WriteMappingFilesAsync(string slnFolder, CancellationToken cancellationToken)
     {
-        // Create XML Mapping file in SolutionPackage folder
-        var mappingFilePath = Path.Combine(solutionPackageFolder, "Mapping.xml");
-        if (File.Exists(mappingFilePath))
+        var pacMapFile   = Path.Combine(slnFolder, "mapping-pac.xml");
+        var buildMapFile = Path.Combine(slnFolder, "mapping-build.xml");
+
+        if (File.Exists(pacMapFile) && File.Exists(buildMapFile))
         {
-            Console.Skip("Mapping file already there — skipping");
+            Console.Skip("Mapping files already there — skipping");
             return 0;
         }
 
-        await File.WriteAllTextAsync(
-            mappingFilePath,
-            $"""
-             <?xml version="1.0" encoding="utf-8"?>
-             <Mapping>
-                 <!-- https://docs.microsoft.com/en-us/dynamics365/customer-engagement/developer/compress-extract-solution-file-solutionpackager -->
-                 <FileToFile map="PluginAssemblies\**\Extensions.dll" to="..\..\Extensions\bin\Release\net462\Extensions.dll" />
-                 <FileToPath map="WebResources\**\*.*" to="..\..\WebResources\dist\**" />
-             </Mapping>
-             """,
-            cancellationToken).FlowlineSpinner();
+        Directory.CreateDirectory(slnFolder);
 
-        Console.Success("Mapping file written");
+        await File.WriteAllTextAsync(pacMapFile,
+            """
+            <?xml version="1.0" encoding="utf-8"?>
+            <Mapping>
+                <!-- pac solution clone / sync: paths relative to SolutionPackage\ (2 levels up to solution root) -->
+                <FileToFile map="PluginAssemblies\**\Extensions.dll" to="..\..\Extensions\bin\Release\net462\Extensions.dll" />
+                <FileToPath map="WebResources\*.*"     to="..\..\..\WebResources\dist\**" />
+                <FileToPath map="WebResources\**\*.*"  to="..\..\WebResources\dist\**" />
+            </Mapping>
+            """, cancellationToken).FlowlineSpinner();
+
+        await File.WriteAllTextAsync(buildMapFile,
+            """
+            <?xml version="1.0" encoding="utf-8"?>
+            <Mapping>
+                <!-- dotnet build (SolutionPackagerTask via MSBuild): paths relative to obj\Debug\Metadata\ (4 levels up) -->
+                <FileToFile map="PluginAssemblies\**\Extensions.dll" to="..\..\..\..\Extensions\bin\Release\net462\Extensions.dll" />
+                <FileToPath map="WebResources\*.*"     to="..\..\..\..\WebResources\dist\**" />
+                <FileToPath map="WebResources\**\*.*"  to="..\..\..\..\WebResources\dist\**" />
+            </Mapping>
+            """, cancellationToken).FlowlineSpinner();
+
+        Console.Success("Mapping files written");
         return 0;
     }
 }

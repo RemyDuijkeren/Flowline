@@ -63,7 +63,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
                          .Add("solution")
                          .Add("sync")
                          .Add("--solution-folder").Add(packageFolder)
-                         //.Add("--map").Add(@"E:\Code\TryOut\MyFlowTest\solutions\Cr07982\SolutionPackage\Mapping.xml")
+                         .Add("--map").Add(Path.Combine(slnFolder, "mapping-pac.xml"))
                          .Add("--environment").Add(devEnv.EnvironmentUrl!)
                          .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
                          .Add("--async"))
@@ -81,7 +81,8 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         Console.Success("Solution synced from Dataverse");
 
         // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
-        if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken) != 0)
+        var buildMapFile = Path.Combine(slnFolder, "mapping-build.xml");
+        if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken, buildMapFile) != 0)
         {
             return 1;
         }
