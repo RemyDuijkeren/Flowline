@@ -32,6 +32,11 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         [Description("Development environment URL")]
         public string? DevUrl { get; set; }
 
+        [CommandOption("--full")]
+        [Description("Download all artifacts from Dataverse, including binaries (skips mapping)")]
+        [DefaultValue(false)]
+        public bool Full { get; set; } = false;
+
         // - `--dev <url>`: save the development environment URL into `.flowconfig`
     }
 
@@ -96,8 +101,12 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         // Write a temp pac mapping outside slnFolder so PAC doesn't see a non-empty output subfolder.
         var allSolutionsFolder = Path.Combine(RootFolder, AllSolutionsFolderName);
         Directory.CreateDirectory(allSolutionsFolder);
-        var tempPacMap = Path.Combine(allSolutionsFolder, $"{projectSln.Name}.MappingPac-temp.xml");
-        await File.WriteAllTextAsync(tempPacMap, PacMappingContent, cancellationToken);
+        string? tempPacMap = null;
+        if (!settings.Full)
+        {
+            tempPacMap = Path.Combine(allSolutionsFolder, $"{projectSln.Name}.MappingPac-temp.xml");
+            await File.WriteAllTextAsync(tempPacMap, PacMappingContent, cancellationToken);
+        }
 
         CommandResult result;
         var sw = Stopwatch.StartNew();
@@ -107,16 +116,19 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
             result = await Console.Status().FlowlineSpinner().StartAsync(
                 $"Cloning solution [bold]{projectSln.Name}[/] from Dataverse...",
                 ctx => Cli.Wrap(cmdName)
-                          .WithArguments(args => args
-                              .AddIfNotNull(prefixArgs)
-                              .Add("solution")
-                              .Add("clone")
-                              .Add("--name").Add(projectSln.Name)
-                              .Add("--environment").Add(Config!.ProdUrl!)
-                              .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
-                              .Add("--outputDirectory").Add(allSolutionsFolder)
-                              .Add("--map").Add(tempPacMap)
-                              .Add("--async"))
+                          .WithArguments(args =>
+                          {
+                              args.AddIfNotNull(prefixArgs)
+                                  .Add("solution")
+                                  .Add("clone")
+                                  .Add("--name").Add(projectSln.Name)
+                                  .Add("--environment").Add(Config!.ProdUrl!)
+                                  .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
+                                  .Add("--outputDirectory").Add(allSolutionsFolder)
+                                  .Add("--async");
+                              if (tempPacMap != null)
+                                  args.Add("--map").Add(tempPacMap);
+                          })
                           .WithValidation(CommandResultValidation.None)
                           .WithToolExecutionLog(settings.Verbose, ctx)
                           .ExecuteAsync(cancellationToken)
@@ -125,7 +137,7 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         finally
         {
             sw.Stop();
-            File.Delete(tempPacMap);
+            if (tempPacMap != null) File.Delete(tempPacMap);
         }
 
         if (!result.IsSuccess)

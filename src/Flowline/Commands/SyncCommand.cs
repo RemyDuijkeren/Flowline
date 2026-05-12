@@ -27,6 +27,11 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         [Description("Include managed artifacts")]
         public bool IncludeManaged { get; set; } = false;
 
+        [CommandOption("--full")]
+        [Description("Download all artifacts from Dataverse, including binaries (skips mapping)")]
+        [DefaultValue(false)]
+        public bool Full { get; set; } = false;
+
     }
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
@@ -59,15 +64,18 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         CommandResult result = await Console.Status().FlowlineSpinner().StartAsync(
             $"Syncing solution [bold]{projectSln.Name}[/]...",
             ctx => Cli.Wrap(cmdName)
-                    .WithArguments(args => args
-                         .AddIfNotNull(prefixArgs)
-                         .Add("solution")
-                         .Add("sync")
-                         .Add("--solution-folder").Add(slnFolder)
-                         .Add("--map").Add(Path.Combine(slnFolder, MappingPacFileName))
-                         .Add("--environment").Add(devEnv.EnvironmentUrl!)
-                         .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
-                         .Add("--async"))
+                    .WithArguments(args =>
+                    {
+                        args.AddIfNotNull(prefixArgs)
+                            .Add("solution")
+                            .Add("sync")
+                            .Add("--solution-folder").Add(slnFolder)
+                            .Add("--environment").Add(devEnv.EnvironmentUrl!)
+                            .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
+                            .Add("--async");
+                        if (!settings.Full)
+                            args.Add("--map").Add(Path.Combine(slnFolder, MappingPacFileName));
+                    })
                     .WithValidation(CommandResultValidation.None)
                     .WithToolExecutionLog(settings.Verbose, ctx)
                     .ExecuteAsync(cancellationToken)
