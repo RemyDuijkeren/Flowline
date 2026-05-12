@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using CliWrap;
 using Flowline.Config;
 using Flowline.Core;
@@ -99,6 +100,7 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         await File.WriteAllTextAsync(tempPacMap, PacMappingContent, cancellationToken);
 
         CommandResult result;
+        var sw = Stopwatch.StartNew();
         try
         {
             var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
@@ -122,6 +124,7 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         }
         finally
         {
+            sw.Stop();
             File.Delete(tempPacMap);
         }
 
@@ -131,7 +134,7 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
             return 1;
         }
 
-        Console.Success($"Solution [bold]{projectSln.Name}[/] cloned");
+        Console.Success($"Solution [bold]{projectSln.Name}[/] cloned in {FormatDuration(sw.Elapsed)}");
         return 0;
     }
 

@@ -18,6 +18,11 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
     protected const string MappingPacFileName = "MappingPac.xml";
     protected const string MappingBuildFileName = "MappingBuild.xml";
 
+    protected static string FormatDuration(TimeSpan elapsed) =>
+        elapsed.TotalMinutes >= 1
+            ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds}s"
+            : $"{(int)elapsed.TotalSeconds}s";
+
     protected readonly IAnsiConsole Console;
     protected FlowlineRuntimeOptions RuntimeOptions { get; }
 

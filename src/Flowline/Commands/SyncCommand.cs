@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using CliWrap;
 using CliWrap.Buffered;
 using Flowline.Config;
@@ -54,6 +55,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         // Sync solution from Dataverse
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
+        var sw = Stopwatch.StartNew();
         CommandResult result = await Console.Status().FlowlineSpinner().StartAsync(
             $"Syncing solution [bold]{projectSln.Name}[/]...",
             ctx => Cli.Wrap(cmdName)
@@ -70,6 +72,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
                     .WithToolExecutionLog(settings.Verbose, ctx)
                     .ExecuteAsync(cancellationToken)
                     .Task);
+        sw.Stop();
 
         if (!result.IsSuccess)
         {
@@ -77,7 +80,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             return 1;
         }
 
-        Console.Success("Solution synced from Dataverse");
+        Console.Success($"Solution synced from Dataverse in {FormatDuration(sw.Elapsed)}");
 
         // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
         if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken) != 0)
