@@ -80,8 +80,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         Console.Success("Solution synced from Dataverse");
 
         // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
-        var buildMapFile = Path.Combine(slnFolder, "mapping-build.xml");
-        if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken, buildMapFile) != 0)
+        if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken) != 0)
         {
             return 1;
         }
