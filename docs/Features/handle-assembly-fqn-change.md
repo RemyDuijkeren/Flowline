@@ -6,8 +6,8 @@ When the assembly's fully qualified name (FQN) changes — specifically when the
 changes (e.g. project recreated from scratch with a new `.snk`) or when the major or minor
 version number is bumped — Dataverse rejects the `UpdateRequest` with:
 
-> `Plugin Assembly fully qualified name has changed from: [Extensions, 1, 0, neutral, df889c1cc53657b7]
-> to: [Extensions, 1, 0, neutral, a4d07ffa42de325f]`
+> `Plugin Assembly fully qualified name has changed from: [Plugins, 1, 0, neutral, df889c1cc53657b7]
+> to: [Plugins, 1, 0, neutral, a4d07ffa42de325f]`
 
 The current code in `GetOrRegisterAssemblyAsync` simply calls `UpdateAsync` on the assembly when
 the hash differs. It does not detect FQN changes upfront, so it crashes.

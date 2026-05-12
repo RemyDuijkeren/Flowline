@@ -63,7 +63,7 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         if (await WriteMappingFilesAsync(slnFolder, cancellationToken) != 0) return 1;
         if (await CloneSolutionFromDataverseAsync(projectSln, slnFolder, solutionPackageFolder, cdsprojPath, settings, cancellationToken) != 0) return 1;
         if (await CreateSolutionFileAsync(projectSln, slnFolder, slnFilePath, cdsprojPath, settings, cancellationToken) != 0) return 1;
-        if (await SetupExtensionsProjectAsync(slnFolder, settings, cancellationToken) != 0) return 1;
+        if (await SetupPluginsProjectAsync(slnFolder, settings, cancellationToken) != 0) return 1;
         if (await SetupWebResourcesProjectAsync(slnFolder, slnFilePath, settings, cancellationToken) != 0) return 1;
         if (await CloneWebResourcesFromDataverseAsync(projectSln, prodEnv.EnvironmentUrl!, slnFolder, settings, cancellationToken) != 0) return 1;
 
@@ -209,19 +209,19 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         return 0;
     }
 
-    private async Task<int> SetupExtensionsProjectAsync(string slnFolder, Settings settings, CancellationToken cancellationToken)
+    private async Task<int> SetupPluginsProjectAsync(string slnFolder, Settings settings, CancellationToken cancellationToken)
     {
-        // Create Extensions (plugins) project if it doesn't exist
-        var extensionsFolder = Path.Combine(slnFolder, ExtensionsName);
-        var extensionsCsproj = Path.Combine(extensionsFolder, $"{ExtensionsName}.csproj");
-        if (File.Exists(extensionsCsproj))
+        // Create Plugins project if it doesn't exist
+        var pluginsFolder = Path.Combine(slnFolder, PluginsName);
+        var pluginsCsproj = Path.Combine(pluginsFolder, $"{PluginsName}.csproj");
+        if (File.Exists(pluginsCsproj))
         {
-            Console.Skip("Extensions project already there — skipping");
+            Console.Skip("Plugins project already there — skipping");
             return 0;
         }
 
-        Console.Info("Setting up Extensions project...");
-        Directory.CreateDirectory(extensionsFolder);
+        Console.Info("Setting up Plugins project...");
+        Directory.CreateDirectory(pluginsFolder);
 
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
         await Cli.Wrap(cmdName)
@@ -229,23 +229,23 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
                      .AddIfNotNull(prefixArgs)
                      .Add("plugin")
                      .Add("init")) // --skip-signing
-                 .WithWorkingDirectory(extensionsFolder)
+                 .WithWorkingDirectory(pluginsFolder)
                  .WithToolExecutionLog(settings.Verbose)
                  .ExecuteAsync(cancellationToken)
                  .Task.FlowlineSpinner();
 
-        // Add Extensions.csproj to the solution
+        // Add Plugins.csproj to the solution
         await Cli.Wrap("dotnet")
                  .WithArguments(args => args
                                       .Add("sln")
                                       .Add("add")
-                                      .Add(extensionsCsproj))
+                                      .Add(pluginsCsproj))
                  .WithWorkingDirectory(slnFolder)
                  .WithToolExecutionLog(settings.Verbose)
                  .ExecuteAsync(cancellationToken)
                  .Task.FlowlineSpinner();
 
-        Console.Success("Extensions project ready");
+        Console.Success("Plugins project ready");
         return 0;
     }
 
@@ -359,7 +359,7 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
             <?xml version="1.0" encoding="utf-8"?>
             <Mapping>
                 <!-- pac solution clone / sync: paths relative to SolutionPackage\ (2 levels up to solution root) -->
-                <FileToFile map="PluginAssemblies\**\Extensions.dll" to="..\..\Extensions\bin\Release\net462\Extensions.dll" />
+                <FileToFile map="PluginAssemblies\**\Plugins.dll" to="..\..\Plugins\bin\Release\net462\Plugins.dll" />
                 <FileToPath map="WebResources\*.*"     to="..\..\..\WebResources\dist\**" />
                 <FileToPath map="WebResources\**\*.*"  to="..\..\WebResources\dist\**" />
             </Mapping>
@@ -370,7 +370,7 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
             <?xml version="1.0" encoding="utf-8"?>
             <Mapping>
                 <!-- dotnet build (SolutionPackagerTask via MSBuild): paths relative to obj\Debug\Metadata\ (4 levels up) -->
-                <FileToFile map="PluginAssemblies\**\Extensions.dll" to="..\..\..\..\Extensions\bin\Release\net462\Extensions.dll" />
+                <FileToFile map="PluginAssemblies\**\Plugins.dll" to="..\..\..\..\Plugins\bin\Release\net462\Plugins.dll" />
                 <FileToPath map="WebResources\*.*"     to="..\..\..\..\WebResources\dist\**" />
                 <FileToPath map="WebResources\**\*.*"  to="..\..\..\..\WebResources\dist\**" />
             </Mapping>

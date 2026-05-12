@@ -47,7 +47,7 @@ Green, bold for the named thing. Drop redundant metadata (don't repeat what was 
 [green]Prod: ByteValue (https://...)[/]
 [green]Dev: ByteValue-dev (https://...)[/]
 [green]Solution: CrO7982 (managed: false)[/]
-[green]Extensions project ready[/]
+[green]Plugins project ready[/]
 [green]Build done[/]
 ```
 
@@ -56,7 +56,7 @@ Dim — not a success, not an error. No "Skip creation" — just state what's tr
 ```
 [dim]SolutionPackage already cloned — skipping[/]
 [dim]Solution file already there — skipping[/]
-[dim]Extensions project already there — skipping[/]
+[dim]Plugins project already there — skipping[/]
 ```
 
 ### Errors
@@ -119,7 +119,7 @@ Solution: CrO7982 (managed: false)
                                           ← ACT 3: work steps
 SolutionPackage already cloned — skipping    [dim]
 Solution file already there — skipping       [dim]
-Extensions project ready                     [green]
+Plugins project ready                     [green]
 WebResources project ready                   [green]
 Mapping file written                         [green]
 Build done                                   [green]

@@ -1,6 +1,6 @@
 ### Flowline CLI Folder Structure
 
-To support a scalable and developer-friendly environment for Dataverse development, Flowline CLI uses the following folder structure. This layout ensures that multiple Dataverse solutions can coexist in the same project root while maintaining a clear separation between solution artifacts, custom logic (Extensions), and front-end assets (WebResources).
+To support a scalable and developer-friendly environment for Dataverse development, Flowline CLI uses the following folder structure. This layout ensures that multiple Dataverse solutions can coexist in the same project root while maintaining a clear separation between solution artifacts, custom logic (Plugins), and front-end assets (WebResources).
 
 #### 1. Folder Hierarchy Overview
 
@@ -16,8 +16,8 @@ ProjectRoot/
     │   ├── SolutionPackage/             <-- .cdsproj & Solution Source
     │   │   ├── SolutionPackage.cdsproj
     │   │   └── src/
-    │   ├── Extensions/                  <-- .csproj (Plugins, Workflows, Custom APIs)
-    │   │   └── Extensions.csproj
+    │   ├── Plugins/                  <-- .csproj (Plugins, Workflows, Custom APIs)
+    │   │   └── Plugins.csproj
     │   └── WebResources/                <-- .csproj & Web assets (JS, CSS, HTML)
     │       ├── WebResources.csproj
     │       ├── src/                     <-- Source files (e.g. TypeScript, SCSS)
@@ -26,15 +26,15 @@ ProjectRoot/
     └── SolutionName_B/                  <-- Second solution
         ├── SolutionName_B.sln
         ├── SolutionPackage/
-        ├── Extensions/
+        ├── Plugins/
         └── WebResources/
 ```
 
 #### 2. Component Breakdown
 
-- **Root `.sln` File**: Located at `solutions/<SolutionName>/<SolutionName>.sln`. This allows developers to open a single file in Visual Studio or JetBrains Rider to manage the `SolutionPackage`, `Extensions`, and `WebResources` projects simultaneously.
+- **Root `.sln` File**: Located at `solutions/<SolutionName>/<SolutionName>.sln`. This allows developers to open a single file in Visual Studio or JetBrains Rider to manage the `SolutionPackage`, `Plugins`, and `WebResources` projects simultaneously.
 - **`SolutionPackage/`**: Contains the `SolutionPackage.cdsproj` file and the unpacked XML source files (from `pac solution clone`). This folder acts as the "orchestrator" that packages the metadata and the output of the other projects into the final Dataverse solution `.zip`.
-- **`Extensions/`**: The home for all server-side logic (`Extensions.csproj`), including Plugins, Workflow Activities, Custom Actions, and Custom APIs. Using a single project for these components simplifies dependency management and deployment.
+- **`Plugins/`**: The home for all server-side logic (`Plugins.csproj`), including Plugins, Workflow Activities, Custom Actions, and Custom APIs. Using a single project for these components simplifies dependency management and deployment.
 - **`WebResources/`**: A dedicated folder for web assets and its corresponding `.NET` project (`WebResources.csproj`). This allows web assets to be part of the solution and easily managed through the build pipeline.
     - **`src/`**: Contains the source files for web development (e.g., TypeScript, SCSS, ES6 JavaScript).
     - **`public/`**: Stores static assets that don't need processing, like images or legacy scripts.

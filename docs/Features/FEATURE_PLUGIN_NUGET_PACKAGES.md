@@ -41,7 +41,7 @@ Dependent Assemblies eliminates this entirely. The `.nupkg` bundles all dependen
 
 ## How Dependent Assemblies works in Dataverse
 
-1. `pac plugin init` creates a .NET Framework class library project. On `dotnet build` (or MSBuild), this project emits both `Extensions.dll` and `Extensions.nupkg` in the output folder.
+1. `pac plugin init` creates a .NET Framework class library project. On `dotnet build` (or MSBuild), this project emits both `Plugins.dll` and `Plugins.nupkg` in the output folder.
 2. The `.nupkg` is uploaded to the `pluginpackage` Dataverse table.
 3. Dataverse automatically creates a `pluginassembly` record linked to the package. This record is read-only — it reflects the DLL inside the package.
 4. Plugin steps are registered on top of the `pluginassembly` record exactly as they are today. The step registration API does not change.
@@ -83,13 +83,13 @@ Classic plugin push stores a SHA-256 hash of the DLL in `pluginassembly.descript
 `clone` currently adds an entry like:
 
 ```xml
-<FileToPackage path="PluginAssemblies\**\Extensions.dll" packageType="Both" />
+<FileToPackage path="PluginAssemblies\**\Plugins.dll" packageType="Both" />
 ```
 
 When switching to Dependent Assemblies, the package file should be tracked instead:
 
 ```xml
-<FileToPackage path="PluginPackages\**\Extensions.nupkg" packageType="Both" />
+<FileToPackage path="PluginPackages\**\Plugins.nupkg" packageType="Both" />
 ```
 
 **Open question:** Does SolutionPackager / `pac solution pack` support `pluginpackage` files? If not, the `.nupkg` may need to live outside the solution folder and be deployed separately by Flowline — similar to how Flowline currently deploys the DLL independently of the solution import.

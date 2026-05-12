@@ -460,7 +460,7 @@ public class ContactPreCreatePlugin : AccountSavePlugin { }
 
 ## One assembly for everything
 
-Flowline supports `IPlugin` classes, `CodeActivity` workflow activities, and `[CustomApi]` classes all in the same assembly. One `Extensions` project, one `Extensions.dll`, one `flowline push`.
+Flowline supports `IPlugin` classes, `CodeActivity` workflow activities, and `[CustomApi]` classes all in the same assembly. One `Plugins` project, one `Plugins.dll`, one `flowline push`.
 
 ### Why other tools can't do this
 

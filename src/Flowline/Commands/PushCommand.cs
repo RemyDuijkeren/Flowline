@@ -110,8 +110,8 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         var pushPlugins = pushScope.HasFlag(PushScope.Plugins);
         var pushWebResources = pushScope.HasFlag(PushScope.WebResources);
 
-        var extensionsDll = await PreparePluginsForPushAsync(pushPlugins, standaloneMode, settings, solutionName, standaloneParams, cancellationToken);
-        if (pushPlugins && extensionsDll == null) return 1;
+        var pluginsDll = await PreparePluginsForPushAsync(pushPlugins, standaloneMode, settings, solutionName, standaloneParams, cancellationToken);
+        if (pushPlugins && pluginsDll == null) return 1;
 
         var (webResourcesSyncFolder, actuallyPushWebResources) = await PrepareWebResourcesForPushAsync(pushWebResources, standaloneMode, settings, solutionName, standaloneParams, cancellationToken);
         if (pushWebResources && string.IsNullOrWhiteSpace(webResourcesSyncFolder)) return 1;
@@ -119,9 +119,9 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         var conn = await ConnectToDataverseAsync(environmentUrl, cancellationToken);
         if (conn == null) return 1;
 
-        if (pushPlugins && extensionsDll != null)
+        if (pushPlugins && pluginsDll != null)
         {
-            await pluginService.SyncSolutionAsync(conn, extensionsDll, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+            await pluginService.SyncSolutionAsync(conn, pluginsDll, solutionName, runMode, cancellationToken).ConfigureAwait(false);
         }
 
         if (actuallyPushWebResources)
@@ -211,31 +211,31 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     {
         if (!pushPlugins) return null;
 
-        string? extensionsDll = standaloneMode ? standaloneParams.DllPath : null;
+        string? pluginsDll = standaloneMode ? standaloneParams.DllPath : null;
 
         if (!standaloneMode)
         {
-            var extensionsFolder = Path.Combine(RootFolder, AllSolutionsFolderName, solutionName, ExtensionsName);
-            if (await DotNetUtils.BuildSolutionAsync(extensionsFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
+            var pluginsFolder = Path.Combine(RootFolder, AllSolutionsFolderName, solutionName, PluginsName);
+            if (await DotNetUtils.BuildSolutionAsync(pluginsFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
             {
                 return null;
             }
 
-            extensionsDll = Path.Combine(extensionsFolder, "bin", "Release", "net462", "publish", $"{ExtensionsName}.dll");
+            pluginsDll = Path.Combine(pluginsFolder, "bin", "Release", "net462", "publish", $"{PluginsName}.dll");
         }
 
-        if (extensionsDll == null || !File.Exists(extensionsDll))
+        if (pluginsDll == null || !File.Exists(pluginsDll))
         {
             Console.Error(standaloneMode
                 ? $"DLL not found: {settings.Dll}"
-                : $"{ExtensionsName}.dll not found. Build the solution first.");
+                : $"{PluginsName}.dll not found. Build the solution first.");
             return null;
         }
 
-        Console.Info($"[bold]{Path.GetFileName(extensionsDll)}[/] found");
-        Console.Verbose($"{extensionsDll}", RuntimeOptions.IsVerbose);
+        Console.Info($"[bold]{Path.GetFileName(pluginsDll)}[/] found");
+        Console.Verbose($"{pluginsDll}", RuntimeOptions.IsVerbose);
 
-        return extensionsDll;
+        return pluginsDll;
     }
 
     private async Task<(string?, bool)> PrepareWebResourcesForPushAsync(

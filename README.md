@@ -92,8 +92,8 @@ solutions/
     SolutionPackage/          # unpacked solution (PAC cdsproj)
       SolutionPackage.cdsproj
       Mapping.xml
-    Extensions/               # plugin assembly project
-      Extensions.csproj
+    Plugins/                  # plugin assembly project
+      Plugins.csproj
     WebResources/             # web resource files
       dist/                   # files here are synced to Dataverse by push
     ContosoCustomizations.sln
@@ -104,7 +104,7 @@ Files under `WebResources/dist/` are synced to Dataverse by `flowline push`. Fil
 
 ### Standalone Push
 
-Use this when you only want Flowline's direct Dataverse push. You do **not** need a Flowline project, `.flowline`, Git repo, `solutions/` folder, `Extensions` project, or `WebResources` project.
+Use this when you only want Flowline's direct Dataverse push. You do **not** need a Flowline project, `.flowline`, Git repo, `solutions/` folder, `Plugins` project, or `WebResources` project.
 
 Run it from a normal folder that is **not** a Flowline project folder:
 
@@ -129,7 +129,7 @@ Standalone rules:
 
 ## Plugin And Custom API Registration
 
-Add the `Flowline.Attributes` NuGet package to your Extensions project:
+Add the `Flowline.Attributes` NuGet package to your Plugins project:
 
 ```xml
 <PackageReference Include="Flowline.Attributes" Version="1.0.0" PrivateAssets="all" />
