@@ -43,7 +43,8 @@ app.Configure(config =>
     config.AddCommand<CloneCommand>("clone") // init (new repo) or clone (existing repo)
           .WithDescription("Clone an existing solution into this repo")
           .WithExample("clone", "ContosoCustomizations --prod https://contoso.crm4.dynamics.com")
-          .WithExample("clone", "ContosoCustomizations --prod https://contoso.crm4.dynamics.com --managed");
+          .WithExample("clone", "ContosoCustomizations --prod https://contoso.crm4.dynamics.com --managed")
+          .WithExample("clone", "ContosoCustomizations --test https://contoso-test.crm4.dynamics.com");
 
     // copy/provision = Copy Source environment to destination environment
     config.AddCommand<ProvisionCommand>("provision")

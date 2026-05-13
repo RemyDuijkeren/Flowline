@@ -28,6 +28,10 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         [DefaultValue(false)]
         public bool IncludeManaged { get; set; } = false;
 
+        [CommandOption("--test <URL>")]
+        [Description("Test environment URL")]
+        public string? TestUrl { get; set; }
+
         [CommandOption("--dev <URL>")]
         [Description("Development environment URL")]
         public string? DevUrl { get; set; }
@@ -36,40 +40,70 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         [Description("Download all artifacts from Dataverse including binaries, skipping the PAC mapping")]
         [DefaultValue(false)]
         public bool NoMap { get; set; } = false;
-
-        // - `--dev <url>`: save the development environment URL into `.flowconfig`
     }
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        // Production URL is required
-        var prodEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Prod, settings.ProdUrl, settings, cancellationToken);
-        if (prodEnv == null) return 1;
+        // Save all provided URLs to config first (no API calls, just config update + prompt on conflict)
+        Config!.GetOrUpdateProdUrl(settings.ProdUrl, settings);
+        Config!.GetOrUpdateTestUrl(settings.TestUrl, settings);
+        Config!.GetOrUpdateDevUrl(settings.DevUrl, settings);
 
-        // Solution name is required
-        (ProjectSolution? projectSln, SolutionInfo? slnInfo) = await GetAndCheckSolutionAsync(settings.Solution, prodEnv.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken, useMapping: !settings.NoMap);
-        if (projectSln == null || slnInfo == null) return 1;
-        if (slnInfo.IsManaged)
+        // Find first unmanaged environment: prod > test > dev
+        EnvironmentInfo? sourceEnv = null;
+        ProjectSolution? projectSln = null;
+
+        foreach (var role in new[] { EnvironmentRole.Prod, EnvironmentRole.Test, EnvironmentRole.Dev })
         {
-            Console.Error("Managed solutions are not supported yet");
+            var configUrl = role switch
+            {
+                EnvironmentRole.Prod => Config.ProdUrl,
+                EnvironmentRole.Test => Config.TestUrl,
+                EnvironmentRole.Dev  => Config.DevUrl,
+                _                    => null
+            };
+            if (string.IsNullOrEmpty(configUrl)) continue;
+
+            var env = await GetAndCheckEnvironmentInfoAsync(role, null, settings, cancellationToken);
+            if (env == null) return 1;
+
+            var (sln, info) = await GetAndCheckSolutionAsync(
+                settings.Solution, env.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken,
+                useMapping: !settings.NoMap);
+            if (sln == null || info == null) return 1;
+
+            if (info.IsManaged)
+            {
+                var label = role switch { EnvironmentRole.Prod => "Prod", EnvironmentRole.Test => "Test", _ => "Dev" };
+                Console.MarkupLine($"[dim]{label} solution is managed — skipping[/]");
+                continue;
+            }
+
+            sourceEnv = env;
+            projectSln = sln;
+            break;
+        }
+
+        if (sourceEnv == null || projectSln == null)
+        {
+            Console.Error("No unmanaged environment found — provide a --dev, --test, or --prod URL with an unmanaged solution.");
             return 1;
         }
 
-        // Save the configuration
-        Config?.Save();
+        Config.Save();
         Console.Verbose($"Project configuration saved to {ProjectConfig.s_configFileName}", settings.Verbose);
 
         var slnFolder = Path.Combine(RootFolder, AllSolutionsFolderName, projectSln.Name);
         var cdsprojPath = Path.Combine(slnFolder, $"{projectSln.Name}.cdsproj");
         var slnFilePath = Path.Combine(slnFolder, $"{projectSln.Name}.sln");
 
-        if (await CloneSolutionFromDataverseAsync(projectSln, slnFolder, cdsprojPath, settings, cancellationToken) != 0) return 1;
+        if (await CloneSolutionFromDataverseAsync(projectSln, slnFolder, cdsprojPath, sourceEnv.EnvironmentUrl!, settings, cancellationToken) != 0) return 1;
         if (await WriteMappingFilesAsync(slnFolder, cancellationToken) != 0) return 1;
         if (await DotNetUtils.EnsureMapFilePathAsync(cdsprojPath, projectSln.UseMapping, cancellationToken) != 0) return 1;
         if (await CreateSolutionFileAsync(projectSln, slnFolder, slnFilePath, cdsprojPath, settings, cancellationToken) != 0) return 1;
         if (await SetupPluginsProjectAsync(slnFolder, settings, cancellationToken) != 0) return 1;
         if (await SetupWebResourcesProjectAsync(slnFolder, slnFilePath, settings, cancellationToken) != 0) return 1;
-        if (await CloneWebResourcesFromDataverseAsync(projectSln, prodEnv.EnvironmentUrl!, slnFolder, settings, cancellationToken) != 0) return 1;
+        if (await CloneWebResourcesFromDataverseAsync(projectSln, sourceEnv.EnvironmentUrl!, slnFolder, settings, cancellationToken) != 0) return 1;
 
         // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
         if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken) != 0) return 1;
@@ -83,11 +117,11 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         return 0;
     }
 
-    private async Task<int> CloneSolutionFromDataverseAsync(ProjectSolution projectSln, string slnFolder, string cdsprojPath, Settings settings, CancellationToken cancellationToken)
+    private async Task<int> CloneSolutionFromDataverseAsync(ProjectSolution projectSln, string slnFolder, string cdsprojPath, string environmentUrl, Settings settings, CancellationToken cancellationToken)
     {
         if (File.Exists(cdsprojPath))
         {
-            Console.Skip($"Solution already cloned — skipping");
+            Console.Skip("Solution already cloned — skipping");
             return 0;
         }
 
@@ -122,7 +156,7 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
                                   .Add("solution")
                                   .Add("clone")
                                   .Add("--name").Add(projectSln.Name)
-                                  .Add("--environment").Add(Config!.ProdUrl!)
+                                  .Add("--environment").Add(environmentUrl)
                                   .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
                                   .Add("--outputDirectory").Add(allSolutionsFolder)
                                   .Add("--async");
