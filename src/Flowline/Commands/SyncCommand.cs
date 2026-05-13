@@ -27,11 +27,6 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         [Description("Include managed artifacts")]
         public bool IncludeManaged { get; set; } = false;
 
-        [CommandOption("--full")]
-        [Description("Download all artifacts from Dataverse, including binaries (skips mapping)")]
-        [DefaultValue(false)]
-        public bool Full { get; set; } = false;
-
     }
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
@@ -58,28 +53,27 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             return 1;
         }
 
+        if (await DotNetUtils.EnsureMapFilePathAsync(cdsprojPath, projectSln.UseMapping, cancellationToken) != 0) return 1;
+
         // Sync solution from Dataverse
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
         var sw = Stopwatch.StartNew();
         CommandResult result = await Console.Status().FlowlineSpinner().StartAsync(
             $"Syncing solution [bold]{projectSln.Name}[/]...",
             ctx => Cli.Wrap(cmdName)
-                    .WithArguments(args =>
-                    {
-                        args.AddIfNotNull(prefixArgs)
-                            .Add("solution")
-                            .Add("sync")
-                            .Add("--solution-folder").Add(slnFolder)
-                            .Add("--environment").Add(devEnv.EnvironmentUrl!)
-                            .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
-                            .Add("--async");
-                        if (!settings.Full)
-                            args.Add("--map").Add(Path.Combine(slnFolder, MappingPacFileName));
-                    })
-                    .WithValidation(CommandResultValidation.None)
-                    .WithToolExecutionLog(settings.Verbose, ctx)
-                    .ExecuteAsync(cancellationToken)
-                    .Task);
+                      .WithArguments(args =>
+                          args.AddIfNotNull(prefixArgs)
+                              .Add("solution")
+                              .Add("sync")
+                              .Add("--solution-folder").Add(slnFolder)
+                              .Add("--environment").Add(devEnv.EnvironmentUrl!)
+                              .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
+                              .AddIf(projectSln.UseMapping, "--map", Path.Combine(slnFolder, MappingPacFileName))
+                              .Add("--async"))
+                      .WithValidation(CommandResultValidation.None)
+                      .WithToolExecutionLog(settings.Verbose, ctx)
+                      .ExecuteAsync(cancellationToken)
+                      .Task);
         sw.Stop();
 
         if (!result.IsSuccess)

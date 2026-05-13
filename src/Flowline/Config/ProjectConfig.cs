@@ -138,7 +138,8 @@ public class ProjectConfig
         var normalizedSolution = new ProjectSolution
         {
             Name = solution.Name.Trim(),
-            IncludeManaged = solution.IncludeManaged
+            IncludeManaged = solution.IncludeManaged,
+            UseMapping = solution.UseMapping
         };
 
         _solutions.Remove(normalizedSolution);
@@ -147,10 +148,10 @@ public class ProjectConfig
         return normalizedSolution;
     }
 
-    public ProjectSolution AddOrUpdateSolution(string name, bool includeManaged = false) =>
-        AddOrUpdateSolution(new ProjectSolution { Name = name, IncludeManaged = includeManaged });
+    public ProjectSolution AddOrUpdateSolution(string name, bool includeManaged = false, bool useMapping = true) =>
+        AddOrUpdateSolution(new ProjectSolution { Name = name, IncludeManaged = includeManaged, UseMapping = useMapping });
 
-    public ProjectSolution? GetOrUpdateSolution(string? name, bool includeManaged = false, FlowlineSettings? settings = null)
+    public ProjectSolution? GetOrUpdateSolution(string? name, bool includeManaged = false, FlowlineSettings? settings = null, bool? useMapping = null)
     {
         name = name?.Trim();
         if (string.IsNullOrWhiteSpace(name))
@@ -174,7 +175,7 @@ public class ProjectConfig
         var sln = _solutions.FirstOrDefault(solution => StringComparer.OrdinalIgnoreCase.Equals(solution.Name, name));
         if (sln == null)
         {
-            return AddOrUpdateSolution(name, includeManaged);
+            return AddOrUpdateSolution(name, includeManaged, useMapping ?? true);
         }
 
         if (sln.IncludeManaged != includeManaged)
@@ -187,7 +188,13 @@ public class ProjectConfig
                 return sln;
             }
             AnsiConsole.MarkupLine("[green]Solution config updated[/]");
-            return AddOrUpdateSolution(name, includeManaged);
+            return AddOrUpdateSolution(name, includeManaged, useMapping ?? sln.UseMapping);
+        }
+
+        if (useMapping.HasValue && sln.UseMapping != useMapping.Value)
+        {
+            AnsiConsole.MarkupLine($"[dim]{sln.Name}: mapping {(useMapping.Value ? "enabled" : "disabled")}[/]");
+            return AddOrUpdateSolution(name, includeManaged, useMapping.Value);
         }
 
         return sln;
@@ -239,6 +246,7 @@ public class ProjectSolution
 
     public string Name { get; init; } = null!;
     public bool IncludeManaged { get; set; } = false;
+    public bool UseMapping { get; set; } = true;
 
     private sealed class ProjectSolutionNameComparer : IEqualityComparer<ProjectSolution>
     {

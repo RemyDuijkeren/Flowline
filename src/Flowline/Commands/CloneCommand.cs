@@ -32,10 +32,10 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         [Description("Development environment URL")]
         public string? DevUrl { get; set; }
 
-        [CommandOption("--full")]
-        [Description("Download all artifacts from Dataverse, including binaries (skips mapping)")]
+        [CommandOption("--no-map")]
+        [Description("Download all artifacts from Dataverse including binaries, skipping the PAC mapping")]
         [DefaultValue(false)]
-        public bool Full { get; set; } = false;
+        public bool NoMap { get; set; } = false;
 
         // - `--dev <url>`: save the development environment URL into `.flowconfig`
     }
@@ -47,7 +47,7 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         if (prodEnv == null) return 1;
 
         // Solution name is required
-        (ProjectSolution? projectSln, SolutionInfo? slnInfo) = await GetAndCheckSolutionAsync(settings.Solution, prodEnv.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken);
+        (ProjectSolution? projectSln, SolutionInfo? slnInfo) = await GetAndCheckSolutionAsync(settings.Solution, prodEnv.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken, useMapping: !settings.NoMap);
         if (projectSln == null || slnInfo == null) return 1;
         if (slnInfo.IsManaged)
         {
@@ -65,7 +65,7 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
 
         if (await CloneSolutionFromDataverseAsync(projectSln, slnFolder, cdsprojPath, settings, cancellationToken) != 0) return 1;
         if (await WriteMappingFilesAsync(slnFolder, cancellationToken) != 0) return 1;
-        if (await InjectMapFilePathAsync(cdsprojPath, cancellationToken) != 0) return 1;
+        if (await DotNetUtils.EnsureMapFilePathAsync(cdsprojPath, projectSln.UseMapping, cancellationToken) != 0) return 1;
         if (await CreateSolutionFileAsync(projectSln, slnFolder, slnFilePath, cdsprojPath, settings, cancellationToken) != 0) return 1;
         if (await SetupPluginsProjectAsync(slnFolder, settings, cancellationToken) != 0) return 1;
         if (await SetupWebResourcesProjectAsync(slnFolder, slnFilePath, settings, cancellationToken) != 0) return 1;
@@ -102,7 +102,7 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         var allSolutionsFolder = Path.Combine(RootFolder, AllSolutionsFolderName);
         Directory.CreateDirectory(allSolutionsFolder);
         string? tempPacMap = null;
-        if (!settings.Full)
+        if (projectSln.UseMapping)
         {
             tempPacMap = Path.Combine(allSolutionsFolder, $"{projectSln.Name}.MappingPac-temp.xml");
             await File.WriteAllTextAsync(tempPacMap, PacMappingContent, cancellationToken);
@@ -348,23 +348,6 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
             Console.Success("Connected");
 
         return conn;
-    }
-
-    private async Task<int> InjectMapFilePathAsync(string cdsprojPath, CancellationToken cancellationToken)
-    {
-        if (!File.Exists(cdsprojPath))
-        {
-            Console.Error($"No .cdsproj found at '{cdsprojPath}' — cannot inject map file path.");
-            return 1;
-        }
-
-        var content = await File.ReadAllTextAsync(cdsprojPath, cancellationToken);
-        if (content.Contains("SolutionPackageMapFilePath")) return 0;
-
-        content = content.Replace("</Project>",
-            $"  <PropertyGroup>\n    <SolutionPackageMapFilePath>$(MSBuildProjectDirectory)\\{MappingBuildFileName}</SolutionPackageMapFilePath>\n  </PropertyGroup>\n</Project>");
-        await File.WriteAllTextAsync(cdsprojPath, content, cancellationToken);
-        return 0;
     }
 
     private const string PacMappingContent =

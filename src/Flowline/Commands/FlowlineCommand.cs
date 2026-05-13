@@ -146,9 +146,10 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
         string environmentUrl,
         bool includeManaged,
         TSettings settings,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool? useMapping = null)
     {
-        var projectSln = Config!.GetOrUpdateSolution(inputName, includeManaged, settings);
+        var projectSln = Config!.GetOrUpdateSolution(inputName, includeManaged, settings, useMapping);
         if (projectSln == null)
         {
             Console.Error("Solution name is required — pass it as an argument or use --solution <name>.");

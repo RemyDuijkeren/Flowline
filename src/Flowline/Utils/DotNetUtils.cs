@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using CliWrap;
 using CliWrap.Buffered;
 using Spectre.Console;
@@ -32,6 +33,31 @@ public static class DotNetUtils
             AnsiConsole.MarkupLine($"Build {relativeWorkingDirectory} done");
             return 0;
         }
+    }
+
+    public static async Task<int> EnsureMapFilePathAsync(string cdsprojPath, bool useMapping, CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(cdsprojPath))
+        {
+            AnsiConsole.MarkupLine($"[red]No .cdsproj found at '{cdsprojPath}'.[/]");
+            return 1;
+        }
+
+        var content = await File.ReadAllTextAsync(cdsprojPath, cancellationToken);
+        var hasMapping = content.Contains("SolutionPackageMapFilePath");
+
+        if (useMapping == hasMapping) return 0;
+
+        if (useMapping)
+            content = content.Replace("</Project>",
+                "  <PropertyGroup>\n    <SolutionPackageMapFilePath>$(MSBuildProjectDirectory)\\MappingBuild.xml</SolutionPackageMapFilePath>\n  </PropertyGroup>\n</Project>");
+        else
+            content = Regex.Replace(content,
+                @"\s*<PropertyGroup>\s*<SolutionPackageMapFilePath>[^<]*</SolutionPackageMapFilePath>\s*</PropertyGroup>",
+                "");
+
+        await File.WriteAllTextAsync(cdsprojPath, content, cancellationToken);
+        return 0;
     }
 
     public static async Task<string> AssertDotNetInstalledAsync(bool verbose = true, CancellationToken cancellationToken = default)
