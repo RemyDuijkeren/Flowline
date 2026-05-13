@@ -73,7 +73,7 @@ flowline sync
 git commit -m "feat: add validation"
 
 # Promote
-flowline deploy staging
+flowline deploy test
 flowline deploy prod
 ```
 
@@ -81,7 +81,7 @@ For fresh environments:
 
 ```bash
 flowline provision dev --prod https://contoso.crm4.dynamics.com
-flowline provision staging --prod https://contoso.crm4.dynamics.com
+flowline provision test --prod https://contoso.crm4.dynamics.com
 ```
 
 Project mode expects this structure:
@@ -159,6 +159,6 @@ Full attribute reference: [Flowline.Attributes README](src/Flowline.Attributes/R
 | `clone <solution>` | Bootstrap an existing solution from production into the repo. Sets up the full project structure. |
 | `push [solution]` | Build and sync project assets to DEV, or push standalone artifacts with `--dll` / `--webresources`. |
 | `sync [solution]` | Pull the current solution state from DEV and unpack it into the repo. |
-| `deploy <target>` | Pack the solution from the repo and import it into STAGING, PROD, or an explicit URL. |
-| `provision [dev\|staging]` | Provision a DEV or STAGING environment by copying from production. |
+| `deploy <target>` | Pack the solution from the repo and import it into TEST, PROD, or an explicit URL. |
+| `provision [dev\|test]` | Provision a DEV or TEST environment by copying from production. |
 | `status` | Show environment info, Flowline version, and PAC CLI status. |

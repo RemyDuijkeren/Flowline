@@ -8,7 +8,7 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public enum Role { Dev, Staging }
+public enum Role { Dev, Test }
 
 public enum CopyType { Minimal, Full }
 
@@ -17,15 +17,15 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "[role]")]
-        [Description("Target role: dev or staging")]
-        public Role Role { get; set; } = Role.Dev; // dev|staging
+        [Description("Target role: dev or test")]
+        public Role Role { get; set; } = Role.Dev; // dev|test
 
         [CommandOption("--prod <URL>")]
         [Description("Production environment URL to copy from")]
         public string? ProdUrl { get; set; }
 
         [CommandOption("--copy <minimal|full>")]
-        [Description("Copy with data (full) or no data (minimal) from prod (default: minimal for dev, full for staging)")]
+        [Description("Copy with data (full) or no data (minimal) from prod (default: minimal for dev, full for test)")]
         public CopyType? CopyType { get; set; }
 
         [CommandOption("--suffix <suffix>")]
@@ -45,7 +45,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
 
         // Prepare the target environment name and url
         var suffix = string.IsNullOrWhiteSpace(settings.Suffix)
-            ? (settings.Role == Role.Dev ? "Dev" : "Staging")
+            ? (settings.Role == Role.Dev ? "Dev" : "Test")
             : settings.Suffix;
         var targetDisplayName = $"{prodEnv.DisplayName} {suffix}";
         EnvironmentUrlParts urlParts = PacUtils.GetPartsFromEnvUrl(prodEnv.EnvironmentUrl!);
@@ -57,8 +57,8 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
 
         string? url = settings.Role switch
         {
-            Role.Dev => Config!.GetOrUpdateDevUrl(targetUrl, settings),
-            Role.Staging => Config!.GetOrUpdateStagingUrl(targetUrl, settings),
+            Role.Dev  => Config!.GetOrUpdateDevUrl(targetUrl, settings),
+            Role.Test => Config!.GetOrUpdateTestUrl(targetUrl, settings),
             _ => null
         };
 
@@ -114,8 +114,8 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
         // reset: empty env with factory settings (https://learn.microsoft.com/en-us/power-platform/admin/reset-environment)?
         // after rest: deploy solution from prod?
 
-        // Staging is always a FullCopy
-        string copyType = (settings.Role == Role.Staging || settings.CopyType == CopyType.Full) ? "FullCopy" : "MinimalCopy";
+        // Test is always a FullCopy
+        string copyType = (settings.Role == Role.Test || settings.CopyType == CopyType.Full) ? "FullCopy" : "MinimalCopy";
 
         var (cmdNameCopy, prefixArgsCopy, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
 

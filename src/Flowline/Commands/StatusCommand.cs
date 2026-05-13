@@ -56,10 +56,10 @@ public class StatusCommand(IAnsiConsole console) : AsyncCommand<StatusCommand.Se
             else
                 Console.MarkupLine("  Production: [gray]Not configured[/]");
 
-            if (!string.IsNullOrEmpty(config.StagingUrl))
-                Console.MarkupLine($"  Staging: [blue]{config.StagingUrl}[/]");
+            if (!string.IsNullOrEmpty(config.TestUrl))
+                Console.MarkupLine($"  Test: [blue]{config.TestUrl}[/]");
             else
-                Console.MarkupLine("  Staging: [gray]Not configured[/]");
+                Console.MarkupLine("  Test: [gray]Not configured[/]");
 
             if (!string.IsNullOrEmpty(config.DevUrl))
                 Console.MarkupLine($"  Development: [blue]{config.DevUrl}[/]");

@@ -25,7 +25,7 @@ public class TranslationSettings : FlowlineSettings
     public string? Solution { get; set; }
 
     [CommandOption("--target <TARGET>")]
-    [Description("Target URL, dev, staging, or prod")]
+    [Description("Target URL, dev, test, or prod")]
     public string? Target { get; set; }
 }
 
@@ -71,7 +71,7 @@ public class TranslationCommand(IAnsiConsole console, DataverseConnector dataver
             targetUrl = targetUrl.ToLowerInvariant() switch
             {
                 "dev" => config.DevUrl ?? string.Empty,
-                "staging" => config.StagingUrl ?? string.Empty,
+                "test" => config.TestUrl ?? string.Empty,
                 "prod" => config.ProdUrl ?? string.Empty,
                 _ => targetUrl
             };

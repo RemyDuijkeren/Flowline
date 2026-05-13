@@ -55,7 +55,7 @@ Small teams should not be forced into enterprise ceremony by default.
 
 ### Stricter Controls Should Remain Available
 
-Managed solutions, PR workflows, staging, and stronger governance may be supported, but they should not define the product identity.
+Managed solutions, PR workflows, test, and stronger governance may be supported, but they should not define the product identity.
 
 ### Integrate Early, Activate Deliberately
 
@@ -100,7 +100,7 @@ Branches should be supported for temporary isolation only:
 - `feature/*` for larger or riskier work
 - `hotfix/*` for urgent fixes based on production truth
 
-Long-lived `dev` or `staging` branches should not be encouraged by default.
+Long-lived `dev` or `test` branches should not be encouraged by default.
 
 ### Environments
 
@@ -110,8 +110,8 @@ Recommended model:
 
 - `prod` is the live baseline
 - `dev` is the main working workspace
-- `staging` is optional
-- `dev` and `staging` are disposable and can be reprovisioned from `prod` when needed
+- `test` is optional
+- `dev` and `test` are disposable and can be reprovisioned from `prod` when needed
 
 Because Dataverse environment creation is relatively heavy, these workspaces may live longer than a Git feature branch, but the intent is the same:
 
@@ -207,19 +207,19 @@ Practical direction:
 
 ## Baseline Tracking
 
-Flowline should clearly mark what commit is currently represented in production and staging.
+Flowline should clearly mark what commit is currently represented in production and test.
 
 Recommended approach:
 
 - use immutable annotated Git tags for real deployments
-- optionally keep moving convenience markers for current prod and staging baselines
+- optionally keep moving convenience markers for current prod and test baselines
 
 Examples:
 
 - `prod/2026-04-05.1`
-- `staging/2026-04-05.1`
+- `test/2026-04-05.1`
 - `prod/current`
-- `staging/current`
+- `test/current`
 
 Immutable tags are the real deployment history.
 
@@ -333,7 +333,7 @@ Use to push local technical assets into the `dev` environment.
 
 This is mainly for developers and technical consultants.
 
-`push` is a dev-only workflow and should reject staging or production roles.
+`push` is a dev-only workflow and should reject test or production roles.
 
 ### `sync`
 
@@ -363,7 +363,7 @@ Examples:
 
 ### `provision`
 
-Use to provision a real `dev` or `staging` environment from production.
+Use to provision a real `dev` or `test` environment from production.
 
 This command is intentionally heavy and potentially destructive.
 
@@ -415,7 +415,7 @@ Preferred names:
 - `--source <...>`: source side of a comparison-style operation
 - `--target <...>`: target side of a deployment-style operation
 - `--dev <url>`: development environment override
-- `--staging <url>`: staging environment override
+- `--test <url>`: test environment override
 - `--prod <url>`: production environment override
 
 Guideline:
@@ -481,7 +481,7 @@ Use to push local technical assets into the `dev` environment.
 
 This is mainly for developers and technical consultants.
 
-`push` is a dev-only workflow and should reject staging or production roles.
+`push` is a dev-only workflow and should reject test or production roles.
 
 Preferred shape:
 
@@ -547,11 +547,11 @@ Parameters:
 
 Preferred shape:
 
-- `flowline provision <dev|staging>`
+- `flowline provision <dev|test>`
 
 Parameters:
 
-- `<dev|staging>`: choose whether to provision `dev` or `staging`
+- `<dev|test>`: choose whether to provision `dev` or `test`
 - `--prod <url>`: production baseline used for provisioning
 - `--suffix <suffix>`: override the default suffix used to derive the target URL
 - `--copy <minimal|full>`: choose the Dataverse copy type
@@ -560,7 +560,7 @@ Parameters:
 Provisioning defaults:
 
 - `dev` => `minimal`
-- `staging` => `full`
+- `test` => `full`
 
 Provisioning rules:
 
@@ -577,7 +577,7 @@ Preferred shape:
 
 Parameters:
 
-- `<target>`: destination environment or role such as `prod`, `staging`, or an explicit URL
+- `<target>`: destination environment or role such as `prod`, `test`, or an explicit URL
 - `--solution <name>`: solution to package and deploy
 - `--managed`: deploy the managed package instead of unmanaged
 - `--artifact <path>`: deploy a prebuilt package

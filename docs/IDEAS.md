@@ -8,19 +8,19 @@ What you gain:
 - No managed/unmanaged split to explain to the team.
 
 Real risks to be aware of:
-- Environment drift: people can change things directly in DEV/STAGING/PROD, and those edits won’t live in source control unless you re-export and commit.
+- Environment drift: people can change things directly in DEV/TEST/PROD, and those edits won’t live in source control unless you re-export and commit.
 - Harder rollbacks: no clean uninstall or stage-for-upgrade paths.
 - Layering surprises: unmanaged tweaks outside your solution can override your intent.
 - Audit/traceability: tougher to prove exactly what changed and when if folks edit in-place.
 
 Guardrails that keep unmanaged workable:
 - Source of truth policy: code (unpacked solution in Git), not PROD.
-- No in-app editing in shared envs: restrict maker rights in DEV/STAGING/PROD so only your pipeline (or a release manager) can import the unmanaged solution.
+- No in-app editing in shared envs: restrict maker rights in DEV/TEST/PROD so only your pipeline (or a release manager) can import the unmanaged solution.
 - Preflight drift checks in your CLI:
   - Export target env’s solution before import and diff against your artifact.
   - Block the deploy if target contains components modified outside your solution (or not present in Git).
 - Version every import: increment solution version on every promote; log who/when/commit SHA.
-- Regular refreshes: copy PROD → STAGING (and occasionally PROD → DEV) to reset drift and test with realistic data.
+- Regular refreshes: copy PROD → TEST (and occasionally PROD → DEV) to reset drift and test with realistic data.
 - Config isolation: use Environment Variables and Connection References so config isn’t hand-edited into components.
 - Audit & Alerts: enable auditing for customizations; optionally have your CLI warn if the Default Solution has recent changes.
 
@@ -29,21 +29,21 @@ Guardrails that keep unmanaged workable:
 
 Small‑team friendly (1–5 makers).
 
-**Main path:** DEV (shared Sandbox) → STAGING → PROD.
+**Main path:** DEV (shared Sandbox) → TEST → PROD.
 
 **Fast path:** DEV (shared Sandbox) → PRODUCTION
 
 **Developer environments are optional** for personal tryouts when you have a clean solution setup. Ships **unmanaged** solutions end‑to‑end with built‑in guardrails.
 
 ```
-DEV (sandbox, shared)  ──▶  STAGING (sandbox, UAT)  ──▶  PROD (production)
+DEV (sandbox, shared)  ──▶  TEST (sandbox, UAT)  ──▶  PROD (production)
      integrate                    preview/validate                 live
 
 Developer (optional, personal tryout)  ──▶  DEV (sandbox, shared)
 ```
 
 DEV: Developers build and test their work.
-STAGING: Business users and power users validate features in a safe, realistic environment.
+TEST: Business users and power users validate features in a safe, realistic environment.
 PRODUCTION: Final version for all end-users.
 
 ---
@@ -51,7 +51,7 @@ PRODUCTION: Final version for all end-users.
 ## Core Principles
 
 * **Unmanaged everywhere.** No managed/unmanaged split to confuse the team.
-* **Developer envs optional.** You can skip tryouts and run the mainline only (DEV → STAGING → PROD).
+* **Developer envs optional.** You can skip tryouts and run the mainline only (DEV → TEST → PROD).
 * **One command per phase.** Flowline orchestrates import/export, checks, Git, and gates.
 * **Human approvals where they matter.** UAT approval before production.
 * **Config isolation.** Environment Variables + Connection References are synced; no hand‑edits.
@@ -68,8 +68,8 @@ Workspace bootstrap: auth, environment IDs, and repo setup.
 
 * Checks prerequisites (Git, PAC, dotnet) and prompts sign‑in if needed.
 * If not a Git repo: `git clone <repo>` (or guide if repo already exists).
-* Creates/updates `.flowline.yml` (stores env IDs for `dev`, `staging`, `prod`; sets `unmanagedOnly: true`).
-* Validates access to **DEV/STAGING/PROD**; warns if DEV is missing.
+* Creates/updates `.flowline.yml` (stores env IDs for `dev`, `test`, `prod`; sets `unmanagedOnly: true`).
+* Validates access to **DEV/TEST/PROD**; warns if DEV is missing.
 * No environment copies by default (use `prime` for PROD→DEV).
 
 ### 1) `flowline prime`
@@ -83,7 +83,7 @@ One‑time bootstrap: clone **PROD** to **DEV**.
 
 ### 2) `flowline push`
 
-Push built assets into **DEV** (never STAGING/PROD).
+Push built assets into **DEV** (never TEST/PROD).
 
 **Does:**
 
@@ -116,20 +116,20 @@ One-liner convenience for the DEV loop — runs **`push` → `export`**.
 
 **Does:**
 
-* Validates you’re targeting **DEV** (never STAGING/PROD).
+* Validates you’re targeting **DEV** (never TEST/PROD).
 * Optionally builds assets with `--build`; otherwise assumes you built via dotnet/VS/VS Code.
 * Executes `push` (plugin assemblies, web resources, PCF), then `export` (unpack, commit, push).
 * Supports `--message`, `--no-commit`, `--no-push`, `--no-pr` flags; passes them through to `export`.
 
 ### 5) `flowline stage`
 
-Promote **DEV** to **STAGING** for customer review.
+Promote **DEV** to **TEST** for customer review.
 
 **Does:**
 
-* If no `--artifact` is supplied, **exports from DEV** automatically and imports into **STAGING** (unmanaged).
-* (Optional) Offer **PROD → STAGING** refresh first (customizations/everything).
-* Sync Environment Variables & Connection References (DEV → STAGING).
+* If no `--artifact` is supplied, **exports from DEV** automatically and imports into **TEST** (unmanaged).
+* (Optional) Offer **PROD → TEST** refresh first (customizations/everything).
+* Sync Environment Variables & Connection References (DEV → TEST).
 * Run UAT suite; generate tester links/checklist.
 * Wait for **UAT approval** before release.
 
@@ -201,7 +201,7 @@ flowline release
 ```
 
 **Start** exports PROD baseline, imports to **Developer**, and creates `hotfix/<hotfix-name>` branch.
-**Ship** runs guarded promotion **DEV → STAGING → PROD**, then tags `vX.Y.Z+hotfix.N`.
+**Ship** runs guarded promotion **DEV → TEST → PROD**, then tags `vX.Y.Z+hotfix.N`.
 
 ---
 
@@ -215,7 +215,7 @@ unmanagedOnly: true
 
 environments:
   dev:       <envId-dev>       # shared sandbox (integration)
-  staging:   <envId-staging>   # UAT sandbox
+  test:   <envId-test>   # UAT sandbox
   prod:      <envId-prod>      # production
 
 bootstrap:
@@ -231,7 +231,7 @@ git:
 
 configSync:
   from: dev
-  to: staging
+  to: test
   include: [EnvironmentVariables, ConnectionReferences]
 
 tests:
@@ -267,7 +267,7 @@ flowline prime --mode customizations   # clone PROD → DEV
 flowline sync                             # push assets to DEV and export to Git (one-liner)
 
 # Send to customer for review
-flowline stage                            # DEV → STAGING for customer review
+flowline stage                            # DEV → TEST for customer review
 
 # After customer sign-off
 flowline release                             # deploy to PROD
@@ -295,7 +295,7 @@ flowline release                             # deploy to PROD
 flowline init            # guided setup: auth, env IDs, writes .flowline.yml
 flowline prime        # clone PROD → DEV (customizations|everything)
 flowline status          # env health, solution versions
-flowline refresh uat     # prompt PROD→STAGING copy with safeguards
+flowline refresh uat     # prompt PROD→TEST copy with safeguards
 ```
 
 ---
@@ -304,5 +304,5 @@ flowline refresh uat     # prompt PROD→STAGING copy with safeguards
 
 * **Developer** (optional) = personal tryout environment (Dataverse *Developer* type).
 * **DEV** = shared integration sandbox (Dataverse *Sandbox*).
-* **STAGING** = UAT sandbox (Dataverse *Sandbox*; often refreshed from PROD).
+* **TEST** = UAT sandbox (Dataverse *Sandbox*; often refreshed from PROD).
 * **PROD** = live environment (Dataverse *Production*).

@@ -24,7 +24,7 @@ To work across multiple environments, create a profile per environment and selec
 
 ```
 pac auth create --url https://dev.crm.dynamics.com
-pac auth create --url https://staging.crm.dynamics.com
+pac auth create --url https://test.crm.dynamics.com
 pac auth list
 pac auth select --index 2
 ```

@@ -15,7 +15,7 @@ public class DeployCommand(IAnsiConsole console) : AsyncCommand<DeployCommand.Se
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "<target>")]
-        [Description("Target environment: prod, staging, or a URL")]
+        [Description("Target environment: prod, test, or a URL")]
         public string Target { get; set; } = null!;
 
         [CommandOption("--solution <name>")]
@@ -49,7 +49,7 @@ public class DeployCommand(IAnsiConsole console) : AsyncCommand<DeployCommand.Se
         var targetUrl = settings.Target.ToLowerInvariant() switch
         {
             "prod" => config.ProdUrl,
-            "staging" => config.StagingUrl,
+            "test" => config.TestUrl,
             _ => settings.Target
         };
 

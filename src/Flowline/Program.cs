@@ -47,10 +47,10 @@ app.Configure(config =>
 
     // copy/provision = Copy Source environment to destination environment
     config.AddCommand<ProvisionCommand>("provision")
-          .WithDescription("Copy prod into dev or staging environment")
+          .WithDescription("Copy prod into dev or test environment")
           .WithExample("provision")
           .WithExample("provision", "dev")
-          .WithExample("provision", "staging")
+          .WithExample("provision", "test")
           .WithExample("provision", "dev --prod https://contoso.crm4.dynamics.com")
           .WithExample("provision", "dev --copy full")
           .WithExample("provision", "dev --suffix mydev")
@@ -77,11 +77,11 @@ app.Configure(config =>
 
     // Deploy (pack and import solution into environment)
     config.AddCommand<DeployCommand>("deploy")
-          .WithDescription("Deploy solution to staging or prod environment")
+          .WithDescription("Deploy solution to test or prod environment")
           .WithExample("deploy")
           .WithExample("deploy", "prod")
-          .WithExample("deploy", "staging")
-          .WithExample("deploy", "https://contoso-staging.crm4.dynamics.com/")
+          .WithExample("deploy", "test")
+          .WithExample("deploy", "https://contoso-test.crm4.dynamics.com/")
           .WithExample("deploy", "prod --solution ContosoCustomizations")
           .WithExample("deploy", "prod --solution ContosoCustomizations --managed");
 

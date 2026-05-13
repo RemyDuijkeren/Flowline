@@ -11,7 +11,7 @@ public class ProjectConfig
     HashSet<ProjectSolution> _solutions = new(ProjectSolution.NameComparer);
 
     public string? ProdUrl { get; set; }
-    public string? StagingUrl { get; set; }
+    public string? TestUrl { get; set; }
     public string? DevUrl { get; set; }
     public HashSet<ProjectSolution> Solutions
     {
@@ -21,39 +21,39 @@ public class ProjectConfig
             : new HashSet<ProjectSolution>(value.Where(solution => !string.IsNullOrWhiteSpace(solution.Name)), ProjectSolution.NameComparer);
     }
 
-    public string? GetOrUpdateStagingUrl(string? inputStagingUrl, FlowlineSettings? settings = null)
+    public string? GetOrUpdateTestUrl(string? inputTestUrl, FlowlineSettings? settings = null)
     {
-        inputStagingUrl = inputStagingUrl?.Trim();
+        inputTestUrl = inputTestUrl?.Trim();
 
-        if (string.IsNullOrWhiteSpace(StagingUrl))
+        if (string.IsNullOrWhiteSpace(TestUrl))
         {
-            StagingUrl = inputStagingUrl;
-            return string.IsNullOrWhiteSpace(inputStagingUrl) ? null : inputStagingUrl;
+            TestUrl = inputTestUrl;
+            return string.IsNullOrWhiteSpace(inputTestUrl) ? null : inputTestUrl;
         }
 
-        if (string.IsNullOrWhiteSpace(inputStagingUrl))
+        if (string.IsNullOrWhiteSpace(inputTestUrl))
         {
             if (settings is { Verbose: true })
             {
-                AnsiConsole.MarkupLine($"[dim]Staging: [bold]{StagingUrl}[/][/]");
+                AnsiConsole.MarkupLine($"[dim]Test: [bold]{TestUrl}[/][/]");
             }
 
-            return StagingUrl;
+            return TestUrl;
         }
 
-        if (StagingUrl != inputStagingUrl)
+        if (TestUrl != inputTestUrl)
         {
-            AnsiConsole.MarkupLine($"[yellow]Staging is already set: [bold]{StagingUrl}[/][/]");
+            AnsiConsole.MarkupLine($"[yellow]Test is already set: [bold]{TestUrl}[/][/]");
             if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings))
             {
-                AnsiConsole.MarkupLine($"[dim]Keeping staging as-is: [link]{StagingUrl}[/][/]");
-                return StagingUrl;
+                AnsiConsole.MarkupLine($"[dim]Keeping test as-is: [link]{TestUrl}[/][/]");
+                return TestUrl;
             }
-            AnsiConsole.MarkupLine("[green]Staging updated[/]");
+            AnsiConsole.MarkupLine("[green]Test updated[/]");
         }
 
-        StagingUrl = inputStagingUrl;
-        return StagingUrl;
+        TestUrl = inputTestUrl;
+        return TestUrl;
     }
 
     public string? GetOrUpdateDevUrl(string? inputDevUrl, FlowlineSettings? settings = null)

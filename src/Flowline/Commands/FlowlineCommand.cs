@@ -8,7 +8,7 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public enum EnvironmentRole { Prod, Staging, Dev }
+public enum EnvironmentRole { Prod, Test, Dev }
 
 public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where TSettings : FlowlineSettings
 {
@@ -88,24 +88,24 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
     {
         var label = role switch
         {
-            EnvironmentRole.Prod    => "Prod",
-            EnvironmentRole.Staging => "Staging",
-            EnvironmentRole.Dev     => "Dev",
+            EnvironmentRole.Prod => "Prod",
+            EnvironmentRole.Test => "Test",
+            EnvironmentRole.Dev  => "Dev",
             _ => throw new ArgumentOutOfRangeException(nameof(role))
         };
         var flag = role switch
         {
-            EnvironmentRole.Prod    => "--prod",
-            EnvironmentRole.Staging => "--staging",
-            EnvironmentRole.Dev     => "--dev",
+            EnvironmentRole.Prod => "--prod",
+            EnvironmentRole.Test => "--test",
+            EnvironmentRole.Dev  => "--dev",
             _ => throw new ArgumentOutOfRangeException(nameof(role))
         };
 
         var url = role switch
         {
-            EnvironmentRole.Prod    => Config!.GetOrUpdateProdUrl(inputUrl, settings),
-            EnvironmentRole.Staging => Config!.GetOrUpdateStagingUrl(inputUrl, settings),
-            EnvironmentRole.Dev     => Config!.GetOrUpdateDevUrl(inputUrl, settings),
+            EnvironmentRole.Prod => Config!.GetOrUpdateProdUrl(inputUrl, settings),
+            EnvironmentRole.Test => Config!.GetOrUpdateTestUrl(inputUrl, settings),
+            EnvironmentRole.Dev  => Config!.GetOrUpdateDevUrl(inputUrl, settings),
             _ => throw new ArgumentOutOfRangeException(nameof(role))
         };
 
