@@ -81,7 +81,7 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
         var app = ConfidentialClientApplicationBuilder
             .Create(appId)
             .WithAuthority(tenantAuthority)
-            .WithClientAssertion("cache-only")
+            .WithClientAssertion((AssertionRequestOptions _) => Task.FromResult("cache-only"))
             .Build();
 
         cacheHelper.RegisterCache(app.AppTokenCache);
