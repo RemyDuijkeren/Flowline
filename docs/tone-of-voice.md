@@ -173,6 +173,24 @@ output should feel complete without it.
 
 ---
 
+## Console helpers
+
+Use `FlowlineConsoleExtensions` (namespace `Flowline.Core`) instead of raw `MarkupLine` calls. Every message category maps to a helper:
+
+| Category | Method | Raw equivalent |
+|---|---|---|
+| Success | `console.Success(msg)` | `MarkupLine($"[green]{msg}[/]")` |
+| Info / neutral | `console.Info(msg)` | `MarkupLine(msg)` |
+| Skip / already done | `console.Skip(msg)` | `MarkupLine($"[dim]{msg}[/]")` |
+| Verbose detail | `console.Verbose(msg, isVerbose)` | `if (isVerbose) MarkupLine($"[dim]{msg}[/]")` |
+| Warning | `console.Warning(msg)` | `MarkupLine($"[yellow]Warning: {msg}[/]")` |
+| Error | `console.Error(msg)` | `MarkupLine($"[red]Error: {msg}[/]")` |
+| Error (exception) | `console.Error(ex)` | `WriteException(ex)` |
+
+Use raw markup only when mixing styles within a single line (e.g., bold name inside a green line). For any plain, single-intent message — always use the helper.
+
+---
+
 ## Vocabulary cheat sheet
 
 | Instead of… | Say… |

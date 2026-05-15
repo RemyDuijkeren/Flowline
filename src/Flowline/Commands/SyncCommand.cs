@@ -52,6 +52,19 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             return 1;
         }
 
+        if (!settings.Force)
+        {
+            var srcPath = Path.Combine(slnFolder, "src");
+            var dirty = await GitUtils.GetUncommittedChangesInPathAsync(srcPath, workingDirectory: RootFolder, verbose: settings.Verbose, cancellationToken: cancellationToken);
+            if (dirty.Count > 0)
+            {
+                Console.Error($"Uncommitted changes in '{projectSln.Name}/src/' — stash or commit first, or re-run with --force.");
+                foreach (var file in dirty)
+                    Console.Skip($"  {Markup.Escape(file)}");
+                return 1;
+            }
+        }
+
         if (await DotNetUtils.EnsureMapFilePathAsync(cdsprojPath, projectSln.UseMapping, cancellationToken) != 0) return 1;
 
         // Sync solution from Dataverse

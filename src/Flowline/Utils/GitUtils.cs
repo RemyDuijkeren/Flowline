@@ -116,19 +116,35 @@ public static class GitUtils
 
     public static async Task<bool> IsRepoCleanAsync(bool verbose = true, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var result = await Cli.Wrap("git")
-                                  .WithArguments("status --porcelain")
-                                  .WithToolExecutionLog(verbose)
-                                  .ExecuteBufferedAsync(cancellationToken);
+        var result = await Cli.Wrap("git")
+                              .WithArguments("status --porcelain")
+                              .WithToolExecutionLog(verbose)
+                              .ExecuteBufferedAsync(cancellationToken);
 
-            return string.IsNullOrWhiteSpace(result.StandardOutput);
-        }
-        catch (Exception)
-        {
-            return false;
-        }
+        return string.IsNullOrWhiteSpace(result.StandardOutput);
+    }
+
+    public static async Task<IReadOnlyList<string>> GetUncommittedChangesInPathAsync(string path, string? workingDirectory = null, bool verbose = false, CancellationToken cancellationToken = default)
+    {
+        var cmd = Cli.Wrap("git");
+        if (workingDirectory != null)
+            cmd = cmd.WithWorkingDirectory(workingDirectory);
+
+        // Relative paths are required for untracked file reporting on some platforms;
+        // absolute paths can silently omit untracked entries when the directory is new
+        var pathArg = workingDirectory != null && Path.IsPathRooted(path)
+            ? Path.GetRelativePath(workingDirectory, path)
+            : path;
+
+        var result = await cmd
+                           .WithArguments(args => args.Add("status").Add("--porcelain").Add("--").Add(pathArg))
+                           .WithToolExecutionLog(verbose)
+                           .ExecuteBufferedAsync(cancellationToken);
+
+        return result.StandardOutput
+                     .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                     .Select(line => line[3..])
+                     .ToList();
     }
 
     public static async Task AssertRepoCleanAsync(bool verbose = true, CancellationToken cancellationToken = default)

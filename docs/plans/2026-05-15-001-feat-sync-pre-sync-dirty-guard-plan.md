@@ -1,7 +1,7 @@
 ---
 title: "feat: Add pre-sync dirty-tree guard to SyncCommand"
 type: feat
-status: active
+status: completed
 date: 2026-05-15
 origin: docs/brainstorms/2026-05-15-sync-pre-sync-guard-requirements.md
 ---
@@ -28,7 +28,7 @@ See origin document for full problem frame and acceptance examples.
 - R2. If any changes are found — modified, staged, deleted, or untracked — abort with exit code 1 and print the list of affected paths.
 - R3. If no changes are found, proceed without any additional output.
 - R4. The error message must name each dirty file and instruct the developer to stash or commit first, or pass `--force` to skip.
-- R5. Add a `--force` flag to `SyncCommand.Settings`. When set, skip the dirty-tree check entirely.
+- R5. When `--force` is passed, skip the dirty-tree check entirely. `--force` (`-f`) is already declared on `FlowlineSettings` (the base class) — reuse `settings.Force`; do not add a duplicate property to `SyncCommand.Settings`.
 
 **Origin flows:** F1 (clean sync), F2 (dirty abort), F3 (--force bypass)
 **Origin acceptance examples:** AE1 (modified file aborts), AE2 (untracked file aborts), AE3 (clean proceeds), AE4 (--force bypasses), AE5 (Plugins/WebResources changes do not block)
@@ -107,7 +107,7 @@ See origin document for full problem frame and acceptance examples.
 - Test: `tests/Flowline.Tests/GitUtilsTests.cs` (new file)
 
 **Approach:**
-- New `public static async Task<IReadOnlyList<string>> HasUncommittedChangesInPathAsync(string path, CancellationToken cancellationToken = default)` method.
+- New `public static async Task<IReadOnlyList<string>> GetUncommittedChangesInPathAsync(string path, string? workingDirectory = null, CancellationToken cancellationToken = default)` method.
 - Runs `git status --porcelain -- <path>` via `Cli.Wrap("git").ExecuteBufferedAsync`.
 - Parses `StandardOutput` line by line: each non-empty line is a dirty-file entry (two-character status + space + path); strip the status prefix to get the file path.
 - On exception: return empty list (guard passes rather than blocking — note: `IsRepoCleanAsync` returns `false` on exception, which blocks; this method deliberately diverges and favours unblocked developer flow since git is already validated upstream by `EnsureGitAsync`).
@@ -120,7 +120,8 @@ See origin document for full problem frame and acceptance examples.
 Tests require a temp git repo. Create a temp directory, `git init`, `git config user.email/name`, create an initial commit, then exercise the method.
 
 - Happy path: `git init` → clean repo → `HasUncommittedChangesInPathAsync(repoPath)` returns empty list. **Covers AE3.**
-- Happy path: create and stage a file → call with containing folder → returns that file's path in the list. **Covers AE1.**
+- Happy path: create a file, commit it, then modify it without staging → call with containing folder → returns that file's path in the list. **Covers AE1.**
+- Happy path: create a file and stage it (but no prior commit) → call with containing folder → returns that file's path (staged-new case, porcelain `A `).
 - Edge case (untracked file): create a file but do not stage → call with containing folder → untracked file appears in the list. **Covers AE2.**
 - Edge case (path scoping): create a dirty file in `Plugins/`; call with `src/` path → returns empty list. **Covers AE5.**
 - Edge case (deleted file): delete a tracked file without staging the deletion → call with folder → deleted file appears.
@@ -134,7 +135,7 @@ Tests require a temp git repo. Create a temp directory, `git init`, `git config 
 
 ### U2. `--force` flag and guard wiring in SyncCommand
 
-**Goal:** Add `--force` to `SyncCommand.Settings` and insert the guard call that aborts with a file-list error when dirty src files are found.
+**Goal:** Insert the guard call into `SyncCommand` that aborts with a file-list error when dirty src files are found. `--force` bypass uses the already-inherited `settings.Force` from `FlowlineSettings` — no new property needed.
 
 **Requirements:** R1, R2, R3, R4, R5
 
@@ -145,11 +146,11 @@ Tests require a temp git repo. Create a temp directory, `git init`, `git config 
 - Test: `tests/Flowline.Tests/SyncCommandTests.cs` (new file)
 
 **Approach:**
-- Add `[CommandOption("--force")]` property (`bool Force`, default `false`) to `SyncCommand.Settings`. Description wording per tone-of-voice guide.
 - In `ExecuteFlowlineAsync`, derive `srcPath = Path.Combine(slnFolder, "src")` immediately after the `.cdsproj` existence check (post line ~53) and before `EnsureMapFilePathAsync` (line ~55).
 - If `!settings.Force`: call `GitUtils.HasUncommittedChangesInPathAsync(srcPath, cancellationToken)`.
 - If the result is non-empty: call `Console.Error(...)` with a message listing the files, then `return 1`.
-- If empty or `--force` is set: fall through to existing sync flow unchanged.
+- If empty or `settings.Force` is true: fall through to existing sync flow unchanged.
+- No new property on `SyncCommand.Settings` — `Force` is inherited from `FlowlineSettings` (`-f|--force`, already wired via `RuntimeOptions.Force` in `FlowlineCommand.ExecuteAsync`).
 
 **Patterns to follow:**
 - `src/Flowline/Commands/PushCommand.cs` — `[CommandOption]` settings property shape.
@@ -158,19 +159,18 @@ Tests require a temp git repo. Create a temp directory, `git init`, `git config 
 
 **Test scenarios:**
 
-Settings unit tests (no git required):
+- Happy path: `new SyncCommand.Settings()` has `Force == false` by default (inherited from `FlowlineSettings`).
 
-- Happy path: `new SyncCommand.Settings()` has `Force == false` by default.
-- Happy path: `new SyncCommand.Settings { Force = true }` has `Force == true`.
-
-Integration scenario (manual verification — full `SyncCommand` execution requires pac CLI and env auth not available in unit tests):
+Integration scenarios (manual verification — full `SyncCommand` execution requires pac CLI and env auth not available in unit tests):
 
 - AE4 (manual): given a dirty `solutions/<Name>/src/` file, `flowline sync --force` proceeds without abort. **Covers AE4.**
+- Manual: given a clean `solutions/<Name>/src/`, `flowline sync` runs with no new guard output. **Covers AE3 at command level.**
+- Manual: given a modified tracked file in `solutions/<Name>/src/`, `flowline sync` prints the dirty-file error and exits 1. **Covers F2 at command level.**
 
 **Verification:**
-- Settings tests pass.
-- `flowline sync` with a clean `src/` folder runs without new output (existing behaviour preserved).
-- `flowline sync` with a modified tracked file in `src/` prints the dirty-file error and exits 1.
+- Settings default test passes.
+- `flowline sync` with clean `src/` produces no new output (existing behaviour preserved).
+- `flowline sync` with a modified tracked file in `src/` prints the dirty-file list and exits 1.
 - `flowline sync --force` with dirty `src/` skips the guard and proceeds.
 
 ---
