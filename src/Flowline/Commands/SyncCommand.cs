@@ -7,7 +7,6 @@ using Flowline.Core;
 using Flowline.Utils;
 using Spectre.Console;
 using Spectre.Console.Cli;
-using Command = CliWrap.Command;
 
 namespace Flowline.Commands;
 
