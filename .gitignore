@@ -24,3 +24,6 @@ _ReSharper*/
 # JetBrains Rider IDE
 .idea/
 riderModule.iml
+
+# Compound Engineering local config
+.compound-engineering/*.local.yaml

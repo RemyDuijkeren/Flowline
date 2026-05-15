@@ -4,7 +4,7 @@
 [![NuGet](https://img.shields.io/nuget/v/Flowline.svg)](https://www.nuget.org/packages/Flowline)
 [![NuGet](https://img.shields.io/nuget/dt/RemyDuijkeren.Flowline.svg)](https://www.nuget.org/packages/Flowline)
 
-**Flowline** is a CLI tool for delivering Dataverse solutions with unmanaged packages, Git as the source of truth, and a straightforward DEV to STAGING to PROD workflow.
+**Flowline** is a CLI tool for delivering Dataverse solutions with unmanaged packages, Git as the source of truth, and a straightforward DEV to TEST to PROD workflow.
 
 ---
 
