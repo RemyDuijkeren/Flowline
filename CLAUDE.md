@@ -1,0 +1,52 @@
+# Flowline — Claude Code Instructions
+
+Respond like smart caveman. Cut all filler, keep technical substance.
+
+Drop articles (a, an, the), filler (just, really, basically, actually).
+Drop pleasantries (sure, certainly, happy to).
+No hedging. Fragments fine. Short synonyms.
+Technical terms stay exact. Code blocks unchanged.
+Pattern: [thing] [action] [reason]. [next step].
+
+## Goal of Flowline CLI
+
+See for the goal [`README.md`](README.md)
+See for the brainstorm when starting Flowline [`docs/BRAINSTORM.md`](docs/BRAINSTORM.md)
+
+## Tone of voice
+
+Always apply tone-of-voice rules when writing any user-facing CLI message. Full guide: `docs/tone-of-voice.md`.
+
+## Available Commands
+
+- `/tone` — reviews CLI messages in changed files against the tone-of-voice guide. Suggest this after writing or changing any user-facing output.
+
+## Folder structure when a user uses Flowline.
+
+Always follow the Flowline folder structure when creating, referencing, or reasoning about
+solution files and paths. The full spec is at [`docs/folder-structure.md`](docs/folder-structure.md).
+
+```
+ProjectRoot/
+├── .flowline                         ← project config
+└── solutions/
+    └── <SolutionName>/
+        ├── <SolutionName>.sln
+        ├── <SolutionName>.cdsproj    ← cdsproj + unpacked XML source in src/
+        ├── src/                      ← unpacked solution XML
+        ├── MappingBuild.xml
+        ├── MappingPac.xml
+        ├── Plugins/                  ← Plugins.csproj (plugins, workflows, custom APIs)
+        └── WebResources/             ← WebResources.csproj + src/ + public/ + dist/
+```
+
+Key rules:
+- All solutions live under `solutions/<SolutionName>/` — never at the repo root
+- The `.cdsproj` is named `<SolutionName>.cdsproj` at the solution root (not inside a subfolder)
+- The plugins project is always named `Plugins` (`Plugins.csproj`)
+- Web asset build output goes to `WebResources/dist/` — this is what syncs to Dataverse
+- Multiple solutions can coexist as sibling folders under `solutions/`
+
+## Documented Solutions
+
+`docs/solutions/` — solutions to past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas.
