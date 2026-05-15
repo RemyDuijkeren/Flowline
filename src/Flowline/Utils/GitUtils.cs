@@ -143,7 +143,7 @@ public static class GitUtils
 
         return result.StandardOutput
                      .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-                     .Select(line => line[3..])
+                     .Select(line => line[3..]) // porcelain v1: "XY filename" — 2-char status + space
                      .ToList();
     }
 
