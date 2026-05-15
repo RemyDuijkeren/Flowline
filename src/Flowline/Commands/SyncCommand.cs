@@ -102,6 +102,16 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             return 1;
         }
 
+        try
+        {
+            var summary = await SolutionChangeSummary.ComputeAsync(Path.Combine(slnFolder, "src"), RootFolder, cancellationToken);
+            summary.Write(Console, devEnv.DisplayName, settings.Verbose);
+        }
+        catch
+        {
+            Console.Skip("Change summary unavailable");
+        }
+
         Console.Success("[bold]:rocket: Synced! Run 'git commit' to save a checkpoint.[/]");
 
         return 0;
