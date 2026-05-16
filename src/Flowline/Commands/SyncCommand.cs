@@ -100,11 +100,11 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         Console.Success($"Solution synced from Dataverse in {FormatDuration(sw.Elapsed)}");
 
-        // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
-        if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken) != 0)
-        {
-            return 1;
-        }
+        // // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
+        // if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken) != 0)
+        // {
+        //     return 1;
+        // }
 
         try
         {

@@ -9,11 +9,12 @@ namespace Flowline.Utils;
 
 public class SolutionChangeSummary
 {
-    public record ChangeItem(string ComponentName, IReadOnlyList<string> FilePaths);
-    public record ChangeGroup(string Label, IReadOnlyList<ChangeItem> Items);
+    public enum ChangeStatus { Added, Modified, Deleted }
+    public record ChangeItem(string ComponentName, IReadOnlyList<string> FilePaths, ChangeStatus Status = ChangeStatus.Modified);
+    public record ChangeGroup(string Label, IReadOnlyList<ChangeItem> Items, bool IsEntity = false);
 
     internal enum XmlRead { None, FormTitle, ViewTitle, DashboardName, StepName }
-    internal record ParsedPath(string Group, string ComponentKey, string? StaticName, XmlRead XmlRead = XmlRead.None, string? NameSuffix = null);
+    internal record ParsedPath(string Group, string ComponentKey, string? StaticName, XmlRead XmlRead = XmlRead.None, string? NameSuffix = null, bool IsEntity = false);
 
     public int TotalFiles { get; }
     public int LinesAdded { get; }
@@ -67,7 +68,7 @@ public class SolutionChangeSummary
             .ToDictionary(p => p[2], p => (added: int.Parse(p[0]), removed: int.Parse(p[1])));
 
         var srcPrefix = srcRelPath.TrimEnd('/') + "/";
-        var components = new Dictionary<string, (ParsedPath Parsed, List<string> Paths)>(StringComparer.OrdinalIgnoreCase);
+        var components = new Dictionary<string, (ParsedPath Parsed, List<string> Paths, List<string> FileStatuses)>(StringComparer.OrdinalIgnoreCase);
         int fileCount = 0;
         int totalAdded = 0, totalRemoved = 0;
 
@@ -93,10 +94,11 @@ public class SolutionChangeSummary
 
             if (!components.TryGetValue(parsed.ComponentKey, out var comp))
             {
-                comp = (parsed, []);
+                comp = (parsed, [], []);
                 components[parsed.ComponentKey] = comp;
             }
             comp.Paths.Add(relPath);
+            comp.FileStatuses.Add(status);
         }
 
         if (fileCount == 0)
@@ -110,9 +112,9 @@ public class SolutionChangeSummary
             {
                 var name = c.Parsed.StaticName ?? await ResolveXmlNameAsync(
                     c.Paths[0], srcFolder, workingDirectory, srcRelPath, c.Parsed, ct);
-                items.Add(new ChangeItem(name, c.Paths));
+                items.Add(new ChangeItem(name, c.Paths, AggregateStatus(c.FileStatuses)));
             }
-            resolvedGroups.Add(new ChangeGroup(g.Key, items));
+            resolvedGroups.Add(new ChangeGroup(g.Key, items, g.First().Parsed.IsEntity));
         }
 
         return new SolutionChangeSummary(fileCount, totalAdded, totalRemoved, resolvedGroups);
@@ -129,24 +131,18 @@ public class SolutionChangeSummary
         var headline = $"Changes ({TotalFiles} {(TotalFiles == 1 ? "file" : "files")}, +{LinesAdded} -{LinesRemoved})";
         var tree = new Tree(headline);
 
-        foreach (var group in Groups)
+        var entityGroups = Groups.Where(g => g.IsEntity).ToList();
+        var otherGroups = Groups.Where(g => !g.IsEntity).ToList();
+
+        if (entityGroups.Count > 0)
         {
-            if (!verbose)
-            {
-                var names = string.Join(", ", group.Items.Select(i => Markup.Escape(i.ComponentName)));
-                tree.AddNode($"{Markup.Escape(group.Label)}: {names}");
-            }
-            else
-            {
-                var groupNode = tree.AddNode(Markup.Escape(group.Label));
-                foreach (var item in group.Items)
-                {
-                    var itemNode = groupNode.AddNode(Markup.Escape(item.ComponentName));
-                    foreach (var path in item.FilePaths)
-                        itemNode.AddNode($"[dim]{Markup.Escape(path)}[/]");
-                }
-            }
+            var entitiesNode = tree.AddNode("Entities");
+            foreach (var group in entityGroups)
+                AddGroupItems(entitiesNode.AddNode(Markup.Escape(group.Label)), group, verbose);
         }
+
+        foreach (var group in otherGroups)
+            AddGroupItems(tree.AddNode(Markup.Escape(group.Label)), group, verbose);
 
         console.Write(tree);
     }
@@ -168,28 +164,28 @@ public class SolutionChangeSummary
             if (parts.Length == 3)
             {
                 if (parts[2].Equals("Entity.xml", StringComparison.OrdinalIgnoreCase))
-                    return new ParsedPath(entity, entity + "/entity", "entity metadata");
+                    return new ParsedPath(entity, entity + "/entity", "entity metadata", IsEntity: true);
                 if (parts[2].Equals("RibbonDiff.xml", StringComparison.OrdinalIgnoreCase))
-                    return new ParsedPath(entity, entity + "/ribbon", "ribbon");
+                    return new ParsedPath(entity, entity + "/ribbon", "ribbon", IsEntity: true);
             }
 
             if (parts[2].Equals("FormXml", StringComparison.OrdinalIgnoreCase) && parts.Length >= 5)
             {
                 var formType = parts[3];
                 var guid = Path.GetFileNameWithoutExtension(parts[4]);
-                return new ParsedPath(entity, entity + "/form/" + guid, null, XmlRead.FormTitle, formType);
+                return new ParsedPath(entity, entity + "/form/" + guid, null, XmlRead.FormTitle, formType + " form", IsEntity: true);
             }
 
             if (parts[2].Equals("SavedQueries", StringComparison.OrdinalIgnoreCase) && parts.Length >= 4)
             {
                 var guid = Path.GetFileNameWithoutExtension(parts[3]);
-                return new ParsedPath(entity, entity + "/view/" + guid, null, XmlRead.ViewTitle);
+                return new ParsedPath(entity, entity + "/view/" + guid, null, XmlRead.ViewTitle, "view", IsEntity: true);
             }
 
             if (parts[2].Equals("Formulas", StringComparison.OrdinalIgnoreCase) && parts.Length >= 4)
             {
                 var name = Path.GetFileNameWithoutExtension(parts[3]);
-                return new ParsedPath(entity, entity + "/formula/" + name, $"formula: {name}");
+                return new ParsedPath(entity, entity + "/formula/" + name, $"formula: {name}", IsEntity: true);
             }
 
             return null;
@@ -201,7 +197,10 @@ public class SolutionChangeSummary
 
         if (top.Equals("Workflows", StringComparison.OrdinalIgnoreCase))
         {
-            var stem = Path.GetFileNameWithoutExtension(rest);
+            var effectiveName = rest.EndsWith(".data.xml", StringComparison.OrdinalIgnoreCase)
+                ? rest[..^".data.xml".Length]
+                : rest;
+            var stem = Path.GetFileNameWithoutExtension(effectiveName);
             return new ParsedPath("Workflows", "Workflows/" + stem, StripGuidSuffix(stem));
         }
 
@@ -244,17 +243,79 @@ public class SolutionChangeSummary
 
         if (top.Equals("WebResources", StringComparison.OrdinalIgnoreCase))
         {
-            var parts = rest.Split('/');
-            if (parts.Length < 2) return null;
-            var folder = parts[0];
-            var file = parts[1];
-            var display = file.EndsWith(".data.xml", StringComparison.OrdinalIgnoreCase)
-                ? folder + "/" + file[..^".data.xml".Length]
-                : folder + "/" + file;
-            return new ParsedPath("Web Resources", "WebResources/" + display, display);
+            if (string.IsNullOrEmpty(rest)) return null;
+            var effectivePath = rest.EndsWith(".data.xml", StringComparison.OrdinalIgnoreCase)
+                ? rest[..^".data.xml".Length]
+                : rest;
+            return new ParsedPath("Web Resources", "WebResources/" + effectivePath, effectivePath);
         }
 
         return null;
+    }
+
+    static void AddGroupItems(TreeNode groupNode, ChangeGroup group, bool verbose)
+    {
+        if (group.Label == "Web Resources")
+        {
+            AddFileTreeNodes(groupNode, group.Items, verbose);
+            return;
+        }
+        foreach (var item in group.Items)
+        {
+            var itemNode = groupNode.AddNode($"{StatusIcon(item.Status)} {Markup.Escape(item.ComponentName)}");
+            if (verbose)
+                foreach (var path in item.FilePaths)
+                    itemNode.AddNode($"[dim]{Markup.Escape(path)}[/]");
+        }
+    }
+
+    static string StatusIcon(ChangeStatus status) => status switch
+    {
+        ChangeStatus.Added   => "[green]+[/]",
+        ChangeStatus.Deleted => "[red]-[/]",
+        _                    => "[yellow]~[/]"
+    };
+
+    static void AddFileTreeNodes(IHasTreeNodes parent, IEnumerable<ChangeItem> items, bool verbose)
+    {
+        var bySegment = items.GroupBy(item => {
+            var idx = item.ComponentName.IndexOf('/');
+            return idx >= 0 ? item.ComponentName[..idx] : string.Empty;
+        });
+
+        foreach (var g in bySegment)
+        {
+            if (g.Key == string.Empty)
+            {
+                foreach (var item in g)
+                {
+                    var leaf = parent.AddNode($"{StatusIcon(item.Status)} {Markup.Escape(item.ComponentName)}");
+                    if (verbose)
+                        foreach (var path in item.FilePaths)
+                            leaf.AddNode($"[dim]{Markup.Escape(path)}[/]");
+                }
+            }
+            else
+            {
+                var folderNode = parent.AddNode(Markup.Escape(g.Key));
+                var subItems = g.Select(item => {
+                    var idx = item.ComponentName.IndexOf('/');
+                    return item with { ComponentName = item.ComponentName[(idx + 1)..] };
+                });
+                AddFileTreeNodes(folderNode, subItems, verbose);
+            }
+        }
+    }
+
+    static ChangeStatus ClassifyFileStatus(string gitStatus) =>
+        gitStatus == "??" || gitStatus[0] == 'A' || gitStatus[1] == 'A' ? ChangeStatus.Added :
+        gitStatus[0] == 'D' || gitStatus[1] == 'D' ? ChangeStatus.Deleted :
+        ChangeStatus.Modified;
+
+    static ChangeStatus AggregateStatus(IEnumerable<string> gitStatuses)
+    {
+        var classified = gitStatuses.Select(ClassifyFileStatus).Distinct().ToList();
+        return classified.Count == 1 ? classified[0] : ChangeStatus.Modified;
     }
 
     internal static bool IsExcluded(string path) =>

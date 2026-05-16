@@ -6,10 +6,22 @@ namespace Flowline.Tests;
 
 public class SolutionChangeSummaryPathParserTests
 {
+    [Fact]
+    public void ParseComponentPath_EntityPath_IsEntityTrue()
+    {
+        SolutionChangeSummary.ParseComponentPath("Entities/Account/Entity.xml")!.IsEntity.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ParseComponentPath_NonEntityPath_IsEntityFalse()
+    {
+        SolutionChangeSummary.ParseComponentPath("Workflows/MyFlow.json")!.IsEntity.Should().BeFalse();
+    }
+
     [Theory]
-    [InlineData("Entities/Account/FormXml/main/{1fed44d1-ae68-4a41-bd2b-f13acac4acfa}.xml", "Account", "Account/form/{1fed44d1-ae68-4a41-bd2b-f13acac4acfa}", null, "main")]
-    [InlineData("Entities/Account/FormXml/quick/{abc}.xml", "Account", "Account/form/{abc}", null, "quick")]
-    [InlineData("Entities/dh_Custom/SavedQueries/{58fb20ff-d5be-406f-908e-c777e9dedf5f}.xml", "dh_Custom", "dh_Custom/view/{58fb20ff-d5be-406f-908e-c777e9dedf5f}", null, null)]
+    [InlineData("Entities/Account/FormXml/main/{1fed44d1-ae68-4a41-bd2b-f13acac4acfa}.xml", "Account", "Account/form/{1fed44d1-ae68-4a41-bd2b-f13acac4acfa}", null, "main form")]
+    [InlineData("Entities/Account/FormXml/quick/{abc}.xml", "Account", "Account/form/{abc}", null, "quick form")]
+    [InlineData("Entities/dh_Custom/SavedQueries/{58fb20ff-d5be-406f-908e-c777e9dedf5f}.xml", "dh_Custom", "dh_Custom/view/{58fb20ff-d5be-406f-908e-c777e9dedf5f}", null, "view")]
     [InlineData("Entities/Account/Entity.xml", "Account", "Account/entity", "entity metadata", null)]
     [InlineData("Entities/Account/RibbonDiff.xml", "Account", "Account/ribbon", "ribbon", null)]
     [InlineData("Entities/Account/Formulas/MyFormula.xaml", "Account", "Account/formula/MyFormula", "formula: MyFormula", null)]
@@ -44,6 +56,7 @@ public class SolutionChangeSummaryPathParserTests
     [Theory]
     [InlineData("Workflows/AccountWF01-45534473-EA8B-4AD0-A20F-67C7F430C5FA.xaml", "Workflows", "AccountWF01")]
     [InlineData("Workflows/NoGuidHere.xaml", "Workflows", "NoGuidHere")]
+    [InlineData("Workflows/MyFlow-45534473-EA8B-4AD0-A20F-67C7F430C5FA.json.data.xml", "Workflows", "MyFlow")]
     public void ParseComponentPath_Workflow_StripsGuidSuffix(string path, string expectedGroup, string expectedName)
     {
         var result = SolutionChangeSummary.ParseComponentPath(path);
@@ -118,6 +131,27 @@ public class SolutionChangeSummaryPathParserTests
         result!.Group.Should().Be("Web Resources");
         result.StaticName.Should().Be("dh_folder/script.js");
         result.ComponentKey.Should().Be("WebResources/dh_folder/script.js");
+    }
+
+    [Fact]
+    public void ParseComponentPath_WebResource_ThreeLevels_KeyIsIndividualFile()
+    {
+        var result = SolutionChangeSummary.ParseComponentPath("WebResources/av_Cr07982/images/claude-v1.png.data.xml");
+
+        result.Should().NotBeNull();
+        result!.Group.Should().Be("Web Resources");
+        result.StaticName.Should().Be("av_Cr07982/images/claude-v1.png");
+        result.ComponentKey.Should().Be("WebResources/av_Cr07982/images/claude-v1.png");
+    }
+
+    [Fact]
+    public void ParseComponentPath_WebResource_OriginalAndDataXmlPairSameKey()
+    {
+        var original = SolutionChangeSummary.ParseComponentPath("WebResources/av_Cr07982/images/claude-v1.png");
+        var metadata = SolutionChangeSummary.ParseComponentPath("WebResources/av_Cr07982/images/claude-v1.png.data.xml");
+
+        original!.ComponentKey.Should().Be(metadata!.ComponentKey);
+        original.StaticName.Should().Be(metadata.StaticName);
     }
 
     [Theory]
@@ -218,7 +252,7 @@ public class SolutionChangeSummaryComputeTests : IDisposable
         var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root);
 
         result.Groups.Should().ContainSingle(g => g.Label == "Account");
-        result.Groups[0].Items.Should().ContainSingle(i => i.ComponentName == "Information (main)");
+        result.Groups[0].Items.Should().ContainSingle(i => i.ComponentName == "Information (main form)");
     }
 
     [Fact]
@@ -237,7 +271,7 @@ public class SolutionChangeSummaryComputeTests : IDisposable
         var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root);
 
         result.Groups.Should().ContainSingle(g => g.Label == "Account");
-        result.Groups[0].Items.Should().ContainSingle(i => i.ComponentName == "Active Accounts");
+        result.Groups[0].Items.Should().ContainSingle(i => i.ComponentName == "Active Accounts (view)");
     }
 
     [Fact]
@@ -274,7 +308,7 @@ public class SolutionChangeSummaryComputeTests : IDisposable
 
         result.TotalFiles.Should().Be(1);
         result.Groups.Should().ContainSingle(g => g.Label == "Contact");
-        result.Groups[0].Items.Should().ContainSingle(i => i.ComponentName == "Quick Create (quick)");
+        result.Groups[0].Items.Should().ContainSingle(i => i.ComponentName == "Quick Create (quick form)");
     }
 
     [Fact]
@@ -291,6 +325,36 @@ public class SolutionChangeSummaryComputeTests : IDisposable
         result.Groups.Should().Contain(g => g.Label == "Account");
         result.Groups.Should().Contain(g => g.Label == "Contact");
         result.Groups.Should().Contain(g => g.Label == "Workflows");
+    }
+
+    [Fact]
+    public async Task ComputeAsync_MixedStatusFiles_ComponentReportsModified()
+    {
+        var guid = "45534473-EA8B-4AD0-A20F-67C7F430C5FA";
+        // Commit one file so it can be deleted, add another as new
+        CommitFile($"Workflows/OldFlow-{guid}.json", "{}");
+        DeleteFile($"Workflows/OldFlow-{guid}.json");
+        WriteFile($"Workflows/OldFlow-{guid}.json.data.xml", "<data/>");
+
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root);
+
+        result.Groups.Should().ContainSingle(g => g.Label == "Workflows");
+        result.Groups[0].Items.Should().ContainSingle(i => i.ComponentName == "OldFlow");
+        result.Groups[0].Items[0].Status.Should().Be(SolutionChangeSummary.ChangeStatus.Modified);
+    }
+
+    [Fact]
+    public async Task ComputeAsync_WorkflowWithDataXmlPair_TreatedAsOneComponent()
+    {
+        var guid = "45534473-EA8B-4AD0-A20F-67C7F430C5FA";
+        WriteFile($"Workflows/MyFlow-{guid}.json", "{}");
+        WriteFile($"Workflows/MyFlow-{guid}.json.data.xml", "<data/>");
+
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root);
+
+        result.Groups.Should().ContainSingle(g => g.Label == "Workflows");
+        result.Groups[0].Items.Should().ContainSingle(i => i.ComponentName == "MyFlow");
+        result.Groups[0].Items[0].FilePaths.Should().HaveCount(2);
     }
 
     [Fact]
@@ -400,7 +464,7 @@ public class SolutionChangeSummaryWriteTests
     }
 
     [Fact]
-    public void Write_DefaultMode_PrintsGroupWithInlineNames()
+    public void Write_DefaultMode_PrintsGroupAndItemsWithoutFilePaths()
     {
         var console = new TestConsole();
         var summary = Build(2, 10, 5,
@@ -408,7 +472,7 @@ public class SolutionChangeSummaryWriteTests
 
         summary.Write(console, "Dev", verbose: false);
 
-        console.Output.Should().Contain("Account:");
+        console.Output.Should().Contain("Account");
         console.Output.Should().Contain("Information (main)");
         console.Output.Should().Contain("Active Accounts");
     }
@@ -426,6 +490,62 @@ public class SolutionChangeSummaryWriteTests
         output.Should().Contain("Account");
         output.Should().Contain("entity metadata");
         output.Should().Contain("Entities/Account/Entity.xml");
+    }
+
+    [Fact]
+    public void Write_EntityGroups_NestedUnderEntitiesNode()
+    {
+        var console = new TestConsole();
+        var summary = Build(2, 10, 5,
+            new SolutionChangeSummary.ChangeGroup("Account", [new SolutionChangeSummary.ChangeItem("entity metadata", [])], IsEntity: true),
+            new SolutionChangeSummary.ChangeGroup("Contact", [new SolutionChangeSummary.ChangeItem("ribbon", [])], IsEntity: true));
+
+        summary.Write(console, "Dev", verbose: false);
+
+        var output = console.Output;
+        output.Should().Contain("Entities");
+        output.Should().Contain("Account");
+        output.Should().Contain("Contact");
+    }
+
+    [Fact]
+    public void Write_WebResources_RenderedAsFolderTree()
+    {
+        var console = new TestConsole();
+        var summary = Build(2, 5, 0,
+            new SolutionChangeSummary.ChangeGroup("Web Resources", [
+                new SolutionChangeSummary.ChangeItem("av_Cr07982/images/claude-v1.png", [], SolutionChangeSummary.ChangeStatus.Added),
+                new SolutionChangeSummary.ChangeItem("av_Cr07982/script/test.js", [], SolutionChangeSummary.ChangeStatus.Modified),
+            ]));
+
+        summary.Write(console, "Dev", verbose: false);
+
+        var output = console.Output;
+        output.Should().Contain("av_Cr07982");
+        output.Should().Contain("images");
+        output.Should().Contain("script");
+        output.Should().Contain("claude-v1.png");
+        output.Should().Contain("test.js");
+        output.Should().NotContain("av_Cr07982/images/claude-v1.png");
+    }
+
+    [Fact]
+    public void Write_StatusIcons_ShownForAddedModifiedDeleted()
+    {
+        var console = new TestConsole();
+        var summary = Build(3, 10, 5,
+            new SolutionChangeSummary.ChangeGroup("Account", [
+                new SolutionChangeSummary.ChangeItem("New Form", [], SolutionChangeSummary.ChangeStatus.Added),
+                new SolutionChangeSummary.ChangeItem("Changed Form", [], SolutionChangeSummary.ChangeStatus.Modified),
+                new SolutionChangeSummary.ChangeItem("Old Form", [], SolutionChangeSummary.ChangeStatus.Deleted),
+            ]));
+
+        summary.Write(console, "Dev", verbose: false);
+
+        var output = console.Output;
+        output.Should().Contain("+ New Form");
+        output.Should().Contain("~ Changed Form");
+        output.Should().Contain("- Old Form");
     }
 
     [Fact]

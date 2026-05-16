@@ -23,18 +23,18 @@ public class CloneCommand(IAnsiConsole console, DataverseConnector dataverseConn
         [Description("Production environment URL to clone solution from")]
         public string? ProdUrl { get; set; }
 
+        [CommandOption("--test <URL>")]
+        [Description("Test environment URL to clone solution from")]
+        public string? TestUrl { get; set; }
+
+        [CommandOption("--dev <URL>")]
+        [Description("Development environment URL to clone solution from")]
+        public string? DevUrl { get; set; }
+
         [CommandOption("--managed")]
         [Description("Include managed artifacts")]
         [DefaultValue(false)]
         public bool IncludeManaged { get; set; } = false;
-
-        [CommandOption("--test <URL>")]
-        [Description("Test environment URL")]
-        public string? TestUrl { get; set; }
-
-        [CommandOption("--dev <URL>")]
-        [Description("Development environment URL")]
-        public string? DevUrl { get; set; }
 
         [CommandOption("--no-map")]
         [Description("Download all artifacts from Dataverse including binaries, skipping the PAC mapping")]
