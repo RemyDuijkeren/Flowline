@@ -106,7 +106,7 @@ public class AccountPostCreatePlugin : IPlugin { ... }
 Use `Config` to pass endpoint URLs, feature flags, or JSON settings. Receive the value in a constructor overload that accepts `string unsecureConfig`:
 
 ```csharp
-[Step("account", Configuration = "{\"endpoint\":\"https://api.example.com\"}")]
+[Step("account", Config = "{\"endpoint\":\"https://api.example.com\"}")]
 public class AccountPostCreatePlugin : IPlugin
 {
     private readonly string _endpoint;
