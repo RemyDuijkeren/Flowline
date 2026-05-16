@@ -52,17 +52,21 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             return 1;
         }
 
-        if (!settings.Force)
+        // Check for uncommitted changes
+        var srcPath = Path.Combine(slnFolder, "src");
+        var dirty = await GitUtils.GetUncommittedChangesInPathAsync(srcPath, workingDirectory: RootFolder, verbose: settings.Verbose, cancellationToken: cancellationToken);
+        if (dirty.Count > 0)
         {
-            var srcPath = Path.Combine(slnFolder, "src");
-            var dirty = await GitUtils.GetUncommittedChangesInPathAsync(srcPath, workingDirectory: RootFolder, verbose: settings.Verbose, cancellationToken: cancellationToken);
-            if (dirty.Count > 0)
+            if (!settings.Force)
             {
-                Console.Error($"Uncommitted changes in '{projectSln.Name}/src/' — stash or commit first, or re-run with --force.");
+                Console.Error($"Uncommitted changes in '{projectSln.Name}/src/' — git stash or commit first, or re-run with --force.");
                 foreach (var file in dirty)
                     Console.Skip($"  {Markup.Escape(file)}");
                 return 1;
             }
+            Console.Warning($"Uncommitted changes in '{projectSln.Name}/src/' — overwriting.");
+            foreach (var file in dirty)
+                Console.Skip($"  {Markup.Escape(file)}");
         }
 
         if (await DotNetUtils.EnsureMapFilePathAsync(cdsprojPath, projectSln.UseMapping, cancellationToken) != 0) return 1;
