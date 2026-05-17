@@ -69,8 +69,6 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
                 Console.Skip($"  {Markup.Escape(file)}");
         }
 
-        if (await DotNetUtils.EnsureMapFilePathAsync(cdsprojPath, projectSln.UseMapping, cancellationToken) != 0) return 1;
-
         // Sync solution from Dataverse
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
         var sw = Stopwatch.StartNew();
@@ -84,7 +82,6 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
                               .Add("--solution-folder").Add(slnFolder)
                               .Add("--environment").Add(devEnv.EnvironmentUrl!)
                               .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
-                              .AddIf(projectSln.UseMapping, "--map", Path.Combine(slnFolder, MappingPacFileName))
                               .Add("--async"))
                       .WithValidation(CommandResultValidation.None)
                       .WithToolExecutionLog(settings.Verbose, ctx)
@@ -100,20 +97,27 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         Console.Success($"Solution synced from Dataverse in {FormatDuration(sw.Elapsed)}");
 
-        // // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
-        // if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken) != 0)
-        // {
-        //     return 1;
-        // }
+        var summary = await SolutionChangeSummary.ComputeAsync(Path.Combine(slnFolder, "src"), RootFolder, cancellationToken);
+        summary.Write(Console, devEnv.DisplayName, settings.Verbose);
 
-        try
+        var driftWarnings = await DriftChecker.CheckAsync(slnFolder, cancellationToken);
+        foreach (var w in driftWarnings)
         {
-            var summary = await SolutionChangeSummary.ComputeAsync(Path.Combine(slnFolder, "src"), RootFolder, cancellationToken);
-            summary.Write(Console, devEnv.DisplayName, settings.Verbose);
+            var hint = w.Category switch
+            {
+                DriftCategory.ContentDiffers     => $"Check who changed '{w.RelativePath}' in Dataverse",
+                DriftCategory.NewInDataverse     => $"Check who changed '{w.RelativePath}' in Dataverse — run 'flowline push' to re-sync",
+                DriftCategory.OnlyLocal          => $"Local change not in Dataverse — run 'flowline push' ({w.RelativePath})",
+                DriftCategory.PluginSizeMismatch => $"Local plugin build may differ from what is deployed — rebuild and push if intentional ({w.RelativePath})",
+                _                                => w.RelativePath
+            };
+            Console.Warning(hint);
         }
-        catch
+
+        // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
+        if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken) != 0)
         {
-            Console.Skip("Change summary unavailable");
+            return 1;
         }
 
         Console.Success("[bold]:rocket: Synced! Run 'git commit' to save a checkpoint.[/]");

@@ -14,9 +14,7 @@ ProjectRoot/
     ├── SolutionName_A/
     │   ├── SolutionName_A.sln           <-- Root solution file
     │   ├── SolutionName_A.cdsproj       <-- .cdsproj & Solution Source
-    │   ├── src/                         <-- Unpacked solution XML
-    │   ├── MappingPac.xml              <-- Mapping for pac solution clone/sync
-    │   ├── MappingBuild.xml            <-- Mapping for dotnet build
+    │   ├── src/                         <-- Unpacked solution XML (from pac solution sync)
     │   ├── Plugins/                  <-- .csproj (Plugins, Workflows, Custom APIs)
     │   │   └── Plugins.csproj
     │   └── WebResources/                <-- .csproj & Web assets (JS, CSS, HTML)
@@ -28,8 +26,6 @@ ProjectRoot/
         ├── SolutionName_B.sln
         ├── SolutionName_B.cdsproj
         ├── src/
-        ├── MappingPac.xml
-        ├── MappingBuild.xml
         ├── Plugins/
         └── WebResources/
 ```

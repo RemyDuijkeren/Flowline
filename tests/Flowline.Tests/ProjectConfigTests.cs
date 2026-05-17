@@ -6,72 +6,46 @@ namespace Flowline.Tests;
 public class ProjectConfigTests
 {
     [Fact]
-    public void ProjectSolution_UseMapping_DefaultsToTrue()
-    {
-        new ProjectSolution { Name = "Test" }.UseMapping.Should().BeTrue();
-    }
-
-    [Fact]
-    public void GetOrUpdateSolution_NewSolution_UseMappingNull_DefaultsTrue()
+    public void GetOrUpdateSolution_NewSolution_ReturnsWithName()
     {
         var config = new ProjectConfig();
 
-        var sln = config.GetOrUpdateSolution("MySolution", useMapping: null);
+        var sln = config.GetOrUpdateSolution("MySolution");
 
-        sln!.UseMapping.Should().BeTrue();
+        sln!.Name.Should().Be("MySolution");
     }
 
     [Fact]
-    public void GetOrUpdateSolution_NewSolution_UseMappingFalse_StoresFalse()
+    public void GetOrUpdateSolution_ExistingSolution_ReturnsSameSolution()
     {
         var config = new ProjectConfig();
+        config.AddOrUpdateSolution("MySolution");
 
-        var sln = config.GetOrUpdateSolution("MySolution", useMapping: false);
+        var sln = config.GetOrUpdateSolution("MySolution");
 
-        sln!.UseMapping.Should().BeFalse();
+        sln!.Name.Should().Be("MySolution");
     }
 
     [Fact]
-    public void GetOrUpdateSolution_ExistingSolution_UseMappingNull_PreservesStoredValue()
+    public void GetOrUpdateSolution_NoName_SingleSolution_ReturnsIt()
     {
         var config = new ProjectConfig();
-        config.AddOrUpdateSolution("MySolution", useMapping: false);
+        config.AddOrUpdateSolution("OnlySolution");
 
-        var sln = config.GetOrUpdateSolution("MySolution", useMapping: null);
+        var sln = config.GetOrUpdateSolution(null);
 
-        sln!.UseMapping.Should().BeFalse();
+        sln!.Name.Should().Be("OnlySolution");
     }
 
     [Fact]
-    public void GetOrUpdateSolution_ExistingSolution_UseMappingMatches_NoChange()
+    public void GetOrUpdateSolution_NoName_MultipleSolutions_ReturnsNull()
     {
         var config = new ProjectConfig();
-        config.AddOrUpdateSolution("MySolution", useMapping: true);
+        config.AddOrUpdateSolution("SolutionA");
+        config.AddOrUpdateSolution("SolutionB");
 
-        var sln = config.GetOrUpdateSolution("MySolution", useMapping: true);
+        var sln = config.GetOrUpdateSolution(null);
 
-        sln!.UseMapping.Should().BeTrue();
-    }
-
-    [Fact]
-    public void GetOrUpdateSolution_ExistingSolution_UseMappingDiffers_Updates()
-    {
-        var config = new ProjectConfig();
-        config.AddOrUpdateSolution("MySolution", useMapping: true);
-
-        var sln = config.GetOrUpdateSolution("MySolution", useMapping: false);
-
-        sln!.UseMapping.Should().BeFalse();
-    }
-
-    [Fact]
-    public void GetOrUpdateSolution_ExistingSolution_UseMappingRestored_Updates()
-    {
-        var config = new ProjectConfig();
-        config.AddOrUpdateSolution("MySolution", useMapping: false);
-
-        var sln = config.GetOrUpdateSolution("MySolution", useMapping: true);
-
-        sln!.UseMapping.Should().BeTrue();
+        sln.Should().BeNull();
     }
 }

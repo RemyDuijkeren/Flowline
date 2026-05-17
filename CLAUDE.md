@@ -34,8 +34,6 @@ ProjectRoot/
         ├── <SolutionName>.sln
         ├── <SolutionName>.cdsproj    ← cdsproj + unpacked XML source in src/
         ├── src/                      ← unpacked solution XML
-        ├── MappingBuild.xml
-        ├── MappingPac.xml
         ├── Plugins/                  ← Plugins.csproj (plugins, workflows, custom APIs)
         └── WebResources/             ← WebResources.csproj + src/ + public/ + dist/
 ```

@@ -29,7 +29,6 @@ public class DeployCommand(IAnsiConsole console) : AsyncCommand<DeployCommand.Se
 
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        await FlowlineValidator.Default.EnsureDotNetAsync(settings, cancellationToken);
         await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
         await FlowlineValidator.Default.EnsureGitAsync(settings, cancellationToken);
 
@@ -97,38 +96,32 @@ public class DeployCommand(IAnsiConsole console) : AsyncCommand<DeployCommand.Se
             return 1;
         }
 
-        // Standard Dataverse solution build produces zip in bin/Debug for unmanaged or bin/Release for managed.
-        // We assume Debug for simplicity, or we should check for built artifacts.
-        // SyncCommand uses dotnet build <slnFolder> which defaults to Debug.
-        var buildType = "Debug";
-        var packagePath = Path.Combine(slnFolder, "bin", buildType, $"{sln.Name}{(sln.IncludeManaged ? "_managed" : "")}.zip");
+        var binFolder = Path.Combine(slnFolder, "bin");
+        Directory.CreateDirectory(binFolder);
 
-        if (!File.Exists(packagePath))
+        var packageType = settings.Managed ? "Managed" : "Unmanaged";
+        var suffix = settings.Managed ? "_managed" : "_unmanaged";
+        var packagePath = Path.Combine(binFolder, $"{sln.Name}{suffix}.zip");
+
+        var (cmdNamePack, prefixArgsPack, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
+        var packResult = await Console.Status().FlowlineSpinner().StartAsync(
+            $"Packing [bold]{sln.Name}[/]...",
+            _ => Cli.Wrap(cmdNamePack)
+                    .WithArguments(args => args
+                        .AddIfNotNull(prefixArgsPack)
+                        .Add("solution")
+                        .Add("pack")
+                        .Add("--folder").Add(Path.Combine(slnFolder, "src"))
+                        .Add("--zipFile").Add(packagePath)
+                        .Add("--packageType").Add(packageType))
+                    .WithToolExecutionLog(settings.Verbose)
+                    .ExecuteAsync(cancellationToken)
+                    .Task);
+
+        if (packResult.ExitCode != 0)
         {
-            Console.MarkupLine("[dim]No package found — building first[/]");
-            var buildResult = await Console.Status().FlowlineSpinner().StartAsync(
-                $"Building [bold]{sln.Name}[/]...",
-                _ => Cli.Wrap("dotnet")
-                                     .WithArguments(args => args
-                                                          .Add("build")
-                                                          .Add(slnFolder))
-                                     .WithStandardOutputPipe(PipeTarget.ToDelegate(s => Console.MarkupLineInterpolated($"[dim]DOTNET: {s}[/]")))
-                                     .WithStandardErrorPipe(PipeTarget.ToDelegate(System.Console.Error.WriteLine))
-                                     .WithToolExecutionLog()
-                                     .ExecuteAsync(cancellationToken)
-                                     .Task);
-
-            if (buildResult.ExitCode != 0)
-            {
-                Console.MarkupLine("[red]Build failed — check the output above. Use --verbose for details.[/]");
-                return 1;
-            }
-
-            if (!File.Exists(packagePath))
-            {
-                Console.MarkupLine($"[red]Build done but no package at '{packagePath}'.[/]");
-                return 1;
-            }
+            Console.MarkupLine("[red]Pack failed — check your solution source.[/]");
+            return 1;
         }
 
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);

@@ -26,7 +26,7 @@ More fundamentally: mapping in the pack direction is a **correctness risk**. Aft
 source → push → Dataverse DEV → sync → src/ → pack → deploy
 ```
 
-`src/` is the record of what was confirmed in DEV. That is what should be packed and deployed. PACX — the most widely used comparable tool — uses no mapping for the same reason. Mapping added complexity and a correctness risk with no benefit in this ALM workflow.
+`src/` is the record of what was confirmed in DEV. That is what should be packed and deployed. Mapping added complexity and a correctness risk with no benefit in this ALM workflow.
 
 ---
 
@@ -101,6 +101,7 @@ source → push → Dataverse DEV → sync → src/ → pack → deploy
 - Idea #4 (`.flowline-sync` metadata stamp) and idea #8 (sync-before-push gate) — deferred; related but independent.
 - Full binary comparison of plugin DLLs — size is the proxy; exact binary match is unreliable due to build metadata variation.
 - Blocking sync on drift — drift check is informational only, never a gate.
+- **Pack-flow / ISV-style builds** — out of scope. Flowline is sync-first: `deploy` packs from `src/`, which holds exactly what was confirmed in Dataverse DEV. Source-driven reproducible builds (no shared DEV env, local artifacts as source of truth, AppSource distribution) are a different model; use `pac solution pack` or ALM Accelerator directly for those workflows.
 
 ---
 

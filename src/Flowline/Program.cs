@@ -72,7 +72,6 @@ app.Configure(config =>
           .WithDescription("Pull dev changes back into the repo")
           .WithExample("sync")
           .WithExample("sync", "ContosoCustomizations")
-          .WithExample("sync", "ContosoCustomizations --no-map")
           .WithExample("sync", "ContosoCustomizations --dev https://contoso-dev.crm4.dynamics.com/ --managed")
           .WithExample("sync", "ContosoCustomizations --dev https://contoso-dev.crm4.dynamics.com/");
 

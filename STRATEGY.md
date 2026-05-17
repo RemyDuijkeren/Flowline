@@ -20,6 +20,14 @@ dev and test environments are short-lived workspaces provisioned from PROD, not
 permanent masters. This is the opposite of the ISV golden-env model, and is
 designed specifically for teams extending their own Dataverse environment.
 
+**Sync-first, not pack-first.** DEV is the working canvas — makers and developers
+contribute directly in the environment, `sync` captures that state into source
+control, and `deploy` packs from `src/`, shipping exactly what was confirmed in
+DEV. This is deliberately not the ISV pack-flow where source builds produce the
+shippable artifact. For ISV-style reproducible builds (no shared DEV env,
+source-as-truth, AppSource distribution), use ALM Accelerator or Power Platform
+Build Tools. Flowline makes no attempt to serve that model.
+
 ## Who it's for
 
 **Primary:** Solo or small-team technical consultant — they're hiring Flowline to

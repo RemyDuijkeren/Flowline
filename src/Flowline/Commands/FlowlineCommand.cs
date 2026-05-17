@@ -15,8 +15,6 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
     protected const string AllSolutionsFolderName = "solutions";
     protected const string WebResourcesName = "WebResources";
     protected const string PluginsName = "Plugins";
-    protected const string MappingPacFileName = "MappingPac.xml";
-    protected const string MappingBuildFileName = "MappingBuild.xml";
 
     public static string FormatDuration(TimeSpan elapsed) =>
         elapsed.TotalMinutes >= 1
@@ -146,10 +144,9 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
         string environmentUrl,
         bool includeManaged,
         TSettings settings,
-        CancellationToken cancellationToken,
-        bool? useMapping = null)
+        CancellationToken cancellationToken)
     {
-        var projectSln = Config!.GetOrUpdateSolution(inputName, includeManaged, settings, useMapping);
+        var projectSln = Config!.GetOrUpdateSolution(inputName, includeManaged, settings);
         if (projectSln == null)
         {
             Console.Error("Solution name is required — pass it as an argument or use --solution <name>.");
