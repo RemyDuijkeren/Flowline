@@ -56,8 +56,18 @@ public class SolutionChangeSummaryPathParserTests
     [Theory]
     [InlineData("Workflows/AccountWF01-45534473-EA8B-4AD0-A20F-67C7F430C5FA.xaml", "Workflows", "AccountWF01")]
     [InlineData("Workflows/NoGuidHere.xaml", "Workflows", "NoGuidHere")]
+    public void ParseComponentPath_Workflow_Xaml_UsesStaticName(string path, string expectedGroup, string expectedName)
+    {
+        var result = SolutionChangeSummary.ParseComponentPath(path);
+
+        result.Should().NotBeNull();
+        result!.Group.Should().Be(expectedGroup);
+        result.StaticName.Should().Be(expectedName);
+    }
+
+    [Theory]
     [InlineData("Workflows/MyFlow-45534473-EA8B-4AD0-A20F-67C7F430C5FA.json.data.xml", "Workflows", "MyFlow")]
-    public void ParseComponentPath_Workflow_StripsGuidSuffix(string path, string expectedGroup, string expectedName)
+    public void ParseComponentPath_Workflow_JsonDataXml_UsesXmlRead(string path, string expectedGroup, string expectedFallback)
     {
         var result = SolutionChangeSummary.ParseComponentPath(path);
 
@@ -65,7 +75,7 @@ public class SolutionChangeSummaryPathParserTests
         result!.Group.Should().Be(expectedGroup);
         result.StaticName.Should().BeNull();
         result.XmlRead.Should().Be(SolutionChangeSummary.XmlRead.WorkflowName);
-        result.FallbackName.Should().Be(expectedName);
+        result.FallbackName.Should().Be(expectedFallback);
     }
 
     [Theory]

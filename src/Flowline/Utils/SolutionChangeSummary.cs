@@ -197,11 +197,15 @@ public class SolutionChangeSummary
 
         if (top.Equals("Workflows", StringComparison.OrdinalIgnoreCase))
         {
+            var isJsonDataXml = rest.EndsWith(".json.data.xml", StringComparison.OrdinalIgnoreCase);
             var effectiveName = rest.EndsWith(".data.xml", StringComparison.OrdinalIgnoreCase)
                 ? rest[..^".data.xml".Length]
                 : rest;
             var stem = Path.GetFileNameWithoutExtension(effectiveName);
-            return new ParsedPath("Workflows", "Workflows/" + stem, null, XmlRead.WorkflowName, FallbackName: StripGuidSuffix(stem));
+            var stripped = StripGuidSuffix(stem);
+            return isJsonDataXml
+                ? new ParsedPath("Workflows", "Workflows/" + stem, null, XmlRead.WorkflowName, FallbackName: stripped)
+                : new ParsedPath("Workflows", "Workflows/" + stem, stripped);
         }
 
         if (top.Equals("OptionSets", StringComparison.OrdinalIgnoreCase))
