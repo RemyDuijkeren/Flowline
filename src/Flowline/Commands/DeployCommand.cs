@@ -82,6 +82,20 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
             return 1;
         }
 
+        // Block if local changes haven't been synced — deploy packs from src/, not dist/
+        var drift = DriftChecker.Check(slnFolder, cancellationToken)
+            .Where(w => w.Category is DriftCategory.OnlyLocal or DriftCategory.PluginSizeMismatch)
+            .ToList();
+        if (drift.Count > 0)
+        {
+            Console.Error("Local changes not in Dataverse — deploy would revert them. Run 'sync' first, or use --force to skip.");
+            foreach (var w in drift)
+                Console.Warning(w.Category == DriftCategory.OnlyLocal
+                    ? $"Only local: {w.RelativePath}"
+                    : $"Plugin size mismatch: {w.RelativePath}");
+            if (!settings.Force) return 1;
+        }
+
         var binFolder = Path.Combine(slnFolder, "bin");
         Directory.CreateDirectory(binFolder);
 
