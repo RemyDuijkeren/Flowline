@@ -114,6 +114,22 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
         // reset: empty env with factory settings (https://learn.microsoft.com/en-us/power-platform/admin/reset-environment)?
         // after rest: deploy solution from prod?
 
+        // Block if target environment has unmanaged solutions
+        var prodTask   = PacUtils.GetSolutionsAsync(prodEnv.EnvironmentUrl!,   settings.Verbose, cancellationToken);
+        var targetTask = PacUtils.GetSolutionsAsync(targetEnv.EnvironmentUrl!, settings.Verbose, cancellationToken);
+        await Task.WhenAll(prodTask, targetTask);
+        var prodSolutions   = prodTask.Result;
+        var targetSolutions = targetTask.Result;
+
+        var problematic = FindProblematicSolutions(targetSolutions, prodSolutions);
+        if (problematic.Count > 0)
+        {
+            Console.Error("Target environment has unmanaged solutions that would be permanently lost:");
+            foreach (var (solution, reason) in problematic)
+                Console.Error($"  {solution.SolutionUniqueName} ({reason})");
+            return 1;
+        }
+
         // Test is always a FullCopy
         string copyType = (settings.Role == Role.Test || settings.CopyType == CopyType.Full) ? "FullCopy" : "MinimalCopy";
 
@@ -142,5 +158,27 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
 
         // TODO: add a different strategy where we import solution(s) from prod, instead of copying the whole environment.
         // should be much faster. also for reset the environment. => use this path also for Development environments.
+    }
+
+    internal static IReadOnlyList<(SolutionInfo Target, string Reason)> FindProblematicSolutions(
+        IEnumerable<SolutionInfo> targetSolutions,
+        IEnumerable<SolutionInfo> prodSolutions)
+    {
+        var prodByName = prodSolutions
+            .Where(s => s.SolutionUniqueName != null)
+            .ToDictionary(s => s.SolutionUniqueName!, StringComparer.OrdinalIgnoreCase);
+
+        return targetSolutions
+            .Where(s => !s.IsManaged && s.SolutionUniqueName != null)
+            .Select(s =>
+            {
+                if (!prodByName.TryGetValue(s.SolutionUniqueName!, out var prodMatch))
+                    return (Target: s, Reason: "absent from prod");
+                if (prodMatch.IsManaged)
+                    return (Target: s, Reason: "managed in prod");
+                return (Target: s, Reason: "");
+            })
+            .Where(x => x.Reason != "")
+            .ToList();
     }
 }

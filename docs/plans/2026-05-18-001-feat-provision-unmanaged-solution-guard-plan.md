@@ -1,7 +1,7 @@
 ---
 title: "feat: Add unmanaged solution guard to ProvisionCommand"
 type: feat
-status: active
+status: completed
 date: 2026-05-18
 origin: docs/brainstorms/provision-unmanaged-solution-guard-requirements.md
 ---
