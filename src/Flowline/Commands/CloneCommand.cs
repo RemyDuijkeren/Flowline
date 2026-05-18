@@ -129,6 +129,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             return;
         }
 
+        Directory.CreateDirectory(distFolder);
         if (Directory.EnumerateFiles(distFolder, "*.*", SearchOption.AllDirectories).Any())
         {
             Console.Skip("WebResources/dist already populated — skipping");

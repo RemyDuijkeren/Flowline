@@ -100,6 +100,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         var summary = await SolutionChangeSummary.ComputeAsync(Path.Combine(slnFolder, "src"), RootFolder, cancellationToken);
         summary.Write(Console, devEnv.DisplayName, settings.Verbose);
 
+        // Check for drift between local solution and Dataverse
         var driftWarnings = await DriftChecker.CheckAsync(slnFolder, cancellationToken);
         foreach (var w in driftWarnings)
         {

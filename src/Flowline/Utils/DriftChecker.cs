@@ -13,12 +13,12 @@ public static class DriftChecker
     public static Task<List<DriftWarning>> CheckAsync(string slnFolder, CancellationToken cancellationToken = default)
     {
         var warnings = new List<DriftWarning>();
-        warnings.AddRange(CheckWebResources(slnFolder));
+        warnings.AddRange(CheckWebResources(slnFolder, cancellationToken));
         warnings.AddRange(CheckPlugins(slnFolder));
         return Task.FromResult(warnings);
     }
 
-    static IEnumerable<DriftWarning> CheckWebResources(string slnFolder)
+    static IEnumerable<DriftWarning> CheckWebResources(string slnFolder, CancellationToken cancellationToken = default)
     {
         var distFolder = Path.Combine(slnFolder, "WebResources", "dist");
         var srcWebFolder = Path.Combine(slnFolder, "src", "WebResources");
@@ -26,8 +26,8 @@ public static class DriftChecker
         if (!Directory.Exists(distFolder) || !Directory.EnumerateFiles(distFolder, "*.*", SearchOption.AllDirectories).Any())
             yield break;
 
-        var distHashes = GetFileHashes(distFolder);
-        var srcHashes = Directory.Exists(srcWebFolder) ? GetFileHashes(srcWebFolder) : new Dictionary<string, byte[]>();
+        var distHashes = GetFileHashes(distFolder, cancellationToken);
+        var srcHashes = Directory.Exists(srcWebFolder) ? GetFileHashes(srcWebFolder, cancellationToken) : new Dictionary<string, byte[]>();
 
         foreach (var (relPath, srcHash) in srcHashes)
         {
@@ -64,13 +64,15 @@ public static class DriftChecker
         }
     }
 
-    static Dictionary<string, byte[]> GetFileHashes(string baseFolder)
+    static Dictionary<string, byte[]> GetFileHashes(string baseFolder, CancellationToken cancellationToken = default)
     {
         var result = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in Directory.EnumerateFiles(baseFolder, "*.*", SearchOption.AllDirectories))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var relPath = Path.GetRelativePath(baseFolder, file);
-            result[relPath] = SHA256.HashData(File.ReadAllBytes(file));
+            using var fs = File.OpenRead(file);
+            result[relPath] = SHA256.HashData(fs);
         }
         return result;
     }

@@ -114,6 +114,7 @@ public class DeployCommand(IAnsiConsole console) : AsyncCommand<DeployCommand.Se
                         .Add("--folder").Add(Path.Combine(slnFolder, "src"))
                         .Add("--zipFile").Add(packagePath)
                         .Add("--packageType").Add(packageType))
+                    .WithValidation(CommandResultValidation.None)
                     .WithToolExecutionLog(settings.Verbose)
                     .ExecuteAsync(cancellationToken)
                     .Task);
@@ -133,6 +134,7 @@ public class DeployCommand(IAnsiConsole console) : AsyncCommand<DeployCommand.Se
                 .Add("--path").Add(packagePath)
                 .Add("--environment").Add(targetEnv.EnvironmentUrl!)
                 .Add("--async"))
+            .WithValidation(CommandResultValidation.None)
             .WithToolExecutionLog();
 
         var importResult = await Console.Status().FlowlineSpinner().StartAsync(
