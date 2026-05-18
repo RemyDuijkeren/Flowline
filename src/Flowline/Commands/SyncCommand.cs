@@ -106,8 +106,8 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         {
             var hint = w.Category switch
             {
-                DriftCategory.ContentDiffers     => $"Check who changed '{w.RelativePath}' in Dataverse",
-                DriftCategory.NewInDataverse     => $"Check who changed '{w.RelativePath}' in Dataverse — run 'flowline push' to re-sync",
+                DriftCategory.ContentDiffers     => $"Check who changed '{w.RelativePath}' in Dataverse — run 'flowline push' to re-sync",
+                DriftCategory.NewInDataverse     => $"Check who add '{w.RelativePath}' in Dataverse — rebuild local WebResources",
                 DriftCategory.OnlyLocal          => $"Local change not in Dataverse — run 'flowline push' ({w.RelativePath})",
                 DriftCategory.PluginSizeMismatch => $"Local plugin build may differ from what is deployed — rebuild and push if intentional ({w.RelativePath})",
                 _                                => w.RelativePath
