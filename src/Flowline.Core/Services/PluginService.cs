@@ -49,7 +49,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
         // Phase 1: Get or register assembly
         var (assembly, needsUpdate) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
-        output.Success($"Assembly registered [bold]{metadata.Name}[/] ({metadata.Version})");
+        output.Ok($"Assembly registered [bold]{metadata.Name}[/] ({metadata.Version})");
 
         // Phase 2: Load snapshot (all Dataverse state in parallel)
         var snapshot = await output.Status()
@@ -88,7 +88,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
         if (!needsUpdate && plan.TotalChanges == 0)
         {
-            output.Success("Plugins already up to date — skipping");
+            output.Ok("Plugins already up to date — skipping");
             return;
         }
 
@@ -107,7 +107,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 })
                 .ConfigureAwait(false);
         }
-        if (plan.TotalDeletes > 0) output.Success($"{plan.TotalDeletes} stale component(s) deleted");
+        if (plan.TotalDeletes > 0) output.Ok($"{plan.TotalDeletes} stale component(s) deleted");
 
         // Phase 5: Update assembly content — must happen before new plugin types are registered
         if (needsUpdate)
@@ -123,7 +123,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                     task.Increment(1);
                 })
                 .ConfigureAwait(false);
-            output.Success($"Updated assembly content for [bold]{metadata.Name}[/]");
+            output.Ok($"Updated assembly content for [bold]{metadata.Name}[/]");
         }
 
         // Phase 6: Execute upserts and add to solution
@@ -197,7 +197,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             var response = (CreateResponse)await service.ExecuteAsync(
                 new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName }, cancellationToken).ConfigureAwait(false);
 
-            output.Success($"Assembly [bold]{metadata.Name}[/] added");
+            output.Ok($"Assembly [bold]{metadata.Name}[/] added");
 
             entity.Id = response.id;
             return (entity, false);
@@ -250,7 +250,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 cancellationToken).ConfigureAwait(false);
 
             freshEntity.Id = response.id;
-            output.Success($"Assembly [bold]{metadata.Name}[/] recreated");
+            output.Ok($"Assembly [bold]{metadata.Name}[/] recreated");
             return (freshEntity, false);
         }
 
@@ -286,7 +286,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                       + plan.ResponseProps.Upserts.Count(u => u.IsCreate);
         var updates = plan.TotalUpserts - creates;
 
-        output.Success($"Dry run: {plan.TotalDeletes} delete(s), {creates} create(s), {updates} update(s). Run without --dry-run to apply.");
+        output.Ok($"Dry run: {plan.TotalDeletes} delete(s), {creates} create(s), {updates} update(s). Run without --dry-run to apply.");
     }
 
     void WriteSnapshotVerbose(RegistrationSnapshot snapshot)

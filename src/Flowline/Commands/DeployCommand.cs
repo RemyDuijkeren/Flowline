@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using CliWrap;
 using Flowline.Config;
+using Flowline.Core;
 using Flowline.Utils;
 using Flowline.Validation;
 using Spectre.Console;
@@ -8,10 +9,8 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class DeployCommand(IAnsiConsole console) : AsyncCommand<DeployCommand.Settings>
+public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions) : FlowlineCommand<DeployCommand.Settings>(console, runtimeOptions)
 {
-    private readonly IAnsiConsole Console = console;
-
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "<target>")]
@@ -27,28 +26,15 @@ public class DeployCommand(IAnsiConsole console) : AsyncCommand<DeployCommand.Se
         public bool Managed { get; set; } = false;
     }
 
-    protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
+    protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
-        await FlowlineValidator.Default.EnsureGitAsync(settings, cancellationToken);
-
-        var rootFolder = Directory.GetCurrentDirectory();
-        await FlowlineValidator.Default.EnsureGitRepoAsync(rootFolder, settings, cancellationToken);
         await GitUtils.AssertRepoCleanAsync(settings.Verbose, cancellationToken);
-
-        // Load or create the project configuration
-        var config = ProjectConfig.Load();
-        if (config == null)
-        {
-            Console.MarkupLine("[dim]No .flowline config found — starting fresh[/]");
-            config = new ProjectConfig();
-        }
 
         // Determine target URL
         var targetUrl = settings.Target.ToLowerInvariant() switch
         {
-            "prod" => config.ProdUrl,
-            "test" => config.TestUrl,
+            "prod" => Config!.ProdUrl,
+            "test" => Config!.TestUrl,
             _ => settings.Target
         };
 
@@ -59,7 +45,7 @@ public class DeployCommand(IAnsiConsole console) : AsyncCommand<DeployCommand.Se
         }
 
         // Resolve solution
-        var sln = config.GetOrUpdateSolution(settings.Solution, settings.Managed, settings);
+        var sln = Config!.GetOrUpdateSolution(settings.Solution, settings.Managed, settings);
         if (sln == null)
         {
             Console.MarkupLine("[red]Solution name is required — use --solution <name>.[/]");
@@ -83,12 +69,12 @@ public class DeployCommand(IAnsiConsole console) : AsyncCommand<DeployCommand.Se
         {
             if (!ConsoleHelper.Confirm($"[yellow]Are you sure you want to deploy to PRODUCTION ([bold]{targetEnv.DisplayName}[/])?[/]", false, settings))
             {
-            Console.MarkupLine("[dim]Deploy cancelled[/]");
+                Console.MarkupLine("[dim]Deploy cancelled[/]");
                 return 0;
             }
         }
 
-        var slnFolder = Path.Combine(rootFolder, "solutions", sln.Name);
+        var slnFolder = Path.Combine(RootFolder, "solutions", sln.Name);
         var cdsprojPath = Path.Combine(slnFolder, $"{sln.Name}.cdsproj");
         if (!File.Exists(cdsprojPath))
         {
@@ -140,10 +126,10 @@ public class DeployCommand(IAnsiConsole console) : AsyncCommand<DeployCommand.Se
         var importResult = await Console.Status().FlowlineSpinner().StartAsync(
             $"Deploying [bold]{sln.Name}[/] to [bold]{targetEnv.DisplayName}[/]...",
             _ => pacSolutionImportCmd
-                                    .WithStandardOutputPipe(PipeTarget.ToDelegate(s => Console.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
-                                    .WithStandardErrorPipe(PipeTarget.ToDelegate(System.Console.Error.WriteLine))
-                                    .ExecuteAsync(cancellationToken)
-                                    .Task);
+                    .WithStandardOutputPipe(PipeTarget.ToDelegate(s => Console.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
+                    .WithStandardErrorPipe(PipeTarget.ToDelegate(System.Console.Error.WriteLine))
+                    .ExecuteAsync(cancellationToken)
+                    .Task);
 
         if (importResult.ExitCode != 0)
         {
@@ -151,7 +137,7 @@ public class DeployCommand(IAnsiConsole console) : AsyncCommand<DeployCommand.Se
             return 1;
         }
 
-        Console.MarkupLine("[bold green]:rocket: Deployed! Your solution is live.[/]");
+        Console.Done("Deployed! Your solution is live.");
 
         return 0;
     }

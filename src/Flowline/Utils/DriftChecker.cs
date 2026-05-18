@@ -10,12 +10,12 @@ public static class DriftChecker
 {
     private const long PluginSizeThresholdBytes = 10 * 1024; // 10 KB
 
-    public static Task<List<DriftWarning>> CheckAsync(string slnFolder, CancellationToken cancellationToken = default)
+    public static List<DriftWarning> Check(string slnFolder, CancellationToken cancellationToken = default)
     {
         var warnings = new List<DriftWarning>();
         warnings.AddRange(CheckWebResources(slnFolder, cancellationToken));
         warnings.AddRange(CheckPlugins(slnFolder));
-        return Task.FromResult(warnings);
+        return warnings;
     }
 
     static IEnumerable<DriftWarning> CheckWebResources(string slnFolder, CancellationToken cancellationToken = default)

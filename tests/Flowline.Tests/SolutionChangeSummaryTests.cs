@@ -63,7 +63,9 @@ public class SolutionChangeSummaryPathParserTests
 
         result.Should().NotBeNull();
         result!.Group.Should().Be(expectedGroup);
-        result.StaticName.Should().Be(expectedName);
+        result.StaticName.Should().BeNull();
+        result.XmlRead.Should().Be(SolutionChangeSummary.XmlRead.WorkflowName);
+        result.FallbackName.Should().Be(expectedName);
     }
 
     [Theory]

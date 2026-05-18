@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Diagnostics.CodeAnalysis;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Services;
@@ -30,16 +29,10 @@ public class TranslationSettings : FlowlineSettings
 }
 
 public class TranslationCommand(IAnsiConsole console, DataverseConnector dataverseConnector, TranslationService translationService, FlowlineRuntimeOptions runtimeOptions)
-    : AsyncCommand<TranslationSettings>
+    : FlowlineCommand<TranslationSettings>(console, runtimeOptions)
 {
-    private readonly IAnsiConsole Console = console;
-
-    protected override async Task<int> ExecuteAsync([NotNull] CommandContext context, [NotNull] TranslationSettings settings, CancellationToken cancellationToken)
+    protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, TranslationSettings settings, CancellationToken cancellationToken)
     {
-        runtimeOptions.IsVerbose = settings.Verbose;
-        runtimeOptions.JsonOutput = settings.JsonOutput;
-        runtimeOptions.Force = settings.Force;
-
         var action = settings.Action.ToLowerInvariant();
         if (action != "export" && action != "import")
         {
@@ -47,18 +40,11 @@ public class TranslationCommand(IAnsiConsole console, DataverseConnector dataver
             return 1;
         }
 
-        var config = ProjectConfig.Load();
-        if (config == null)
-        {
-            Console.Error(".flowline config not found");
-            return 1;
-        }
-
         var targetUrl = settings.Target;
 
         if (string.IsNullOrEmpty(targetUrl))
         {
-            targetUrl = config.DevUrl;
+            targetUrl = Config!.DevUrl;
             if (string.IsNullOrEmpty(targetUrl))
             {
                 Console.Error("Dev URL isn't configured in .flowline");
@@ -70,9 +56,9 @@ public class TranslationCommand(IAnsiConsole console, DataverseConnector dataver
         {
             targetUrl = targetUrl.ToLowerInvariant() switch
             {
-                "dev" => config.DevUrl ?? string.Empty,
-                "test" => config.TestUrl ?? string.Empty,
-                "prod" => config.ProdUrl ?? string.Empty,
+                "dev" => Config!.DevUrl ?? string.Empty,
+                "test" => Config!.TestUrl ?? string.Empty,
+                "prod" => Config!.ProdUrl ?? string.Empty,
                 _ => targetUrl
             };
         }
@@ -86,7 +72,7 @@ public class TranslationCommand(IAnsiConsole console, DataverseConnector dataver
         var solutionName = settings.Solution;
         if (string.IsNullOrEmpty(solutionName))
         {
-            var projectSolution = config.Solutions.FirstOrDefault();
+            var projectSolution = Config!.Solutions.FirstOrDefault();
             solutionName = projectSolution?.Name;
             if (solutionName != null)
             {
@@ -132,7 +118,7 @@ public class TranslationCommand(IAnsiConsole console, DataverseConnector dataver
             });
 
             if (service == null) return 1;
-            Console.Success("Connected");
+            Console.Ok("Connected");
 
             if (action == "export")
             {
@@ -147,7 +133,7 @@ public class TranslationCommand(IAnsiConsole console, DataverseConnector dataver
                     _ => translationService.ImportAsync(service, path));
             }
 
-            Console.Success($"Translations {action}ed");
+            Console.Ok($"Translations {action}ed");
             return 0;
         }
         catch (Exception ex)

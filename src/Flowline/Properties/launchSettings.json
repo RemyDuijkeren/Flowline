@@ -19,6 +19,11 @@
       "commandName": "Project",
       "commandLineArgs": "push --scope webresources --verbose",
       "workingDirectory": "E:/Code/TryOut/MyFlowTest"
+    },
+    "sync": {
+      "commandName": "Project",
+      "commandLineArgs": "sync --verbose --force",
+      "workingDirectory": "E:/Code/TryOut/MyFlowTest"
     }
   }
 }

@@ -43,45 +43,9 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         Config!.GetOrUpdateTestUrl(settings.TestUrl, settings);
         Config!.GetOrUpdateDevUrl(settings.DevUrl, settings);
 
-        // Find first unmanaged environment: prod > test > dev
-        EnvironmentInfo? sourceEnv = null;
-        ProjectSolution? projectSln = null;
-
-        foreach (var role in new[] { EnvironmentRole.Prod, EnvironmentRole.Test, EnvironmentRole.Dev })
-        {
-            var configUrl = role switch
-            {
-                EnvironmentRole.Prod => Config.ProdUrl,
-                EnvironmentRole.Test => Config.TestUrl,
-                EnvironmentRole.Dev  => Config.DevUrl,
-                _                    => null
-            };
-            if (string.IsNullOrEmpty(configUrl)) continue;
-
-            var env = await GetAndCheckEnvironmentInfoAsync(role, null, settings, cancellationToken);
-            if (env == null) return 1;
-
-            var (sln, info) = await GetAndCheckSolutionAsync(
-                settings.Solution, env.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken);
-            if (sln == null || info == null) return 1;
-
-            if (info.IsManaged)
-            {
-                var label = role switch { EnvironmentRole.Prod => "Prod", EnvironmentRole.Test => "Test", _ => "Dev" };
-                Console.MarkupLine($"[dim]{label} solution is managed — skipping[/]");
-                continue;
-            }
-
-            sourceEnv = env;
-            projectSln = sln;
-            break;
-        }
-
-        if (sourceEnv == null || projectSln == null)
-        {
-            Console.Error("No unmanaged environment found — provide a --dev, --test, or --prod URL with an unmanaged solution.");
-            return 1;
-        }
+        var source = await FindUnmanagedSourceAsync(settings, cancellationToken);
+        if (source == null) return 1;
+        var (sourceEnv, projectSln) = source.Value;
 
         Config.Save();
         Console.Verbose($"Project configuration saved to {ProjectConfig.s_configFileName}", settings.Verbose);
@@ -114,8 +78,42 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             return 1;
         }
 
-        Console.Success("[bold]:rocket: Cloned! Use 'push' and 'sync' to keep it in flow.[/]");
+        Console.Done("Cloned! Use 'push' and 'sync' to keep it in flow.");
         return 0;
+    }
+
+    private async Task<(EnvironmentInfo sourceEnv, ProjectSolution projectSln)?> FindUnmanagedSourceAsync(Settings settings, CancellationToken cancellationToken)
+    {
+        foreach (var role in new[] { EnvironmentRole.Prod, EnvironmentRole.Test, EnvironmentRole.Dev })
+        {
+            var configUrl = role switch
+            {
+                EnvironmentRole.Prod => Config!.ProdUrl,
+                EnvironmentRole.Test => Config!.TestUrl,
+                EnvironmentRole.Dev  => Config!.DevUrl,
+                _                    => null
+            };
+            if (string.IsNullOrEmpty(configUrl)) continue;
+
+            var env = await GetAndCheckEnvironmentInfoAsync(role, null, settings, cancellationToken);
+            if (env == null) return null;
+
+            var (sln, info) = await GetAndCheckSolutionAsync(
+                settings.Solution, env.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken);
+            if (sln == null || info == null) return null;
+
+            if (info.IsManaged)
+            {
+                var label = role switch { EnvironmentRole.Prod => "Prod", EnvironmentRole.Test => "Test", _ => "Dev" };
+                Console.MarkupLine($"[dim]{label} solution is managed — skipping[/]");
+                continue;
+            }
+
+            return (env, sln);
+        }
+
+        Console.Error("No unmanaged environment found — provide a --dev, --test, or --prod URL with an unmanaged solution.");
+        return null;
     }
 
     private void SeedWebResourceDistFromSrc(string slnFolder, Settings settings)
@@ -144,7 +142,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             File.Copy(srcFile, destFile, overwrite: false);
         }
 
-        Console.Success("WebResources/dist seeded from src");
+        Console.Ok("WebResources/dist seeded from src");
         Console.Verbose($"[dim]{distFolder}[/]", settings.Verbose);
     }
 
@@ -178,7 +176,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             return 1;
         }
 
-        Console.Success($"{packageType} package validated in {FormatDuration(sw.Elapsed)}");
+        Console.Ok($"{packageType} package validated in {FormatDuration(sw.Elapsed)}");
         return 0;
     }
 
@@ -225,7 +223,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             return 1;
         }
 
-        Console.Success($"Solution [bold]{projectSln.Name}[/] cloned in {FormatDuration(sw.Elapsed)}");
+        Console.Ok($"Solution [bold]{projectSln.Name}[/] cloned in {FormatDuration(sw.Elapsed)}");
         return 0;
     }
 
@@ -255,7 +253,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             return 1;
         }
 
-        Console.Success("Solution file created");
+        Console.Ok("Solution file created");
 
         // NOTE: 'dotnet sln add' doesn't support .cdsproj directly.
         // We'll rename it to .csproj, add it, then rename it back and fix the .sln file.
@@ -292,14 +290,13 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             await File.WriteAllTextAsync(slnFilePath, slnContent, cancellationToken);
         }
 
-        Console.Success($"[bold]{projectSln.Name}.cdsproj[/] added to solution file");
+        Console.Ok($"[bold]{projectSln.Name}.cdsproj[/] added to solution file");
         Console.Verbose($"[dim]{slnFilePath}[/]", settings.Verbose);
         return 0;
     }
 
     private async Task<int> SetupPluginsProjectAsync(string slnFolder, Settings settings, CancellationToken cancellationToken)
     {
-        // Create Plugins project if it doesn't exist
         var pluginsFolder = Path.Combine(slnFolder, PluginsName);
         var pluginsCsproj = Path.Combine(pluginsFolder, $"{PluginsName}.csproj");
         if (File.Exists(pluginsCsproj))
@@ -308,32 +305,45 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             return 0;
         }
 
-        Console.Info("Setting up Plugins project...");
-        Directory.CreateDirectory(pluginsFolder);
+        await Console.Status().FlowlineSpinner().StartAsync(
+            "Setting up Plugins project...", async ctx =>
+            {
+                // Create Plugins project
+                Directory.CreateDirectory(pluginsFolder);
 
-        var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-        await Cli.Wrap(cmdName)
-                 .WithArguments(args => args
-                     .AddIfNotNull(prefixArgs)
-                     .Add("plugin")
-                     .Add("init")) // --skip-signing
-                 .WithWorkingDirectory(pluginsFolder)
-                 .WithToolExecutionLog(settings.Verbose)
-                 .ExecuteAsync(cancellationToken)
-                 .Task.FlowlineSpinner();
+                var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
+                await Cli.Wrap(cmdName)
+                    .WithArguments(args => args
+                        .AddIfNotNull(prefixArgs)
+                        .Add("plugin")
+                        .Add("init")) // --skip-signing
+                    .WithWorkingDirectory(pluginsFolder)
+                    .WithToolExecutionLog(settings.Verbose)
+                    .ExecuteAsync(cancellationToken);
 
-        // Add Plugins.csproj to the solution
-        await Cli.Wrap("dotnet")
-                 .WithArguments(args => args
-                                      .Add("sln")
-                                      .Add("add")
-                                      .Add(pluginsCsproj))
-                 .WithWorkingDirectory(slnFolder)
-                 .WithToolExecutionLog(settings.Verbose)
-                 .ExecuteAsync(cancellationToken)
-                 .Task.FlowlineSpinner();
+                // Add Flowline.Attributes NuGet package
+                await Cli.Wrap("dotnet")
+                    .WithArguments(args => args
+                        .Add("add")
+                        .Add(pluginsCsproj)
+                        .Add("package")
+                        .Add("Flowline.Attributes"))
+                    .WithWorkingDirectory(pluginsFolder)
+                    .WithToolExecutionLog(settings.Verbose)
+                    .ExecuteAsync(cancellationToken);
 
-        Console.Success("Plugins project ready");
+                // Add Plugins.csproj to the solution
+                await Cli.Wrap("dotnet")
+                    .WithArguments(args => args
+                        .Add("sln")
+                        .Add("add")
+                        .Add(pluginsCsproj))
+                    .WithWorkingDirectory(slnFolder)
+                    .WithToolExecutionLog(settings.Verbose)
+                    .ExecuteAsync(cancellationToken);
+            });
+
+        Console.Ok("Plugins project ready");
         return 0;
     }
 
@@ -348,35 +358,37 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             return 0;
         }
 
-        Console.Info("Setting up WebResources project...");
+        await Console.Status().FlowlineSpinner().StartAsync(
+            "Setting up WebResources project...", async ctx =>
+            {
+                // Create a basic class library for WebResources.csproj
+                await Cli.Wrap("dotnet")
+                    .WithArguments(args => args
+                        .Add("new")
+                        .Add("classlib")
+                        .Add("--name").Add(WebResourcesName))
+                    .WithWorkingDirectory(slnFolder)
+                    .WithToolExecutionLog(settings.Verbose)
+                    .ExecuteAsync(cancellationToken);
 
-        // Create a basic class library for WebResources.csproj
-        await Cli.Wrap("dotnet")
-                 .WithArguments(args => args
-                                      .Add("new")
-                                      .Add("classlib")
-                                      .Add("--name").Add(WebResourcesName))
-                 .WithWorkingDirectory(slnFolder)
-                 .WithToolExecutionLog(settings.Verbose)
-                 .ExecuteAsync(cancellationToken);
+                // Add WebResources.csproj to the solution
+                await Cli.Wrap("dotnet")
+                    .WithArguments(args => args
+                        .Add("sln")
+                        .Add(slnFilePath)
+                        .Add("add")
+                        .Add(webresourcesCsproj))
+                    .WithToolExecutionLog(settings.Verbose)
+                    .ExecuteAsync(cancellationToken);
 
-        // Add WebResources.csproj to the solution
-        await Cli.Wrap("dotnet")
-                 .WithArguments(args => args
-                                      .Add("sln")
-                                      .Add(slnFilePath)
-                                      .Add("add")
-                                      .Add(webresourcesCsproj))
-                 .WithToolExecutionLog(settings.Verbose)
-                 .ExecuteAsync(cancellationToken);
+                // Create default WebResources folder structure
+                File.Delete(Path.Combine(webresourcesFolder, "Class1.cs"));
+                Directory.CreateDirectory(Path.Combine(webresourcesFolder, "src"));
+                Directory.CreateDirectory(Path.Combine(webresourcesFolder, "public"));
+                Directory.CreateDirectory(Path.Combine(webresourcesFolder, "dist"));
+            });
 
-        // Create default WebResources folder structure
-        File.Delete(Path.Combine(webresourcesFolder, "Class1.cs"));
-        Directory.CreateDirectory(Path.Combine(webresourcesFolder, "src"));
-        Directory.CreateDirectory(Path.Combine(webresourcesFolder, "public"));
-        Directory.CreateDirectory(Path.Combine(webresourcesFolder, "dist"));
-
-        Console.Success("WebResources project ready");
+        Console.Ok("WebResources project ready");
         return 0;
     }
 

@@ -32,7 +32,7 @@ public class WebResourceExecutor(IAnsiConsole output, bool isVerbose)
                 ExecuteCreatesAsync(service, plan.Creates, failures,
                     ctx.AddTask("Creating web resources", maxValue: plan.Creates.Count), cancellationToken)).ConfigureAwait(false));
             foreach (var a in plan.Creates) output.Verbose($"Web resource '{a.Name}' created", isVerbose);
-            output.Success($"{plan.Creates.Count} web resource(s) created");
+            output.Ok($"{plan.Creates.Count} web resource(s) created");
         }
 
         // Update web resources — parallel, so lock needed for progress
@@ -49,7 +49,7 @@ public class WebResourceExecutor(IAnsiConsole output, bool isVerbose)
                     catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                 }, ctx.AddTask("Updating web resources", maxValue: plan.Updates.Count), cancellationToken)).ConfigureAwait(false);
             foreach (var a in plan.Updates) output.Verbose($"Web resource '{a.Name}' updated", isVerbose);
-            output.Success($"{plan.Updates.Count} web resource(s) updated");
+            output.Ok($"{plan.Updates.Count} web resource(s) updated");
         }
 
         // Add web resources to solution — parallel, so lock needed for progress
@@ -62,7 +62,7 @@ public class WebResourceExecutor(IAnsiConsole output, bool isVerbose)
                     catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                 }, ctx.AddTask("Adding web resources to solution", maxValue: plan.AddsToSolution.Count), cancellationToken)).ConfigureAwait(false);
             foreach (var a in plan.AddsToSolution) output.Verbose($"Web resource '{a.Name}' added to solution", isVerbose);
-            output.Success($"{plan.AddsToSolution.Count} web resource(s) added to solution");
+            output.Ok($"{plan.AddsToSolution.Count} web resource(s) added to solution");
         }
 
         if (!save)
@@ -77,7 +77,7 @@ public class WebResourceExecutor(IAnsiConsole output, bool isVerbose)
                         catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                     }, ctx.AddTask("Deleting web resources", maxValue: plan.Deletes.Count), cancellationToken)).ConfigureAwait(false);
                 foreach (var a in plan.Deletes) output.Verbose($"Web resource '{a.Name}' deleted", isVerbose);
-                output.Success($"{plan.Deletes.Count} web resource(s) deleted");
+                output.Ok($"{plan.Deletes.Count} web resource(s) deleted");
             }
 
             // Remove web resources from solution — parallel, so lock needed for progress
@@ -90,7 +90,7 @@ public class WebResourceExecutor(IAnsiConsole output, bool isVerbose)
                         catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                     }, ctx.AddTask("Removing web resources from solution", maxValue: plan.RemovesFromSolution.Count), cancellationToken)).ConfigureAwait(false);
                 foreach (var a in plan.RemovesFromSolution) output.Verbose($"Web resource '{a.Name}' removed from solution", isVerbose);
-                output.Success($"{plan.RemovesFromSolution.Count} web resource(s) removed from solution");
+                output.Ok($"{plan.RemovesFromSolution.Count} web resource(s) removed from solution");
             }
         }
         else
@@ -107,7 +107,7 @@ public class WebResourceExecutor(IAnsiConsole output, bool isVerbose)
             await output.Status()
                         .StartAsync("Publishing web resources", ctx => PublishAsync(service, distinctIds, cancellationToken))
                         .ConfigureAwait(false);
-            output.Success($"{distinctIds.Count} web resource(s) published");
+            output.Ok($"{distinctIds.Count} web resource(s) published");
         }
 
         if (failures.Count > 0)

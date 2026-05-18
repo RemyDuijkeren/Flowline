@@ -13,8 +13,8 @@ public class SolutionChangeSummary
     public record ChangeItem(string ComponentName, IReadOnlyList<string> FilePaths, ChangeStatus Status = ChangeStatus.Modified);
     public record ChangeGroup(string Label, IReadOnlyList<ChangeItem> Items, bool IsEntity = false);
 
-    internal enum XmlRead { None, FormTitle, ViewTitle, DashboardName, StepName }
-    internal record ParsedPath(string Group, string ComponentKey, string? StaticName, XmlRead XmlRead = XmlRead.None, string? NameSuffix = null, bool IsEntity = false);
+    internal enum XmlRead { None, FormTitle, ViewTitle, DashboardName, StepName, WorkflowName }
+    internal record ParsedPath(string Group, string ComponentKey, string? StaticName, XmlRead XmlRead = XmlRead.None, string? NameSuffix = null, bool IsEntity = false, string? FallbackName = null);
 
     public int TotalFiles { get; }
     public int LinesAdded { get; }
@@ -201,7 +201,7 @@ public class SolutionChangeSummary
                 ? rest[..^".data.xml".Length]
                 : rest;
             var stem = Path.GetFileNameWithoutExtension(effectiveName);
-            return new ParsedPath("Workflows", "Workflows/" + stem, StripGuidSuffix(stem));
+            return new ParsedPath("Workflows", "Workflows/" + stem, null, XmlRead.WorkflowName, FallbackName: StripGuidSuffix(stem));
         }
 
         if (top.Equals("OptionSets", StringComparison.OrdinalIgnoreCase))
@@ -359,7 +359,7 @@ public class SolutionChangeSummary
                 xml = result.StandardOutput;
         }
 
-        var fallback = Path.GetFileNameWithoutExtension(relPath);
+        var fallback = parsed.FallbackName ?? Path.GetFileNameWithoutExtension(relPath);
         return ResolveXmlName(xml, parsed.XmlRead, parsed.NameSuffix) ?? fallback;
     }
 
@@ -371,7 +371,7 @@ public class SolutionChangeSummary
             var doc = XDocument.Parse(xml);
             var title = xmlRead switch
             {
-                XmlRead.StepName => (string?)doc.Root?.Attribute("Name"),
+                XmlRead.StepName or XmlRead.WorkflowName => (string?)doc.Root?.Attribute("Name"),
                 _ => GetLocalizedName(doc)
             };
             return nameSuffix != null && title != null ? $"{title} ({nameSuffix})" : title;

@@ -95,13 +95,13 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             return 1;
         }
 
-        Console.Success($"Solution synced from Dataverse in {FormatDuration(sw.Elapsed)}");
+        Console.Ok($"Solution synced from Dataverse in {FormatDuration(sw.Elapsed)}");
 
         var summary = await SolutionChangeSummary.ComputeAsync(Path.Combine(slnFolder, "src"), RootFolder, cancellationToken);
         summary.Write(Console, devEnv.DisplayName, settings.Verbose);
 
         // Check for drift between local solution and Dataverse
-        var driftWarnings = await DriftChecker.CheckAsync(slnFolder, cancellationToken);
+        var driftWarnings = DriftChecker.Check(slnFolder, cancellationToken);
         foreach (var w in driftWarnings)
         {
             var hint = w.Category switch
@@ -121,7 +121,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             return 1;
         }
 
-        Console.Success("[bold]:rocket: Synced! Run 'git commit' to save a checkpoint.[/]");
+        Console.Done("Synced! Run 'git commit' to save a checkpoint.");
 
         return 0;
     }

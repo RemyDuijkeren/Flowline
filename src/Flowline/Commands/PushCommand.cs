@@ -77,7 +77,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
         });
 
-        Console.Success("All good, let's go!");
+        Console.Ok("All good, let's go!");
     }
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
@@ -129,7 +129,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder!, solutionName, runMode: runMode, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
-        Console.Success("[bold]:rocket: Assets pushed! Use 'sync' to keep it in flow.[/]");
+        Console.Done("Assets pushed! Use 'sync' to keep it in flow.");
 
         return 0;
     }
@@ -295,7 +295,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         });
 
         if (conn != null)
-            Console.Success("Connected");
+            Console.Ok("Connected");
 
         return conn;
     }
@@ -414,7 +414,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             return null;
         }
 
-        console.Success($"Solution: [bold]{solutionName}[/] (managed: {remoteSln.IsManaged})");
+        console.Ok($"Solution: [bold]{solutionName}[/] (managed: {remoteSln.IsManaged})");
         return remoteSln;
     }
 
@@ -440,7 +440,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             return null;
         }
 
-        console.Success($"Dev: [bold]{env.DisplayName}[/] ({env.EnvironmentUrl})");
+        console.Ok($"Dev: [bold]{env.DisplayName}[/] ({env.EnvironmentUrl})");
         return env;
     }
 }

@@ -23,17 +23,26 @@ public static class CommandExtensions
             return command
                    .WithStandardOutputPipe(PipeTarget.ToDelegate(s =>
                    {
-                       if (!string.IsNullOrWhiteSpace(s) && ctx is not null)
-                       {
-                           ctx.Status(s);
-                           //ctx.Status(s.StartsWith("Processing asynchronous operation...") ? $"Cloning... {s}[/]" : s);
-                       }
+                       // if (!string.IsNullOrWhiteSpace(s) && ctx is not null
+                       //     && s.StartsWith("Processing asynchronous operation..."))
+                       // {
+                       //     // cut execution part from s (Processing asynchronous operation... execution time: 00:01:28 and 2.46% of max time allotted)
+                       //     var execution = s.Split("execution time:")[0];
+                       //
+                       //     // take ctx.Status until the (execution time: 00:01:28 and 2.46% of max time allotted)
+                       //     var status = ctx.Status[..ctx.Status.IndexOf(" (", StringComparison.Ordinal)];
+                       //
+                       //     ctx.Status($"{status} ({execution})");
+                       // }
 
                        // Skip if the output is an error message
                        if (DisplayErrorMessage(s, command.TargetFilePath)) return;
 
                        // Skip if the output is PAC async operation progress
                        if (s.StartsWith("Processing asynchronous operation...")) return;
+
+                       // Skip if the output is empty
+                       if (string.IsNullOrWhiteSpace(s)) return;
 
                        AnsiConsole.MarkupLineInterpolated($"[dim]{command.TargetFilePath}: {s}[/]");
                    }))

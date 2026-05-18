@@ -4,7 +4,8 @@ namespace Flowline.Core;
 
 public static class FlowlineConsoleExtensions
 {
-    public static void Success(this IAnsiConsole console, string message) => console.MarkupLine($"[green]{message}[/]");
+    public static void Ok(this IAnsiConsole console, string message) => console.MarkupLine($"[green]✓[/] {message}");
+    public static void Done(this IAnsiConsole console, string message) => console.MarkupLine($"\n[bold green]:rocket: {message}[/]");
 
     public static void Info(this IAnsiConsole console, string message) => console.MarkupLine(message);
 

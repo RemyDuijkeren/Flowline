@@ -39,7 +39,7 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             foreach (var a in plan.Skips)
                 output.Skip($"Web resource '{a.Name}' kept ({a.Reason})");
 
-            output.Success("Web resources already up to date — skipping");
+            output.Ok("Web resources already up to date — skipping");
             return;
         }
 
@@ -89,7 +89,7 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             count++;
         }
 
-        output.Success($"[bold]{count}[/] web resource(s) downloaded");
+        output.Ok($"[bold]{count}[/] web resource(s) downloaded");
     }
 
     void WriteSnapshotVerbose(WebResourceSyncSnapshot snapshot)
@@ -200,6 +200,6 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         if (publishCount > 0)
             output.Info($"{publishCount} web resource(s) — would publish");
 
-        output.Success($"Dry run: {plan.Deletes.Count} delete(s), {plan.RemovesFromSolution.Count} remove(s), {plan.Creates.Count} create(s), {plan.Updates.Count} update(s), {plan.AddsToSolution.Count} add(s), {plan.Skips.Count} skip(s). Run without --dry-run to apply.");
+        output.Ok($"Dry run: {plan.Deletes.Count} delete(s), {plan.RemovesFromSolution.Count} remove(s), {plan.Creates.Count} create(s), {plan.Updates.Count} update(s), {plan.AddsToSolution.Count} add(s), {plan.Skips.Count} skip(s). Run without --dry-run to apply.");
     }
 }

@@ -29,7 +29,7 @@ public static class DotNetUtils
         }
         else
         {
-            AnsiConsole.MarkupLine($"Build {relativeWorkingDirectory} done");
+            AnsiConsole.MarkupLine($"[green]✓[/] Build {relativeWorkingDirectory} done");
             return 0;
         }
     }

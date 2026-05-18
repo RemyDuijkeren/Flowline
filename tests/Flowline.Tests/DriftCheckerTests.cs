@@ -34,19 +34,19 @@ public class DriftCheckerTests : IDisposable
     // ── no artifacts → nothing to check ─────────────────────────────────────
 
     [Fact]
-    public async Task CheckAsync_NeitherDistNorPluginsRelease_ReturnsEmpty()
+    public void Check_NeitherDistNorPluginsRelease_ReturnsEmpty()
     {
-        var warnings = await DriftChecker.CheckAsync(_root);
+        var warnings = DriftChecker.Check(_root);
 
         warnings.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task CheckAsync_EmptyDist_ReturnsEmpty()
+    public void Check_EmptyDist_ReturnsEmpty()
     {
         Directory.CreateDirectory(Path.Combine(_root, "WebResources", "dist"));
 
-        var warnings = await DriftChecker.CheckAsync(_root);
+        var warnings = DriftChecker.Check(_root);
 
         warnings.Should().BeEmpty();
     }
@@ -54,23 +54,23 @@ public class DriftCheckerTests : IDisposable
     // ── web resource checks ───────────────────────────────────────────────────
 
     [Fact]
-    public async Task CheckAsync_IdenticalFile_NoWarning()
+    public void Check_IdenticalFile_NoWarning()
     {
         WriteFile(Path.Combine("WebResources", "dist", "script.js"), "console.log('hi')");
         WriteFile(Path.Combine("src", "WebResources", "script.js"), "console.log('hi')");
 
-        var warnings = await DriftChecker.CheckAsync(_root);
+        var warnings = DriftChecker.Check(_root);
 
         warnings.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task CheckAsync_ContentDiffers_ReturnsContentDiffersWarning()
+    public void Check_ContentDiffers_ReturnsContentDiffersWarning()
     {
         WriteFile(Path.Combine("WebResources", "dist", "script.js"), "v1");
         WriteFile(Path.Combine("src", "WebResources", "script.js"), "v2");
 
-        var warnings = await DriftChecker.CheckAsync(_root);
+        var warnings = DriftChecker.Check(_root);
 
         warnings.Should().ContainSingle(w =>
             w.Category == DriftCategory.ContentDiffers &&
@@ -78,13 +78,13 @@ public class DriftCheckerTests : IDisposable
     }
 
     [Fact]
-    public async Task CheckAsync_FileInSrcButNotDist_ReturnsNewInDataverseWarning()
+    public void Check_FileInSrcButNotDist_ReturnsNewInDataverseWarning()
     {
         WriteFile(Path.Combine("WebResources", "dist", "existing.js"), "x");
         WriteFile(Path.Combine("src", "WebResources", "existing.js"), "x");
         WriteFile(Path.Combine("src", "WebResources", "newfile.js"), "new");
 
-        var warnings = await DriftChecker.CheckAsync(_root);
+        var warnings = DriftChecker.Check(_root);
 
         warnings.Should().ContainSingle(w =>
             w.Category == DriftCategory.NewInDataverse &&
@@ -92,12 +92,12 @@ public class DriftCheckerTests : IDisposable
     }
 
     [Fact]
-    public async Task CheckAsync_FileInDistButNotSrc_ReturnsOnlyLocalWarning()
+    public void Check_FileInDistButNotSrc_ReturnsOnlyLocalWarning()
     {
         WriteFile(Path.Combine("WebResources", "dist", "local.js"), "local");
         // no src counterpart
 
-        var warnings = await DriftChecker.CheckAsync(_root);
+        var warnings = DriftChecker.Check(_root);
 
         warnings.Should().ContainSingle(w =>
             w.Category == DriftCategory.OnlyLocal &&
@@ -105,7 +105,7 @@ public class DriftCheckerTests : IDisposable
     }
 
     [Fact]
-    public async Task CheckAsync_MultipleFiles_CorrectCategoryPerFile()
+    public void Check_MultipleFiles_CorrectCategoryPerFile()
     {
         WriteFile(Path.Combine("WebResources", "dist", "same.js"), "same");
         WriteFile(Path.Combine("WebResources", "dist", "differ.js"), "old");
@@ -115,7 +115,7 @@ public class DriftCheckerTests : IDisposable
         WriteFile(Path.Combine("src", "WebResources", "differ.js"), "new");
         WriteFile(Path.Combine("src", "WebResources", "dataverseonly.js"), "dv");
 
-        var warnings = await DriftChecker.CheckAsync(_root);
+        var warnings = DriftChecker.Check(_root);
 
         warnings.Should().Contain(w => w.Category == DriftCategory.ContentDiffers && w.RelativePath.Contains("differ.js"));
         warnings.Should().Contain(w => w.Category == DriftCategory.OnlyLocal && w.RelativePath.Contains("localonly.js"));
@@ -124,12 +124,12 @@ public class DriftCheckerTests : IDisposable
     }
 
     [Fact]
-    public async Task CheckAsync_DistPopulated_NoSrcWebFolder_AllOnlyLocal()
+    public void Check_DistPopulated_NoSrcWebFolder_AllOnlyLocal()
     {
         WriteFile(Path.Combine("WebResources", "dist", "script.js"), "content");
         // no src/WebResources folder
 
-        var warnings = await DriftChecker.CheckAsync(_root);
+        var warnings = DriftChecker.Check(_root);
 
         warnings.Should().ContainSingle(w =>
             w.Category == DriftCategory.OnlyLocal &&
@@ -139,7 +139,7 @@ public class DriftCheckerTests : IDisposable
     // ── plugin checks ─────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task CheckAsync_PluginWithinThreshold_NoWarning()
+    public void Check_PluginWithinThreshold_NoWarning()
     {
         var srcSize = 50_000;
         var releaseSize = 50_000 + 5_000; // 5 KB diff — within 10 KB threshold
@@ -147,13 +147,13 @@ public class DriftCheckerTests : IDisposable
         WriteBinaryFile(Path.Combine("src", "PluginAssemblies", "MyPlugin.dll"), srcSize);
         WriteBinaryFile(Path.Combine("Plugins", "bin", "Release", "MyPlugin.dll"), releaseSize);
 
-        var warnings = await DriftChecker.CheckAsync(_root);
+        var warnings = DriftChecker.Check(_root);
 
         warnings.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task CheckAsync_PluginExceedsThreshold_ReturnsPluginSizeMismatch()
+    public void Check_PluginExceedsThreshold_ReturnsPluginSizeMismatch()
     {
         var srcSize = 50_000;
         var releaseSize = 50_000 + 15_000; // 15 KB diff — exceeds 10 KB threshold
@@ -161,7 +161,7 @@ public class DriftCheckerTests : IDisposable
         WriteBinaryFile(Path.Combine("src", "PluginAssemblies", "MyPlugin.dll"), srcSize);
         WriteBinaryFile(Path.Combine("Plugins", "bin", "Release", "MyPlugin.dll"), releaseSize);
 
-        var warnings = await DriftChecker.CheckAsync(_root);
+        var warnings = DriftChecker.Check(_root);
 
         warnings.Should().ContainSingle(w =>
             w.Category == DriftCategory.PluginSizeMismatch &&
@@ -169,23 +169,23 @@ public class DriftCheckerTests : IDisposable
     }
 
     [Fact]
-    public async Task CheckAsync_ReleaseDllNotInSrcPluginAssemblies_NoWarning()
+    public void Check_ReleaseDllNotInSrcPluginAssemblies_NoWarning()
     {
         WriteBinaryFile(Path.Combine("Plugins", "bin", "Release", "Unrelated.dll"), 100_000);
         // no matching name in src/PluginAssemblies
 
-        var warnings = await DriftChecker.CheckAsync(_root);
+        var warnings = DriftChecker.Check(_root);
 
         warnings.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task CheckAsync_SrcPluginAssembliesExists_NoReleaseFolder_NoWarning()
+    public void Check_SrcPluginAssembliesExists_NoReleaseFolder_NoWarning()
     {
         WriteBinaryFile(Path.Combine("src", "PluginAssemblies", "MyPlugin.dll"), 50_000);
         // no Plugins/bin/Release folder
 
-        var warnings = await DriftChecker.CheckAsync(_root);
+        var warnings = DriftChecker.Check(_root);
 
         warnings.Should().BeEmpty();
     }

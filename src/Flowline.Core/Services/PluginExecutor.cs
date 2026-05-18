@@ -174,7 +174,7 @@ public class PluginExecutor(IAnsiConsole output, bool isVerbose)
             progressTask?.Increment(1);
             output.Info($"{a.EntityLogicalName} '{a.Id}' added to solution");
         }
-        if (all.Count > 0) output.Success($"{all.Count} component(s) added to solution");
+        if (all.Count > 0) output.Ok($"{all.Count} component(s) added to solution");
     }
 
     async Task UpsertAsync(IOrganizationServiceAsync2 service, UpsertAction action, string solutionName, CancellationToken cancellationToken)

@@ -79,7 +79,7 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
             await FlowlineValidator.Default.EnsureGitRepoAsync(RootFolder, settings, cancellationToken);
         });
 
-        Console.Success("All good, let's go!");
+        Console.Ok("Prerequisites all good, let's go!");
     }
 
     protected async Task<EnvironmentInfo?> GetAndCheckEnvironmentInfoAsync(EnvironmentRole role, string? inputUrl, TSettings settings, CancellationToken cancellationToken)
@@ -135,7 +135,7 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
             return null;
         }
 
-        Console.Success($"{label}: [bold]{env.DisplayName}[/] ({env.EnvironmentUrl})");
+        Console.Ok($"{label} env [bold]{env.DisplayName}[/] ({env.EnvironmentUrl}) exists");
         return env;
     }
 
@@ -162,7 +162,7 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
             return (projectSln, null);
         }
 
-        Console.Success($"Solution: [bold]{projectSln.Name}[/] (managed: {remoteSln.IsManaged})");
+        Console.Ok($"Solution [bold]{projectSln.Name}[/] (managed: {remoteSln.IsManaged}) exists");
 
         return (projectSln, remoteSln);
     }
