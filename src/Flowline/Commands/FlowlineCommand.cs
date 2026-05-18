@@ -45,7 +45,7 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
     {
         InitializeRuntimeOptions(settings);
 
-        if (ShowWelcome && !settings.JsonOutput)
+        if (ShowWelcome && !settings.JsonOutput && FlowlineValidator.Default.ShouldShowWelcomeScreen(settings.NoCache))
             WelcomeScreen();
 
         await CheckSetupAsync(settings, cancellationToken);

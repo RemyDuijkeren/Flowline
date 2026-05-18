@@ -5,6 +5,7 @@ namespace Flowline.Validation;
 
 public sealed class FlowlineValidator
 {
+    static readonly TimeSpan WelcomeScreenTtl = TimeSpan.FromDays(1);
     static readonly TimeSpan ToolTtl = TimeSpan.FromDays(7);
     static readonly TimeSpan GitRepoTtl = TimeSpan.FromDays(1);
     static readonly TimeSpan EnvironmentTtl = TimeSpan.FromHours(12);
@@ -132,6 +133,19 @@ public sealed class FlowlineValidator
         }
 
         return solution;
+    }
+
+    public bool ShouldShowWelcomeScreen(bool noCache = false)
+    {
+        if (noCache) return true;
+        var cache = _store.Load();
+        if (cache.WelcomeShownAtUtc == null || !IsFresh(cache.WelcomeShownAtUtc.Value, WelcomeScreenTtl))
+        {
+            cache.WelcomeShownAtUtc = DateTimeOffset.UtcNow;
+            _store.Save(cache);
+            return true;
+        }
+        return false;
     }
 
     async Task<ToolCheckResult> GetOrRunToolCheckAsync(

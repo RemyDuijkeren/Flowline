@@ -142,6 +142,55 @@ public class ValidationCacheTests : IDisposable
         solutionCalls.Should().Be(1);
     }
 
+    [Fact]
+    public void ShouldShowWelcomeScreen_ReturnsTrueWhenNoCachedEntry()
+    {
+        var validator = CreateValidator(new ValidationProbes());
+
+        validator.ShouldShowWelcomeScreen().Should().BeTrue();
+    }
+
+    [Fact]
+    public void ShouldShowWelcomeScreen_ReturnsFalseWhenShownWithinTtl()
+    {
+        var validator = CreateValidator(new ValidationProbes());
+
+        validator.ShouldShowWelcomeScreen();
+        validator.ShouldShowWelcomeScreen().Should().BeFalse();
+    }
+
+    [Fact]
+    public void ShouldShowWelcomeScreen_ReturnsTrueWhenCacheIsStale()
+    {
+        var store = new ValidationCacheStore(_cachePath);
+        store.Save(new ValidationCache { WelcomeShownAtUtc = DateTimeOffset.UtcNow.AddDays(-2) });
+
+        var validator = new FlowlineValidator(store, new ValidationProbes());
+
+        validator.ShouldShowWelcomeScreen().Should().BeTrue();
+    }
+
+    [Fact]
+    public void ShouldShowWelcomeScreen_NoCacheAlwaysReturnsTrue()
+    {
+        var validator = CreateValidator(new ValidationProbes());
+
+        validator.ShouldShowWelcomeScreen(noCache: true);
+        validator.ShouldShowWelcomeScreen(noCache: true).Should().BeTrue();
+    }
+
+    [Fact]
+    public void ShouldShowWelcomeScreen_PersistsTimestampOnShow()
+    {
+        var store = new ValidationCacheStore(_cachePath);
+        var validator = new FlowlineValidator(store, new ValidationProbes());
+
+        validator.ShouldShowWelcomeScreen();
+
+        store.Load().WelcomeShownAtUtc.Should().NotBeNull()
+            .And.BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(5));
+    }
+
     FlowlineValidator CreateValidator(ValidationProbes probes) =>
         new(new ValidationCacheStore(_cachePath), probes);
 }

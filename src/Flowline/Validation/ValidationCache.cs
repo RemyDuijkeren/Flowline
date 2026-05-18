@@ -8,6 +8,7 @@ public sealed class ValidationCache
     public Dictionary<string, ValidationCacheEntry<GitRepoCheckResult>> GitRepos { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, ValidationCacheEntry<EnvironmentInfo>> Environments { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, ValidationCacheEntry<SolutionInfo>> Solutions { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public DateTimeOffset? WelcomeShownAtUtc { get; set; }
 }
 
 public sealed class ValidationCacheEntry<T>
