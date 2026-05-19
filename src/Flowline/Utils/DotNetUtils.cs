@@ -29,7 +29,9 @@ public static class DotNetUtils
         }
         else
         {
-            AnsiConsole.MarkupLine($"[green]✓[/] Build {relativeWorkingDirectory} done");
+            var elapsed = buildResult.RunTime;
+        var duration = elapsed.TotalMinutes >= 1 ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds}s" : $"{(int)elapsed.TotalSeconds}s";
+        AnsiConsole.MarkupLine($"[green]✓[/] Build {relativeWorkingDirectory} done in {duration}");
             return 0;
         }
     }
