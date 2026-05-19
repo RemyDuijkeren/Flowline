@@ -53,25 +53,17 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         // Check for uncommitted changes
         var srcPath = Path.Combine(slnFolder, "src");
-        var dirty = await GitUtils.GetUncommittedChangesInPathAsync(srcPath, workingDirectory: RootFolder, verbose: settings.Verbose, cancellationToken: cancellationToken);
-        if (dirty.Count > 0)
+        var preSyncSummary = await SolutionChangeSummary.ComputeAsync(srcPath, RootFolder, settings.Verbose, cancellationToken);
+        if (preSyncSummary.TotalFiles > 0)
         {
             if (!settings.Force)
             {
                 Console.Error($"Uncommitted changes in '{projectSln.Name}/src/' — git commit first, or re-run with --force.");
-                if (settings.Verbose)
-                {
-                    foreach (var file in dirty)
-                        Console.Skip($"  {ConsolePath.FormatRelativePath(file, srcPath)}");
-                }
+                preSyncSummary.WriteFlat(Console, settings.Verbose);
                 return 1;
             }
             Console.Warning($"Uncommitted changes in '{projectSln.Name}/src/' — overwriting.");
-            if (settings.Verbose)
-            {
-                foreach (var file in dirty)
-                    Console.Skip($"  {ConsolePath.FormatRelativePath(file, srcPath)}");
-            }
+            preSyncSummary.WriteFlat(Console, settings.Verbose);
         }
 
         // Sync solution from Dataverse
@@ -141,8 +133,8 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         }
 
         // Summary of changes
-        var summary = await SolutionChangeSummary.ComputeAsync(Path.Combine(slnFolder, "src"), RootFolder, settings.Verbose, cancellationToken);
-        summary.Write(Console, devEnv.DisplayName, settings.Verbose);
+        var summary = await SolutionChangeSummary.ComputeAsync(srcPath, RootFolder, settings.Verbose, cancellationToken);
+        summary.WriteTree(Console, devEnv.DisplayName, settings.Verbose);
 
         Console.Done("Synced! Run 'git commit' to save a checkpoint.");
 

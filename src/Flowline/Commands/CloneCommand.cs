@@ -310,6 +310,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             });
 
         Console.Ok("Plugins project ready");
+        Console.Warning("Put existing plugin code in the Plugins project");
         return 0;
     }
 

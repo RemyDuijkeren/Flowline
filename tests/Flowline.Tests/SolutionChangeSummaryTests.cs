@@ -436,7 +436,7 @@ public class SolutionChangeSummaryWriteTests
         var console = new TestConsole();
         var summary = Build(0, 0, 0);
 
-        summary.Write(console, "Contoso Dev", verbose: false);
+        summary.WriteTree(console, "Contoso Dev", verbose: false);
 
         console.Output.Should().Contain("No changes pulled from Contoso Dev.");
     }
@@ -447,7 +447,7 @@ public class SolutionChangeSummaryWriteTests
         var console = new TestConsole();
         var summary = Build(0, 0, 0);
 
-        summary.Write(console, null, verbose: false);
+        summary.WriteTree(console, null, verbose: false);
 
         console.Output.Should().Contain("No changes pulled from DEV.");
     }
@@ -458,7 +458,7 @@ public class SolutionChangeSummaryWriteTests
         var console = new TestConsole();
         var summary = Build(3, 47, 23, Group("Account", "entity metadata"));
 
-        summary.Write(console, "Dev", verbose: false);
+        summary.WriteTree(console, "Dev", verbose: false);
 
         console.Output.Should().Contain("Changes (3 files, +47 -23)");
     }
@@ -469,7 +469,7 @@ public class SolutionChangeSummaryWriteTests
         var console = new TestConsole();
         var summary = Build(1, 5, 0, Group("Account", "entity metadata"));
 
-        summary.Write(console, "Dev", verbose: false);
+        summary.WriteTree(console, "Dev", verbose: false);
 
         console.Output.Should().Contain("1 file,");
         console.Output.Should().NotContain("1 files");
@@ -482,7 +482,7 @@ public class SolutionChangeSummaryWriteTests
         var summary = Build(2, 10, 5,
             Group("Account", "Information (main)", "Active Accounts"));
 
-        summary.Write(console, "Dev", verbose: false);
+        summary.WriteTree(console, "Dev", verbose: false);
 
         console.Output.Should().Contain("Account");
         console.Output.Should().Contain("Information (main)");
@@ -496,7 +496,7 @@ public class SolutionChangeSummaryWriteTests
         var summary = Build(1, 5, 0,
             GroupWithPaths("Account", "entity metadata", "Entities/Account/Entity.xml"));
 
-        summary.Write(console, "Dev", verbose: true);
+        summary.WriteTree(console, "Dev", verbose: true);
 
         var output = console.Output;
         output.Should().Contain("Account");
@@ -512,7 +512,7 @@ public class SolutionChangeSummaryWriteTests
             new SolutionChangeSummary.ChangeGroup("Account", [new SolutionChangeSummary.ChangeItem("entity metadata", [])], IsEntity: true),
             new SolutionChangeSummary.ChangeGroup("Contact", [new SolutionChangeSummary.ChangeItem("ribbon", [])], IsEntity: true));
 
-        summary.Write(console, "Dev", verbose: false);
+        summary.WriteTree(console, "Dev", verbose: false);
 
         var output = console.Output;
         output.Should().Contain("Entities");
@@ -530,7 +530,7 @@ public class SolutionChangeSummaryWriteTests
                 new SolutionChangeSummary.ChangeItem("av_Cr07982/script/test.js", [], SolutionChangeSummary.ChangeStatus.Modified),
             ]));
 
-        summary.Write(console, "Dev", verbose: false);
+        summary.WriteTree(console, "Dev", verbose: false);
 
         var output = console.Output;
         output.Should().Contain("av_Cr07982");
@@ -552,7 +552,7 @@ public class SolutionChangeSummaryWriteTests
                 new SolutionChangeSummary.ChangeItem("Old Form", [], SolutionChangeSummary.ChangeStatus.Deleted),
             ]));
 
-        summary.Write(console, "Dev", verbose: false);
+        summary.WriteTree(console, "Dev", verbose: false);
 
         var output = console.Output;
         output.Should().Contain("+ New Form");
@@ -569,7 +569,7 @@ public class SolutionChangeSummaryWriteTests
             Group("Contact", "ribbon"),
             Group("Workflows", "AccountWF01"));
 
-        summary.Write(console, "Dev", verbose: false);
+        summary.WriteTree(console, "Dev", verbose: false);
 
         var output = console.Output;
         output.Should().Contain("Account");

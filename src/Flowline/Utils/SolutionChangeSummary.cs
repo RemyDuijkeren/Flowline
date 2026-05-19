@@ -122,7 +122,22 @@ public class SolutionChangeSummary
         return new SolutionChangeSummary(fileCount, totalAdded, totalRemoved, resolvedGroups);
     }
 
-    public void Write(IAnsiConsole console, string? envName, bool verbose)
+    public void WriteFlat(IAnsiConsole console, bool verbose)
+    {
+        foreach (var group in Groups.OrderBy(g => g.IsEntity ? 0 : 1).ThenBy(g => g.Label))
+        {
+            foreach (var item in group.Items.OrderBy(i => i.ComponentName))
+            {
+                console.Info($"- {StatusIcon(item.Status)} {(group.IsEntity ? "Entity " : "")}{group.Label}: {Markup.Escape(item.ComponentName)}");
+                foreach (var path in item.FilePaths)
+                {
+                    console.Verbose($"    {Markup.Escape(path)}", verbose);
+                }
+            }
+        }
+    }
+
+    public void WriteTree(IAnsiConsole console, string? envName, bool verbose)
     {
         if (TotalFiles == 0)
         {
