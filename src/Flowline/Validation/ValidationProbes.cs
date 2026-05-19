@@ -21,4 +21,7 @@ public sealed class ValidationProbes
 
     public Func<string, bool, CancellationToken, Task<List<SolutionInfo>>> GetSolutionsAsync { get; init; } =
         PacUtils.GetSolutionsAsync;
+
+    public Func<string, string, bool, CancellationToken, Task<string?>> GetPublisherCustomizationPrefixAsync { get; init; } =
+        PacUtils.GetPublisherCustomizationPrefixAsync;
 }

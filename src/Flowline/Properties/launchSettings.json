@@ -7,7 +7,7 @@
     },
     "clone": {
       "commandName": "Project",
-      "commandLineArgs": "clone Cr07982 --verbose",
+      "commandLineArgs": "clone Cr07982 --verbose --no-cache",
       "workingDirectory": "E:/Code/TryOut/MyFlowTest"
     },
     "push --scope plugins": {

@@ -126,6 +126,10 @@ public sealed class FlowlineValidator
         var solution = solutions.FirstOrDefault(s => s.SolutionUniqueName?.Equals(solutionName, StringComparison.OrdinalIgnoreCase) == true);
         if (solution != null)
         {
+            if (solution.PublisherUniqueName != null)
+                solution.CustomizationPrefix = await _probes.GetPublisherCustomizationPrefixAsync(
+                    environmentUrl, solution.PublisherUniqueName, settings.Verbose, cancellationToken);
+
             cache = _store.Load();
             cache.Solutions[key] = NewEntry(solution);
             cache.FlowlineVersion = GetFlowlineVersion();

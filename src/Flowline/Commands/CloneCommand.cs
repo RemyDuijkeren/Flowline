@@ -45,7 +45,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
         var source = await FindUnmanagedSourceAsync(settings, cancellationToken);
         if (source == null) return 1;
-        var (sourceEnv, projectSln) = source.Value;
+        var (sourceEnv, projectSln, solutionInfo) = source.Value;
 
         Config.Save();
         Console.Verbose($"Project configuration saved to {ProjectConfig.s_configFileName}", settings.Verbose);
@@ -58,11 +58,11 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         if (await CreateSolutionFileAsync(projectSln, slnFolder, slnFilePath, cdsprojPath, settings, cancellationToken) != 0) return 1;
         if (await SetupPluginsProjectAsync(slnFolder, settings, cancellationToken) != 0) return 1;
         if (await SetupWebResourcesProjectAsync(slnFolder, slnFilePath, settings, cancellationToken) != 0) return 1;
-        SeedWebResourceDistFromSrc(slnFolder, settings);
-        var binFolder = Path.Combine(slnFolder, "bin");
-        Directory.CreateDirectory(binFolder);
+        SeedWebResourceDistFromSrc(slnFolder, solutionInfo.CustomizationPrefix, projectSln.Name, settings);
 
         // Pack the solution in pac to validate it
+        var binFolder = Path.Combine(slnFolder, "bin");
+        Directory.CreateDirectory(binFolder);
         if (await PacUtils.PackSolutionAsync(projectSln, slnFolder, binFolder, false, settings.Verbose, cancellationToken) != 0) return 1;
         if (settings.IncludeManaged &&
             await PacUtils.PackSolutionAsync(projectSln, slnFolder, binFolder, true, settings.Verbose, cancellationToken) != 0)
@@ -82,7 +82,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         return 0;
     }
 
-    private async Task<(EnvironmentInfo sourceEnv, ProjectSolution projectSln)?> FindUnmanagedSourceAsync(Settings settings, CancellationToken cancellationToken)
+    private async Task<(EnvironmentInfo sourceEnv, ProjectSolution projectSolution, SolutionInfo solutionInfo)?> FindUnmanagedSourceAsync(Settings settings, CancellationToken cancellationToken)
     {
         foreach (var role in new[] { EnvironmentRole.Prod, EnvironmentRole.Test, EnvironmentRole.Dev })
         {
@@ -109,14 +109,14 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
                 continue;
             }
 
-            return (env, sln);
+            return (env, sln, info);
         }
 
         Console.Error("No unmanaged environment found — provide a --dev, --test, or --prod URL with an unmanaged solution.");
         return null;
     }
 
-    private void SeedWebResourceDistFromSrc(string slnFolder, Settings settings)
+    private void SeedWebResourceDistFromSrc(string slnFolder, string? publisherPrefix, string solutionName, Settings settings)
     {
         var srcWebResources = Path.Combine(slnFolder, "src", "WebResources");
         var distFolder = Path.Combine(slnFolder, "WebResources", "dist");
@@ -134,9 +134,23 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             return;
         }
 
+        // PAC unpacks web resources under src/WebResources/<publisher_prefix>_<solution>/
+        // That subfolder maps to dist/ root — strip one level. Everything else copies as-is.
+        var publisherFolderName = publisherPrefix != null ? $"{publisherPrefix}_{solutionName}" : null;
+        var publisherRoot = publisherFolderName != null
+            ? Path.Combine(srcWebResources, publisherFolderName)
+            : null;
+        if (publisherRoot != null && !Directory.Exists(publisherRoot)) publisherRoot = null;
+
         foreach (var srcFile in Directory.EnumerateFiles(srcWebResources, "*.*", SearchOption.AllDirectories))
         {
-            var relPath = Path.GetRelativePath(srcWebResources, srcFile);
+            if (srcFile.EndsWith(".data.xml", StringComparison.OrdinalIgnoreCase)) continue;
+
+            var sourceRoot = publisherRoot != null && srcFile.StartsWith(publisherRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                ? publisherRoot
+                : srcWebResources;
+
+            var relPath = Path.GetRelativePath(sourceRoot, srcFile);
             var destFile = Path.Combine(distFolder, relPath);
             Directory.CreateDirectory(Path.GetDirectoryName(destFile)!);
             File.Copy(srcFile, destFile, overwrite: false);
@@ -310,7 +324,6 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             });
 
         Console.Ok("Plugins project ready");
-        Console.Warning("Put existing plugin code in the Plugins project");
         return 0;
     }
 

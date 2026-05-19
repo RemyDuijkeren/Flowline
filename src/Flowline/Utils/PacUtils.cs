@@ -248,6 +248,44 @@ public static class PacUtils
         return JsonSerializer.Deserialize<List<SolutionInfo>>(result.StandardOutput) ?? new List<SolutionInfo>();
     }
 
+    public static async Task<string?> GetPublisherCustomizationPrefixAsync(string environmentUrl, string publisherUniqueName, bool verbose = false, CancellationToken cancellationToken = default)
+    {
+        var fetchXml = $"<fetch><entity name='publisher'><attribute name='customizationprefix'/>" +
+                       $"<filter><condition attribute='uniquename' operator='eq' value='{publisherUniqueName}'/>" +
+                       $"</filter></entity></fetch>";
+
+        var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
+        var result = await Cli.Wrap(cmdName)
+            .WithArguments(args => args
+                .AddIfNotNull(prefixArgs)
+                .Add("env").Add("fetch")
+                .Add("--environment").Add(environmentUrl)
+                .Add("--xml").Add(fetchXml))
+            .WithToolExecutionLog(verbose)
+            .WithValidation(CommandResultValidation.None)
+            .ExecuteBufferedAsync(cancellationToken);
+
+        var allLines = result.StandardOutput
+            .Split('\n')
+            .Select(l => l.TrimEnd())
+            .ToList();
+
+        // PAC always appends publisherid column — find header explicitly, take next non-empty line as data
+        var headerIdx = allLines.FindIndex(l => l.TrimStart().StartsWith("customizationprefix", StringComparison.OrdinalIgnoreCase));
+        if (headerIdx < 0) return null;
+
+        var header = allLines[headerIdx];
+        var data = allLines.Skip(headerIdx + 1).FirstOrDefault(l => !string.IsNullOrWhiteSpace(l));
+        if (data == null) return null;
+
+        var publisherIdPos = header.IndexOf("publisherid", StringComparison.OrdinalIgnoreCase);
+        var prefix = publisherIdPos > 0
+            ? data[..Math.Min(publisherIdPos, data.Length)].Trim()
+            : data.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+
+        return string.IsNullOrEmpty(prefix) ? null : prefix;
+    }
+
     public static EnvironmentUrlParts GetPartsFromEnvUrl(string envUrl)
     {
         var regex = new Regex(@"^https://([^.]+)\.([^.]+\.[^.]+\.[a-z]+)(?:/|$)");
@@ -322,6 +360,7 @@ public class SolutionInfo
     public string? SolutionUniqueName { get; set; }
     public string? FriendlyName { get; set; }
     public string? PublisherUniqueName { get; set; }
+    public string? CustomizationPrefix { get; set; }
     public string? VersionNumber { get; set; }
     public bool IsManaged { get; set; }
 }
