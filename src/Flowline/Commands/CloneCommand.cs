@@ -63,9 +63,9 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         Directory.CreateDirectory(binFolder);
 
         // Pack the solution in pac to validate it
-        if (await PackSolutionAsync(projectSln, slnFolder, binFolder, false, settings, cancellationToken) != 0) return 1;
+        if (await PacUtils.PackSolutionAsync(projectSln, slnFolder, binFolder, false, settings.Verbose, cancellationToken) != 0) return 1;
         if (settings.IncludeManaged &&
-            await PackSolutionAsync(projectSln, slnFolder, binFolder, true, settings, cancellationToken) != 0)
+            await PacUtils.PackSolutionAsync(projectSln, slnFolder, binFolder, true, settings.Verbose, cancellationToken) != 0)
         {
             return 1;
         }
@@ -144,40 +144,6 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
         Console.Ok("WebResources/dist seeded from src");
         Console.Verbose($"[dim]{distFolder}[/]", settings.Verbose);
-    }
-
-    private async Task<int> PackSolutionAsync(ProjectSolution projectSln, string slnFolder, string binFolder, bool managed, Settings settings, CancellationToken cancellationToken)
-    {
-        var packageType = managed ? "Managed" : "Unmanaged";
-        var suffix = managed ? "_managed" : "_unmanaged";
-        var zipFile = Path.Combine(binFolder, $"{projectSln.Name}{suffix}.zip");
-
-        var sw = Stopwatch.StartNew();
-        var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-        CommandResult result = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Validating {packageType.ToLower()} package...",
-            ctx => Cli.Wrap(cmdName)
-                      .WithArguments(args =>
-                          args.AddIfNotNull(prefixArgs)
-                              .Add("solution")
-                              .Add("pack")
-                              .Add("--folder").Add(Path.Combine(slnFolder, "src"))
-                              .Add("--zipFile").Add(zipFile)
-                              .Add("--packageType").Add(packageType))
-                      .WithValidation(CommandResultValidation.None)
-                      .WithToolExecutionLog(settings.Verbose, ctx)
-                      .ExecuteAsync(cancellationToken)
-                      .Task);
-        sw.Stop();
-
-        if (!result.IsSuccess)
-        {
-            Console.Error($"{packageType} pack failed — check your solution source.");
-            return 1;
-        }
-
-        Console.Ok($"{packageType} package validated in {FormatDuration(sw.Elapsed)}");
-        return 0;
     }
 
     private async Task<int> CloneSolutionFromDataverseAsync(ProjectSolution projectSln, string slnFolder, string cdsprojPath, string environmentUrl, Settings settings, CancellationToken cancellationToken)

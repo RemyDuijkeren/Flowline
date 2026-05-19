@@ -6,9 +6,9 @@ using Spectre.Console;
 
 public static class ConsolePath
 {
-    public static string FormatRelativePath(string path)
+    public static string FormatRelativePath(string path, string? rootFolder = null)
     {
-        string cwd = Environment.CurrentDirectory;
+        string cwd = rootFolder ?? Environment.CurrentDirectory;
 
         string relativePath = Path.GetRelativePath(cwd, path)
                                   .Replace("\\", "/");

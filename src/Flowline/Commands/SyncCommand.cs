@@ -25,7 +25,6 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         [CommandOption("--managed")]
         [Description("Include managed artifacts")]
         public bool IncludeManaged { get; set; } = false;
-
     }
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
@@ -59,14 +58,20 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         {
             if (!settings.Force)
             {
-                Console.Error($"Uncommitted changes in '{projectSln.Name}/src/' — git stash or commit first, or re-run with --force.");
-                foreach (var file in dirty)
-                    Console.Skip($"  {Markup.Escape(file)}");
+                Console.Error($"Uncommitted changes in '{projectSln.Name}/src/' — git commit first, or re-run with --force.");
+                if (settings.Verbose)
+                {
+                    foreach (var file in dirty)
+                        Console.Skip($"  {ConsolePath.FormatRelativePath(file, srcPath)}");
+                }
                 return 1;
             }
             Console.Warning($"Uncommitted changes in '{projectSln.Name}/src/' — overwriting.");
-            foreach (var file in dirty)
-                Console.Skip($"  {Markup.Escape(file)}");
+            if (settings.Verbose)
+            {
+                foreach (var file in dirty)
+                    Console.Skip($"  {ConsolePath.FormatRelativePath(file, srcPath)}");
+            }
         }
 
         // Sync solution from Dataverse
@@ -91,28 +96,42 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         if (!result.IsSuccess)
         {
-            Console.Error("Sync failed — check the environment and your PAC login");
+            Console.Error("Sync failed — check the environment and your PAC login. Use --verbose for more details.");
             return 1;
         }
 
         Console.Ok($"Solution synced from Dataverse in {FormatDuration(sw.Elapsed)}");
 
-        var summary = await SolutionChangeSummary.ComputeAsync(Path.Combine(slnFolder, "src"), RootFolder, cancellationToken);
-        summary.Write(Console, devEnv.DisplayName, settings.Verbose);
-
-        // Check for drift between local solution and Dataverse
+        // Check for drift between local solution (Plugins/WebResources) and Dataverse (/src)
         var driftWarnings = DriftChecker.Check(slnFolder, cancellationToken);
-        foreach (var w in driftWarnings)
+        if (driftWarnings.Count == 0)
         {
-            var hint = w.Category switch
+            Console.Ok("Local solution matches Dataverse");
+        }
+        else
+        {
+            Console.Warning("Drift detected between local solution and Dataverse");
+            foreach (var w in driftWarnings)
             {
-                DriftCategory.ContentDiffers     => $"Check who changed '{w.RelativePath}' in Dataverse — run 'flowline push' to re-sync",
-                DriftCategory.NewInDataverse     => $"Check who add '{w.RelativePath}' in Dataverse — rebuild local WebResources",
-                DriftCategory.OnlyLocal          => $"Local change not in Dataverse — run 'flowline push' ({w.RelativePath})",
-                DriftCategory.PluginSizeMismatch => $"Local plugin build may differ from what is deployed — rebuild and push if intentional ({w.RelativePath})",
-                _                                => w.RelativePath
-            };
-            Console.Warning(hint);
+                var hint = w.Category switch
+                {
+                    DriftCategory.ContentDiffers => $"- Check who changed '{w.RelativePath}' in Dataverse — run 'flowline push' to re-sync",
+                    DriftCategory.NewInDataverse => $"- Check who added '{w.RelativePath}' in Dataverse — add to local WebResources and run 'flowline push' to re-sync",
+                    DriftCategory.OnlyLocal => $"- Local file '{w.RelativePath}' not in Dataverse — run 'flowline push' to re-sync",
+                    DriftCategory.PluginSizeMismatch => $"- Local plugin build may not match Dataverse — rebuild and push if intentional ({w.RelativePath})",
+                    _ => $"- {w.RelativePath}"
+                };
+                Console.Warning(hint);
+            }
+        }
+
+        // Pack the solution in pac to validate it
+        var binFolder = Path.Combine(slnFolder, "bin");
+        if (await PacUtils.PackSolutionAsync(projectSln, slnFolder, binFolder, false, settings.Verbose, cancellationToken) != 0) return 1;
+        if (settings.IncludeManaged &&
+            await PacUtils.PackSolutionAsync(projectSln, slnFolder, binFolder, true, settings.Verbose, cancellationToken) != 0)
+        {
+            return 1;
         }
 
         // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
@@ -120,6 +139,10 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         {
             return 1;
         }
+
+        // Summary of changes
+        var summary = await SolutionChangeSummary.ComputeAsync(Path.Combine(slnFolder, "src"), RootFolder, settings.Verbose, cancellationToken);
+        summary.Write(Console, devEnv.DisplayName, settings.Verbose);
 
         Console.Done("Synced! Run 'git commit' to save a checkpoint.");
 

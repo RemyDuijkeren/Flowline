@@ -29,7 +29,7 @@ public class SolutionChangeSummary
         Groups = groups;
     }
 
-    public static async Task<SolutionChangeSummary> ComputeAsync(string srcFolder, string workingDirectory, CancellationToken ct = default)
+    public static async Task<SolutionChangeSummary> ComputeAsync(string srcFolder, string workingDirectory, bool verbose = false, CancellationToken ct = default)
     {
         var srcRelPath = Path.GetRelativePath(workingDirectory, srcFolder).Replace('\\', '/');
 
@@ -39,6 +39,7 @@ public class SolutionChangeSummary
                 .Add("-c").Add("core.quotepath=false")
                 .Add("status").Add("--porcelain").Add("-uall")
                 .Add("--").Add(srcRelPath))
+            .WithToolExecutionLog(verbose)
             .WithValidation(CommandResultValidation.None)
             .ExecuteBufferedAsync(ct);
 
@@ -58,6 +59,7 @@ public class SolutionChangeSummary
                 .Add("-c").Add("core.quotepath=false")
                 .Add("diff").Add("HEAD").Add("--numstat")
                 .Add("--").Add(srcRelPath))
+            .WithToolExecutionLog(verbose)
             .WithValidation(CommandResultValidation.None)
             .ExecuteBufferedAsync(ct);
 
@@ -128,7 +130,7 @@ public class SolutionChangeSummary
             return;
         }
 
-        var headline = $"Changes ({TotalFiles} {(TotalFiles == 1 ? "file" : "files")}, +{LinesAdded} -{LinesRemoved})";
+        var headline = $"\nChanges ({TotalFiles} {(TotalFiles == 1 ? "file" : "files")}, +{LinesAdded} -{LinesRemoved})";
         var tree = new Tree(headline);
 
         var entityGroups = Groups.Where(g => g.IsEntity).ToList();

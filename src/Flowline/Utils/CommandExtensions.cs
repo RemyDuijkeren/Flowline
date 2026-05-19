@@ -58,7 +58,7 @@ public static class CommandExtensions
         // append execution part to ctx.Status
         var indexOf = ctx.Status.IndexOf(" (", StringComparison.Ordinal);
         var status = (indexOf == -1) ? ctx.Status : ctx.Status[..indexOf];
-        ctx.Status($"{status}  ({execution})");
+        ctx.Status($"{status} ([italic]{execution}[/])");
     }
 
     static bool DisplayErrorMessage(string s, string? targetFilePath = null)

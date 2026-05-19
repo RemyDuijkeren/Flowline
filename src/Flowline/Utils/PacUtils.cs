@@ -1,6 +1,8 @@
+using Flowline.Config;
 using Flowline.Utils;
 using CliWrap;
 using CliWrap.Buffered;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
@@ -169,6 +171,45 @@ public static class PacUtils
         }
 
         throw new Exception("Power Platform CLI isn't available.");
+    }
+
+    public static async Task<int> PackSolutionAsync(ProjectSolution projectSln, string slnFolder, string binFolder, bool managed, bool verbose, CancellationToken cancellationToken)
+    {
+        var packageType = managed ? "Managed" : "Unmanaged";
+        var suffix = managed ? "_managed" : "_unmanaged";
+        var zipFile = Path.Combine(binFolder, $"{projectSln.Name}{suffix}.zip");
+
+        Directory.CreateDirectory(binFolder);
+
+        var sw = Stopwatch.StartNew();
+        var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
+        CommandResult result = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+            $"Validating {packageType.ToLower()} package...",
+            ctx => Cli.Wrap(cmdName)
+                      .WithArguments(args =>
+                          args.AddIfNotNull(prefixArgs)
+                              .Add("solution")
+                              .Add("pack")
+                              .Add("--folder").Add(Path.Combine(slnFolder, "src"))
+                              .Add("--zipFile").Add(zipFile)
+                              .Add("--packageType").Add(packageType))
+                      .WithValidation(CommandResultValidation.None)
+                      .WithToolExecutionLog(verbose, ctx)
+                      .ExecuteAsync(cancellationToken)
+                      .Task);
+        sw.Stop();
+
+        if (!result.IsSuccess)
+        {
+            AnsiConsole.MarkupLine($"[red]{packageType} pack failed — check your solution source.[/]");
+            return 1;
+        }
+
+        var duration = sw.Elapsed.TotalMinutes >= 1
+            ? $"{(int)sw.Elapsed.TotalMinutes}m {sw.Elapsed.Seconds}s"
+            : $"{(int)sw.Elapsed.TotalSeconds}s";
+        AnsiConsole.MarkupLine($"[green]✓[/] {packageType} package validated in {duration}");
+        return 0;
     }
 
     public static async Task<List<EnvironmentInfo>> GetEnvironmentsAsync(bool verbose = true, CancellationToken cancellationToken = default)
