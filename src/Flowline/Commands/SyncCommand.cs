@@ -95,7 +95,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         Console.Ok($"Solution synced from Dataverse in {FormatDuration(sw.Elapsed)}");
 
         // Check for drift between local solution (Plugins/WebResources) and Dataverse (/src)
-        var driftWarnings = DriftChecker.Check(slnFolder, cancellationToken);
+        var driftWarnings = DriftChecker.Check(slnFolder, slnInfo.CustomizationPrefix, cancellationToken);
         if (driftWarnings.Count == 0)
         {
             Console.Ok("Local solution matches Dataverse");
@@ -111,6 +111,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
                     DriftCategory.NewInDataverse => $"- Check who added '{w.RelativePath}' in Dataverse — add to local WebResources and run 'flowline push' to re-sync",
                     DriftCategory.OnlyLocal => $"- Local file '{w.RelativePath}' not in Dataverse — run 'flowline push' to re-sync",
                     DriftCategory.PluginSizeMismatch => $"- Local plugin build may not match Dataverse — rebuild and push if intentional ({w.RelativePath})",
+                    DriftCategory.OrphanAssembly => $"- '{w.RelativePath}' in Dataverse — no local source. Flowline won't manage it.",
                     _ => $"- {w.RelativePath}"
                 };
                 Console.Warning(hint);

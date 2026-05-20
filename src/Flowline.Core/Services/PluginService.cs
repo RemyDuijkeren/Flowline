@@ -1,5 +1,6 @@
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
+using Microsoft.Xrm.Sdk.Query;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Flowline.Core.Models;
 using Spectre.Console;
@@ -50,6 +51,8 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         // Phase 1: Get or register assembly
         var (assembly, needsUpdate) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
         output.Ok($"Assembly registered [bold]{metadata.Name}[/] ({metadata.Version})");
+
+        await WarnOrphanAssembliesAsync(service, metadata.Name, solutionName, cancellationToken).ConfigureAwait(false);
 
         // Phase 2: Load snapshot (all Dataverse state in parallel)
         var snapshot = await output.Status()
@@ -157,6 +160,30 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         else
         {
             await _executor.ExecuteAddToSolutionAsync(service, plan, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    async Task WarnOrphanAssembliesAsync(
+        IOrganizationServiceAsync2 service,
+        string managedAssemblyName,
+        string solutionName,
+        CancellationToken cancellationToken)
+    {
+        var query = new QueryExpression("pluginassembly")
+        {
+            ColumnSet = new ColumnSet("name"),
+            Criteria = { Conditions = { new ConditionExpression("name", ConditionOperator.NotEqual, managedAssemblyName) } }
+        };
+        var componentLink = query.AddLink("solutioncomponent", "pluginassemblyid", "objectid", JoinOperator.Inner);
+        componentLink.LinkCriteria.AddCondition("componenttype", ConditionOperator.Equal, 91); // 91 = PluginAssembly
+        var solutionLink = componentLink.AddLink("solution", "solutionid", "solutionid", JoinOperator.Inner);
+        solutionLink.LinkCriteria.AddCondition("uniquename", ConditionOperator.Equal, solutionName);
+
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
+        foreach (var entity in result.Entities)
+        {
+            var name = entity.GetAttributeValue<string>("name");
+            output.Warning($"[bold]{Safe(name)}.dll[/] in environment — no local source. Flowline won't touch it.");
         }
     }
 

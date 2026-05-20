@@ -82,7 +82,7 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
         }
 
         // Block if local changes haven't been synced — deploy packs from src/, not dist/
-        var drift = DriftChecker.Check(slnFolder, cancellationToken)
+        var drift = DriftChecker.Check(slnFolder, cancellationToken: cancellationToken)
             .Where(w => w.Category is DriftCategory.OnlyLocal or DriftCategory.PluginSizeMismatch)
             .ToList();
         if (drift.Count > 0)
