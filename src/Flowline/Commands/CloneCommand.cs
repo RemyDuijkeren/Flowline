@@ -58,7 +58,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         if (await CreateSolutionFileAsync(projectSln, slnFolder, slnFilePath, cdsprojPath, settings, cancellationToken) != 0) return 1;
         if (await SetupPluginsProjectAsync(slnFolder, settings, cancellationToken) != 0) return 1;
         if (await SetupWebResourcesProjectAsync(slnFolder, slnFilePath, settings, cancellationToken) != 0) return 1;
-        SeedWebResourceDistFromSrc(slnFolder, solutionInfo.CustomizationPrefix, projectSln.Name, settings);
+        SeedWebResourceDistFromSrc(slnFolder, solutionInfo.PublisherPrefix, projectSln.Name, settings);
 
         // Pack the solution in pac to validate it
         var binFolder = Path.Combine(slnFolder, "bin");

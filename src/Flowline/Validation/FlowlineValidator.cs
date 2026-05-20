@@ -127,7 +127,7 @@ public sealed class FlowlineValidator
         if (solution != null)
         {
             if (solution.PublisherUniqueName != null)
-                solution.CustomizationPrefix = await _probes.GetPublisherCustomizationPrefixAsync(
+                solution.PublisherPrefix = await _probes.GetPublisherCustomizationPrefixAsync(
                     environmentUrl, solution.PublisherUniqueName, settings.Verbose, cancellationToken);
 
             cache = _store.Load();

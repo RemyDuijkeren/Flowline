@@ -59,11 +59,11 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             if (!settings.Force)
             {
                 Console.Error($"Uncommitted changes in '{projectSln.Name}/src/' — git commit first, or re-run with --force.");
-                preSyncSummary.WriteFlat(Console, settings.Verbose);
+                preSyncSummary.WriteFlat(Console, settings.Verbose, "[red]Error: ");
                 return 1;
             }
             Console.Warning($"Uncommitted changes in '{projectSln.Name}/src/' — overwriting.");
-            preSyncSummary.WriteFlat(Console, settings.Verbose);
+            preSyncSummary.WriteFlat(Console, settings.Verbose, "[yellow]Warning: ");
         }
 
         // Sync solution from Dataverse
@@ -94,30 +94,6 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         Console.Ok($"Solution synced from Dataverse in {FormatDuration(sw.Elapsed)}");
 
-        // Check for drift between local solution (Plugins/WebResources) and Dataverse (/src)
-        var driftWarnings = DriftChecker.Check(slnFolder, slnInfo.CustomizationPrefix, cancellationToken);
-        if (driftWarnings.Count == 0)
-        {
-            Console.Ok("Local solution matches Dataverse");
-        }
-        else
-        {
-            Console.Warning("Drift detected between local solution and Dataverse");
-            foreach (var w in driftWarnings)
-            {
-                var hint = w.Category switch
-                {
-                    DriftCategory.ContentDiffers => $"- Check who changed '{w.RelativePath}' in Dataverse — run 'flowline push' to re-sync",
-                    DriftCategory.NewInDataverse => $"- Check who added '{w.RelativePath}' in Dataverse — add to local WebResources and run 'flowline push' to re-sync",
-                    DriftCategory.OnlyLocal => $"- Local file '{w.RelativePath}' not in Dataverse — run 'flowline push' to re-sync",
-                    DriftCategory.PluginSizeMismatch => $"- Local plugin build may not match Dataverse — rebuild and push if intentional ({w.RelativePath})",
-                    DriftCategory.OrphanAssembly => $"- '{w.RelativePath}' in Dataverse — no local source. Flowline won't manage it.",
-                    _ => $"- {w.RelativePath}"
-                };
-                Console.Warning(hint);
-            }
-        }
-
         // Pack the solution in pac to validate it
         var binFolder = Path.Combine(slnFolder, "bin");
         if (await PacUtils.PackSolutionAsync(projectSln, slnFolder, binFolder, false, settings.Verbose, cancellationToken) != 0) return 1;
@@ -131,6 +107,30 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken) != 0)
         {
             return 1;
+        }
+
+        // Check for drift between local solution (Plugins/WebResources) and Dataverse (/src)
+        var driftWarnings = DriftChecker.Check(slnFolder, slnInfo.PublisherPrefix, cancellationToken);
+        if (driftWarnings.Count == 0)
+        {
+            Console.Ok("Local solution matches Dataverse");
+        }
+        else
+        {
+            Console.Warning("Drift detected between local solution and Dataverse:");
+            foreach (var w in driftWarnings)
+            {
+                var hint = w.Category switch
+                {
+                    DriftCategory.ContentDiffers => $"- Check who changed '{w.RelativePath}' in Dataverse — run 'flowline push' to re-sync",
+                    DriftCategory.NewInDataverse => $"- Check who added '{w.RelativePath}' in Dataverse — add to local WebResources and run 'flowline push' to re-sync",
+                    DriftCategory.OnlyLocal => $"- Local file '{w.RelativePath}' not in Dataverse — run 'flowline push' to re-sync",
+                    DriftCategory.PluginSizeMismatch => $"- Local plugin build may not match Dataverse — rebuild and push if intentional ({w.RelativePath})",
+                    DriftCategory.OrphanAssembly => $"- '{w.RelativePath}' in Dataverse — no local source. Flowline won't manage it.",
+                    _ => $"- {w.RelativePath}"
+                };
+                Console.Warning(hint);
+            }
         }
 
         // Summary of changes

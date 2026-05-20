@@ -360,7 +360,7 @@ public class SolutionInfo
     public string? SolutionUniqueName { get; set; }
     public string? FriendlyName { get; set; }
     public string? PublisherUniqueName { get; set; }
-    public string? CustomizationPrefix { get; set; }
+    public string? PublisherPrefix { get; set; }
     public string? VersionNumber { get; set; }
     public bool IsManaged { get; set; }
 }

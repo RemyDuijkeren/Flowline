@@ -122,13 +122,17 @@ public class SolutionChangeSummary
         return new SolutionChangeSummary(fileCount, totalAdded, totalRemoved, resolvedGroups);
     }
 
-    public void WriteFlat(IAnsiConsole console, bool verbose)
+    public void WriteFlat(IAnsiConsole console, bool verbose, string? markupStyle = null)
     {
         foreach (var group in Groups.OrderBy(g => g.IsEntity ? 0 : 1).ThenBy(g => g.Label))
         {
             foreach (var item in group.Items.OrderBy(i => i.ComponentName))
             {
-                console.Info($"- {StatusIcon(item.Status)} {(group.IsEntity ? "Entity " : "")}{group.Label}: {Markup.Escape(item.ComponentName)}");
+                var line = $"- {StatusIcon(item.Status)} {(group.IsEntity ? "Entity " : "")}{group.Label}: {Markup.Escape(item.ComponentName)}";
+                if (markupStyle is not null)
+                    console.MarkupLine($"{markupStyle}{line}[/]");
+                else
+                    console.Info(line);
                 foreach (var path in item.FilePaths)
                 {
                     console.Verbose($"    {Markup.Escape(path)}", verbose);
