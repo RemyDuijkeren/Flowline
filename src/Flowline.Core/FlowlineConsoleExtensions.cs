@@ -17,9 +17,9 @@ public static class FlowlineConsoleExtensions
             console.MarkupLine($"[dim]{message}[/]");
     }
 
-    public static void Warning(this IAnsiConsole console, string message) => console.MarkupLine($"[yellow]Warning: {message}[/]");
+    public static void Warning(this IAnsiConsole console, string message) => console.MarkupLine($"[yellow]⚠️ Warning:[/] {message}");
 
-    public static void Error(this IAnsiConsole console, string message) => console.MarkupLine($"[red]Error: {message}[/]");
+    public static void Error(this IAnsiConsole console, string message) => console.MarkupLine($"[red]Error:[/] {message}");
 
     public static void Error(this IAnsiConsole console, Exception ex) => console.WriteException(ex);
 }

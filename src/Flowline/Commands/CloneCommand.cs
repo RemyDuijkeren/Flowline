@@ -54,10 +54,10 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         var cdsprojPath = Path.Combine(slnFolder, $"{projectSln.Name}.cdsproj");
         var slnFilePath = Path.Combine(slnFolder, $"{projectSln.Name}.sln");
 
-        if (await CloneSolutionFromDataverseAsync(projectSln, slnFolder, cdsprojPath, sourceEnv.EnvironmentUrl!, settings, cancellationToken) != 0) return 1;
-        if (await CreateSolutionFileAsync(projectSln, slnFolder, slnFilePath, cdsprojPath, settings, cancellationToken) != 0) return 1;
-        if (await SetupPluginsProjectAsync(slnFolder, settings, cancellationToken) != 0) return 1;
-        if (await SetupWebResourcesProjectAsync(slnFolder, slnFilePath, settings, cancellationToken) != 0) return 1;
+        await CloneSolutionFromDataverseAsync(projectSln, slnFolder, cdsprojPath, sourceEnv.EnvironmentUrl!, settings, cancellationToken);
+        await CreateSolutionFileAsync(projectSln, slnFolder, slnFilePath, cdsprojPath, settings, cancellationToken);
+        await SetupPluginsProjectAsync(slnFolder, settings, cancellationToken);
+        await SetupWebResourcesProjectAsync(slnFolder, slnFilePath, settings, cancellationToken);
         SeedWebResourceDistFromSrc(slnFolder, solutionInfo.PublisherPrefix, projectSln.Name, settings);
 
         // Pack the solution in pac to validate it
@@ -160,19 +160,16 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         Console.Verbose($"[dim]{distFolder}[/]", settings.Verbose);
     }
 
-    private async Task<int> CloneSolutionFromDataverseAsync(ProjectSolution projectSln, string slnFolder, string cdsprojPath, string environmentUrl, Settings settings, CancellationToken cancellationToken)
+    private async Task CloneSolutionFromDataverseAsync(ProjectSolution projectSln, string slnFolder, string cdsprojPath, string environmentUrl, Settings settings, CancellationToken cancellationToken)
     {
         if (File.Exists(cdsprojPath))
         {
             Console.Skip("Solution already cloned — skipping");
-            return 0;
+            return;
         }
 
         if (Directory.Exists(slnFolder) && !File.Exists(cdsprojPath))
-        {
-            Console.Error($"Solution folder {slnFolder} already exists but no .cdsproj file found. Cannot clone. Delete the folder and try again.");
-            return 1;
-        }
+            throw new FlowlineException($"Solution folder {slnFolder} already exists but no .cdsproj file found. Cannot clone. Delete the folder and try again.");
 
         var allSolutionsFolder = Path.Combine(RootFolder, AllSolutionsFolderName);
         Directory.CreateDirectory(allSolutionsFolder);
@@ -198,22 +195,18 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         sw.Stop();
 
         if (!result.IsSuccess)
-        {
-            Console.Error("Clone failed — check the environment and your PAC login.");
-            return 1;
-        }
+            throw new FlowlineException("Clone failed — check the environment and your PAC login.");
 
         Console.Ok($"Solution [bold]{projectSln.Name}[/] cloned in {FormatDuration(sw.Elapsed)}");
-        return 0;
     }
 
-    private async Task<int> CreateSolutionFileAsync(ProjectSolution projectSln, string slnFolder, string slnFilePath, string cdsprojPath, Settings settings, CancellationToken cancellationToken)
+    private async Task CreateSolutionFileAsync(ProjectSolution projectSln, string slnFolder, string slnFilePath, string cdsprojPath, Settings settings, CancellationToken cancellationToken)
     {
         // Create Solution file if it doesn't exist (use sln for now because slnx can't handle .cdsproj yet)
         if (File.Exists(slnFilePath))
         {
             Console.Skip("Solution file already there — skipping");
-            return 0;
+            return;
         }
 
         var result = await Cli.Wrap("dotnet")
@@ -228,10 +221,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
                               .Task.FlowlineSpinner();
 
         if (!result.IsSuccess || !File.Exists(slnFilePath))
-        {
-            Console.Error("Couldn't create the solution file.");
-            return 1;
-        }
+            throw new FlowlineException("Couldn't create the solution file.");
 
         Console.Ok("Solution file created");
 
@@ -272,17 +262,16 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
         Console.Ok($"[bold]{projectSln.Name}.cdsproj[/] added to solution file");
         Console.Verbose($"[dim]{slnFilePath}[/]", settings.Verbose);
-        return 0;
     }
 
-    private async Task<int> SetupPluginsProjectAsync(string slnFolder, Settings settings, CancellationToken cancellationToken)
+    private async Task SetupPluginsProjectAsync(string slnFolder, Settings settings, CancellationToken cancellationToken)
     {
         var pluginsFolder = Path.Combine(slnFolder, PluginsName);
         var pluginsCsproj = Path.Combine(pluginsFolder, $"{PluginsName}.csproj");
         if (File.Exists(pluginsCsproj))
         {
             Console.Skip("Plugins project already there — skipping");
-            return 0;
+            return;
         }
 
         await Console.Status().FlowlineSpinner().StartAsync(
@@ -324,10 +313,9 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             });
 
         Console.Ok("Plugins project ready");
-        return 0;
     }
 
-    private async Task<int> SetupWebResourcesProjectAsync(string slnFolder, string slnFilePath, Settings settings, CancellationToken cancellationToken)
+    private async Task SetupWebResourcesProjectAsync(string slnFolder, string slnFilePath, Settings settings, CancellationToken cancellationToken)
     {
         // Create WebResources project if it doesn't exist
         var webresourcesFolder = Path.Combine(slnFolder, WebResourcesName);
@@ -335,7 +323,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         if (File.Exists(webresourcesCsproj))
         {
             Console.Skip("WebResources project already there — skipping");
-            return 0;
+            return;
         }
 
         await Console.Status().FlowlineSpinner().StartAsync(
@@ -369,7 +357,6 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             });
 
         Console.Ok("WebResources project ready");
-        return 0;
     }
 
 }

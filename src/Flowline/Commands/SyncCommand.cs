@@ -37,19 +37,13 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         (ProjectSolution? projectSln, SolutionInfo? slnInfo) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken);
         if (projectSln == null || slnInfo == null) return 1;
         if (slnInfo.IsManaged)
-        {
-            Console.Error("Managed solutions are not supported for sync");
-            return 1;
-        }
+            throw new FlowlineException("Managed solutions are not supported for sync");
 
         // Validate that we have an initialized project
         var slnFolder = Path.Combine(RootFolder, "solutions", projectSln.Name);
         var cdsprojPath = Path.Combine(slnFolder, $"{projectSln.Name}.cdsproj");
         if (!File.Exists(cdsprojPath))
-        {
-            Console.Error($"No solution found at '{cdsprojPath}' — run 'clone' first");
-            return 1;
-        }
+            throw new FlowlineException($"No solution found at '{cdsprojPath}' — run 'clone' first");
 
         // Check for uncommitted changes
         var srcPath = Path.Combine(slnFolder, "src");
@@ -58,12 +52,12 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         {
             if (!settings.Force)
             {
-                Console.Error($"Uncommitted changes in '{projectSln.Name}/src/' — git commit first, or re-run with --force.");
-                preSyncSummary.WriteFlat(Console, settings.Verbose, "[red]Error: ");
-                return 1;
+                throw new FlowlineException($"Uncommitted changes in '{projectSln.Name}/src/' — git commit first, or re-run with --force.")
+                    .WithDetail(c => preSyncSummary.WriteFlat(c, settings.Verbose, "[dim]  "));
             }
+
             Console.Warning($"Uncommitted changes in '{projectSln.Name}/src/' — overwriting.");
-            preSyncSummary.WriteFlat(Console, settings.Verbose, "[yellow]Warning: ");
+            preSyncSummary.WriteFlat(Console, settings.Verbose, "[dim]  ");
         }
 
         // Sync solution from Dataverse
@@ -87,10 +81,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         sw.Stop();
 
         if (!result.IsSuccess)
-        {
-            Console.Error("Sync failed — check the environment and your PAC login. Use --verbose for more details.");
-            return 1;
-        }
+            throw new FlowlineException("Sync failed — check the environment and your PAC login. Use --verbose for more details.");
 
         Console.Ok($"Solution synced from Dataverse in {FormatDuration(sw.Elapsed)}");
 

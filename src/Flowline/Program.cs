@@ -1,3 +1,4 @@
+using Flowline;
 using Flowline.Commands;
 using Flowline.Core;
 using Flowline.Core.Services;
@@ -38,6 +39,23 @@ app.Configure(config =>
     config.PropagateExceptions();
     config.ValidateExamples();
 #endif
+    config.SetExceptionHandler((ex, _) =>
+    {
+        switch (ex)
+        {
+            case FlowlineException fe:
+                AnsiConsole.MarkupLine($"[red]Error:[/] {fe.Message}");
+                fe.Detail?.Invoke(AnsiConsole.Console);
+                if (fe.HelpLink is not null)
+                    AnsiConsole.MarkupLine($"[dim]See: {fe.HelpLink}[/]");
+                return 1;
+            case OperationCanceledException:
+                return 130;
+            default:
+                AnsiConsole.WriteException(ex, ExceptionFormats.ShortenPaths);
+                return 1;
+        }
+    });
 
     // clone = Clone solution from environment to local folder
     config.AddCommand<CloneCommand>("clone") // init (new repo) or clone (existing repo)
