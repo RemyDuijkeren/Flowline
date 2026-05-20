@@ -31,11 +31,9 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     {
         // Dev URL is required
         var devEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, settings.DevUrl, settings, cancellationToken);
-        if (devEnv == null) return 1;
 
         // Solution name is required
-        (ProjectSolution? projectSln, SolutionInfo? slnInfo) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken);
-        if (projectSln == null || slnInfo == null) return 1;
+        var (projectSln, slnInfo) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken);
         if (slnInfo.IsManaged)
             throw new FlowlineException("Managed solutions are not supported for sync");
 
@@ -120,7 +118,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
                     DriftCategory.OrphanAssembly => $"- '{w.RelativePath}' in Dataverse — no local source. Flowline won't manage it.",
                     _ => $"- {w.RelativePath}"
                 };
-                Console.Warning(hint);
+                Console.MarkupLine($"[dim]  {hint}[/]");
             }
         }
 

@@ -44,7 +44,7 @@ app.Configure(config =>
         switch (ex)
         {
             case FlowlineException fe:
-                AnsiConsole.MarkupLine($"[red]Error:[/] {fe.Message}");
+                AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(fe.Message)}");
                 fe.Detail?.Invoke(AnsiConsole.Console);
                 if (fe.HelpLink is not null)
                     AnsiConsole.MarkupLine($"[dim]See: {fe.HelpLink}[/]");

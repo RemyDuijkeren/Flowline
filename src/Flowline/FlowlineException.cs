@@ -2,7 +2,7 @@ using Spectre.Console;
 
 namespace Flowline;
 
-public class FlowlineException(string message) : Exception(message)
+public class FlowlineException(string message, Exception? inner = null) : Exception(message, inner)
 {
     public Action<IAnsiConsole>? Detail { get; private set; }
 

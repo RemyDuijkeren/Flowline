@@ -82,7 +82,7 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
         Console.Ok("Prerequisites all good, let's go!");
     }
 
-    protected async Task<EnvironmentInfo?> GetAndCheckEnvironmentInfoAsync(EnvironmentRole role, string? inputUrl, TSettings settings, CancellationToken cancellationToken)
+    protected async Task<EnvironmentInfo> GetAndCheckEnvironmentInfoAsync(EnvironmentRole role, string? inputUrl, TSettings settings, CancellationToken cancellationToken)
     {
         var label = role switch
         {
@@ -108,38 +108,26 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
         };
 
         if (string.IsNullOrEmpty(url))
-        {
-            Console.Error($"{label} URL is required — use {flag} <URL>.");
-            return null;
-        }
+            throw new FlowlineException($"{label} URL is required — use {flag} <URL>.");
 
         EnvironmentInfo? env = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking {label.ToLower()} [bold]{url}[/]...",
             ctx => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(url, settings, cancellationToken));
 
         if (env == null)
-        {
-            Console.Error($"{label} environment not found — check the URL or your PAC login.");
-            return null;
-        }
+            throw new FlowlineException($"{label} environment not found — check the URL or your PAC login.");
 
         if (role == EnvironmentRole.Prod && env.Type != "Production")
-        {
-            Console.Error("That environment isn't Production type.");
-            return null;
-        }
+            throw new FlowlineException("That environment isn't Production type.");
 
         if (role != EnvironmentRole.Prod && env.Type == "Production")
-        {
-            Console.Error("That's a Production environment — use a sandbox or dev instead.");
-            return null;
-        }
+            throw new FlowlineException("That's a Production environment — use a sandbox or dev instead.");
 
         Console.Ok($"{label} env [bold]{env.DisplayName}[/] ({env.EnvironmentUrl}) exists");
         return env;
     }
 
-    protected async Task<(ProjectSolution? projectSolution, SolutionInfo? solutionInfo)> GetAndCheckSolutionAsync(
+    protected async Task<(ProjectSolution projectSolution, SolutionInfo solutionInfo)> GetAndCheckSolutionAsync(
         string? inputName,
         string environmentUrl,
         bool includeManaged,
@@ -148,19 +136,13 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
     {
         var projectSln = Config!.GetOrUpdateSolution(inputName, includeManaged, settings);
         if (projectSln == null)
-        {
-            Console.Error("Solution name is required — pass it as an argument or use --solution <name>.");
-            return (null, null);
-        }
+            throw new FlowlineException("Solution name is required — pass it as an argument or use --solution <name>.");
 
         SolutionInfo? remoteSln = await Console.Status().FlowlineSpinner().StartAsync(
             $"Looking up solution [bold]{projectSln.Name}[/]...",
             ctx => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, projectSln.Name, includeManaged, settings, cancellationToken));
         if (remoteSln == null)
-        {
-            Console.Error($"Solution [bold]{projectSln.Name}[/] not found in that environment.");
-            return (projectSln, null);
-        }
+            throw new FlowlineException($"Solution '{projectSln.Name}' not found in that environment.");
 
         Console.Ok($"Solution [bold]{projectSln.Name}[/] (managed: {remoteSln.IsManaged}) exists");
 

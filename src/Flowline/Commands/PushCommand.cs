@@ -84,21 +84,16 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     {
         var standaloneMode = IsStandaloneMode(settings);
 
-        if (standaloneMode && !ValidateStandaloneMode(Console, settings, RootFolder)) return 1;
+        if (standaloneMode) ValidateStandaloneMode(settings, RootFolder);
 
         var runMode = ResolveRunMode(settings);
-        var standaloneParams = await ResolveStandaloneParametersAsync(settings, standaloneMode, cancellationToken);
-        if (standaloneParams == null) return 1;
+        var standaloneParams = ResolveStandaloneParameters(settings, standaloneMode);
 
         var environmentUrl = "";
         if (standaloneMode)
-        {
-            environmentUrl = ResolveStandaloneEnvironmentUrl(Console, settings, dataverseConnector) ?? "";
-            if (string.IsNullOrWhiteSpace(environmentUrl)) return 1;
-        }
+            environmentUrl = ResolveStandaloneEnvironmentUrl(settings, dataverseConnector);
 
         var (devEnv, solutionName) = await ResolveEnvironmentAndSolutionAsync(settings, standaloneMode, environmentUrl, standaloneParams, cancellationToken);
-        if (devEnv == null || solutionName == null) return 1;
 
         if (!standaloneMode)
             environmentUrl = devEnv.EnvironmentUrl!;
@@ -111,10 +106,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         var pushWebResources = pushScope.HasFlag(PushScope.WebResources);
 
         var pluginsDll = await PreparePluginsForPushAsync(pushPlugins, standaloneMode, settings, solutionName, standaloneParams, cancellationToken);
-        if (pushPlugins && pluginsDll == null) return 1;
-
         var (webResourcesSyncFolder, actuallyPushWebResources) = await PrepareWebResourcesForPushAsync(pushWebResources, standaloneMode, settings, solutionName, standaloneParams, cancellationToken);
-        if (pushWebResources && string.IsNullOrWhiteSpace(webResourcesSyncFolder)) return 1;
 
         var conn = await ConnectToDataverseAsync(environmentUrl, cancellationToken);
         if (conn == null) return 1;
@@ -139,64 +131,44 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             : settings.Save ? RunMode.Save
             : RunMode.Normal;
 
-    private async Task<StandaloneParams?> ResolveStandaloneParametersAsync(Settings settings, bool standaloneMode, CancellationToken cancellationToken)
+    private StandaloneParams ResolveStandaloneParameters(Settings settings, bool standaloneMode)
     {
         if (!standaloneMode) return new StandaloneParams();
 
-        var solutionName = ResolveStandaloneSolutionName(Console, settings);
-        if (solutionName == null) return null;
-
-        var dllPath = !string.IsNullOrWhiteSpace(settings.Dll)
-            ? ResolveStandaloneDllPath(Console, settings)
-            : null;
-        if (!string.IsNullOrWhiteSpace(settings.Dll) && dllPath == null) return null;
-
-        var webResourcesPath = !string.IsNullOrWhiteSpace(settings.WebResources)
-            ? ResolveStandaloneWebResourcesPath(Console, settings)
-            : null;
-        if (!string.IsNullOrWhiteSpace(settings.WebResources) && webResourcesPath == null) return null;
+        var solutionName = ResolveStandaloneSolutionName(settings);
+        var dllPath = !string.IsNullOrWhiteSpace(settings.Dll) ? ResolveStandaloneDllPath(settings) : null;
+        var webResourcesPath = !string.IsNullOrWhiteSpace(settings.WebResources) ? ResolveStandaloneWebResourcesPath(settings) : null;
 
         return new StandaloneParams { SolutionName = solutionName, DllPath = dllPath, WebResourcesPath = webResourcesPath };
     }
 
-    private async Task<(EnvironmentInfo?, string?)> ResolveEnvironmentAndSolutionAsync(
+    private async Task<(EnvironmentInfo, string)> ResolveEnvironmentAndSolutionAsync(
         Settings settings,
         bool standaloneMode,
         string environmentUrl,
         StandaloneParams standaloneParams,
         CancellationToken cancellationToken)
     {
-        EnvironmentInfo? devEnv;
-        string? solutionName;
-        SolutionInfo? slnInfo;
+        EnvironmentInfo devEnv;
+        string solutionName;
+        SolutionInfo slnInfo;
 
         if (standaloneMode)
         {
             devEnv = await GetAndCheckStandaloneEnvironmentAsync(Console, environmentUrl, settings, cancellationToken).ConfigureAwait(false);
-            if (devEnv == null) return (null, null);
-
             slnInfo = await GetAndCheckStandaloneSolutionAsync(Console, standaloneParams.SolutionName!, environmentUrl, settings, cancellationToken).ConfigureAwait(false);
-            if (slnInfo == null) return (null, null);
-
-            solutionName = standaloneParams.SolutionName;
+            solutionName = standaloneParams.SolutionName!;
         }
         else
         {
             devEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, settings.DevUrl, settings, cancellationToken);
-            if (devEnv == null) return (null, null);
-
             var (projectSln, slnInfoResult) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, false, settings, cancellationToken);
-            if (projectSln == null || slnInfoResult == null) return (null, null);
-
             slnInfo = slnInfoResult;
             solutionName = projectSln.Name;
         }
 
         if (slnInfo.IsManaged)
-        {
-            Console.Error("Managed solutions are not supported for push.");
-            return (null, null);
-        }
+            throw new FlowlineException("Managed solutions are not supported for push.");
 
         return (devEnv, solutionName);
     }
@@ -217,20 +189,15 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         {
             var pluginsFolder = Path.Combine(RootFolder, AllSolutionsFolderName, solutionName, PluginsName);
             if (await DotNetUtils.BuildSolutionAsync(pluginsFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
-            {
-                return null;
-            }
+                throw new FlowlineException("Plugins build failed — fix errors above.");
 
             pluginsDll = Path.Combine(pluginsFolder, "bin", "Release", "net462", "publish", $"{PluginsName}.dll");
         }
 
         if (pluginsDll == null || !File.Exists(pluginsDll))
-        {
-            Console.Error(standaloneMode
+            throw new FlowlineException(standaloneMode
                 ? $"DLL not found: {settings.Dll}"
                 : $"{PluginsName}.dll not found. Build the solution first.");
-            return null;
-        }
 
         Console.Info($"[bold]{Path.GetFileName(pluginsDll)}[/] found");
         Console.Verbose($"{pluginsDll}", RuntimeOptions.IsVerbose);
@@ -263,9 +230,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         }
 
         if (await DotNetUtils.BuildSolutionAsync(webResourcesFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
-        {
-            return (null, false);
-        }
+            throw new FlowlineException("WebResources build failed — fix errors above.");
 
         return (webResourcesSyncFolder, true);
     }
@@ -323,33 +288,24 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         return scope;
     }
 
-    internal static bool ValidateStandaloneMode(IAnsiConsole console, Settings settings, string rootFolder)
+    internal static void ValidateStandaloneMode(Settings settings, string rootFolder)
     {
         if (settings.Scopes.Length > 0)
-        {
-            console.Error("--scope cannot be used together with --dll or --webresources. Use either project mode or standalone artifact mode");
-            return false;
-        }
+            throw new FlowlineException("--scope cannot be used together with --dll or --webresources. Use either project mode or standalone artifact mode.");
 
         if (File.Exists(Path.Combine(rootFolder, ProjectConfig.s_configFileName)))
-        {
-            console.Error("--dll and --webresources cannot be used inside a Flowline project folder. Use project mode or run standalone push from another folder");
-            return false;
-        }
-
-        return true;
+            throw new FlowlineException("--dll and --webresources cannot be used inside a Flowline project folder. Use project mode or run standalone push from another folder.");
     }
 
-    internal static string? ResolveStandaloneSolutionName(IAnsiConsole console, Settings settings)
+    internal static string ResolveStandaloneSolutionName(Settings settings)
     {
         if (!string.IsNullOrWhiteSpace(settings.Solution))
             return settings.Solution.Trim();
 
-        console.Error("Solution name is required in standalone mode — pass it as the first argument");
-        return null;
+        throw new FlowlineException("Solution name is required in standalone mode — pass it as the first argument.");
     }
 
-    internal static string? ResolveStandaloneEnvironmentUrl(IAnsiConsole console, Settings settings, DataverseConnector dataverseConnector)
+    internal static string ResolveStandaloneEnvironmentUrl(Settings settings, DataverseConnector dataverseConnector)
     {
         if (!string.IsNullOrWhiteSpace(settings.DevUrl))
             return settings.DevUrl.Trim();
@@ -358,47 +314,31 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (!string.IsNullOrWhiteSpace(profile?.Resource))
             return profile.Resource.Trim();
 
-        console.Error("Dev URL is required in standalone mode — use --dev <URL> or select a resource-specific PAC profile");
-        return null;
+        throw new FlowlineException("Dev URL is required in standalone mode — use --dev <URL> or select a resource-specific PAC profile.");
     }
 
-    internal static string? ResolveStandaloneDllPath(IAnsiConsole console, Settings settings)
+    internal static string ResolveStandaloneDllPath(Settings settings)
     {
-        if (string.IsNullOrWhiteSpace(settings.Dll))
-            return null;
-
-        var path = Path.GetFullPath(settings.Dll);
+        var path = Path.GetFullPath(settings.Dll!);
         if (!string.Equals(Path.GetExtension(path), ".dll", StringComparison.OrdinalIgnoreCase))
-        {
-            console.Error("--dll must point to a .dll file");
-            return null;
-        }
+            throw new FlowlineException("--dll must point to a .dll file.");
 
         if (!File.Exists(path))
-        {
-            console.Error($"DLL not found: {path}");
-            return null;
-        }
+            throw new FlowlineException($"DLL not found: {path}");
 
         return path;
     }
 
-    internal static string? ResolveStandaloneWebResourcesPath(IAnsiConsole console, Settings settings)
+    internal static string ResolveStandaloneWebResourcesPath(Settings settings)
     {
-        if (string.IsNullOrWhiteSpace(settings.WebResources))
-            return null;
-
-        var path = Path.GetFullPath(settings.WebResources);
+        var path = Path.GetFullPath(settings.WebResources!);
         if (!Directory.Exists(path))
-        {
-            console.Error($"Web resources folder not found: {path}");
-            return null;
-        }
+            throw new FlowlineException($"Web resources folder not found: {path}");
 
         return path;
     }
 
-    static async Task<SolutionInfo?> GetAndCheckStandaloneSolutionAsync(
+    static async Task<SolutionInfo> GetAndCheckStandaloneSolutionAsync(
         IAnsiConsole console,
         string solutionName,
         string environmentUrl,
@@ -409,16 +349,13 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             $"Looking up [bold]{solutionName}[/]...",
             ctx => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, solutionName, includeManaged: false, settings, cancellationToken));
         if (remoteSln == null)
-        {
-            console.Error($"[bold]{solutionName}[/] not found in that environment");
-            return null;
-        }
+            throw new FlowlineException($"Solution '{solutionName}' not found in that environment.");
 
         console.Ok($"Solution: [bold]{solutionName}[/] (managed: {remoteSln.IsManaged})");
         return remoteSln;
     }
 
-    static async Task<EnvironmentInfo?> GetAndCheckStandaloneEnvironmentAsync(
+    static async Task<EnvironmentInfo> GetAndCheckStandaloneEnvironmentAsync(
         IAnsiConsole console,
         string environmentUrl,
         Settings settings,
@@ -429,16 +366,10 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             ctx => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(environmentUrl, settings, cancellationToken));
 
         if (env == null)
-        {
-            console.Error("Dev environment not found — check the URL or your PAC login");
-            return null;
-        }
+            throw new FlowlineException("Dev environment not found — check the URL or your PAC login.");
 
         if (env.Type == "Production")
-        {
-            console.Error("That's a Production environment — use a sandbox or dev instead");
-            return null;
-        }
+            throw new FlowlineException("That's a Production environment — use a sandbox or dev instead.");
 
         console.Ok($"Dev: [bold]{env.DisplayName}[/] ({env.EnvironmentUrl})");
         return env;

@@ -43,9 +43,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         Config!.GetOrUpdateTestUrl(settings.TestUrl, settings);
         Config!.GetOrUpdateDevUrl(settings.DevUrl, settings);
 
-        var source = await FindUnmanagedSourceAsync(settings, cancellationToken);
-        if (source == null) return 1;
-        var (sourceEnv, projectSln, solutionInfo) = source.Value;
+        var (sourceEnv, projectSln, solutionInfo) = await FindUnmanagedSourceAsync(settings, cancellationToken);
 
         Config.Save();
         Console.Verbose($"Project configuration saved to {ProjectConfig.s_configFileName}", settings.Verbose);
@@ -82,7 +80,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         return 0;
     }
 
-    private async Task<(EnvironmentInfo sourceEnv, ProjectSolution projectSolution, SolutionInfo solutionInfo)?> FindUnmanagedSourceAsync(Settings settings, CancellationToken cancellationToken)
+    private async Task<(EnvironmentInfo sourceEnv, ProjectSolution projectSolution, SolutionInfo solutionInfo)> FindUnmanagedSourceAsync(Settings settings, CancellationToken cancellationToken)
     {
         foreach (var role in new[] { EnvironmentRole.Prod, EnvironmentRole.Test, EnvironmentRole.Dev })
         {
@@ -96,11 +94,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             if (string.IsNullOrEmpty(configUrl)) continue;
 
             var env = await GetAndCheckEnvironmentInfoAsync(role, null, settings, cancellationToken);
-            if (env == null) return null;
-
             var (sln, info) = await GetAndCheckSolutionAsync(
                 settings.Solution, env.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken);
-            if (sln == null || info == null) return null;
 
             if (info.IsManaged)
             {
@@ -112,8 +107,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             return (env, sln, info);
         }
 
-        Console.Error("No unmanaged environment found — provide a --dev, --test, or --prod URL with an unmanaged solution.");
-        return null;
+        throw new FlowlineException("No unmanaged environment found — provide a --dev, --test, or --prod URL with an unmanaged solution.");
     }
 
     private void SeedWebResourceDistFromSrc(string slnFolder, string? publisherPrefix, string solutionName, Settings settings)

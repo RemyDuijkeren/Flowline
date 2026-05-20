@@ -41,7 +41,6 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
     {
         // Production URL is required
         var prodEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Prod, settings.ProdUrl, settings, cancellationToken);
-        if (prodEnv == null) return 1;
 
         // Prepare the target environment name and url
         var suffix = string.IsNullOrWhiteSpace(settings.Suffix)
