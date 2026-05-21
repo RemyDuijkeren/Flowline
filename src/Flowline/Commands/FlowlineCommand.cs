@@ -1,4 +1,3 @@
-using System.Reflection;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Utils;
@@ -46,25 +45,13 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
         InitializeRuntimeOptions(settings);
 
         if (ShowWelcome && !settings.JsonOutput && FlowlineValidator.Default.ShouldShowWelcomeScreen(settings.NoCache))
-            WelcomeScreen();
+            ConsoleHelper.WelcomeScreen(Console);
 
         await CheckSetupAsync(settings, cancellationToken);
 
         Config = ProjectConfig.Load(RootFolder) ?? new ProjectConfig();
 
         return await ExecuteFlowlineAsync(context, settings, cancellationToken);
-    }
-
-    void WelcomeScreen()
-    {
-        var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version;
-        var versionText = new Text($"Version {version}", new Style(Color.Turquoise2));
-
-        Console.MarkupLine("[turquoise2]____ _    ____ _ _ _ _    _ _  _ ____[/]");
-        Console.MarkupLine("[turquoise2]|___ |    |  | | | | |    | |\\ | |___[/]");
-        Console.MarkupLine("[turquoise2]|    |___ |__| |_|_| |___ | | \\| |___[/]");
-        Console.Write(versionText);
-        Console.WriteLine();
     }
 
     protected abstract Task<int> ExecuteFlowlineAsync(CommandContext context, TSettings settings, CancellationToken cancellationToken);

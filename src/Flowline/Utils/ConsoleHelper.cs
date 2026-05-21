@@ -1,9 +1,23 @@
+using System.Reflection;
 using Spectre.Console;
+using Spectre.Console.Rendering;
 
 namespace Flowline.Utils;
 
 public static class ConsoleHelper
 {
+    public static void WelcomeScreen(IAnsiConsole console)
+    {
+        var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version;
+        var versionText = new Text($"Version {version}", new Style(Color.Turquoise2));
+
+        console.MarkupLine("[turquoise2]____ _    ____ _ _ _ _    _ _  _ ____[/]");
+        console.MarkupLine("[turquoise2]|___ |    |  | | | | |    | |\\ | |___[/]");
+        console.MarkupLine("[turquoise2]|    |___ |__| |_|_| |___ | | \\| |___[/]");
+        console.Write(versionText);
+        console.WriteLine();
+    }
+
     /// <summary>
     /// Detects if the current run is in interactive mode.
     /// Non-interactive mode is typically detected via Environment.UserInteractive,

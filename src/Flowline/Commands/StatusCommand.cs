@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Reflection;
 using Flowline.Config;
 using Flowline.Utils;
 using Flowline.Validation;
@@ -18,10 +17,7 @@ public class StatusCommand(IAnsiConsole console) : AsyncCommand<StatusCommand.Se
 
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        WelcomeScreen();
-
-        // Console.MarkupLine(
-        //     $"[bold]Flowline[/] version: [green]{Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version}[/]");
+        ConsoleHelper.WelcomeScreen(Console);
 
         try
         {
@@ -74,17 +70,5 @@ public class StatusCommand(IAnsiConsole console) : AsyncCommand<StatusCommand.Se
         }
 
         return 0;
-    }
-
-    void WelcomeScreen()
-    {
-        var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version;
-        var versionText = new Text($"Version {version}", new Style(Color.Turquoise2));
-
-        Console.MarkupLine("[turquoise2]____ _    ____ _ _ _ _    _ _  _ ____[/]");
-        Console.MarkupLine("[turquoise2]|___ |    |  | | | | |    | |\\ | |___[/]");
-        Console.MarkupLine("[turquoise2]|    |___ |__| |_|_| |___ | | \\| |___[/]");
-        Console.Write(versionText);
-        Console.WriteLine();
     }
 }
