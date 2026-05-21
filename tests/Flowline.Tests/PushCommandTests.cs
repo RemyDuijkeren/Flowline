@@ -1,6 +1,5 @@
 using Flowline.Commands;
 using FluentAssertions;
-using Spectre.Console;
 
 namespace Flowline.Tests;
 
@@ -52,7 +51,7 @@ public class PushCommandTests : IDisposable
     }
 
     [Fact]
-    public void ValidateStandaloneMode_WithScope_ShouldReturnFalse()
+    public void ValidateStandaloneMode_WithScope_ShouldThrow()
     {
         var settings = new PushCommand.Settings
         {
@@ -60,24 +59,30 @@ public class PushCommandTests : IDisposable
             Scopes = [PushCommand.PushScope.Plugins]
         };
 
-        PushCommand.ValidateStandaloneMode(AnsiConsole.Console, settings, _root).Should().BeFalse();
+        var act = () => PushCommand.ValidateStandaloneMode(settings, _root);
+
+        act.Should().Throw<FlowlineException>();
     }
 
     [Fact]
-    public void ValidateStandaloneMode_WithFlowlineFile_ShouldReturnFalse()
+    public void ValidateStandaloneMode_WithFlowlineFile_ShouldThrow()
     {
         File.WriteAllText(Path.Combine(_root, ".flowline"), "{}");
         var settings = new PushCommand.Settings { Dll = "plugins.dll" };
 
-        PushCommand.ValidateStandaloneMode(AnsiConsole.Console, settings, _root).Should().BeFalse();
+        var act = () => PushCommand.ValidateStandaloneMode(settings, _root);
+
+        act.Should().Throw<FlowlineException>();
     }
 
     [Fact]
-    public void ResolveStandaloneSolutionName_WithoutSolution_ShouldReturnNull()
+    public void ResolveStandaloneSolutionName_WithoutSolution_ShouldThrow()
     {
         var settings = new PushCommand.Settings { Dll = "plugins.dll" };
 
-        PushCommand.ResolveStandaloneSolutionName(AnsiConsole.Console, settings).Should().BeNull();
+        var act = () => PushCommand.ResolveStandaloneSolutionName(settings);
+
+        act.Should().Throw<FlowlineException>();
     }
 
     [Fact]
@@ -87,17 +92,19 @@ public class PushCommandTests : IDisposable
         File.WriteAllText(dll, "");
         var settings = new PushCommand.Settings { Dll = dll };
 
-        PushCommand.ResolveStandaloneDllPath(AnsiConsole.Console, settings).Should().Be(Path.GetFullPath(dll));
+        PushCommand.ResolveStandaloneDllPath(settings).Should().Be(Path.GetFullPath(dll));
     }
 
     [Fact]
-    public void ResolveStandaloneDllPath_WithNonDll_ShouldReturnNull()
+    public void ResolveStandaloneDllPath_WithNonDll_ShouldThrow()
     {
         var file = Path.Combine(_root, "plugins.txt");
         File.WriteAllText(file, "");
         var settings = new PushCommand.Settings { Dll = file };
 
-        PushCommand.ResolveStandaloneDllPath(AnsiConsole.Console, settings).Should().BeNull();
+        var act = () => PushCommand.ResolveStandaloneDllPath(settings);
+
+        act.Should().Throw<FlowlineException>();
     }
 
     [Fact]
@@ -107,6 +114,6 @@ public class PushCommandTests : IDisposable
         Directory.CreateDirectory(folder);
         var settings = new PushCommand.Settings { WebResources = folder };
 
-        PushCommand.ResolveStandaloneWebResourcesPath(AnsiConsole.Console, settings).Should().Be(Path.GetFullPath(folder));
+        PushCommand.ResolveStandaloneWebResourcesPath(settings).Should().Be(Path.GetFullPath(folder));
     }
 }

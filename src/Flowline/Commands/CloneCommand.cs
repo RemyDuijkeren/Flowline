@@ -33,7 +33,6 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         [Description("Include managed artifacts")]
         [DefaultValue(false)]
         public bool IncludeManaged { get; set; } = false;
-
     }
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
@@ -295,6 +294,17 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
                     .WithToolExecutionLog(settings.Verbose)
                     .ExecuteAsync(cancellationToken);
 
+                // Add MinVer NuGet package
+                await Cli.Wrap("dotnet")
+                         .WithArguments(args => args
+                                                .Add("add")
+                                                .Add(pluginsCsproj)
+                                                .Add("package")
+                                                .Add("MinVer"))
+                         .WithWorkingDirectory(pluginsFolder)
+                         .WithToolExecutionLog(settings.Verbose)
+                         .ExecuteAsync(cancellationToken);
+
                 // Add Plugins.csproj to the solution
                 await Cli.Wrap("dotnet")
                     .WithArguments(args => args
@@ -352,5 +362,4 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
         Console.Ok("WebResources project ready");
     }
-
 }
