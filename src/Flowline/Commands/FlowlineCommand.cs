@@ -58,11 +58,11 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
     void WelcomeScreen()
     {
         var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version;
-        var versionText = new Text($"Version {version}", new Style(Color.Green));
+        var versionText = new Text($"Version {version}", new Style(Color.Turquoise2));
 
-        Console.MarkupLine("[green]____ _    ____ _ _ _ _    _ _  _ ____[/]");
-        Console.MarkupLine("[green]|___ |    |  | | | | |    | |\\ | |___[/]");
-        Console.MarkupLine("[green]|    |___ |__| |_|_| |___ | | \\| |___[/]");
+        Console.MarkupLine("[turquoise2]____ _    ____ _ _ _ _    _ _  _ ____[/]");
+        Console.MarkupLine("[turquoise2]|___ |    |  | | | | |    | |\\ | |___[/]");
+        Console.MarkupLine("[turquoise2]|    |___ |__| |_|_| |___ | | \\| |___[/]");
         Console.Write(versionText);
         Console.WriteLine();
     }

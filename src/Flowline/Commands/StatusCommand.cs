@@ -18,8 +18,10 @@ public class StatusCommand(IAnsiConsole console) : AsyncCommand<StatusCommand.Se
 
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        Console.MarkupLine(
-            $"[bold]Flowline[/] version: [green]{Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version}[/]");
+        WelcomeScreen();
+
+        // Console.MarkupLine(
+        //     $"[bold]Flowline[/] version: [green]{Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version}[/]");
 
         try
         {
@@ -72,5 +74,17 @@ public class StatusCommand(IAnsiConsole console) : AsyncCommand<StatusCommand.Se
         }
 
         return 0;
+    }
+
+    void WelcomeScreen()
+    {
+        var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version;
+        var versionText = new Text($"Version {version}", new Style(Color.Turquoise2));
+
+        Console.MarkupLine("[turquoise2]____ _    ____ _ _ _ _    _ _  _ ____[/]");
+        Console.MarkupLine("[turquoise2]|___ |    |  | | | | |    | |\\ | |___[/]");
+        Console.MarkupLine("[turquoise2]|    |___ |__| |_|_| |___ | | \\| |___[/]");
+        Console.Write(versionText);
+        Console.WriteLine();
     }
 }
