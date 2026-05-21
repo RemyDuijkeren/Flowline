@@ -4,9 +4,9 @@
     "net10.0": {
       "coverlet.collector": {
         "type": "Direct",
-        "requested": "[10.0.0, )",
-        "resolved": "10.0.0",
-        "contentHash": "WFejCcOUR6k8UYyDnnR6Gk+obFYMsWrZuNqPJnsVFGVhpPSN0y20D4qbdKJnXinYGx9PQ397Hf9TnU1NBST8vA=="
+        "requested": "[10.0.1, )",
+        "resolved": "10.0.1",
+        "contentHash": "27jXSV/0DbVqF5jDrAxuQFZ9oaz6gmG03p8ttxAFk+X0M4woFYj7MoWDLCna5EGLb0CE6OE7X6ZH3Wt5smTtaA=="
       },
       "FluentAssertions": {
         "type": "Direct",
@@ -175,8 +175,8 @@
       },
       "Microsoft.Identity.Client": {
         "type": "Transitive",
-        "resolved": "4.84.0",
-        "contentHash": "Ac2pabU2W+p9yxPaILnoKhjj3HYefuJpKHcngJSljs8LVS05I19UtsJvbIrphG4fbJSdUcwpnpNzhARz/98SCA==",
+        "resolved": "4.84.1",
+        "contentHash": "60+xPFQgNattMRnVksYten6wRUHNCDzjlJnerGF2C2xXpsCkUHgLE4jkaoXKuIPtmq4zubs09I6sIsWVpZBsSA==",
         "dependencies": {
           "Microsoft.IdentityModel.Abstractions": "8.14.0"
         }
@@ -340,7 +340,7 @@
         "type": "Project",
         "dependencies": {
           "Flowline.Attributes": "[1.0.0, )",
-          "Microsoft.Identity.Client.Extensions.Msal": "[4.84.0, )",
+          "Microsoft.Identity.Client.Extensions.Msal": "[4.84.1, )",
           "Microsoft.PowerPlatform.Dataverse.Client": "[1.2.10, )",
           "Spectre.Console": "[0.55.2, )",
           "System.Reflection.MetadataLoadContext": "[10.0.8, )",
@@ -349,11 +349,11 @@
       },
       "Microsoft.Identity.Client.Extensions.Msal": {
         "type": "CentralTransitive",
-        "requested": "[4.84.0, )",
-        "resolved": "4.84.0",
-        "contentHash": "gObHIqgy4OF4yQy36b9xcrwsd6ZMuhqWP+04lCs4owP2gVCY0gyoUmDEDL4j1yY5GphXBOh2rdRhT0ZF2dvcrg==",
+        "requested": "[4.84.1, )",
+        "resolved": "4.84.1",
+        "contentHash": "DnfUWKfkRnSIXEnMWKHc9q893Xqaaal26PkznsIdC/IR8P2BaYsgEItoK9wSU++UNO/TapLg6XydI5XwcdykBQ==",
         "dependencies": {
-          "Microsoft.Identity.Client": "4.84.0",
+          "Microsoft.Identity.Client": "4.84.1",
           "System.Security.Cryptography.ProtectedData": "4.5.0"
         }
       },
