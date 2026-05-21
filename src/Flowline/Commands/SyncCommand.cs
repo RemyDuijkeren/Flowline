@@ -25,10 +25,22 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         [CommandOption("--managed")]
         [Description("Include managed artifacts")]
         public bool IncludeManaged { get; set; } = false;
+
+        [CommandOption("--bump")]
+        [Description("Version component to increment: major, minor, or patch (default: patch)")]
+        public string? Bump { get; set; }
+
+        [CommandOption("--no-tag")]
+        [Description("Skip creating a git tag after bumping the version")]
+        public bool NoTag { get; set; } = false;
     }
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
+        var bump = settings.Bump?.ToLowerInvariant() ?? "patch";
+        if (bump is not ("major" or "minor" or "patch"))
+            throw new FlowlineException($"Invalid --bump value '{settings.Bump}' — use major, minor, or patch.");
+
         // Dev URL is required
         var devEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, settings.DevUrl, settings, cancellationToken);
 
@@ -126,10 +138,50 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         var summary = await SolutionChangeSummary.ComputeAsync(srcPath, RootFolder, settings.Verbose, cancellationToken);
         summary.WriteTree(Console, devEnv.DisplayName, settings.Verbose);
 
-        Console.Done("Synced! Run 'git commit' to save a checkpoint.");
+        // Bump solution version in Dataverse and tag
+        var currentVersion = await PacUtils.GetSolutionVersionAsync(slnInfo.SolutionUniqueName!, devEnv.EnvironmentUrl!, settings.Verbose, cancellationToken);
+        var newVersion = BumpVersion(currentVersion, bump);
+        await PacUtils.SetSolutionVersionAsync(slnInfo.SolutionUniqueName!, newVersion, devEnv.EnvironmentUrl!, settings.Verbose, cancellationToken);
+        var tagVersion = ToTagVersion(newVersion);
+        Console.Ok($"Solution version bumped to {tagVersion}");
+
+        if (!settings.NoTag)
+        {
+            await GitUtils.CreateTagAsync(tagVersion, RootFolder, cancellationToken);
+            Console.Ok($"Git tag {tagVersion} created");
+        }
+
+        Console.Done($"Synced to {tagVersion}. Run 'git commit' to save a checkpoint.");
 
         return 0;
     }
+
+    internal static string BumpVersion(string version, string component)
+    {
+        var parts = version.Split('.');
+        var nums = parts.Select(p => int.TryParse(p, out var n) ? n : 0).ToArray();
+
+        switch (component)
+        {
+            case "major":
+                nums[0]++;
+                for (var i = 1; i < nums.Length; i++) nums[i] = 0;
+                break;
+            case "minor":
+                nums[1]++;
+                for (var i = 2; i < nums.Length; i++) nums[i] = 0;
+                break;
+            default: // patch
+                nums[2]++;
+                for (var i = 3; i < nums.Length; i++) nums[i] = 0;
+                break;
+        }
+
+        return string.Join(".", nums);
+    }
+
+    internal static string ToTagVersion(string version) =>
+        string.Join(".", version.Split('.').Take(3));
 
     static async Task GitCommitChanges(IAnsiConsole console, CancellationToken cancellationToken)
     {
