@@ -22,6 +22,7 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
 
         [CommandOption("--managed")]
         [Description("Deploy the managed package")]
+        [DefaultValue(false)]
         public bool Managed { get; set; } = false;
     }
 

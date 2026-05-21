@@ -47,10 +47,12 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
 
         [CommandOption("--save")]
         [Description("Keep Dataverse assets that are missing from source")]
+        [DefaultValue(false)]
         public bool Save { get; set; } = false;
 
         [CommandOption("--dry-run")]
         [Description("Preview changes without touching Dataverse")]
+        [DefaultValue(false)]
         public bool DryRun { get; set; } = false;
     }
 

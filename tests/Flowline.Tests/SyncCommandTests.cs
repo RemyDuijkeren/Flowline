@@ -12,26 +12,20 @@ public class SyncCommandTests
     }
 
     [Fact]
-    public void Settings_NoTag_ShouldDefaultToFalse()
+    public void Settings_Bump_ShouldDefaultToPatch()
     {
-        new SyncCommand.Settings().NoTag.Should().BeFalse();
-    }
-
-    [Fact]
-    public void Settings_Bump_ShouldDefaultToNull()
-    {
-        new SyncCommand.Settings().Bump.Should().BeNull();
+        new SyncCommand.Settings().Bump.Should().Be(BumpComponent.Patch);
     }
 }
 
 public class BumpVersionTests
 {
     [Theory]
-    [InlineData("1.0.0.1", "patch", "1.0.1.0")]
-    [InlineData("1.0.9.3", "patch", "1.0.10.0")]
-    [InlineData("1.2.5.3", "minor", "1.3.0.0")]
-    [InlineData("1.2.5.3", "major", "2.0.0.0")]
-    public void BumpVersion_ShouldIncrementCorrectComponent(string version, string component, string expected)
+    [InlineData("1.0.0.1", BumpComponent.Patch, "1.0.1.0")]
+    [InlineData("1.0.9.3", BumpComponent.Patch, "1.0.10.0")]
+    [InlineData("1.2.5.3", BumpComponent.Minor, "1.3.0.0")]
+    [InlineData("1.2.5.3", BumpComponent.Major, "2.0.0.0")]
+    public void BumpVersion_ShouldIncrementCorrectComponent(string version, BumpComponent component, string expected)
     {
         SyncCommand.BumpVersion(version, component).Should().Be(expected);
     }

@@ -2,7 +2,6 @@ using Flowline.Config;
 using Flowline.Utils;
 using CliWrap;
 using CliWrap.Buffered;
-using System.Diagnostics;
 using System.Text.Json;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
@@ -181,7 +180,6 @@ public static class PacUtils
 
         Directory.CreateDirectory(binFolder);
 
-        var sw = Stopwatch.StartNew();
         var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
         CommandResult result = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
             $"Validating {packageType.ToLower()} package...",
@@ -197,7 +195,6 @@ public static class PacUtils
                       .WithToolExecutionLog(verbose, ctx)
                       .ExecuteAsync(cancellationToken)
                       .Task);
-        sw.Stop();
 
         if (!result.IsSuccess)
         {
@@ -205,9 +202,9 @@ public static class PacUtils
             return 1;
         }
 
-        var duration = sw.Elapsed.TotalMinutes >= 1
-            ? $"{(int)sw.Elapsed.TotalMinutes}m {sw.Elapsed.Seconds}s"
-            : $"{(int)sw.Elapsed.TotalSeconds}s";
+        var duration = result.RunTime.TotalMinutes >= 1
+            ? $"{(int)result.RunTime.TotalMinutes}m {result.RunTime.Seconds}s"
+            : $"{(int)result.RunTime.TotalSeconds}s";
         AnsiConsole.MarkupLine($"[green]✓[/] {packageType} package validated in {duration}");
         return 0;
     }

@@ -18,6 +18,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
     {
         [CommandArgument(0, "[role]")]
         [Description("Target role: dev or test")]
+        [DefaultValue(Role.Dev)]
         public Role Role { get; set; } = Role.Dev; // dev|test
 
         [CommandOption("--prod <URL>")]
@@ -34,6 +35,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
 
         [CommandOption("--allow-overwrite")]
         [Description("Overwrite an existing target")]
+        [DefaultValue(false)]
         public bool AllowOverwrite { get; set; } = false;
     }
 

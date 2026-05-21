@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Diagnostics;
 using CliWrap;
 using CliWrap.Buffered;
 using Flowline.Config;
@@ -9,6 +8,8 @@ using Spectre.Console;
 using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
+
+public enum BumpComponent { Patch, Minor, Major }
 
 public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions) : FlowlineCommand<SyncCommand.Settings>(console, runtimeOptions)
 {
@@ -24,23 +25,17 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         [CommandOption("--managed")]
         [Description("Include managed artifacts")]
+        [DefaultValue(false)]
         public bool IncludeManaged { get; set; } = false;
 
         [CommandOption("--bump")]
-        [Description("Version component to increment: major, minor, or patch (default: patch)")]
-        public string? Bump { get; set; }
-
-        [CommandOption("--no-tag")]
-        [Description("Skip creating a git tag after bumping the version")]
-        public bool NoTag { get; set; } = false;
+        [Description("Version component to increment: patch, minor, or major (default: patch)")]
+        [DefaultValue(BumpComponent.Patch)]
+        public BumpComponent Bump { get; set; } = BumpComponent.Patch;
     }
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        var bump = settings.Bump?.ToLowerInvariant() ?? "patch";
-        if (bump is not ("major" or "minor" or "patch"))
-            throw new FlowlineException($"Invalid --bump value '{settings.Bump}' — use major, minor, or patch.");
-
         // Dev URL is required
         var devEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, settings.DevUrl, settings, cancellationToken);
 
@@ -70,9 +65,23 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             preSyncSummary.WriteFlat(Console, settings.Verbose, "[dim]  ");
         }
 
+        // Bump version in Dataverse before sync so the downloaded XML reflects the new version
+        var tagVersion = await Console.Status().FlowlineSpinner().StartAsync(
+            $"Bump {settings.Bump} version [bold]{projectSln.Name}[/]...",
+            async ctx =>
+            {
+                var currentVersion = await PacUtils.GetSolutionVersionAsync(slnInfo.SolutionUniqueName!, devEnv.EnvironmentUrl!, settings.Verbose, cancellationToken);
+                console.Verbose($"[dim]Current version: {currentVersion}[/]", settings.Verbose);
+                var newVersion = BumpVersion(currentVersion, settings.Bump);
+                await PacUtils.SetSolutionVersionAsync(slnInfo.SolutionUniqueName!, newVersion, devEnv.EnvironmentUrl!, settings.Verbose, cancellationToken);
+                console.Verbose($"[dim]New version: {newVersion}[/]", settings.Verbose);
+                var tagVersion = ToTagVersion(newVersion);
+                return tagVersion;
+            });
+        Console.Ok($"Version bumped: {tagVersion}");
+
         // Sync solution from Dataverse
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-        var sw = Stopwatch.StartNew();
         CommandResult result = await Console.Status().FlowlineSpinner().StartAsync(
             $"Syncing solution [bold]{projectSln.Name}[/]...",
             ctx => Cli.Wrap(cmdName)
@@ -88,12 +97,11 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
                       .WithToolExecutionLog(settings.Verbose, ctx)
                       .ExecuteAsync(cancellationToken)
                       .Task);
-        sw.Stop();
 
         if (!result.IsSuccess)
             throw new FlowlineException("Sync failed — check the environment and your PAC login. Use --verbose for more details.");
 
-        Console.Ok($"Solution synced from Dataverse in {FormatDuration(sw.Elapsed)}");
+        Console.Ok($"Solution synced from Dataverse in {FormatDuration(result.RunTime)}");
 
         // Pack the solution in pac to validate it
         var binFolder = Path.Combine(slnFolder, "bin");
@@ -138,40 +146,27 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         var summary = await SolutionChangeSummary.ComputeAsync(srcPath, RootFolder, settings.Verbose, cancellationToken);
         summary.WriteTree(Console, devEnv.DisplayName, settings.Verbose);
 
-        // Bump solution version in Dataverse and tag
-        var currentVersion = await PacUtils.GetSolutionVersionAsync(slnInfo.SolutionUniqueName!, devEnv.EnvironmentUrl!, settings.Verbose, cancellationToken);
-        var newVersion = BumpVersion(currentVersion, bump);
-        await PacUtils.SetSolutionVersionAsync(slnInfo.SolutionUniqueName!, newVersion, devEnv.EnvironmentUrl!, settings.Verbose, cancellationToken);
-        var tagVersion = ToTagVersion(newVersion);
-        Console.Ok($"Solution version bumped to {tagVersion}");
-
-        if (!settings.NoTag)
-        {
-            await GitUtils.CreateTagAsync(tagVersion, RootFolder, cancellationToken);
-            Console.Ok($"Git tag {tagVersion} created");
-        }
-
-        Console.Done($"Synced to {tagVersion}. Run 'git commit' to save a checkpoint.");
+        Console.Done($"Synced {tagVersion}. Run 'git commit' to save a checkpoint and 'git tag {tagVersion}' to tag it.");
 
         return 0;
     }
 
-    internal static string BumpVersion(string version, string component)
+    internal static string BumpVersion(string version, BumpComponent component)
     {
         var parts = version.Split('.');
         var nums = parts.Select(p => int.TryParse(p, out var n) ? n : 0).ToArray();
 
         switch (component)
         {
-            case "major":
+            case BumpComponent.Major:
                 nums[0]++;
                 for (var i = 1; i < nums.Length; i++) nums[i] = 0;
                 break;
-            case "minor":
+            case BumpComponent.Minor:
                 nums[1]++;
                 for (var i = 2; i < nums.Length; i++) nums[i] = 0;
                 break;
-            default: // patch
+            default: // Patch
                 nums[2]++;
                 for (var i = 3; i < nums.Length; i++) nums[i] = 0;
                 break;

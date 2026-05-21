@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Diagnostics;
 using CliWrap;
 using Flowline.Config;
 using Flowline.Core;
@@ -167,7 +166,6 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         var allSolutionsFolder = Path.Combine(RootFolder, AllSolutionsFolderName);
         Directory.CreateDirectory(allSolutionsFolder);
 
-        var sw = Stopwatch.StartNew();
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
         CommandResult result = await Console.Status().FlowlineSpinner().StartAsync(
             $"Cloning solution [bold]{projectSln.Name}[/] from Dataverse...",
@@ -185,12 +183,11 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
                       .WithToolExecutionLog(settings.Verbose, ctx)
                       .ExecuteAsync(cancellationToken)
                       .Task);
-        sw.Stop();
 
         if (!result.IsSuccess)
             throw new FlowlineException("Clone failed — check the environment and your PAC login.");
 
-        Console.Ok($"Solution [bold]{projectSln.Name}[/] cloned in {FormatDuration(sw.Elapsed)}");
+        Console.Ok($"Solution [bold]{projectSln.Name}[/] cloned in {FormatDuration(result.RunTime)}");
     }
 
     private async Task CreateSolutionFileAsync(ProjectSolution projectSln, string slnFolder, string slnFilePath, string cdsprojPath, Settings settings, CancellationToken cancellationToken)

@@ -1,7 +1,7 @@
 ---
 title: "feat: Solution versioning — auto patch bump and git tagging on sync"
 type: feat
-status: active
+status: completed
 date: 2026-05-21
 origin: docs/brainstorms/solution-versioning-requirements.md
 ---
