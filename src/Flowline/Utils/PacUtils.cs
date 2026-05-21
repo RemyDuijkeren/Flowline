@@ -286,6 +286,60 @@ public static class PacUtils
         return string.IsNullOrEmpty(prefix) ? null : prefix;
     }
 
+    internal static string? ParseVersionFromPacOutput(string output)
+    {
+        if (string.IsNullOrWhiteSpace(output)) return null;
+
+        var line = output.Split('\n').FirstOrDefault(l => l.StartsWith("Solution Version:"));
+        if (line == null) return null;
+
+        var parts = line.Split(": ", 2);
+        return parts.Length == 2 ? parts[1].Trim() : null;
+    }
+
+    public static async Task<string> GetSolutionVersionAsync(string solutionName, string environmentUrl, bool verbose = false, CancellationToken cancellationToken = default)
+    {
+        var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
+        var result = await Cli.Wrap(cmdName)
+            .WithArguments(args => args
+                .AddIfNotNull(prefixArgs)
+                .Add("solution")
+                .Add("online-version")
+                .Add("--solution-name").Add(solutionName)
+                .Add("--environment").Add(environmentUrl))
+            .WithValidation(CommandResultValidation.None)
+            .WithToolExecutionLog(verbose)
+            .ExecuteBufferedAsync(cancellationToken);
+
+        if (result.ExitCode != 0)
+            throw new FlowlineException("Failed to read solution version from Dataverse.");
+
+        var version = ParseVersionFromPacOutput(result.StandardOutput);
+        if (string.IsNullOrEmpty(version))
+            throw new FlowlineException("Could not parse solution version from PAC output.");
+
+        return version;
+    }
+
+    public static async Task SetSolutionVersionAsync(string solutionName, string version, string environmentUrl, bool verbose = false, CancellationToken cancellationToken = default)
+    {
+        var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
+        var result = await Cli.Wrap(cmdName)
+            .WithArguments(args => args
+                .AddIfNotNull(prefixArgs)
+                .Add("solution")
+                .Add("online-version")
+                .Add("--solution-name").Add(solutionName)
+                .Add("--environment").Add(environmentUrl)
+                .Add("--solution-version").Add(version))
+            .WithValidation(CommandResultValidation.None)
+            .WithToolExecutionLog(verbose)
+            .ExecuteBufferedAsync(cancellationToken);
+
+        if (result.ExitCode != 0)
+            throw new FlowlineException($"Failed to set solution version to {version}.");
+    }
+
     public static EnvironmentUrlParts GetPartsFromEnvUrl(string envUrl)
     {
         var regex = new Regex(@"^https://([^.]+)\.([^.]+\.[^.]+\.[a-z]+)(?:/|$)");

@@ -184,3 +184,53 @@ public class PacUtilsTests : IDisposable
         isDotnetTool.Should().BeTrue();
     }
 }
+
+public class ParseVersionFromPacOutputTests
+{
+    const string FullOutput =
+        "Connected as remy@automatevalue.com\r\n" +
+        "Connected to... AutomateValue Dev\r\n" +
+        "\r\n" +
+        "Listing all Solutions from the current Dataverse organization...\r\n" +
+        "Unique Name: Cr07982\r\n" +
+        "Solution Display Name: AV Default Solution\r\n" +
+        "Solution Version: 1.0.0.1\r\n";
+
+    [Fact]
+    public void ParseVersionFromPacOutput_ReturnsVersion_WhenFullOutputProvided()
+    {
+        var result = PacUtils.ParseVersionFromPacOutput(FullOutput);
+
+        result.Should().Be("1.0.0.1");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ParseVersionFromPacOutput_ReturnsNull_WhenOutputIsEmptyOrWhitespace(string output)
+    {
+        var result = PacUtils.ParseVersionFromPacOutput(output);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void ParseVersionFromPacOutput_ReturnsNull_WhenVersionLineAbsent()
+    {
+        var output = "Connected as remy@automatevalue.com\r\nListing all Solutions...\r\nUnique Name: Cr07982\r\n";
+
+        var result = PacUtils.ParseVersionFromPacOutput(output);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void ParseVersionFromPacOutput_TrimsWhitespace_WhenVersionHasExtraSpaces()
+    {
+        var output = "Solution Version:  1.0.0.1  \r\n";
+
+        var result = PacUtils.ParseVersionFromPacOutput(output);
+
+        result.Should().Be("1.0.0.1");
+    }
+}
