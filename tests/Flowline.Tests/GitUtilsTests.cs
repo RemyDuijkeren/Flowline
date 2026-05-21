@@ -1,3 +1,5 @@
+using CliWrap;
+using CliWrap.Buffered;
 using FluentAssertions;
 
 namespace Flowline.Tests;
@@ -128,5 +130,30 @@ public class GitUtilsTests : IDisposable
             Path.Combine(_root, "nonexistent"), _root);
 
         result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CreateTagAsync_WithValidTag_ShouldCreateTag()
+    {
+        CreateAndCommitFile("readme.txt");
+
+        await GitUtils.CreateTagAsync("1.0.1", _root, CancellationToken.None);
+
+        var listResult = await Cli.Wrap("git")
+                                  .WithArguments("tag")
+                                  .WithWorkingDirectory(_root)
+                                  .ExecuteBufferedAsync();
+        listResult.StandardOutput.Trim().Should().Be("1.0.1");
+    }
+
+    [Fact]
+    public async Task CreateTagAsync_WithDuplicateTag_ShouldThrowFlowlineException()
+    {
+        CreateAndCommitFile("readme.txt");
+
+        await GitUtils.CreateTagAsync("1.0.1", _root, CancellationToken.None);
+
+        var act = async () => await GitUtils.CreateTagAsync("1.0.1", _root, CancellationToken.None);
+        await act.Should().ThrowAsync<FlowlineException>();
     }
 }
