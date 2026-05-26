@@ -337,6 +337,46 @@ public static class PacUtils
             throw new FlowlineException($"Failed to set solution version to {version}.");
     }
 
+    public static async Task<WhoAmIInfo?> GetEnvWhoAsync(string environmentUrl, CancellationToken cancellationToken = default)
+    {
+        var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
+        var result = await Cli.Wrap(cmdName)
+            .WithArguments(args => args
+                .AddIfNotNull(prefixArgs)
+                .Add("env").Add("who")
+                .Add("--environment").Add(environmentUrl)
+                .Add("--json"))
+            .WithValidation(CommandResultValidation.None)
+            .ExecuteBufferedAsync(cancellationToken);
+
+        if (result.ExitCode != 0) return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(result.StandardOutput);
+            var connectedAs = GetStringProperty(doc.RootElement,
+                "ConnectedAs", "UserEmail", "Email", "UserPrincipalName", "FriendlyName");
+            return new WhoAmIInfo(connectedAs ?? "Connected");
+        }
+        catch (JsonException)
+        {
+            // pac env who succeeded but output wasn't valid JSON (e.g. older CLI version without --json support)
+            return new WhoAmIInfo("Connected");
+        }
+    }
+
+    static string? GetStringProperty(JsonElement element, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (element.TryGetProperty(name, out var prop)
+                && prop.ValueKind == JsonValueKind.String
+                && prop.GetString() is { Length: > 0 } value)
+                return value;
+        }
+        return null;
+    }
+
     public static EnvironmentUrlParts GetPartsFromEnvUrl(string envUrl)
     {
         var regex = new Regex(@"^https://([^.]+)\.([^.]+\.[^.]+\.[a-z]+)(?:/|$)");
@@ -415,3 +455,5 @@ public class SolutionInfo
     public string? VersionNumber { get; set; }
     public bool IsManaged { get; set; }
 }
+
+public record WhoAmIInfo(string ConnectedAs);

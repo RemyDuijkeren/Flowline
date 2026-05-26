@@ -47,26 +47,54 @@ public class StatusCommand(IAnsiConsole console) : AsyncCommand<StatusCommand.Se
         var config = ProjectConfig.Load();
         Console.MarkupLine("\n[bold]Configuration[/]");
 
-        if (config is not null)
+        if (config is null)
         {
-            if (!string.IsNullOrEmpty(config.ProdUrl))
-                Console.MarkupLine($"  Production: [blue]{config.ProdUrl}[/]");
-            else
-                Console.MarkupLine("  Production: [gray]Not configured[/]");
+            Console.MarkupLine("  [yellow]No .flowline config found[/]");
+            return 0;
+        }
 
-            if (!string.IsNullOrEmpty(config.TestUrl))
-                Console.MarkupLine($"  Test: [blue]{config.TestUrl}[/]");
-            else
-                Console.MarkupLine("  Test: [gray]Not configured[/]");
+        var envs = new (string Label, string? Url)[]
+        {
+            ("Production",  config.ProdUrl),
+            ("Test",        config.TestUrl),
+            ("Development", config.DevUrl),
+        };
 
-            if (!string.IsNullOrEmpty(config.DevUrl))
-                Console.MarkupLine($"  Development: [blue]{config.DevUrl}[/]");
-            else
-                Console.MarkupLine("  Development: [gray]Not configured[/]");
+        var hasUrls = envs.Any(e => !string.IsNullOrEmpty(e.Url));
+
+        (string Label, string? Url, WhoAmIInfo? Who)[] results;
+
+        if (hasUrls)
+        {
+            results = await Console.Status().FlowlineSpinner().StartAsync(
+                "Checking environment connectivity...",
+                _ => Task.WhenAll(envs.Select(async e =>
+                {
+                    var who = !string.IsNullOrEmpty(e.Url)
+                        ? await PacUtils.GetEnvWhoAsync(e.Url!, cancellationToken)
+                        : null;
+                    return (e.Label, e.Url, who);
+                })));
         }
         else
         {
-            Console.MarkupLine("  [yellow]No .flowline config found[/]");
+            results = envs.Select(e => (e.Label, e.Url, (WhoAmIInfo?)null)).ToArray();
+        }
+
+        foreach (var (label, url, who) in results)
+        {
+            if (string.IsNullOrEmpty(url))
+            {
+                Console.MarkupLine($"  {label}: [gray]Not configured[/]");
+                continue;
+            }
+
+            Console.MarkupLine($"  {label}: [green]{Markup.Escape(url)}[/]");
+
+            if (who is not null)
+                Console.MarkupLine($"    [green]✓[/] {Markup.Escape(who.ConnectedAs)}");
+            else
+                Console.MarkupLine($"    [yellow]✗ Not authenticated[/]");
         }
 
         return 0;
