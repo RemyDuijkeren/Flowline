@@ -102,14 +102,14 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
     static Tree BuildResourceTree(string label, IEnumerable<string> names)
     {
-        var tree = new Tree(label) { Style = Style.Parse("dim") };
+        var tree = new Tree($"[dim]{label}[/]") { Style = Style.Parse("dim") };
 
         foreach (var group in names
             .Select(n => n.Split('/'))
             .GroupBy(p => p[0], StringComparer.OrdinalIgnoreCase)
             .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
         {
-            var folderNode = tree.AddNode($"{group.Key}");
+            var folderNode = tree.AddNode($"[dim]{Markup.Escape(group.Key)}[/]");
             AddTreeChildren(folderNode, group.Select(p => p[1..]).Where(p => p.Length > 0).ToList());
         }
 
@@ -123,7 +123,7 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             .GroupBy(p => p[0], StringComparer.OrdinalIgnoreCase)
             .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
         {
-            var node = parent.AddNode($"{folder.Key}");
+            var node = parent.AddNode($"[dim]{Markup.Escape(folder.Key)}[/]");
             AddTreeChildren(node, folder.Select(p => p[1..]).ToList());
         }
 
@@ -132,7 +132,7 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             .Select(p => p[0])
             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase))
         {
-            parent.AddNode($"{file}");
+            parent.AddNode($"[dim]{Markup.Escape(file)}[/]");
         }
     }
 

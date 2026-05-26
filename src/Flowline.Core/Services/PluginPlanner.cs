@@ -91,6 +91,21 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
             plan.PluginTypes.Deletes.Add(new DeleteAction(obsoletePluginType.Key, "plugintype", obsoletePluginType.Value.Id));
         }
 
+        // Unlinked Custom APIs — plugintypeid is null/empty or references a plugin type not in the snapshot.
+        // No PlanCustomApi call ever covers these, so they'd persist forever without this sweep.
+        var knownPluginTypeIds = snapshot.PluginTypes.Values.Select(t => t.Id).ToHashSet();
+        foreach (var unlinkedApi in snapshot.CustomApis.Where(a =>
+        {
+            var typeId = a.GetAttributeValue<EntityReference>("plugintypeid")?.Id;
+            return typeId == null || typeId == Guid.Empty || !knownPluginTypeIds.Contains(typeId.Value);
+        }))
+        {
+            var apiName = unlinkedApi.GetAttributeValue<string>("uniquename") ?? unlinkedApi.Id.ToString();
+            plan.CustomApis.Deletes.Add(new DeleteAction(apiName, "customapi", unlinkedApi.Id));
+            plan.RequestParams.Add(PlanRequestParameters(snapshot, snapshot.PublisherPrefix, unlinkedApi.Id, apiName, [], solutionName));
+            plan.ResponseProps.Add(PlanResponseProperties(snapshot, snapshot.PublisherPrefix, unlinkedApi.Id, apiName, [], solutionName));
+        }
+
         AddCrossSolutionWarnings(plan, snapshot, solutionName);
 
         return plan;

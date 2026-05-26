@@ -320,16 +320,16 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
     {
         if (!opt.IsVerbose) return;
 
-        var tree = new Tree("Dataverse snapshot") { Style = Style.Parse("dim") };
-        tree.AddNode($"Publisher prefix: {Safe(snapshot.PublisherPrefix)}");
+        var tree = new Tree("[dim]Dataverse snapshot[/]") { Style = Style.Parse("dim") };
+        tree.AddNode($"[dim]Publisher prefix: {Safe(snapshot.PublisherPrefix)}[/]");
 
-        var pluginTypesNode = tree.AddNode($"Plugin types ({snapshot.PluginTypes.Count})");
+        var pluginTypesNode = tree.AddNode($"[dim]Plugin types ({snapshot.PluginTypes.Count})[/]");
         foreach (var pluginType in snapshot.PluginTypes.Values.OrderBy(NameForPluginType, StringComparer.OrdinalIgnoreCase))
         {
             var pluginTypeId = pluginType.Id;
             var isWorkflow = BoolValue(pluginType, "isworkflowactivity");
             var pluginTypeNode = pluginTypesNode.AddNode(
-                $"{Safe(NameForPluginType(pluginType))} ({pluginTypeId}){(isWorkflow ? " [[workflow]]" : "")}");
+                $"[dim]{Safe(NameForPluginType(pluginType))} ({pluginTypeId}){(isWorkflow ? " [[workflow]]" : "")}[/]");
 
             var steps = snapshot.Steps
                 .Where(step => SameReference(step.GetAttributeValue<EntityReference>("plugintypeid"), pluginTypeId))
@@ -337,25 +337,25 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 .ToList();
             if (steps.Count > 0)
             {
-                var stepsNode = pluginTypeNode.AddNode($"Steps ({steps.Count})");
+                var stepsNode = pluginTypeNode.AddNode($"[dim]Steps ({steps.Count})[/]");
                 foreach (var step in steps)
                 {
                     var stepId = step.Id;
                     var stepNode = stepsNode.AddNode(
-                        $"{Safe(step.GetAttributeValue<string>("name") ?? stepId.ToString())} " +
-                        $"stage={OptionValue(step, "stage")} mode={OptionValue(step, "mode")} rank={OptionValue(step, "rank")}");
+                        $"[dim]{Safe(step.GetAttributeValue<string>("name") ?? stepId.ToString())} " +
+                        $"stage={OptionValue(step, "stage")} mode={OptionValue(step, "mode")} rank={OptionValue(step, "rank")}[/]");
 
                     var description = step.GetAttributeValue<string>("description");
                     if (!string.IsNullOrWhiteSpace(description))
-                        stepNode.AddNode($"Description: {Safe(description)}");
+                        stepNode.AddNode($"[dim]Description: {Safe(description)}[/]");
 
                     var filteringAttributes = step.GetAttributeValue<string>("filteringattributes");
                     if (!string.IsNullOrWhiteSpace(filteringAttributes))
-                        stepNode.AddNode($"Filtering attributes: {Safe(filteringAttributes)}");
+                        stepNode.AddNode($"[dim]Filtering attributes: {Safe(filteringAttributes)}[/]");
 
                     var impersonatingUser = step.GetAttributeValue<EntityReference>("impersonatinguserid");
                     if (impersonatingUser != null)
-                        stepNode.AddNode($"Run as: {impersonatingUser.Id}");
+                        stepNode.AddNode($"[dim]Run as: {impersonatingUser.Id}[/]");
 
                     var images = snapshot.Images
                         .Where(image => SameReference(image.GetAttributeValue<EntityReference>("sdkmessageprocessingstepid"), stepId))
@@ -363,13 +363,13 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                         .ToList();
                     if (images.Count > 0)
                     {
-                        var imagesNode = stepNode.AddNode($"Images ({images.Count})");
+                        var imagesNode = stepNode.AddNode($"[dim]Images ({images.Count})[/]");
                         foreach (var image in images)
                             imagesNode.AddNode(
-                                $"{Safe(image.GetAttributeValue<string>("name") ?? image.Id.ToString())} " +
+                                $"[dim]{Safe(image.GetAttributeValue<string>("name") ?? image.Id.ToString())} " +
                                 $"alias={Safe(image.GetAttributeValue<string>("entityalias") ?? "(none)")} " +
                                 $"type={OptionValue(image, "imagetype")} " +
-                                $"attributes={Safe(image.GetAttributeValue<string>("attributes") ?? "(all)")}");
+                                $"attributes={Safe(image.GetAttributeValue<string>("attributes") ?? "(all)")}[/]");
                     }
                 }
             }
@@ -380,17 +380,17 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 .ToList();
             if (customApis.Count > 0)
             {
-                var apisNode = pluginTypeNode.AddNode($"Custom APIs ({customApis.Count})");
+                var apisNode = pluginTypeNode.AddNode($"[dim]Custom APIs ({customApis.Count})[/]");
                 foreach (var api in customApis)
                 {
                     var apiId = api.Id;
                     var apiNode = apisNode.AddNode(
-                        $"{Safe(api.GetAttributeValue<string>("uniquename") ?? apiId.ToString())} " +
-                        $"binding={OptionValue(api, "bindingtype")} function={BoolValue(api, "isfunction")} private={BoolValue(api, "isprivate")}");
+                        $"[dim]{Safe(api.GetAttributeValue<string>("uniquename") ?? apiId.ToString())} " +
+                        $"binding={OptionValue(api, "bindingtype")} function={BoolValue(api, "isfunction")} private={BoolValue(api, "isprivate")}[/]");
 
                     var boundEntity = api.GetAttributeValue<string>("boundentitylogicalname");
                     if (!string.IsNullOrWhiteSpace(boundEntity))
-                        apiNode.AddNode($"Bound entity: {Safe(boundEntity)}");
+                        apiNode.AddNode($"[dim]Bound entity: {Safe(boundEntity)}[/]");
 
                     var requestParams = snapshot.RequestParams
                         .Where(param => SameReference(param.GetAttributeValue<EntityReference>("customapiid"), apiId))
@@ -398,12 +398,12 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                         .ToList();
                     if (requestParams.Count > 0)
                     {
-                        var paramsNode = apiNode.AddNode($"Request parameters ({requestParams.Count})");
+                        var paramsNode = apiNode.AddNode($"[dim]Request parameters ({requestParams.Count})[/]");
                         foreach (var param in requestParams)
                             paramsNode.AddNode(
-                                $"{Safe(param.GetAttributeValue<string>("uniquename") ?? param.Id.ToString())} " +
+                                $"[dim]{Safe(param.GetAttributeValue<string>("uniquename") ?? param.Id.ToString())} " +
                                 $"type={OptionValue(param, "type")} optional={BoolValue(param, "isoptional")} " +
-                                $"entity={Safe(param.GetAttributeValue<string>("logicalentityname") ?? "(none)")}");
+                                $"entity={Safe(param.GetAttributeValue<string>("logicalentityname") ?? "(none)")}[/]");
                     }
 
                     var responseProps = snapshot.ResponseProps
@@ -412,11 +412,11 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                         .ToList();
                     if (responseProps.Count > 0)
                     {
-                        var propsNode = apiNode.AddNode($"Response properties ({responseProps.Count})");
+                        var propsNode = apiNode.AddNode($"[dim]Response properties ({responseProps.Count})[/]");
                         foreach (var prop in responseProps)
                             propsNode.AddNode(
-                                $"{Safe(prop.GetAttributeValue<string>("uniquename") ?? prop.Id.ToString())} " +
-                                $"type={OptionValue(prop, "type")} entity={Safe(prop.GetAttributeValue<string>("logicalentityname") ?? "(none)")}");
+                                $"[dim]{Safe(prop.GetAttributeValue<string>("uniquename") ?? prop.Id.ToString())} " +
+                                $"type={OptionValue(prop, "type")} entity={Safe(prop.GetAttributeValue<string>("logicalentityname") ?? "(none)")}[/]");
                     }
                 }
             }
@@ -434,23 +434,23 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
         if (snapshot.SdkMessageIds.Count > 0)
         {
-            var messagesNode = tree.AddNode($"SDK messages ({snapshot.SdkMessageIds.Count})");
+            var messagesNode = tree.AddNode($"[dim]SDK messages ({snapshot.SdkMessageIds.Count})[/]");
             foreach (var (name, id) in snapshot.SdkMessageIds.OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
-                messagesNode.AddNode($"{Safe(name)}: {id}");
+                messagesNode.AddNode($"[dim]{Safe(name)}: {id}[/]");
         }
 
         if (snapshot.FilterIds.Count > 0)
         {
-            var filtersNode = tree.AddNode($"SDK message filters ({snapshot.FilterIds.Count})");
+            var filtersNode = tree.AddNode($"[dim]SDK message filters ({snapshot.FilterIds.Count})[/]");
             foreach (var (key, id) in snapshot.FilterIds.OrderBy(kvp => $"{kvp.Key.MessageId}:{kvp.Key.EntityName}:{kvp.Key.SecondaryEntity}", StringComparer.OrdinalIgnoreCase))
-                filtersNode.AddNode($"message={key.MessageId} entity={Safe(key.EntityName ?? "(any)")} secondary={Safe(key.SecondaryEntity ?? "(none)")}: {id?.ToString() ?? "(none)"}");
+                filtersNode.AddNode($"[dim]message={key.MessageId} entity={Safe(key.EntityName ?? "(any)")} secondary={Safe(key.SecondaryEntity ?? "(none)")}: {id?.ToString() ?? "(none)"}[/]");
         }
 
         if (snapshot.SystemUserIds.Count > 0)
         {
-            var usersNode = tree.AddNode($"System users ({snapshot.SystemUserIds.Count})");
+            var usersNode = tree.AddNode($"[dim]System users ({snapshot.SystemUserIds.Count})[/]");
             foreach (var id in snapshot.SystemUserIds.OrderBy(id => id))
-                usersNode.AddNode(id.ToString());
+                usersNode.AddNode($"[dim]{id}[/]");
         }
 
         output.Write(tree);
@@ -470,9 +470,9 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
         if (unlinked.Count == 0) return;
 
-        var section = tree.AddNode($"{title} ({unlinked.Count})");
+        var section = tree.AddNode($"[dim]{title} ({unlinked.Count})[/]");
         foreach (var item in unlinked)
-            section.AddNode($"{Safe(NameForEntity(item))} ({item.Id})");
+            section.AddNode($"[dim]{Safe(NameForEntity(item))} ({item.Id})[/]");
     }
 
     void WritePlanVerbose(RegistrationPlan plan)
@@ -481,50 +481,55 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             return;
 
         var addToSolutionCount = CountAddToSolutionComponents(plan);
-        output.Verbose("Registration plan", opt.IsVerbose);
-        output.Verbose($"  Summary: {plan.TotalDeletes} delete(s), {plan.TotalUpserts} upsert(s), {addToSolutionCount} add-to-solution action(s)", opt.IsVerbose);
+        var tree = new Tree("[dim]Registration plan[/]") { Style = Style.Parse("dim") };
+        tree.AddNode($"[dim]Summary: {plan.TotalDeletes} delete(s), {plan.TotalUpserts} upsert(s), {addToSolutionCount} add-to-solution action(s)[/]");
 
-        WriteActionPlanVerbose("Plugin types", plan.PluginTypes,
+        AddActionPlanNode(tree, "Plugin types", plan.PluginTypes,
             e => $"workflow={BoolValue(e, "isworkflowactivity")}");
-        WriteActionPlanVerbose("Steps", plan.Steps,
+        AddActionPlanNode(tree, "Steps", plan.Steps,
             e => $"stage={OptionValue(e, "stage")} mode={OptionValue(e, "mode")} rank={OptionValue(e, "rank")}");
-        WriteActionPlanVerbose("Images", plan.Images,
+        AddActionPlanNode(tree, "Images", plan.Images,
             e => $"alias={Safe(e.GetAttributeValue<string>("entityalias") ?? "(none)")} type={OptionValue(e, "imagetype")} attributes={Safe(e.GetAttributeValue<string>("attributes") ?? "(all)")}");
-        WriteActionPlanVerbose("Custom APIs", plan.CustomApis,
+        AddActionPlanNode(tree, "Custom APIs", plan.CustomApis,
             e => $"binding={OptionValue(e, "bindingtype")} function={BoolValue(e, "isfunction")} private={BoolValue(e, "isprivate")}");
-        WriteActionPlanVerbose("Request parameters", plan.RequestParams,
+        AddActionPlanNode(tree, "Request parameters", plan.RequestParams,
             e => $"type={OptionValue(e, "type")} optional={BoolValue(e, "isoptional")} entity={Safe(e.GetAttributeValue<string>("logicalentityname") ?? "(none)")}");
-        WriteActionPlanVerbose("Response properties", plan.ResponseProps,
+        AddActionPlanNode(tree, "Response properties", plan.ResponseProps,
             e => $"type={OptionValue(e, "type")} entity={Safe(e.GetAttributeValue<string>("logicalentityname") ?? "(none)")}");
+
+        output.Write(tree);
     }
 
-    void WriteActionPlanVerbose(string title, ActionPlan actionPlan, Func<Entity, string> entityDetail)
+    void AddActionPlanNode(IHasTreeNodes parent, string title, ActionPlan actionPlan, Func<Entity, string> entityDetail)
     {
-        output.Verbose($"  {title}", opt.IsVerbose);
+        if (actionPlan.Deletes.Count == 0 && actionPlan.Upserts.Count == 0 && actionPlan.AddSolutionComponents.Count == 0)
+            return;
+
+        var section = parent.AddNode($"[dim]{title}[/]");
 
         if (actionPlan.Deletes.Count > 0)
         {
-            output.Verbose($"    Deletes ({actionPlan.Deletes.Count})", opt.IsVerbose);
+            var deletesNode = section.AddNode($"[dim]Deletes ({actionPlan.Deletes.Count})[/]");
             foreach (var action in actionPlan.Deletes.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-                output.Verbose($"      - {Safe(action.Name)}", opt.IsVerbose);
+                deletesNode.AddNode($"[dim]{Safe(action.Name)}[/]");
         }
 
         if (actionPlan.Upserts.Count > 0)
         {
-            output.Verbose($"    Upserts ({actionPlan.Upserts.Count})", opt.IsVerbose);
+            var upsertsNode = section.AddNode($"[dim]Upserts ({actionPlan.Upserts.Count})[/]");
             foreach (var action in actionPlan.Upserts.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
             {
                 var detail = entityDetail(action.Entity);
                 var solution = string.IsNullOrWhiteSpace(action.SolutionName) ? "" : $" solution={Safe(action.SolutionName)}";
-                output.Verbose($"      - {Safe(action.Name)} [[{(action.IsCreate ? "create" : "update")}]] {detail}{solution}", opt.IsVerbose);
+                upsertsNode.AddNode($"[dim]{Safe(action.Name)} [[{(action.IsCreate ? "create" : "update")}]] {detail}{solution}[/]");
             }
         }
 
         if (actionPlan.AddSolutionComponents.Count > 0)
         {
-            output.Verbose($"    Add to solution ({actionPlan.AddSolutionComponents.Count})", opt.IsVerbose);
+            var addNode = section.AddNode($"[dim]Add to solution ({actionPlan.AddSolutionComponents.Count})[/]");
             foreach (var action in actionPlan.AddSolutionComponents.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-                output.Verbose($"      - {Safe(action.Name)} solution={Safe(action.SolutionName)} componenttype={action.ComponentType}", opt.IsVerbose);
+                addNode.AddNode($"[dim]{Safe(action.Name)} solution={Safe(action.SolutionName)} componenttype={action.ComponentType}[/]");
         }
     }
 
