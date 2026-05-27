@@ -14,7 +14,7 @@ namespace Flowline.Attributes
     /// </para>
     /// <code>
     /// [CustomApi]
-    /// [Input("accountId", FieldType.EntityReference, Entity = "account")]
+    /// [Input("accountId", FieldType.EntityReference, Table = "account")]
     /// [Output("riskScore", FieldType.Integer)]
     /// [Output("riskLabel", FieldType.String)]
     /// public class GetAccountRiskApi : IPlugin
@@ -29,7 +29,7 @@ namespace Flowline.Attributes
     /// }
     /// </code>
     /// <para>
-    /// <b>EntityReference outputs:</b> always set <see cref="Entity"/> to the logical name of the
+    /// <b>EntityReference outputs:</b> always set <see cref="Table"/> to the logical name of the
     /// referenced table. Dataverse requires this to validate the reference.
     /// </para>
     /// </remarks>
@@ -69,7 +69,7 @@ namespace Flowline.Attributes
         /// Required when <see cref="Type"/> is <see cref="FieldType.EntityReference"/> or
         /// <see cref="FieldType.Entity"/>. Example: <c>"account"</c>, <c>"cr123_invoice"</c>.
         /// </summary>
-        public string Entity { get; set; }
+        public string Table { get; set; }
 
         /// <summary>
         /// Display name shown in the solution explorer and API catalog.

@@ -56,12 +56,12 @@ public class PluginAssemblyReaderTests
     {
         var step = Assert.Single(GetPlugin(Analyze(), nameof(MockPreCreatePlugin)).Steps);
 
-        Assert.Equal("account", step.EntityName);
+        Assert.Equal("account", step.TableName);
         Assert.Equal("Create", step.Message);
         Assert.Equal((int)ProcessingStage.PreOperation, step.Stage);
         Assert.Equal((int)ProcessingMode.Synchronous, step.Mode);
         Assert.Equal(1, step.Order);
-        Assert.Null(step.FilteringAttributes);
+        Assert.Null(step.FilteringColumns);
         Assert.Empty(step.Images);
     }
 
@@ -72,7 +72,7 @@ public class PluginAssemblyReaderTests
 
         Assert.Equal((int)ProcessingStage.PostOperation, step.Stage);
         Assert.Equal("Update", step.Message);
-        Assert.Equal("contact", step.EntityName);
+        Assert.Equal("contact", step.TableName);
     }
 
     [Fact]
@@ -97,7 +97,7 @@ public class PluginAssemblyReaderTests
     {
         var step = Assert.Single(GetPlugin(Analyze(), nameof(MockPreUpdatePlugin)).Steps);
 
-        Assert.Equal("name,telephone1", step.FilteringAttributes);
+        Assert.Equal("name,telephone1", step.FilteringColumns);
     }
 
     [Fact]
@@ -105,7 +105,7 @@ public class PluginAssemblyReaderTests
     {
         var step = Assert.Single(GetPlugin(Analyze(), nameof(MockWithWhitespacePreUpdatePlugin)).Steps);
 
-        Assert.Equal("name,firstname", step.FilteringAttributes);
+        Assert.Equal("name,firstname", step.FilteringColumns);
     }
 
     [Fact]
@@ -132,7 +132,7 @@ public class PluginAssemblyReaderTests
 
         Assert.Single(step.Warnings);
         Assert.Contains("PreImage", step.Warnings[0]);
-        Assert.Contains("no attribute filter", step.Warnings[0]);
+        Assert.Contains("no column filter", step.Warnings[0]);
         Assert.Contains("https://learn.microsoft.com", step.Warnings[0]);
     }
 
@@ -197,7 +197,7 @@ public class PluginAssemblyReaderTests
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
             PluginAssemblyReader.ValidateSecondaryLogicalName("MockPreAssociatePlugin", ""));
-        Assert.Contains("[SecondaryEntity]", ex.Message);
+        Assert.Contains("[SecondaryTable]", ex.Message);
         Assert.Contains("none", ex.Message);
     }
 
@@ -223,24 +223,24 @@ public class PluginAssemblyReaderTests
     }
 
     [Fact]
-    public void ValidateSecondaryEntity_OnNonAssociateMessage_Throws()
+    public void ValidateSecondaryTable_OnNonAssociateMessage_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateSecondaryEntity("MockPreCreatePlugin", "Create", true, "account"));
-        Assert.Contains("[SecondaryEntity]", ex.Message);
+            PluginAssemblyReader.ValidateSecondaryTable("MockPreCreatePlugin", "Create", true, "account"));
+        Assert.Contains("[SecondaryTable]", ex.Message);
         Assert.Contains("Create", ex.Message);
     }
 
     [Fact]
-    public void ValidateSecondaryEntity_OnAssociate_DoesNotThrow()
+    public void ValidateSecondaryTable_OnAssociate_DoesNotThrow()
     {
-        PluginAssemblyReader.ValidateSecondaryEntity("MockPreAssociatePlugin", "Associate", true, "account");
+        PluginAssemblyReader.ValidateSecondaryTable("MockPreAssociatePlugin", "Associate", true, "account");
     }
 
     [Fact]
-    public void ValidateSecondaryEntity_NoAttributeOnAnyMessage_DoesNotThrow()
+    public void ValidateSecondaryTable_NoAttributeOnAnyMessage_DoesNotThrow()
     {
-        PluginAssemblyReader.ValidateSecondaryEntity("MockPreCreatePlugin", "Create", false, null);
+        PluginAssemblyReader.ValidateSecondaryTable("MockPreCreatePlugin", "Create", false, null);
     }
 
     [Fact]
@@ -254,21 +254,21 @@ public class PluginAssemblyReaderTests
     }
 
     [Fact]
-    public void Analyze_AssociatePluginWithSecondaryEntity_DetectsSecondaryEntity()
+    public void Analyze_AssociatePluginWithSecondaryTable_DetectsSecondaryTable()
     {
         var step = Assert.Single(GetPlugin(Analyze(), nameof(MockPreAssociatePlugin)).Steps);
 
-        Assert.Equal("account", step.SecondaryEntity);
+        Assert.Equal("account", step.SecondaryTable);
         Assert.Empty(step.Warnings);
     }
 
     [Fact]
-    public void Analyze_AssociatePluginWithoutSecondaryEntity_AddsWarning()
+    public void Analyze_AssociatePluginWithoutSecondaryTable_AddsWarning()
     {
         var step = Assert.Single(GetPlugin(Analyze(), nameof(MockNoSecondaryPreAssociatePlugin)).Steps);
 
         Assert.Single(step.Warnings);
-        Assert.Contains("[SecondaryEntity]", step.Warnings[0]);
+        Assert.Contains("[SecondaryTable]", step.Warnings[0]);
     }
 
     [Fact]
@@ -276,7 +276,7 @@ public class PluginAssemblyReaderTests
     {
         var step = Assert.Single(GetPlugin(Analyze(), nameof(MockNoEntityStepPreCreatePlugin)).Steps);
 
-        Assert.Null(step.EntityName);
+        Assert.Null(step.TableName);
         Assert.Single(step.Warnings);
         Assert.Contains("[Step]", step.Warnings[0]);
         Assert.Contains("[Step(\"none\")]", step.Warnings[0]);
@@ -287,18 +287,18 @@ public class PluginAssemblyReaderTests
     {
         var step = Assert.Single(GetPlugin(Analyze(), nameof(MockNoneEntityPreCreatePlugin)).Steps);
 
-        Assert.Equal("none", step.EntityName);
+        Assert.Equal("none", step.TableName);
         Assert.Empty(step.Warnings);
     }
 
     [Fact]
-    public void Analyze_AssociatePluginWithNoArgSecondaryEntity_AddsWarning()
+    public void Analyze_AssociatePluginWithNoArgSecondaryTable_AddsWarning()
     {
         var step = Assert.Single(GetPlugin(Analyze(), nameof(MockNoEntitySecondaryPreAssociatePlugin)).Steps);
 
         Assert.Single(step.Warnings);
-        Assert.Contains("[SecondaryEntity]", step.Warnings[0]);
-        Assert.Contains("[SecondaryEntity(\"none\")]", step.Warnings[0]);
+        Assert.Contains("[SecondaryTable]", step.Warnings[0]);
+        Assert.Contains("[SecondaryTable(\"none\")]", step.Warnings[0]);
     }
 
     [Fact]
@@ -610,7 +610,7 @@ public class MockNoFilterPostUpdatePlugin : IPlugin
 }
 
 [Step("contact")]
-[SecondaryEntity("account")]
+[SecondaryTable("account")]
 public class MockPreAssociatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
@@ -636,9 +636,9 @@ public class MockNoneEntityPreCreatePlugin : IPlugin
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
 
-// [SecondaryEntity] with no entity — should produce a warning on Associate
+// [SecondaryTable] with no table — should produce a warning on Associate
 [Step("contact")]
-[SecondaryEntity]
+[SecondaryTable]
 public class MockNoEntitySecondaryPreAssociatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();

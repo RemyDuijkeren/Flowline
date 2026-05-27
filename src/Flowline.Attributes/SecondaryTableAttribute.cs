@@ -14,18 +14,18 @@ namespace Flowline.Attributes
     /// </para>
     /// <para>
     /// These messages always involve two tables. <c>[Step]</c> specifies the primary table and
-    /// <c>[SecondaryEntity]</c> specifies the related table. Use <c>"none"</c> on
-    /// <c>[SecondaryEntity]</c> to match the message regardless of which table is on the other side.
+    /// <c>[SecondaryTable]</c> specifies the related table. Use <c>"none"</c> on
+    /// <c>[SecondaryTable]</c> to match the message regardless of which table is on the other side.
     /// </para>
     /// <code>
     /// // Fires when ANY record is associated with a contact
     /// [Step("contact")]
-    /// [SecondaryEntity("none")]
+    /// [SecondaryTable("none")]
     /// public class ContactAssociatePlugin : IPlugin { ... }
     ///
     /// // Fires only when a contact is associated with an account specifically
     /// [Step("contact")]
-    /// [SecondaryEntity("account")]
+    /// [SecondaryTable("account")]
     /// public class ContactAccountAssociatePlugin : IPlugin { ... }
     /// </code>
     /// <para>
@@ -39,20 +39,20 @@ namespace Flowline.Attributes
     /// </code>
     /// <para>
     /// For all other messages (Create, Update, Delete, ...) where only one table is involved,
-    /// omit <c>[SecondaryEntity]</c> entirely. Dataverse uses <c>"none"</c> automatically.
+    /// omit <c>[SecondaryTable]</c> entirely. Dataverse uses <c>"none"</c> automatically.
     /// </para>
     /// </remarks>
     [AttributeUsage(AttributeTargets.Class)]
-    public sealed class SecondaryEntityAttribute : Attribute
+    public sealed class SecondaryTableAttribute : Attribute
     {
         /// <summary>Specifies the secondary table for plugin steps that involve two records.</summary>
-        public SecondaryEntityAttribute()
+        public SecondaryTableAttribute()
             : this(null)
         {
         }
 
         /// <summary>Specifies the secondary table for plugin steps that involve two records.</summary>
-        /// <param name="entity">
+        /// <param name="table">
         /// Logical name of the secondary table, e.g. <c>"account"</c>.
         /// Use <c>"none"</c> to match all secondary tables.
         /// <para>
@@ -61,9 +61,9 @@ namespace Flowline.Attributes
         /// Passing an empty string is an error.
         /// </para>
         /// </param>
-        public SecondaryEntityAttribute(string entity)
+        public SecondaryTableAttribute(string table)
         {
-            Entity = entity;
+            Table = table;
         }
 
         /// <summary>
@@ -71,6 +71,6 @@ namespace Flowline.Attributes
         /// or <see langword="null"/> when no table was specified. Use <c>"none"</c> to
         /// intentionally match any secondary table without a warning.
         /// </summary>
-        public string Entity { get; }
+        public string Table { get; }
     }
 }

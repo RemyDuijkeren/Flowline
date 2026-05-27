@@ -60,12 +60,12 @@ namespace Flowline.Attributes
         public CustomApiAttribute() : this(null) { }
 
         /// <summary>Marks a class as a Dataverse Custom API.</summary>
-        /// <param name="entity">
+        /// <param name="table">
         /// Logical name of the table to bind this API to. Omit for a global (unbound) API.
         /// </param>
-        public CustomApiAttribute(string entity)
+        public CustomApiAttribute(string table)
         {
-            Entity = entity;
+            Table = table;
         }
 
         /// <summary>
@@ -73,14 +73,14 @@ namespace Flowline.Attributes
         /// When set, Dataverse automatically provides a <c>Target</c> EntityReference parameter containing
         /// the record the API was invoked on. Omit for a global (unbound) API.
         /// </summary>
-        public string Entity { get; }
+        public string Table { get; }
 
         /// <summary>
-        /// Logical name of the table for entity collection binding.
-        /// Use instead of <see cref="Entity"/> when the API operates on a set of records rather than
+        /// Logical name of the table for table collection binding.
+        /// Use instead of <see cref="Table"/> when the API operates on a set of records rather than
         /// a single record. Dataverse provides a <c>Target</c> EntityCollection parameter.
         /// </summary>
-        public string EntityCollection { get; set; }
+        public string TableCollection { get; set; }
 
         /// <summary>
         /// When <c>true</c>, this API is a Function: it must return a value and has no side effects.

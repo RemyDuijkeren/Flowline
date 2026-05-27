@@ -160,14 +160,14 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
                     $"Step '{asmStep.Name}' references message '{asmStep.Message}' which does not exist in this environment. " +
                     $"Check the message name on [Step] for '{asmPluginType.FullName}'.");
 
-            snapshot.FilterIds.TryGetValue((messageId, asmStep.EntityName, asmStep.SecondaryEntity), out var filterId);
+            snapshot.FilterIds.TryGetValue((messageId, asmStep.TableName, asmStep.SecondaryTable), out var filterId);
 
-            var entityRequested = !string.IsNullOrEmpty(asmStep.EntityName) &&
-                                  !string.Equals(asmStep.EntityName, "none", StringComparison.OrdinalIgnoreCase);
-            if (entityRequested && !filterId.HasValue)
+            var tableRequested = !string.IsNullOrEmpty(asmStep.TableName) &&
+                                 !string.Equals(asmStep.TableName, "none", StringComparison.OrdinalIgnoreCase);
+            if (tableRequested && !filterId.HasValue)
                 throw new InvalidOperationException(
-                    $"Step '{asmStep.Name}' references entity '{asmStep.EntityName}' which is not supported for message '{asmStep.Message}' in this environment. " +
-                    $"Check the entity name on [Step] for '{asmPluginType.FullName}'.");
+                    $"Step '{asmStep.Name}' references table '{asmStep.TableName}' which is not supported for message '{asmStep.Message}' in this environment. " +
+                    $"Check the table name on [Step] for '{asmPluginType.FullName}'.");
 
             if (asmStep.RunAs.HasValue && !snapshot.SystemUserIds.Contains(asmStep.RunAs.Value))
                 throw new InvalidOperationException(
@@ -185,7 +185,7 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
 
                 var changed =
                     dvStep.GetAttributeValue<string>("configuration") != asmStep.Configuration ||
-                    dvStep.GetAttributeValue<string>("filteringattributes") != asmStep.FilteringAttributes ||
+                    dvStep.GetAttributeValue<string>("filteringattributes") != asmStep.FilteringColumns ||
                     dvStep.GetAttributeValue<OptionSetValue>("stage")?.Value != asmStep.Stage ||
                     dvStep.GetAttributeValue<OptionSetValue>("mode")?.Value != asmStep.Mode ||
                     dvStep.GetAttributeValue<int?>("rank") != asmStep.Order ||
@@ -203,7 +203,7 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
                 dvStep["stage"]                = new OptionSetValue(asmStep.Stage);
                 dvStep["mode"]                 = new OptionSetValue(asmStep.Mode);
                 dvStep["rank"]                 = asmStep.Order;
-                dvStep["filteringattributes"]  = asmStep.FilteringAttributes;
+                dvStep["filteringattributes"]  = asmStep.FilteringColumns;
                 dvStep["configuration"]        = asmStep.Configuration;
                 dvStep["asyncautodelete"]      = asmStep.AsyncAutoDelete;
                 dvStep["impersonatinguserid"]  = asmStep.RunAs.HasValue ? new EntityReference("systemuser", asmStep.RunAs.Value) : null;
@@ -222,7 +222,7 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
                     ["stage"]              = new OptionSetValue(asmStep.Stage),
                     ["mode"]               = new OptionSetValue(asmStep.Mode),
                     ["rank"]               = asmStep.Order,
-                    ["filteringattributes"] = asmStep.FilteringAttributes,
+                    ["filteringattributes"] = asmStep.FilteringColumns,
                     ["configuration"]      = asmStep.Configuration,
                     ["asyncautodelete"]    = asmStep.AsyncAutoDelete,
                     ["impersonatinguserid"] = asmStep.RunAs.HasValue ? new EntityReference("systemuser", asmStep.RunAs.Value) : null,

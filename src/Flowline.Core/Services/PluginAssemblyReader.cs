@@ -198,7 +198,7 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
         {
             switch (arg.MemberName)
             {
-                case "EntityCollection": entityCollection = arg.TypedValue.Value as string; break;
+                case "TableCollection": entityCollection = arg.TypedValue.Value as string; break;
                 case "IsFunction":       isFunction = (bool)arg.TypedValue.Value!; break;
                 case "IsPrivate":        isPrivate = (bool)arg.TypedValue.Value!; break;
                 case "AllowedStepType":  allowedStepType = Convert.ToInt32(arg.TypedValue.Value); break;
@@ -249,7 +249,7 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
                     switch (arg.MemberName)
                     {
                         case "IsOptional":   isOptional = (bool)arg.TypedValue.Value!; break;
-                        case "Entity":   entityName = arg.TypedValue.Value as string; break;
+                        case "Table":        entityName = arg.TypedValue.Value as string; break;
                         case "DisplayName":  displayName = arg.TypedValue.Value as string; break;
                         case "Description":  description = arg.TypedValue.Value as string; break;
                     }
@@ -272,7 +272,7 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
                 {
                     switch (arg.MemberName)
                     {
-                        case "Entity":   entityName = arg.TypedValue.Value as string; break;
+                        case "Table":        entityName = arg.TypedValue.Value as string; break;
                         case "DisplayName":  displayName = arg.TypedValue.Value as string; break;
                         case "Description":  description = arg.TypedValue.Value as string; break;
                     }
@@ -295,7 +295,7 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
             .FirstOrDefault(a => a.AttributeType.FullName == "Flowline.Attributes.StepAttribute");
         if (stepAttr == null) return null;
 
-        var entity = stepAttr.ConstructorArguments.Count > 0
+        var table = stepAttr.ConstructorArguments.Count > 0
             ? (string?)stepAttr.ConstructorArguments[0].Value
             : null;
         var order = 1;
@@ -310,25 +310,25 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
             else if (arg.MemberName == "DeleteJobOnSuccess") deleteJobOnSuccessExplicit = (bool)arg.TypedValue.Value!;
         }
 
-        ValidateLogicalName(type.Name, entity);
+        ValidateLogicalName(type.Name, table);
 
         ParseStepClassNameOrThrow(type.Name, out var message, out var stage, out var mode);
 
         ValidateExecutionMode(type.Name, stage, mode);
         ValidateCustomApiAttributesOnStep(type.Name, HasCustomApiAttributes(type));
 
-        var filteringAttributes = ReadFilterAttributes(type);
-        ValidateFilter(type.Name, message, filteringAttributes);
+        var filteringColumns = ReadFilterAttributes(type);
+        ValidateFilter(type.Name, message, filteringColumns);
 
-        var (hasSecondaryAttr, secondaryEntity) = ReadSecondaryEntityAttribute(type);
-        ValidateSecondaryLogicalName(type.Name, secondaryEntity);
-        ValidateSecondaryEntity(type.Name, message, hasSecondaryAttr, secondaryEntity);
+        var (hasSecondaryAttr, secondaryTable) = ReadSecondaryTableAttribute(type);
+        ValidateSecondaryLogicalName(type.Name, secondaryTable);
+        ValidateSecondaryTable(type.Name, message, hasSecondaryAttr, secondaryTable);
 
         var images = ReadImageAttributes(type);
         ValidateImages(type.Name, message, stage, images);
         Guid? runAs = runAsString != null && Guid.TryParse(runAsString, out var parsed) ? parsed : (Guid?)null;
 
-        var warnings = BuildStepWarnings(type.Name, message, entity, filteringAttributes, hasSecondaryAttr, secondaryEntity, images);
+        var warnings = BuildStepWarnings(type.Name, message, table, filteringColumns, hasSecondaryAttr, secondaryTable, images);
 
         var deleteJobOnSuccess = (mode == (int)ProcessingMode.Asynchronous) && (deleteJobOnSuccessExplicit ?? true);
         if (deleteJobOnSuccessExplicit == true && mode != (int)ProcessingMode.Asynchronous)
@@ -336,12 +336,12 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
         if (runAsString != null && runAs == null)
             warnings.Add($"RunAs value '{runAsString}' on '{type.Name}' is not a valid GUID — impersonatinguserid will not be set.");
 
-        var entityDisplay = entity ?? "any";
-        var stepName = secondaryEntity != null
-            ? $"{type.FullName}: {message} of {entityDisplay} with {secondaryEntity}"
-            : $"{type.FullName}: {message} of {entityDisplay}";
+        var tableDisplay = table ?? "any";
+        var stepName = secondaryTable != null
+            ? $"{type.FullName}: {message} of {tableDisplay} with {secondaryTable}"
+            : $"{type.FullName}: {message} of {tableDisplay}";
 
-        return new PluginStepMetadata(stepName, message, entity, stage, mode, order, filteringAttributes, configuration, images, warnings, secondaryEntity, deleteJobOnSuccess, runAs);
+        return new PluginStepMetadata(stepName, message, table, stage, mode, order, filteringColumns, configuration, images, warnings, secondaryTable, deleteJobOnSuccess, runAs);
     }
 
     internal static void ValidateStepUsage(string className, bool hasStepAttribute, bool isPlugin)
@@ -451,20 +451,20 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
         return normalized.Length > 0 ? string.Join(",", normalized) : null;
     }
 
-    internal static void ValidateLogicalName(string className, string? entity)
+    internal static void ValidateLogicalName(string className, string? table)
     {
-        if (entity is not null && string.IsNullOrWhiteSpace(entity))
+        if (table is not null && string.IsNullOrWhiteSpace(table))
             throw new InvalidOperationException(
-                $"{className}: [Step] entity cannot be an empty string — use [Step(\"none\")] to register on all tables, " +
+                $"{className}: [Step] table cannot be an empty string — use [Step(\"none\")] to register on all tables, " +
                 $"or specify a table logical name e.g. [Step(\"account\")].");
     }
 
-    internal static void ValidateSecondaryLogicalName(string className, string? entity)
+    internal static void ValidateSecondaryLogicalName(string className, string? table)
     {
-        if (entity is not null && string.IsNullOrWhiteSpace(entity))
+        if (table is not null && string.IsNullOrWhiteSpace(table))
             throw new InvalidOperationException(
-                $"{className}: [SecondaryEntity] entity cannot be an empty string — use [SecondaryEntity(\"none\")] to match any secondary table, " +
-                $"or specify a table logical name e.g. [SecondaryEntity(\"account\")].");
+                $"{className}: [SecondaryTable] table cannot be an empty string — use [SecondaryTable(\"none\")] to match any secondary table, " +
+                $"or specify a table logical name e.g. [SecondaryTable(\"account\")].");
     }
 
     internal static void ValidateCustomApiAttributesOnStep(string className, bool hasCustomApiAttributes)
@@ -480,23 +480,23 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
         type.GetCustomAttributesData().Any(a => a.AttributeType.FullName is
             "Flowline.Attributes.InputAttribute" or "Flowline.Attributes.OutputAttribute");
 
-    private static (bool hasAttribute, string? entity) ReadSecondaryEntityAttribute(Type type)
+    private static (bool hasAttribute, string? table) ReadSecondaryTableAttribute(Type type)
     {
         var attr = type.GetCustomAttributesData()
-            .FirstOrDefault(a => a.AttributeType.FullName == "Flowline.Attributes.SecondaryEntityAttribute");
+            .FirstOrDefault(a => a.AttributeType.FullName == "Flowline.Attributes.SecondaryTableAttribute");
         if (attr == null) return (false, null);
-        var entity = attr.ConstructorArguments.Count > 0
+        var table = attr.ConstructorArguments.Count > 0
             ? (string?)attr.ConstructorArguments[0].Value
             : null;
-        return (true, entity);
+        return (true, table);
     }
 
-    internal static void ValidateSecondaryEntity(string className, string message, bool hasSecondaryAttr, string? secondaryEntity)
+    internal static void ValidateSecondaryTable(string className, string message, bool hasSecondaryAttr, string? secondaryTable)
     {
-        if (hasSecondaryAttr && secondaryEntity is not (null or "none") && message is not ("Associate" or "Disassociate"))
+        if (hasSecondaryAttr && secondaryTable is not (null or "none") && message is not ("Associate" or "Disassociate"))
             throw new InvalidOperationException(
-                $"{className}: [SecondaryEntity] has no effect on {message} — it only applies to Associate and Disassociate steps. " +
-                $"Remove [SecondaryEntity] or change the step message.");
+                $"{className}: [SecondaryTable] has no effect on {message} — it only applies to Associate and Disassociate steps. " +
+                $"Remove [SecondaryTable] or change the step message.");
     }
 
     // https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#execution-mode
@@ -509,9 +509,9 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
                 $"See https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#execution-mode");
     }
 
-    internal static void ValidateFilter(string className, string message, string? filteringAttributes)
+    internal static void ValidateFilter(string className, string message, string? filteringColumns)
     {
-        if (filteringAttributes == null || message == "Update") return;
+        if (filteringColumns == null || message == "Update") return;
 
         throw new InvalidOperationException(
             $"{className}: [Filter] has no effect on {message} — column filtering only applies to Update steps. " +
@@ -548,16 +548,16 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
                 $"See https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#define-entity-images");
     }
 
-    private static List<string> BuildStepWarnings(string className, string message, string? entity, string? filteringAttributes, bool hasSecondaryAttr, string? secondaryEntity, List<PluginImageMetadata> images)
+    private static List<string> BuildStepWarnings(string className, string message, string? table, string? filteringColumns, bool hasSecondaryAttr, string? secondaryTable, List<PluginImageMetadata> images)
     {
         var warnings = new List<string>();
 
-        if (entity == null)
+        if (table == null)
             warnings.Add(
-                $"{className}: [[Step]] has no entity — this step will fire for all tables. " +
+                $"{className}: [[Step]] has no table — this step will fire for all tables. " +
                 $"If intentional, specify [[Step(\"none\")]] to suppress this warning.");
 
-        if (message == "Update" && filteringAttributes == null)
+        if (message == "Update" && filteringColumns == null)
             warnings.Add(
                 $"{className}: Update step has no [[Filter]] — it will fire on every update to the table, regardless of which columns changed. " +
                 $"Add [[Filter]] with the columns your plugin cares about. " +
@@ -567,12 +567,12 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
         {
             if (!hasSecondaryAttr)
                 warnings.Add(
-                    $"{className}: {message} step has no [[SecondaryEntity]] — it will fire for any table on the other side of the relationship. " +
-                    $"Add [[SecondaryEntity(\"none\")]] to make this explicit, or specify the exact secondary table logical name.");
-            else if (secondaryEntity == null)
+                    $"{className}: {message} step has no [[SecondaryTable]] — it will fire for any table on the other side of the relationship. " +
+                    $"Add [[SecondaryTable(\"none\")]] to make this explicit, or specify the exact secondary table logical name.");
+            else if (secondaryTable == null)
                 warnings.Add(
-                    $"{className}: [[SecondaryEntity]] has no entity — this step will fire for all secondary tables. " +
-                    $"If intentional, specify [[SecondaryEntity(\"none\")]] to suppress this warning.");
+                    $"{className}: [[SecondaryTable]] has no table — this step will fire for all secondary tables. " +
+                    $"If intentional, specify [[SecondaryTable(\"none\")]] to suppress this warning.");
         }
 
         foreach (var image in images)
@@ -580,7 +580,7 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
             if (image.Attributes != null) continue;
             var attrName = image.ImageType == (int)ImageType.PreImage ? "PreImage" : "PostImage";
             warnings.Add(
-                $"{className}: [[{attrName}]] has no attribute filter — all columns will be fetched, which negatively impacts performance. " +
+                $"{className}: [[{attrName}]] has no column filter — all columns will be fetched, which negatively impacts performance. " +
                 $"Specify only the columns your plugin requires. " +
                 $"See https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#define-entity-images");
         }

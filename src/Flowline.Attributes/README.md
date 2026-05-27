@@ -71,10 +71,10 @@ public class AccountPostCreatePlugin : IPlugin { ... }
 
 The logical name is always lowercase and found in the maker portal under **Table → Properties → Name**.
 
-**Registering on all tables:** omit the entity argument to fire on every table. Flowline warns so you don't do this accidentally. Pass `"none"` to suppress the warning and make the intent explicit:
+**Registering on all tables:** omit the table argument to fire on every table. Flowline warns so you don't do this accidentally. Pass `"none"` to suppress the warning and make the intent explicit:
 
 ```csharp
-// Warns: "[Step] has no entity — this step will fire for all tables."
+// Warns: "[Step] has no table — this step will fire for all tables."
 [Step]
 public class GlobalPreCreatePlugin : IPlugin { ... }
 
@@ -150,19 +150,19 @@ Use `nameof` with early-bound classes for compile-time safety:
 
 > `[Filter]` only applies to Update steps. Using it on Create, Delete, or any other message is an error — Flowline will throw during `flowline push`.
 
-### `[SecondaryEntity]` — required for Associate / Disassociate
+### `[SecondaryTable]` — required for Associate / Disassociate
 
 Scopes the step to a specific secondary table. Use `"none"` to fire on any table.
 
 ```csharp
 // Fires when a contact is associated with any record type
 [Step("contact")]
-[SecondaryEntity("none")]
+[SecondaryTable("none")]
 public class ContactPreAssociatePlugin : IPlugin { ... }
 
 // Fires only when a contact is associated with an account
 [Step("contact")]
-[SecondaryEntity("account")]
+[SecondaryTable("account")]
 public class ContactAccountPreAssociatePlugin : IPlugin
 {
     public void Execute(IServiceProvider sp)
@@ -175,7 +175,7 @@ public class ContactAccountPreAssociatePlugin : IPlugin
 }
 ```
 
-Omitting `[SecondaryEntity]` on an Associate or Disassociate step produces a warning during `flowline push`. Using `[SecondaryEntity]` with no argument also warns — pass `"none"` explicitly to suppress it. Passing an empty string is an error. Using `[SecondaryEntity]` on any other message (Create, Update, Delete, ...) is an error.
+Omitting `[SecondaryTable]` on an Associate or Disassociate step produces a warning during `flowline push`. Using `[SecondaryTable]` with no argument also warns — pass `"none"` explicitly to suppress it. Passing an empty string is an error. Using `[SecondaryTable]` on any other message (Create, Update, Delete, ...) is an error.
 
 ### `[PreImage]` and `[PostImage]` — optional
 
@@ -337,10 +337,10 @@ public class ApproveOrderApi : IPlugin
 }
 ```
 
-Use `EntityCollection` for **entity collection binding**:
+Use `TableCollection` for **table collection binding**:
 
 ```csharp
-[CustomApi(EntityCollection = "invoice")]
+[CustomApi(TableCollection = "invoice")]
 public class BulkApproveApi : IPlugin { ... }
 ```
 
@@ -361,7 +361,7 @@ Declare parameters on the class. These are registration declarations only — Fl
 
 ```csharp
 [CustomApi]
-[Input("accountId",      FieldType.EntityReference, Entity = "account")]
+[Input("accountId",      FieldType.EntityReference, Table = "account")]
 [Input("includeHistory", FieldType.Boolean, IsOptional = true)]
 [Output("riskScore",     FieldType.Integer)]
 [Output("riskLabel",     FieldType.String)]
@@ -390,7 +390,7 @@ Always check `Contains` before reading an optional input — Dataverse throws if
 | `Name` | `string` | — | Key in `context.InputParameters`. Convention: camelCase. |
 | `Type` | `FieldType` | — | See type table below. |
 | `IsOptional` | `bool` | `false` | Check `Contains("name")` before reading when `true`. |
-| `Entity` | `string?` | `null` | Required when type is `EntityReference` or `Entity`. |
+| `Table` | `string?` | `null` | Required when type is `EntityReference` or `Entity`. |
 | `DisplayName` | `string?` | name split | Shown in solution explorer. |
 | `Description` | `string?` | `null` | |
 

@@ -71,7 +71,7 @@ namespace Flowline.Attributes
         }
 
         /// <summary>Marks a class as a Dataverse plugin step.</summary>
-        /// <param name="entity">
+        /// <param name="table">
         /// The logical name of the Dataverse table to register the step on.
         /// Use the schema name in lowercase: <c>"account"</c>, <c>"contact"</c>,
         /// <c>"cr123_invoice"</c>. Found in the maker portal under Table → Properties → Name.
@@ -81,9 +81,9 @@ namespace Flowline.Attributes
         /// <c>"none"</c> explicitly. Passing an empty string is an error.
         /// </para>
         /// </param>
-        public StepAttribute(string entity)
+        public StepAttribute(string table)
         {
-            Entity = entity;
+            Table = table;
         }
 
         /// <summary>
@@ -91,7 +91,7 @@ namespace Flowline.Attributes
         /// when no table was specified. <c>"none"</c> means the step is intentionally registered on
         /// all tables (no filter).
         /// </summary>
-        public string Entity { get; }
+        public string Table { get; }
 
         /// <summary>
         /// Controls the execution order when multiple plugin steps are registered for the same

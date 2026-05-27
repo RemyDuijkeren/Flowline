@@ -155,7 +155,7 @@ public class PluginReader
         var stepKeys = metadata.Plugins
             .Where(p => !p.IsWorkflow && !p.IsCustomApi)
             .SelectMany(p => p.Steps)
-            .Select(s => (s.Message, s.EntityName, s.SecondaryEntity))
+            .Select(s => (s.Message, s.TableName, s.SecondaryTable))
             .Distinct()
             .ToList();
 
@@ -165,12 +165,12 @@ public class PluginReader
         var tasks = stepKeys.Select(async key =>
         {
             if (!messageIds.TryGetValue(key.Message, out var messageId))
-                return ((Guid.Empty, key.EntityName, key.SecondaryEntity), (Guid?)null);
-            // null EntityName means "any entity" — no message filter exists for it
-            if (key.EntityName == null || string.Equals(key.EntityName, "none", StringComparison.OrdinalIgnoreCase))
-                return ((messageId, key.EntityName, key.SecondaryEntity), (Guid?)null);
-            var filterId = await LookupSdkMessageFilterIdAsync(service, messageId, key.EntityName, key.SecondaryEntity, cancellationToken).ConfigureAwait(false);
-            return ((messageId, key.EntityName, key.SecondaryEntity), filterId);
+                return ((Guid.Empty, key.TableName, key.SecondaryTable), (Guid?)null);
+            // null TableName means "any table" — no message filter exists for it
+            if (key.TableName == null || string.Equals(key.TableName, "none", StringComparison.OrdinalIgnoreCase))
+                return ((messageId, key.TableName, key.SecondaryTable), (Guid?)null);
+            var filterId = await LookupSdkMessageFilterIdAsync(service, messageId, key.TableName, key.SecondaryTable, cancellationToken).ConfigureAwait(false);
+            return ((messageId, key.TableName, key.SecondaryTable), filterId);
         });
         var results = await Task.WhenAll(tasks).ConfigureAwait(false);
         return results.ToDictionary(r => r.Item1, r => r.Item2).AsReadOnly();

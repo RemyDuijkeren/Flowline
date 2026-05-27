@@ -3,14 +3,14 @@ namespace Flowline.Core.Models;
 public record PluginStepMetadata(
     string Name,
     string Message,
-    string? EntityName,
+    string? TableName,
     int Stage,
     int Mode,
     int Order,
-    string? FilteringAttributes,
+    string? FilteringColumns,
     string? Configuration,
     List<PluginImageMetadata> Images,
     List<string> Warnings,
-    string? SecondaryEntity = null,
+    string? SecondaryTable = null,
     bool AsyncAutoDelete = false,
     Guid? RunAs = null);
