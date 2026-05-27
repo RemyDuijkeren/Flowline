@@ -92,13 +92,19 @@ public static class DriftChecker
     static IEnumerable<DriftWarning> CheckOrphanAssemblies(string slnFolder)
     {
         var pluginAssembliesFolder = Path.Combine(slnFolder, "src", "PluginAssemblies");
-        if (!Directory.Exists(pluginAssembliesFolder))
+        var releaseFolder = Path.Combine(slnFolder, "Plugins", "bin", "Release");
+
+        if (!Directory.Exists(pluginAssembliesFolder) || !Directory.Exists(releaseFolder))
             yield break;
+
+        var releaseDlls = Directory.EnumerateFiles(releaseFolder, "*.dll", SearchOption.AllDirectories)
+            .Select(Path.GetFileName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var dll in Directory.EnumerateFiles(pluginAssembliesFolder, "*.dll", SearchOption.AllDirectories))
         {
             var name = Path.GetFileName(dll);
-            if (!name.Equals("Plugins.dll", StringComparison.OrdinalIgnoreCase))
+            if (!name.Equals("Plugins.dll", StringComparison.OrdinalIgnoreCase) && !releaseDlls.Contains(name))
                 yield return new DriftWarning(DriftCategory.OrphanAssembly, name);
         }
     }

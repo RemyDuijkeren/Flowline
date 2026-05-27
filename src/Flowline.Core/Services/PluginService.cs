@@ -502,9 +502,6 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
     void AddActionPlanNode(IHasTreeNodes parent, string title, ActionPlan actionPlan, Func<Entity, string> entityDetail)
     {
-        if (actionPlan.Deletes.Count == 0 && actionPlan.Upserts.Count == 0 && actionPlan.AddSolutionComponents.Count == 0)
-            return;
-
         var section = parent.AddNode($"[dim]{title}[/]");
 
         if (actionPlan.Deletes.Count > 0)
