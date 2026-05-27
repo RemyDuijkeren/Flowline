@@ -113,21 +113,25 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
             return 0;
         }
         // reset: empty env with factory settings (https://learn.microsoft.com/en-us/power-platform/admin/reset-environment)?
-        // after rest: deploy solution from prod?
+        // after rest: deploy the solution from prod?
 
         // Block if target environment has unmanaged solutions
-        var prodTask   = PacUtils.GetSolutionsAsync(prodEnv.EnvironmentUrl!,   settings.Verbose, cancellationToken);
-        var targetTask = PacUtils.GetSolutionsAsync(targetEnv.EnvironmentUrl!, settings.Verbose, cancellationToken);
-        await Task.WhenAll(prodTask, targetTask);
-        var prodSolutions   = prodTask.Result;
-        var targetSolutions = targetTask.Result;
+        var (prodSolutions, targetSolutions) = await Console.Status().FlowlineSpinner().StartAsync(
+            "Checking solutions...",
+            async _ =>
+            {
+                var prodTask   = PacUtils.GetSolutionsAsync(prodEnv.EnvironmentUrl!,   settings.Verbose, cancellationToken);
+                var targetTask = PacUtils.GetSolutionsAsync(targetEnv.EnvironmentUrl!, settings.Verbose, cancellationToken);
+                await Task.WhenAll(prodTask, targetTask);
+                return (prodTask.Result, targetTask.Result);
+            });
 
         var problematic = FindProblematicSolutions(targetSolutions, prodSolutions);
         if (problematic.Count > 0)
         {
             Console.Error("Target environment has unmanaged solutions that would be permanently lost:");
             foreach (var (solution, reason) in problematic)
-                Console.Error($"  {solution.SolutionUniqueName} ({reason})");
+                Console.Info($"- {solution.SolutionUniqueName} ({reason})");
             return 1;
         }
 

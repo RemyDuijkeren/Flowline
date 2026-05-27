@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/RemyDuijkeren/Flowline/workflows/CI/badge.svg)
 [![NuGet](https://img.shields.io/nuget/v/Flowline.Attributes.svg)](https://www.nuget.org/packages/Flowline.Attributes)
-[![NuGet](https://img.shields.io/nuget/dt/RemyDuijkeren.Flowline.Attributes.svg)](https://www.nuget.org/packages/Flowline.Attributes)
+[![NuGet](https://img.shields.io/nuget/dt/Flowline.Attributes.svg)](https://www.nuget.org/packages/Flowline.Attributes)
 
 Source-only NuGet package that provides attributes for registering Dataverse plugin steps and Custom APIs with the [Flowline CLI](https://github.com/RemyDuijkeren/Flowline).
 
