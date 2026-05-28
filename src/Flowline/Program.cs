@@ -26,7 +26,6 @@ services.AddSingleton<FlowlineRuntimeOptions>();
 services.AddSingleton<DataverseConnector>();
 services.AddSingleton<PluginService>();
 services.AddSingleton<WebResourceService>();
-services.AddSingleton<TranslationService>();
 
 // Configure and run the app
 var app = new CommandApp(new TypeRegistrar(services));
@@ -106,12 +105,6 @@ app.Configure(config =>
     config.AddCommand<StatusCommand>("status")
           .WithDescription("Show Flowline, PAC CLI, and project status")
           .WithExample("status");
-
-    // Translation sync (export/import translations)
-    config.AddCommand<TranslationCommand>("translations")
-          .WithDescription("Export or import solution translations")
-          .WithExample("translations", "export --solution ContosoCustomizations")
-          .WithExample("translations", "import translations.zip");
 });
 
 return await app.RunAsync(args, cancellationTokenSource.Token);
