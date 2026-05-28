@@ -105,6 +105,14 @@ app.Configure(config =>
     config.AddCommand<StatusCommand>("status")
           .WithDescription("Show Flowline, PAC CLI, and project status")
           .WithExample("status");
+
+    // Generate early-bound C# types from solution entities via pac modelbuilder build
+    config.AddCommand<GenerateCommand>("generate")
+          .WithDescription("Generate early-bound C# types for the solution's entities and custom APIs")
+          .WithExample("generate")
+          .WithExample("generate", "ContosoCustomizations")
+          .WithExample("generate", "--namespace", "Contoso.Plugins.Models")
+          .WithExample("generate", "--extra-tables", "account,contact");
 });
 
 return await app.RunAsync(args, cancellationTokenSource.Token);

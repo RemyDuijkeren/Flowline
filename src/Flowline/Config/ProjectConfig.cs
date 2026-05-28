@@ -139,6 +139,7 @@ public class ProjectConfig
         {
             Name = solution.Name.Trim(),
             IncludeManaged = solution.IncludeManaged,
+            Generate = solution.Generate,
         };
 
         _solutions.Remove(normalizedSolution);
@@ -147,10 +148,13 @@ public class ProjectConfig
         return normalizedSolution;
     }
 
-    public ProjectSolution AddOrUpdateSolution(string name, bool includeManaged = false) =>
-        AddOrUpdateSolution(new ProjectSolution { Name = name, IncludeManaged = includeManaged });
+    public ProjectSolution AddOrUpdateSolution(string name, bool includeManaged = false)
+    {
+        var existing = _solutions.FirstOrDefault(s => StringComparer.OrdinalIgnoreCase.Equals(s.Name, name));
+        return AddOrUpdateSolution(new ProjectSolution { Name = name, IncludeManaged = includeManaged, Generate = existing?.Generate });
+    }
 
-    public ProjectSolution? GetOrUpdateSolution(string? name, bool includeManaged = false, FlowlineSettings? settings = null)
+    public ProjectSolution? GetOrUpdateSolution(string? name, bool? includeManaged = null, FlowlineSettings? settings = null)
     {
         name = name?.Trim();
         if (string.IsNullOrWhiteSpace(name))
@@ -174,10 +178,10 @@ public class ProjectConfig
         var sln = _solutions.FirstOrDefault(solution => StringComparer.OrdinalIgnoreCase.Equals(solution.Name, name));
         if (sln == null)
         {
-            return AddOrUpdateSolution(name, includeManaged);
+            return AddOrUpdateSolution(name, includeManaged ?? false);
         }
 
-        if (sln.IncludeManaged != includeManaged)
+        if (includeManaged.HasValue && sln.IncludeManaged != includeManaged.Value)
         {
             AnsiConsole.MarkupLine($"[yellow]{sln.Name} is already set to managed: {sln.IncludeManaged}[/]");
 
@@ -187,7 +191,7 @@ public class ProjectConfig
                 return sln;
             }
             AnsiConsole.MarkupLine("[green]Solution config updated[/]");
-            return AddOrUpdateSolution(name, includeManaged);
+            return AddOrUpdateSolution(new ProjectSolution { Name = name, IncludeManaged = includeManaged.Value, Generate = sln.Generate });
         }
 
         return sln;
@@ -233,12 +237,24 @@ public class ProjectConfig
     }
 }
 
+public class GenerateConfig
+{
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Namespace { get; set; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string[]? ExtraTables { get; set; }
+}
+
 public class ProjectSolution
 {
     public static IEqualityComparer<ProjectSolution> NameComparer { get; } = new ProjectSolutionNameComparer();
 
     public string Name { get; init; } = null!;
     public bool IncludeManaged { get; set; } = false;
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GenerateConfig? Generate { get; set; }
 
     private sealed class ProjectSolutionNameComparer : IEqualityComparer<ProjectSolution>
     {

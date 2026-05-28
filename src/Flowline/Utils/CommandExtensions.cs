@@ -14,7 +14,7 @@ public static class CommandExtensions
         return command;
     }
 
-    public static Command WithToolExecutionLog(this Command command, bool verbose = true, StatusContext? ctx = null)
+    public static Command WithToolExecutionLog(this Command command, bool verbose = true, StatusContext? ctx = null, Func<string, string>? lineTransform = null)
     {
         if (verbose)
         {
@@ -34,7 +34,8 @@ public static class CommandExtensions
                        // Skip if the output is empty
                        if (string.IsNullOrWhiteSpace(s)) return;
 
-                       AnsiConsole.MarkupLineInterpolated($"[dim]{command.TargetFilePath}: {s}[/]");
+                       var display = lineTransform != null ? lineTransform(s) : s;
+                       AnsiConsole.MarkupLineInterpolated($"[dim]{command.TargetFilePath}: {display}[/]");
                    }))
                    .WithStandardErrorPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[red]{command.TargetFilePath}: {s}[/]")));
         }

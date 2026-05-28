@@ -64,8 +64,8 @@ public class WebResourceReader
         linkComponent.LinkCriteria.AddCondition("solutionid", ConditionOperator.Equal, solutionId);
         linkComponent.LinkCriteria.AddCondition("componenttype", ConditionOperator.Equal, WebResourceComponentType);
 
-        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
-        return result.Entities.AsReadOnly();
+        var entities = await service.RetrieveAllAsync(query, cancellationToken).ConfigureAwait(false);
+        return entities.AsReadOnly();
     }
 
     async Task<WebResourceOwnership> GetOwnershipAsync(
