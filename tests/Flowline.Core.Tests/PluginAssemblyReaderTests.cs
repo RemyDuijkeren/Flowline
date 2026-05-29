@@ -197,7 +197,7 @@ public class PluginAssemblyReaderTests
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
             PluginAssemblyReader.ValidateSecondaryLogicalName("MockPreAssociatePlugin", ""));
-        Assert.Contains("[SecondaryTable]", ex.Message);
+        Assert.Contains("SecondaryTable", ex.Message);
         Assert.Contains("none", ex.Message);
     }
 
@@ -226,21 +226,21 @@ public class PluginAssemblyReaderTests
     public void ValidateSecondaryTable_OnNonAssociateMessage_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateSecondaryTable("MockPreCreatePlugin", "Create", true, "account"));
-        Assert.Contains("[SecondaryTable]", ex.Message);
+            PluginAssemblyReader.ValidateSecondaryTable("MockPreCreatePlugin", "Create", "account"));
+        Assert.Contains("SecondaryTable", ex.Message);
         Assert.Contains("Create", ex.Message);
     }
 
     [Fact]
     public void ValidateSecondaryTable_OnAssociate_DoesNotThrow()
     {
-        PluginAssemblyReader.ValidateSecondaryTable("MockPreAssociatePlugin", "Associate", true, "account");
+        PluginAssemblyReader.ValidateSecondaryTable("MockPreAssociatePlugin", "Associate", "account");
     }
 
     [Fact]
-    public void ValidateSecondaryTable_NoAttributeOnAnyMessage_DoesNotThrow()
+    public void ValidateSecondaryTable_Null_DoesNotThrow()
     {
-        PluginAssemblyReader.ValidateSecondaryTable("MockPreCreatePlugin", "Create", false, null);
+        PluginAssemblyReader.ValidateSecondaryTable("MockPreCreatePlugin", "Create", null);
     }
 
     [Fact]
@@ -268,7 +268,7 @@ public class PluginAssemblyReaderTests
         var step = Assert.Single(GetPlugin(Analyze(), nameof(MockNoSecondaryPreAssociatePlugin)).Steps);
 
         Assert.Single(step.Warnings);
-        Assert.Contains("[SecondaryTable]", step.Warnings[0]);
+        Assert.Contains("secondary table", step.Warnings[0]);
     }
 
     [Fact]
@@ -289,16 +289,6 @@ public class PluginAssemblyReaderTests
 
         Assert.Equal("none", step.TableName);
         Assert.Empty(step.Warnings);
-    }
-
-    [Fact]
-    public void Analyze_AssociatePluginWithNoArgSecondaryTable_AddsWarning()
-    {
-        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockNoEntitySecondaryPreAssociatePlugin)).Steps);
-
-        Assert.Single(step.Warnings);
-        Assert.Contains("[SecondaryTable]", step.Warnings[0]);
-        Assert.Contains("[SecondaryTable(\"none\")]", step.Warnings[0]);
     }
 
     [Fact]
@@ -508,6 +498,75 @@ public class PluginAssemblyReaderTests
         Assert.True(PluginAssemblyReader.TryParseClassName("AccountPreRetrieveMultiplePlugin", out var msg, out _, out _));
         Assert.Equal("RetrieveMultiple", msg);
     }
+
+    // ---- [Handles] tests ----
+
+    [Fact]
+    public void Analyze_HandlesEnumOverload_DetectsStep()
+    {
+        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockHandlesUpdatePrePlugin)).Steps);
+
+        Assert.Equal("Update", step.Message);
+        Assert.Equal((int)ProcessingStage.PreOperation, step.Stage);
+        Assert.Equal((int)ProcessingMode.Synchronous, step.Mode);
+        Assert.Equal("account", step.TableName);
+    }
+
+    [Fact]
+    public void Analyze_HandlesPostOperationAsync_DetectsAsyncMode()
+    {
+        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockHandlesAsyncPostCreatePlugin)).Steps);
+
+        Assert.Equal("Create", step.Message);
+        Assert.Equal((int)ProcessingStage.PostOperation, step.Stage);
+        Assert.Equal((int)ProcessingMode.Asynchronous, step.Mode);
+    }
+
+    [Fact]
+    public void Analyze_HandlesStringOverload_DetectsCustomApiMessage()
+    {
+        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockHandlesCustomApiPlugin)).Steps);
+
+        Assert.Equal("mynamespace_MyAction", step.Message);
+        Assert.Equal((int)ProcessingStage.PostOperation, step.Stage);
+        Assert.Equal((int)ProcessingMode.Synchronous, step.Mode);
+    }
+
+    [Fact]
+    public void Analyze_HandlesOnConventionClassName_AddsRedundancyWarning()
+    {
+        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockHandlesRedundantAccountPreUpdatePlugin)).Steps);
+
+        Assert.NotEmpty(step.Warnings);
+        Assert.Contains("redundant", step.Warnings[^1]);
+    }
+
+    [Fact]
+    public void Analyze_HandlesWithoutStep_ProducesNoStep()
+    {
+        var plugin = GetPlugin(Analyze(), nameof(MockHandlesWithoutStepPlugin));
+
+        Assert.Empty(plugin.Steps);
+    }
+
+    [Fact]
+    public void Analyze_HandlesWithSecondaryTable_DetectsSecondaryTable()
+    {
+        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockHandlesAssociatePlugin)).Steps);
+
+        Assert.Equal("Associate", step.Message);
+        Assert.Equal("account", step.SecondaryTable);
+        Assert.Empty(step.Warnings);
+    }
+
+    [Fact]
+    public void Message_MembersMatchMessageName()
+    {
+        var messageNames = new HashSet<string>(Enum.GetNames<MessageName>());
+        var messageEnumNames = new HashSet<string>(Enum.GetNames<Message>());
+
+        Assert.Equal(messageNames, messageEnumNames);
+    }
 }
 
 // -- Mock plugin types used by the integration tests above --
@@ -609,8 +668,7 @@ public class MockNoFilterPostUpdatePlugin : IPlugin
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
 
-[Step("contact")]
-[SecondaryTable("account")]
+[Step("contact", SecondaryTable = "account")]
 public class MockPreAssociatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
@@ -636,10 +694,49 @@ public class MockNoneEntityPreCreatePlugin : IPlugin
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
 
-// [SecondaryTable] with no table — should produce a warning on Associate
-[Step("contact")]
-[SecondaryTable]
-public class MockNoEntitySecondaryPreAssociatePlugin : IPlugin
+// [Handles] with Message enum overload — non-convention class name
+[Step("account")]
+[Handles(Message.Update, Stage.PreOperation)]
+public class MockHandlesUpdatePrePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+// [Handles] with PostOperationAsync — folds async mode into stage
+[Step("account")]
+[Handles(Message.Create, Stage.PostOperationAsync)]
+public class MockHandlesAsyncPostCreatePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+// [Handles] with string overload for Custom API message
+[Step("account")]
+[Handles("mynamespace_MyAction", Stage.PostOperation)]
+public class MockHandlesCustomApiPlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+// [Handles] on a class that already follows convention → R7 warning
+[Step("account")]
+[Handles(Message.Update, Stage.PreOperation)]
+public class MockHandlesRedundantAccountPreUpdatePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+// [Handles] without [Step] — no step produced
+[Handles(Message.Update, Stage.PreOperation)]
+public class MockHandlesWithoutStepPlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+// [Handles] with SecondaryTable on [Step]
+[Step("contact", SecondaryTable = "account")]
+[Handles(Message.Associate, Stage.PostOperation)]
+public class MockHandlesAssociatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
