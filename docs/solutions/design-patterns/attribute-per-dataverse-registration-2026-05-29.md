@@ -1,6 +1,7 @@
 ---
 title: "Separate Attribute = Separate Dataverse Registration"
 date: 2026-05-29
+last_updated: 2026-05-29
 category: docs/solutions/design-patterns/
 module: flowline
 problem_type: design_pattern
@@ -12,14 +13,14 @@ applies_when:
   - Evaluating whether to add SecureConfig support to Flowline
 symptoms:
   - Unclear whether a Dataverse concept is a behavioral modifier or a separate registration entity
-  - Temptation to add a property to StepAttribute for concepts that change registration shape
+  - Temptation to create a separate attribute for concepts that are just fields on the step record
   - Migration pressure from Spkl features that turn out to be no-ops
 tags:
   - dataverse
   - plugin-registration
   - csharp-attributes
   - step-attribute
-  - secondary-table
+  - handles-attribute
   - secure-config
   - spkl-migration
   - api-design
@@ -29,59 +30,65 @@ tags:
 
 ## Context
 
-Flowline reads C# attributes on plugin classes to sync step registrations to Dataverse. As the attribute surface grows, a recurring design question emerges: should new data live on `StepAttribute` as a named property, or become its own attribute? Getting this wrong creates a misleading API — attributes that imply one Dataverse entity when two are involved, or properties that imply modifying behavior when they actually change registration shape entirely.
+Flowline reads C# attributes on plugin classes to sync step registrations to Dataverse. As the attribute surface grows, a recurring design question emerges: should new data live on `StepAttribute` as a named property, or become its own attribute? Getting this wrong creates a misleading API — separate attributes that imply a distinct Dataverse entity when they're just a field, or properties that hide categorically different registrations.
 
 Two concrete decisions settled the governing rule:
-1. `SecondaryTableAttribute` — debated as a StepAttribute property, kept separate
+1. `SecondaryTable` — initially created as a separate `SecondaryTableAttribute`, later merged into `StepAttribute` as a named property after recognising it's a field on `sdkmessageprocessingstep`, not a separate entity
 2. `[SecureConfig]` — considered as a new attribute, rejected entirely
 
 ## Guidance
 
 **Rule: separate attribute = separate Dataverse registration.**
 
-If adding data changes how many Dataverse entities are involved in the registration, it must be a separate attribute. If it only modifies behavior on an otherwise-normal step, it belongs on `StepAttribute`.
+If the data requires creating an additional Dataverse entity during registration, it must be a separate attribute. If it only modifies a field on an otherwise-normal step (or creates no additional entity), it belongs on `StepAttribute`.
 
-Properties that belong on `StepAttribute` (behavioral modifiers — one Dataverse record, different behavior):
+Properties that belong on `StepAttribute` (fields on `sdkmessageprocessingstep`, one Dataverse record):
 
 ```csharp
-[Step("account", Message.Create, Stage.PreOperation,
-    Order = 1,
-    RunAs = "service-user",
-    Config = "endpoint=https://...",
-    DeleteJobOnSuccess = true)]
-public class MyPlugin : IPlugin { ... }
+// Convention-based: class name drives message + stage
+[Step("account")]
+public class AccountPreCreatePlugin : IPlugin { ... }
+
+// With SecondaryTable — a field on the step record, stays on [Step]
+[Step("contact", SecondaryTable = "account")]
+public class AccountContactPreAssociatePlugin : IPlugin { ... }
+
+// With behavioral modifiers
+[Step("account", Order = 2, Config = "endpoint=https://...", DeleteJobOnSuccess = false)]
+public class AccountPreCreatePlugin : IPlugin { ... }
 ```
 
-`SecondaryTableAttribute` must be a separate attribute — it changes the registration from a single-entity step to a two-entity step (Associate/Disassociate):
+`PreImageAttribute` and `PostImageAttribute` must be separate attributes — each creates a separate `sdkmessageprocessingstepimage` record in Dataverse:
 
 ```csharp
-[Step("account", Message.Associate, Stage.PostOperation)]
-[SecondaryTable("contact")]
-public class AccountContactPlugin : IPlugin { ... }
-```
-
-`PreImageAttribute` and `PostImageAttribute` must be separate attributes — each maps to a separate `sdkmessageprocessingstepimage` record:
-
-```csharp
-[Step("account", Message.Update, Stage.PreOperation)]
+[Step("account")]
 [PreImage("name", "telephone1")]
 [PostImage]
-public class AccountUpdatePlugin : IPlugin { ... }
+public class AccountPreUpdatePlugin : IPlugin { ... }
+```
+
+`HandlesAttribute` is a separate attribute not because it creates a separate entity, but because it is an explicit **opt-in escape hatch** — it overrides the naming convention and signals "this class does not follow convention." It belongs on a separate attribute precisely so it stands out visually as a deviation:
+
+```csharp
+// Brownfield class that can't be renamed
+[Step("account")]
+[Handles(Message.Update, Stage.PreOperation)]
+public class AccountPlugin : IPlugin { ... }
 ```
 
 **Do not add `[SecureConfig]`.** It is intentionally excluded — see Why This Matters.
 
 ## Why This Matters
 
-**Attribute shape maps to Dataverse entity shape.** The existing pattern is not arbitrary:
+**Attribute shape should mirror Dataverse entity shape** for registration concepts, with escape hatches handled by opt-in attributes that signal deviation:
 
-| Attribute | Dataverse entity |
+| Attribute | Dataverse entity / role |
 |---|---|
-| `[Step]` | `sdkmessageprocessingstep` |
+| `[Step]` | `sdkmessageprocessingstep` — one record, all step fields including `SecondaryTable` |
 | `[PreImage]` / `[PostImage]` | `sdkmessageprocessingstepimage` (one record each) |
-| `[SecondaryTable]` | Two-entity form of `sdkmessageprocessingstep` |
+| `[Handles]` | No separate entity — explicit opt-in escape hatch for non-convention class names |
 
-Merging `SecondaryTable` into `StepAttribute` as a named property hides the fact that this is a categorically different registration. A developer reading `[Step("account", ..., SecondaryTable = "contact")]` would not know they are configuring an Associate/Disassociate step — the two-table nature is invisible.
+`SecondaryTable` belongs on `[Step]` because it IS a field on `sdkmessageprocessingstep` (via the message filter). Creating a separate `[SecondaryTable]` attribute would imply it's a separate Dataverse entity — which misleads readers. It's a modifier, not a registration.
 
 **Why SecureConfig is excluded:**
 
@@ -106,57 +113,58 @@ The modern replacement is **Dataverse Environment Variables** (since ~2020): the
 
 When deciding whether to extend `StepAttribute` or create a new attribute:
 
-- Does this data change how many Dataverse records are created during registration? → Separate attribute.
-- Does this data only change behavior or configuration of an otherwise-normal step? → Property on `StepAttribute`.
+- Does this data create a separate Dataverse entity during registration? → Separate attribute.
+- Does this data only modify a field on the step record? → Property on `StepAttribute`.
+- Is this a convention-override or opt-in escape hatch that should be visually distinct? → Separate attribute.
 - Does this involve SecureConfig or Spkl SecureConfiguration? → Do not add it. Redirect to Dataverse Environment Variables.
 
 ## Examples
 
-**Behavioral modifier — property on `StepAttribute`:**
+**Step-level fields — property on `StepAttribute`:**
 
 ```csharp
-// CORRECT: RunAs, Config, Order, DeleteJobOnSuccess are behavior modifiers
-[Step("account", Message.Create, Stage.PreOperation,
-    RunAs = "integration-user",
-    Config = "timeout=30",
-    DeleteJobOnSuccess = true,
-    Order = 2)]
-public class AccountCreatePlugin : IPlugin { ... }
-```
+// SecondaryTable is a field on sdkmessageprocessingstep — belongs on [Step]
+[Step("contact", SecondaryTable = "account")]
+public class AccountContactPreAssociatePlugin : IPlugin { ... }
 
-**Registration shape change — must be a separate attribute:**
-
-```csharp
-// CORRECT: SecondaryTable changes the step to a two-entity registration
-[Step("account", Message.Associate, Stage.PostOperation)]
-[SecondaryTable("contact")]
-public class AccountContactAssociatePlugin : IPlugin { ... }
-
-// WRONG: hides the two-entity nature, misleads the reader
-[Step("account", Message.Associate, Stage.PostOperation, SecondaryTable = "contact")]
-public class AccountContactAssociatePlugin : IPlugin { ... }
+// Other behavioral modifiers also on [Step]
+[Step("account", Order = 2, Config = "{\"timeout\":30}", DeleteJobOnSuccess = false)]
+public class AccountPreCreatePlugin : IPlugin { ... }
 ```
 
 **Separate Dataverse image records — must be separate attributes:**
 
 ```csharp
 // CORRECT: each attribute = one sdkmessageprocessingstepimage record
-[Step("account", Message.Update, Stage.PreOperation)]
+[Step("account")]
 [PreImage("name", "telephone1", "emailaddress1")]
 [PostImage]
-public class AccountUpdatePlugin : IPlugin { ... }
+public class AccountPreUpdatePlugin : IPlugin { ... }
+```
+
+**Convention override — separate attribute by design:**
+
+```csharp
+// [Handles] is separate because it's an escape hatch, not a Dataverse entity
+[Step("account")]
+[Handles(Message.Update, Stage.PreOperation)]
+public class AccountPlugin : IPlugin { ... }
+
+// Prefer renaming the class so [Handles] can be removed:
+[Step("account")]
+public class AccountPreUpdatePlugin : IPlugin { ... }
 ```
 
 **SecureConfig — do not add; use Dataverse Environment Variables:**
 
 ```csharp
 // WRONG: don't add this attribute
-[Step("account", Message.Create, Stage.PreOperation)]
+[Step("account")]
 [SecureConfig("apiKey=abc123")]
-public class MyPlugin : IPlugin { ... }
+public class AccountPreCreatePlugin : IPlugin { ... }
 
 // CORRECT: use a Dataverse Environment Variable, retrieved in plugin execute
-public class MyPlugin : IPlugin
+public class AccountPreCreatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider)
     {
@@ -170,6 +178,6 @@ public class MyPlugin : IPlugin
 ## Related
 
 - `src/Flowline.Attributes/StepAttribute.cs`
-- `src/Flowline.Attributes/SecondaryTableAttribute.cs`
+- `src/Flowline.Attributes/HandlesAttribute.cs`
 - `src/Flowline.Attributes/PreImageAttribute.cs`
 - Spkl reference: `E:\Code\SparkleXrm\spkl\SparkleXrm.Tasks\PluginRegistraton.cs` line 449
