@@ -336,6 +336,9 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
             if (onArg.ArgumentType.FullName == "System.String")
             {
                 message = (string)onArg.Value!;
+                if (string.IsNullOrWhiteSpace(message))
+                    throw new InvalidOperationException(
+                        $"{type.Name}: [Handles] message name cannot be empty or whitespace — specify a valid Dataverse message name.");
             }
             else
             {
@@ -366,10 +369,12 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
 
         var warnings = BuildStepWarnings(type.Name, message, table, filteringColumns, secondaryTable, images);
 
-        // R7: [Handles] is redundant when the class name already parses to a valid step.
-        if (handlesUsed && TryParseClassName(type.Name, out _, out _, out _))
+        // R7: [Handles] is redundant only when the class name parses to the same message+stage+mode.
+        if (handlesUsed &&
+            TryParseClassName(type.Name, out var parsedMsg, out var parsedStage, out var parsedMode) &&
+            parsedMsg == message && parsedStage == stage && parsedMode == mode)
             warnings.Add(
-                $"{type.Name}: [[Handles]] is redundant — the class name already parses to a valid step registration. " +
+                $"{type.Name}: [[Handles]] is redundant — the class name already parses to the same step registration. " +
                 $"Consider renaming the class to follow convention and removing [[Handles]].");
 
         var deleteJobOnSuccess = (mode == (int)ProcessingMode.Asynchronous) && (deleteJobOnSuccessExplicit ?? true);

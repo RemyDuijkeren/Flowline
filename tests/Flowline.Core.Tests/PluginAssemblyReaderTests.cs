@@ -520,6 +520,7 @@ public class PluginAssemblyReaderTests
         Assert.Equal("Create", step.Message);
         Assert.Equal((int)ProcessingStage.PostOperation, step.Stage);
         Assert.Equal((int)ProcessingMode.Asynchronous, step.Mode);
+        Assert.Empty(step.Warnings);
     }
 
     [Fact]
