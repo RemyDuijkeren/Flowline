@@ -61,8 +61,9 @@ public class StatusCommand(IAnsiConsole console) : AsyncCommand<StatusCommand.Se
         };
 
         var hasUrls = envs.Any(e => !string.IsNullOrEmpty(e.Url));
+        var solutions = config.Solutions.ToList();
 
-        (string Label, string? Url, WhoAmIInfo? Who)[] results;
+        (string Label, string? Url, WhoAmIInfo? Who, Dictionary<string, string?> Versions)[] results;
 
         if (hasUrls)
         {
@@ -73,15 +74,36 @@ public class StatusCommand(IAnsiConsole console) : AsyncCommand<StatusCommand.Se
                     var who = !string.IsNullOrEmpty(e.Url)
                         ? await PacUtils.GetEnvWhoAsync(e.Url!, cancellationToken)
                         : null;
-                    return (e.Label, e.Url, who);
+
+                    var versions = new Dictionary<string, string?>();
+                    if (who is not null && solutions.Count > 0)
+                    {
+                        var versionTasks = solutions.Select(async sol =>
+                        {
+                            string? version = null;
+                            try
+                            {
+                                version = await PacUtils.GetSolutionVersionAsync(sol.Name, e.Url!, cancellationToken: cancellationToken);
+                            }
+                            catch (FlowlineException)
+                            {
+                                // solution not deployed or version unreadable
+                            }
+                            return (sol.Name, version);
+                        });
+                        foreach (var (name, ver) in await Task.WhenAll(versionTasks))
+                            versions[name] = ver;
+                    }
+
+                    return (e.Label, e.Url, who, versions);
                 })));
         }
         else
         {
-            results = envs.Select(e => (e.Label, e.Url, (WhoAmIInfo?)null)).ToArray();
+            results = envs.Select(e => (e.Label, e.Url, (WhoAmIInfo?)null, new Dictionary<string, string?>())).ToArray();
         }
 
-        foreach (var (label, url, who) in results)
+        foreach (var (label, url, who, versions) in results)
         {
             if (string.IsNullOrEmpty(url))
             {
@@ -95,6 +117,14 @@ public class StatusCommand(IAnsiConsole console) : AsyncCommand<StatusCommand.Se
                 Console.MarkupLine($"    [green]✓[/] {Markup.Escape(who.ConnectedAs)}");
             else
                 Console.MarkupLine($"    [yellow]✗ Not authenticated[/]");
+
+            foreach (var (solutionName, version) in versions)
+            {
+                if (version is not null)
+                    Console.MarkupLine($"    [dim]{Markup.Escape(solutionName)}[/]  [green]{Markup.Escape(version)}[/]");
+                else
+                    Console.MarkupLine($"    [dim]{Markup.Escape(solutionName)}  not deployed[/]");
+            }
         }
 
         return 0;

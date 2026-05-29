@@ -193,5 +193,3 @@ flowline generate --extra-tables account,contact
 Generated types land in `Plugins/Models/` alongside your plugin code — no separate assembly, no ILMerge. Running `generate` again fully replaces the folder, so stale files from removed entities are cleaned up automatically.
 
 Requires an active `pac auth create` session against the DEV environment. The namespace is derived in order from `<RootNamespace>`, then `<PackageId>` (set by `pac plugin init --name`), then the csproj filename, then `<SolutionName>.Models`. Once derived, it is saved to `.flowline` and reused on every subsequent run.
-
-> **CI pipelines and offline use** are not supported — `generate` always queries live DEV. Teams that need generated types in CI should commit `Plugins/Models/` to source control and re-run `flowline generate` locally when solution entities change.
