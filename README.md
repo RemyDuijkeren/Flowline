@@ -167,7 +167,7 @@ Full attribute reference: [Flowline.Attributes README](src/Flowline.Attributes/R
 | `sync [solution]` | Pull the current solution state from DEV and unpack it into the repo. |
 | `deploy <target>` | Pack the solution from the repo and import it into TEST, PROD, or an explicit URL. |
 | `provision [dev\|test]` | Provision a DEV or TEST environment by copying from production. |
-| `generate [solution]` | Generate early-bound C# types for the solution's entities and custom APIs into `Plugins/Models/`. |
+| `generate [solution]` | Generate early-bound C# types for the solution's entities and custom APIs into `Plugins/Models/`. Works standalone outside a Flowline project with `-o <PATH>`. |
 | `status` | Show environment info, Flowline version, and PAC CLI status. |
 
 ---
@@ -193,3 +193,16 @@ flowline generate --extra-tables account,contact
 Generated types land in `Plugins/Models/` alongside your plugin code — no separate assembly, no ILMerge. Running `generate` again fully replaces the folder, so stale files from removed entities are cleaned up automatically.
 
 Requires an active `pac auth create` session against the DEV environment. The namespace is derived in order from `<RootNamespace>`, then `<PackageId>` (set by `pac plugin init --name`), then the csproj filename, then `<SolutionName>.Models`. Once derived, it is saved to `.flowline` and reused on every subsequent run.
+
+### Standalone mode
+
+Run `flowline generate` outside a Flowline project by supplying `-o` (output path), `--dev`, and the solution name. Useful for CI pipelines or repos that don't use the full Flowline structure.
+
+```bash
+flowline generate ContosoCustomizations \
+  --dev https://contoso.crm4.dynamics.com \
+  --namespace Contoso.Plugins.Models \
+  -o ./src/Models
+```
+
+Outside a Flowline project, `--dev` and `-o` are required. `--namespace` is optional — defaults to `<SolutionName>.Models`. Nothing is saved to `.flowline`.

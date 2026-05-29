@@ -4,6 +4,7 @@ using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Services;
 using Flowline.Utils;
+using Flowline.Validation;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -30,63 +31,139 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         [CommandOption("--dev <URL>")]
         [Description("Dev environment URL")]
         public string? DevUrl { get; set; }
+
+        [CommandOption("-o|--output <PATH>")]
+        [Description("Output folder for generated types (required outside a Flowline project)")]
+        public string? Output { get; set; }
+    }
+
+    protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
+    {
+        if (!IsStandaloneMode())
+            return await base.ExecuteAsync(context, settings, cancellationToken);
+
+        InitializeRuntimeOptions(settings);
+        await CheckSetupAsync(settings, cancellationToken);
+        return await ExecuteFlowlineAsync(context, settings, cancellationToken);
+    }
+
+    protected override async Task CheckSetupAsync(Settings settings, CancellationToken cancellationToken)
+    {
+        if (!IsStandaloneMode())
+        {
+            await base.CheckSetupAsync(settings, cancellationToken);
+            return;
+        }
+
+        await Console.Status().FlowlineSpinner().StartAsync("Checking your setup...", async _ =>
+        {
+            await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
+        });
+
+        Console.Ok("All good, let's go!");
     }
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        // Resolve solution
-        var projectSln = Config!.GetOrUpdateSolution(settings.Solution, settings: settings);
-        if (projectSln == null)
-            throw new FlowlineException("Solution name is required — pass it as an argument or configure a single solution in .flowline.");
+        var standaloneMode = IsStandaloneMode();
 
-        // Resolve DEV URL (R13)
-        var devUrl = Config.GetOrUpdateDevUrl(settings.DevUrl, settings);
-        if (string.IsNullOrEmpty(devUrl))
-            throw new FlowlineException("No DEV environment configured — run 'flowline provision' or pass --dev <URL>.");
-
-        // Apply --namespace (R7)
-        if (!string.IsNullOrWhiteSpace(settings.Namespace))
-        {
-            projectSln.Generate ??= new GenerateConfig();
-            projectSln.Generate.Namespace = settings.Namespace.Trim();
-        }
-
-        // Apply --extra-tables (R8): replaces full list; empty value clears the list
-        if (settings.ExtraTables != null)
-        {
-            projectSln.Generate ??= new GenerateConfig();
-            var tables = settings.ExtraTables.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            projectSln.Generate.ExtraTables = tables.Length > 0 ? tables : null;
-        }
-
-        // Derive namespace if not yet set (R4)
-        var slnFolder = Path.Combine(RootFolder, AllSolutionsFolderName, projectSln.Name);
+        // --- Resolve inputs ---
+        string solutionName;
+        string devUrl;
+        string modelNamespace;
+        string modelsFolder;
+        string[] extraTables;
         bool namespaceWasDerived = false;
-        var modelNamespace = projectSln.Generate?.Namespace;
-        if (string.IsNullOrEmpty(modelNamespace))
+        ProjectSolution? projectSln = null;
+
+        if (standaloneMode)
         {
-            modelNamespace = NamespaceDeriver.Derive(slnFolder, projectSln.Name);
-            namespaceWasDerived = true;
-            Console.Verbose($"Derived namespace: [bold]{modelNamespace}[/]", settings.Verbose);
+            if (string.IsNullOrWhiteSpace(settings.Solution))
+                throw new FlowlineException("Solution name is required — pass it as the first argument.");
+            if (string.IsNullOrWhiteSpace(settings.DevUrl))
+                throw new FlowlineException("Dev URL is required in standalone mode — use --dev <URL>.");
+            if (string.IsNullOrWhiteSpace(settings.Output))
+                throw new FlowlineException("Output folder is required in standalone mode — use -o <PATH> or --output <PATH>.");
+
+            solutionName = settings.Solution.Trim();
+            devUrl = settings.DevUrl.Trim();
+            modelsFolder = Path.GetFullPath(settings.Output);
+            extraTables = settings.ExtraTables?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
+            modelNamespace = !string.IsNullOrWhiteSpace(settings.Namespace)
+                ? settings.Namespace.Trim()
+                : $"{solutionName}.Models";
+        }
+        else
+        {
+            projectSln = Config!.GetOrUpdateSolution(settings.Solution, settings: settings);
+            if (projectSln == null)
+                throw new FlowlineException("Solution name is required — pass it as an argument or configure a single solution in .flowline.");
+
+            var resolvedDevUrl = Config!.GetOrUpdateDevUrl(settings.DevUrl, settings);
+            if (string.IsNullOrEmpty(resolvedDevUrl))
+                throw new FlowlineException("No DEV environment configured — run 'flowline provision' or pass --dev <URL>.");
+            devUrl = resolvedDevUrl;
+
+            solutionName = projectSln.Name;
+
+            // Apply --namespace (R7)
+            if (!string.IsNullOrWhiteSpace(settings.Namespace))
+            {
+                projectSln.Generate ??= new GenerateConfig();
+                projectSln.Generate.Namespace = settings.Namespace.Trim();
+            }
+
+            // Apply --extra-tables (R8): replaces full list; empty value clears the list
+            if (settings.ExtraTables != null)
+            {
+                projectSln.Generate ??= new GenerateConfig();
+                var tables = settings.ExtraTables.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                projectSln.Generate.ExtraTables = tables.Length > 0 ? tables : null;
+            }
+
+            var slnFolder = Path.Combine(RootFolder, AllSolutionsFolderName, solutionName);
+
+            // Derive namespace if not yet set (R4)
+            modelNamespace = projectSln.Generate?.Namespace ?? string.Empty;
+            if (string.IsNullOrEmpty(modelNamespace))
+            {
+                modelNamespace = NamespaceDeriver.Derive(slnFolder, solutionName);
+                namespaceWasDerived = true;
+                Console.Verbose($"Derived namespace: [bold]{modelNamespace}[/]", settings.Verbose);
+            }
+
+            // Resolve output path — --output overrides convention, not saved to .flowline
+            modelsFolder = !string.IsNullOrWhiteSpace(settings.Output)
+                ? Path.GetFullPath(settings.Output)
+                : Path.Combine(slnFolder, PluginsName, "Models");
+
+            extraTables = projectSln.Generate?.ExtraTables ?? [];
+
+            // Dirty-tree guard
+            if (Directory.Exists(modelsFolder))
+            {
+                var modelsSummary = await SolutionChangeSummary.ComputeAsync(modelsFolder, RootFolder, settings.Verbose, cancellationToken);
+                if (modelsSummary.TotalFiles > 0)
+                    Console.Warning($"Uncommitted changes in '{Path.GetRelativePath(RootFolder, modelsFolder)}' will be overwritten.");
+            }
         }
 
-        // Dirty-tree guard for Plugins/Models/
-        var modelsFolder = Path.Combine(slnFolder, PluginsName, "Models");
-        if (Directory.Exists(modelsFolder))
-        {
-            var modelsSummary = await SolutionChangeSummary.ComputeAsync(modelsFolder, RootFolder, settings.Verbose, cancellationToken);
-            if (modelsSummary.TotalFiles > 0)
-                Console.Warning($"Uncommitted changes in 'Plugins/Models/' will be overwritten.");
-        }
-
-        // Connect to DEV (reuse PAC token cache)
+        // --- Connect and validate ---
         var service = await ConnectToDataverseAsync(dataverseConnector, devUrl, cancellationToken);
 
-        // Resolve solution ID from Dataverse (needed for component queries)
-        var devEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, devUrl, settings, cancellationToken);
-        var (_, remoteSln) = await GetAndCheckSolutionAsync(projectSln.Name, devEnv.EnvironmentUrl!, cancellationToken: cancellationToken, settings: settings);
+        SolutionInfo remoteSln;
+        if (standaloneMode)
+        {
+            await CheckStandaloneEnvironmentAsync(devUrl, settings, cancellationToken);
+            remoteSln = await GetStandaloneSolutionAsync(solutionName, devUrl, settings, cancellationToken);
+        }
+        else
+        {
+            var devEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, devUrl, settings, cancellationToken);
+            (_, remoteSln) = await GetAndCheckSolutionAsync(solutionName, devEnv.EnvironmentUrl!, cancellationToken: cancellationToken, settings: settings);
+        }
 
-        // Discover entities and custom APIs in parallel (R10–R12)
+        // --- Discover entities and custom APIs in parallel (R10–R12) ---
         var entityTask = Console.Status().FlowlineSpinner().StartAsync(
             "Discovering solution entities...",
             _ => GenerateReader.GetSolutionEntityLogicalNamesAsync(service, remoteSln.Id, cancellationToken));
@@ -96,7 +173,6 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         var customApiNames = await customApiTask;
 
         // Deduplicate entity filter (R14): solution entities + extraTables
-        var extraTables = projectSln.Generate?.ExtraTables ?? [];
         var entityFilter = solutionEntities
             .Concat(extraTables)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -114,14 +190,12 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
                 Console.Verbose($"  custom api: {api}", isVerbose: true);
         }
 
-        // Temp folder for safe output (R17)
-        var tempFolder = Path.Combine(slnFolder, PluginsName, "Models~");
+        // --- Build and run pac modelbuilder build ---
+        var tempFolder = modelsFolder + "~";
 
-        // Clean up any leftover temp folder from a previous killed run
         if (Directory.Exists(tempFolder))
             Directory.Delete(tempFolder, recursive: true);
 
-        // Build pac command (R1, R2, R3, R10, R11)
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
 
         var pacCommand = Cli.Wrap(cmdName)
@@ -144,21 +218,23 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             })
             .WithValidation(CommandResultValidation.None);
 
-        // Strip the absolute temp folder prefix from pac output lines so paths stay readable (R6)
         var tempPrefix = tempFolder + Path.DirectorySeparatorChar;
-        string ShortenPacLine(string line) => line.Replace(tempPrefix, "Models/");
+        var outputFolderName = Path.GetFileName(modelsFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        string ShortenPacLine(string line) => line.Replace(tempPrefix, outputFolderName + "/");
 
-        // Run pac modelbuilder build; --verbose prints command + streams output (R6, R17)
+        var outputLabel = standaloneMode
+            ? modelsFolder
+            : $"{solutionName}/Plugins/Models";
+
         CommandResult result;
         try
         {
             result = await Console.Status().FlowlineSpinner().StartAsync(
-                $"Generating early-bound types into [bold]{projectSln.Name}/Plugins/Models[/]...",
+                $"Generating early-bound types into [bold]{outputLabel}[/]...",
                 ctx => pacCommand.WithToolExecutionLog(settings.Verbose, ctx, ShortenPacLine).ExecuteAsync(cancellationToken).Task);
         }
         catch
         {
-            // Discard temp folder on any exception (including cancellation) — leave Plugins/Models/ unchanged (R17)
             if (Directory.Exists(tempFolder))
                 Directory.Delete(tempFolder, recursive: true);
             throw;
@@ -166,7 +242,6 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
 
         if (!result.IsSuccess)
         {
-            // Discard temp folder — leave Plugins/Models/ unchanged (R17)
             if (Directory.Exists(tempFolder))
                 Directory.Delete(tempFolder, recursive: true);
 
@@ -175,26 +250,55 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
 
         Console.Ok("Early-bound types generated");
 
-        // Swap: replace Plugins/Models/ with temp folder (R17)
-        // Guard: verify pac produced output before touching the existing folder
         if (!Directory.Exists(tempFolder))
             throw new FlowlineException("pac modelbuilder build reported success but produced no output folder.");
         if (Directory.Exists(modelsFolder))
             Directory.Delete(modelsFolder, recursive: true);
         Directory.Move(tempFolder, modelsFolder);
 
-        // Save derived namespace to .flowline after successful run (R5)
-        if (namespaceWasDerived || settings.Namespace != null || settings.ExtraTables != null)
+        // Save to .flowline — project mode only, skipped when --output overrides the path (R5)
+        if (!standaloneMode && projectSln != null && string.IsNullOrWhiteSpace(settings.Output) &&
+            (namespaceWasDerived || settings.Namespace != null || settings.ExtraTables != null))
         {
             projectSln.Generate ??= new GenerateConfig();
             if (namespaceWasDerived)
                 projectSln.Generate.Namespace = modelNamespace;
-            Config.Save(RootFolder);
+            Config!.Save(RootFolder);
         }
 
         var duration = FormatDuration(result.RunTime);
-        Console.Done($"Types generated into [bold]Plugins/Models[/] in {duration}. Namespace: [bold]{modelNamespace}[/]");
+        Console.Done($"Types generated into [bold]{outputLabel}[/] in {duration}. Namespace: [bold]{modelNamespace}[/]");
 
         return 0;
+    }
+
+    private bool IsStandaloneMode() =>
+        !File.Exists(Path.Combine(RootFolder, ProjectConfig.s_configFileName));
+
+    private async Task CheckStandaloneEnvironmentAsync(string devUrl, Settings settings, CancellationToken cancellationToken)
+    {
+        EnvironmentInfo? env = await Console.Status().FlowlineSpinner().StartAsync(
+            $"Checking dev [bold]{devUrl}[/]...",
+            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(devUrl, settings, cancellationToken));
+
+        if (env == null)
+            throw new FlowlineException("Dev environment not found — check the URL or your PAC login.");
+        if (env.Type == "Production")
+            throw new FlowlineException("That's a Production environment — use a sandbox or dev instead.");
+
+        Console.Ok($"Dev: [bold]{env.DisplayName}[/] ({env.EnvironmentUrl})");
+    }
+
+    private async Task<SolutionInfo> GetStandaloneSolutionAsync(string solutionName, string environmentUrl, Settings settings, CancellationToken cancellationToken)
+    {
+        SolutionInfo? remoteSln = await Console.Status().FlowlineSpinner().StartAsync(
+            $"Looking up [bold]{solutionName}[/]...",
+            _ => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, solutionName, includeManaged: false, settings, cancellationToken));
+
+        if (remoteSln == null)
+            throw new FlowlineException($"Solution '{solutionName}' not found in that environment.");
+
+        Console.Ok($"Solution: [bold]{solutionName}[/] (managed: {remoteSln.IsManaged})");
+        return remoteSln;
     }
 }
