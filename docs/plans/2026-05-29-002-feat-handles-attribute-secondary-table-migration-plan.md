@@ -1,7 +1,7 @@
 ---
 title: "feat: Add HandlesAttribute and migrate SecondaryTable to StepAttribute property"
 type: feat
-status: active
+status: completed
 date: 2026-05-29
 ---
 
