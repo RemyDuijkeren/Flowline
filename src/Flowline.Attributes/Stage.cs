@@ -28,7 +28,7 @@ namespace Flowline.Attributes
 
         /// <summary>
         /// Runs inside the main database transaction, after the core platform operation.
-        /// Synchronous. Suitable for side-effects that must complete within the same transaction.
+        /// Synchronous. Suitable for side effects that must be complete within the same transaction.
         /// </summary>
         PostOperation = 2,
 

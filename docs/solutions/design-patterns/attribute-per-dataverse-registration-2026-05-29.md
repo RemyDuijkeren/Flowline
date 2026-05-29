@@ -11,6 +11,7 @@ applies_when:
   - Adding a new C# attribute to represent a Dataverse registration concept
   - Deciding whether a new property belongs on StepAttribute or deserves its own attribute class
   - Evaluating whether to add SecureConfig support to Flowline
+  - "Deciding whether to warn on all [Handles] usages or only redundant ones"
 symptoms:
   - Unclear whether a Dataverse concept is a behavioral modifier or a separate registration entity
   - Temptation to create a separate attribute for concepts that are just fields on the step record
@@ -24,6 +25,8 @@ tags:
   - secure-config
   - spkl-migration
   - api-design
+  - warning-strategy
+  - r7-warning
 ---
 
 # Separate Attribute = Separate Dataverse Registration
@@ -117,6 +120,43 @@ When deciding whether to extend `StepAttribute` or create a new attribute:
 - Does this data only modify a field on the step record? → Property on `StepAttribute`.
 - Is this a convention-override or opt-in escape hatch that should be visually distinct? → Separate attribute.
 - Does this involve SecureConfig or Spkl SecureConfiguration? → Do not add it. Redirect to Dataverse Environment Variables.
+
+## R7 Warning: `[Handles]` Is Redundant
+
+**Warn only when `[Handles]` is redundant — not on every `[Handles]` usage.**
+
+When `[Handles]` specifies the same message, stage, and mode that the class name already encodes, Flowline emits R7: the attribute is unnecessary and can be removed. When `[Handles]` genuinely overrides a non-convention class name, no warning fires.
+
+**R7 fires — class name already encodes the same registration:**
+
+```csharp
+[Step("account")]
+[Handles(Message.Update, Stage.PreOperation)]
+public class AccountPreUpdatePlugin : IPlugin { ... }
+// R7: [Handles] is redundant — remove it and rely on the naming convention
+```
+
+**R7 does not fire — `[Handles]` is intentional:**
+
+```csharp
+[Step("account")]
+[Handles(Message.Update, Stage.PreOperation)]
+public class AccountPlugin : IPlugin { ... }
+// No warning — class name doesn't follow convention; [Handles] is necessary
+
+[Step("account")]
+[Handles(Message.Create, Stage.PostOperation)]
+public class SyncContactWF : IPlugin { ... }
+// No warning — tied to production workflows; can't be renamed
+```
+
+**Why not warn on every `[Handles]`:**
+
+- `[Handles]` is intentional opt-in — nagging on every build disrespects that choice
+- Brownfield codebases may have many `[Handles]` usages; warning on all degrades signal-to-noise
+- Some classes genuinely can't be renamed (external assembly references, Dynamics workflow activities, legacy constraints)
+- README already establishes convention as preferred; repeating it as a warning undermines the message
+- R7 (redundant case) is the only actionable warning — the developer can always act on it
 
 ## Examples
 

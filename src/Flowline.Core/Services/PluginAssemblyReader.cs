@@ -10,7 +10,7 @@ namespace Flowline.Core.Services;
 public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
 {
     private static readonly string[] MessageNames =
-        Enum.GetNames<MessageName>().OrderByDescending(n => n.Length).ToArray();
+        Enum.GetNames<Message>().OrderByDescending(n => n.Length).ToArray();
 
     // Maps Message enum int values to their name strings. Built at startup from the live runtime
     // type (not MetadataLoadContext) so Enum.GetValues<Message>() is safe to call here.
@@ -425,7 +425,7 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
             $"{className}: [Step] declares that this class should be registered as a plugin step, but {reason}. " +
             $"Expected pattern: {{Name}}{{Stage}}{{Message}}[Async][Plugin]. " +
             $"Examples: AccountPreCreatePlugin, AccountPostUpdatePlugin, AccountPostUpdateAsyncPlugin, AccountValidationDeletePlugin. " +
-            $"Valid stages: Validation, Pre, Post. Valid messages come from {nameof(MessageName)}.");
+            $"Valid stages: Validation, Pre, Post. Valid messages come from {nameof(Message)}.");
     }
 
     internal static bool TryParseClassName(string className, out string message, out int stage, out int mode)

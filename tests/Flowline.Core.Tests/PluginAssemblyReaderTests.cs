@@ -415,7 +415,7 @@ public class PluginAssemblyReaderTests
         Assert.Contains("[Step]", ex.Message);
         Assert.Contains("no stage", ex.Message);
         Assert.Contains("AccountPreCreatePlugin", ex.Message);
-        Assert.Contains(nameof(MessageName), ex.Message);
+        Assert.Contains(nameof(Message), ex.Message);
     }
 
     [Fact]
@@ -560,14 +560,6 @@ public class PluginAssemblyReaderTests
         Assert.Empty(step.Warnings);
     }
 
-    [Fact]
-    public void Message_MembersMatchMessageName()
-    {
-        var messageNames = new HashSet<string>(Enum.GetNames<MessageName>());
-        var messageEnumNames = new HashSet<string>(Enum.GetNames<Message>());
-
-        Assert.Equal(messageNames, messageEnumNames);
-    }
 }
 
 // -- Mock plugin types used by the integration tests above --
