@@ -17,6 +17,93 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
     readonly SolutionReader  _solutionReader = new();
     readonly PluginAssemblyReader _assemblyReader = new(output, opt.IsVerbose);
 
+    public async Task SyncAssemblyOnlyAsync(
+        IOrganizationServiceAsync2 service,
+        string dllPath,
+        string solutionName,
+        RunMode runMode = RunMode.Normal,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(dllPath))
+            throw new ArgumentException("dllPath is required and cannot be empty.", nameof(dllPath));
+
+        var metadata = output.Status().Start("Analyzing plugin assembly...", _ => _assemblyReader.Analyze(dllPath));
+        await SyncAssemblyOnlyAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task SyncAssemblyOnlyAsync(
+        IOrganizationServiceAsync2 service,
+        PluginAssemblyMetadata metadata,
+        string solutionName,
+        RunMode runMode = RunMode.Normal,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(solutionName))
+            throw new ArgumentException("solutionName is required and cannot be empty.", nameof(solutionName));
+
+        await output.Status()
+                    .StartAsync($"Looking up solution [bold]{solutionName}[/]...",
+                        _ => _solutionReader.GetSupportedSolutionInfoAsync(service, solutionName, cancellationToken))
+                    .ConfigureAwait(false);
+        output.Info("Solution found and supported");
+
+        var query = new QueryExpression("pluginassembly")
+        {
+            TopCount = 1,
+            ColumnSet = new ColumnSet("pluginassemblyid", "name", "version", "publickeytoken", "culture", "description"),
+            Criteria = { Conditions = { new ConditionExpression("name", ConditionOperator.Equal, metadata.Name) } }
+        };
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
+        var existing = result.Entities.FirstOrDefault();
+
+        if (existing == null)
+            throw new InvalidOperationException($"Assembly '{metadata.Name}' not found in Dataverse — run push without --scope assemblyonly to register it first.");
+
+        var registeredPkt     = existing.GetAttributeValue<string>("publickeytoken");
+        var registeredCulture = existing.GetAttributeValue<string>("culture") ?? "neutral";
+        var registeredVersion = existing.GetAttributeValue<string>("version");
+
+        bool pktChanged        = !string.Equals(registeredPkt, metadata.PublicKeyToken, StringComparison.OrdinalIgnoreCase);
+        bool cultureChanged    = !string.Equals(registeredCulture, metadata.Culture, StringComparison.OrdinalIgnoreCase);
+        bool majorMinorChanged = HasMajorOrMinorVersionChange(registeredVersion, metadata.Version);
+
+        if (pktChanged || cultureChanged || majorMinorChanged)
+        {
+            var reasons = new List<string>();
+            if (pktChanged)        reasons.Add($"public key token ({registeredPkt ?? "null"} -> {metadata.PublicKeyToken ?? "null"})");
+            if (cultureChanged)    reasons.Add($"culture ({registeredCulture} -> {metadata.Culture})");
+            if (majorMinorChanged) reasons.Add($"major/minor version ({registeredVersion} -> {metadata.Version})");
+            throw new InvalidOperationException($"Assembly '{metadata.Name}' identity changed ({string.Join(", ", reasons)}) — cannot update assembly-only. Run push without --scope assemblyonly to delete and recreate registrations.");
+        }
+
+        var storedHash = ParseStoredHash(existing.GetAttributeValue<string>("description"));
+        if (storedHash == metadata.Hash)
+        {
+            output.Skip("Assembly already up to date — skipping");
+            return;
+        }
+
+        if (runMode == RunMode.DryRun)
+        {
+            output.Info($"Assembly '{metadata.Name} ({metadata.Version})' — would update content");
+            output.Ok("Dry run: 1 update. Run without --dry-run to apply.");
+            return;
+        }
+
+        await output.Progress()
+            .StartAsync(async ctx =>
+            {
+                var task = ctx.AddTask("Updating plugin assembly", maxValue: 1);
+                existing["content"]     = Convert.ToBase64String(metadata.Content);
+                existing["version"]     = metadata.Version;
+                existing["description"] = $"{FlowlineMarker} sha256={metadata.Hash}";
+                await service.UpdateAsync(existing, cancellationToken).ConfigureAwait(false);
+                task.Increment(1);
+            })
+            .ConfigureAwait(false);
+        output.Ok($"Assembly [bold]{metadata.Name}[/] ({metadata.Version}) updated");
+    }
+
     public async Task SyncSolutionAsync(
         IOrganizationServiceAsync2 service,
         string dllPath,

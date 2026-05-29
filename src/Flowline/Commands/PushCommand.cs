@@ -17,10 +17,10 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     public enum PushScope
     {
         None = 0,
-        WebResources = 1,
+        AssemblyOnly = 1,
         Plugins = 2,
-        Pcf = 4,
-        All = WebResources | Plugins | Pcf
+        WebResources = 4,
+        All = WebResources | Plugins
     }
 
     public sealed class Settings : FlowlineSettings
@@ -30,7 +30,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         public string? Solution { get; set; }
 
         [CommandOption("-s|--scope <SCOPE>")]
-        [Description("Limit the push scope: all, webresources, plugins, or pcf. Can be used more than once.")]
+        [Description("Limit the push scope: all, webresources, plugins, pcf, or assemblyonly. Can be used more than once.")]
         public PushScope[] Scopes { get; set; } = [];
 
         [CommandOption("--dll <PATH>")]
@@ -104,15 +104,20 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             ? ResolveStandaloneScope(settings)
             : ResolveProjectScope(settings);
 
-        var pushPlugins = pushScope.HasFlag(PushScope.Plugins);
+        var pushAssemblyOnly = pushScope.HasFlag(PushScope.AssemblyOnly);
+        var pushPlugins = !pushAssemblyOnly && pushScope.HasFlag(PushScope.Plugins);
         var pushWebResources = pushScope.HasFlag(PushScope.WebResources);
 
-        var pluginsDll = await PreparePluginsForPushAsync(pushPlugins, standaloneMode, settings, solutionName, standaloneParams, cancellationToken);
+        var pluginsDll = await PreparePluginsForPushAsync(pushPlugins || pushAssemblyOnly, standaloneMode, settings, solutionName, standaloneParams, cancellationToken);
         var (webResourcesSyncFolder, actuallyPushWebResources) = await PrepareWebResourcesForPushAsync(pushWebResources, standaloneMode, settings, solutionName, standaloneParams, cancellationToken);
 
         var conn = await ConnectToDataverseAsync(dataverseConnector, environmentUrl, cancellationToken);
 
-        if (pushPlugins && pluginsDll != null)
+        if (pushAssemblyOnly && pluginsDll != null)
+        {
+            await pluginService.SyncAssemblyOnlyAsync(conn, pluginsDll, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+        }
+        else if (pushPlugins && pluginsDll != null)
         {
             await pluginService.SyncSolutionAsync(conn, pluginsDll, solutionName, runMode, cancellationToken).ConfigureAwait(false);
         }
@@ -246,13 +251,20 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     internal static bool IsStandaloneMode(Settings settings) =>
         !string.IsNullOrWhiteSpace(settings.Dll) || !string.IsNullOrWhiteSpace(settings.WebResources);
 
-    internal static PushScope ResolveProjectScope(Settings settings) =>
-        settings.Scopes.Length == 0
-            ? PushScope.All
-            : settings.Scopes.Aggregate(PushScope.None, (current, scope) => current | scope);
+    internal static PushScope ResolveProjectScope(Settings settings)
+    {
+        if (settings.Scopes.Length == 0) return PushScope.All;
+        var scope = settings.Scopes.Aggregate(PushScope.None, (current, s) => current | s);
+        if (scope.HasFlag(PushScope.AssemblyOnly) && scope.HasFlag(PushScope.Plugins))
+            throw new FlowlineException("--scope assemblyonly and --scope plugins are mutually exclusive.");
+        return scope;
+    }
 
     internal static PushScope ResolveStandaloneScope(Settings settings)
     {
+        if (settings.Scopes is [PushScope.AssemblyOnly])
+            return PushScope.AssemblyOnly;
+
         var scope = PushScope.None;
         if (!string.IsNullOrWhiteSpace(settings.Dll)) scope |= PushScope.Plugins;
         if (!string.IsNullOrWhiteSpace(settings.WebResources)) scope |= PushScope.WebResources;
@@ -262,7 +274,11 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     internal static void ValidateStandaloneMode(Settings settings, string rootFolder)
     {
         if (settings.Scopes.Length > 0)
-            throw new FlowlineException("--scope cannot be used together with --dll or --webresources. Use either project mode or standalone artifact mode.");
+        {
+            var assemblyOnlyWithDll = settings.Scopes is [PushScope.AssemblyOnly] && !string.IsNullOrWhiteSpace(settings.Dll);
+            if (!assemblyOnlyWithDll)
+                throw new FlowlineException("--scope cannot be used together with --dll or --webresources. Use either project mode or standalone artifact mode.");
+        }
 
         if (File.Exists(Path.Combine(rootFolder, ProjectConfig.s_configFileName)))
             throw new FlowlineException("--dll and --webresources cannot be used inside a Flowline project folder. Use project mode or run standalone push from another folder.");

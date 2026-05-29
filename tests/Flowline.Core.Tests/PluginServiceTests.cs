@@ -1064,4 +1064,87 @@ public class PluginServiceTests
 
         Assert.Contains("Dry run:", _console.Output);
     }
+
+    // -- SyncAssemblyOnlyAsync --
+
+    [Fact]
+    public async Task SyncAssemblyOnlyAsync_AssemblyNotFound_Throws()
+    {
+        SetupAssembly(); // no existing assembly
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.SyncAssemblyOnlyAsync(_serviceMock, Metadata(), "MySolution"));
+
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncAssemblyOnlyAsync_HashUnchanged_Skips()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, hash: "abc123"));
+
+        await _service.SyncAssemblyOnlyAsync(_serviceMock, Metadata(hash: "abc123"), "MySolution");
+
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        Assert.Contains("already up to date", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncAssemblyOnlyAsync_HashChanged_UpdatesContent()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, hash: "oldhash"));
+
+        await _service.SyncAssemblyOnlyAsync(_serviceMock, Metadata(hash: "newhash"), "MySolution");
+
+        await _serviceMock.Received(1).UpdateAsync(Arg.Is<Entity>(e =>
+            e.LogicalName == "pluginassembly" &&
+            e.Id == assemblyId &&
+            e.GetAttributeValue<string>("description") == "[flowline] sha256=newhash"
+        ), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncAssemblyOnlyAsync_IdentityChanged_Throws()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, pkt: "df889c1cc53657b7"));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.SyncAssemblyOnlyAsync(_serviceMock, Metadata(pkt: "a4d07ffa42de325f"), "MySolution"));
+
+        Assert.Contains("identity changed", ex.Message);
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncAssemblyOnlyAsync_DryRun_HashChanged_NoUpdateCalled()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, hash: "oldhash"));
+
+        await _service.SyncAssemblyOnlyAsync(_serviceMock, Metadata(hash: "newhash"), "MySolution", RunMode.DryRun);
+
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        Assert.Contains("would update content", _console.Output);
+        Assert.Contains("Dry run:", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncAssemblyOnlyAsync_DoesNotQueryStepsOrImages()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, hash: "oldhash"));
+
+        await _service.SyncAssemblyOnlyAsync(_serviceMock, Metadata(hash: "newhash"), "MySolution");
+
+        await _serviceMock.DidNotReceive().RetrieveMultipleAsync(
+            Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep"), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().RetrieveMultipleAsync(
+            Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstepimage"), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().RetrieveMultipleAsync(
+            Arg.Is<QueryExpression>(q => q.EntityName == "customapi"), Arg.Any<CancellationToken>());
+    }
 }

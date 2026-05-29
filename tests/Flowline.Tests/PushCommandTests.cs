@@ -51,6 +51,32 @@ public class PushCommandTests : IDisposable
     }
 
     [Fact]
+    public void ResolveProjectScope_WithAssemblyOnly_ShouldReturnAssemblyOnly()
+    {
+        var settings = new PushCommand.Settings { Scopes = [PushCommand.PushScope.AssemblyOnly] };
+
+        PushCommand.ResolveProjectScope(settings).Should().Be(PushCommand.PushScope.AssemblyOnly);
+    }
+
+    [Fact]
+    public void ResolveProjectScope_WithAssemblyOnlyAndPlugins_ShouldThrow()
+    {
+        var settings = new PushCommand.Settings { Scopes = [PushCommand.PushScope.AssemblyOnly, PushCommand.PushScope.Plugins] };
+
+        var act = () => PushCommand.ResolveProjectScope(settings);
+
+        act.Should().Throw<FlowlineException>();
+    }
+
+    [Fact]
+    public void ResolveStandaloneScope_WithDllAndAssemblyOnlyScope_ShouldReturnAssemblyOnly()
+    {
+        var settings = new PushCommand.Settings { Dll = "plugins.dll", Scopes = [PushCommand.PushScope.AssemblyOnly] };
+
+        PushCommand.ResolveStandaloneScope(settings).Should().Be(PushCommand.PushScope.AssemblyOnly);
+    }
+
+    [Fact]
     public void ValidateStandaloneMode_WithScope_ShouldThrow()
     {
         var settings = new PushCommand.Settings
@@ -62,6 +88,20 @@ public class PushCommandTests : IDisposable
         var act = () => PushCommand.ValidateStandaloneMode(settings, _root);
 
         act.Should().Throw<FlowlineException>();
+    }
+
+    [Fact]
+    public void ValidateStandaloneMode_WithDllAndAssemblyOnlyScope_ShouldNotThrow()
+    {
+        var settings = new PushCommand.Settings
+        {
+            Dll = "plugins.dll",
+            Scopes = [PushCommand.PushScope.AssemblyOnly]
+        };
+
+        var act = () => PushCommand.ValidateStandaloneMode(settings, _root);
+
+        act.Should().NotThrow();
     }
 
     [Fact]
