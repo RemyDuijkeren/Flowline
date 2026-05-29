@@ -60,6 +60,8 @@ Classes without `[Step]` are skipped. Classes with `[Step]` must follow the nami
 Flowline fails fast when it cannot parse the stage and message, because `[Step]` is explicit
 intent to register a Dataverse plugin step.
 
+**Brownfield class names.** If you can't rename an existing class, use `[Handles]` to declare the message and stage explicitly — see [`[Handles]`](#handles--brownfield-escape-hatch) below.
+
 ### `[Step]` — required
 
 Specifies the table logical name. Without it, Flowline ignores the class.
@@ -93,6 +95,7 @@ Optional named properties:
 | `RunAs` | `string?` | `null` | GUID of the Dataverse `systemuser` to impersonate (`impersonatinguserid`). `null` runs as the calling user. |
 | `Config` | `string?` | `null` | Passed to the plugin constructor as `unsecureConfig`. |
 | `DeleteJobOnSuccess` | `bool` | `true` | Automatically delete the `AsyncOperation` job record when the step succeeds. Async post-operation steps only. Set to `false` to retain the record for auditing. |
+| `SecondaryTable` | `string?` | `null` | Secondary table for Associate / Disassociate steps. Pass `"none"` to fire on any secondary table without a warning. See [Associate / Disassociate](#associate--disassociate) below. |
 
 Use `RunAs` to run the plugin as a specific service account. Pass the string form of the user's GUID:
 
@@ -150,19 +153,17 @@ Use `nameof` with early-bound classes for compile-time safety:
 
 > `[Filter]` only applies to Update steps. Using it on Create, Delete, or any other message is an error — Flowline will throw during `flowline push`.
 
-### `[SecondaryTable]` — required for Associate / Disassociate
+### Associate / Disassociate
 
-Scopes the step to a specific secondary table. Use `"none"` to fire on any table.
+Use `SecondaryTable` on `[Step]` to scope the step to a specific secondary table. Pass `"none"` to fire on any secondary table without a warning.
 
 ```csharp
 // Fires when a contact is associated with any record type
-[Step("contact")]
-[SecondaryTable("none")]
+[Step("contact", SecondaryTable = "none")]
 public class ContactPreAssociatePlugin : IPlugin { ... }
 
 // Fires only when a contact is associated with an account
-[Step("contact")]
-[SecondaryTable("account")]
+[Step("contact", SecondaryTable = "account")]
 public class ContactAccountPreAssociatePlugin : IPlugin
 {
     public void Execute(IServiceProvider sp)
@@ -175,7 +176,32 @@ public class ContactAccountPreAssociatePlugin : IPlugin
 }
 ```
 
-Omitting `[SecondaryTable]` on an Associate or Disassociate step produces a warning during `flowline push`. Using `[SecondaryTable]` with no argument also warns — pass `"none"` explicitly to suppress it. Passing an empty string is an error. Using `[SecondaryTable]` on any other message (Create, Update, Delete, ...) is an error.
+Omitting `SecondaryTable` on an Associate or Disassociate step produces a warning during `flowline push`. Passing an empty string is an error. Using `SecondaryTable` on any other message (Create, Update, Delete, ...) is an error.
+
+### `[Handles]` — brownfield escape hatch
+
+When a class name doesn't follow the naming convention, use `[Handles]` to declare the message and stage explicitly. Prefer renaming the class — a conventional name documents intent and makes `[Handles]` unnecessary.
+
+```csharp
+// Explicit message and stage
+[Step("account")]
+[Handles(Message.Update, Stage.PreOperation)]
+public class AccountPlugin : IPlugin { ... }
+
+// Async — PostOperationAsync maps to PostOperation + asynchronous mode
+[Step("account")]
+[Handles(Message.Create, Stage.PostOperationAsync)]
+public class AccountPlugin : IPlugin { ... }
+
+// Custom API message (string overload)
+[Step("account")]
+[Handles("mynamespace_MyAction", Stage.PostOperation)]
+public class AccountPlugin : IPlugin { ... }
+```
+
+`[Handles]` requires `[Step]` to be present. The `Message` enum covers all built-in Dataverse messages; the string overload accepts any Custom API message name.
+
+If the class name would also parse to the same registration (message, stage, and mode all match), Flowline warns that `[Handles]` is redundant.
 
 ### `[PreImage]` and `[PostImage]` — optional
 

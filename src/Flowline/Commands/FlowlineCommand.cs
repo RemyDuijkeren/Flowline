@@ -1,7 +1,9 @@
 using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Services;
 using Flowline.Utils;
 using Flowline.Validation;
+using Microsoft.PowerPlatform.Dataverse.Client;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -114,12 +116,29 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
         return env;
     }
 
+    protected async Task<IOrganizationServiceAsync2> ConnectToDataverseAsync(DataverseConnector dataverseConnector, string environmentUrl, CancellationToken cancellationToken)
+    {
+        IOrganizationServiceAsync2? conn = null;
+
+        await Console.Status().FlowlineSpinner().StartAsync("Connecting to Dataverse...", async _ =>
+        {
+            var profile = dataverseConnector.FindBestProfile(environmentUrl);
+            if (profile == null)
+                throw new FlowlineException("No PAC profile found — run 'pac auth create' first.");
+
+            conn = await dataverseConnector.ConnectViaPacAsync(profile, environmentUrl, cancellationToken);
+        });
+
+        Console.Ok("Connected to Dataverse");
+        return conn!;
+    }
+
     protected async Task<(ProjectSolution projectSolution, SolutionInfo solutionInfo)> GetAndCheckSolutionAsync(
         string? inputName,
         string environmentUrl,
-        bool includeManaged,
-        TSettings settings,
-        CancellationToken cancellationToken)
+        bool? includeManaged = null,
+        TSettings settings = default!,
+        CancellationToken cancellationToken = default)
     {
         var projectSln = Config!.GetOrUpdateSolution(inputName, includeManaged, settings);
         if (projectSln == null)
@@ -127,7 +146,7 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
 
         SolutionInfo? remoteSln = await Console.Status().FlowlineSpinner().StartAsync(
             $"Looking up solution [bold]{projectSln.Name}[/]...",
-            ctx => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, projectSln.Name, includeManaged, settings, cancellationToken));
+            ctx => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, projectSln.Name, includeManaged ?? false, settings, cancellationToken));
         if (remoteSln == null)
             throw new FlowlineException($"Solution '{projectSln.Name}' not found in that environment.");
 

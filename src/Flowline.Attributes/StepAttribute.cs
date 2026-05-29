@@ -150,6 +150,20 @@ namespace Flowline.Attributes
         public string Config { get; set; }
 
         /// <summary>
+        /// The logical name of the secondary Dataverse table involved in an Associate or
+        /// Disassociate operation, e.g. <c>"contact"</c>. Only relevant for those two messages;
+        /// ignored on all others.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Omit (leave <see langword="null"/>) to register on <b>all secondary tables</b> — Flowline
+        /// will warn that the step fires globally. To make this intentional and suppress the warning,
+        /// pass <c>"none"</c> explicitly. Passing an empty string is an error.
+        /// </para>
+        /// </remarks>
+        public string SecondaryTable { get; set; }
+
+        /// <summary>
         /// When <see langword="true"/>, Dataverse automatically deletes the
         /// <c>AsyncOperation</c> (system job) record after this step completes successfully.
         /// Keeps the job queue clean without a separate cleanup flow. Default is <c>true</c>.

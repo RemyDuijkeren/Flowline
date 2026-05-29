@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using Flowline.Attributes;
 using Flowline.Core.Models;
 using Spectre.Console;
 
@@ -10,6 +11,11 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
 {
     private static readonly string[] MessageNames =
         Enum.GetNames<MessageName>().OrderByDescending(n => n.Length).ToArray();
+
+    // Maps Message enum int values to their name strings. Built at startup from the live runtime
+    // type (not MetadataLoadContext) so Enum.GetValues<Message>() is safe to call here.
+    private static readonly Dictionary<int, string> MessageValueToName =
+        Enum.GetValues<Message>().ToDictionary(v => (int)v, v => v.ToString());
 
     // Messages that support entity images.
     // https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#define-entity-images
@@ -302,17 +308,52 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
         var configuration = (string?)null;
         var runAsString = (string?)null;
         bool? deleteJobOnSuccessExplicit = null;
+        var secondaryTable = (string?)null;
         foreach (var arg in stepAttr.NamedArguments)
         {
             if (arg.MemberName == "Order") order = Convert.ToInt32(arg.TypedValue.Value);
             else if (arg.MemberName == "Config") configuration = (string?)arg.TypedValue.Value;
             else if (arg.MemberName == "RunAs") runAsString = (string?)arg.TypedValue.Value;
             else if (arg.MemberName == "DeleteJobOnSuccess") deleteJobOnSuccessExplicit = (bool)arg.TypedValue.Value!;
+            else if (arg.MemberName == "SecondaryTable") secondaryTable = (string?)arg.TypedValue.Value;
         }
 
         ValidateLogicalName(type.Name, table);
+        ValidateSecondaryLogicalName(type.Name, secondaryTable);
 
-        ParseStepClassNameOrThrow(type.Name, out var message, out var stage, out var mode);
+        string message;
+        int stage;
+        int mode;
+        var handlesUsed = false;
+
+        var handlesAttr = type.GetCustomAttributesData()
+            .FirstOrDefault(a => a.AttributeType.FullName == "Flowline.Attributes.HandlesAttribute");
+
+        if (handlesAttr != null)
+        {
+            handlesUsed = true;
+            var onArg = handlesAttr.ConstructorArguments[0];
+            if (onArg.ArgumentType.FullName == "System.String")
+            {
+                message = (string)onArg.Value!;
+                if (string.IsNullOrWhiteSpace(message))
+                    throw new InvalidOperationException(
+                        $"{type.Name}: [Handles] message name cannot be empty or whitespace — specify a valid Dataverse message name.");
+            }
+            else
+            {
+                var enumValue = Convert.ToInt32(onArg.Value);
+                if (!MessageValueToName.TryGetValue(enumValue, out message!))
+                    throw new InvalidOperationException(
+                        $"{type.Name}: [Handles] uses an unknown Message enum value ({enumValue}).");
+            }
+
+            (stage, mode) = MapHandlesStage(Convert.ToInt32(handlesAttr.ConstructorArguments[1].Value), type.Name);
+        }
+        else
+        {
+            ParseStepClassNameOrThrow(type.Name, out message, out stage, out mode);
+        }
 
         ValidateExecutionMode(type.Name, stage, mode);
         ValidateCustomApiAttributesOnStep(type.Name, HasCustomApiAttributes(type));
@@ -320,15 +361,21 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
         var filteringColumns = ReadFilterAttributes(type);
         ValidateFilter(type.Name, message, filteringColumns);
 
-        var (hasSecondaryAttr, secondaryTable) = ReadSecondaryTableAttribute(type);
-        ValidateSecondaryLogicalName(type.Name, secondaryTable);
-        ValidateSecondaryTable(type.Name, message, hasSecondaryAttr, secondaryTable);
+        ValidateSecondaryTable(type.Name, message, secondaryTable);
 
         var images = ReadImageAttributes(type);
         ValidateImages(type.Name, message, stage, images);
         Guid? runAs = runAsString != null && Guid.TryParse(runAsString, out var parsed) ? parsed : (Guid?)null;
 
-        var warnings = BuildStepWarnings(type.Name, message, table, filteringColumns, hasSecondaryAttr, secondaryTable, images);
+        var warnings = BuildStepWarnings(type.Name, message, table, filteringColumns, secondaryTable, images);
+
+        // R7: [Handles] is redundant only when the class name parses to the same message+stage+mode.
+        if (handlesUsed &&
+            TryParseClassName(type.Name, out var parsedMsg, out var parsedStage, out var parsedMode) &&
+            parsedMsg == message && parsedStage == stage && parsedMode == mode)
+            warnings.Add(
+                $"{type.Name}: [[Handles]] is redundant — the class name already parses to the same step registration. " +
+                $"Consider renaming the class to follow convention and removing [[Handles]].");
 
         var deleteJobOnSuccess = (mode == (int)ProcessingMode.Asynchronous) && (deleteJobOnSuccessExplicit ?? true);
         if (deleteJobOnSuccessExplicit == true && mode != (int)ProcessingMode.Asynchronous)
@@ -463,8 +510,8 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
     {
         if (table is not null && string.IsNullOrWhiteSpace(table))
             throw new InvalidOperationException(
-                $"{className}: [SecondaryTable] table cannot be an empty string — use [SecondaryTable(\"none\")] to match any secondary table, " +
-                $"or specify a table logical name e.g. [SecondaryTable(\"account\")].");
+                $"{className}: SecondaryTable cannot be an empty string — use SecondaryTable = \"none\" to match any secondary table, " +
+                $"or specify a table logical name e.g. [Step(\"contact\", SecondaryTable = \"account\")].");
     }
 
     internal static void ValidateCustomApiAttributesOnStep(string className, bool hasCustomApiAttributes)
@@ -480,23 +527,12 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
         type.GetCustomAttributesData().Any(a => a.AttributeType.FullName is
             "Flowline.Attributes.InputAttribute" or "Flowline.Attributes.OutputAttribute");
 
-    private static (bool hasAttribute, string? table) ReadSecondaryTableAttribute(Type type)
+    internal static void ValidateSecondaryTable(string className, string message, string? secondaryTable)
     {
-        var attr = type.GetCustomAttributesData()
-            .FirstOrDefault(a => a.AttributeType.FullName == "Flowline.Attributes.SecondaryTableAttribute");
-        if (attr == null) return (false, null);
-        var table = attr.ConstructorArguments.Count > 0
-            ? (string?)attr.ConstructorArguments[0].Value
-            : null;
-        return (true, table);
-    }
-
-    internal static void ValidateSecondaryTable(string className, string message, bool hasSecondaryAttr, string? secondaryTable)
-    {
-        if (hasSecondaryAttr && secondaryTable is not (null or "none") && message is not ("Associate" or "Disassociate"))
+        if (secondaryTable is not (null or "none") && message is not ("Associate" or "Disassociate"))
             throw new InvalidOperationException(
-                $"{className}: [SecondaryTable] has no effect on {message} — it only applies to Associate and Disassociate steps. " +
-                $"Remove [SecondaryTable] or change the step message.");
+                $"{className}: SecondaryTable has no effect on {message} — it only applies to Associate and Disassociate steps. " +
+                $"Remove SecondaryTable from [Step] or change the step message.");
     }
 
     // https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#execution-mode
@@ -548,7 +584,7 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
                 $"See https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#define-entity-images");
     }
 
-    private static List<string> BuildStepWarnings(string className, string message, string? table, string? filteringColumns, bool hasSecondaryAttr, string? secondaryTable, List<PluginImageMetadata> images)
+    private static List<string> BuildStepWarnings(string className, string message, string? table, string? filteringColumns, string? secondaryTable, List<PluginImageMetadata> images)
     {
         var warnings = new List<string>();
 
@@ -565,14 +601,10 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
 
         if (message is "Associate" or "Disassociate")
         {
-            if (!hasSecondaryAttr)
+            if (secondaryTable == null)
                 warnings.Add(
-                    $"{className}: {message} step has no [[SecondaryTable]] — it will fire for any table on the other side of the relationship. " +
-                    $"Add [[SecondaryTable(\"none\")]] to make this explicit, or specify the exact secondary table logical name.");
-            else if (secondaryTable == null)
-                warnings.Add(
-                    $"{className}: [[SecondaryTable]] has no table — this step will fire for all secondary tables. " +
-                    $"If intentional, specify [[SecondaryTable(\"none\")]] to suppress this warning.");
+                    $"{className}: {message} step has no secondary table — it will fire for any table on the other side of the relationship. " +
+                    $"Add [[Step(..., SecondaryTable = \"none\")]] to make this explicit, or specify the exact secondary table logical name.");
         }
 
         foreach (var image in images)
@@ -655,6 +687,20 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
         if (className.EndsWith("Plugin", StringComparison.Ordinal))    return className[..^6];
         return className;
     }
+
+    // Maps a Stage enum int value (0-3) to the internal ProcessingStage/ProcessingMode pair.
+    // Throws NotSupportedException for unknown values so new enum members fail loudly.
+    private static (int stage, int mode) MapHandlesStage(int stageValue, string className) =>
+        stageValue switch
+        {
+            0 => ((int)ProcessingStage.PreValidation,  (int)ProcessingMode.Synchronous),
+            1 => ((int)ProcessingStage.PreOperation,   (int)ProcessingMode.Synchronous),
+            2 => ((int)ProcessingStage.PostOperation,  (int)ProcessingMode.Synchronous),
+            3 => ((int)ProcessingStage.PostOperation,  (int)ProcessingMode.Asynchronous),
+            _ => throw new NotSupportedException(
+                $"{className}: [Handles] uses an unknown Stage enum value ({stageValue}). " +
+                $"Expected 0 (PreValidation), 1 (PreOperation), 2 (PostOperation), or 3 (PostOperationAsync).")
+        };
 
     // Splits PascalCase into "Title Case" words, e.g. "GetAccountRisk" → "Get Account Risk".
     internal static string SplitPascalCase(string name)

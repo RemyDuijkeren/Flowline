@@ -108,6 +108,7 @@ Developers writing Dataverse plugins need early-bound C# types for compile-time 
 - No support for non-DEV environments — always queries DEV
 - Requires live DEV connection and an active `pac` auth session — CI pipelines and offline use are not supported; teams that need generated types in CI should commit `Plugins/Models/` to source control and re-run `flowline generate` locally when solution entities change
 - Separate `Models.csproj` project not created — generated types live inside the Plugins project; each project that needs types generates independently
+- Multi-project solutions (e.g., separate Workflows project alongside Plugins) not supported — `flowline generate` always targets the `Plugins` project; additional projects use `pac modelbuilder build` directly until a `--project` flag is added post-v1
 
 ---
 

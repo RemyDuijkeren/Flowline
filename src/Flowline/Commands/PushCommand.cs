@@ -110,8 +110,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         var pluginsDll = await PreparePluginsForPushAsync(pushPlugins, standaloneMode, settings, solutionName, standaloneParams, cancellationToken);
         var (webResourcesSyncFolder, actuallyPushWebResources) = await PrepareWebResourcesForPushAsync(pushWebResources, standaloneMode, settings, solutionName, standaloneParams, cancellationToken);
 
-        var conn = await ConnectToDataverseAsync(environmentUrl, cancellationToken);
-        if (conn == null) return 1;
+        var conn = await ConnectToDataverseAsync(dataverseConnector, environmentUrl, cancellationToken);
 
         if (pushPlugins && pluginsDll != null)
         {
@@ -164,7 +163,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         else
         {
             devEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, settings.DevUrl, settings, cancellationToken);
-            var (projectSln, slnInfoResult) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, false, settings, cancellationToken);
+            var (projectSln, slnInfoResult) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, cancellationToken: cancellationToken, settings: settings);
             slnInfo = slnInfoResult;
             solutionName = projectSln.Name;
         }
@@ -235,36 +234,6 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             throw new FlowlineException("WebResources build failed — fix errors above.");
 
         return (webResourcesSyncFolder, true);
-    }
-
-    private async Task<IOrganizationServiceAsync2?> ConnectToDataverseAsync(string environmentUrl, CancellationToken cancellationToken)
-    {
-        IOrganizationServiceAsync2? conn = null;
-
-        await Console.Status().FlowlineSpinner().StartAsync("Connecting to Dataverse...", async ctx =>
-        {
-            var profile = dataverseConnector.FindBestProfile(environmentUrl);
-
-            if (profile == null)
-            {
-                Console.Error("No PAC profile found — run 'pac auth create' first.");
-                return;
-            }
-
-            try
-            {
-                conn = await dataverseConnector.ConnectViaPacAsync(profile, environmentUrl, cancellationToken);
-            }
-            catch (InvalidOperationException ex)
-            {
-                Console.Error(ex);
-            }
-        });
-
-        if (conn != null)
-            Console.Ok("Connected");
-
-        return conn;
     }
 
     private class StandaloneParams
