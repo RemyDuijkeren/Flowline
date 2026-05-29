@@ -30,7 +30,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         public string? Solution { get; set; }
 
         [CommandOption("-s|--scope <SCOPE>")]
-        [Description("Limit the push scope: all, webresources, plugins, pcf, or assemblyonly. Can be used more than once.")]
+        [Description("Limit the push scope: all, webresources, plugins, or assemblyonly. Can be used more than once.")]
         public PushScope[] Scopes { get; set; } = [];
 
         [CommandOption("--dll <PATH>")]
