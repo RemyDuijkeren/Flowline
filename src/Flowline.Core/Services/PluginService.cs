@@ -11,10 +11,10 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 {
     const string FlowlineMarker = "[flowline]";
 
-    readonly PluginReader _reader   = new();
-    readonly PluginPlanner      _planner  = new(output, opt.IsVerbose);
+    readonly PluginReader _reader = new();
+    readonly PluginPlanner _planner = new(output, opt.IsVerbose);
     readonly PluginExecutor _executor = new(output, opt.IsVerbose);
-    readonly SolutionReader  _solutionReader = new();
+    readonly SolutionReader _solutionReader = new();
     readonly PluginAssemblyReader _assemblyReader = new(output, opt.IsVerbose);
 
     public async Task SyncAssemblyOnlyAsync(
@@ -59,22 +59,9 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         if (existing == null)
             throw new InvalidOperationException($"Assembly '{metadata.Name}' not found in Dataverse — run push without --scope assemblyonly to register it first.");
 
-        var registeredPkt     = existing.GetAttributeValue<string>("publickeytoken");
-        var registeredCulture = existing.GetAttributeValue<string>("culture") ?? "neutral";
-        var registeredVersion = existing.GetAttributeValue<string>("version");
-
-        bool pktChanged        = !string.Equals(registeredPkt, metadata.PublicKeyToken, StringComparison.OrdinalIgnoreCase);
-        bool cultureChanged    = !string.Equals(registeredCulture, metadata.Culture, StringComparison.OrdinalIgnoreCase);
-        bool majorMinorChanged = HasMajorOrMinorVersionChange(registeredVersion, metadata.Version);
-
-        if (pktChanged || cultureChanged || majorMinorChanged)
-        {
-            var reasons = new List<string>();
-            if (pktChanged)        reasons.Add($"public key token ({registeredPkt ?? "null"} -> {metadata.PublicKeyToken ?? "null"})");
-            if (cultureChanged)    reasons.Add($"culture ({registeredCulture} -> {metadata.Culture})");
-            if (majorMinorChanged) reasons.Add($"major/minor version ({registeredVersion} -> {metadata.Version})");
-            throw new InvalidOperationException($"Assembly '{metadata.Name}' identity changed ({string.Join(", ", reasons)}) — cannot update assembly-only. Run push without --scope assemblyonly to delete and recreate registrations.");
-        }
+        var identityChanges = DetectIdentityChanges(existing, metadata);
+        if (identityChanges != null)
+            throw new InvalidOperationException($"Assembly '{metadata.Name}' identity changed ({string.Join(", ", identityChanges)}) — cannot update assembly-only. Run push without --scope assemblyonly to delete and recreate registrations.");
 
         var storedHash = ParseStoredHash(existing.GetAttributeValue<string>("description"));
         if (storedHash == metadata.Hash)
@@ -94,10 +81,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             .StartAsync(async ctx =>
             {
                 var task = ctx.AddTask("Updating plugin assembly", maxValue: 1);
-                existing["content"]     = Convert.ToBase64String(metadata.Content);
-                existing["version"]     = metadata.Version;
-                existing["description"] = $"{FlowlineMarker} sha256={metadata.Hash}";
-                await service.UpdateAsync(existing, cancellationToken).ConfigureAwait(false);
+                await UpdateAssemblyContentAsync(service, existing, metadata, cancellationToken).ConfigureAwait(false);
                 task.Increment(1);
             })
             .ConfigureAwait(false);
@@ -206,10 +190,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 .StartAsync(async ctx =>
                 {
                     var task = ctx.AddTask("Updating plugin assembly", maxValue: 1);
-                    assembly["content"]     = Convert.ToBase64String(metadata.Content);
-                    assembly["version"]     = metadata.Version;
-                    assembly["description"] = $"{FlowlineMarker} sha256={metadata.Hash}";
-                    await service.UpdateAsync(assembly, cancellationToken).ConfigureAwait(false);
+                    await UpdateAssemblyContentAsync(service, assembly, metadata, cancellationToken).ConfigureAwait(false);
                     task.Increment(1);
                 })
                 .ConfigureAwait(false);
@@ -277,13 +258,13 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
     async Task<(Entity entity, bool needsUpdate)> GetOrRegisterAssemblyAsync(
         IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName, RunMode runMode, CancellationToken cancellationToken = default)
     {
-        var query = new Microsoft.Xrm.Sdk.Query.QueryExpression("pluginassembly")
+        var query = new QueryExpression("pluginassembly")
         {
             TopCount = 1,
-            ColumnSet = new Microsoft.Xrm.Sdk.Query.ColumnSet("pluginassemblyid", "name", "version", "publickeytoken", "culture", "description"),
+            ColumnSet = new ColumnSet("pluginassemblyid", "name", "version", "publickeytoken", "culture", "description"),
             Criteria =
             {
-                Conditions = { new Microsoft.Xrm.Sdk.Query.ConditionExpression("name", Microsoft.Xrm.Sdk.Query.ConditionOperator.Equal, metadata.Name) }
+                Conditions = { new ConditionExpression("name", ConditionOperator.Equal, metadata.Name) }
             }
         };
 
@@ -317,21 +298,10 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             return (entity, false);
         }
 
-        var registeredPkt     = existing.GetAttributeValue<string>("publickeytoken");
-        var registeredCulture = existing.GetAttributeValue<string>("culture") ?? "neutral";
-        var registeredVersion = existing.GetAttributeValue<string>("version");
-
-        bool pktChanged        = !string.Equals(registeredPkt, metadata.PublicKeyToken, StringComparison.OrdinalIgnoreCase);
-        bool cultureChanged    = !string.Equals(registeredCulture, metadata.Culture, StringComparison.OrdinalIgnoreCase);
-        bool majorMinorChanged = HasMajorOrMinorVersionChange(registeredVersion, metadata.Version);
-
-        if (pktChanged || cultureChanged || majorMinorChanged)
+        var identityChanges = DetectIdentityChanges(existing, metadata);
+        if (identityChanges != null)
         {
-            var reasons = new List<string>();
-            if (pktChanged)        reasons.Add($"public key token ({registeredPkt ?? "null"} -> {metadata.PublicKeyToken ?? "null"})");
-            if (cultureChanged)    reasons.Add($"culture ({registeredCulture} -> {metadata.Culture})");
-            if (majorMinorChanged) reasons.Add($"major/minor version ({registeredVersion} -> {metadata.Version})");
-            var reason = string.Join(", ", reasons);
+            var reason = string.Join(", ", identityChanges);
 
             switch (runMode)
             {
@@ -617,6 +587,14 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         }
     }
 
+    async Task UpdateAssemblyContentAsync(IOrganizationServiceAsync2 service, Entity entity, PluginAssemblyMetadata metadata, CancellationToken cancellationToken)
+    {
+        entity["content"]     = Convert.ToBase64String(metadata.Content);
+        entity["version"]     = metadata.Version;
+        entity["description"] = $"{FlowlineMarker} sha256={metadata.Hash}";
+        await service.UpdateAsync(entity, cancellationToken).ConfigureAwait(false);
+    }
+
     async Task AddSolutionComponentAsync(IOrganizationServiceAsync2 service, Guid assemblyId, string solutionName, CancellationToken cancellationToken)
     {
         var request = new OrganizationRequest("AddSolutionComponent")
@@ -635,6 +613,25 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         if (description == null) return null;
         var idx = description.IndexOf("sha256=", StringComparison.Ordinal);
         return idx < 0 ? null : description[(idx + 7)..].Split(' ')[0].Trim();
+    }
+
+    static List<string>? DetectIdentityChanges(Entity existing, PluginAssemblyMetadata metadata)
+    {
+        var registeredPkt     = existing.GetAttributeValue<string>("publickeytoken");
+        var registeredCulture = existing.GetAttributeValue<string>("culture") ?? "neutral";
+        var registeredVersion = existing.GetAttributeValue<string>("version");
+
+        bool pktChanged        = !string.Equals(registeredPkt, metadata.PublicKeyToken, StringComparison.OrdinalIgnoreCase);
+        bool cultureChanged    = !string.Equals(registeredCulture, metadata.Culture, StringComparison.OrdinalIgnoreCase);
+        bool majorMinorChanged = HasMajorOrMinorVersionChange(registeredVersion, metadata.Version);
+
+        if (!pktChanged && !cultureChanged && !majorMinorChanged) return null;
+
+        var reasons = new List<string>();
+        if (pktChanged)        reasons.Add($"public key token ({registeredPkt ?? "null"} -> {metadata.PublicKeyToken ?? "null"})");
+        if (cultureChanged)    reasons.Add($"culture ({registeredCulture} -> {metadata.Culture})");
+        if (majorMinorChanged) reasons.Add($"major/minor version ({registeredVersion} -> {metadata.Version})");
+        return reasons;
     }
 
     internal static bool HasMajorOrMinorVersionChange(string? registered, string local)
