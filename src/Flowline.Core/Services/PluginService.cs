@@ -93,13 +93,14 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         string dllPath,
         string solutionName,
         RunMode runMode = RunMode.Normal,
+        bool force = false,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(dllPath))
             throw new ArgumentException("dllPath is required and cannot be empty.", nameof(dllPath));
 
         var metadata = output.Status().Start("Analyzing plugin assembly...", ctx => _assemblyReader.Analyze(dllPath));
-        await SyncSolutionAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+        await SyncSolutionAsync(service, metadata, solutionName, runMode, force, cancellationToken).ConfigureAwait(false);
     }
 
     internal async Task SyncSolutionAsync(
@@ -107,6 +108,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         PluginAssemblyMetadata metadata,
         string solutionName,
         RunMode runMode = RunMode.Normal,
+        bool force = false,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(solutionName))
@@ -120,7 +122,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         output.Info("Solution found and supported");
 
         // Phase 1: Get or register assembly
-        var (assembly, needsUpdate) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+        var (assembly, needsUpdate) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, force, cancellationToken).ConfigureAwait(false);
         output.Ok($"Assembly registered [bold]{metadata.Name}[/] ({metadata.Version})");
 
         await WarnOrphanAssembliesAsync(service, metadata.Name, solutionName, cancellationToken).ConfigureAwait(false);
@@ -256,7 +258,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
     }
 
     async Task<(Entity entity, bool needsUpdate)> GetOrRegisterAssemblyAsync(
-        IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName, RunMode runMode, CancellationToken cancellationToken = default)
+        IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName, RunMode runMode, bool force, CancellationToken cancellationToken = default)
     {
         var query = new QueryExpression("pluginassembly")
         {
@@ -305,13 +307,14 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
             switch (runMode)
             {
-                case RunMode.Save:
-                    output.Error($"Assembly '{metadata.Name}' identity changed ({reason}) — Dataverse needs a delete and recreate. Re-run without --save to apply it, or use --dry-run to preview.");
-                    throw new InvalidOperationException($"Assembly '{metadata.Name}' identity changed ({reason}). Cannot continue in save mode — re-run without --save to apply or use --dry-run to preview changes.");
                 case RunMode.DryRun:
-                    output.Skip($"Assembly '{metadata.Name}' identity changed ({reason}) — would delete and recreate");
-                    // Return a dummy entity so that the caller can continue with the dry-run
+                    output.Skip($"Assembly '{metadata.Name}' identity changed ({reason}) — would delete and recreate. Run with --force to apply.");
                     return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false);
+                case RunMode.Save:
+                    output.Error($"Assembly '{metadata.Name}' identity changed ({reason}) — Dataverse needs a delete and recreate. Re-run without --save and with --force to apply, or use --dry-run to preview.");
+                    throw new InvalidOperationException($"Assembly '{metadata.Name}' identity changed ({reason}). Cannot continue in save mode — re-run without --save and with --force to apply, or use --dry-run to preview.");
+                case RunMode.Normal when !force:
+                    throw new InvalidOperationException($"Assembly '{metadata.Name}' identity changed ({reason}) — this deletes and recreates all plugin registrations. Use --force to apply, or --dry-run to preview.");
                 case RunMode.Normal:
                     output.Warning($"Assembly '{metadata.Name}' identity changed ({reason}) — deleting and recreating plugin registrations.");
                     await service.DeleteAsync("pluginassembly", existing.Id, cancellationToken).ConfigureAwait(false);

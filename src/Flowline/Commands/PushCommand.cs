@@ -119,7 +119,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         }
         else if (pushPlugins && pluginsDll != null)
         {
-            await pluginService.SyncSolutionAsync(conn, pluginsDll, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+            await pluginService.SyncSolutionAsync(conn, pluginsDll, solutionName, runMode, settings.Force, cancellationToken).ConfigureAwait(false);
         }
 
         if (actuallyPushWebResources)
