@@ -133,26 +133,6 @@ public class InvoicePostUpdateAsyncPlugin : IPlugin { ... }
 
 > `DeleteJobOnSuccess` only applies to asynchronous (post-operation) steps. Flowline warns if you explicitly set it to `true` on a synchronous step.
 
-### `[Filter]` — optional, strongly recommended on Update steps
-
-Limits the step to fire only when at least one of the listed columns is included in the operation. Dataverse evaluates the filter before invoking your plugin — a filtered step that doesn't match costs almost nothing.
-
-Without `[Filter]`, an Update step fires on **every** update to the table, regardless of which columns changed. Flowline warns if you omit `[Filter]` on an Update step.
-
-```csharp
-[Step("account")]
-[Filter("name", "creditlimit")]
-public class AccountPreUpdatePlugin : IPlugin { ... }
-```
-
-Use `nameof` with early-bound classes for compile-time safety:
-
-```csharp
-[Filter(nameof(Account.name), nameof(Account.creditlimit))]
-```
-
-> `[Filter]` only applies to Update steps. Using it on Create, Delete, or any other message is an error — Flowline will throw during `flowline push`.
-
 ### Associate / Disassociate
 
 Use `SecondaryTable` on `[Step]` to scope the step to a specific secondary table. Pass `"none"` to fire on any secondary table without a warning.
@@ -178,30 +158,25 @@ public class ContactAccountPreAssociatePlugin : IPlugin
 
 Omitting `SecondaryTable` on an Associate or Disassociate step produces a warning during `flowline push`. Passing an empty string is an error. Using `SecondaryTable` on any other message (Create, Update, Delete, ...) is an error.
 
-### `[Handles]` — brownfield escape hatch
+### `[Filter]` — optional, strongly recommended on Update steps
 
-When a class name doesn't follow the naming convention, use `[Handles]` to declare the message and stage explicitly. Prefer renaming the class — a conventional name documents intent and makes `[Handles]` unnecessary.
+Limits the step to fire only when at least one of the listed columns is included in the operation. Dataverse evaluates the filter before invoking your plugin — a filtered step that doesn't match costs almost nothing.
+
+Without `[Filter]`, an Update step fires on **every** update to the table, regardless of which columns changed. Flowline warns if you omit `[Filter]` on an Update step.
 
 ```csharp
-// Explicit message and stage
 [Step("account")]
-[Handles(Message.Update, Stage.PreOperation)]
-public class AccountPlugin : IPlugin { ... }
-
-// Async — PostOperationAsync maps to PostOperation + asynchronous mode
-[Step("account")]
-[Handles(Message.Create, Stage.PostOperationAsync)]
-public class AccountPlugin : IPlugin { ... }
-
-// Custom API message (string overload)
-[Step("account")]
-[Handles("mynamespace_MyAction", Stage.PostOperation)]
-public class AccountPlugin : IPlugin { ... }
+[Filter("name", "creditlimit")]
+public class AccountPreUpdatePlugin : IPlugin { ... }
 ```
 
-`[Handles]` requires `[Step]` to be present. The `Message` enum covers all built-in Dataverse messages; the string overload accepts any Custom API message name.
+Use `nameof` with early-bound classes for compile-time safety:
 
-If the class name would also parse to the same registration (message, stage, and mode all match), Flowline warns that `[Handles]` is redundant.
+```csharp
+[Filter(nameof(Account.name), nameof(Account.creditlimit))]
+```
+
+> `[Filter]` only applies to Update steps. Using it on Create, Delete, or any other message is an error — Flowline will throw during `flowline push`.
 
 ### `[PreImage]` and `[PostImage]` — optional
 
@@ -296,6 +271,31 @@ public class InvoicePostUpdateAsyncPlugin : IPlugin
     }
 }
 ```
+
+### `[Handles]` — brownfield escape hatch
+
+When a class name doesn't follow the naming convention, use `[Handles]` to declare the message and stage explicitly. Prefer renaming the class — a conventional name documents intent and makes `[Handles]` unnecessary.
+
+```csharp
+// Explicit message and stage
+[Step("account")]
+[Handles(Message.Update, Stage.PreOperation)]
+public class AccountPlugin : IPlugin { ... }
+
+// Async — PostOperationAsync maps to PostOperation + asynchronous mode
+[Step("account")]
+[Handles(Message.Create, Stage.PostOperationAsync)]
+public class AccountPlugin : IPlugin { ... }
+
+// Custom API message (string overload)
+[Step("account")]
+[Handles("mynamespace_MyAction", Stage.PostOperation)]
+public class AccountPlugin : IPlugin { ... }
+```
+
+`[Handles]` requires `[Step]` to be present. The `Message` enum covers all built-in Dataverse messages; the string overload accepts any Custom API message name.
+
+If the class name would also parse to the same registration (message, stage, and mode all match), Flowline warns that `[Handles]` is redundant.
 
 ### Lifecycle
 
@@ -457,11 +457,11 @@ The `--no-delete` flag suppresses deletions the same way it does for steps.
 
 Each plugin class registers exactly one step. This constraint pays dividends:
 
+**Unambiguous attributes.** `[Filter]`, `[PreImage]`, and `[PostImage]` always belong to exactly one step — the one the class registers. No need to associate them with a particular step in a multi-step registration.
+
 **Focused `Execute` bodies.** Without the rule, `Execute` needs branching logic to handle different messages. With it, every `Execute` does one thing — Dataverse guarantees which step fired because only one is registered.
 
 **Self-describing logs.** When a plugin throws, Dataverse logs the class name. `AccountPostCreatePlugin` tells you exactly what happened; `AccountPlugin` does not.
-
-**Unambiguous attributes.** `[Filter]`, `[PreImage]`, and `[PostImage]` always belong to exactly one step — the one the class registers. No need to associate them with a particular step in a multi-step registration.
 
 **Shared logic via base classes.** The rule does not mean duplicating code. Put shared logic in a base class and declare one leaf class per step:
 
