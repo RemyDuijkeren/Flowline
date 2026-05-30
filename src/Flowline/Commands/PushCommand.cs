@@ -6,7 +6,6 @@ using Spectre.Console;
 using Spectre.Console.Cli;
 using Flowline.Utils;
 using Flowline.Validation;
-using Microsoft.PowerPlatform.Dataverse.Client;
 
 namespace Flowline.Commands;
 
@@ -33,11 +32,11 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         [Description("Limit the push scope: all, webresources, plugins, or assemblyonly. Can be used more than once.")]
         public PushScope[] Scopes { get; set; } = [];
 
-        [CommandOption("--dll <PATH>")]
-        [Description("Prebuilt plugin assembly DLL to push without using a Flowline project")]
-        public string? Dll { get; set; }
+        [CommandOption("-pf|--pluginFile <PATH>")]
+        [Description("Prebuilt plugin file (.dll) to push without using a Flowline project")]
+        public string? PluginFile { get; set; }
 
-        [CommandOption("-w|--webresources <PATH>")]
+        [CommandOption("-wr|--webresources <PATH>")]
         [Description("Web resource folder to push without using a Flowline project")]
         public string? WebResources { get; set; }
 
@@ -100,31 +99,28 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (!standaloneMode)
             environmentUrl = devEnv.EnvironmentUrl!;
 
-        var pushScope = standaloneMode
-            ? ResolveStandaloneScope(settings)
-            : ResolveProjectScope(settings);
-
+        var pushScope = ResolveScope(settings, standaloneMode);
         var pushAssemblyOnly = pushScope.HasFlag(PushScope.AssemblyOnly);
-        var pushPlugins = !pushAssemblyOnly && pushScope.HasFlag(PushScope.Plugins);
-        var pushWebResources = pushScope.HasFlag(PushScope.WebResources);
-
-        var pluginsDll = await PreparePluginsForPushAsync(pushPlugins || pushAssemblyOnly, standaloneMode, settings, solutionName, standaloneParams, cancellationToken);
-        var (webResourcesSyncFolder, actuallyPushWebResources) = await PrepareWebResourcesForPushAsync(pushWebResources, standaloneMode, settings, solutionName, standaloneParams, cancellationToken);
+        var pluginsDll = (pushAssemblyOnly || pushScope.HasFlag(PushScope.Plugins))
+            ? await PreparePluginsForPushAsync(standaloneMode, settings, solutionName, standaloneParams, cancellationToken)
+            : null;
+        var webResourcesSyncFolder = pushScope.HasFlag(PushScope.WebResources)
+            ? await PrepareWebResourcesForPushAsync(standaloneMode, settings, solutionName, standaloneParams, cancellationToken)
+            : null;
 
         var conn = await ConnectToDataverseAsync(dataverseConnector, environmentUrl, cancellationToken);
 
-        if (pushAssemblyOnly && pluginsDll != null)
+        if (pluginsDll != null)
         {
-            await pluginService.SyncAssemblyOnlyAsync(conn, pluginsDll, solutionName, runMode, cancellationToken).ConfigureAwait(false);
-        }
-        else if (pushPlugins && pluginsDll != null)
-        {
-            await pluginService.SyncSolutionAsync(conn, pluginsDll, solutionName, runMode, settings.Force, cancellationToken).ConfigureAwait(false);
+            if (pushAssemblyOnly)
+                await pluginService.SyncAssemblyOnlyAsync(conn, pluginsDll, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+            else
+                await pluginService.SyncSolutionAsync(conn, pluginsDll, solutionName, runMode, settings.Force, cancellationToken).ConfigureAwait(false);
         }
 
-        if (actuallyPushWebResources)
+        if (webResourcesSyncFolder != null)
         {
-            await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder!, solutionName, runMode: runMode, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder, solutionName, runMode: runMode, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
         Console.Done("Assets pushed! Use 'sync' to keep it in flow.");
@@ -142,7 +138,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (!standaloneMode) return new StandaloneParams();
 
         var solutionName = ResolveStandaloneSolutionName(settings);
-        var dllPath = !string.IsNullOrWhiteSpace(settings.Dll) ? ResolveStandaloneDllPath(settings) : null;
+        var dllPath = !string.IsNullOrWhiteSpace(settings.PluginFile) ? ResolveStandalonePluginFilePath(settings) : null;
         var webResourcesPath = !string.IsNullOrWhiteSpace(settings.WebResources) ? ResolveStandaloneWebResourcesPath(settings) : null;
 
         return new StandaloneParams { SolutionName = solutionName, DllPath = dllPath, WebResourcesPath = webResourcesPath };
@@ -180,15 +176,12 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     }
 
     private async Task<string?> PreparePluginsForPushAsync(
-        bool pushPlugins,
         bool standaloneMode,
         Settings settings,
         string solutionName,
         StandaloneParams standaloneParams,
         CancellationToken cancellationToken)
     {
-        if (!pushPlugins) return null;
-
         string? pluginsDll = standaloneMode ? standaloneParams.DllPath : null;
 
         if (!standaloneMode)
@@ -202,7 +195,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
 
         if (pluginsDll == null || !File.Exists(pluginsDll))
             throw new FlowlineException(standaloneMode
-                ? $"DLL not found: {settings.Dll}"
+                ? $"Plugin file not found: {settings.PluginFile}"
                 : $"{PluginsName}.dll not found. Build the solution first.");
 
         Console.Info($"[bold]{Path.GetFileName(pluginsDll)}[/] found");
@@ -211,20 +204,14 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         return pluginsDll;
     }
 
-    private async Task<(string?, bool)> PrepareWebResourcesForPushAsync(
-        bool pushWebResources,
+    private async Task<string?> PrepareWebResourcesForPushAsync(
         bool standaloneMode,
         Settings settings,
         string solutionName,
         StandaloneParams standaloneParams,
         CancellationToken cancellationToken)
     {
-        if (!pushWebResources) return (null, false);
-
-        if (standaloneMode)
-        {
-            return (standaloneParams.WebResourcesPath, true);
-        }
+        if (standaloneMode) return standaloneParams.WebResourcesPath;
 
         var webResourcesFolder = Path.Combine(RootFolder, AllSolutionsFolderName, solutionName, WebResourcesName);
         var webResourcesSyncFolder = Path.Combine(webResourcesFolder, "dist");
@@ -232,13 +219,13 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (!Directory.Exists(webResourcesFolder))
         {
             Console.Skip("WebResources project not found — skipping");
-            return (null, false);
+            return null;
         }
 
         if (await DotNetUtils.BuildSolutionAsync(webResourcesFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
             throw new FlowlineException("WebResources build failed — fix errors above.");
 
-        return (webResourcesSyncFolder, true);
+        return webResourcesSyncFolder;
     }
 
     private class StandaloneParams
@@ -249,39 +236,43 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     }
 
     internal static bool IsStandaloneMode(Settings settings) =>
-        !string.IsNullOrWhiteSpace(settings.Dll) || !string.IsNullOrWhiteSpace(settings.WebResources);
+        !string.IsNullOrWhiteSpace(settings.PluginFile) || !string.IsNullOrWhiteSpace(settings.WebResources);
 
-    internal static PushScope ResolveProjectScope(Settings settings)
+    internal static PushScope ResolveScope(Settings settings, bool standaloneMode)
     {
-        if (settings.Scopes.Length == 0) return PushScope.All;
-        var scope = settings.Scopes.Aggregate(PushScope.None, (current, s) => current | s);
-        if (scope.HasFlag(PushScope.AssemblyOnly) && scope.HasFlag(PushScope.Plugins))
-            throw new FlowlineException("--scope assemblyonly and --scope plugins are mutually exclusive.");
-        return scope;
-    }
+        PushScope scope;
+        if (settings.Scopes.Length > 0)
+        {
+            scope = settings.Scopes.Aggregate(PushScope.None, (current, s) => current | s);
+            if (scope.HasFlag(PushScope.AssemblyOnly) && scope.HasFlag(PushScope.Plugins))
+                throw new FlowlineException("--scope assemblyonly and --scope plugins are mutually exclusive.");
+        }
+        else if (standaloneMode)
+        {
+            scope = PushScope.None;
+            if (!string.IsNullOrWhiteSpace(settings.PluginFile)) scope |= PushScope.Plugins;
+            if (!string.IsNullOrWhiteSpace(settings.WebResources)) scope |= PushScope.WebResources;
+        }
+        else
+        {
+            scope = PushScope.All;
+        }
 
-    internal static PushScope ResolveStandaloneScope(Settings settings)
-    {
-        if (settings.Scopes is [PushScope.AssemblyOnly])
-            return PushScope.AssemblyOnly;
+        if (standaloneMode)
+        {
+            if ((scope.HasFlag(PushScope.Plugins) || scope.HasFlag(PushScope.AssemblyOnly)) && string.IsNullOrWhiteSpace(settings.PluginFile))
+                throw new FlowlineException("--scope plugins/assemblyonly requires --pluginFile.");
+            if (scope.HasFlag(PushScope.WebResources) && string.IsNullOrWhiteSpace(settings.WebResources))
+                throw new FlowlineException("--scope webresources requires --webresources.");
+        }
 
-        var scope = PushScope.None;
-        if (!string.IsNullOrWhiteSpace(settings.Dll)) scope |= PushScope.Plugins;
-        if (!string.IsNullOrWhiteSpace(settings.WebResources)) scope |= PushScope.WebResources;
         return scope;
     }
 
     internal static void ValidateStandaloneMode(Settings settings, string rootFolder)
     {
-        if (settings.Scopes.Length > 0)
-        {
-            var assemblyOnlyWithDll = settings.Scopes is [PushScope.AssemblyOnly] && !string.IsNullOrWhiteSpace(settings.Dll);
-            if (!assemblyOnlyWithDll)
-                throw new FlowlineException("--scope cannot be used together with --dll or --webresources. Use either project mode or standalone artifact mode.");
-        }
-
         if (File.Exists(Path.Combine(rootFolder, ProjectConfig.s_configFileName)))
-            throw new FlowlineException("--dll and --webresources cannot be used inside a Flowline project folder. Use project mode or run standalone push from another folder.");
+            throw new FlowlineException("--pluginFile and --webresources cannot be used inside a Flowline project folder. Use project mode or run standalone push from another folder.");
     }
 
     internal static string ResolveStandaloneSolutionName(Settings settings)
@@ -304,14 +295,19 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         throw new FlowlineException("Dev URL is required in standalone mode — use --dev <URL> or select a resource-specific PAC profile.");
     }
 
-    internal static string ResolveStandaloneDllPath(Settings settings)
+    internal static string ResolveStandalonePluginFilePath(Settings settings)
     {
-        var path = Path.GetFullPath(settings.Dll!);
-        if (!string.Equals(Path.GetExtension(path), ".dll", StringComparison.OrdinalIgnoreCase))
-            throw new FlowlineException("--dll must point to a .dll file.");
+        var path = Path.GetFullPath(settings.PluginFile!);
+        var ext = Path.GetExtension(path);
+
+        if (string.Equals(ext, ".nupkg", StringComparison.OrdinalIgnoreCase))
+            throw new FlowlineException("NuGet packages not yet supported — use a .dll file.");
+
+        if (!string.Equals(ext, ".dll", StringComparison.OrdinalIgnoreCase))
+            throw new FlowlineException("--pluginFile must point to a .dll file.");
 
         if (!File.Exists(path))
-            throw new FlowlineException($"DLL not found: {path}");
+            throw new FlowlineException($"Plugin file not found: {path}");
 
         return path;
     }

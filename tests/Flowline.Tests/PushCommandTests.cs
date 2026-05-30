@@ -19,9 +19,9 @@ public class PushCommandTests : IDisposable
     }
 
     [Fact]
-    public void IsStandaloneMode_WithDll_ShouldReturnTrue()
+    public void IsStandaloneMode_WithPluginFile_ShouldReturnTrue()
     {
-        var settings = new PushCommand.Settings { Dll = "plugins.dll" };
+        var settings = new PushCommand.Settings { PluginFile = "plugins.dll" };
 
         PushCommand.IsStandaloneMode(settings).Should().BeTrue();
     }
@@ -35,80 +35,80 @@ public class PushCommandTests : IDisposable
     }
 
     [Fact]
-    public void ResolveProjectScope_WithoutScope_ShouldDefaultToAll()
+    public void ResolveScope_ProjectMode_WithoutScope_ShouldDefaultToAll()
     {
         var settings = new PushCommand.Settings();
 
-        PushCommand.ResolveProjectScope(settings).Should().Be(PushCommand.PushScope.All);
+        PushCommand.ResolveScope(settings, standaloneMode: false).Should().Be(PushCommand.PushScope.All);
     }
 
     [Fact]
-    public void ResolveStandaloneScope_WithDllAndWebResources_ShouldUseProvidedArtifacts()
+    public void ResolveScope_StandaloneMode_WithPluginFileAndWebResources_ShouldDeriveScope()
     {
-        var settings = new PushCommand.Settings { Dll = "plugins.dll", WebResources = "dist" };
+        var settings = new PushCommand.Settings { PluginFile = "plugins.dll", WebResources = "dist" };
 
-        PushCommand.ResolveStandaloneScope(settings).Should().Be(PushCommand.PushScope.Plugins | PushCommand.PushScope.WebResources);
+        PushCommand.ResolveScope(settings, standaloneMode: true).Should().Be(PushCommand.PushScope.Plugins | PushCommand.PushScope.WebResources);
     }
 
     [Fact]
-    public void ResolveProjectScope_WithAssemblyOnly_ShouldReturnAssemblyOnly()
+    public void ResolveScope_WithAssemblyOnly_ShouldReturnAssemblyOnly()
     {
         var settings = new PushCommand.Settings { Scopes = [PushCommand.PushScope.AssemblyOnly] };
 
-        PushCommand.ResolveProjectScope(settings).Should().Be(PushCommand.PushScope.AssemblyOnly);
+        PushCommand.ResolveScope(settings, standaloneMode: false).Should().Be(PushCommand.PushScope.AssemblyOnly);
     }
 
     [Fact]
-    public void ResolveProjectScope_WithAssemblyOnlyAndPlugins_ShouldThrow()
+    public void ResolveScope_WithAssemblyOnlyAndPlugins_ShouldThrow()
     {
         var settings = new PushCommand.Settings { Scopes = [PushCommand.PushScope.AssemblyOnly, PushCommand.PushScope.Plugins] };
 
-        var act = () => PushCommand.ResolveProjectScope(settings);
+        var act = () => PushCommand.ResolveScope(settings, standaloneMode: false);
 
         act.Should().Throw<FlowlineException>();
     }
 
     [Fact]
-    public void ResolveStandaloneScope_WithDllAndAssemblyOnlyScope_ShouldReturnAssemblyOnly()
+    public void ResolveScope_StandaloneMode_WithPluginFileAndAssemblyOnlyScope_ShouldReturnAssemblyOnly()
     {
-        var settings = new PushCommand.Settings { Dll = "plugins.dll", Scopes = [PushCommand.PushScope.AssemblyOnly] };
+        var settings = new PushCommand.Settings { PluginFile = "plugins.dll", Scopes = [PushCommand.PushScope.AssemblyOnly] };
 
-        PushCommand.ResolveStandaloneScope(settings).Should().Be(PushCommand.PushScope.AssemblyOnly);
+        PushCommand.ResolveScope(settings, standaloneMode: true).Should().Be(PushCommand.PushScope.AssemblyOnly);
     }
 
     [Fact]
-    public void ValidateStandaloneMode_WithScope_ShouldThrow()
+    public void ResolveScope_StandaloneMode_WithPluginsScopeAndPluginFile_ShouldReturnPlugins()
     {
-        var settings = new PushCommand.Settings
-        {
-            Dll = "plugins.dll",
-            Scopes = [PushCommand.PushScope.Plugins]
-        };
+        var settings = new PushCommand.Settings { PluginFile = "plugins.dll", Scopes = [PushCommand.PushScope.Plugins] };
 
-        var act = () => PushCommand.ValidateStandaloneMode(settings, _root);
+        PushCommand.ResolveScope(settings, standaloneMode: true).Should().Be(PushCommand.PushScope.Plugins);
+    }
+
+    [Fact]
+    public void ResolveScope_StandaloneMode_WithPluginsScopeButNoPluginFile_ShouldThrow()
+    {
+        var settings = new PushCommand.Settings { Scopes = [PushCommand.PushScope.Plugins] };
+
+        var act = () => PushCommand.ResolveScope(settings, standaloneMode: true);
 
         act.Should().Throw<FlowlineException>();
     }
 
     [Fact]
-    public void ValidateStandaloneMode_WithDllAndAssemblyOnlyScope_ShouldNotThrow()
+    public void ResolveScope_StandaloneMode_WithWebResourcesScopeButNoPath_ShouldThrow()
     {
-        var settings = new PushCommand.Settings
-        {
-            Dll = "plugins.dll",
-            Scopes = [PushCommand.PushScope.AssemblyOnly]
-        };
+        var settings = new PushCommand.Settings { Scopes = [PushCommand.PushScope.WebResources] };
 
-        var act = () => PushCommand.ValidateStandaloneMode(settings, _root);
+        var act = () => PushCommand.ResolveScope(settings, standaloneMode: true);
 
-        act.Should().NotThrow();
+        act.Should().Throw<FlowlineException>();
     }
 
     [Fact]
     public void ValidateStandaloneMode_WithFlowlineFile_ShouldThrow()
     {
         File.WriteAllText(Path.Combine(_root, ".flowline"), "{}");
-        var settings = new PushCommand.Settings { Dll = "plugins.dll" };
+        var settings = new PushCommand.Settings { PluginFile = "plugins.dll" };
 
         var act = () => PushCommand.ValidateStandaloneMode(settings, _root);
 
@@ -118,7 +118,7 @@ public class PushCommandTests : IDisposable
     [Fact]
     public void ResolveStandaloneSolutionName_WithoutSolution_ShouldThrow()
     {
-        var settings = new PushCommand.Settings { Dll = "plugins.dll" };
+        var settings = new PushCommand.Settings { PluginFile = "plugins.dll" };
 
         var act = () => PushCommand.ResolveStandaloneSolutionName(settings);
 
@@ -126,25 +126,37 @@ public class PushCommandTests : IDisposable
     }
 
     [Fact]
-    public void ResolveStandaloneDllPath_WithExistingDll_ShouldReturnFullPath()
+    public void ResolveStandalonePluginFilePath_WithExistingDll_ShouldReturnFullPath()
     {
         var dll = Path.Combine(_root, "plugins.dll");
         File.WriteAllText(dll, "");
-        var settings = new PushCommand.Settings { Dll = dll };
+        var settings = new PushCommand.Settings { PluginFile = dll };
 
-        PushCommand.ResolveStandaloneDllPath(settings).Should().Be(Path.GetFullPath(dll));
+        PushCommand.ResolveStandalonePluginFilePath(settings).Should().Be(Path.GetFullPath(dll));
     }
 
     [Fact]
-    public void ResolveStandaloneDllPath_WithNonDll_ShouldThrow()
+    public void ResolveStandalonePluginFilePath_WithNonDll_ShouldThrow()
     {
         var file = Path.Combine(_root, "plugins.txt");
         File.WriteAllText(file, "");
-        var settings = new PushCommand.Settings { Dll = file };
+        var settings = new PushCommand.Settings { PluginFile = file };
 
-        var act = () => PushCommand.ResolveStandaloneDllPath(settings);
+        var act = () => PushCommand.ResolveStandalonePluginFilePath(settings);
 
         act.Should().Throw<FlowlineException>();
+    }
+
+    [Fact]
+    public void ResolveStandalonePluginFilePath_WithNupkg_ShouldThrow()
+    {
+        var file = Path.Combine(_root, "plugins.nupkg");
+        File.WriteAllText(file, "");
+        var settings = new PushCommand.Settings { PluginFile = file };
+
+        var act = () => PushCommand.ResolveStandalonePluginFilePath(settings);
+
+        act.Should().Throw<FlowlineException>().WithMessage("*NuGet*");
     }
 
     [Fact]

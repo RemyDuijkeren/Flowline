@@ -308,10 +308,10 @@ Steps created by Flowline are stamped with `[flowline]` in their description, vi
 
 **Disabling a step without deleting it:** remove `[Step]` — Flowline deletes the step but keeps the plugin type registered.
 
-**`--save` flag:** suppresses all deletions for that run and prints each skipped item:
+**`--no-delete` flag:** suppresses all deletions for that run and prints each skipped item:
 
 ```bash
-flowline push MySolution --save
+flowline push MySolution --no-delete
 ```
 
 **`--dry-run` flag:** prints the changes that would be made without actually making them:
@@ -449,7 +449,7 @@ Flowline treats the DLL as the source of truth for Custom APIs, the same as for 
 - **Deleted and recreated** when an immutable field changes (binding type, `IsFunction`, `AllowedStepType`, or a parameter's type or optionality). Flowline warns before doing this.
 - **Deleted** when the class or `[CustomApi]` is removed.
 
-The `--save` flag suppresses deletions the same way it does for steps.
+The `--no-delete` flag suppresses deletions the same way it does for steps.
 
 ---
 

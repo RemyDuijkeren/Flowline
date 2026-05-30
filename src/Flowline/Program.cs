@@ -80,9 +80,9 @@ app.Configure(config =>
         .WithExample("push")
         .WithExample("push", "ContosoCustomizations")
         .WithExample("push", "ContosoCustomizations --dev https://contoso-dev.crm4.dynamics.com/")
-        .WithExample("push", "ContosoCustomizations --dll ./bin/Release/Plugins.dll")
+        .WithExample("push", "ContosoCustomizations --pluginFile ./bin/Release/Plugins.dll")
         .WithExample("push", "ContosoCustomizations --webresources ./dist")
-        .WithExample("push", "ContosoCustomizations --dll ./bin/Release/Plugins.dll --webresources ./dist");
+        .WithExample("push", "ContosoCustomizations --pluginFile ./bin/Release/Plugins.dll --webresources ./dist");
 
     // Sync changes to local repo (export solution and unpack)
     config.AddCommand<SyncCommand>("sync")

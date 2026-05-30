@@ -17,7 +17,7 @@
 Flowline brings a few things the other tools don't:
 
 - **Source-controlled solution XML.** `sync` unpacks the solution per component, so `git diff` shows real changes — not a binary blob. `clone` bootstraps an existing solution into the repo; `deploy` packages from the repo and imports into the target.
-- **Fast push for code assets.** `push` syncs plugin assemblies and web resources directly to DEV without a full solution import. Use it from a Flowline project, or point it at a standalone DLL and web resource folder. `--scope assemblyonly` updates only the DLL bytes — useful in hot iteration loops when registrations haven't changed.
+- **Fast push for code assets.** `push` syncs plugin assemblies and web resources directly to DEV without a full solution import. Use it from a Flowline project, or point it at a standalone plugin file and web resource folder. `--scope assemblyonly` updates only the assembly bytes — useful in hot iteration loops when registrations haven't changed.
 - **Attribute-driven plugin registration.** Decorate `IPlugin` classes with `[Step]`, `[Filter]`, `[PreImage]`, and `[PostImage]`; Flowline reads the compiled assembly and handles the Dataverse registrations.
 - **Plugins, workflow activities, and Custom APIs in one assembly.** Flowline reads all supported types from a single assembly in one pass.
 - **Modern auth.** Flowline reuses the PAC CLI token cache. No passwords, no client secrets in scripts, no Windows Credential Manager.
@@ -114,24 +114,24 @@ Use this when you only want Flowline's direct Dataverse push. You do **not** nee
 Run it from a normal folder that is **not** a Flowline project folder:
 
 ```bash
-flowline push ContosoCustomizations --dll ./bin/Release/MyPlugins.dll --dev https://contoso-dev.crm4.dynamics.com
+flowline push ContosoCustomizations --pluginFile ./bin/Release/MyPlugins.dll --dev https://contoso-dev.crm4.dynamics.com
 flowline push ContosoCustomizations --webresources ./dist --dev https://contoso-dev.crm4.dynamics.com
-flowline push ContosoCustomizations --dll ./bin/Release/MyPlugins.dll --webresources ./dist --dev https://contoso-dev.crm4.dynamics.com
+flowline push ContosoCustomizations --pluginFile ./bin/Release/MyPlugins.dll --webresources ./dist --dev https://contoso-dev.crm4.dynamics.com
 ```
 
 To update only the assembly bytes without touching step or Custom API registrations:
 
 ```bash
-flowline push ContosoCustomizations --dll ./bin/Release/MyPlugins.dll --scope assemblyonly --dev https://contoso-dev.crm4.dynamics.com
+flowline push ContosoCustomizations --pluginFile ./bin/Release/MyPlugins.dll --scope assemblyonly --dev https://contoso-dev.crm4.dynamics.com
 ```
 
 If `--dev` is omitted, Flowline uses the current resource-specific PAC auth profile.
 
 Standalone rules:
 
-- `--dll` must point to an already-built plugin assembly.
+- `--pluginFile` must point to an already-built plugin assembly (`.dll`).
 - `--webresources` points directly at the folder whose files should be synced.
-- `--scope` is not allowed with `--dll` or `--webresources`, except `--scope assemblyonly` which is allowed with `--dll`.
+- `--scope` is optional. Without it, scope is derived from the provided options. With it, the given scope must match what was provided — `--scope plugins` or `--scope assemblyonly` requires `--pluginFile`; `--scope webresources` requires `--webresources`.
 - `.flowline` is not read in standalone mode.
 - If `.flowline` exists in the current folder, standalone mode stops because that usually means project mode and standalone mode were mixed.
 - The target solution must be unmanaged.
@@ -169,7 +169,7 @@ Full attribute reference: [Flowline.Attributes README](src/Flowline.Attributes/R
 | Command | What it does |
 |---|---|
 | `clone <solution>` | Bootstrap an existing solution from production into the repo. Sets up the full project structure. |
-| `push [solution]` | Build and sync project assets to DEV, or push standalone artifacts with `--dll` / `--webresources`. Use `--scope assemblyonly` to update only the DLL without touching plugin registrations. |
+| `push [solution]` | Build and sync project assets to DEV, or push standalone artifacts with `--pluginFile` / `--webresources`. Use `--scope assemblyonly` to update only the assembly without touching plugin registrations. |
 | `sync [solution]` | Pull the current solution state from DEV and unpack it into the repo. |
 | `deploy <target>` | Pack the solution from the repo and import it into TEST, PROD, or an explicit URL. |
 | `provision [dev\|test]` | Provision a DEV or TEST environment by copying from production. |
