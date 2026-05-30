@@ -1,3 +1,3 @@
 namespace Flowline.Core;
 
-public enum RunMode { Normal, Save, DryRun }
+public enum RunMode { Normal, NoDelete, DryRun }

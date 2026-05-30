@@ -758,7 +758,7 @@ public class PluginServiceTests
         _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter"), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([new Entity("sdkmessagefilter", Guid.NewGuid())])));
 
-        await _service.SyncSolutionAsync(_serviceMock, Metadata(plugins: plugin), "MySolution", RunMode.Save);
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(plugins: plugin), "MySolution", RunMode.NoDelete);
 
         await _serviceMock.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
         Assert.Contains("Orphaned step", _console.Output);
@@ -887,17 +887,17 @@ public class PluginServiceTests
     }
 
     [Fact]
-    public async Task SyncAsync_SaveMode_IdentityChanged_ThrowsAndDoesNotDelete()
+    public async Task SyncAsync_NoDeleteMode_IdentityChanged_ThrowsAndDoesNotDelete()
     {
         var assemblyId = Guid.NewGuid();
         SetupAssembly(ExistingAssembly(assemblyId, pkt: "df889c1cc53657b7"));
         SetupPluginTypes();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            _service.SyncSolutionAsync(_serviceMock, Metadata(pkt: "a4d07ffa42de325f"), "MySolution", RunMode.Save));
+            _service.SyncSolutionAsync(_serviceMock, Metadata(pkt: "a4d07ffa42de325f"), "MySolution", RunMode.NoDelete));
 
         await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
-        Assert.Contains("--save", _console.Output);
+        Assert.Contains("--no-delete", _console.Output);
     }
 
     [Fact]

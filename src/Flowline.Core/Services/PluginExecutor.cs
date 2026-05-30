@@ -26,12 +26,12 @@ public class PluginExecutor(IAnsiConsole output, bool isVerbose)
     {
         if (save)
         {
-            foreach (var a in plan.Images.Deletes)        output.Skip($"Image '{a.Name}' not in source — kept (--save)");
-            foreach (var a in plan.ResponseProps.Deletes) output.Skip($"Response Property '{a.Name}' not in source — kept (--save)");
-            foreach (var a in plan.RequestParams.Deletes) output.Skip($"Request Parameter '{a.Name}' not in source — kept (--save)");
-            foreach (var a in plan.Steps.Deletes)         output.Skip($"Step '{a.Name}' not in source — kept (--save)");
-            foreach (var a in plan.CustomApis.Deletes)    output.Skip($"Custom API '{a.Name}' not in source — kept (--save)");
-            foreach (var a in plan.PluginTypes.Deletes)   output.Skip($"Plugin Type '{a.Name}' not in source — kept (--save)");
+            foreach (var a in plan.Images.Deletes)        output.Skip($"Image '{a.Name}' not in source — kept (--no-delete)");
+            foreach (var a in plan.ResponseProps.Deletes) output.Skip($"Response Property '{a.Name}' not in source — kept (--no-delete)");
+            foreach (var a in plan.RequestParams.Deletes) output.Skip($"Request Parameter '{a.Name}' not in source — kept (--no-delete)");
+            foreach (var a in plan.Steps.Deletes)         output.Skip($"Step '{a.Name}' not in source — kept (--no-delete)");
+            foreach (var a in plan.CustomApis.Deletes)    output.Skip($"Custom API '{a.Name}' not in source — kept (--no-delete)");
+            foreach (var a in plan.PluginTypes.Deletes)   output.Skip($"Plugin Type '{a.Name}' not in source — kept (--no-delete)");
             return;
         }
 

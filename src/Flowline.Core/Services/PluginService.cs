@@ -122,10 +122,10 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         output.Info("Solution found and supported");
 
         // Phase 1: Get or register assembly
-        var (assembly, needsUpdate) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, force, cancellationToken).ConfigureAwait(false);
+        var (assembly, needsUpdate) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
         output.Ok($"Assembly registered [bold]{metadata.Name}[/] ({metadata.Version})");
 
-        await WarnOrphanAssembliesAsync(service, metadata.Name, solutionName, cancellationToken).ConfigureAwait(false);
+        await WarnOrphanAssembliesAsync(service, metadata.Name, solutionName, force, cancellationToken).ConfigureAwait(false);
 
         // Phase 2: Load snapshot (all Dataverse state in parallel)
         var snapshot = await output.Status()
@@ -169,9 +169,9 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         }
 
         // Phase 4: Execute the deletes first — must precede assembly update and upserts
-        if (runMode == RunMode.Save || plan.TotalDeletes == 0)
+        if (runMode == RunMode.NoDelete || plan.TotalDeletes == 0)
         {
-            await _executor.ExecuteDeletesAsync(service, plan, solutionName, runMode == RunMode.Save, cancellationToken).ConfigureAwait(false);
+            await _executor.ExecuteDeletesAsync(service, plan, solutionName, runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -237,11 +237,12 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         IOrganizationServiceAsync2 service,
         string managedAssemblyName,
         string solutionName,
+        bool force,
         CancellationToken cancellationToken)
     {
         var query = new QueryExpression("pluginassembly")
         {
-            ColumnSet = new ColumnSet("name"),
+            ColumnSet = new ColumnSet("pluginassemblyid", "name"),
             Criteria = { Conditions = { new ConditionExpression("name", ConditionOperator.NotEqual, managedAssemblyName) } }
         };
         var componentLink = query.AddLink("solutioncomponent", "pluginassemblyid", "objectid", JoinOperator.Inner);
@@ -253,12 +254,20 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         foreach (var entity in result.Entities)
         {
             var name = entity.GetAttributeValue<string>("name");
-            output.Warning($"[bold]{Safe(name)}.dll[/] in environment — no local source. Flowline won't touch it.");
+            if (force)
+            {
+                output.Warning($"[bold]{Safe(name)}.dll[/] in environment — no local source. Deleting.");
+                await service.DeleteAsync("pluginassembly", entity.Id, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                output.Warning($"[bold]{Safe(name)}.dll[/] in environment — no local source. Use --force to delete.");
+            }
         }
     }
 
     async Task<(Entity entity, bool needsUpdate)> GetOrRegisterAssemblyAsync(
-        IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName, RunMode runMode, bool force, CancellationToken cancellationToken = default)
+        IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName, RunMode runMode, CancellationToken cancellationToken = default)
     {
         var query = new QueryExpression("pluginassembly")
         {
@@ -308,13 +317,11 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             switch (runMode)
             {
                 case RunMode.DryRun:
-                    output.Skip($"Assembly '{metadata.Name}' identity changed ({reason}) — would delete and recreate. Run with --force to apply.");
+                    output.Skip($"Assembly '{metadata.Name}' identity changed ({reason}) — would delete and recreate");
                     return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false);
-                case RunMode.Save:
-                    output.Error($"Assembly '{metadata.Name}' identity changed ({reason}) — Dataverse needs a delete and recreate. Re-run without --save and with --force to apply, or use --dry-run to preview.");
-                    throw new InvalidOperationException($"Assembly '{metadata.Name}' identity changed ({reason}). Cannot continue in save mode — re-run without --save and with --force to apply, or use --dry-run to preview.");
-                case RunMode.Normal when !force:
-                    throw new InvalidOperationException($"Assembly '{metadata.Name}' identity changed ({reason}) — this deletes and recreates all plugin registrations. Use --force to apply, or --dry-run to preview.");
+                case RunMode.NoDelete:
+                    output.Error($"Assembly '{metadata.Name}' identity changed ({reason}) — Dataverse needs a delete and recreate. Re-run without --no-delete to apply, or use --dry-run to preview.");
+                    throw new InvalidOperationException($"Assembly '{metadata.Name}' identity changed ({reason}). Cannot continue in no-delete mode — re-run without --no-delete to apply, or use --dry-run to preview.");
                 case RunMode.Normal:
                     output.Warning($"Assembly '{metadata.Name}' identity changed ({reason}) — deleting and recreating plugin registrations.");
                     await service.DeleteAsync("pluginassembly", existing.Id, cancellationToken).ConfigureAwait(false);

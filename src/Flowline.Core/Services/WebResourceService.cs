@@ -51,7 +51,7 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         }
 
         // Phase 3: Execute the plan
-        await _executor.ExecuteAsync(service, plan, publishAfterSync, runMode == RunMode.Save, cancellationToken).ConfigureAwait(false);
+        await _executor.ExecuteAsync(service, plan, publishAfterSync, runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task DownloadWebResourcesAsync(

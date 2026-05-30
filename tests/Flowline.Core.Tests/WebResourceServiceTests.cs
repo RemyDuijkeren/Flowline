@@ -158,16 +158,16 @@ public class WebResourceServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SyncSolutionAsync_SaveMode_ShouldKeepOrphan()
+    public async Task SyncSolutionAsync_NoDeleteMode_ShouldKeepOrphan()
     {
         var webResourceId = Guid.NewGuid();
         SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/orphan.js", "old"));
         SetupOwnership(webResourceId, ("MySolution", false));
 
-        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false, runMode: RunMode.Save);
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false, runMode: RunMode.NoDelete);
 
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", webResourceId, Arg.Any<CancellationToken>());
-        Assert.Contains("--save", _console.Output);
+        Assert.Contains("--no-delete", _console.Output);
     }
 
     [Fact]

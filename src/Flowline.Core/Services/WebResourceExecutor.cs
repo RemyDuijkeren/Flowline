@@ -95,10 +95,10 @@ public class WebResourceExecutor(IAnsiConsole output, bool isVerbose)
         }
         else
         {
-            foreach (var a in plan.Deletes) output.Skip($"Web resource '{a.Name}' not in source — kept (--save)");
-            if (plan.Deletes.Count > 0) output.Skip($"{plan.Deletes.Count} web resource(s) not in source — kept (--save)");
-            foreach (var a in plan.RemovesFromSolution) output.Skip($"Web resource '{a.Name}' still in other solution — kept (--save)");
-            if (plan.RemovesFromSolution.Count > 0) output.Skip($"{plan.RemovesFromSolution.Count} web resource(s) still in other solution — kept (--save)");
+            foreach (var a in plan.Deletes) output.Skip($"Web resource '{a.Name}' not in source — kept (--no-delete)");
+            if (plan.Deletes.Count > 0) output.Skip($"{plan.Deletes.Count} web resource(s) not in source — kept (--no-delete)");
+            foreach (var a in plan.RemovesFromSolution) output.Skip($"Web resource '{a.Name}' still in other solution — kept (--no-delete)");
+            if (plan.RemovesFromSolution.Count > 0) output.Skip($"{plan.RemovesFromSolution.Count} web resource(s) still in other solution — kept (--no-delete)");
         }
 
         if (publishAfterSync && publishIds.Count > 0)

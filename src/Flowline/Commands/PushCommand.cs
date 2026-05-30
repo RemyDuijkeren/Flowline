@@ -45,10 +45,10 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         [Description("Use this dev environment URL")]
         public string? DevUrl { get; set; }
 
-        [CommandOption("--save")]
-        [Description("Keep Dataverse assets that are missing from source")]
+        [CommandOption("--no-delete")]
+        [Description("Push without deleting any Dataverse assets that are missing from source")]
         [DefaultValue(false)]
-        public bool Save { get; set; } = false;
+        public bool NoDelete { get; set; } = false;
 
         [CommandOption("--dry-run")]
         [Description("Preview changes without touching Dataverse")]
@@ -134,7 +134,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
 
     private static RunMode ResolveRunMode(Settings settings) =>
         settings.DryRun ? RunMode.DryRun
-            : settings.Save ? RunMode.Save
+            : settings.NoDelete ? RunMode.NoDelete
             : RunMode.Normal;
 
     private StandaloneParams ResolveStandaloneParameters(Settings settings, bool standaloneMode)
