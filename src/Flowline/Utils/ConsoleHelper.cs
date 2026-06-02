@@ -18,21 +18,8 @@ public static class ConsoleHelper
         console.WriteLine();
     }
 
-    /// <summary>
-    /// Detects if the current run is in interactive mode.
-    /// Non-interactive mode is typically detected via Environment.UserInteractive,
-    /// if the output is redirected, or if explicit CLI flags like --json are set.
-    /// </summary>
-    /// <param name="settings">The current Flowline settings which may contain flags like --json.</param>
-    /// <returns>True if interactive, false otherwise.</returns>
     public static bool IsInteractive(FlowlineSettings? settings)
     {
-        // Explicitly set non-interactive flags
-        if (settings is { JsonOutput: true })
-        {
-            return false;
-        }
-
         // CI Environment detection
         if (Environment.GetEnvironmentVariable("CI") != null ||
             Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != null ||

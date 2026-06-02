@@ -11,7 +11,8 @@ namespace Flowline.Commands;
 
 public enum BumpComponent { Patch, Minor, Major }
 
-public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions) : FlowlineCommand<SyncCommand.Settings>(console, runtimeOptions)
+public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions) :
+    FlowlineCommand<SyncCommand.Settings>(console, runtimeOptions)
 {
     public sealed class Settings : FlowlineSettings
     {
@@ -71,10 +72,10 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             async ctx =>
             {
                 var currentVersion = await PacUtils.GetSolutionVersionAsync(slnInfo.SolutionUniqueName!, devEnv.EnvironmentUrl!, settings.Verbose, cancellationToken);
-                console.Verbose($"[dim]Current version: {currentVersion}[/]", settings.Verbose);
+                Console.Verbose($"[dim]Current version: {currentVersion}[/]", settings.Verbose);
                 var newVersion = BumpVersion(currentVersion, settings.Bump);
                 await PacUtils.SetSolutionVersionAsync(slnInfo.SolutionUniqueName!, newVersion, devEnv.EnvironmentUrl!, settings.Verbose, cancellationToken);
-                console.Verbose($"[dim]New version: {newVersion}[/]", settings.Verbose);
+                Console.Verbose($"[dim]New version: {newVersion}[/]", settings.Verbose);
                 var tagVersion = ToTagVersion(newVersion);
                 return tagVersion;
             });

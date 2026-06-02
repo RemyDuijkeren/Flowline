@@ -106,7 +106,7 @@ Files under `WebResources/dist/` are synced to Dataverse by `flowline push`. Fil
 | Command | What it does |
 |---|---|
 | [`clone <solution>`](#clone) | Bootstrap an existing solution from production into the repo. Sets up the full project structure. |
-| [`push [solution]`](#push) | Build and sync project assets to DEV, or push standalone artifacts with `--pluginFile` / `--webresources`. Use `--scope assemblyonly` to update only the assembly without touching plugin registrations. |
+| [`push [solution]`](#push) | Build and sync project assets to DEV, or push standalone artifacts with `--pluginFile` / `--webresources`. |
 | [`sync [solution]`](#sync) | Pull the current solution state from DEV and unpack it into the repo. |
 | [`deploy <target>`](#deploy) | Pack the solution from the repo and import it into TEST, PROD, or an explicit URL. |
 | [`provision [dev\|test]`](#provision) | Provision a DEV or TEST environment by copying from production. |
@@ -131,7 +131,6 @@ flowline clone ContosoCustomizations --prod https://contoso.crm4.dynamics.com
 | `--dev <url>` | Development environment URL to clone solution from |
 | `--managed` | Include managed artifacts |
 | `-v`, `--verbose` | Show command details |
-| `--json` | Write machine-readable JSON output |
 | `-f`, `--force` | Skip confirmation prompts |
 | `--no-cache` | Refresh validation checks instead of using the local validation cache |
 
@@ -155,7 +154,6 @@ flowline push
 | `--no-delete` | Push without deleting Dataverse assets that are missing from source |
 | `--dry-run` | Preview changes without touching Dataverse |
 | `-v`, `--verbose` | Show command details |
-| `--json` | Write machine-readable JSON output |
 | `-f`, `--force` | Skip confirmation prompts |
 | `--no-cache` | Refresh validation checks instead of using the local validation cache |
 
@@ -236,7 +234,6 @@ flowline sync
 | `--managed` | Include managed artifacts |
 | `--bump <component>` | Version component to increment: `patch`, `minor`, or `major` (default: `patch`) |
 | `-v`, `--verbose` | Show command details |
-| `--json` | Write machine-readable JSON output |
 | `-f`, `--force` | Skip confirmation prompts |
 | `--no-cache` | Refresh validation checks instead of using the local validation cache |
 
@@ -258,7 +255,6 @@ flowline deploy https://contoso-uat.crm4.dynamics.com
 | `--solution <name>` | Solution to deploy |
 | `--managed` | Deploy the managed package |
 | `-v`, `--verbose` | Show command details |
-| `--json` | Write machine-readable JSON output |
 | `-f`, `--force` | Skip confirmation prompts |
 | `--no-cache` | Refresh validation checks instead of using the local validation cache |
 
@@ -281,7 +277,6 @@ flowline provision test --prod https://contoso.crm4.dynamics.com
 | `--suffix <text>` | Target URL suffix (default: role name) |
 | `--allow-overwrite` | Overwrite an existing target environment |
 | `-v`, `--verbose` | Show command details |
-| `--json` | Write machine-readable JSON output |
 | `-f`, `--force` | Skip confirmation prompts |
 | `--no-cache` | Refresh validation checks instead of using the local validation cache |
 
@@ -299,7 +294,6 @@ flowline provision test --prod https://contoso.crm4.dynamics.com
 | `--dev <url>` | Dev environment URL |
 | `-o`, `--output <path>` | Output folder for generated types (required outside a Flowline project) |
 | `-v`, `--verbose` | Show command details |
-| `--json` | Write machine-readable JSON output |
 | `-f`, `--force` | Skip confirmation prompts |
 | `--no-cache` | Refresh validation checks instead of using the local validation cache | It auto-discovers the solution's entities and custom APIs from DEV, generates early-bound C# types into `Plugins/Models/`, and saves the namespace to `.flowline`.
 
@@ -345,6 +339,5 @@ flowline status
 | Option | Description |
 |---|---|
 | `-v`, `--verbose` | Show command details |
-| `--json` | Write machine-readable JSON output |
 | `-f`, `--force` | Skip confirmation prompts |
 | `--no-cache` | Refresh validation checks instead of using the local validation cache |

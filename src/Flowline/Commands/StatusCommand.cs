@@ -17,7 +17,8 @@ public class StatusCommand(IAnsiConsole console) : AsyncCommand<StatusCommand.Se
 
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        ConsoleHelper.WelcomeScreen(Console);
+        if (ConsoleHelper.IsInteractive(settings))
+            ConsoleHelper.WelcomeScreen(Console);
 
         try
         {

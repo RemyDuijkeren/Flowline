@@ -11,7 +11,8 @@ namespace Flowline.Commands;
 
 public enum EnvironmentRole { Prod, Test, Dev }
 
-public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where TSettings : FlowlineSettings
+public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions) : AsyncCommand<TSettings>
+    where TSettings : FlowlineSettings
 {
     protected const string AllSolutionsFolderName = "solutions";
     protected const string WebResourcesName = "WebResources";
@@ -22,14 +23,8 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
             ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds}s"
             : $"{(int)elapsed.TotalSeconds}s";
 
-    protected readonly IAnsiConsole Console;
-    protected FlowlineRuntimeOptions RuntimeOptions { get; }
-
-    protected FlowlineCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions)
-    {
-        Console = console;
-        RuntimeOptions = runtimeOptions;
-    }
+    protected readonly IAnsiConsole Console = console;
+    protected FlowlineRuntimeOptions RuntimeOptions { get; } = runtimeOptions;
 
     protected string RootFolder { get; private set; } = Directory.GetCurrentDirectory();
     protected ProjectConfig? Config { get; private set; }
@@ -38,7 +33,6 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
     protected void InitializeRuntimeOptions(TSettings settings)
     {
         RuntimeOptions.IsVerbose = settings.Verbose;
-        RuntimeOptions.JsonOutput = settings.JsonOutput;
         RuntimeOptions.Force = settings.Force;
     }
 
@@ -46,7 +40,7 @@ public abstract class FlowlineCommand<TSettings> : AsyncCommand<TSettings> where
     {
         InitializeRuntimeOptions(settings);
 
-        if (ShowWelcome && !settings.JsonOutput && FlowlineValidator.Default.ShouldShowWelcomeScreen(settings.NoCache))
+        if (ShowWelcome && ConsoleHelper.IsInteractive(settings) && FlowlineValidator.Default.ShouldShowWelcomeScreen(settings.NoCache))
             ConsoleHelper.WelcomeScreen(Console);
 
         await CheckSetupAsync(settings, cancellationToken);

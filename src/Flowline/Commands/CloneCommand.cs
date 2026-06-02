@@ -8,7 +8,8 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions) : FlowlineCommand<CloneCommand.Settings>(console, runtimeOptions)
+public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions) :
+    FlowlineCommand<CloneCommand.Settings>(console, runtimeOptions)
 {
     public sealed class Settings : FlowlineSettings
     {
@@ -78,7 +79,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         return 0;
     }
 
-    private async Task<(EnvironmentInfo sourceEnv, ProjectSolution projectSolution, SolutionInfo solutionInfo)> FindUnmanagedSourceAsync(Settings settings, CancellationToken cancellationToken)
+    private async Task<(EnvironmentInfo sourceEnv, ProjectSolution projectSolution, SolutionInfo solutionInfo)> FindUnmanagedSourceAsync(Settings settings,
+        CancellationToken cancellationToken)
     {
         foreach (var role in new[] { EnvironmentRole.Prod, EnvironmentRole.Test, EnvironmentRole.Dev })
         {
@@ -86,8 +88,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             {
                 EnvironmentRole.Prod => Config!.ProdUrl,
                 EnvironmentRole.Test => Config!.TestUrl,
-                EnvironmentRole.Dev  => Config!.DevUrl,
-                _                    => null
+                EnvironmentRole.Dev => Config!.DevUrl,
+                _ => null
             };
             if (string.IsNullOrEmpty(configUrl)) continue;
 
@@ -152,7 +154,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         Console.Verbose($"[dim]{distFolder}[/]", settings.Verbose);
     }
 
-    private async Task CloneSolutionFromDataverseAsync(ProjectSolution projectSln, string slnFolder, string cdsprojPath, string environmentUrl, Settings settings, CancellationToken cancellationToken)
+    private async Task CloneSolutionFromDataverseAsync(ProjectSolution projectSln, string slnFolder, string cdsprojPath, string environmentUrl,
+        Settings settings, CancellationToken cancellationToken)
     {
         if (File.Exists(cdsprojPath))
         {
@@ -161,7 +164,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         }
 
         if (Directory.Exists(slnFolder) && !File.Exists(cdsprojPath))
-            throw new FlowlineException($"Solution folder {slnFolder} already exists but no .cdsproj file found. Cannot clone. Delete the folder and try again.");
+            throw new FlowlineException(
+                $"Solution folder {slnFolder} already exists but no .cdsproj file found. Cannot clone. Delete the folder and try again.");
 
         var allSolutionsFolder = Path.Combine(RootFolder, AllSolutionsFolderName);
         Directory.CreateDirectory(allSolutionsFolder);
@@ -190,7 +194,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         Console.Ok($"Solution [bold]{projectSln.Name}[/] cloned in {FormatDuration(result.RunTime)}");
     }
 
-    private async Task CreateSolutionFileAsync(ProjectSolution projectSln, string slnFolder, string slnFilePath, string cdsprojPath, Settings settings, CancellationToken cancellationToken)
+    private async Task CreateSolutionFileAsync(ProjectSolution projectSln, string slnFolder, string slnFilePath, string cdsprojPath, Settings settings,
+        CancellationToken cancellationToken)
     {
         // Create Solution file if it doesn't exist (use sln for now because slnx can't handle .cdsproj yet)
         if (File.Exists(slnFilePath))
@@ -272,24 +277,24 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
                 var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
                 await Cli.Wrap(cmdName)
-                    .WithArguments(args => args
-                        .AddIfNotNull(prefixArgs)
-                        .Add("plugin")
-                        .Add("init")) // --skip-signing
-                    .WithWorkingDirectory(pluginsFolder)
-                    .WithToolExecutionLog(settings.Verbose)
-                    .ExecuteAsync(cancellationToken);
+                         .WithArguments(args => args
+                                                .AddIfNotNull(prefixArgs)
+                                                .Add("plugin")
+                                                .Add("init")) // --skip-signing
+                         .WithWorkingDirectory(pluginsFolder)
+                         .WithToolExecutionLog(settings.Verbose)
+                         .ExecuteAsync(cancellationToken);
 
                 // Add Flowline.Attributes NuGet package
                 await Cli.Wrap("dotnet")
-                    .WithArguments(args => args
-                        .Add("add")
-                        .Add(pluginsCsproj)
-                        .Add("package")
-                        .Add("Flowline.Attributes"))
-                    .WithWorkingDirectory(pluginsFolder)
-                    .WithToolExecutionLog(settings.Verbose)
-                    .ExecuteAsync(cancellationToken);
+                         .WithArguments(args => args
+                                                .Add("add")
+                                                .Add(pluginsCsproj)
+                                                .Add("package")
+                                                .Add("Flowline.Attributes"))
+                         .WithWorkingDirectory(pluginsFolder)
+                         .WithToolExecutionLog(settings.Verbose)
+                         .ExecuteAsync(cancellationToken);
 
                 // Add MinVer NuGet package
                 await Cli.Wrap("dotnet")
@@ -304,13 +309,13 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
                 // Add Plugins.csproj to the solution
                 await Cli.Wrap("dotnet")
-                    .WithArguments(args => args
-                        .Add("sln")
-                        .Add("add")
-                        .Add(pluginsCsproj))
-                    .WithWorkingDirectory(slnFolder)
-                    .WithToolExecutionLog(settings.Verbose)
-                    .ExecuteAsync(cancellationToken);
+                         .WithArguments(args => args
+                                                .Add("sln")
+                                                .Add("add")
+                                                .Add(pluginsCsproj))
+                         .WithWorkingDirectory(slnFolder)
+                         .WithToolExecutionLog(settings.Verbose)
+                         .ExecuteAsync(cancellationToken);
             });
 
         Console.Ok("Plugins project ready");
@@ -332,23 +337,23 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             {
                 // Create a basic class library for WebResources.csproj
                 await Cli.Wrap("dotnet")
-                    .WithArguments(args => args
-                        .Add("new")
-                        .Add("classlib")
-                        .Add("--name").Add(WebResourcesName))
-                    .WithWorkingDirectory(slnFolder)
-                    .WithToolExecutionLog(settings.Verbose)
-                    .ExecuteAsync(cancellationToken);
+                         .WithArguments(args => args
+                                                .Add("new")
+                                                .Add("classlib")
+                                                .Add("--name").Add(WebResourcesName))
+                         .WithWorkingDirectory(slnFolder)
+                         .WithToolExecutionLog(settings.Verbose)
+                         .ExecuteAsync(cancellationToken);
 
                 // Add WebResources.csproj to the solution
                 await Cli.Wrap("dotnet")
-                    .WithArguments(args => args
-                        .Add("sln")
-                        .Add(slnFilePath)
-                        .Add("add")
-                        .Add(webresourcesCsproj))
-                    .WithToolExecutionLog(settings.Verbose)
-                    .ExecuteAsync(cancellationToken);
+                         .WithArguments(args => args
+                                                .Add("sln")
+                                                .Add(slnFilePath)
+                                                .Add("add")
+                                                .Add(webresourcesCsproj))
+                         .WithToolExecutionLog(settings.Verbose)
+                         .ExecuteAsync(cancellationToken);
 
                 // Create default WebResources folder structure
                 File.Delete(Path.Combine(webresourcesFolder, "Class1.cs"));
