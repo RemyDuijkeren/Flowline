@@ -26,9 +26,14 @@ source control; `deploy` packages from the repo and imports into the target.
 
 What sets Flowline apart:
 
+- **Scaffolded WebResources project.** `clone` creates a web resources project with TypeScript/JavaScript bundling already set up where `dist/` is automatically wired to `push`. But bring in your own bundler if you prefer.
 - **Fast push for code assets.** `push` syncs plugin assemblies and web resources directly to DEV without a full solution import. Use it from a Flowline project, or point it at a standalone plugin file and web resource folder. `--scope assemblyonly` updates only the assembly bytes — useful in hot iteration loops when registrations haven't changed.
+- **Keeps Dataverse in sync with source.** Plugin steps, images, and web resources missing from source are deleted or removed (if exist in another solution) on push — no manual cleanup. Use `--no-delete` to skip.
+- **Dry-run everything.** `--dry-run` previews every change before it touches Dataverse.
+- **Human-readable sync summary.** After `sync`, Flowline translates the git diff into a developer-friendly summary — entities and components added, changed, or removed. No raw XML noise.
 - **Attribute-driven plugin registration.** Decorate `IPlugin` classes with `[Step]`, `[Filter]`, `[PreImage]`, `[PostImage]`, and `[CustomApi]`; Flowline reads the compiled assembly and handles Dataverse registrations.
 - **Plugins, workflow activities, and Custom APIs in one assembly.** Flowline reads all supported types from a single assembly in one pass.
+- **One-command environment provisioning.** `provision` copies PROD to a fresh DEV or TEST environment — no manual admin center clicks.
 - **Modern auth.** Flowline reuses the PAC CLI token cache. No passwords, no client secrets in scripts, no Windows Credential Manager.
 
 ---
