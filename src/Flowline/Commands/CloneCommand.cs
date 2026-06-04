@@ -113,23 +113,23 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     private void SeedWebResourceDistFromSrc(string slnFolder, string? publisherPrefix, string solutionName, Settings settings)
     {
         var srcWebResources = Path.Combine(slnFolder, "src", "WebResources");
-        var distFolder = Path.Combine(slnFolder, "WebResources", "dist");
+        var publicFolder = Path.Combine(slnFolder, "WebResources", "public");
 
         if (!Directory.Exists(srcWebResources))
         {
-            Console.Skip("No WebResources in src — skipping dist seed");
+            Console.Skip("No WebResources in src — skipping public seed");
             return;
         }
 
-        Directory.CreateDirectory(distFolder);
-        if (Directory.EnumerateFiles(distFolder, "*.*", SearchOption.AllDirectories).Any())
+        Directory.CreateDirectory(publicFolder);
+        if (Directory.EnumerateFiles(publicFolder, "*.*", SearchOption.AllDirectories).Any())
         {
-            Console.Skip("WebResources/dist already populated — skipping");
+            Console.Skip("WebResources/public already populated — skipping");
             return;
         }
 
         // PAC unpacks web resources under src/WebResources/<publisher_prefix>_<solution>/
-        // That subfolder maps to dist/ root — strip one level. Everything else copies as-is.
+        // That subfolder maps to public/ root — strip one level. Everything else copies as-is.
         var publisherFolderName = publisherPrefix != null ? $"{publisherPrefix}_{solutionName}" : null;
         var publisherRoot = publisherFolderName != null
             ? Path.Combine(srcWebResources, publisherFolderName)
@@ -145,13 +145,13 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
                 : srcWebResources;
 
             var relPath = Path.GetRelativePath(sourceRoot, srcFile);
-            var destFile = Path.Combine(distFolder, relPath);
+            var destFile = Path.Combine(publicFolder, relPath);
             Directory.CreateDirectory(Path.GetDirectoryName(destFile)!);
             File.Copy(srcFile, destFile, overwrite: false);
         }
 
-        Console.Ok("WebResources/dist seeded from src");
-        Console.Verbose($"[dim]{distFolder}[/]", settings.Verbose);
+        Console.Ok("WebResources/public seeded from src");
+        Console.Verbose($"[dim]{publicFolder}[/]", settings.Verbose);
     }
 
     private async Task CloneSolutionFromDataverseAsync(ProjectSolution projectSln, string slnFolder, string cdsprojPath, string environmentUrl,
@@ -335,17 +335,22 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         await Console.Status().FlowlineSpinner().StartAsync(
             "Setting up WebResources project...", async ctx =>
             {
-                // Create a basic class library for WebResources.csproj
-                await Cli.Wrap("dotnet")
-                         .WithArguments(args => args
-                                                .Add("new")
-                                                .Add("classlib")
-                                                .Add("--name").Add(WebResourcesName))
-                         .WithWorkingDirectory(slnFolder)
-                         .WithToolExecutionLog(settings.Verbose)
-                         .ExecuteAsync(cancellationToken);
+                Directory.CreateDirectory(webresourcesFolder);
 
-                // Add WebResources.csproj to the solution
+                await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.WebResources.csproj", webresourcesCsproj, cancellationToken);
+                await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.package.json", Path.Combine(webresourcesFolder, "package.json"), cancellationToken);
+                await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.rollup.config.mjs", Path.Combine(webresourcesFolder, "rollup.config.mjs"), cancellationToken);
+                await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.tsconfig.json", Path.Combine(webresourcesFolder, "tsconfig.json"), cancellationToken);
+                await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.eslint.config.mjs", Path.Combine(webresourcesFolder, "eslint.config.mjs"), cancellationToken);
+                await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.README.md", Path.Combine(webresourcesFolder, "README.md"), cancellationToken);
+
+                Directory.CreateDirectory(Path.Combine(webresourcesFolder, "src", "modules"));
+                await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.src.example.ts", Path.Combine(webresourcesFolder, "src", "example.ts"), cancellationToken);
+                Directory.CreateDirectory(Path.Combine(webresourcesFolder, "public"));
+                Directory.CreateDirectory(Path.Combine(webresourcesFolder, "dist"));
+
+                Console.Verbose($"Created {ConsolePath.FormatRelativePath(webresourcesFolder)}", settings.Verbose);
+
                 await Cli.Wrap("dotnet")
                          .WithArguments(args => args
                                                 .Add("sln")
@@ -355,11 +360,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
                          .WithToolExecutionLog(settings.Verbose)
                          .ExecuteAsync(cancellationToken);
 
-                // Create default WebResources folder structure
-                File.Delete(Path.Combine(webresourcesFolder, "Class1.cs"));
-                Directory.CreateDirectory(Path.Combine(webresourcesFolder, "src"));
-                Directory.CreateDirectory(Path.Combine(webresourcesFolder, "public"));
-                Directory.CreateDirectory(Path.Combine(webresourcesFolder, "dist"));
+                Console.Verbose($"Added {WebResourcesName} project to solution", settings.Verbose);
             });
 
         Console.Ok("WebResources project ready");

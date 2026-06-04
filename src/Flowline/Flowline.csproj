@@ -19,6 +19,30 @@
     </ItemGroup>
 
     <ItemGroup>
+      <EmbeddedResource Include="Templates\WebResources\WebResources.csproj">
+        <LogicalName>Flowline.Templates.WebResources.WebResources.csproj</LogicalName>
+      </EmbeddedResource>
+      <EmbeddedResource Include="Templates\WebResources\package.json">
+        <LogicalName>Flowline.Templates.WebResources.package.json</LogicalName>
+      </EmbeddedResource>
+      <EmbeddedResource Include="Templates\WebResources\rollup.config.mjs">
+        <LogicalName>Flowline.Templates.WebResources.rollup.config.mjs</LogicalName>
+      </EmbeddedResource>
+      <EmbeddedResource Include="Templates\WebResources\tsconfig.json">
+        <LogicalName>Flowline.Templates.WebResources.tsconfig.json</LogicalName>
+      </EmbeddedResource>
+      <EmbeddedResource Include="Templates\WebResources\eslint.config.mjs">
+        <LogicalName>Flowline.Templates.WebResources.eslint.config.mjs</LogicalName>
+      </EmbeddedResource>
+      <EmbeddedResource Include="Templates\WebResources\README.md">
+        <LogicalName>Flowline.Templates.WebResources.README.md</LogicalName>
+      </EmbeddedResource>
+      <EmbeddedResource Include="Templates\WebResources\src\example.ts">
+        <LogicalName>Flowline.Templates.WebResources.src.example.ts</LogicalName>
+      </EmbeddedResource>
+    </ItemGroup>
+
+    <ItemGroup>
       <PackageReference Include="CliWrap" />
       <PackageReference Include="Microsoft.Extensions.Logging.Console" />
       <PackageReference Include="Spectre.Console.Cli" />

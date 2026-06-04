@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.Build.NoTargets/3.7.134">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <NpmInputFiles Include="src\**\*.ts;public\**\*;rollup.config.mjs;eslint.config.mjs;package.json;tsconfig.json" />
+  </ItemGroup>
+
+  <Target Name="NpmInstall"
+          Inputs="package.json"
+          Outputs="$(BaseIntermediateOutputPath)npm-install.stamp">
+    <MakeDir Directories="$(BaseIntermediateOutputPath)" />
+    <Exec Command="npm install" />
+    <Touch Files="$(BaseIntermediateOutputPath)npm-install.stamp" AlwaysCreate="true" />
+  </Target>
+
+  <Target Name="NpmBuild" DependsOnTargets="NpmInstall" BeforeTargets="Build"
+          Inputs="@(NpmInputFiles)"
+          Outputs="$(BaseIntermediateOutputPath)npm-build.stamp">
+    <MakeDir Directories="$(BaseIntermediateOutputPath)" />
+    <Exec Command="npm run build" />
+    <Touch Files="$(BaseIntermediateOutputPath)npm-build.stamp" AlwaysCreate="true" />
+  </Target>
+
+</Project>

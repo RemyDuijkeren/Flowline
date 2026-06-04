@@ -32,11 +32,11 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         [Description("Limit the push scope: all, webresources, plugins, or assemblyonly. Can be used more than once.")]
         public PushScope[] Scopes { get; set; } = [];
 
-        [CommandOption("-pf|--pluginFile <PATH>")]
+        [CommandOption("-p|--pluginFile <PATH>")]
         [Description("Prebuilt plugin file (.dll) to push without using a Flowline project")]
         public string? PluginFile { get; set; }
 
-        [CommandOption("-wr|--webresources <PATH>")]
+        [CommandOption("-w|--webresources <PATH>")]
         [Description("Web resource folder to push without using a Flowline project")]
         public string? WebResources { get; set; }
 
