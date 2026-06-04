@@ -4,21 +4,27 @@
 [![NuGet](https://img.shields.io/nuget/v/Flowline.svg)](https://www.nuget.org/packages/Flowline)
 [![NuGet](https://img.shields.io/nuget/dt/RemyDuijkeren.Flowline.svg)](https://www.nuget.org/packages/Flowline)
 
-**Flowline** is a CLI tool for delivering Dataverse solutions with unmanaged packages, Git as the source of truth, and a straightforward DEV to TEST to PROD workflow.
+**Flowline** is a Dataverse ALM CLI — structured workflow, Git-tracked solutions, and a fast push to DEV without the enterprise overhead.
 
 ---
 
 ## Why Flowline?
 
-**PAC CLI gives you the primitives — Flowline gives you the workflow.** Export, unpack, pack, and import are building blocks; Flowline turns them into a defined project structure with a clone → push → sync → deploy loop, plus attribute-driven plugin registration and a direct push that skips the pack/import cycle.
+**PAC CLI gives you the primitives — Flowline gives you the workflow.** Export, unpack, pack, and import are building
+blocks; Flowline turns them into a defined project structure with a clone → push → sync → deploy loop,
+plus attribute-driven plugin registration and a direct push that skips the pack/import/register cycle.
+Unlike Power Platform Pipelines — which require Managed Environments and managed solutions — Flowline requires neither.
 
-**Sync-first, not pack-first.** Flowline is for teams that *own* their Dataverse environments. DEV is the working canvas — makers and developers contribute directly there, `sync` captures its state into source control, and `deploy` ships exactly what was confirmed in DEV. For ISV-style packaging (reproducible builds, no shared DEV env, AppSource distribution), reach for ALM Accelerator or Power Platform Build Tools instead. And unlike Power Platform Pipelines — which require Managed Environments and managed solutions — Flowline requires neither.
+> Pipelines are buried steel — permits, compressors, years to commission. A flowline goes where the pipeline can't.
 
-Flowline brings a few things the other tools don't:
+Flowline is for small teams that want simple ALM with Git. `clone` bootstraps an existing solution into the repo and
+unpacks it per component so `git diff` shows real changes — not a binary blob. `sync` captures DEV's state into
+source control; `deploy` packages from the repo and imports into the target.
 
-- **Source-controlled solution XML.** `sync` unpacks the solution per component, so `git diff` shows real changes — not a binary blob. `clone` bootstraps an existing solution into the repo; `deploy` packages from the repo and imports into the target.
+What sets Flowline apart:
+
 - **Fast push for code assets.** `push` syncs plugin assemblies and web resources directly to DEV without a full solution import. Use it from a Flowline project, or point it at a standalone plugin file and web resource folder. `--scope assemblyonly` updates only the assembly bytes — useful in hot iteration loops when registrations haven't changed.
-- **Attribute-driven plugin registration.** Decorate `IPlugin` classes with `[Step]`, `[Filter]`, `[PreImage]`, and `[PostImage]`; Flowline reads the compiled assembly and handles the Dataverse registrations.
+- **Attribute-driven plugin registration.** Decorate `IPlugin` classes with `[Step]`, `[Filter]`, `[PreImage]`, `[PostImage]`, and `[CustomApi]`; Flowline reads the compiled assembly and handles Dataverse registrations.
 - **Plugins, workflow activities, and Custom APIs in one assembly.** Flowline reads all supported types from a single assembly in one pass.
 - **Modern auth.** Flowline reuses the PAC CLI token cache. No passwords, no client secrets in scripts, no Windows Credential Manager.
 
@@ -63,13 +69,7 @@ cd contoso-flowline
 git init
 
 # One-time: bring an existing solution into the repo
-flowline clone ContosoCustomizations --prod https://contoso.crm4.dynamics.com
-
-# Set up a DEV environment
-flowline provision dev --prod https://contoso.crm4.dynamics.com
-
-# Generate early-bound C# types from solution (if needed)
-flowline generate
+flowline clone ContosoSales --prod https://contoso.crm4.dynamics.com
 
 # Daily dev loop
 flowline push
@@ -86,9 +86,9 @@ Project mode expects this structure:
 ```text
 .flowline                                 # environment URLs and solution config
 └── solutions/
-    └── ContosoCustomizations/
-        ├── ContosoCustomizations.sln
-        ├── ContosoCustomizations.cdsproj # cdsproj + unpacked solution XML in src/
+    └── ContosoSales/
+        ├── ContosoSales.sln
+        ├── ContosoSales.cdsproj # cdsproj + unpacked solution XML in src/
         ├── src/
         ├── Plugins/                      # plugin assembly project
         │   ├── Plugins.csproj
@@ -120,7 +120,7 @@ Files under `WebResources/dist/` are synced to Dataverse by `flowline push`. Fil
 Bootstraps an existing Dataverse solution into a new Git repo. Creates `.flowline`, unpacks the solution XML into `src/`, and scaffolds the `Plugins` and `WebResources` projects.
 
 ```bash
-flowline clone ContosoCustomizations --prod https://contoso.crm4.dynamics.com
+flowline clone ContosoSales --prod https://contoso.crm4.dynamics.com
 ```
 
 | Argument / Option | Description |
@@ -170,15 +170,15 @@ Use this when you only want Flowline's direct Dataverse push. You do **not** nee
 Run it from a normal folder that is **not** a Flowline project folder:
 
 ```bash
-flowline push ContosoCustomizations --pluginFile ./bin/Release/MyPlugins.dll --dev https://contoso-dev.crm4.dynamics.com
-flowline push ContosoCustomizations --webresources ./dist --dev https://contoso-dev.crm4.dynamics.com
-flowline push ContosoCustomizations --pluginFile ./bin/Release/MyPlugins.dll --webresources ./dist --dev https://contoso-dev.crm4.dynamics.com
+flowline push ContosoSales --pluginFile ./bin/Release/MyPlugins.dll --dev https://contoso-dev.crm4.dynamics.com
+flowline push ContosoSales --webresources ./dist --dev https://contoso-dev.crm4.dynamics.com
+flowline push ContosoSales --pluginFile ./bin/Release/MyPlugins.dll --webresources ./dist --dev https://contoso-dev.crm4.dynamics.com
 ```
 
 To update only the assembly bytes without touching step or Custom API registrations:
 
 ```bash
-flowline push ContosoCustomizations --pluginFile ./bin/Release/MyPlugins.dll --scope assemblyonly --dev https://contoso-dev.crm4.dynamics.com
+flowline push ContosoSales --pluginFile ./bin/Release/MyPlugins.dll --scope assemblyonly --dev https://contoso-dev.crm4.dynamics.com
 ```
 
 If `--dev` is omitted, Flowline uses the current resource-specific PAC auth profile.
@@ -318,7 +318,7 @@ Requires an active `pac auth create` session against the DEV environment. The na
 **Standalone mode:** Run `flowline generate` outside a Flowline project by supplying `-o` (output path), `--dev`, and the solution name. Useful for CI pipelines or repos that don't use the full Flowline structure.
 
 ```bash
-flowline generate ContosoCustomizations \
+flowline generate ContosoSales \
   --dev https://contoso.crm4.dynamics.com \
   --namespace Contoso.Plugins.Models \
   -o ./src/Models
