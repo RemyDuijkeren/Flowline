@@ -15,6 +15,14 @@ public class FlowlineCommandTests
             .Should().Be(expected);
     }
 
+    [Fact]
+    public void PackageFolder_ReturnsSlnFolderWithPackageSubfolder()
+    {
+        var slnFolder = Path.Combine("solutions", "MySolution");
+        FlowlineCommand<FlowlineSettings>.PackageFolder(slnFolder)
+            .Should().Be(Path.Combine("solutions", "MySolution", "Package"));
+    }
+
     [Theory]
     [InlineData(60,  "1m 0s")]
     [InlineData(61,  "1m 1s")]

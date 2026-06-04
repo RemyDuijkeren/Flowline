@@ -172,13 +172,13 @@ public static class PacUtils
         throw new Exception("Power Platform CLI isn't available.");
     }
 
-    public static async Task<int> PackSolutionAsync(ProjectSolution projectSln, string slnFolder, string binFolder, bool managed, bool verbose, CancellationToken cancellationToken)
+    public static async Task<int> PackSolutionAsync(ProjectSolution projectSln, string packageFolder, string artifactsFolder, bool managed, bool verbose, CancellationToken cancellationToken)
     {
         var packageType = managed ? "Managed" : "Unmanaged";
         var suffix = managed ? "_managed" : "_unmanaged";
-        var zipFile = Path.Combine(binFolder, $"{projectSln.Name}{suffix}.zip");
+        var zipFile = Path.Combine(artifactsFolder, $"{projectSln.Name}{suffix}.zip");
 
-        Directory.CreateDirectory(binFolder);
+        Directory.CreateDirectory(artifactsFolder);
 
         var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
         CommandResult result = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
@@ -188,7 +188,7 @@ public static class PacUtils
                           args.AddIfNotNull(prefixArgs)
                               .Add("solution")
                               .Add("pack")
-                              .Add("--folder").Add(Path.Combine(slnFolder, "src"))
+                              .Add("--folder").Add(Path.Combine(packageFolder, "src"))
                               .Add("--zipFile").Add(zipFile)
                               .Add("--packageType").Add(packageType))
                       .WithValidation(CommandResultValidation.None)

@@ -10,19 +10,19 @@ public static class DriftChecker
 {
     private const long PluginSizeThresholdBytes = 10 * 1024; // 10 KB
 
-    public static List<DriftWarning> Check(string slnFolder, string? publisherPrefix = null, CancellationToken cancellationToken = default)
+    public static List<DriftWarning> Check(string slnFolder, string packageFolder, string? publisherPrefix = null, CancellationToken cancellationToken = default)
     {
         var warnings = new List<DriftWarning>();
-        warnings.AddRange(CheckWebResources(slnFolder, publisherPrefix, cancellationToken));
-        warnings.AddRange(CheckPlugins(slnFolder));
-        warnings.AddRange(CheckOrphanAssemblies(slnFolder));
+        warnings.AddRange(CheckWebResources(slnFolder, packageFolder, publisherPrefix, cancellationToken));
+        warnings.AddRange(CheckPlugins(slnFolder, packageFolder));
+        warnings.AddRange(CheckOrphanAssemblies(slnFolder, packageFolder));
         return warnings;
     }
 
-    static IEnumerable<DriftWarning> CheckWebResources(string slnFolder, string? publisherPrefix, CancellationToken cancellationToken = default)
+    static IEnumerable<DriftWarning> CheckWebResources(string slnFolder, string packageFolder, string? publisherPrefix, CancellationToken cancellationToken = default)
     {
         var distFolder = Path.Combine(slnFolder, "WebResources", "dist");
-        var srcWebFolder = Path.Combine(slnFolder, "src", "WebResources");
+        var srcWebFolder = Path.Combine(packageFolder, "src", "WebResources");
 
         if (!Directory.Exists(distFolder) || !Directory.EnumerateFiles(distFolder, "*.*", SearchOption.AllDirectories).Any())
             yield break;
@@ -66,10 +66,10 @@ public static class DriftChecker
         return result;
     }
 
-    static IEnumerable<DriftWarning> CheckPlugins(string slnFolder)
+    static IEnumerable<DriftWarning> CheckPlugins(string slnFolder, string packageFolder)
     {
         var releaseFolder = Path.Combine(slnFolder, "Plugins", "bin", "Release");
-        var pluginAssembliesFolder = Path.Combine(slnFolder, "src", "PluginAssemblies");
+        var pluginAssembliesFolder = Path.Combine(packageFolder, "src", "PluginAssemblies");
 
         if (!Directory.Exists(releaseFolder) || !Directory.Exists(pluginAssembliesFolder))
             yield break;
@@ -89,9 +89,9 @@ public static class DriftChecker
         }
     }
 
-    static IEnumerable<DriftWarning> CheckOrphanAssemblies(string slnFolder)
+    static IEnumerable<DriftWarning> CheckOrphanAssemblies(string slnFolder, string packageFolder)
     {
-        var pluginAssembliesFolder = Path.Combine(slnFolder, "src", "PluginAssemblies");
+        var pluginAssembliesFolder = Path.Combine(packageFolder, "src", "PluginAssemblies");
         var releaseFolder = Path.Combine(slnFolder, "Plugins", "bin", "Release");
 
         if (!Directory.Exists(pluginAssembliesFolder) || !Directory.Exists(releaseFolder))

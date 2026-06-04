@@ -75,7 +75,7 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
         }
 
         var slnFolder = Path.Combine(RootFolder, "solutions", sln.Name);
-        var cdsprojPath = Path.Combine(slnFolder, $"{sln.Name}.cdsproj");
+        var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
         if (!File.Exists(cdsprojPath))
         {
             Console.MarkupLine($"[red]No solution found at '{cdsprojPath}' — run 'clone' first.[/]");
@@ -83,7 +83,7 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
         }
 
         // Block if local changes haven't been synced — deploy packs from src/, not dist/
-        var drift = DriftChecker.Check(slnFolder, cancellationToken: cancellationToken)
+        var drift = DriftChecker.Check(slnFolder, PackageFolder(slnFolder), cancellationToken: cancellationToken)
             .Where(w => w.Category is DriftCategory.OnlyLocal or DriftCategory.PluginSizeMismatch)
             .ToList();
         if (drift.Count > 0)
@@ -96,12 +96,12 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
             if (!settings.Force) return 1;
         }
 
-        var binFolder = Path.Combine(slnFolder, "bin");
-        Directory.CreateDirectory(binFolder);
+        var artifactsFolder = Path.Combine(slnFolder, "artifacts");
+        Directory.CreateDirectory(artifactsFolder);
 
         var packageType = settings.Managed ? "Managed" : "Unmanaged";
         var suffix = settings.Managed ? "_managed" : "_unmanaged";
-        var packagePath = Path.Combine(binFolder, $"{sln.Name}{suffix}.zip");
+        var packagePath = Path.Combine(artifactsFolder, $"{sln.Name}{suffix}.zip");
 
         var (cmdNamePack, prefixArgsPack, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
         var packResult = await Console.Status().FlowlineSpinner().StartAsync(
@@ -111,7 +111,7 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
                         .AddIfNotNull(prefixArgsPack)
                         .Add("solution")
                         .Add("pack")
-                        .Add("--folder").Add(Path.Combine(slnFolder, "src"))
+                        .Add("--folder").Add(Path.Combine(PackageFolder(slnFolder), "src"))
                         .Add("--zipFile").Add(packagePath)
                         .Add("--packageType").Add(packageType))
                     .WithValidation(CommandResultValidation.None)

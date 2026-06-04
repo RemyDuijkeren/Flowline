@@ -15,8 +15,11 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     where TSettings : FlowlineSettings
 {
     protected const string AllSolutionsFolderName = "solutions";
+    protected const string PackageName = "Package";
     protected const string WebResourcesName = "WebResources";
     protected const string PluginsName = "Plugins";
+
+    public static string PackageFolder(string slnFolder) => Path.Combine(slnFolder, PackageName);
 
     public static string FormatDuration(TimeSpan elapsed) =>
         elapsed.TotalMinutes >= 1

@@ -48,7 +48,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         Console.Verbose($"Project configuration saved to {ProjectConfig.s_configFileName}", settings.Verbose);
 
         var slnFolder = Path.Combine(RootFolder, AllSolutionsFolderName, projectSln.Name);
-        var cdsprojPath = Path.Combine(slnFolder, $"{projectSln.Name}.cdsproj");
+        var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
         var slnFilePath = Path.Combine(slnFolder, $"{projectSln.Name}.sln");
 
         await CloneSolutionFromDataverseAsync(projectSln, slnFolder, cdsprojPath, sourceEnv.EnvironmentUrl!, settings, cancellationToken);
@@ -58,11 +58,11 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         SeedWebResourceDistFromSrc(slnFolder, solutionInfo.PublisherPrefix, projectSln.Name, settings);
 
         // Pack the solution in pac to validate it
-        var binFolder = Path.Combine(slnFolder, "bin");
-        Directory.CreateDirectory(binFolder);
-        if (await PacUtils.PackSolutionAsync(projectSln, slnFolder, binFolder, false, settings.Verbose, cancellationToken) != 0) return 1;
+        var artifactsFolder = Path.Combine(slnFolder, "artifacts");
+        Directory.CreateDirectory(artifactsFolder);
+        if (await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, false, settings.Verbose, cancellationToken) != 0) return 1;
         if (settings.IncludeManaged &&
-            await PacUtils.PackSolutionAsync(projectSln, slnFolder, binFolder, true, settings.Verbose, cancellationToken) != 0)
+            await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, true, settings.Verbose, cancellationToken) != 0)
         {
             return 1;
         }
@@ -112,7 +112,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
     private void SeedWebResourceDistFromSrc(string slnFolder, string? publisherPrefix, string solutionName, Settings settings)
     {
-        var srcWebResources = Path.Combine(slnFolder, "src", "WebResources");
+        var srcWebResources = Path.Combine(PackageFolder(slnFolder), "src", "WebResources");
         var publicFolder = Path.Combine(slnFolder, "WebResources", "public");
 
         if (!Directory.Exists(srcWebResources))
@@ -163,12 +163,12 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             return;
         }
 
-        if (Directory.Exists(slnFolder) && !File.Exists(cdsprojPath))
+        if (Directory.Exists(PackageFolder(slnFolder)))
             throw new FlowlineException(
-                $"Solution folder {slnFolder} already exists but no .cdsproj file found. Cannot clone. Delete the folder and try again.");
+                $"{PackageName}/ exists but {PackageName}.cdsproj is missing. Delete solutions/{projectSln.Name}/{PackageName} and re-clone.");
 
-        var allSolutionsFolder = Path.Combine(RootFolder, AllSolutionsFolderName);
-        Directory.CreateDirectory(allSolutionsFolder);
+        Directory.CreateDirectory(Path.Combine(RootFolder, AllSolutionsFolderName));
+        Directory.CreateDirectory(slnFolder);
 
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
         CommandResult result = await Console.Status().FlowlineSpinner().StartAsync(
@@ -181,7 +181,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
                               .Add("--name").Add(projectSln.Name)
                               .Add("--environment").Add(environmentUrl)
                               .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
-                              .Add("--outputDirectory").Add(allSolutionsFolder)
+                              .Add("--outputDirectory").Add(slnFolder)
                               .Add("--async"))
                       .WithValidation(CommandResultValidation.None)
                       .WithToolExecutionLog(settings.Verbose, ctx)
@@ -190,6 +190,12 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
         if (!result.IsSuccess)
             throw new FlowlineException("Clone failed — check the environment and your PAC login.");
+
+        // PAC creates slnFolder/{SolutionName}/ — rename it to Package/ and rename the .cdsproj
+        Directory.Move(Path.Combine(slnFolder, projectSln.Name), PackageFolder(slnFolder));
+        File.Move(
+            Path.Combine(PackageFolder(slnFolder), $"{projectSln.Name}.cdsproj"),
+            cdsprojPath);
 
         Console.Ok($"Solution [bold]{projectSln.Name}[/] cloned in {FormatDuration(result.RunTime)}");
     }
@@ -251,11 +257,11 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         {
             Console.Verbose("Fixing XML in .sln file...", settings.Verbose);
             var slnContent = await File.ReadAllTextAsync(slnFilePath, cancellationToken);
-            slnContent = slnContent.Replace($"{projectSln.Name}.csproj", $"{projectSln.Name}.cdsproj");
+            slnContent = slnContent.Replace(Path.GetFileName(csprojPath), Path.GetFileName(cdsprojPath));
             await File.WriteAllTextAsync(slnFilePath, slnContent, cancellationToken);
         }
 
-        Console.Ok($"[bold]{projectSln.Name}.cdsproj[/] added to solution file");
+        Console.Ok($"[bold]{PackageName}.cdsproj[/] added to solution file");
         Console.Verbose($"[dim]{slnFilePath}[/]", settings.Verbose);
     }
 

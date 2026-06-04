@@ -47,22 +47,22 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         // Validate that we have an initialized project
         var slnFolder = Path.Combine(RootFolder, "solutions", projectSln.Name);
-        var cdsprojPath = Path.Combine(slnFolder, $"{projectSln.Name}.cdsproj");
+        var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
         if (!File.Exists(cdsprojPath))
             throw new FlowlineException($"No solution found at '{cdsprojPath}' — run 'clone' first");
 
         // Check for uncommitted changes
-        var srcPath = Path.Combine(slnFolder, "src");
+        var srcPath = Path.Combine(PackageFolder(slnFolder), "src");
         var preSyncSummary = await SolutionChangeSummary.ComputeAsync(srcPath, RootFolder, settings.Verbose, cancellationToken);
         if (preSyncSummary.TotalFiles > 0)
         {
             if (!settings.Force)
             {
-                throw new FlowlineException($"Uncommitted changes in '{projectSln.Name}/src/' — git commit first, or re-run with --force.")
+                throw new FlowlineException($"Uncommitted changes in '{projectSln.Name}/{PackageName}/src/' — git commit first, or re-run with --force.")
                     .WithDetail(c => preSyncSummary.WriteFlat(c, settings.Verbose, "[dim]  "));
             }
 
-            Console.Warning($"Uncommitted changes in '{projectSln.Name}/src/' — overwriting.");
+            Console.Warning($"Uncommitted changes in '{projectSln.Name}/{PackageName}/src/' — overwriting.");
             preSyncSummary.WriteFlat(Console, settings.Verbose, "[dim]  ");
         }
 
@@ -90,7 +90,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
                           args.AddIfNotNull(prefixArgs)
                               .Add("solution")
                               .Add("sync")
-                              .Add("--solution-folder").Add(slnFolder)
+                              .Add("--solution-folder").Add(PackageFolder(slnFolder))
                               .Add("--environment").Add(devEnv.EnvironmentUrl!)
                               .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
                               .Add("--async"))
@@ -105,10 +105,10 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         Console.Ok($"Solution synced from Dataverse in {FormatDuration(result.RunTime)}");
 
         // Pack the solution in pac to validate it
-        var binFolder = Path.Combine(slnFolder, "bin");
-        if (await PacUtils.PackSolutionAsync(projectSln, slnFolder, binFolder, false, settings.Verbose, cancellationToken) != 0) return 1;
+        var artifactsFolder = Path.Combine(slnFolder, "artifacts");
+        if (await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, false, settings.Verbose, cancellationToken) != 0) return 1;
         if (settings.IncludeManaged &&
-            await PacUtils.PackSolutionAsync(projectSln, slnFolder, binFolder, true, settings.Verbose, cancellationToken) != 0)
+            await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, true, settings.Verbose, cancellationToken) != 0)
         {
             return 1;
         }
@@ -120,7 +120,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         }
 
         // Check for drift between local solution (Plugins/WebResources) and Dataverse (/src)
-        var driftWarnings = DriftChecker.Check(slnFolder, slnInfo.PublisherPrefix, cancellationToken);
+        var driftWarnings = DriftChecker.Check(slnFolder, PackageFolder(slnFolder), slnInfo.PublisherPrefix, cancellationToken);
         if (driftWarnings.Count == 0)
         {
             Console.Ok("Local solution matches Dataverse");
