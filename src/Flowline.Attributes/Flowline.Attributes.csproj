@@ -30,7 +30,7 @@
     <!-- Ship source files as contentFiles so they compile into the consuming plugin assembly -->
     <Content Include="**/*.cs" Exclude="obj/**">
       <Pack>true</Pack>
-      <PackagePath>contentFiles/cs/any/</PackagePath>
+      <PackagePath>contentFiles/cs/any/Flowline/</PackagePath>
       <BuildAction>Compile</BuildAction>
     </Content>
   </ItemGroup>
