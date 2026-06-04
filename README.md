@@ -17,7 +17,10 @@ Unlike Power Platform Pipelines — which require Managed Environments and manag
 
 > Pipelines are buried steel — permits, compressors, years to commission. A flowline goes where the pipeline can't.
 
-Flowline is for small teams that want simple ALM with Git. `clone` bootstraps an existing solution into the repo and
+Flowline is the opinionated successor to [spkl](https://github.com/scottdurow/SparkleXrm/wiki/spkl) — same attribute-driven plugin registration that
+supports Custom API's, extended with a full Git-based ALM workflow and modern PAC auth.
+
+For small teams that want simple ALM with Git. `clone` bootstraps an existing solution into the repo and
 unpacks it per component so `git diff` shows real changes — not a binary blob. `sync` captures DEV's state into
 source control; `deploy` packages from the repo and imports into the target.
 
