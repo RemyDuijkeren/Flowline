@@ -17,8 +17,8 @@ Unlike Power Platform Pipelines — which require Managed Environments and manag
 
 > Pipelines are buried steel — permits, compressors, years to commission. A flowline goes where the pipeline can't.
 
-Flowline is the opinionated successor to [spkl](https://github.com/scottdurow/SparkleXrm/wiki/spkl) — same attribute-driven plugin registration that
-supports Custom API's, extended with a full Git-based ALM workflow and modern PAC auth.
+Flowline is the opinionated successor to [spkl](https://github.com/scottdurow/SparkleXrm/wiki/spkl) — the same attribute-driven plugin registration that now
+supports Custom APIs, push web resources without `spkl.json` mapping, a full Git-based ALM workflow, and modern PAC auth.
 
 For small teams that want simple ALM with Git. `clone` bootstraps an existing solution into the repo and
 unpacks it per component so `git diff` shows real changes — not a binary blob. `sync` captures DEV's state into
@@ -26,7 +26,7 @@ source control; `deploy` packages from the repo and imports into the target.
 
 What sets Flowline apart:
 
-- **Scaffolded WebResources project.** `clone` creates a web resources project with TypeScript/JavaScript bundling already set up where `dist/` is automatically wired to `push`. But bring in your own bundler if you prefer.
+- **Scaffolded WebResources project.** `clone` creates a web resources project with Rollup + TypeScript already set up — `dist/` is automatically wired to `push`. Swap in any bundler you prefer.
 - **Fast push for code assets.** `push` syncs plugin assemblies and web resources directly to DEV without a full solution import. Use it from a Flowline project, or point it at a standalone plugin file and web resource folder. `--scope assemblyonly` updates only the assembly bytes — useful in hot iteration loops when registrations haven't changed.
 - **Keeps Dataverse in sync with source.** Plugin steps, images, and web resources missing from source are deleted or removed (if exist in another solution) on push — no manual cleanup. Use `--no-delete` to skip.
 - **Dry-run everything.** `--dry-run` previews every change before it touches Dataverse.
