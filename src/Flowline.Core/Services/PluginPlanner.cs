@@ -11,16 +11,18 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
     static readonly Dictionary<string, string> s_messagePropertyNames = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Assign"]                = "Target",
-        ["Create"]                = "id",
+        ["Create"]                = "Id",
+        ["CreateMultiple"]        = "Targets",
         ["Delete"]                = "Target",
-        ["DeliverIncoming"]       = "emailid",
-        ["DeliverPromote"]        = "emailid",
+        ["DeliverIncoming"]       = "EmailId",
+        ["DeliverPromote"]        = "EmailId",
         ["Merge"]                 = "Target",
         ["Route"]                 = "Target",
-        ["Send"]                  = "emailid",
-        ["SetState"]              = "entityMoniker",
-        ["SetStateDynamicEntity"] = "entityMoniker",
+        ["Send"]                  = "EmailId",
+        ["SetState"]              = "EntityMoniker",
+        ["SetStateDynamicEntity"] = "EntityMoniker",
         ["Update"]                = "Target",
+        ["UpdateMultiple"]        = "Targets",
     };
 
     public RegistrationPlan Plan(RegistrationSnapshot snapshot, PluginAssemblyMetadata metadata, Entity assembly, string solutionName)

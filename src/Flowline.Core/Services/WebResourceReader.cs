@@ -140,9 +140,6 @@ public class WebResourceReader
         var result = new Dictionary<string, LocalWebResource>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories))
         {
-            if (Path.GetFileNameWithoutExtension(file).EndsWith("_nosync", StringComparison.OrdinalIgnoreCase))
-                continue;
-
             var relativePath = Path.GetRelativePath(root, file).Replace("\\", "/");
             var name = $"{prefix}/{relativePath}";
             result[name] = LocalResourceFromFile(file, name, relativePath);

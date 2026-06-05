@@ -66,7 +66,7 @@ public class StatusCommand(IAnsiConsole console) : AsyncCommand<StatusCommand.Se
         if (hasUrls)
         {
             results = await Console.Status().FlowlineSpinner().StartAsync(
-                "Checking environment connectivity...",
+                "Checking environments...",
                 _ => Task.WhenAll(envs.Select(async e =>
                 {
                     var who = !string.IsNullOrEmpty(e.Url)
