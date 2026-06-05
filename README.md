@@ -1,8 +1,8 @@
+# Flowline
+
 <table>
 <tr>
 <td>
-
-# Flowline
 
 **Flowline** is a Dataverse ALM CLI — structured workflow, Git-tracked solutions,
 and a fast push to DEV without the enterprise overhead.
@@ -19,14 +19,6 @@ and a fast push to DEV without the enterprise overhead.
 </td>
 </tr>
 </table>
-
-# Flowline
-
-![CI](https://github.com/RemyDuijkeren/Flowline/workflows/CI/badge.svg)
-[![NuGet](https://img.shields.io/nuget/v/Flowline.svg)](https://www.nuget.org/packages/Flowline)
-[![NuGet](https://img.shields.io/nuget/dt/RemyDuijkeren.Flowline.svg)](https://www.nuget.org/packages/Flowline)
-
-**Flowline** is a Dataverse ALM CLI — structured workflow, Git-tracked solutions, and a fast push to DEV without the enterprise overhead.
 
 ---
 
