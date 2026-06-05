@@ -4,8 +4,8 @@ namespace Flowline.Utils;
 
 public static class SpinnerExtensions
 {
-    internal static readonly Spinner SpinnerType = Spinner.Known.Default; // BoxBounce2 .Binary .Arrow3 .Dots12
-    internal static readonly Color SpinnerColor = Color.Turquoise2; //.MediumOrchid;
+    internal static readonly Spinner s_spinnerType = Spinner.Known.Default; // BoxBounce2 .Binary .Arrow3 .Dots12
+    internal static readonly Color s_spinnerColor = Color.Turquoise2; //Turquoise2, Plum4, DarkMagenta, DarkMagenta_1;
 
     extension(Status status)
     {
@@ -16,8 +16,8 @@ public static class SpinnerExtensions
         /// Use as <c>AnsiConsole.Status().FlowlineSpinner().StartAsync(...)</c>.
         /// </summary>
         public FlowlineStatus FlowlineSpinner()
-            => new(status.Spinner(SpinnerType)
-                         .SpinnerStyle(new Style(foreground: SpinnerColor)));
+            => new(status.Spinner(s_spinnerType)
+                         .SpinnerStyle(new Style(foreground: s_spinnerColor)));
     }
 
     extension<T>(Task<T> task)
@@ -27,28 +27,28 @@ public static class SpinnerExtensions
         /// Use instead of <c>.Spinner()</c> directly so spinner appearance is defined in one place.
         /// </summary>
         public Task<T> FlowlineSpinner()
-            => task.Spinner(SpinnerType, new Style(foreground: SpinnerColor));
+            => task.Spinner(s_spinnerType, new Style(foreground: s_spinnerColor));
     }
 
     extension(Task task)
     {
         /// <inheritdoc cref="FlowlineSpinner{T}"/>
         public Task FlowlineSpinner()
-            => task.Spinner(SpinnerType, new Style(foreground: SpinnerColor));
+            => task.Spinner(s_spinnerType, new Style(foreground: s_spinnerColor));
     }
 }
 
 public readonly struct FlowlineStatus(Status status)
 {
     public Task StartAsync(string statusText, Func<StatusContext, Task> action)
-        => status.StartAsync($"[{SpinnerExtensions.SpinnerColor}]{statusText}[/]", action);
+        => status.StartAsync($"[{SpinnerExtensions.s_spinnerColor}]{statusText}[/]", action);
 
     public Task<T> StartAsync<T>(string statusText, Func<StatusContext, Task<T>> action)
-        => status.StartAsync($"[{SpinnerExtensions.SpinnerColor}]{statusText}[/]", action);
+        => status.StartAsync($"[{SpinnerExtensions.s_spinnerColor}]{statusText}[/]", action);
 
     public void Start(string statusText, Action<StatusContext> action)
-        => status.Start($"[{SpinnerExtensions.SpinnerColor}]{statusText}[/]", action);
+        => status.Start($"[{SpinnerExtensions.s_spinnerColor}]{statusText}[/]", action);
 
     public T Start<T>(string statusText, Func<StatusContext, T> action)
-        => status.Start($"[{SpinnerExtensions.SpinnerColor}]{statusText}[/]", action);
+        => status.Start($"[{SpinnerExtensions.s_spinnerColor}]{statusText}[/]", action);
 }

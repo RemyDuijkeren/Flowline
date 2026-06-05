@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="https://raw.githubusercontent.com/RemyDuijkeren/Flowline/master/docs/Flowline-icon.png" alt="Flowline" width="120" />
+</div>
+
 # Flowline
 
 ![CI](https://github.com/RemyDuijkeren/Flowline/workflows/CI/badge.svg)

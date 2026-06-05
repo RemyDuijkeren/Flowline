@@ -6,21 +6,23 @@ namespace Flowline.Utils;
 
 public static class ConsoleHelper
 {
+    internal static readonly Color s_welcomeColor = Color.Turquoise2; //Turquoise2, Plum4, DarkMagenta, DarkMagenta_1
     public static void WelcomeScreen(IAnsiConsole console)
     {
+        // Future Smooth
+        var welcomeText = new Text(
+            """
+            ╭─╴╷  ╭─╮╷ ╷╷  ╷╭╮╷╭─╴
+            ├╴ │  │ ││╷││  ││╰┤├╴
+            ╵  ╰─╴╰─╯╰┴╯╰─╴╵╵ ╵╰─╴
+            """, new Style(s_welcomeColor));
+
+        console.Write(welcomeText);
+        console.WriteLine();
+
         var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version;
-        var versionText = new Text($"Flowline CLI version {version}", new Style(Color.Turquoise2));
+        var versionText = new Text($"Flowline CLI v{version} ({Environment.OSVersion}, CLR:{Environment.Version}, {(Environment.Is64BitOperatingSystem ? "64-bit" : "32-bit")})", new Style(s_welcomeColor));
 
-        // console.MarkupLine("███████╗██╗      ██████╗ ██╗    ██╗██╗     ██╗███╗   ██╗███████╗");
-        // console.MarkupLine("██╔════╝██║     ██╔═══██╗██║    ██║██║     ██║████╗  ██║██╔════╝");
-        // console.MarkupLine("█████╗  ██║     ██║   ██║██║ █╗ ██║██║     ██║██╔██╗ ██║█████╗  ");
-        // console.MarkupLine("██╔══╝  ██║     ██║   ██║██║███╗██║██║     ██║██║╚██╗██║██╔══╝  ");
-        // console.MarkupLine("██║     ███████╗╚██████╔╝╚███╔███╔╝███████╗██║██║ ╚████║███████╗");
-        // console.MarkupLine("╚═╝     ╚══════╝ ╚═════╝  ╚══╝╚══╝ ╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝");
-
-        console.MarkupLine("[turquoise2]____ _    ____ _ _ _ _    _ _  _ ____[/]");
-        console.MarkupLine("[turquoise2]|___ |    |  | | | | |    | |\\ | |___[/]");
-        console.MarkupLine("[turquoise2]|    |___ |__| |_|_| |___ | | \\| |___[/]");
         console.Write(versionText);
         console.WriteLine();
     }

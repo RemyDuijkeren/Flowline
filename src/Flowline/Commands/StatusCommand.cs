@@ -31,13 +31,10 @@ public class StatusCommand(IAnsiConsole console) : AsyncCommand<StatusCommand.Se
             var git = await FlowlineValidator.Default.EnsureGitAsync(settings, cancellationToken);
             Console.MarkupLine($"[bold]Git[/] version: [green]{git.Version}[/]");
 
-            if (settings.Verbose)
-            {
-                Console.MarkupLine("\n[bold]Environment Information:[/]");
-                Console.MarkupLine($"Operating System: [green]{Environment.OSVersion}[/]");
-                Console.MarkupLine($".NET Runtime: [green]{Environment.Version}[/]");
-                Console.MarkupLine($"64-bit OS: [green]{Environment.Is64BitOperatingSystem}[/]");
-            }
+            Console.MarkupLine("\n[bold]Environment Information:[/]");
+            Console.MarkupLine($"Operating System: [green]{Environment.OSVersion}[/]");
+            Console.MarkupLine($".NET Runtime: [green]{Environment.Version}[/]");
+            Console.MarkupLine($"64-bit OS: [green]{Environment.Is64BitOperatingSystem}[/]");
         }
         catch
         {
