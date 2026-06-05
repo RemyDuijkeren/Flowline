@@ -1,6 +1,4 @@
-<div align="center">
-  <img src="https://raw.githubusercontent.com/RemyDuijkeren/Flowline/master/docs/Flowline-icon.png" alt="Flowline" width="120" />
-</div>
+<img src="https://raw.githubusercontent.com/RemyDuijkeren/Flowline/master/docs/Flowline-icon.png" alt="Flowline CLI" width="100" style="float:inline-start; margin:auto;">
 
 # Flowline
 
