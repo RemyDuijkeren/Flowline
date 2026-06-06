@@ -13,7 +13,7 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "<target>")]
-        [Description("Target environment: prod, test, or a URL")]
+        [Description("Target environment: prod, uat, test, or a URL")]
         public string Target { get; set; } = null!;
 
         [CommandOption("--solution <name>")]
@@ -34,6 +34,7 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
         var targetUrl = settings.Target.ToLowerInvariant() switch
         {
             "prod" => Config!.ProdUrl,
+            "uat"  => Config!.UatUrl,
             "test" => Config!.TestUrl,
             _ => settings.Target
         };

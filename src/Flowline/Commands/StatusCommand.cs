@@ -30,11 +30,6 @@ public class StatusCommand(IAnsiConsole console) : AsyncCommand<StatusCommand.Se
 
             var git = await FlowlineValidator.Default.EnsureGitAsync(settings, cancellationToken);
             Console.MarkupLine($"[bold]Git[/] version: [green]{git.Version}[/]");
-
-            Console.MarkupLine("\n[bold]Environment Information:[/]");
-            Console.MarkupLine($"Operating System: [green]{Environment.OSVersion}[/]");
-            Console.MarkupLine($".NET Runtime: [green]{Environment.Version}[/]");
-            Console.MarkupLine($"64-bit OS: [green]{Environment.Is64BitOperatingSystem}[/]");
         }
         catch
         {
@@ -54,6 +49,7 @@ public class StatusCommand(IAnsiConsole console) : AsyncCommand<StatusCommand.Se
         var envs = new (string Label, string? Url)[]
         {
             ("Production",  config.ProdUrl),
+            ("UAT",         config.UatUrl),
             ("Test",        config.TestUrl),
             ("Development", config.DevUrl),
         };
@@ -119,9 +115,9 @@ public class StatusCommand(IAnsiConsole console) : AsyncCommand<StatusCommand.Se
             foreach (var (solutionName, version) in versions)
             {
                 if (version is not null)
-                    Console.MarkupLine($"    [dim]{Markup.Escape(solutionName)}[/]  [green]{Markup.Escape(version)}[/]");
+                    Console.MarkupLine($"    {Markup.Escape(solutionName)}  [green]{Markup.Escape(version)}[/]");
                 else
-                    Console.MarkupLine($"    [dim]{Markup.Escape(solutionName)}  not deployed[/]");
+                    Console.MarkupLine($"    [yellow]{Markup.Escape(solutionName)}  not deployed[/]");
             }
         }
 

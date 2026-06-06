@@ -50,6 +50,62 @@ public class ProjectConfigTests
         sln.Should().BeNull();
     }
 
+    // GetOrUpdateUatUrl tests
+
+    [Fact]
+    public void GetOrUpdateUatUrl_NullInput_WhenUatUrlEmpty_ReturnsNull()
+    {
+        var config = new ProjectConfig();
+
+        var result = config.GetOrUpdateUatUrl(null);
+
+        result.Should().BeNull();
+        config.UatUrl.Should().BeNull();
+    }
+
+    [Fact]
+    public void GetOrUpdateUatUrl_WithUrl_WhenUatUrlEmpty_SetsAndReturnsUrl()
+    {
+        var config = new ProjectConfig();
+
+        var result = config.GetOrUpdateUatUrl("https://contoso-uat.crm.dynamics.com/");
+
+        result.Should().Be("https://contoso-uat.crm.dynamics.com/");
+        config.UatUrl.Should().Be("https://contoso-uat.crm.dynamics.com/");
+    }
+
+    [Fact]
+    public void GetOrUpdateUatUrl_NullInput_WhenUatUrlAlreadySet_ReturnsStoredUrl()
+    {
+        var config = new ProjectConfig { UatUrl = "https://contoso-uat.crm.dynamics.com/" };
+
+        var result = config.GetOrUpdateUatUrl(null);
+
+        result.Should().Be("https://contoso-uat.crm.dynamics.com/");
+        config.UatUrl.Should().Be("https://contoso-uat.crm.dynamics.com/");
+    }
+
+    [Fact]
+    public void GetOrUpdateUatUrl_SameUrl_WhenAlreadySet_ReturnsUrl()
+    {
+        var config = new ProjectConfig { UatUrl = "https://contoso-uat.crm.dynamics.com/" };
+
+        var result = config.GetOrUpdateUatUrl("https://contoso-uat.crm.dynamics.com/");
+
+        result.Should().Be("https://contoso-uat.crm.dynamics.com/");
+    }
+
+    [Fact]
+    public void UatUrl_RoundTripsViaJson()
+    {
+        var config = new ProjectConfig { UatUrl = "https://contoso-uat.crm.dynamics.com/" };
+
+        var json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
+        var restored = JsonSerializer.Deserialize<ProjectConfig>(json)!;
+
+        restored.UatUrl.Should().Be("https://contoso-uat.crm.dynamics.com/");
+    }
+
     // GenerateConfig tests
 
     [Fact]

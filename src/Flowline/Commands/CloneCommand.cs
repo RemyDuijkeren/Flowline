@@ -21,6 +21,10 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         [Description("Production environment URL to clone solution from")]
         public string? ProdUrl { get; set; }
 
+        [CommandOption("--uat <URL>")]
+        [Description("UAT environment URL to clone solution from")]
+        public string? UatUrl { get; set; }
+
         [CommandOption("--test <URL>")]
         [Description("Test environment URL to clone solution from")]
         public string? TestUrl { get; set; }
@@ -39,6 +43,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     {
         // Save all provided URLs to config first (no API calls, just config update + prompt on conflict)
         Config!.GetOrUpdateProdUrl(settings.ProdUrl, settings);
+        Config!.GetOrUpdateUatUrl(settings.UatUrl, settings);
         Config!.GetOrUpdateTestUrl(settings.TestUrl, settings);
         Config!.GetOrUpdateDevUrl(settings.DevUrl, settings);
 
@@ -82,13 +87,14 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     private async Task<(EnvironmentInfo sourceEnv, ProjectSolution projectSolution, SolutionInfo solutionInfo)> FindUnmanagedSourceAsync(Settings settings,
         CancellationToken cancellationToken)
     {
-        foreach (var role in new[] { EnvironmentRole.Prod, EnvironmentRole.Test, EnvironmentRole.Dev })
+        foreach (var role in new[] { EnvironmentRole.Prod, EnvironmentRole.Uat, EnvironmentRole.Test, EnvironmentRole.Dev })
         {
             var configUrl = role switch
             {
                 EnvironmentRole.Prod => Config!.ProdUrl,
+                EnvironmentRole.Uat  => Config!.UatUrl,
                 EnvironmentRole.Test => Config!.TestUrl,
-                EnvironmentRole.Dev => Config!.DevUrl,
+                EnvironmentRole.Dev  => Config!.DevUrl,
                 _ => null
             };
             if (string.IsNullOrEmpty(configUrl)) continue;
@@ -99,7 +105,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
             if (info.IsManaged)
             {
-                var label = role switch { EnvironmentRole.Prod => "Prod", EnvironmentRole.Test => "Test", _ => "Dev" };
+                var label = role switch { EnvironmentRole.Prod => "Prod", EnvironmentRole.Uat => "UAT", EnvironmentRole.Test => "Test", _ => "Dev" };
                 Console.MarkupLine($"[dim]{label} solution is managed — skipping[/]");
                 continue;
             }
@@ -107,7 +113,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             return (env, sln, info);
         }
 
-        throw new FlowlineException("No unmanaged environment found — provide a --dev, --test, or --prod URL with an unmanaged solution.");
+        throw new FlowlineException("No unmanaged environment found — provide a --dev, --test, --uat, or --prod URL with an unmanaged solution.");
     }
 
     private void SeedWebResourceDistFromSrc(string slnFolder, string? publisherPrefix, string solutionName, Settings settings)

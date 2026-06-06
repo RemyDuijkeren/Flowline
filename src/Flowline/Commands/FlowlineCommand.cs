@@ -9,7 +9,7 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public enum EnvironmentRole { Prod, Test, Dev }
+public enum EnvironmentRole { Prod, Uat, Test, Dev }
 
 public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions) : AsyncCommand<TSettings>
     where TSettings : FlowlineSettings
@@ -73,6 +73,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         var label = role switch
         {
             EnvironmentRole.Prod => "Prod",
+            EnvironmentRole.Uat  => "UAT",
             EnvironmentRole.Test => "Test",
             EnvironmentRole.Dev  => "Dev",
             _ => throw new ArgumentOutOfRangeException(nameof(role))
@@ -80,6 +81,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         var flag = role switch
         {
             EnvironmentRole.Prod => "--prod",
+            EnvironmentRole.Uat  => "--uat",
             EnvironmentRole.Test => "--test",
             EnvironmentRole.Dev  => "--dev",
             _ => throw new ArgumentOutOfRangeException(nameof(role))
@@ -88,6 +90,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         var url = role switch
         {
             EnvironmentRole.Prod => Config!.GetOrUpdateProdUrl(inputUrl, settings),
+            EnvironmentRole.Uat  => Config!.GetOrUpdateUatUrl(inputUrl, settings),
             EnvironmentRole.Test => Config!.GetOrUpdateTestUrl(inputUrl, settings),
             EnvironmentRole.Dev  => Config!.GetOrUpdateDevUrl(inputUrl, settings),
             _ => throw new ArgumentOutOfRangeException(nameof(role))

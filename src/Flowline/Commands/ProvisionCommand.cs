@@ -8,7 +8,7 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public enum Role { Dev, Test }
+public enum Role { Dev, Test, Uat }
 
 public enum CopyType { Minimal, Full }
 
@@ -17,9 +17,9 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "[role]")]
-        [Description("Target role: dev or test")]
+        [Description("Target role: dev, test, or uat")]
         [DefaultValue(Role.Dev)]
-        public Role Role { get; set; } = Role.Dev; // dev|test
+        public Role Role { get; set; } = Role.Dev; // dev|test|uat
 
         [CommandOption("--prod <URL>")]
         [Description("Production environment URL to copy from")]
@@ -46,7 +46,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
 
         // Prepare the target environment name and url
         var suffix = string.IsNullOrWhiteSpace(settings.Suffix)
-            ? (settings.Role == Role.Dev ? "Dev" : "Test")
+            ? settings.Role switch { Role.Dev => "Dev", Role.Uat => "UAT", _ => "Test" }
             : settings.Suffix;
         var targetDisplayName = $"{prodEnv.DisplayName} {suffix}";
         EnvironmentUrlParts urlParts = PacUtils.GetPartsFromEnvUrl(prodEnv.EnvironmentUrl!);
@@ -60,6 +60,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
         {
             Role.Dev  => Config!.GetOrUpdateDevUrl(targetUrl, settings),
             Role.Test => Config!.GetOrUpdateTestUrl(targetUrl, settings),
+            Role.Uat  => Config!.GetOrUpdateUatUrl(targetUrl, settings),
             _ => null
         };
 
@@ -135,8 +136,8 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
             return 1;
         }
 
-        // Test is always a FullCopy
-        string copyType = (settings.Role == Role.Test || settings.CopyType == CopyType.Full) ? "FullCopy" : "MinimalCopy";
+        // Test and UAT are always a FullCopy
+        string copyType = (settings.Role is Role.Test or Role.Uat || settings.CopyType == CopyType.Full) ? "FullCopy" : "MinimalCopy";
 
         var (cmdNameCopy, prefixArgsCopy, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
 

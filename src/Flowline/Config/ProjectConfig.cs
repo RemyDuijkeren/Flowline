@@ -11,6 +11,7 @@ public class ProjectConfig
     HashSet<ProjectSolution> _solutions = new(ProjectSolution.NameComparer);
 
     public string? ProdUrl { get; set; }
+    public string? UatUrl { get; set; }
     public string? TestUrl { get; set; }
     public string? DevUrl { get; set; }
     public HashSet<ProjectSolution> Solutions
@@ -19,6 +20,41 @@ public class ProjectConfig
         set => _solutions = value == null
             ? new HashSet<ProjectSolution>(ProjectSolution.NameComparer)
             : new HashSet<ProjectSolution>(value.Where(solution => !string.IsNullOrWhiteSpace(solution.Name)), ProjectSolution.NameComparer);
+    }
+
+    public string? GetOrUpdateUatUrl(string? inputUatUrl, FlowlineSettings? settings = null)
+    {
+        inputUatUrl = inputUatUrl?.Trim();
+
+        if (string.IsNullOrWhiteSpace(UatUrl))
+        {
+            UatUrl = inputUatUrl;
+            return string.IsNullOrWhiteSpace(inputUatUrl) ? null : inputUatUrl;
+        }
+
+        if (string.IsNullOrWhiteSpace(inputUatUrl))
+        {
+            if (settings is { Verbose: true })
+            {
+                AnsiConsole.MarkupLine($"[dim]UAT: [bold]{UatUrl}[/][/]");
+            }
+
+            return UatUrl;
+        }
+
+        if (UatUrl != inputUatUrl)
+        {
+            AnsiConsole.MarkupLine($"[yellow]UAT is already set: [bold]{UatUrl}[/][/]");
+            if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings))
+            {
+                AnsiConsole.MarkupLine($"[dim]Keeping UAT as-is: [link]{UatUrl}[/][/]");
+                return UatUrl;
+            }
+            AnsiConsole.MarkupLine("[green]UAT updated[/]");
+        }
+
+        UatUrl = inputUatUrl;
+        return UatUrl;
     }
 
     public string? GetOrUpdateTestUrl(string? inputTestUrl, FlowlineSettings? settings = null)
