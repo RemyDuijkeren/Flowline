@@ -43,9 +43,12 @@ dotnet tool install --global Flowline
 Prerequisites:
 
 ```bash
-winget install Microsoft.PowerAppsCLI
+dotnet tool install --global Microsoft.PowerApps.CLI.Tool
 winget install Git.Git
 ```
+
+On Windows, winget is an alternative for PAC CLI: `winget install Microsoft.PowerAppsCLI`  
+If .NET 10 is installed, Flowline uses dnx — no separate PAC CLI install needed.
 
 Authenticate before using Flowline:
 
