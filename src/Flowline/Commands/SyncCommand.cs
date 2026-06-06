@@ -139,7 +139,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
                     DriftCategory.OrphanAssembly => $"- '{w.RelativePath}' in Dataverse — no local source. Flowline won't manage it.",
                     _ => $"- {w.RelativePath}"
                 };
-                Console.MarkupLine($"[dim]  {hint}[/]");
+                Console.MarkupLine($"  {hint}");
             }
         }
 
