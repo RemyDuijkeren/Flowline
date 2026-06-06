@@ -45,6 +45,21 @@ Key rules:
 - Web asset build output goes to `WebResources/dist/` — this is what syncs to Dataverse
 - Multiple solutions can coexist as sibling folders under `solutions/`
 
+## GitHub Wiki
+
+The GitHub Wiki lives in a sibling folder: `E:\Code\RemyDuijkeren\Flowline.wiki\`
+
+When changing code that affects user-facing behavior — commands, flags, plugin registration, web
+resource handling, project structure — update the relevant wiki page(s) alongside any README changes.
+
+Wiki pages and their scope:
+- `Getting-Started.md` — install, auth, project workflow
+- `Command-Reference.md` — all commands and flags
+- `Plugin-Registration.md` — `[Step]`, `[Filter]`, `[CustomApi]` attribute reference
+- `WebResources-Project.md` — TypeScript setup, Rollup build, folder structure
+- `Migration-from-spkl.md`, `Migration-from-Daxif.md`, `Migration-from-PACX.md` — migration guides
+- `Known-Limitations.md` — unsupported features and planned work
+
 ## Documented Solutions
 
 `docs/solutions/` — solutions to past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas.
