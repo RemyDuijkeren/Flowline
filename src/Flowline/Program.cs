@@ -58,14 +58,14 @@ app.Configure(config =>
 
     // clone = Clone solution from environment to local folder
     config.AddCommand<CloneCommand>("clone") // init (new repo) or clone (existing repo)
-          .WithDescription("Clone an existing unmanaged solution into this repo.")
+          .WithDescription("Initialize a Flowline project from an existing Dataverse solution. Creates folder structure, unpacks solution XML, scaffolds Plugins and WebResources projects, and generates AGENTS.md. One-time setup per solution.")
           .WithExample("clone", "ContosoCustomizations --prod https://contoso.crm4.dynamics.com")
           .WithExample("clone", "ContosoCustomizations --test https://contoso-test.crm4.dynamics.com --managed")
           .WithExample("clone", "ContosoCustomizations --dev https://contoso-dev.crm4.dynamics.com");
 
     // copy/provision = Copy Source environment to destination environment
     config.AddCommand<ProvisionCommand>("provision")
-          .WithDescription("Copy prod into dev or test environment")
+          .WithDescription("Create a DEV, TEST, or UAT environment by copying from production. Saves environment URL to .flowline. One-time setup for new environments.")
           .WithExample("provision")
           .WithExample("provision", "dev")
           .WithExample("provision", "test")
@@ -76,7 +76,7 @@ app.Configure(config =>
 
     // Push assets to dev environment (upload and push assets to environment: plugins, webresources, pcf controls, etc.)
     config.AddCommand<PushCommand>("push")
-        .WithDescription("Push plugins and web resources to Dataverse")
+        .WithDescription("Build and register plugin assembly and web resources directly to DEV — skips pack/import. Reads [Step] attributes to create or update plugin registrations. Run after plugin or web resource changes.")
         .WithExample("push")
         .WithExample("push", "ContosoCustomizations")
         .WithExample("push", "ContosoCustomizations --dev https://contoso-dev.crm4.dynamics.com/")
@@ -86,7 +86,7 @@ app.Configure(config =>
 
     // Sync changes to local repo (export solution and unpack)
     config.AddCommand<SyncCommand>("sync")
-          .WithDescription("Pull dev changes back into the repo")
+          .WithDescription("Export solution from DEV, bump build version, and unpack to source-controlled XML. Run after testing changes in DEV. Requires no uncommitted changes in Package/src/.")
           .WithExample("sync")
           .WithExample("sync", "ContosoCustomizations")
           .WithExample("sync", "ContosoCustomizations --dev https://contoso-dev.crm4.dynamics.com/ --managed")
@@ -94,7 +94,7 @@ app.Configure(config =>
 
     // Deploy (pack and import solution into environment)
     config.AddCommand<DeployCommand>("deploy")
-          .WithDescription("Deploy solution to test or prod environment")
+          .WithDescription("Pack solution from repo and import into target environment (test, uat, prod, or URL). Requires clean git working directory.")
           .WithExample("deploy")
           .WithExample("deploy", "prod")
           .WithExample("deploy", "test")
@@ -103,12 +103,12 @@ app.Configure(config =>
           .WithExample("deploy", "prod --solution ContosoCustomizations --managed");
 
     config.AddCommand<StatusCommand>("status")
-          .WithDescription("Show Flowline, PAC CLI, and project status")
+          .WithDescription("Show configured environments, connection status, solution version, PAC CLI auth status, and git state. Use to verify setup before running commands.")
           .WithExample("status");
 
     // Generate early-bound C# types from solution entities via pac modelbuilder build
     config.AddCommand<GenerateCommand>("generate")
-          .WithDescription("Generate early-bound C# types for the solution's entities and custom APIs")
+          .WithDescription("Generate early-bound C# types from solution entities and custom APIs. Overwrites Plugins/Models/ with generated .cs files. Run after adding or modifying entities or custom APIs.")
           .WithExample("generate")
           .WithExample("generate", "ContosoCustomizations")
           .WithExample("generate", "--namespace", "Contoso.Plugins.Models")
