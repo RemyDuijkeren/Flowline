@@ -42,7 +42,7 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
         if (string.IsNullOrWhiteSpace(targetUrl))
         {
             Console.MarkupLine($"[red]Can't resolve '{settings.Target}' — provide an explicit URL or check your .flowline config.[/]");
-            return 1;
+            return (int)ExitCode.ConfigInvalid;
         }
 
         // Resolve solution
@@ -50,7 +50,7 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
         if (sln == null)
         {
             Console.MarkupLine("[red]Solution name is required — use --solution <name>.[/]");
-            return 1;
+            return (int)ExitCode.ConfigInvalid;
         }
 
         // Validate target environment
@@ -60,27 +60,17 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
         if (targetEnv == null)
         {
             Console.MarkupLine("[red]Target environment not found. Check the URL or your PAC login.[/]");
-            return 1;
+            return (int)ExitCode.ConnectionFailed;
         }
 
         Console.MarkupLine($"[green]Target: [bold]{targetEnv.DisplayName}[/] ({targetEnv.EnvironmentUrl})[/]");
-
-        // Ask for confirmation if target is Production
-        if (targetEnv.Type == "Production")
-        {
-            if (!ConsoleHelper.Confirm($"[yellow]Are you sure you want to deploy to PRODUCTION ([bold]{targetEnv.DisplayName}[/])?[/]", false, settings))
-            {
-                Console.MarkupLine("[dim]Deploy cancelled[/]");
-                return 0;
-            }
-        }
 
         var slnFolder = Path.Combine(RootFolder, "solutions", sln.Name);
         var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
         if (!File.Exists(cdsprojPath))
         {
             Console.MarkupLine($"[red]No solution found at '{cdsprojPath}' — run 'clone' first.[/]");
-            return 1;
+            return (int)ExitCode.NotFound;
         }
 
         // Block if local changes haven't been synced — deploy packs from src/, not dist/
@@ -94,7 +84,7 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
                 Console.Warning(w.Category == DriftCategory.OnlyLocal
                     ? $"Only local: {w.RelativePath}"
                     : $"Plugin size mismatch: {w.RelativePath}");
-            if (!settings.Force) return 1;
+            if (!settings.Force) return (int)ExitCode.ValidationFailed;
         }
 
         var artifactsFolder = Path.Combine(slnFolder, "artifacts");
@@ -123,7 +113,7 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
         if (packResult.ExitCode != 0)
         {
             Console.MarkupLine("[red]Pack failed — check your solution source.[/]");
-            return 1;
+            return (int)ExitCode.BuildFailed;
         }
 
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
@@ -149,7 +139,7 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
         if (importResult.ExitCode != 0)
         {
             Console.MarkupLine("[red]Deploy failed — check the environment and your PAC login.[/]");
-            return 1;
+            return (int)ExitCode.BuildFailed;
         }
 
         Console.Done("Deployed! Your solution is live.");

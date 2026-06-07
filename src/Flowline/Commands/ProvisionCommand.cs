@@ -67,7 +67,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
         if (url == null)
         {
             Console.Error("Couldn't build a valid target URL — check your .flowline config");
-            return 1;
+            return (int)ExitCode.ConfigInvalid;
         }
 
         // Validate target environment
@@ -94,7 +94,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
             if (targetEnv == null)
             {
                 Console.Error("Environment created but not found — check the Power Platform admin center");
-                return 1;
+                return (int)ExitCode.ConnectionFailed;
             }
         }
         else
@@ -105,7 +105,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
         if (targetEnv.Type == "Production")
         {
             Console.Error("Can't overwrite a Production environment");
-            return 1;
+            return (int)ExitCode.ValidationFailed;
         }
 
         if (!settings.AllowOverwrite)
@@ -133,7 +133,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
             Console.Error("Target environment has unmanaged solutions that would be permanently lost:");
             foreach (var (solution, reason) in problematic)
                 Console.Info($"- {solution.SolutionUniqueName} ({reason})");
-            return 1;
+            return (int)ExitCode.ValidationFailed;
         }
 
         // Test and UAT are always a FullCopy

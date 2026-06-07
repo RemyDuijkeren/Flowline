@@ -79,11 +79,11 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         if (standaloneMode)
         {
             if (string.IsNullOrWhiteSpace(settings.Solution))
-                throw new FlowlineException("Solution name is required — pass it as the first argument.");
+                throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — pass it as the first argument.");
             if (string.IsNullOrWhiteSpace(settings.DevUrl))
-                throw new FlowlineException("Dev URL is required in standalone mode — use --dev <URL>.");
+                throw new FlowlineException(ExitCode.ConfigInvalid, "Dev URL is required in standalone mode — use --dev <URL>.");
             if (string.IsNullOrWhiteSpace(settings.Output))
-                throw new FlowlineException("Output folder is required in standalone mode — use -o <PATH> or --output <PATH>.");
+                throw new FlowlineException(ExitCode.ConfigInvalid, "Output folder is required in standalone mode — use -o <PATH> or --output <PATH>.");
 
             solutionName = settings.Solution.Trim();
             devUrl = settings.DevUrl.Trim();
@@ -97,11 +97,11 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         {
             projectSln = Config!.GetOrUpdateSolution(settings.Solution, settings: settings);
             if (projectSln == null)
-                throw new FlowlineException("Solution name is required — pass it as an argument or configure a single solution in .flowline.");
+                throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — pass it as an argument or configure a single solution in .flowline.");
 
             var resolvedDevUrl = Config!.GetOrUpdateDevUrl(settings.DevUrl, settings);
             if (string.IsNullOrEmpty(resolvedDevUrl))
-                throw new FlowlineException("No DEV environment configured — run 'flowline provision' or pass --dev <URL>.");
+                throw new FlowlineException(ExitCode.ConfigInvalid, "No DEV environment configured — run 'flowline provision' or pass --dev <URL>.");
             devUrl = resolvedDevUrl;
 
             solutionName = projectSln.Name;
@@ -245,13 +245,13 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             if (Directory.Exists(tempFolder))
                 Directory.Delete(tempFolder, recursive: true);
 
-            throw new FlowlineException("pac modelbuilder build failed — check the output above.");
+            throw new FlowlineException(ExitCode.BuildFailed, "pac modelbuilder build failed — check the output above.");
         }
 
         Console.Ok("Early-bound types generated");
 
         if (!Directory.Exists(tempFolder))
-            throw new FlowlineException("pac modelbuilder build reported success but produced no output folder.");
+            throw new FlowlineException(ExitCode.BuildFailed, "pac modelbuilder build reported success but produced no output folder.");
         if (Directory.Exists(modelsFolder))
             Directory.Delete(modelsFolder, recursive: true);
         Directory.Move(tempFolder, modelsFolder);
@@ -282,9 +282,9 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(devUrl, settings, cancellationToken));
 
         if (env == null)
-            throw new FlowlineException("Dev environment not found — check the URL or your PAC login.");
+            throw new FlowlineException(ExitCode.ConnectionFailed, "Dev environment not found — check the URL or your PAC login.");
         if (env.Type == "Production")
-            throw new FlowlineException("That's a Production environment — use a sandbox or dev instead.");
+            throw new FlowlineException(ExitCode.ValidationFailed, "That's a Production environment — use a sandbox or dev instead.");
 
         Console.Ok($"Dev: [bold]{env.DisplayName}[/] ({env.EnvironmentUrl})");
     }
@@ -296,7 +296,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             _ => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, solutionName, includeManaged: false, settings, cancellationToken));
 
         if (remoteSln == null)
-            throw new FlowlineException($"Solution '{solutionName}' not found in that environment.");
+            throw new FlowlineException(ExitCode.NotFound, $"Solution '{solutionName}' not found in that environment.");
 
         Console.Ok($"Solution: [bold]{solutionName}[/] (managed: {remoteSln.IsManaged})");
         return remoteSln;

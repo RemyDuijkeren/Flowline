@@ -199,7 +199,7 @@ public static class PacUtils
         if (!result.IsSuccess)
         {
             AnsiConsole.MarkupLine($"[red]{packageType} pack failed — check your solution source.[/]");
-            return 1;
+            return (int)ExitCode.BuildFailed;
         }
 
         var duration = result.RunTime.TotalMinutes >= 1
@@ -309,11 +309,11 @@ public static class PacUtils
             .ExecuteBufferedAsync(cancellationToken);
 
         if (result.ExitCode != 0)
-            throw new FlowlineException("Failed to read solution version from Dataverse.");
+            throw new FlowlineException(ExitCode.ConnectionFailed, "Failed to read solution version from Dataverse.");
 
         var version = ParseVersionFromPacOutput(result.StandardOutput);
         if (string.IsNullOrEmpty(version))
-            throw new FlowlineException("Could not parse solution version from PAC output.");
+            throw new FlowlineException(ExitCode.GeneralError, "Could not parse solution version from PAC output.");
 
         return version;
     }
@@ -334,7 +334,7 @@ public static class PacUtils
             .ExecuteBufferedAsync(cancellationToken);
 
         if (result.ExitCode != 0)
-            throw new FlowlineException($"Failed to set solution version to {version}.");
+            throw new FlowlineException(ExitCode.ConnectionFailed, $"Failed to set solution version to {version}.");
     }
 
     public static async Task<WhoAmIInfo?> GetEnvWhoAsync(string environmentUrl, CancellationToken cancellationToken = default)

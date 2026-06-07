@@ -151,8 +151,8 @@ public static class GitUtils
     {
         if (!await IsRepoCleanAsync(verbose, cancellationToken))
         {
-            AnsiConsole.MarkupLine("[red]Git has uncommitted changes. Commit or stash them before deploying.[/]");
-            Environment.Exit(1);
+            AnsiConsole.MarkupLine("[red]Git has uncommitted changes. Commit or stash changes first before deploying.[/]");
+            Environment.Exit((int)ExitCode.DirtyWorkingDirectory);
         }
     }
 
@@ -168,7 +168,7 @@ public static class GitUtils
                            .ExecuteBufferedAsync(cancellationToken);
 
         if (result.ExitCode != 0)
-            throw new FlowlineException($"Failed to create git tag '{tagName}'. Tag may already exist — use --no-tag or remove it with: git tag -d {tagName}");
+            throw new FlowlineException(ExitCode.GeneralError, $"Failed to create git tag '{tagName}'. Tag may already exist — use --no-tag or remove it with: git tag -d {tagName}");
     }
 
     public static async Task AssertGitRepoAsync(string rootFolder, bool verbose = true, CancellationToken cancellationToken = default)

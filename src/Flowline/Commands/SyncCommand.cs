@@ -43,13 +43,13 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         // Solution name is required
         var (projectSln, slnInfo) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken);
         if (slnInfo.IsManaged)
-            throw new FlowlineException("Managed solutions are not supported for sync");
+            throw new FlowlineException(ExitCode.ValidationFailed, "Managed solutions are not supported for sync");
 
         // Validate that we have an initialized project
         var slnFolder = Path.Combine(RootFolder, "solutions", projectSln.Name);
         var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
         if (!File.Exists(cdsprojPath))
-            throw new FlowlineException($"No solution found at '{cdsprojPath}' — run 'clone' first");
+            throw new FlowlineException(ExitCode.NotFound, $"No solution found at '{cdsprojPath}' — run 'clone' first");
 
         // Check for uncommitted changes
         var srcPath = Path.Combine(PackageFolder(slnFolder), "src");
@@ -58,7 +58,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         {
             if (!settings.Force)
             {
-                throw new FlowlineException($"Uncommitted changes in '{projectSln.Name}/{PackageName}/src/' — git commit first, or re-run with --force.")
+                throw new FlowlineException(ExitCode.DirtyWorkingDirectory, $"Uncommitted changes in '{projectSln.Name}/{PackageName}/src/' — Commit or stash changes first, or re-run with --force.")
                     .WithDetail(c => preSyncSummary.WriteFlat(c, settings.Verbose, "[dim]  "));
             }
 
@@ -100,23 +100,23 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
                       .Task);
 
         if (!result.IsSuccess)
-            throw new FlowlineException("Sync failed — check the environment and your PAC login. Use --verbose for more details.");
+            throw new FlowlineException(ExitCode.GeneralError, "Sync failed — check the environment and your PAC login. Use --verbose for more details.");
 
         Console.Ok($"Solution synced from Dataverse in {FormatDuration(result.RunTime)}");
 
         // Pack the solution in pac to validate it
         var artifactsFolder = Path.Combine(slnFolder, "artifacts");
-        if (await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, false, settings.Verbose, cancellationToken) != 0) return 1;
+        if (await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, false, settings.Verbose, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
         if (settings.IncludeManaged &&
             await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, true, settings.Verbose, cancellationToken) != 0)
         {
-            return 1;
+            return (int)ExitCode.BuildFailed;
         }
 
         // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
         if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken) != 0)
         {
-            return 1;
+            return (int)ExitCode.BuildFailed;
         }
 
         // Check for drift between local solution (Plugins/WebResources) and Dataverse (/src)

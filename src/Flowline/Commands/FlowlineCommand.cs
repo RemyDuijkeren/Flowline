@@ -97,20 +97,20 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         };
 
         if (string.IsNullOrEmpty(url))
-            throw new FlowlineException($"{label} URL is required — use {flag} <URL>.");
+            throw new FlowlineException(ExitCode.ConfigInvalid, $"{label} URL is required — use {flag} <URL>.");
 
         EnvironmentInfo? env = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking {label.ToLower()} [bold]{url}[/]...",
             ctx => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(url, settings, cancellationToken));
 
         if (env == null)
-            throw new FlowlineException($"{label} environment not found — check the URL or your PAC login.");
+            throw new FlowlineException(ExitCode.ConnectionFailed, $"{label} environment not found — check the URL or your PAC login.");
 
         if (role == EnvironmentRole.Prod && env.Type != "Production")
-            throw new FlowlineException("That environment isn't Production type.");
+            throw new FlowlineException(ExitCode.ValidationFailed, "That environment isn't Production type.");
 
         if (role != EnvironmentRole.Prod && env.Type == "Production")
-            throw new FlowlineException("That's a Production environment — use a sandbox or dev instead.");
+            throw new FlowlineException(ExitCode.ValidationFailed, "That's a Production environment — use a sandbox or dev instead.");
 
         Console.Ok($"{label} env [bold]{env.DisplayName}[/] ({env.EnvironmentUrl}) exists");
         return env;
@@ -124,7 +124,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         {
             var profile = dataverseConnector.FindBestProfile(environmentUrl);
             if (profile == null)
-                throw new FlowlineException("No PAC profile found — run 'pac auth create' first.");
+                throw new FlowlineException(ExitCode.NotAuthenticated, "Not authenticated — run: pac auth create --environment <url>");
 
             conn = await dataverseConnector.ConnectViaPacAsync(profile, environmentUrl, cancellationToken);
         });
@@ -142,13 +142,13 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     {
         var projectSln = Config!.GetOrUpdateSolution(inputName, includeManaged, settings);
         if (projectSln == null)
-            throw new FlowlineException("Solution name is required — pass it as an argument or use --solution <name>.");
+            throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — pass it as an argument or use --solution <name>.");
 
         SolutionInfo? remoteSln = await Console.Status().FlowlineSpinner().StartAsync(
             $"Looking up solution [bold]{projectSln.Name}[/]...",
             ctx => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, projectSln.Name, includeManaged ?? false, settings, cancellationToken));
         if (remoteSln == null)
-            throw new FlowlineException($"Solution '{projectSln.Name}' not found in that environment.");
+            throw new FlowlineException(ExitCode.NotFound, $"Solution '{projectSln.Name}' not found in that environment.");
 
         Console.Ok($"Solution [bold]{projectSln.Name}[/] (managed: {remoteSln.IsManaged}) exists");
 

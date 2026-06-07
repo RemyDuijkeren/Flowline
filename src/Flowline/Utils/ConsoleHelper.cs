@@ -54,7 +54,7 @@ public static class ConsoleHelper
                 return true;
             }
 
-            throw new FlowlineException("Confirmation required but not in interactive mode. Use --force to override.");
+            throw new FlowlineException(ExitCode.ForceRequired, "Confirmation required but not in interactive mode. Use --force to proceed.");
         }
 
         return AnsiConsole.Confirm(prompt, defaultValue);

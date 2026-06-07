@@ -170,7 +170,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         }
 
         if (slnInfo.IsManaged)
-            throw new FlowlineException("Managed solutions are not supported for push.");
+            throw new FlowlineException(ExitCode.ValidationFailed, "Managed solutions are not supported for push.");
 
         return (devEnv, solutionName);
     }
@@ -188,13 +188,13 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         {
             var pluginsFolder = Path.Combine(RootFolder, AllSolutionsFolderName, solutionName, PluginsName);
             if (await DotNetUtils.BuildSolutionAsync(pluginsFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
-                throw new FlowlineException("Plugins build failed — fix errors above.");
+                throw new FlowlineException(ExitCode.BuildFailed, "Plugins build failed — fix errors above.");
 
             pluginsDll = Path.Combine(pluginsFolder, "bin", "Release", "net462", "publish", $"{PluginsName}.dll");
         }
 
         if (pluginsDll == null || !File.Exists(pluginsDll))
-            throw new FlowlineException(standaloneMode
+            throw new FlowlineException(ExitCode.NotFound, standaloneMode
                 ? $"Plugin file not found: {settings.PluginFile}"
                 : $"{PluginsName}.dll not found. Build the solution first.");
 
@@ -223,7 +223,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         }
 
         if (await DotNetUtils.BuildSolutionAsync(webResourcesFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
-            throw new FlowlineException("WebResources build failed — fix errors above.");
+            throw new FlowlineException(ExitCode.BuildFailed, "WebResources build failed — fix errors above.");
 
         return webResourcesSyncFolder;
     }
@@ -245,7 +245,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         {
             scope = settings.Scopes.Aggregate(PushScope.None, (current, s) => current | s);
             if (scope.HasFlag(PushScope.AssemblyOnly) && scope.HasFlag(PushScope.Plugins))
-                throw new FlowlineException("--scope assemblyonly and --scope plugins are mutually exclusive.");
+                throw new FlowlineException(ExitCode.GeneralError, "--scope assemblyonly and --scope plugins are mutually exclusive.");
         }
         else if (standaloneMode)
         {
@@ -261,9 +261,9 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (standaloneMode)
         {
             if ((scope.HasFlag(PushScope.Plugins) || scope.HasFlag(PushScope.AssemblyOnly)) && string.IsNullOrWhiteSpace(settings.PluginFile))
-                throw new FlowlineException("--scope plugins/assemblyonly requires --pluginFile.");
+                throw new FlowlineException(ExitCode.ConfigInvalid, "--scope plugins/assemblyonly requires --pluginFile.");
             if (scope.HasFlag(PushScope.WebResources) && string.IsNullOrWhiteSpace(settings.WebResources))
-                throw new FlowlineException("--scope webresources requires --webresources.");
+                throw new FlowlineException(ExitCode.ConfigInvalid, "--scope webresources requires --webresources.");
         }
 
         return scope;
@@ -272,7 +272,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     internal static void ValidateStandaloneMode(Settings settings, string rootFolder)
     {
         if (File.Exists(Path.Combine(rootFolder, ProjectConfig.s_configFileName)))
-            throw new FlowlineException("--pluginFile and --webresources cannot be used inside a Flowline project folder. Use project mode or run standalone push from another folder.");
+            throw new FlowlineException(ExitCode.GeneralError, "--pluginFile and --webresources cannot be used inside a Flowline project folder. Use project mode or run standalone push from another folder.");
     }
 
     internal static string ResolveStandaloneSolutionName(Settings settings)
@@ -280,7 +280,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (!string.IsNullOrWhiteSpace(settings.Solution))
             return settings.Solution.Trim();
 
-        throw new FlowlineException("Solution name is required in standalone mode — pass it as the first argument.");
+        throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required in standalone mode — pass it as the first argument.");
     }
 
     internal static string ResolveStandaloneEnvironmentUrl(Settings settings, DataverseConnector dataverseConnector)
@@ -292,7 +292,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (!string.IsNullOrWhiteSpace(profile?.Resource))
             return profile.Resource.Trim();
 
-        throw new FlowlineException("Dev URL is required in standalone mode — use --dev <URL> or select a resource-specific PAC profile.");
+        throw new FlowlineException(ExitCode.ConfigInvalid, "Dev URL is required in standalone mode — use --dev <URL> or select a resource-specific PAC profile.");
     }
 
     internal static string ResolveStandalonePluginFilePath(Settings settings)
@@ -301,13 +301,13 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         var ext = Path.GetExtension(path);
 
         if (string.Equals(ext, ".nupkg", StringComparison.OrdinalIgnoreCase))
-            throw new FlowlineException("NuGet packages not yet supported — use a .dll file.");
+            throw new FlowlineException(ExitCode.GeneralError, "NuGet packages not yet supported — use a .dll file.");
 
         if (!string.Equals(ext, ".dll", StringComparison.OrdinalIgnoreCase))
-            throw new FlowlineException("--pluginFile must point to a .dll file.");
+            throw new FlowlineException(ExitCode.ConfigInvalid, "--pluginFile must point to a .dll file.");
 
         if (!File.Exists(path))
-            throw new FlowlineException($"Plugin file not found: {path}");
+            throw new FlowlineException(ExitCode.NotFound, $"Plugin file not found: {path}");
 
         return path;
     }
@@ -316,7 +316,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     {
         var path = Path.GetFullPath(settings.WebResources!);
         if (!Directory.Exists(path))
-            throw new FlowlineException($"Web resources folder not found: {path}");
+            throw new FlowlineException(ExitCode.NotFound, $"Web resources folder not found: {path}");
 
         return path;
     }
@@ -332,7 +332,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             $"Looking up [bold]{solutionName}[/]...",
             ctx => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, solutionName, includeManaged: false, settings, cancellationToken));
         if (remoteSln == null)
-            throw new FlowlineException($"Solution '{solutionName}' not found in that environment.");
+            throw new FlowlineException(ExitCode.NotFound, $"Solution '{solutionName}' not found in that environment.");
 
         console.Ok($"Solution: [bold]{solutionName}[/] (managed: {remoteSln.IsManaged})");
         return remoteSln;
@@ -349,10 +349,10 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             ctx => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(environmentUrl, settings, cancellationToken));
 
         if (env == null)
-            throw new FlowlineException("Dev environment not found — check the URL or your PAC login.");
+            throw new FlowlineException(ExitCode.ConnectionFailed, "Dev environment not found — check the URL or your PAC login.");
 
         if (env.Type == "Production")
-            throw new FlowlineException("That's a Production environment — use a sandbox or dev instead.");
+            throw new FlowlineException(ExitCode.ValidationFailed, "That's a Production environment — use a sandbox or dev instead.");
 
         console.Ok($"Dev: [bold]{env.DisplayName}[/] ({env.EnvironmentUrl})");
         return env;

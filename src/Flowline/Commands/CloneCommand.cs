@@ -65,19 +65,19 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         // Pack the solution in pac to validate it
         var artifactsFolder = Path.Combine(slnFolder, "artifacts");
         Directory.CreateDirectory(artifactsFolder);
-        if (await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, false, settings.Verbose, cancellationToken) != 0) return 1;
+        if (await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, false, settings.Verbose, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
         if (settings.IncludeManaged &&
             await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, true, settings.Verbose, cancellationToken) != 0)
         {
-            return 1;
+            return (int)ExitCode.BuildFailed;
         }
 
         // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
-        if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken) != 0) return 1;
+        if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
         if (settings.IncludeManaged &&
             await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
         {
-            return 1;
+            return (int)ExitCode.BuildFailed;
         }
 
         Console.Done("Cloned! Use 'push' and 'sync' to keep it in flow.");
@@ -113,7 +113,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             return (env, sln, info);
         }
 
-        throw new FlowlineException("No unmanaged environment found — provide a --dev, --test, --uat, or --prod URL with an unmanaged solution.");
+        throw new FlowlineException(ExitCode.NotFound, "No unmanaged environment found — provide a --dev, --test, --uat, or --prod URL with an unmanaged solution.");
     }
 
     private void SeedWebResourceDistFromSrc(string slnFolder, string? publisherPrefix, string solutionName, Settings settings)
@@ -170,7 +170,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         }
 
         if (Directory.Exists(PackageFolder(slnFolder)))
-            throw new FlowlineException(
+            throw new FlowlineException(ExitCode.ConfigInvalid,
                 $"{PackageName}/ exists but {PackageName}.cdsproj is missing. Delete solutions/{projectSln.Name}/{PackageName} and re-clone.");
 
         Directory.CreateDirectory(Path.Combine(RootFolder, AllSolutionsFolderName));
@@ -195,7 +195,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
                       .Task);
 
         if (!result.IsSuccess)
-            throw new FlowlineException("Clone failed — check the environment and your PAC login.");
+            throw new FlowlineException(ExitCode.GeneralError, "Clone failed — check the environment and your PAC login.");
 
         // PAC creates slnFolder/{SolutionName}/ — rename it to Package/ and rename the .cdsproj
         Directory.Move(Path.Combine(slnFolder, projectSln.Name), PackageFolder(slnFolder));
@@ -228,7 +228,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
                               .Task.FlowlineSpinner();
 
         if (!result.IsSuccess || !File.Exists(slnFilePath))
-            throw new FlowlineException("Couldn't create the solution file.");
+            throw new FlowlineException(ExitCode.BuildFailed, "Couldn't create the solution file.");
 
         Console.Ok("Solution file created");
 
