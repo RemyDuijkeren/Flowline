@@ -65,6 +65,24 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
 
         Console.MarkupLine($"[green]Target: [bold]{targetEnv.DisplayName}[/] ({targetEnv.EnvironmentUrl})[/]");
 
+        var existingSolution = await Console.Status().FlowlineSpinner().StartAsync(
+            $"Checking [bold]{sln.Name}[/]...",
+            _ => FlowlineValidator.Default.GetSolutionInfoAsync(targetUrl, sln.Name, includeManaged: true, settings, cancellationToken));
+
+        if (existingSolution != null)
+        {
+            if (settings.Managed && !existingSolution.IsManaged)
+            {
+                Console.Error($"'{sln.Name}' is unmanaged in {targetEnv.DisplayName} — importing managed is irreversible. Remove the unmanaged solution first, or deploy unmanaged.");
+                return (int)ExitCode.ValidationFailed;
+            }
+            if (!settings.Managed && existingSolution.IsManaged)
+            {
+                Console.Error($"'{sln.Name}' is managed in {targetEnv.DisplayName} — can't import unmanaged over managed. Deploy managed instead.");
+                return (int)ExitCode.ValidationFailed;
+            }
+        }
+
         var slnFolder = Path.Combine(RootFolder, "solutions", sln.Name);
         var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
         if (!File.Exists(cdsprojPath))
