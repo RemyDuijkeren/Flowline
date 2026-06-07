@@ -92,3 +92,5 @@ flowline deploy prod
 | `status` | Show environment info, Flowline version, and PAC CLI status |
 
 **Full documentation:** [github.com/RemyDuijkeren/Flowline/wiki](https://github.com/RemyDuijkeren/Flowline/wiki)
+
+**Plugin attributes NuGet:** [Flowline.Attributes](src/Flowline.Attributes/README.md) — add to your plugin project to use `[Step]`, `[Filter]`, `[CustomApi]`, and friends

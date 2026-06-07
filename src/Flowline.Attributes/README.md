@@ -1,12 +1,29 @@
 # Flowline.Attributes
 
-![CI](https://github.com/RemyDuijkeren/Flowline/workflows/CI/badge.svg)
-[![NuGet](https://img.shields.io/nuget/v/Flowline.Attributes.svg)](https://www.nuget.org/packages/Flowline.Attributes)
-[![NuGet](https://img.shields.io/nuget/dt/Flowline.Attributes.svg)](https://www.nuget.org/packages/Flowline.Attributes)
+<table>
+<tr>
+<td>
 
 Source-only NuGet package that provides attributes for registering Dataverse plugin steps and Custom APIs with the [Flowline CLI](https://github.com/RemyDuijkeren/Flowline).
 
 Run `flowline push` and Flowline inspects your plugin assembly and automatically creates or updates all registrations in Dataverse — no Plugin Registration Tool needed.
+
+
+[![Docs](https://img.shields.io/badge/docs-wiki-blue?logo=readthedocs&logoColor=white)](https://github.com/RemyDuijkeren/Flowline/wiki)
+[![CI](https://github.com/RemyDuijkeren/Flowline/workflows/CI/badge.svg)](https://github.com/RemyDuijkeren/Flowline/workflows/CI/badge.svg)
+[![NuGet](https://img.shields.io/nuget/v/Flowline.Attributes.svg)](https://www.nuget.org/packages/Flowline.Attributes)
+[![NuGet downloads](https://img.shields.io/nuget/dt/Flowline.Attributes.svg)](https://www.nuget.org/packages/Flowline.Attributes)
+[![GitHub last commit](https://img.shields.io/github/last-commit/RemyDuijkeren/Flowline)](https://github.com/RemyDuijkeren/Flowline/commits/master)
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/RemyDuijkeren?label=sponsor&logo=githubsponsors&color=EA4AAA)](https://github.com/sponsors/RemyDuijkeren)
+
+</td>
+<td width="120" align="right" valign="top">
+
+![Flowline CLI](https://raw.githubusercontent.com/RemyDuijkeren/Flowline/master/docs/Flowline-icon.png)
+
+</td>
+</tr>
+</table>
 
 ## Installation
 
