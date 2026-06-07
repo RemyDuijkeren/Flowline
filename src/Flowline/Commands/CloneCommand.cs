@@ -80,8 +80,94 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             return (int)ExitCode.BuildFailed;
         }
 
+        await ScaffoldAgentsFileAsync(projectSln.Name, cancellationToken);
+
         Console.Done("Cloned! Use 'push' and 'sync' to keep it in flow.");
         return 0;
+    }
+
+    private async Task ScaffoldAgentsFileAsync(string solutionName, CancellationToken cancellationToken)
+    {
+        var agentsPath = Path.Combine(RootFolder, "AGENTS.md");
+        if (File.Exists(agentsPath))
+        {
+            Console.Info("AGENTS.md already exists — skipping.");
+            return;
+        }
+
+        var content = $$"""
+            # Flowline — Agent Instructions
+
+            Flowline is the ALM CLI for this Power Platform solution repo.
+            Use Flowline commands instead of PAC CLI directly.
+
+            ## Daily dev loop
+
+            ```
+            dotnet build                    # build plugin assembly
+            flowline push --dry-run         # preview what would be registered (optional safety check)
+            flowline push                   # register DLL + web resources in DEV
+            flowline sync                   # pull solution state from DEV, bump version, unpack to XML
+            git add . && git commit -m "…"  # commit the unpacked XML diff
+            flowline deploy test            # promote to TEST
+            flowline deploy prod            # promote to PROD
+            ```
+
+            ## Generate early-bound types (run after entities or custom APIs change)
+
+            ```
+            flowline generate               # regenerate Plugins/Models/ from solution entities
+            ```
+
+            ## Rules
+
+            - Never run `pac solution` commands directly — Flowline wraps them correctly.
+            - Always run `flowline push` before `flowline sync` when plugin code changed.
+            - `flowline sync` requires no uncommitted changes in `Package/src/` (exit code 12 if dirty).
+            - `flowline deploy` requires a clean git working directory (exit code 12 if dirty).
+            - DEV is the source of truth. Sync captures its state; never hand-edit unpacked XML.
+            - `clone`, `push`, and `sync` require an unmanaged solution in DEV — they fail on managed environments.
+            - To deploy a managed package, use `--managed` on `deploy`. Requires the solution to have been cloned or synced with `--managed` first.
+            - In repos with multiple solutions, pass the solution name as the first argument: `flowline push {{solutionName}}`, `flowline sync {{solutionName}}`, etc.
+
+            ## Project structure
+
+            ```
+            .flowline                            ← environment URLs + solution config
+            solutions/{{solutionName}}/
+              Package/Package.cdsproj            ← solution package project (PAC-managed, do not edit)
+              Package/src/                       ← unpacked solution XML (git-diffable)
+              Plugins/Plugins.csproj             ← plugin source, decorated with [Step] attributes
+              Plugins/Models/                    ← early-bound C# types (from flowline generate)
+              WebResources/WebResources.csproj   ← web resource assets
+              WebResources/dist/                 ← build output synced to Dataverse
+            ```
+
+            ## Exit codes
+
+            | Code | Meaning | Fix |
+            |------|---------|-----|
+            | 0 | Success | |
+            | 1 | General error | Check error output |
+            | 3 | Not found | Verify solution name matches .flowline config |
+            | 4 | Not authenticated | Run: `pac auth create --environment <url>` |
+            | 10 | Connection failed | Check environment URL in .flowline |
+            | 11 | Config invalid | Check .flowline exists and is valid |
+            | 12 | Dirty working directory | Commit or stash changes first |
+            | 13 | Build failed | Fix `dotnet build` errors in Plugins/ |
+            | 14 | Version conflict | Add --force to overwrite older version |
+            | 15 | Validation failed | Check error output for drift or missing dependencies |
+            | 16 | Timeout | PAC CLI 60-min limit hit — retry or check environment health |
+            | 17 | Force required | Add --force flag |
+            | 130 | Cancelled | Ctrl+C pressed |
+
+            ## Environments
+
+            Defined in `.flowline`. Use `flowline status` to verify connectivity before running commands.
+            """;
+
+        await File.WriteAllTextAsync(agentsPath, content, cancellationToken);
+        Console.Ok("AGENTS.md created.");
     }
 
     private async Task<(EnvironmentInfo sourceEnv, ProjectSolution projectSolution, SolutionInfo solutionInfo)> FindUnmanagedSourceAsync(Settings settings,
