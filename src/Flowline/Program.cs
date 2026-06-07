@@ -47,9 +47,9 @@ app.Configure(config =>
                 fe.Detail?.Invoke(AnsiConsole.Console);
                 if (fe.HelpLink is not null)
                     AnsiConsole.MarkupLine($"[dim]See: {fe.HelpLink}[/]");
-                return 1;
+                return (int)fe.ExitCode;
             case OperationCanceledException:
-                return 130;
+                return (int)ExitCode.Cancelled;
             default:
                 AnsiConsole.WriteException(ex, ExceptionFormats.ShortenPaths);
                 return 1;
