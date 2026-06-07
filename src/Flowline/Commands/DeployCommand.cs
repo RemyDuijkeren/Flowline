@@ -1,5 +1,7 @@
 using System.ComponentModel;
+using System.Xml.Linq;
 using CliWrap;
+using Flowline.Config;
 using Flowline.Core;
 using Flowline.Utils;
 using Flowline.Validation;
@@ -13,7 +15,7 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "<target>")]
-        [Description("Target environment: prod, uat, test, or a URL")]
+        [Description("Target environment: prod, uat, test, dev, or a URL")]
         public string Target { get; set; } = null!;
 
         [CommandOption("--solution <name>")]
@@ -24,6 +26,11 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
         [Description("Deploy the managed package")]
         [DefaultValue(false)]
         public bool Managed { get; set; } = false;
+
+        [CommandOption("--skip-dtap-check")]
+        [Description("Skip DTAP promotion checks")]
+        [DefaultValue(false)]
+        public bool SkipDtapCheck { get; set; } = false;
     }
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
@@ -36,6 +43,7 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
             "prod" => Config!.ProdUrl,
             "uat"  => Config!.UatUrl,
             "test" => Config!.TestUrl,
+            "dev"  => Config!.DevUrl,
             _ => settings.Target
         };
 
@@ -84,6 +92,55 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
         }
 
         var slnFolder = Path.Combine(RootFolder, "solutions", sln.Name);
+
+        var dtapDecision = ResolveDtapGate(Config!, targetUrl);
+
+        if (dtapDecision.Outcome == DtapGateOutcome.DevBlock)
+        {
+            Console.Error("Dev is a development environment — use 'sync' to push changes there, not 'deploy'.");
+            return (int)ExitCode.ValidationFailed;
+        }
+
+        if (dtapDecision.Outcome == DtapGateOutcome.Check)
+        {
+            string localVersion;
+            try
+            {
+                localVersion = ReadLocalSolutionVersion(PackageFolder(slnFolder));
+            }
+            catch (FlowlineException ex)
+            {
+                Console.Error(ex.Message);
+                return (int)ExitCode.ValidationFailed;
+            }
+
+            if (settings.SkipDtapCheck)
+            {
+                Console.Skip($"Skipping DTAP gate — '{sln.Name}' not verified in {dtapDecision.PredecessorLabel}.");
+            }
+            else
+            {
+                var predecessorInfo = await Console.Status().FlowlineSpinner().StartAsync(
+                    $"Checking [bold]{sln.Name}[/] in {dtapDecision.PredecessorLabel}...",
+                    _ => FlowlineValidator.Default.GetSolutionInfoAsync(dtapDecision.PredecessorUrl!, sln.Name, includeManaged: true, settings, cancellationToken));
+
+                if (predecessorInfo == null)
+                {
+                    Console.Error($"'{sln.Name}' hasn't been deployed to {dtapDecision.PredecessorLabel} yet — promote there first, or use --skip-dtap-check.");
+                    return (int)ExitCode.ValidationFailed;
+                }
+
+                if (predecessorInfo.VersionNumber == null
+                    || !Version.TryParse(predecessorInfo.VersionNumber, out var predVer)
+                    || !Version.TryParse(localVersion, out var localVer)
+                    || predVer < localVer)
+                {
+                    Console.Error($"'{sln.Name}' in {dtapDecision.PredecessorLabel} is v{predecessorInfo.VersionNumber ?? "unknown"} — promote v{localVersion} there first, or use --skip-dtap-check.");
+                    return (int)ExitCode.ValidationFailed;
+                }
+            }
+        }
+
         var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
         if (!File.Exists(cdsprojPath))
         {
@@ -163,5 +220,74 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
         Console.Done("Deployed! Your solution is live.");
 
         return 0;
+    }
+
+    internal enum DtapGateOutcome { DevBlock, Skip, Check }
+    internal sealed record DtapGateDecision(DtapGateOutcome Outcome, string? PredecessorUrl = null, string? PredecessorLabel = null);
+
+    internal static DtapGateDecision ResolveDtapGate(ProjectConfig config, string targetUrl)
+    {
+        static string Normalize(string url) => url.TrimEnd('/').ToLowerInvariant();
+
+        var target = Normalize(targetUrl);
+
+        bool isProd = !string.IsNullOrEmpty(config.ProdUrl) && Normalize(config.ProdUrl) == target;
+        bool isUat  = !string.IsNullOrEmpty(config.UatUrl)  && Normalize(config.UatUrl)  == target;
+        bool isTest = !string.IsNullOrEmpty(config.TestUrl) && Normalize(config.TestUrl) == target;
+        bool isDev  = !string.IsNullOrEmpty(config.DevUrl)  && Normalize(config.DevUrl)  == target;
+
+        if (isDev)
+            return new DtapGateDecision(DtapGateOutcome.DevBlock);
+
+        if (!isProd && !isUat && !isTest)
+            return new DtapGateDecision(DtapGateOutcome.Skip);
+
+        string? predecessorUrl = null;
+        string? predecessorLabel = null;
+
+        if (isProd)
+        {
+            (predecessorUrl, predecessorLabel) = FirstConfigured(
+                (config.UatUrl, "UAT"),
+                (config.TestUrl, "Test"),
+                (config.DevUrl, "Dev"));
+        }
+        else if (isUat)
+        {
+            (predecessorUrl, predecessorLabel) = FirstConfigured(
+                (config.TestUrl, "Test"),
+                (config.DevUrl, "Dev"));
+        }
+        else if (isTest)
+        {
+            (predecessorUrl, predecessorLabel) = FirstConfigured(
+                (config.DevUrl, "Dev"));
+        }
+
+        return string.IsNullOrEmpty(predecessorUrl)
+            ? new DtapGateDecision(DtapGateOutcome.Skip)
+            : new DtapGateDecision(DtapGateOutcome.Check, predecessorUrl, predecessorLabel);
+
+        static (string? Url, string? Label) FirstConfigured(params (string? Url, string Label)[] candidates) =>
+            candidates.Select(c => (c.Url, c.Label))
+                      .FirstOrDefault(c => !string.IsNullOrEmpty(c.Url));
+    }
+
+    internal static string ReadLocalSolutionVersion(string packageFolderPath)
+    {
+        var solutionXmlPath = Path.Combine(packageFolderPath, "src", "Other", "Solution.xml");
+        if (!File.Exists(solutionXmlPath))
+            throw new FlowlineException(ExitCode.NotFound, $"Solution.xml not found at '{solutionXmlPath}' — run 'clone' first.");
+
+        var doc = XDocument.Load(solutionXmlPath);
+        var version = doc.Root
+            ?.Element("SolutionManifest")
+            ?.Element("Version")
+            ?.Value;
+
+        if (string.IsNullOrEmpty(version))
+            throw new FlowlineException(ExitCode.ValidationFailed, "Solution version not set in Solution.xml — set a version before deploying.");
+
+        return version;
     }
 }
