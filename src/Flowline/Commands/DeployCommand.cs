@@ -41,7 +41,7 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
 
         if (string.IsNullOrWhiteSpace(targetUrl))
         {
-            Console.MarkupLine($"[red]Can't resolve '{settings.Target}' — provide an explicit URL or check your .flowline config.[/]");
+            Console.Error($"Can't resolve '{settings.Target}' — provide an explicit URL or check your .flowline config.");
             return (int)ExitCode.ConfigInvalid;
         }
 
@@ -49,7 +49,7 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
         var sln = Config!.GetOrUpdateSolution(settings.Solution, settings.Managed, settings);
         if (sln == null)
         {
-            Console.MarkupLine("[red]Solution name is required — use --solution <name>.[/]");
+            Console.Error("Solution name is required — use --solution <name>.");
             return (int)ExitCode.ConfigInvalid;
         }
 
@@ -59,7 +59,7 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
             _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, settings, cancellationToken));
         if (targetEnv == null)
         {
-            Console.MarkupLine("[red]Target environment not found. Check the URL or your PAC login.[/]");
+            Console.Error("Target environment not found — check the URL or your PAC login.");
             return (int)ExitCode.ConnectionFailed;
         }
 
@@ -69,7 +69,7 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
         var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
         if (!File.Exists(cdsprojPath))
         {
-            Console.MarkupLine($"[red]No solution found at '{cdsprojPath}' — run 'clone' first.[/]");
+            Console.Error($"No solution found at '{cdsprojPath}' — run 'clone' first.");
             return (int)ExitCode.NotFound;
         }
 
@@ -112,7 +112,7 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
 
         if (packResult.ExitCode != 0)
         {
-            Console.MarkupLine("[red]Pack failed — check your solution source.[/]");
+            Console.Error("Pack failed — check your solution source.");
             return (int)ExitCode.BuildFailed;
         }
 
@@ -138,7 +138,7 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
 
         if (importResult.ExitCode != 0)
         {
-            Console.MarkupLine("[red]Deploy failed — check the environment and your PAC login.[/]");
+            Console.Error("Deploy failed — check the environment and your PAC login.");
             return (int)ExitCode.BuildFailed;
         }
 
