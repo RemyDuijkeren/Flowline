@@ -48,13 +48,14 @@ public class ComponentClassifierTests : IDisposable
     // ── Classify — MANUAL types ──────────────────────────────────────────────
 
     [Theory]
-    [InlineData(1)]   // Entity/Table
-    [InlineData(2)]   // Attribute/Column
-    [InlineData(3)]   // Relationship
-    [InlineData(24)]  // Form
-    [InlineData(26)]  // View
-    [InlineData(20)]  // Role
-    [InlineData(999)] // Unknown
+    [InlineData(1)]     // Entity/Table
+    [InlineData(2)]     // Attribute/Column
+    [InlineData(3)]     // Relationship
+    [InlineData(24)]    // Form
+    [InlineData(26)]    // View
+    [InlineData(20)]    // Role
+    [InlineData(10034)] // CustomApi — env-specific, detected via entity query not componenttype
+    [InlineData(999)]   // Unknown
     public void Classify_ReturnsManual_ForManualAndUnknownTypes(int componentType)
     {
         ComponentClassifier.Classify(componentType).Should().Be(ComponentAction.Manual);

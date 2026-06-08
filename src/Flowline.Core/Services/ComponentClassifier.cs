@@ -7,17 +7,16 @@ public enum ComponentAction { AutoDelete, Manual }
 public static class ComponentClassifier
 {
     // solutioncomponent.componenttype values for AUTO-delete candidates.
-    // Values confirmed from existing codebase are marked; others require validation against a real org.
-    // See: docs/plans/2026-06-07-004-feat-deploy-orphan-cleanup-plan.md — Institutional Learnings
-    private const int PluginAssembly              = 91;  // confirmed: PluginService.cs
-    private const int PluginType                  = 90;  // TODO: verify against real org
-    private const int SdkMessageProcessingStep    = 92;  // confirmed: PluginPlanner.cs
-    private const int SdkMessageProcessingStepImage = 93; // TODO: verify against real org
-    private const int CustomApi                   = 10034; // TODO: verify against real org
-    private const int CustomApiRequestParameter   = 10036; // TODO: verify against real org
-    private const int CustomApiResponseProperty   = 10037; // TODO: verify against real org
-    private const int WebResource                 = 61;  // confirmed: WebResourceReader.cs
-    private const int Workflow                    = 29;  // TODO: verify against real org
+    // Low-numbered types (<100) are stable platform constants across all Dataverse orgs.
+    // CustomApi family (10034/10036/10037) are environment-specific — they vary per org and
+    // must be detected via entity-side queries (customapi/customapirequestparameter/
+    // customapiresponseproperty), not by componenttype. See OrphanCleanupService.
+    private const int PluginAssembly                = 91;  // confirmed: PluginService.cs
+    private const int PluginType                    = 90;  // TODO: verify against real org
+    private const int SdkMessageProcessingStep      = 92;  // confirmed: PluginPlanner.cs
+    private const int SdkMessageProcessingStepImage = 93;  // TODO: verify against real org
+    private const int WebResource                   = 61;  // confirmed: WebResourceReader.cs
+    private const int Workflow                      = 29;  // TODO: verify against real org
 
     static readonly HashSet<int> AutoTypes =
     [
@@ -25,9 +24,6 @@ public static class ComponentClassifier
         PluginType,
         SdkMessageProcessingStep,
         SdkMessageProcessingStepImage,
-        CustomApi,
-        CustomApiRequestParameter,
-        CustomApiResponseProperty,
         WebResource,
         Workflow,
     ];

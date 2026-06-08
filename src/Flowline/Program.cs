@@ -26,6 +26,7 @@ services.AddSingleton<FlowlineRuntimeOptions>();
 services.AddSingleton<DataverseConnector>();
 services.AddSingleton<PluginService>();
 services.AddSingleton<WebResourceService>();
+services.AddSingleton<OrphanCleanupService>();
 
 // Configure and run the app
 var app = new CommandApp(new TypeRegistrar(services));

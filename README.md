@@ -11,8 +11,6 @@ and a fast push to DEV without the enterprise overhead.
 [![CI](https://github.com/RemyDuijkeren/Flowline/workflows/CI/badge.svg)](https://github.com/RemyDuijkeren/Flowline/workflows/CI/badge.svg)
 [![NuGet](https://img.shields.io/nuget/v/Flowline.svg)](https://www.nuget.org/packages/Flowline)
 [![NuGet downloads](https://img.shields.io/nuget/dt/Flowline.svg)](https://www.nuget.org/packages/Flowline)
-[![GitHub last commit](https://img.shields.io/github/last-commit/RemyDuijkeren/Flowline)](https://github.com/RemyDuijkeren/Flowline/commits/master)
-[![GitHub Sponsors](https://img.shields.io/github/sponsors/RemyDuijkeren?label=sponsor&logo=githubsponsors&color=EA4AAA)](https://github.com/sponsors/RemyDuijkeren)
 
 </td>
 <td width="120" align="right" valign="top">

@@ -3,6 +3,7 @@ using System.Xml.Linq;
 using CliWrap;
 using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Services;
 using Flowline.Utils;
 using Flowline.Validation;
 using Spectre.Console;
@@ -10,7 +11,7 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions) : FlowlineCommand<DeployCommand.Settings>(console, runtimeOptions)
+public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseConnector, OrphanCleanupService orphanCleanupService, FlowlineRuntimeOptions runtimeOptions) : FlowlineCommand<DeployCommand.Settings>(console, runtimeOptions)
 {
     public sealed class Settings : FlowlineSettings
     {
@@ -31,196 +32,230 @@ public class DeployCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
         [Description("Skip DTAP promotion checks")]
         [DefaultValue(false)]
         public bool SkipDtapCheck { get; set; } = false;
+
+        [CommandOption("--no-delete")]
+        [Description("Report orphan components without deleting them")]
+        [DefaultValue(false)]
+        public bool NoDelete { get; set; } = false;
     }
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         await GitUtils.AssertRepoCleanAsync(settings.Verbose, cancellationToken);
 
-        // Determine target URL
-        var targetUrl = settings.Target.ToLowerInvariant() switch
+        var runMode = settings.NoDelete ? RunMode.NoDelete : RunMode.Normal;
+        var targetUrl = ResolveTargetUrl(settings);
+        var sln = Config!.GetOrUpdateSolution(settings.Solution, settings.Managed, settings)
+            ?? throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — use --solution <name>.");
+        var slnFolder = Path.Combine(RootFolder, "solutions", sln.Name);
+
+        var targetEnv = await ValidateTargetAsync(targetUrl, sln, settings, cancellationToken);
+        await ValidateDtapGateAsync(sln, slnFolder, targetUrl, settings, cancellationToken);
+        ValidateLocalState(slnFolder, settings, cancellationToken);
+
+        var sNew = ParseSolutionXml(slnFolder);
+        var service  = await ConnectToDataverseAsync(dataverseConnector, targetUrl, cancellationToken);
+        var deferred = await orphanCleanupService.RunPreImportAsync(service, sln.Name, sNew, runMode, cancellationToken);
+
+        var packagePath = await PackSolutionAsync(sln, slnFolder, settings, cancellationToken);
+        await ImportSolutionAsync(packagePath, targetEnv, sln.Name, cancellationToken);
+        await orphanCleanupService.RunPostImportAsync(service, sln.Name, sNew, deferred, runMode, cancellationToken);
+
+        Console.Done("Deployed! Your solution is live.");
+        return 0;
+    }
+
+    // ── Target resolution ────────────────────────────────────────────────────
+
+    private string ResolveTargetUrl(Settings settings)
+    {
+        var url = settings.Target.ToLowerInvariant() switch
         {
             "prod" => Config!.ProdUrl,
             "uat"  => Config!.UatUrl,
             "test" => Config!.TestUrl,
             "dev"  => Config!.DevUrl,
-            _ => settings.Target
+            _      => settings.Target
         };
 
-        if (string.IsNullOrWhiteSpace(targetUrl))
-        {
-            Console.Error($"Can't resolve '{settings.Target}' — provide an explicit URL or check your .flowline config.");
-            return (int)ExitCode.ConfigInvalid;
-        }
+        if (string.IsNullOrWhiteSpace(url))
+            throw new FlowlineException(ExitCode.ConfigInvalid,
+                $"Can't resolve '{settings.Target}' — provide an explicit URL or check your .flowline config.");
 
-        // Resolve solution
-        var sln = Config!.GetOrUpdateSolution(settings.Solution, settings.Managed, settings);
-        if (sln == null)
-        {
-            Console.Error("Solution name is required — use --solution <name>.");
-            return (int)ExitCode.ConfigInvalid;
-        }
+        return url;
+    }
 
-        // Validate target environment
+    // ── Validation ───────────────────────────────────────────────────────────
+
+    private async Task<EnvironmentInfo> ValidateTargetAsync(
+        string targetUrl, ProjectSolution sln, Settings settings, CancellationToken ct)
+    {
         var targetEnv = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{targetUrl}[/]...",
-            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, settings, cancellationToken));
+            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, settings, ct));
+
         if (targetEnv == null)
-        {
-            Console.Error("Target environment not found — check the URL or your PAC login.");
-            return (int)ExitCode.ConnectionFailed;
-        }
+            throw new FlowlineException(ExitCode.ConnectionFailed,
+                "Target environment not found — check the URL or your PAC login.");
 
         Console.MarkupLine($"[green]Target: [bold]{targetEnv.DisplayName}[/] ({targetEnv.EnvironmentUrl})[/]");
 
         var existingSolution = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{sln.Name}[/]...",
-            _ => FlowlineValidator.Default.GetSolutionInfoAsync(targetUrl, sln.Name, includeManaged: true, settings, cancellationToken));
+            _ => FlowlineValidator.Default.GetSolutionInfoAsync(targetUrl, sln.Name, includeManaged: true, settings, ct));
 
         if (existingSolution != null)
         {
             if (settings.Managed && !existingSolution.IsManaged)
-            {
-                Console.Error($"'{sln.Name}' is unmanaged in {targetEnv.DisplayName} — importing managed is irreversible. Remove the unmanaged solution first, or deploy unmanaged.");
-                return (int)ExitCode.ValidationFailed;
-            }
+                throw new FlowlineException(ExitCode.ValidationFailed,
+                    $"'{sln.Name}' is unmanaged in {targetEnv.DisplayName} — importing managed is irreversible. Deploy solution as unmanaged.");
             if (!settings.Managed && existingSolution.IsManaged)
-            {
-                Console.Error($"'{sln.Name}' is managed in {targetEnv.DisplayName} — can't import unmanaged over managed. Deploy managed instead.");
-                return (int)ExitCode.ValidationFailed;
-            }
+                throw new FlowlineException(ExitCode.ValidationFailed,
+                    $"'{sln.Name}' is managed in {targetEnv.DisplayName} — can't import unmanaged over managed. Deploy managed instead.");
         }
 
-        var slnFolder = Path.Combine(RootFolder, "solutions", sln.Name);
+        return targetEnv;
+    }
 
+    private async Task ValidateDtapGateAsync(
+        ProjectSolution sln, string slnFolder, string targetUrl, Settings settings, CancellationToken ct)
+    {
         var dtapDecision = ResolveDtapGate(Config!, targetUrl);
 
         if (dtapDecision.Outcome == DtapGateOutcome.DevBlock)
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                "Dev is a development environment — use 'sync' to push changes there, not 'deploy'.");
+
+        if (dtapDecision.Outcome != DtapGateOutcome.Check)
+            return;
+
+        var localVersion = ReadLocalSolutionVersion(PackageFolder(slnFolder));
+
+        if (settings.SkipDtapCheck)
         {
-            Console.Error("Dev is a development environment — use 'sync' to push changes there, not 'deploy'.");
-            return (int)ExitCode.ValidationFailed;
+            Console.Skip($"Skipping DTAP gate — '{sln.Name}' not verified in {dtapDecision.PredecessorLabel}.");
+            return;
         }
 
-        if (dtapDecision.Outcome == DtapGateOutcome.Check)
-        {
-            string localVersion;
-            try
-            {
-                localVersion = ReadLocalSolutionVersion(PackageFolder(slnFolder));
-            }
-            catch (FlowlineException ex)
-            {
-                Console.Error(ex.Message);
-                return (int)ExitCode.ValidationFailed;
-            }
+        var predecessorInfo = await Console.Status().FlowlineSpinner().StartAsync(
+            $"Checking [bold]{sln.Name}[/] in {dtapDecision.PredecessorLabel}...",
+            _ => FlowlineValidator.Default.GetSolutionInfoAsync(dtapDecision.PredecessorUrl!, sln.Name, includeManaged: true, settings, ct));
 
-            if (settings.SkipDtapCheck)
-            {
-                Console.Skip($"Skipping DTAP gate — '{sln.Name}' not verified in {dtapDecision.PredecessorLabel}.");
-            }
-            else
-            {
-                var predecessorInfo = await Console.Status().FlowlineSpinner().StartAsync(
-                    $"Checking [bold]{sln.Name}[/] in {dtapDecision.PredecessorLabel}...",
-                    _ => FlowlineValidator.Default.GetSolutionInfoAsync(dtapDecision.PredecessorUrl!, sln.Name, includeManaged: true, settings, cancellationToken));
+        if (predecessorInfo == null)
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"'{sln.Name}' hasn't been deployed to {dtapDecision.PredecessorLabel} yet — promote there first, or use --skip-dtap-check.");
 
-                if (predecessorInfo == null)
-                {
-                    Console.Error($"'{sln.Name}' hasn't been deployed to {dtapDecision.PredecessorLabel} yet — promote there first, or use --skip-dtap-check.");
-                    return (int)ExitCode.ValidationFailed;
-                }
+        if (predecessorInfo.VersionNumber == null
+            || !Version.TryParse(predecessorInfo.VersionNumber, out var predVer)
+            || !Version.TryParse(localVersion, out var localVer)
+            || predVer < localVer)
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"'{sln.Name}' in {dtapDecision.PredecessorLabel} is v{predecessorInfo.VersionNumber ?? "unknown"} — promote v{localVersion} there first, or use --skip-dtap-check.");
+    }
 
-                if (predecessorInfo.VersionNumber == null
-                    || !Version.TryParse(predecessorInfo.VersionNumber, out var predVer)
-                    || !Version.TryParse(localVersion, out var localVer)
-                    || predVer < localVer)
-                {
-                    Console.Error($"'{sln.Name}' in {dtapDecision.PredecessorLabel} is v{predecessorInfo.VersionNumber ?? "unknown"} — promote v{localVersion} there first, or use --skip-dtap-check.");
-                    return (int)ExitCode.ValidationFailed;
-                }
-            }
-        }
-
+    private void ValidateLocalState(string slnFolder, Settings settings, CancellationToken ct)
+    {
         var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
         if (!File.Exists(cdsprojPath))
-        {
-            Console.Error($"No solution found at '{cdsprojPath}' — run 'clone' first.");
-            return (int)ExitCode.NotFound;
-        }
+            throw new FlowlineException(ExitCode.NotFound,
+                $"No solution found at '{cdsprojPath}' — run 'clone' first.");
 
-        // Block if local changes haven't been synced — deploy packs from src/, not dist/
-        var drift = DriftChecker.Check(slnFolder, PackageFolder(slnFolder), cancellationToken: cancellationToken)
+        var drift = DriftChecker.Check(slnFolder, PackageFolder(slnFolder), cancellationToken: ct)
             .Where(w => w.Category is DriftCategory.OnlyLocal or DriftCategory.PluginSizeMismatch)
             .ToList();
-        if (drift.Count > 0)
-        {
-            Console.Error("Local changes not in Dataverse — deploy would revert them. Run 'sync' first, or use --force to skip.");
-            foreach (var w in drift)
-                Console.Warning(w.Category == DriftCategory.OnlyLocal
-                    ? $"Only local: {w.RelativePath}"
-                    : $"Plugin size mismatch: {w.RelativePath}");
-            if (!settings.Force) return (int)ExitCode.ValidationFailed;
-        }
 
+        if (drift.Count == 0) return;
+
+        if (!settings.Force)
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                "Local changes not in Dataverse — deploy would revert them. Run 'sync' first, or use --force to skip.")
+                .WithDetail(c =>
+                {
+                    foreach (var w in drift)
+                        c.Warning(w.Category == DriftCategory.OnlyLocal
+                            ? $"Only local: {w.RelativePath}"
+                            : $"Plugin size mismatch: {w.RelativePath}");
+                });
+
+        foreach (var w in drift)
+            Console.Warning(w.Category == DriftCategory.OnlyLocal
+                ? $"Only local: {w.RelativePath}"
+                : $"Plugin size mismatch: {w.RelativePath}");
+    }
+
+    private IReadOnlyList<(Guid ObjectId, int ComponentType)> ParseSolutionXml(string slnFolder)
+    {
+        try
+        {
+            return ComponentClassifier.ParseSolutionXmlComponents(
+                Path.Combine(PackageFolder(slnFolder), "src", "Other", "Solution.xml"));
+        }
+        catch (FileNotFoundException ex)
+        {
+            throw new FlowlineException(ExitCode.NotFound, ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new FlowlineException(ExitCode.ValidationFailed, ex.Message);
+        }
+    }
+
+    // ── Pack and import ──────────────────────────────────────────────────────
+
+    private async Task<string> PackSolutionAsync(ProjectSolution sln, string slnFolder, Settings settings, CancellationToken ct)
+    {
         var artifactsFolder = Path.Combine(slnFolder, "artifacts");
         Directory.CreateDirectory(artifactsFolder);
 
+        var suffix      = settings.Managed ? "_managed" : "_unmanaged";
         var packageType = settings.Managed ? "Managed" : "Unmanaged";
-        var suffix = settings.Managed ? "_managed" : "_unmanaged";
         var packagePath = Path.Combine(artifactsFolder, $"{sln.Name}{suffix}.zip");
 
-        var (cmdNamePack, prefixArgsPack, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-        var packResult = await Console.Status().FlowlineSpinner().StartAsync(
+        var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(ct);
+        var result = await Console.Status().FlowlineSpinner().StartAsync(
             $"Packing [bold]{sln.Name}[/]...",
-            _ => Cli.Wrap(cmdNamePack)
+            _ => Cli.Wrap(cmdName)
                     .WithArguments(args => args
-                        .AddIfNotNull(prefixArgsPack)
-                        .Add("solution")
-                        .Add("pack")
+                        .AddIfNotNull(prefixArgs)
+                        .Add("solution").Add("pack")
                         .Add("--folder").Add(Path.Combine(PackageFolder(slnFolder), "src"))
                         .Add("--zipFile").Add(packagePath)
                         .Add("--packageType").Add(packageType))
                     .WithValidation(CommandResultValidation.None)
                     .WithToolExecutionLog(settings.Verbose)
-                    .ExecuteAsync(cancellationToken)
+                    .ExecuteAsync(ct)
                     .Task);
 
-        if (packResult.ExitCode != 0)
-        {
-            Console.Error("Pack failed — check your solution source.");
-            return (int)ExitCode.BuildFailed;
-        }
+        if (result.ExitCode != 0)
+            throw new FlowlineException(ExitCode.BuildFailed, "Pack failed — check your solution source.");
 
-        var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-        var pacSolutionImportCmd = Cli.Wrap(cmdName)
-            .WithArguments(args => args
-                .AddIfNotNull(prefixArgs)
-                .Add("solution")
-                .Add("import")
-                .Add("--path").Add(packagePath)
-                .Add("--environment").Add(targetEnv.EnvironmentUrl!)
-                .Add("--async"))
-            .WithValidation(CommandResultValidation.None)
-            .WithToolExecutionLog();
+        return packagePath;
+    }
 
-        var importResult = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Deploying [bold]{sln.Name}[/] to [bold]{targetEnv.DisplayName}[/]...",
-            _ => pacSolutionImportCmd
+    private async Task ImportSolutionAsync(string packagePath, EnvironmentInfo targetEnv, string slnName, CancellationToken ct)
+    {
+        var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(ct);
+        var result = await Console.Status().FlowlineSpinner().StartAsync(
+            $"Deploying [bold]{slnName}[/] to [bold]{targetEnv.DisplayName}[/]...",
+            _ => Cli.Wrap(cmdName)
+                    .WithArguments(args => args
+                        .AddIfNotNull(prefixArgs)
+                        .Add("solution").Add("import")
+                        .Add("--path").Add(packagePath)
+                        .Add("--environment").Add(targetEnv.EnvironmentUrl!)
+                        .Add("--async"))
+                    .WithValidation(CommandResultValidation.None)
+                    .WithToolExecutionLog()
                     .WithStandardOutputPipe(PipeTarget.ToDelegate(s => Console.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
                     .WithStandardErrorPipe(PipeTarget.ToDelegate(System.Console.Error.WriteLine))
-                    .ExecuteAsync(cancellationToken)
+                    .ExecuteAsync(ct)
                     .Task);
 
-        if (importResult.ExitCode != 0)
-        {
-            Console.Error("Deploy failed — check the environment and your PAC login.");
-            return (int)ExitCode.BuildFailed;
-        }
-
-        Console.Done("Deployed! Your solution is live.");
-
-        return 0;
+        if (result.ExitCode != 0)
+            throw new FlowlineException(ExitCode.BuildFailed, "Deploy failed — check the environment and your PAC login.");
     }
+
+    // ── DTAP gate (static helpers, tested directly) ──────────────────────────
 
     internal enum DtapGateOutcome { DevBlock, Skip, Check }
     internal sealed record DtapGateDecision(DtapGateOutcome Outcome, string? PredecessorUrl = null, string? PredecessorLabel = null);
