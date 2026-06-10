@@ -1,7 +1,7 @@
 ---
 title: "feat: Deploy — Orphan Component Cleanup"
 type: feat
-status: active
+status: completed
 date: 2026-06-07
 origin: docs/brainstorms/2026-06-07-deploy-orphan-cleanup-requirements.md
 ---
