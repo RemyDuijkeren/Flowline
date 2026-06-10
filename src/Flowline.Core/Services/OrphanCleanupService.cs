@@ -199,6 +199,8 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
         var ids = objectIds.Distinct().Where(id => id != Guid.Empty).ToList();
         if (ids.Count == 0)
             return [];
+        if (ids.Count > 2000)
+            throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {ids.Count} IDs (max 2000). Solution has too many CustomApi components for orphan detection.");
 
         var idArray = ids.Select(id => (object)id).ToArray();
 
@@ -229,6 +231,8 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
         var ids = objectIds.Distinct().Where(id => id != Guid.Empty).ToList();
         if (ids.Count == 0)
             return [];
+        if (ids.Count > 2000)
+            throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {ids.Count} IDs (max 2000). Solution has too many orphan components for cross-solution membership check.");
 
         var query = new QueryExpression("solutioncomponent")
         {
@@ -269,6 +273,9 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
         IReadOnlyList<Guid> objectIds,
         CancellationToken ct)
     {
+        if (objectIds.Count > 2000)
+            throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {objectIds.Count} IDs (max 2000). Solution has too many deferred orphan components.");
+
         var query = new QueryExpression("solutioncomponent")
         {
             ColumnSet = new ColumnSet("objectid"),
