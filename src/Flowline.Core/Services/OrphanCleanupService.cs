@@ -8,7 +8,7 @@ namespace Flowline.Core.Services;
 
 public enum OrphanAction { Delete, RemoveFromSolution, Manual }
 
-public sealed record OrphanEntry(Guid ObjectId, int ComponentType, string DisplayName, OrphanAction Action, string? Note = null, string? EntityName = null);
+public sealed record OrphanEntry(Guid ObjectId, int ComponentType, string DisplayName, OrphanAction Action, string? EntityName = null);
 
 public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 {
@@ -48,6 +48,13 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
         }
 
         var sNewIds = sNew.Select(c => c.ObjectId).ToHashSet();
+
+        if (sNew.Count == 0)
+        {
+            output.Warning("No components in Solution.xml — orphan check skipped to prevent mass deletion.");
+            return [];
+        }
+
         var orphans = sOld.Where(c => !sNewIds.Contains(c.ObjectId)).ToList();
 
         if (orphans.Count == 0)
@@ -60,9 +67,18 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
         var unknownOrphans = orphans.Where(c => ComponentClassifier.Classify(c.ComponentType) == ComponentAction.Manual).ToList();
 
         // CustomApi family has an env-specific componenttype — detect via entity-side queries instead.
-        var customApiEntities = unknownOrphans.Count > 0
-            ? await IdentifyCustomApiEntityTypesAsync(service, unknownOrphans.Select(c => c.ObjectId), ct).ConfigureAwait(false)
-            : [];
+        Dictionary<Guid, string> customApiEntities = [];
+        if (unknownOrphans.Count > 0)
+        {
+            try
+            {
+                customApiEntities = await IdentifyCustomApiEntityTypesAsync(service, unknownOrphans.Select(c => c.ObjectId), ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                output.Warning($"CustomApi entity detection failed ({Markup.Escape(ex.Message)}) — unknown orphan components will be marked Manual.");
+            }
+        }
 
         var customApiOrphans = unknownOrphans.Where(c => customApiEntities.ContainsKey(c.ObjectId)).ToList();
         var manualOrphans    = unknownOrphans.Where(c => !customApiEntities.ContainsKey(c.ObjectId)).ToList();
@@ -106,7 +122,7 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
         return await ExecuteInOrderAsync(service, solutionName, entries, isPostImport: false, ct).ConfigureAwait(false);
     }
 
-    public async Task RunPostImportAsync(
+    public async Task<int> RunPostImportAsync(
         IOrganizationServiceAsync2 service,
         string solutionName,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> sNew,
@@ -115,7 +131,7 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
         CancellationToken ct)
     {
         if (deferred.Count == 0 || mode == RunMode.NoDelete)
-            return;
+            return 0;
 
         var sNewIds     = sNew.Select(c => c.ObjectId).ToHashSet();
         var deferredIds = deferred.Select(e => e.ObjectId).ToList();
@@ -141,10 +157,11 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
         }
 
         if (reEntries.Count == 0)
-            return;
+            return 0;
 
-        output.MarkupLine("[dim]Post-import: retrying deferred orphan cleanup...[/]");
-        await ExecuteInOrderAsync(service, solutionName, reEntries, isPostImport: true, ct).ConfigureAwait(false);
+        output.Skip("Post-import: retrying deferred orphan cleanup...");
+        var failed = await ExecuteInOrderAsync(service, solutionName, reEntries, isPostImport: true, ct).ConfigureAwait(false);
+        return failed.Count;
     }
 
     async Task<List<(Guid ObjectId, int ComponentType)>> QuerySolutionComponentsAsync(
@@ -192,15 +209,15 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
                 Criteria  = { Conditions = { new ConditionExpression(idAttr, ConditionOperator.In, ids) } }
             };
 
-        var caTask    = service.RetrieveMultipleAsync(EntityQuery("customapi",                 "customapiid",                 idArray), ct);
-        var paramTask = service.RetrieveMultipleAsync(EntityQuery("customapirequestparameter", "customapirequestparameterid", idArray), ct);
-        var propTask  = service.RetrieveMultipleAsync(EntityQuery("customapiresponseproperty", "customapiresponsepropertyid", idArray), ct);
+        var caTask    = service.RetrieveAllAsync(EntityQuery("customapi",                 "customapiid",                 idArray), ct);
+        var paramTask = service.RetrieveAllAsync(EntityQuery("customapirequestparameter", "customapirequestparameterid", idArray), ct);
+        var propTask  = service.RetrieveAllAsync(EntityQuery("customapiresponseproperty", "customapiresponsepropertyid", idArray), ct);
         await Task.WhenAll(caTask, paramTask, propTask).ConfigureAwait(false);
 
         var result = new Dictionary<Guid, string>();
-        foreach (var e in caTask.Result.Entities)    result[e.Id] = "customapi";
-        foreach (var e in paramTask.Result.Entities) result[e.Id] = "customapirequestparameter";
-        foreach (var e in propTask.Result.Entities)  result[e.Id] = "customapiresponseproperty";
+        foreach (var e in caTask.Result)    result[e.Id] = "customapi";
+        foreach (var e in paramTask.Result) result[e.Id] = "customapirequestparameter";
+        foreach (var e in propTask.Result)  result[e.Id] = "customapiresponseproperty";
         return result;
     }
 
@@ -227,10 +244,10 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
             }
         };
 
-        var result     = await service.RetrieveMultipleAsync(query, ct).ConfigureAwait(false);
+        var entities   = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
         var membership = new Dictionary<Guid, List<string>>();
 
-        foreach (var entity in result.Entities)
+        foreach (var entity in entities)
         {
             var objectId = entity.GetAttributeValue<Guid>("objectid");
             if (objectId == Guid.Empty) continue;
@@ -261,8 +278,8 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
         var solutionLink = query.AddLink("solution", "solutionid", "solutionid", JoinOperator.Inner);
         solutionLink.LinkCriteria.AddCondition("uniquename", ConditionOperator.Equal, solutionName);
 
-        var result = await service.RetrieveMultipleAsync(query, ct).ConfigureAwait(false);
-        return result.Entities.Select(e => e.GetAttributeValue<Guid>("objectid")).Where(id => id != Guid.Empty).ToHashSet();
+        var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
+        return entities.Select(e => e.GetAttributeValue<Guid>("objectid")).Where(id => id != Guid.Empty).ToHashSet();
     }
 
     async Task<IReadOnlyList<OrphanEntry>> ExecuteInOrderAsync(
@@ -334,6 +351,7 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
         catch (FaultException<OrganizationServiceFault> ex) when (isPostImport)
         {
             output.Warning($"'{entry.DisplayName}' — post-import cleanup failed, remove manually: {Markup.Escape(ex.Message)}");
+            deferred.Add(entry);
         }
     }
 
@@ -395,7 +413,7 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
         if (mode == RunMode.NoDelete)
             output.Skip($"{deleteCount} would be deleted, {removeCount} would be removed from solution, {manualCount} manual. (--no-delete active)");
         else
-            output.MarkupLine($"[dim]{deleteCount} to delete, {removeCount} to remove from solution, {manualCount} manual[/]");
+            output.Skip($"{deleteCount} to delete, {removeCount} to remove from solution, {manualCount} manual");
     }
 
     static int ExecutionOrderIndex(int componentType, string? entityName)

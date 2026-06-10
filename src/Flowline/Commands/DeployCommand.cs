@@ -59,7 +59,13 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         var packagePath = await PackSolutionAsync(sln, slnFolder, settings, cancellationToken);
         await ImportSolutionAsync(packagePath, targetEnv, sln.Name, cancellationToken);
-        await orphanCleanupService.RunPostImportAsync(service, sln.Name, sNew, deferred, runMode, cancellationToken);
+        var cleanupFailures = await orphanCleanupService.RunPostImportAsync(service, sln.Name, sNew, deferred, runMode, cancellationToken);
+
+        if (cleanupFailures > 0)
+        {
+            Console.Warning($"{cleanupFailures} orphan {(cleanupFailures == 1 ? "component" : "components")} couldn't be cleaned up — see above, remove manually via maker portal.");
+            return (int)ExitCode.PartialSuccess;
+        }
 
         Console.Done("Deployed! Your solution is live.");
         return 0;

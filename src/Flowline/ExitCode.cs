@@ -47,6 +47,9 @@ public enum ExitCode
     /// <summary>Destructive or overwriting operation requires --force in non-interactive mode.</summary>
     ForceRequired = 17,
 
+    /// <summary>Deploy completed but orphan cleanup failed for some components. Check output for items to remove manually via maker portal.</summary>
+    PartialSuccess = 18,
+
     /// <summary>Operation cancelled by user (Ctrl+C / SIGINT). Follows de facto convention 128+2=130.</summary>
     Cancelled = 130,
 }
