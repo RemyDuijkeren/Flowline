@@ -91,6 +91,10 @@ var entities = await service.RetrieveAllAsync(query, cancellationToken);
 | `src/Flowline.Core/Services/GenerateReader.cs` | `GetSolutionEntityLogicalNamesAsync` | `solutioncomponent` (entities in solution) |
 | `src/Flowline.Core/Services/GenerateReader.cs` | `GetSolutionCustomApiMessageNamesAsync` | `customapi` joined to `solutioncomponent` |
 | `src/Flowline.Core/Services/WebResourceReader.cs` | `GetWebResourcesForSolutionAsync` | `webresource` joined to `solutioncomponent` |
+| `src/Flowline.Core/Services/OrphanCleanupService.cs` | `QuerySolutionComponentsAsync` | `solutioncomponent` (S_old query for orphan diff) |
+| `src/Flowline.Core/Services/OrphanCleanupService.cs` | `GetCrossSolutionMembershipAsync` | `solutioncomponent` (cross-solution membership check) |
+| `src/Flowline.Core/Services/OrphanCleanupService.cs` | `GetStillPresentAsync` | `solutioncomponent` (post-import re-check of deferred components) |
+| `src/Flowline.Core/Services/OrphanCleanupService.cs` | `IdentifyCustomApiEntityTypesAsync` | `customapi`, `customapirequestparameter`, `customapiresponseproperty` |
 
 ### Call sites that don't need paging
 

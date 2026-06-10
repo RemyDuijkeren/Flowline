@@ -60,6 +60,7 @@ public enum ExitCode
     ValidationFailed = 15,
     Timeout = 16,
     ForceRequired = 17,
+    PartialSuccess = 18,    // deploy succeeded; orphan cleanup partially failed — manual action needed
     Cancelled = 130,        // de facto convention: 128 + SIGINT(2)
 }
 ```
