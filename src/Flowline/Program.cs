@@ -7,6 +7,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using System.Reflection;
+using System.Text;
+
+Console.OutputEncoding = Encoding.UTF8;
 
 // Create a cancellation token source to handle Ctrl+C
 var cancellationTokenSource = new CancellationTokenSource();
