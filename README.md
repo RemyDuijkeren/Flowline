@@ -41,14 +41,12 @@ a full Git-based ALM workflow, and modern PAC auth.
 dotnet tool install --global Flowline
 ```
 
-Prerequisites:
+Prerequisites: [.NET SDK](https://dot.net) (8 or later), [Git](https://git-scm.com), and PAC CLI:
 
 ```bash
 dotnet tool install --global Microsoft.PowerApps.CLI.Tool
-winget install Git.Git
 ```
 
-On Windows, winget is an alternative for PAC CLI: `winget install Microsoft.PowerAppsCLI`
 If .NET 10 is installed, Flowline uses dnx — no separate PAC CLI install needed.
 
 Authenticate before using Flowline:
