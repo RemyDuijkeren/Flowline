@@ -32,15 +32,17 @@ ProjectRoot/
 └── solutions/
     └── <SolutionName>/
         ├── <SolutionName>.sln
-        ├── <SolutionName>.cdsproj    ← cdsproj + unpacked XML source in src/
-        ├── src/                      ← unpacked solution XML
+        ├── Package/                  ← PAC-managed (do not edit manually)
+        │   ├── Package.cdsproj       ← solution package project
+        │   └── src/                  ← unpacked solution XML (git-diffable)
         ├── Plugins/                  ← Plugins.csproj (plugins, workflows, custom APIs)
         └── WebResources/             ← WebResources.csproj + src/ + public/ + dist/
 ```
 
 Key rules:
 - All solutions live under `solutions/<SolutionName>/` — never at the repo root
-- The `.cdsproj` is named `<SolutionName>.cdsproj` at the solution root (not inside a subfolder)
+- The cdsproj is always `Package/Package.cdsproj` — PAC-managed, never edit manually
+- Unpacked solution XML lives in `Package/src/` — committed to source control
 - The plugins project is always named `Plugins` (`Plugins.csproj`)
 - Web asset build output goes to `WebResources/dist/` — this is what syncs to Dataverse
 - Multiple solutions can coexist as sibling folders under `solutions/`

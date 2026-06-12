@@ -80,7 +80,7 @@ app.Configure(config =>
 
     // Push assets to dev environment (upload and push assets to environment: plugins, webresources, pcf controls, etc.)
     config.AddCommand<PushCommand>("push")
-        .WithDescription("Build and register plugin assembly and web resources directly to DEV — skips pack/import. Reads [Step] attributes to create or update plugin registrations. Run after plugin or web resource changes.")
+        .WithDescription("Build and register plugin assembly and web resources directly to DEV — skips pack/import. Reads [[Step]] attributes to create or update plugin registrations. Run after plugin or web resource changes.")
         .WithExample("push")
         .WithExample("push", "ContosoCustomizations")
         .WithExample("push", "ContosoCustomizations --dev https://contoso-dev.crm4.dynamics.com/")

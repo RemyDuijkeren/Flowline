@@ -1,5 +1,5 @@
 ---
-status: active
+status: completed
 plan-type: refactor
 origin: conversation — brainstorm on solution folder structure and IDE experience
 ---

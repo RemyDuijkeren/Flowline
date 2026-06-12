@@ -1,6 +1,6 @@
 ---
 name: Flowline
-last_updated: 2026-06-06
+last_updated: 2026-06-12
 ---
 
 # Flowline Strategy
@@ -84,17 +84,19 @@ over unmanaged.
 
 ## Milestones
 
-- **2026-06-10** — Deploy command complete ✓ (testing in progress)
-- **2026-06-15** — Drift detection and component deletion on deploy (--prune)
-- **2026-06-20** — WebResource dependencies push support
+- **2026-06-04** — Package/ subfolder refactor: PAC-managed files in `Package/Package.cdsproj` ✓
+- **2026-06-07** — AI agent improvements: typed exit codes (ExitCode enum), AGENTS.md scaffolding in `flowline clone`, expanded command help text ✓
+- **2026-06-10** — Deploy command complete ✓
+- **2026-06-15** — Orphan cleanup on deploy (`--no-delete`): auto-delete + report-only classification, cross-solution safety check ✓
+- **2026-06-20** — WebResource dependencies push support (requirements: `docs/brainstorms/2026-06-12-webresource-dependencies-requirements.md`)
 - **2026-06-22** — `flowline init` for greenfield projects (create publisher + solution in DEV, scaffold local structure)
-- **2026-06-24** — Migration guide and command reference on GitHub Wiki; README trimmed to overview + quick start
+- **2026-06-24** — Migration guide and command reference on GitHub Wiki; README trimmed to overview + quick start ✓
 - **2026-06-27** — CHANGELOG with honest "not yet supported" section
 - **2026-07-01** — v1.0 release
 
 ## Not working on
 
-- Restore state of workflows on deploy (`--restore-state`, post-v1)
+- Restore state of workflows on deploy (`--no-restore` flag, post-v1; requirements: `docs/brainstorms/2026-06-12-deploy-state-restoration-requirements.md`)
 
 ## Marketing
 
@@ -102,5 +104,5 @@ over unmanaged.
 unmanaged packages, Git as the source of truth, and a straightforward DEV to TEST
 to PROD workflow.
 
-**Documentation:** GitHub Wiki for command reference, migration guide, and getting-started.
+**Documentation:** GitHub Wiki live at https://github.com/RemyDuijkeren/Flowline/wiki — command reference, migration guide, and getting-started.
 README covers overview, install, and quick start only — links out to the Wiki.
