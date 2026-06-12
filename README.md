@@ -25,6 +25,7 @@ and a fast push to DEV without the enterprise overhead.
 
 **PAC CLI gives you the primitives — Flowline gives you the workflow.** Clone, push, sync, and deploy are a defined loop
 with attribute-driven plugin registration and a direct push that skips the pack/import/register cycle.
+Where PAC CLI already handles it, Flowline wraps — it doesn't re-implement.
 Unlike Power Platform Pipelines, Flowline requires neither Managed Environments nor managed solutions.
 
 > Pipelines are buried steel — permits, compressors, years to commission. A flowline goes where the pipeline can't.
@@ -73,20 +74,22 @@ flowline deploy test
 flowline deploy prod
 ```
 
+For full setup, auth, and project workflow: **[Getting Started](https://github.com/RemyDuijkeren/Flowline/wiki/Getting-Started)**
+
 ---
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `clone <solution>` | Bootstrap an existing solution from Dataverse into the repo |
-| `push [solution]` | Build and sync code assets to DEV; or push standalone with `--pluginFile` / `--webresources` |
-| `sync [solution]` | Pull the current solution state from DEV into source control |
-| `deploy <target>` | Pack from the repo and import into `test`, `uat`, `prod`, or a URL |
-| `provision [dev\|test]` | Provision a DEV or TEST environment by copying from production |
-| `generate [solution]` | Generate early-bound C# types into `Plugins/Models/` |
-| `status` | Show environment info, Flowline version, and PAC CLI status |
+| [`clone <solution>`](https://github.com/RemyDuijkeren/Flowline/wiki/Command-Reference#clone) | Bootstrap an existing solution from Dataverse into the repo |
+| [`push [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/Command-Reference#push) | Build and sync code assets to DEV; or push standalone with `--pluginFile` / `--webresources` |
+| [`sync [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/Command-Reference#sync) | Pull the current solution state from DEV into source control |
+| [`deploy <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/Command-Reference#deploy) | Pack from the repo and import into `test`, `uat`, `prod`, or a URL |
+| [`provision [dev\|test]`](https://github.com/RemyDuijkeren/Flowline/wiki/Command-Reference#provision) | Provision a DEV or TEST environment by copying from production |
+| [`generate [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/Command-Reference#generate) | Generate early-bound C# types into `Plugins/Models/` |
+| [`status`](https://github.com/RemyDuijkeren/Flowline/wiki/Command-Reference#status) | Show environment info, Flowline version, and PAC CLI status |
 
-**Full documentation:** [github.com/RemyDuijkeren/Flowline/wiki](https://github.com/RemyDuijkeren/Flowline/wiki)
+**Plugin attributes NuGet:** [Flowline.Attributes](src/Flowline.Attributes/README.md) — add to your plugin project to use `[Step]`, `[Filter]`, `[CustomApi]`, and friends — full reference: [Plugin Registration](https://github.com/RemyDuijkeren/Flowline/wiki/Plugin-Registration)
 
-**Plugin attributes NuGet:** [Flowline.Attributes](src/Flowline.Attributes/README.md) — add to your plugin project to use `[Step]`, `[Filter]`, `[CustomApi]`, and friends
+See the [Wiki for the full documentation.](https://github.com/RemyDuijkeren/Flowline/wiki)
