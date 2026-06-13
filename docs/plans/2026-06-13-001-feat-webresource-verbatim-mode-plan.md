@@ -1,6 +1,7 @@
 ---
 title: "feat: Add verbatim mode for web resource naming"
 type: feat
+status: complete
 date: 2026-06-13
 origin: docs/brainstorms/2026-06-12-webresource-naming-requirements.md
 ---
