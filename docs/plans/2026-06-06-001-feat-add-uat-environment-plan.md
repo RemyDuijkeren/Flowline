@@ -1,7 +1,7 @@
 ---
 title: "feat: Add UAT environment"
 type: feat
-status: active
+status: complete
 created: 2026-06-06
 ---
 
