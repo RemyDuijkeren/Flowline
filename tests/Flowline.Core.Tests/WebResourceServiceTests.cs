@@ -402,6 +402,120 @@ public class WebResourceServiceTests : IDisposable
             _service.DownloadWebResourcesAsync(_serviceMock, _webresourceRoot, "MySolution"));
     }
 
+    // --- Verbatim mode ---
+
+    [Fact]
+    public async Task SyncSolutionAsync_AutoPrefix_RootLevelFileWithPublisherLikeName_ShouldAutoPrefix()
+    {
+        // A root-level file whose name starts with a publisher-like prefix must still be auto-prefixed
+        // because it has no subfolder — verbatim mode only fires when there is a containing folder.
+        File.WriteAllText(Path.Combine(_webresourceRoot, "av_helper.js"), "// helper");
+        var createdId = Guid.NewGuid();
+        var createResponse = new CreateResponse();
+        createResponse.Results["id"] = createdId;
+        _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(createResponse));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_MySolution/av_helper.js"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_VerbatimMode_OwnPublisherFolder_ShouldUseVerbatimName()
+    {
+        var dir = Directory.CreateDirectory(Path.Combine(_webresourceRoot, "my_MySolution", "js"));
+        File.WriteAllText(Path.Combine(dir.FullName, "app.js"), "// app");
+        var createdId = Guid.NewGuid();
+        var createResponse = new CreateResponse();
+        createResponse.Results["id"] = createdId;
+        _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(createResponse));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_MySolution/js/app.js"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_VerbatimMode_DifferentPublisherFolder_ShouldUseVerbatimName()
+    {
+        var dir = Directory.CreateDirectory(Path.Combine(_webresourceRoot, "new_Other", "util"));
+        File.WriteAllText(Path.Combine(dir.FullName, "helper.js"), "// helper");
+        var createdId = Guid.NewGuid();
+        var createResponse = new CreateResponse();
+        createResponse.Results["id"] = createdId;
+        _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(createResponse));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "new_Other/util/helper.js"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_VerbatimMode_SharedNamespaceFolder_ShouldUseVerbatimName()
+    {
+        var dir = Directory.CreateDirectory(Path.Combine(_webresourceRoot, "dh_", "lib"));
+        File.WriteAllText(Path.Combine(dir.FullName, "jquery.js"), "// jquery");
+        var createdId = Guid.NewGuid();
+        var createResponse = new CreateResponse();
+        createResponse.Results["id"] = createdId;
+        _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(createResponse));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "dh_/lib/jquery.js"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_VerbatimMode_MixedRoot_ShouldResolveDistinctNames()
+    {
+        // auto-prefix file
+        File.WriteAllText(Path.Combine(_webresourceRoot, "app.js"), "// app");
+        // verbatim file under a different path that won't collide with the auto-prefix result
+        var dir = Directory.CreateDirectory(Path.Combine(_webresourceRoot, "av_Shared", "lib"));
+        File.WriteAllText(Path.Combine(dir.FullName, "util.js"), "// util");
+
+        var createdId = Guid.NewGuid();
+        var createResponse = new CreateResponse();
+        createResponse.Results["id"] = createdId;
+        _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(createResponse));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_MySolution/app.js"),
+            Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "av_Shared/lib/util.js"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_CollisionDetection_VerbatimAndAutoPrefixSameName_ShouldThrow()
+    {
+        // auto-prefix: js/app.js → my_MySolution/js/app.js
+        Directory.CreateDirectory(Path.Combine(_webresourceRoot, "js"));
+        File.WriteAllText(Path.Combine(_webresourceRoot, "js", "app.js"), "// app");
+        // verbatim: my_MySolution/js/app.js → my_MySolution/js/app.js  (collision!)
+        var dir = Directory.CreateDirectory(Path.Combine(_webresourceRoot, "my_MySolution", "js"));
+        File.WriteAllText(Path.Combine(dir.FullName, "app.js"), "// app verbatim");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution"));
+    }
+
     void SetupSolution(string solutionName, string prefix, bool isManaged = false, Guid? parentSolutionId = null)
     {
         var solution = new Entity("solution", Guid.NewGuid())

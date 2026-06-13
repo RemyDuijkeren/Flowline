@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
@@ -9,6 +10,8 @@ public class WebResourceReader
 {
     const int WebResourceComponentType = 61;
     const string DefaultSolutionUniqueName = "Default";
+    // Publisher prefixes are always lowercase: ^[a-z][a-z0-9]*_
+    static readonly Regex VerbatimPrefixRegex = new(@"^[a-z][a-z0-9]*_", RegexOptions.Compiled);
     readonly SolutionReader _solutionReader = new();
 
     public async Task<WebResourceSyncSnapshot> LoadSnapshotAsync(
@@ -141,11 +144,25 @@ public class WebResourceReader
         foreach (var file in Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories))
         {
             var relativePath = Path.GetRelativePath(root, file).Replace("\\", "/");
-            var name = $"{prefix}/{relativePath}";
+            var name = IsVerbatimPath(relativePath) ? relativePath : $"{prefix}/{relativePath}";
+            if (result.TryGetValue(name, out var existing))
+                throw new InvalidOperationException(
+                    $"Two local files resolve to the same CRM name '{name}':\n" +
+                    $"  {existing.RelativePath}\n" +
+                    $"  {relativePath}");
             result[name] = LocalResourceFromFile(file, name, relativePath);
         }
 
         return result.AsReadOnly();
+    }
+
+    // Verbatim mode: only applies when the file is inside a subfolder whose name starts with a publisher prefix.
+    // Root-level files (no '/') always use auto-prefix regardless of filename.
+    static bool IsVerbatimPath(string relativePath)
+    {
+        var slashIndex = relativePath.IndexOf('/');
+        if (slashIndex < 0) return false;
+        return VerbatimPrefixRegex.IsMatch(relativePath[..slashIndex]);
     }
 
     static LocalWebResource LocalResourceFromFile(string path, string name, string relativePath)

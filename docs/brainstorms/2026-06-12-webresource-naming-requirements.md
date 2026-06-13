@@ -1,9 +1,9 @@
 ---
 title: Web Resource Naming — Verbatim Mode and Shared Namespace
 date: 2026-06-12
-status: idea
+status: implemented
 origin: docs/Features/FR-webresource-naming.md
-partially-implemented: auto-prefix mode is live (WebResourceReader.cs)
+implemented: verbatim mode, shared namespace, collision detection (WebResourceReader.cs)
 ---
 
 # Web Resource Naming — Verbatim Mode and Shared Namespace
