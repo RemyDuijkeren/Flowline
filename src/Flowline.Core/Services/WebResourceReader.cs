@@ -75,7 +75,15 @@ public class WebResourceReader(IAnsiConsole output)
 
         var enriched = localResources.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
 
-        // Phase 2a: LCID expansion — resolve bare ".resx" references (no LCID) to all matching LCID variants.
+        ExpandLcidDependencies(enriched, allNames);
+        AutoMatchResxDependencies(enriched);
+
+        return enriched.AsReadOnly();
+    }
+
+    // Phase 2a: resolve bare ".resx" references (no LCID) to all matching LCID variants.
+    void ExpandLcidDependencies(Dictionary<string, LocalWebResource> enriched, HashSet<string> allNames)
+    {
         foreach (var (name, resource) in enriched.ToList())
         {
             if (resource.Type != WebResourceType.Js) continue;
@@ -84,17 +92,30 @@ public class WebResourceReader(IAnsiConsole output)
             var resolved = new List<string>(resource.DependsOn.Count);
             foreach (var dep in resource.DependsOn)
             {
-                if (IsBareResxReference(dep))
-                    resolved.AddRange(ExpandLcidVariants(dep, allNames));
-                else
+                if (!IsBareResxReference(dep))
+                {
                     resolved.Add(dep);
+                    continue;
+                }
+
+                var expanded = ExpandLcidVariants(dep, allNames).ToList();
+                if (expanded.Count > 0)
+                    resolved.AddRange(expanded);
+                else
+                {
+                    output.Warning($"'{name}': bare RESX reference '{dep}' has no LCID variants — kept as-is.");
+                    resolved.Add(dep);
+                }
             }
 
             if (resolved.Count != resource.DependsOn.Count || !resolved.SequenceEqual(resource.DependsOn))
                 enriched[name] = resource with { DependsOn = resolved.AsReadOnly() };
         }
+    }
 
-        // Phase 2b: RESX auto-matching — link each RESX group to its unique JS match by base name.
+    // Phase 2b: link each RESX group to its unique JS match by folder-qualified base name.
+    void AutoMatchResxDependencies(Dictionary<string, LocalWebResource> enriched)
+    {
         var resxByBaseName = enriched.Values
             .Where(r => r.Type == WebResourceType.Resx)
             .GroupBy(r => GetResxBaseName(r.Name), StringComparer.OrdinalIgnoreCase);
@@ -128,8 +149,6 @@ public class WebResourceReader(IAnsiConsole output)
                 DependsOn = jsResource.DependsOn.Concat(added).ToList().AsReadOnly()
             };
         }
-
-        return enriched.AsReadOnly();
     }
 
     static bool IsBareResxReference(string name) =>
@@ -143,28 +162,24 @@ public class WebResourceReader(IAnsiConsole output)
             ResxLcidSuffixRegex.IsMatch(n));
     }
 
+    // Folder-qualified base name: "av_ns/MyForm.1033.resx" → "av_ns/MyForm"
     static string GetResxBaseName(string logicalName)
     {
-        var lastSlash = logicalName.LastIndexOf('/');
-        var filename = lastSlash >= 0 ? logicalName[(lastSlash + 1)..] : logicalName;
-        // filename: "MyForm.1033.resx" → strip ".resx" → "MyForm.1033" → strip LCID → "MyForm"
-        filename = filename[..^5]; // strip ".resx"
-        var dotIdx = filename.LastIndexOf('.');
-        if (dotIdx >= 0 && filename[(dotIdx + 1)..].All(char.IsDigit))
-            filename = filename[..dotIdx];
-        return filename;
+        var stem = logicalName[..^5]; // strip ".resx"
+        var lastSlash = stem.LastIndexOf('/');
+        var dotIdx = stem.LastIndexOf('.');
+        if (dotIdx >= 0 && dotIdx > lastSlash && stem[(dotIdx + 1)..].All(char.IsDigit))
+            stem = stem[..dotIdx];
+        return stem;
     }
 
-    static string GetJsBaseName(string logicalName)
-    {
-        var lastSlash = logicalName.LastIndexOf('/');
-        var filename = lastSlash >= 0 ? logicalName[(lastSlash + 1)..] : logicalName;
-        return filename.EndsWith(".js", StringComparison.OrdinalIgnoreCase)
-            ? filename[..^3]
-            : filename;
-    }
+    // Folder-qualified base name: "av_ns/MyForm.js" → "av_ns/MyForm"
+    static string GetJsBaseName(string logicalName) =>
+        logicalName.EndsWith(".js", StringComparison.OrdinalIgnoreCase)
+            ? logicalName[..^3]
+            : logicalName;
 
-    async Task<IReadOnlyList<Entity>> GetWebResourcesForSolutionAsync(
+    static async Task<IReadOnlyList<Entity>> GetWebResourcesForSolutionAsync(
         IOrganizationServiceAsync2 service, Guid solutionId, CancellationToken cancellationToken)
     {
         var query = new QueryExpression("webresource")
@@ -180,7 +195,7 @@ public class WebResourceReader(IAnsiConsole output)
         return entities.AsReadOnly();
     }
 
-    async Task<WebResourceOwnership> GetOwnershipAsync(
+    static async Task<WebResourceOwnership> GetOwnershipAsync(
         IOrganizationServiceAsync2 service, Guid webResourceId, string currentSolutionName, CancellationToken cancellationToken)
     {
         var query = new QueryExpression("solutioncomponent")
@@ -227,7 +242,7 @@ public class WebResourceReader(IAnsiConsole output)
             ownership,
             entity.GetAttributeValue<string>("dependencyxml"));
 
-    async Task<IReadOnlyDictionary<string, DataverseWebResource>> GetGlobalWebResourcesByNameAsync(
+    static async Task<IReadOnlyDictionary<string, DataverseWebResource>> GetGlobalWebResourcesByNameAsync(
         IOrganizationServiceAsync2 service,
         IEnumerable<string> names,
         CancellationToken cancellationToken)

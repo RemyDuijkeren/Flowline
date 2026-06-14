@@ -11,6 +11,7 @@ public static class WebResourceAnnotationParser
     public static IReadOnlyList<string> ParseAnnotations(string filePath)
     {
         List<string>? result = null;
+        HashSet<string>? seen = null;
         foreach (var line in File.ReadLines(filePath))
         {
             var trimmed = line.Trim();
@@ -18,7 +19,8 @@ public static class WebResourceAnnotationParser
             if (trimmed.StartsWith(DependsPrefix))
             {
                 var name = trimmed[DependsPrefix.Length..].Trim();
-                if (!string.IsNullOrEmpty(name))
+                if (!string.IsNullOrEmpty(name) &&
+                    (seen ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase)).Add(name))
                     (result ??= []).Add(name);
             }
             else if (trimmed.StartsWith("//"))

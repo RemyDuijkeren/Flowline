@@ -537,16 +537,115 @@ public class WebResourceServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SyncSolutionAsync_ResxMultipleMatchingJs_ShouldEmitWarning()
+    public async Task SyncSolutionAsync_ResxCrossFolderJs_ShouldWarnNoMatch()
     {
+        // RESX at root, JS only in subfolder — folder-qualified base names differ, so no auto-match.
         File.WriteAllText(Path.Combine(_webresourceRoot, "Labels.1033.resx"), "");
-        File.WriteAllText(Path.Combine(_webresourceRoot, "Labels.js"), "// no deps");
         Directory.CreateDirectory(Path.Combine(_webresourceRoot, "sub"));
         File.WriteAllText(Path.Combine(_webresourceRoot, "sub", "Labels.js"), "// no deps");
 
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false, runMode: RunMode.DryRun);
 
-        Assert.Contains("multiple JS", _console.Output);
+        Assert.Contains("no JS file", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_ResxSameFolderJs_AutoMatchesSameFolderOnly()
+    {
+        // RESX at root auto-matches root JS, not subfolder JS with the same base name.
+        File.WriteAllText(Path.Combine(_webresourceRoot, "Labels.1033.resx"), "");
+        File.WriteAllText(Path.Combine(_webresourceRoot, "Labels.js"), "code();");
+        Directory.CreateDirectory(Path.Combine(_webresourceRoot, "sub"));
+        File.WriteAllText(Path.Combine(_webresourceRoot, "sub", "Labels.js"), "code();");
+        var createResponse = new CreateResponse();
+        createResponse.Results["id"] = Guid.NewGuid();
+        _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(createResponse));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is<CreateRequest>(r =>
+                r.Target.GetAttributeValue<string>("name") == "my_MySolution/Labels.js" &&
+                r.Target.Attributes.ContainsKey("dependencyxml") &&
+                r.Target.GetAttributeValue<string>("dependencyxml")!.Contains("my_MySolution/Labels.1033.resx")),
+            Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is<CreateRequest>(r =>
+                r.Target.GetAttributeValue<string>("name") == "my_MySolution/sub/Labels.js" &&
+                !r.Target.Attributes.ContainsKey("dependencyxml")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_ResxAutoMatchesSingleJs_RegisteredAsDependency()
+    {
+        File.WriteAllText(Path.Combine(_webresourceRoot, "Form.js"), "code();");
+        File.WriteAllText(Path.Combine(_webresourceRoot, "Form.1033.resx"), "");
+        var createResponse = new CreateResponse();
+        createResponse.Results["id"] = Guid.NewGuid();
+        _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(createResponse));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is<CreateRequest>(r =>
+                r.Target.GetAttributeValue<string>("name") == "my_MySolution/Form.js" &&
+                r.Target.Attributes.ContainsKey("dependencyxml") &&
+                r.Target.GetAttributeValue<string>("dependencyxml")!.Contains("my_MySolution/Form.1033.resx")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_BareResxAnnotationExpandedToLcidVariant_RegisteredAsDependency()
+    {
+        // Local RESX variant exists; bare ".resx" annotation should expand to the LCID variant.
+        File.WriteAllText(Path.Combine(_webresourceRoot, "Form.js"),
+            "// flowline:depends my_MySolution/strings.resx\ncode();");
+        File.WriteAllText(Path.Combine(_webresourceRoot, "strings.1033.resx"), "");
+        var createResponse = new CreateResponse();
+        createResponse.Results["id"] = Guid.NewGuid();
+        _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(createResponse));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is<CreateRequest>(r =>
+                r.Target.GetAttributeValue<string>("name") == "my_MySolution/Form.js" &&
+                r.Target.Attributes.ContainsKey("dependencyxml") &&
+                r.Target.GetAttributeValue<string>("dependencyxml")!.Contains("my_MySolution/strings.1033.resx")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_GlobalOrphanWithChangedDeps_UpdatesDepXmlAndAddsToSolution()
+    {
+        var orphanId = Guid.NewGuid();
+        var existingDepXml = """<Dependencies><Dependency componentType="WebResource"><Library name="old/lib.js" displayName="lib.js" languagecode="" description="" libraryUniqueId="{0e58647c-5eb8-e4cc-b94d-19e6acb09469}"/></Dependency></Dependencies>""";
+        SetupGlobalOrphans(RemoteWebResourceWithDepXml(orphanId, "my_MySolution/shared.js", "same content", existingDepXml));
+        File.WriteAllText(Path.Combine(_webresourceRoot, "shared.js"),
+            "// flowline:depends av_Sol/new-lib.js\nsame content");
+        var createResponse = new CreateResponse();
+        createResponse.Results["id"] = orphanId;
+        _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(createResponse));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        await _serviceMock.Received(1).UpdateAsync(
+            Arg.Is<Entity>(e =>
+                e.Id == orphanId &&
+                e.Attributes.ContainsKey("dependencyxml") &&
+                e.GetAttributeValue<string>("dependencyxml")!.Contains("av_Sol/new-lib.js")),
+            Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is<OrganizationRequest>(r =>
+                r.RequestName == "AddSolutionComponent" &&
+                (Guid)r["ComponentId"] == orphanId &&
+                r["SolutionUniqueName"].ToString() == "MySolution"),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]

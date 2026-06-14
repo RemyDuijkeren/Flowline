@@ -47,7 +47,14 @@ public enum WebResourceAction
     Skip
 }
 
-public record DependencyLibrary(string Name, string DisplayName, Guid LibraryUniqueId);
+public record DependencyLibrary(string Name, string DisplayName, Guid LibraryUniqueId)
+{
+    public virtual bool Equals(DependencyLibrary? other) =>
+        other is not null && string.Equals(Name, other.Name, StringComparison.OrdinalIgnoreCase);
+
+    public override int GetHashCode() =>
+        StringComparer.OrdinalIgnoreCase.GetHashCode(Name);
+}
 
 public record LocalWebResource(string Name, string RelativePath, string Path, string DisplayName, WebResourceType Type, string? Content, IReadOnlyList<string> DependsOn);
 

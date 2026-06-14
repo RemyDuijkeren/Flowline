@@ -35,7 +35,7 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
         IReadOnlyList<(Guid ObjectId, int ComponentType)> sNew,
         RunMode mode,
         CancellationToken ct,
-        string? webresourceRoot = null)
+        string? webresourceRoot)
     {
         var sOld = await output.Status()
             .StartAsync($"Querying orphan components in [bold]{solutionName}[/]...",
