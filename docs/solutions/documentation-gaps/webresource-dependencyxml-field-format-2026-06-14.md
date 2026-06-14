@@ -146,3 +146,4 @@ The Planner (U4) resolves the full `DependencyLibrary` set before calling Serial
 
 - `docs/brainstorms/2026-06-12-webresource-dependencies-requirements.md` — original brainstorm (format assumption now corrected)
 - `docs/plans/2026-06-13-002-feat-webresource-dependency-registration-plan.md` — implementation plan (U2 serializer design must be updated per above)
+- `docs/solutions/design-patterns/webresource-dependency-registration-patterns.md` — implementation patterns: GUID reuse, Name-only equality, RESX auto-matching, annotation deduplication
