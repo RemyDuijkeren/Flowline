@@ -6,7 +6,7 @@ namespace Flowline.Core.Services;
 
 public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 {
-    readonly WebResourceReader _reader = new();
+    readonly WebResourceReader _reader = new(output);
     readonly WebResourcePlanner _planner = new(output, opt.IsVerbose);
     readonly WebResourceExecutor _executor = new(output, opt.IsVerbose);
 

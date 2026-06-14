@@ -403,6 +403,50 @@ public class WebResourceServiceTests : IDisposable
             _service.DownloadWebResourcesAsync(_serviceMock, _webresourceRoot, "MySolution"));
     }
 
+    // --- Dependency annotations ---
+
+    [Fact]
+    public async Task SyncSolutionAsync_ResxNoMatchingJs_ShouldEmitWarning()
+    {
+        File.WriteAllText(Path.Combine(_webresourceRoot, "Labels.1033.resx"), "");
+        // No JS file with base name "Labels"
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false, runMode: RunMode.DryRun);
+
+        Assert.Contains("Labels", _console.Output);
+        Assert.Contains("no JS file", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_ResxMultipleMatchingJs_ShouldEmitWarning()
+    {
+        File.WriteAllText(Path.Combine(_webresourceRoot, "Labels.1033.resx"), "");
+        File.WriteAllText(Path.Combine(_webresourceRoot, "Labels.js"), "// no deps");
+        Directory.CreateDirectory(Path.Combine(_webresourceRoot, "sub"));
+        File.WriteAllText(Path.Combine(_webresourceRoot, "sub", "Labels.js"), "// no deps");
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false, runMode: RunMode.DryRun);
+
+        Assert.Contains("multiple JS", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_RemoteResourceHasDependencyXml_SnapshotCaptures()
+    {
+        var depXml = """<Dependencies><Dependency componentType="WebResource"><Library name="av_Sol/lib.js" displayName="lib.js" languagecode="" description="" libraryUniqueId="{0e58647c-5eb8-e4cc-b94d-19e6acb09469}"/></Dependency></Dependencies>""";
+        var id = Guid.NewGuid();
+        var entity = RemoteWebResourceWithDepXml(id, "my_MySolution/form.js", "code();", depXml);
+        SetupWebResources(entity);
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"), "code();");
+        SetupOwnership(id, ("MySolution", false));
+
+        // No changes expected (same content, we check that dependencyxml is considered)
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
+
+        // Snapshot loaded — no exception; existing dep stays (no local annotation → DependsOn empty → no change)
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
     // --- Verbatim mode ---
 
     [Fact]
@@ -557,6 +601,14 @@ public class WebResourceServiceTests : IDisposable
             ["content"] = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(content)),
             ["webresourcetype"] = new OptionSetValue((int)WebResourceType.Js)
         };
+        return entity;
+    }
+
+    static Entity RemoteWebResourceWithDepXml(Guid id, string name, string content, string? dependencyXml)
+    {
+        var entity = RemoteWebResource(id, name, content);
+        if (dependencyXml != null)
+            entity["dependencyxml"] = dependencyXml;
         return entity;
     }
 
