@@ -168,4 +168,50 @@ public class PushCommandTests : IDisposable
 
         PushCommand.ResolveStandaloneWebResourcesPath(settings).Should().Be(Path.GetFullPath(folder));
     }
+
+    [Fact]
+    public void EnsureBuiltWebResources_WithFiles_ShouldNotThrow()
+    {
+        var dist = Path.Combine(_root, "dist");
+        Directory.CreateDirectory(dist);
+        File.WriteAllText(Path.Combine(dist, "account.js"), "");
+
+        var act = () => PushCommand.EnsureBuiltWebResources(dist);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void EnsureBuiltWebResources_WithNestedFiles_ShouldNotThrow()
+    {
+        var dist = Path.Combine(_root, "dist");
+        var sub = Path.Combine(dist, "forms");
+        Directory.CreateDirectory(sub);
+        File.WriteAllText(Path.Combine(sub, "form.js"), "");
+
+        var act = () => PushCommand.EnsureBuiltWebResources(dist);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void EnsureBuiltWebResources_WithEmptyFolder_ShouldThrow()
+    {
+        var dist = Path.Combine(_root, "dist");
+        Directory.CreateDirectory(dist);
+
+        var act = () => PushCommand.EnsureBuiltWebResources(dist);
+
+        act.Should().Throw<FlowlineException>();
+    }
+
+    [Fact]
+    public void EnsureBuiltWebResources_WithMissingFolder_ShouldThrow()
+    {
+        var dist = Path.Combine(_root, "dist");
+
+        var act = () => PushCommand.EnsureBuiltWebResources(dist);
+
+        act.Should().Throw<FlowlineException>();
+    }
 }

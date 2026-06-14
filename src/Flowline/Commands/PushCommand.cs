@@ -49,6 +49,11 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         [DefaultValue(false)]
         public bool NoDelete { get; set; } = false;
 
+        [CommandOption("--no-build")]
+        [Description("Skip 'dotnet build' and push the existing Release artifacts")]
+        [DefaultValue(false)]
+        public bool NoBuild { get; set; } = false;
+
         [CommandOption("--dry-run")]
         [Description("Preview changes without touching Dataverse")]
         [DefaultValue(false)]
@@ -187,7 +192,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (!standaloneMode)
         {
             var pluginsFolder = Path.Combine(RootFolder, AllSolutionsFolderName, solutionName, PluginsName);
-            if (await DotNetUtils.BuildSolutionAsync(pluginsFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
+            if (!settings.NoBuild && await DotNetUtils.BuildSolutionAsync(pluginsFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
                 throw new FlowlineException(ExitCode.BuildFailed, "Plugins build failed — fix errors above.");
 
             pluginsDll = Path.Combine(pluginsFolder, "bin", "Release", "net462", "publish", $"{PluginsName}.dll");
@@ -196,7 +201,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (pluginsDll == null || !File.Exists(pluginsDll))
             throw new FlowlineException(ExitCode.NotFound, standaloneMode
                 ? $"Plugin file not found: {settings.PluginFile}"
-                : $"{PluginsName}.dll not found. Build the solution first.");
+                : $"{PluginsName}.dll not found — build the solution (Release) first, or drop --no-build.");
 
         Console.Info($"[bold]{Path.GetFileName(pluginsDll)}[/] found");
         Console.Verbose($"{pluginsDll}", RuntimeOptions.IsVerbose);
@@ -222,10 +227,21 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             return null;
         }
 
-        if (await DotNetUtils.BuildSolutionAsync(webResourcesFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
+        if (!settings.NoBuild && await DotNetUtils.BuildSolutionAsync(webResourcesFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
             throw new FlowlineException(ExitCode.BuildFailed, "WebResources build failed — fix errors above.");
 
+        EnsureBuiltWebResources(webResourcesSyncFolder);
+
         return webResourcesSyncFolder;
+    }
+
+    // Safety guard: an empty 'dist' makes push compute deletes for every remote web
+    // resource. Refuse before that can happen — independent of --no-build.
+    internal static void EnsureBuiltWebResources(string distFolder)
+    {
+        if (!Directory.Exists(distFolder) || !Directory.EnumerateFiles(distFolder, "*", SearchOption.AllDirectories).Any())
+            throw new FlowlineException(ExitCode.NotFound,
+                "No web resources in 'dist' — refusing to push, since this would remove every web resource in the solution. Build first, or check your source.");
     }
 
     private class StandaloneParams
