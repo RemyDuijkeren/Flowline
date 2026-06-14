@@ -84,7 +84,8 @@ public class WebResourceServiceTests : IDisposable
         await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<OrganizationRequest>(), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
-        Assert.Contains("would create", _console.Output);
+        Assert.Contains("Creates (1)", _console.Output);
+        Assert.Contains("1 create(s)", _console.Output);
     }
 
     [Fact]

@@ -27,12 +27,12 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         var snapshot = await output.Status().StartAsync("Loading web resource snapshot...", _ =>
             _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, cancellationToken)).ConfigureAwait(false);
         WriteSnapshotVerbose(snapshot);
-        output.Info("Snapshot web resources loaded");
+        output.Ok("Snapshot web resources loaded");
 
         // Phase 2: Plan registration (pure, synchronous)
         var plan = _planner.Plan(snapshot);
-        WritePlanVerbose(plan);
-        output.Info("Web resource plan ready");
+        WritePlanReport(plan, PlanReportMode.Verbose, publishAfterSync);
+        output.Ok("Web resource plan ready");
 
         if (plan.TotalChanges == 0)
         {
@@ -46,7 +46,7 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         // Dry-run: print preview and return without making any changes
         if (runMode == RunMode.DryRun)
         {
-            WriteDryRunSummary(plan, publishAfterSync);
+            WritePlanReport(plan, PlanReportMode.DryRun, publishAfterSync);
             return;
         }
 
@@ -136,70 +136,55 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         }
     }
 
-    void WritePlanVerbose(WebResourceSyncPlan plan)
+    enum PlanReportMode { Verbose, DryRun }
+
+    void WritePlanReport(WebResourceSyncPlan plan, PlanReportMode mode, bool publishAfterSync = false)
     {
-        if (!opt.IsVerbose)
+        if (mode == PlanReportMode.Verbose && !opt.IsVerbose)
             return;
 
-        output.Verbose("Web resource plan", opt.IsVerbose);
-        output.Verbose($"  Summary: {plan.TotalDeletes} delete(s), {plan.TotalUpserts} upsert(s), {plan.AddsToSolution.Count} add-to-solution action(s)", opt.IsVerbose);
-
-        if (plan.Creates.Count > 0)
-        {
-            output.Verbose($"  Creates ({plan.Creates.Count})", opt.IsVerbose);
-            foreach (var a in plan.Creates.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-                output.Verbose($"    - {a.Name}", opt.IsVerbose);
-        }
-
-        if (plan.Updates.Count > 0)
-        {
-            output.Verbose($"  Updates ({plan.Updates.Count})", opt.IsVerbose);
-            foreach (var a in plan.Updates.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-                output.Verbose($"    - {a.Name}", opt.IsVerbose);
-        }
-
-        if (plan.AddsToSolution.Count > 0)
-        {
-            output.Verbose($"  Add to solution ({plan.AddsToSolution.Count})", opt.IsVerbose);
-            foreach (var a in plan.AddsToSolution.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-                output.Verbose($"    - {a.Name}", opt.IsVerbose);
-        }
-
-        if (plan.Deletes.Count > 0)
-        {
-            output.Verbose($"  Deletes ({plan.Deletes.Count})", opt.IsVerbose);
-            foreach (var a in plan.Deletes.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-                output.Verbose($"    - {a.Name}", opt.IsVerbose);
-        }
-
-        if (plan.RemovesFromSolution.Count > 0)
-        {
-            output.Verbose($"  Remove from solution ({plan.RemovesFromSolution.Count})", opt.IsVerbose);
-            foreach (var a in plan.RemovesFromSolution.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-                output.Verbose($"    - {a.Name}", opt.IsVerbose);
-        }
-
-        if (plan.Skips.Count > 0)
-        {
-            output.Verbose($"  Skips ({plan.Skips.Count})", opt.IsVerbose);
-            foreach (var a in plan.Skips.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-                output.Verbose($"    - {a.Name} ({a.Reason})", opt.IsVerbose);
-        }
-    }
-
-    void WriteDryRunSummary(WebResourceSyncPlan plan, bool publishAfterSync)
-    {
-        foreach (var a in plan.Creates) output.Info($"Web resource '{a.Name}' — would create");
-        foreach (var a in plan.Updates) output.Info($"Web resource '{a.Name}' — would update");
-        foreach (var a in plan.AddsToSolution) output.Info($"Web resource '{a.Name}' — would add to solution");
-        foreach (var a in plan.Deletes) output.Info($"Web resource '{a.Name}' — would delete");
-        foreach (var a in plan.RemovesFromSolution) output.Info($"Web resource '{a.Name}' — would remove from solution");
-        foreach (var a in plan.Skips) output.Info($"Web resource '{a.Name}' — kept ({a.Reason})");
+        Action<string> line = mode == PlanReportMode.Verbose
+            ? msg => output.Verbose(msg, opt.IsVerbose)
+            : output.Info;
 
         var publishCount = publishAfterSync ? plan.PublishCount : 0;
-        if (publishCount > 0)
-            output.Info($"{publishCount} web resource(s) — would publish");
+        var counts = JoinCounts(
+            (plan.Deletes.Count, "delete(s)"), (plan.RemovesFromSolution.Count, "remove(s)"),
+            (plan.Creates.Count, "create(s)"), (plan.Updates.Count, "update(s)"),
+            (plan.AddsToSolution.Count, "add(s)"), (plan.Skips.Count, "skip(s)"),
+            (publishCount, "publish(es)"));
 
-        output.Ok($"Dry run: {plan.Deletes.Count} delete(s), {plan.RemovesFromSolution.Count} remove(s), {plan.Creates.Count} create(s), {plan.Updates.Count} update(s), {plan.AddsToSolution.Count} add(s), {plan.Skips.Count} skip(s). Run without --dry-run to apply.");
+        line($"  Summary: {counts}");
+
+        WriteSection(line, "Creates", plan.Creates);
+        WriteSection(line, "Updates", plan.Updates);
+        WriteSection(line, "Add to solution", plan.AddsToSolution);
+        WriteSection(line, "Deletes", plan.Deletes);
+        WriteSection(line, "Remove from solution", plan.RemovesFromSolution);
+        WriteSection(line, "Skips", plan.Skips, withReason: true);
+
+        if (publishCount > 0)
+            line($"  Publish ({publishCount})");
+
+        if (mode != PlanReportMode.DryRun)
+            return;
+
+        output.Ok($"Dry run: {counts}. Run without --dry-run to apply.");
+    }
+
+    static string JoinCounts(params (int Count, string Label)[] parts)
+    {
+        var nonZero = parts.Where(p => p.Count > 0).Select(p => $"{p.Count} {p.Label}").ToList();
+        return nonZero.Count > 0 ? string.Join(", ", nonZero) : "no changes";
+    }
+
+    static void WriteSection(Action<string> line, string label, List<WebResourcePlanAction> actions, bool withReason = false)
+    {
+        if (actions.Count == 0)
+            return;
+
+        line($"  {label} ({actions.Count})");
+        foreach (var a in actions.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
+            line(withReason ? $"    - {a.Name} ({a.Reason})" : $"    - {a.Name}");
     }
 }
