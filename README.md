@@ -24,9 +24,14 @@ and a fast push to DEV without the enterprise overhead.
 ---
 
 **PAC CLI gives you the primitives — Flowline gives you the workflow.** Clone, push, sync, and deploy are a defined loop
-with attribute-driven plugin registration and a direct push that skips the pack/import/register cycle.
-Where PAC CLI already handles it, Flowline wraps — it doesn't re-implement.
+with attribute-driven plugin registration, automatic web resource dependency registration, and a direct push that skips
+the pack/import/register cycle. Where PAC CLI already handles it, Flowline wraps — it doesn't re-implement.
 Unlike Power Platform Pipelines, Flowline requires neither Managed Environments nor managed solutions.
+
+`flowline push` goes beyond syncing file content:
+- **Plugin assemblies** — registered and published from `[Step]` / `[Filter]` / `[CustomApi]` attributes; no `spkl.json` or PAC registration step
+- **Web resource dependencies** — RESX files auto-linked to their parent JS by base-name; JS-to-JS dependencies declared with `// flowline:depends`; dependency changes diffed and written only when needed
+- **Orphan cleanup** — annotation-referenced external resources are exempt from deletion during `flowline deploy`
 
 > Pipelines are buried steel — permits, compressors, years to commission. A flowline goes where the pipeline can't.
 
