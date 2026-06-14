@@ -205,6 +205,8 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
     {
         var idList = ids.Distinct().Where(id => id != Guid.Empty).ToList();
         if (idList.Count == 0) return [];
+        if (idList.Count > 2000)
+            throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {idList.Count} IDs (max 2000). Solution has too many web resource orphans for name resolution.");
 
         var query = new QueryExpression("webresource")
         {

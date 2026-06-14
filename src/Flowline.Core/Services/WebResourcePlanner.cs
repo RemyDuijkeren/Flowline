@@ -29,12 +29,13 @@ public class WebResourcePlanner(IAnsiConsole output, bool isVerbose)
                 var existingByName = ToDictByName(existingDeps);
                 var desiredDeps = BuildDesiredSet(local.DependsOn, existingByName, snapshot);
 
-                if (existing.Content != local.Content || existing.DisplayName != local.DisplayName || DependenciesDiffer(desiredDeps, existingDeps))
+                var depsChangedGlobal = DependenciesDiffer(desiredDeps, existingDeps);
+                if (existing.Content != local.Content || existing.DisplayName != local.DisplayName || depsChangedGlobal)
                 {
                     existing.Entity["content"] = local.Content;
                     existing.Entity["displayname"] = local.DisplayName;
                     existing.Entity["webresourcetype"] = new OptionSetValue((int)local.Type);
-                    if (DependenciesDiffer(desiredDeps, existingDeps))
+                    if (depsChangedGlobal)
                         existing.Entity["dependencyxml"] = DependencyXmlSerializer.Serialize(desiredDeps);
                     plan.Updates.Add(new WebResourcePlanAction(name, WebResourceAction.Update, Entity: existing.Entity, Id: existing.Id));
                 }
@@ -119,7 +120,7 @@ public class WebResourcePlanner(IAnsiConsole output, bool isVerbose)
             return new HashSet<DependencyLibrary>();
 
         var result = new HashSet<DependencyLibrary>();
-        foreach (var name in dependsOn)
+        foreach (var name in dependsOn.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             if (existingByName.TryGetValue(name, out var existing))
                 result.Add(existing);
@@ -147,7 +148,8 @@ public class WebResourcePlanner(IAnsiConsole output, bool isVerbose)
     }
 
     static Dictionary<string, DependencyLibrary> ToDictByName(IReadOnlySet<DependencyLibrary> set) =>
-        set.ToDictionary(l => l.Name, l => l, StringComparer.OrdinalIgnoreCase);
+        set.GroupBy(l => l.Name, StringComparer.OrdinalIgnoreCase)
+           .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
     void ValidateWebResourceFiles(WebResourceSyncSnapshot snapshot)
     {

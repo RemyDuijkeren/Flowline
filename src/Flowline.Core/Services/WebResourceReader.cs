@@ -234,7 +234,7 @@ public class WebResourceReader(IAnsiConsole output)
     {
         var query = new QueryExpression("webresource")
         {
-            ColumnSet = new ColumnSet("name", "content", "displayname", "webresourcetype")
+            ColumnSet = new ColumnSet("name", "content", "displayname", "webresourcetype", "dependencyxml")
         };
         query.Criteria.AddCondition("name", ConditionOperator.In, names.Cast<object>().ToArray());
 

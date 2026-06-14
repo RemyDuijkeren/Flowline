@@ -49,11 +49,7 @@ public enum WebResourceAction
 
 public record DependencyLibrary(string Name, string DisplayName, Guid LibraryUniqueId);
 
-public record LocalWebResource(string Name, string RelativePath, string Path, string DisplayName, WebResourceType Type, string? Content, IReadOnlyList<string> DependsOn)
-{
-    public LocalWebResource(string Name, string RelativePath, string Path, string DisplayName, WebResourceType Type, string? Content)
-        : this(Name, RelativePath, Path, DisplayName, Type, Content, []) { }
-}
+public record LocalWebResource(string Name, string RelativePath, string Path, string DisplayName, WebResourceType Type, string? Content, IReadOnlyList<string> DependsOn);
 
 public record DataverseWebResource(
     Guid Id,
