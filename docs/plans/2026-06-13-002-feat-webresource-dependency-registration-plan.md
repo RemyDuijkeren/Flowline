@@ -48,7 +48,7 @@ origin: docs/brainstorms/2026-06-12-webresource-dependencies-requirements.md
 
 ## Key Technical Decisions
 
-- **`dependencyxml` format verified empirically before implementation**: The field is marked "for internal use only" in the Dataverse SDK; the brainstorm flags its format as community knowledge requiring empirical verification. U1 exports a solution with manually-configured dependencies and reads the field via SDK query. U2, U3, and U4 are blocked until the format is confirmed.
+- **`dependencyxml` format confirmed (U1 complete)**: Format verified empirically — see `docs/solutions/documentation-gaps/webresource-dependencyxml-field-format-2026-06-14.md`. Actual: `<Dependency componentType="WebResource">` with `<Library name="..." displayName="..." languagecode="" description="" libraryUniqueId="{guid}"/>` elements. Differs from brainstorm expectation (`componentType="31"`, `<WebResourceDependency>`). Writable via OData PATCH; invalid XML returns HTTP 400. U2, U3, U4 unblocked.
 
 - **Annotation parsing in `WebResourceReader` in two phases**: Raw `// flowline:depends` lines are collected during local file load, reading file text from disk (not from `Content`, which is base64-encoded). LCID expansion (R6) and RESX matching (R1–R3) run in a post-`WhenAll` enrichment step that has access to both local and Dataverse resources. No user-visible scan phase — all dependency data is computed inside `LoadSnapshotAsync` before the snapshot is returned.
 
@@ -118,7 +118,7 @@ flowchart TB
 
 ## Risks & Dependencies
 
-- **`dependencyxml` format is undocumented**: U1 must confirm it before U2/U3/U4 can be finalized. If the format deviates significantly from the brainstorm's expected structure, the serializer and planner designs may need adjustment.
+- **`dependencyxml` format confirmed**: U1 complete. Format deviates from brainstorm expectation — U2 design updated to use `DependencyLibrary` record with `LibraryUniqueId`. See `docs/solutions/documentation-gaps/webresource-dependencyxml-field-format-2026-06-14.md`.
 - **LCID pattern assumption**: The RESX detector assumes a four-digit locale suffix (`.\d{4}.resx`). Atypical LCID variants would not be matched; document in the solution doc produced by U1.
 - **Wiki update required**: The `// flowline:depends` annotation is new user-facing syntax; `WebResources-Project.md` in the wiki must be updated alongside this work (see Documentation Notes).
 
@@ -152,30 +152,36 @@ flowchart TB
 
 ### U2. Extend models and add `DependencyXmlSerializer`
 
-**Goal:** Add `DependsOn` to `LocalWebResource`, `DependencyXml` to `DataverseWebResource`, and a serializer that translates between the confirmed XML format and a set of logical names.
+**Goal:** Add `DependsOn` to `LocalWebResource`, `DependencyXml` to `DataverseWebResource`, add the `DependencyLibrary` record, and a serializer that translates between the confirmed XML format and a set of library records.
 
 **Requirements:** R9, R10 (foundational).
 
-**Dependencies:** U1 (confirmed XML format).
+**Dependencies:** U1 (confirmed XML format — see `docs/solutions/documentation-gaps/webresource-dependencyxml-field-format-2026-06-14.md`).
 
 **Files:**
 - `src/Flowline.Core/Models/WebResourceModels.cs`
 - `src/Flowline.Core/Services/DependencyXmlSerializer.cs` (new)
 - `tests/Flowline.Core.Tests/DependencyXmlSerializerTests.cs` (new)
 
-**Approach:** `LocalWebResource` record gains `IReadOnlyList<string> DependsOn` (empty list = no dependencies). `DataverseWebResource` record gains `string? DependencyXml`. `DependencyXmlSerializer` exposes deserialize (`string? → IReadOnlySet<string>`) and serialize (`IReadOnlySet<string> → string?`) — null returned for empty set. Both methods implement the exact format from U1.
+**Approach:** `LocalWebResource` record gains `IReadOnlyList<string> DependsOn` (empty list = no dependencies). `DataverseWebResource` record gains `string? DependencyXml` (raw field value). Add `DependencyLibrary(string Name, string DisplayName, Guid LibraryUniqueId)` record to `WebResourceModels.cs`.
+
+`DependencyXmlSerializer` exposes:
+- `Deserialize(string? xml) → IReadOnlySet<DependencyLibrary>` — parses `<Library>` elements, extracts all three values; returns empty set for null/empty input.
+- `Serialize(IReadOnlySet<DependencyLibrary> libs) → string?` — produces `<Dependencies><Dependency componentType="WebResource"><Library .../></Dependency></Dependencies>`; returns null for empty set.
+
+Confirmed format (from U1): single `<Dependency componentType="WebResource">` with one `<Library name="..." displayName="..." languagecode="" description="" libraryUniqueId="{...}"/>` per dependency.
 
 **Patterns to follow:** Existing immutable record shapes in `WebResourceModels.cs`.
 
 **Test scenarios:**
 - Deserialize null → empty set.
 - Deserialize empty string → empty set.
-- Deserialize single-dependency XML → set with that one name.
-- Deserialize multi-dependency XML → set with all names.
+- Deserialize single-dependency XML → set with one `DependencyLibrary` (name, displayName, libraryUniqueId all populated).
+- Deserialize multi-dependency XML → set with all libraries.
 - Serialize empty set → null.
-- Serialize one logical name → valid XML matching confirmed format.
-- Serialize multiple logical names → valid XML, all names present.
-- Round-trip: `serialize(deserialize(x))` produces XML equivalent to input.
+- Serialize one `DependencyLibrary` → valid XML with correct element structure and all five attributes.
+- Serialize multiple libraries → all `<Library>` elements present under one `<Dependency>`.
+- Round-trip: `Serialize(Deserialize(x))` produces XML equivalent to input (same names, same GUIDs).
 
 **Verification:** `DependencyXmlSerializerTests` pass. `WebResourceModels.cs` compiles with updated records.
 
@@ -232,9 +238,11 @@ ColumnSet: add `"dependencyxml"` to the query in `GetWebResourcesForSolutionAsyn
 - `src/Flowline.Core/Services/WebResourcePlanner.cs`
 - `tests/Flowline.Core.Tests/WebResourceServiceTests.cs`
 
-**Approach:** In the "Exist in both" branch, after the content/displayname check, also compare the desired dependency set (serialize `local.DependsOn` → set) against the current set (deserialize `remote.DependencyXml`). If they differ, set `entity["dependencyxml"]` on the update entity to the serialized desired set. Extend the skip condition: a resource is skipped only when content, displayname, and dependencies are all unchanged.
+**Approach:** Deserialize `remote.DependencyXml` → existing `IReadOnlySet<DependencyLibrary>` (keyed by name for lookup). Build the desired `IReadOnlySet<DependencyLibrary>` from `local.DependsOn`: for each desired name, if it exists in the current set reuse its `DependencyLibrary` (preserving `LibraryUniqueId`); otherwise create a new `DependencyLibrary` with `Guid.NewGuid()` and `DisplayName` resolved from the snapshot (local or Dataverse resource's `displayname`, falling back to the last path segment).
 
-In the Creates branch, when `local.DependsOn` is non-empty, also set `entity["dependencyxml"]` to the serialized desired set on the create entity. `ToEntity()` gains an optional serialized dependency XML parameter, or the Planner sets the field on the returned entity immediately after calling `ToEntity()`.
+In the "Exist in both" branch, if the desired set differs from the current set (by name comparison), set `entity["dependencyxml"]` to `Serialize(desiredSet)` on the update entity. Extend the skip condition: a resource is skipped only when content, displayname, and dependencies are all unchanged.
+
+In the Creates branch, when `local.DependsOn` is non-empty, also set `entity["dependencyxml"]` to `Serialize(desiredSet)` on the create entity. The Planner sets this field on the entity after `ToEntity()` returns.
 
 **Patterns to follow:** Existing `remote.Entity["content"] = ...` mutation pattern; `DependencyXmlSerializer` for both directions.
 
@@ -290,4 +298,4 @@ In the Creates branch, when `local.DependsOn` is non-empty, also set `entity["de
 
 ## Open Questions
 
-- **`dependencyxml` XML format** — unconfirmed; resolved in U1. If the format differs significantly from the brainstorm's expected structure, the `DependencyXmlSerializer` design (U2) and the ColumnSet addition (U3) may need adjustment before proceeding.
+- **`dependencyxml` XML format** — resolved by U1. Format confirmed in `docs/solutions/documentation-gaps/webresource-dependencyxml-field-format-2026-06-14.md`. The actual format differs from the brainstorm's expected structure (`<Library>` not `<WebResourceDependency>`, `componentType="WebResource"` not `"31"`, `libraryUniqueId` GUID required). U2 design updated accordingly.

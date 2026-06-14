@@ -98,17 +98,29 @@ cleanup if they appear in any `// flowline:depends` annotation across all local 
 ## SDK Notes
 
 Dependencies stored in `dependencyxml` field on `webresource` entity (Memo, max 5000 chars, "for
-internal use only"). Format based on community knowledge — **verify empirically before implementing**
-by exporting a solution with manually configured dependencies.
+internal use only"). **Format confirmed empirically** — see
+`docs/solutions/documentation-gaps/webresource-dependencyxml-field-format-2026-06-14.md`.
 
-Expected format:
+Confirmed format (raw field value):
 ```xml
 <Dependencies>
-  <Dependency componentType="31">
-    <WebResourceDependency name="av_mysolution/strings/Labels.resx" />
+  <Dependency componentType="WebResource">
+    <Library name="av_Cr07982/example1.js"
+             displayName="example1.js"
+             languagecode=""
+             description=""
+             libraryUniqueId="{0e58647c-5eb8-e4cc-b94d-19e6acb09469}"/>
   </Dependency>
 </Dependencies>
 ```
+
+Key findings:
+- `componentType="WebResource"` (not `"31"`)
+- `<Library>` element (not `<WebResourceDependency>`)
+- Five required attributes: `name`, `displayName`, `languagecode` (empty), `description` (empty), `libraryUniqueId` (GUID)
+- `libraryUniqueId` is **not** the `webresourceid` — generate `Guid.NewGuid()` for new deps, reuse existing for unchanged deps
+- Null/absent = no dependencies; setting to null clears all dependencies
+- Writable via OData PATCH; Dataverse validates XML structure (invalid XML → HTTP 400)
 
 Read-modify-write pattern: always read existing `dependencyxml` before writing to avoid overwriting
 dependencies set by other tools.
