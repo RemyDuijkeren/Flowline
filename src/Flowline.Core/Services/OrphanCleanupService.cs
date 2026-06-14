@@ -34,7 +34,8 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
         string solutionName,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> sNew,
         RunMode mode,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? webresourceRoot = null)
     {
         var sOld = await output.Status()
             .StartAsync($"Querying orphan components in [bold]{solutionName}[/]...",
@@ -65,6 +66,9 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
 
         var autoOrphans    = orphans.Where(c => ComponentClassifier.Classify(c.ComponentType) == ComponentAction.AutoDelete).ToList();
         var unknownOrphans = orphans.Where(c => ComponentClassifier.Classify(c.ComponentType) == ComponentAction.Manual).ToList();
+
+        // Exempt webresource orphans referenced in // flowline:depends annotations.
+        autoOrphans = await ExemptAnnotationReferencedWebResourcesAsync(service, autoOrphans, webresourceRoot, ct).ConfigureAwait(false);
 
         // CustomApi family has an env-specific componenttype — detect via entity-side queries instead.
         Dictionary<Guid, string> customApiEntities = [];
@@ -162,6 +166,56 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
         output.Skip("Post-import: retrying deferred orphan cleanup...");
         var failed = await ExecuteInOrderAsync(service, solutionName, reEntries, isPostImport: true, ct).ConfigureAwait(false);
         return failed.Count;
+    }
+
+    async Task<List<(Guid ObjectId, int ComponentType)>> ExemptAnnotationReferencedWebResourcesAsync(
+        IOrganizationServiceAsync2 service,
+        List<(Guid ObjectId, int ComponentType)> autoOrphans,
+        string? webresourceRoot,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(webresourceRoot)) return autoOrphans;
+
+        var webResourceOrphans = autoOrphans.Where(c => c.ComponentType == 61).ToList();
+        if (webResourceOrphans.Count == 0) return autoOrphans;
+
+        var annotationRefs = WebResourceAnnotationParser.CollectAllReferences(webresourceRoot);
+        if (annotationRefs.Count == 0) return autoOrphans;
+
+        var orphanNames = await GetWebResourceNamesAsync(service, webResourceOrphans.Select(c => c.ObjectId), ct).ConfigureAwait(false);
+
+        var exemptIds = webResourceOrphans
+            .Where(o => orphanNames.TryGetValue(o.ObjectId, out var name) && annotationRefs.Contains(name))
+            .Select(o => o.ObjectId)
+            .ToHashSet();
+
+        if (exemptIds.Count == 0) return autoOrphans;
+
+        foreach (var (id, name) in orphanNames)
+            if (exemptIds.Contains(id))
+                output.Skip($"'{name}' preserved — referenced in // flowline:depends annotation.");
+
+        return autoOrphans.Where(o => !exemptIds.Contains(o.ObjectId)).ToList();
+    }
+
+    async Task<Dictionary<Guid, string>> GetWebResourceNamesAsync(
+        IOrganizationServiceAsync2 service,
+        IEnumerable<Guid> ids,
+        CancellationToken ct)
+    {
+        var idList = ids.Distinct().Where(id => id != Guid.Empty).ToList();
+        if (idList.Count == 0) return [];
+
+        var query = new QueryExpression("webresource")
+        {
+            ColumnSet = new ColumnSet("name"),
+            Criteria  = { Conditions = { new ConditionExpression("webresourceid", ConditionOperator.In, idList.Select(id => (object)id).ToArray()) } }
+        };
+
+        var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
+        return entities
+            .Where(e => !string.IsNullOrEmpty(e.GetAttributeValue<string>("name")))
+            .ToDictionary(e => e.Id, e => e.GetAttributeValue<string>("name")!);
     }
 
     async Task<List<(Guid ObjectId, int ComponentType)>> QuerySolutionComponentsAsync(
