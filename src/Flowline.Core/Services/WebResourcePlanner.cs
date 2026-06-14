@@ -25,36 +25,59 @@ public class WebResourcePlanner(IAnsiConsole output, bool isVerbose)
 
             if (snapshot.GlobalOrphans.TryGetValue(name, out var existing))
             {
-                if (existing.Content != local.Content || existing.DisplayName != local.DisplayName)
+                var existingDeps = DependencyXmlSerializer.Deserialize(existing.DependencyXml);
+                var existingByName = ToDictByName(existingDeps);
+                var desiredDeps = BuildDesiredSet(local.DependsOn, existingByName, snapshot);
+
+                if (existing.Content != local.Content || existing.DisplayName != local.DisplayName || DependenciesDiffer(desiredDeps, existingDeps))
                 {
                     existing.Entity["content"] = local.Content;
                     existing.Entity["displayname"] = local.DisplayName;
                     existing.Entity["webresourcetype"] = new OptionSetValue((int)local.Type);
+                    if (DependenciesDiffer(desiredDeps, existingDeps))
+                        existing.Entity["dependencyxml"] = DependencyXmlSerializer.Serialize(desiredDeps);
                     plan.Updates.Add(new WebResourcePlanAction(name, WebResourceAction.Update, Entity: existing.Entity, Id: existing.Id));
                 }
                 plan.AddsToSolution.Add(new WebResourcePlanAction(name, WebResourceAction.AddToSolution, Id: existing.Id, SolutionName: targetSolutionName));
                 continue;
             }
 
+            var entity = ToEntity(local);
+            if (local.DependsOn.Count > 0)
+            {
+                var desiredDeps = BuildDesiredSet(local.DependsOn, [], snapshot);
+                entity["dependencyxml"] = DependencyXmlSerializer.Serialize(desiredDeps);
+            }
+
             plan.Creates.Add(new WebResourcePlanAction(
                 name,
                 WebResourceAction.Create,
-                Entity: ToEntity(local),
+                Entity: entity,
                 SolutionName: targetSolutionName));
         }
 
         // Exist in both, update them if needed
         foreach (var name in localNames.Intersect(dataverseNames, StringComparer.OrdinalIgnoreCase))
         {
-            // Compare content and display name
             var local = snapshot.LocalResources[name];
             var remote = snapshot.DataverseResources[name];
-            if (remote.Content == local.Content && remote.DisplayName == local.DisplayName)
+
+            var currentDeps = DependencyXmlSerializer.Deserialize(remote.DependencyXml);
+            var currentByName = ToDictByName(currentDeps);
+            var desiredDeps = BuildDesiredSet(local.DependsOn, currentByName, snapshot);
+            var depsChanged = DependenciesDiffer(desiredDeps, currentDeps);
+
+            if (remote.Content == local.Content && remote.DisplayName == local.DisplayName && !depsChanged)
                 continue;
 
             remote.Entity["content"] = local.Content;
             remote.Entity["displayname"] = local.DisplayName;
             remote.Entity["webresourcetype"] = new OptionSetValue((int)local.Type);
+
+            if (depsChanged)
+                remote.Entity["dependencyxml"] = DependencyXmlSerializer.Serialize(desiredDeps);
+            else
+                remote.Entity.Attributes.Remove("dependencyxml");
 
             plan.Updates.Add(new WebResourcePlanAction(
                 name,
@@ -86,6 +109,45 @@ public class WebResourcePlanner(IAnsiConsole output, bool isVerbose)
 
         return plan;
     }
+
+    IReadOnlySet<DependencyLibrary> BuildDesiredSet(
+        IReadOnlyList<string> dependsOn,
+        Dictionary<string, DependencyLibrary> existingByName,
+        WebResourceSyncSnapshot snapshot)
+    {
+        if (dependsOn.Count == 0)
+            return new HashSet<DependencyLibrary>();
+
+        var result = new HashSet<DependencyLibrary>();
+        foreach (var name in dependsOn)
+        {
+            if (existingByName.TryGetValue(name, out var existing))
+                result.Add(existing);
+            else
+                result.Add(new DependencyLibrary(name, ResolveDisplayName(name, snapshot), Guid.NewGuid()));
+        }
+        return result;
+    }
+
+    static string ResolveDisplayName(string logicalName, WebResourceSyncSnapshot snapshot)
+    {
+        if (snapshot.LocalResources.TryGetValue(logicalName, out var local))
+            return local.DisplayName;
+        if (snapshot.DataverseResources.TryGetValue(logicalName, out var remote) && remote.DisplayName != null)
+            return remote.DisplayName;
+        var lastSlash = logicalName.LastIndexOf('/');
+        return lastSlash >= 0 ? logicalName[(lastSlash + 1)..] : logicalName;
+    }
+
+    static bool DependenciesDiffer(IReadOnlySet<DependencyLibrary> desired, IReadOnlySet<DependencyLibrary> current)
+    {
+        if (desired.Count != current.Count) return true;
+        var currentNames = current.Select(l => l.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return desired.Any(l => !currentNames.Contains(l.Name));
+    }
+
+    static Dictionary<string, DependencyLibrary> ToDictByName(IReadOnlySet<DependencyLibrary> set) =>
+        set.ToDictionary(l => l.Name, l => l, StringComparer.OrdinalIgnoreCase);
 
     void ValidateWebResourceFiles(WebResourceSyncSnapshot snapshot)
     {

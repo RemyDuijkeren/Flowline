@@ -403,6 +403,125 @@ public class WebResourceServiceTests : IDisposable
             _service.DownloadWebResourcesAsync(_serviceMock, _webresourceRoot, "MySolution"));
     }
 
+    // --- Dependency planner (U4) ---
+
+    [Fact]
+    public async Task SyncSolutionAsync_ContentChangedDepsUnchanged_UpdateWithoutDependencyXml()
+    {
+        var id = Guid.NewGuid();
+        var depXml = """<Dependencies><Dependency componentType="WebResource"><Library name="av_Sol/lib.js" displayName="lib.js" languagecode="" description="" libraryUniqueId="{0e58647c-5eb8-e4cc-b94d-19e6acb09469}"/></Dependency></Dependencies>""";
+        // Remote has the annotation + old body; local has annotation + new body — content differs, deps same
+        SetupWebResources(RemoteWebResourceWithDepXml(id, "my_MySolution/form.js",
+            "// flowline:depends av_Sol/lib.js\nold content", depXml));
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+            "// flowline:depends av_Sol/lib.js\nnew content");
+        SetupOwnership(id, ("MySolution", false));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
+
+        await _serviceMock.Received(1).UpdateAsync(
+            Arg.Is<Entity>(e => e.Id == id && !e.Attributes.ContainsKey("dependencyxml")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_DepsChangedContentUnchanged_UpdateWithDependencyXml()
+    {
+        var id = Guid.NewGuid();
+        // Remote: same content, no deps. Local: same content + annotation → new dep.
+        var fileContent = "// flowline:depends av_Sol/lib.js\ncode();";
+        SetupWebResources(RemoteWebResourceWithDepXml(id, "my_MySolution/form.js", fileContent, null));
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"), fileContent);
+        SetupOwnership(id, ("MySolution", false));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
+
+        await _serviceMock.Received(1).UpdateAsync(
+            Arg.Is<Entity>(e => e.Id == id && e.Attributes.ContainsKey("dependencyxml")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_DepsAndContentUnchanged_NoUpdate()
+    {
+        var id = Guid.NewGuid();
+        var depXml = """<Dependencies><Dependency componentType="WebResource"><Library name="av_Sol/lib.js" displayName="lib.js" languagecode="" description="" libraryUniqueId="{0e58647c-5eb8-e4cc-b94d-19e6acb09469}"/></Dependency></Dependencies>""";
+        var fileContent = "// flowline:depends av_Sol/lib.js\ncode();";
+        // Remote: same content + same dep. No change.
+        SetupWebResources(RemoteWebResourceWithDepXml(id, "my_MySolution/form.js", fileContent, depXml));
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"), fileContent);
+        SetupOwnership(id, ("MySolution", false));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
+
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_DepsRemovedRemoteHadDeps_UpdateWithNullDependencyXml()
+    {
+        var id = Guid.NewGuid();
+        var depXml = """<Dependencies><Dependency componentType="WebResource"><Library name="av_Sol/lib.js" displayName="lib.js" languagecode="" description="" libraryUniqueId="{0e58647c-5eb8-e4cc-b94d-19e6acb09469}"/></Dependency></Dependencies>""";
+        SetupWebResources(RemoteWebResourceWithDepXml(id, "my_MySolution/form.js", "code();", depXml));
+        // Local has no annotations → no deps
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"), "code();");
+        SetupOwnership(id, ("MySolution", false));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
+
+        await _serviceMock.Received(1).UpdateAsync(
+            Arg.Is<Entity>(e => e.Id == id && e.Attributes.ContainsKey("dependencyxml") && e["dependencyxml"] == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_NewResourceWithDeps_CreateHasDependencyXml()
+    {
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+            "// flowline:depends av_Sol/lib.js\ncode();");
+        var createdId = Guid.NewGuid();
+        var createResponse = new CreateResponse();
+        createResponse.Results["id"] = createdId;
+        _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(createResponse));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is<CreateRequest>(r => r.Target.Attributes.ContainsKey("dependencyxml")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_NewResourceNoDeps_CreateWithoutDependencyXml()
+    {
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"), "code();");
+        var createdId = Guid.NewGuid();
+        var createResponse = new CreateResponse();
+        createResponse.Results["id"] = createdId;
+        _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(createResponse));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is<CreateRequest>(r => !r.Target.Attributes.ContainsKey("dependencyxml")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_NoDepsNullRemoteDeps_NoSpuriousUpdate()
+    {
+        var id = Guid.NewGuid();
+        SetupWebResources(RemoteWebResourceWithDepXml(id, "my_MySolution/form.js", "code();", null));
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"), "code();");
+        SetupOwnership(id, ("MySolution", false));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
+
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
     // --- Dependency annotations ---
 
     [Fact]
@@ -431,20 +550,20 @@ public class WebResourceServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SyncSolutionAsync_RemoteResourceHasDependencyXml_SnapshotCaptures()
+    public async Task SyncSolutionAsync_RemoteResourceHasDependencyXml_LocalNoAnnotation_ClearsDeps()
     {
         var depXml = """<Dependencies><Dependency componentType="WebResource"><Library name="av_Sol/lib.js" displayName="lib.js" languagecode="" description="" libraryUniqueId="{0e58647c-5eb8-e4cc-b94d-19e6acb09469}"/></Dependency></Dependencies>""";
         var id = Guid.NewGuid();
-        var entity = RemoteWebResourceWithDepXml(id, "my_MySolution/form.js", "code();", depXml);
-        SetupWebResources(entity);
+        SetupWebResources(RemoteWebResourceWithDepXml(id, "my_MySolution/form.js", "code();", depXml));
         File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"), "code();");
         SetupOwnership(id, ("MySolution", false));
 
-        // No changes expected (same content, we check that dependencyxml is considered)
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
 
-        // Snapshot loaded — no exception; existing dep stays (no local annotation → DependsOn empty → no change)
-        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        // Remote had dep, local has no annotation → planner clears dependencyxml
+        await _serviceMock.Received(1).UpdateAsync(
+            Arg.Is<Entity>(e => e.Id == id && e.Attributes.ContainsKey("dependencyxml") && e["dependencyxml"] == null),
+            Arg.Any<CancellationToken>());
     }
 
     // --- Verbatim mode ---
