@@ -74,7 +74,7 @@ public class OrphanCleanupServiceTests : IDisposable
         File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
             "// flowline:depends av_ext/shared.js\nconsole.log('hi');");
 
-        await _service.RunPreImportAsync(_serviceMock, "MySolution", [(Guid.NewGuid(), 0)], RunMode.Normal, default, _webresourceRoot);
+        await _service.RunPreImportAsync(_serviceMock, "MySolution", [(Guid.NewGuid(), 0)], RunMode.Normal, _webresourceRoot, default);
 
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
@@ -88,7 +88,7 @@ public class OrphanCleanupServiceTests : IDisposable
         File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
             "// flowline:depends av_ext/shared.js\ncode();");
 
-        await _service.RunPreImportAsync(_serviceMock, "MySolution", [(Guid.NewGuid(), 0)], RunMode.Normal, default, _webresourceRoot);
+        await _service.RunPreImportAsync(_serviceMock, "MySolution", [(Guid.NewGuid(), 0)], RunMode.Normal, _webresourceRoot, default);
 
         Assert.Contains("av_ext/shared.js", _console.Output);
         Assert.Contains("preserved", _console.Output);
@@ -103,7 +103,7 @@ public class OrphanCleanupServiceTests : IDisposable
         // No annotations referencing unref.js
         File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"), "// no deps\ncode();");
 
-        await _service.RunPreImportAsync(_serviceMock, "MySolution", [(Guid.NewGuid(), 0)], RunMode.Normal, default, _webresourceRoot);
+        await _service.RunPreImportAsync(_serviceMock, "MySolution", [(Guid.NewGuid(), 0)], RunMode.Normal, _webresourceRoot, default);
 
         await _serviceMock.Received(1).DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
@@ -116,7 +116,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupWebResourceNames((orphanId, "av_ext/lib.js"));
         File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"), "code(); // no annotations");
 
-        await _service.RunPreImportAsync(_serviceMock, "MySolution", [(Guid.NewGuid(), 0)], RunMode.Normal, default, _webresourceRoot);
+        await _service.RunPreImportAsync(_serviceMock, "MySolution", [(Guid.NewGuid(), 0)], RunMode.Normal, _webresourceRoot, default);
 
         await _serviceMock.Received(1).DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
@@ -132,7 +132,7 @@ public class OrphanCleanupServiceTests : IDisposable
         File.WriteAllText(Path.Combine(_webresourceRoot, "b.js"),
             "// flowline:depends av_ext/shared.js\ncode();");
 
-        await _service.RunPreImportAsync(_serviceMock, "MySolution", [(Guid.NewGuid(), 0)], RunMode.Normal, default, _webresourceRoot);
+        await _service.RunPreImportAsync(_serviceMock, "MySolution", [(Guid.NewGuid(), 0)], RunMode.Normal, _webresourceRoot, default);
 
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
@@ -146,7 +146,7 @@ public class OrphanCleanupServiceTests : IDisposable
         // and the mock would return an empty collection, potentially still deleting.
         // The point is: no webresourceRoot → no name query, normal orphan flow.
 
-        await _service.RunPreImportAsync(_serviceMock, "MySolution", [(Guid.NewGuid(), 0)], RunMode.Normal, default, webresourceRoot: null);
+        await _service.RunPreImportAsync(_serviceMock, "MySolution", [(Guid.NewGuid(), 0)], RunMode.Normal, webresourceRoot: null, ct: default);
 
         // With no name query setup, it falls through to delete the orphan
         await _serviceMock.Received(1).DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());

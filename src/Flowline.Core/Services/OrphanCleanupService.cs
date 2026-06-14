@@ -29,13 +29,12 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
         [29] = "workflow",
     };
 
-    public async Task<IReadOnlyList<OrphanEntry>> RunPreImportAsync(
-        IOrganizationServiceAsync2 service,
+    public async Task<IReadOnlyList<OrphanEntry>> RunPreImportAsync(IOrganizationServiceAsync2 service,
         string solutionName,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> sNew,
         RunMode mode,
-        CancellationToken ct,
-        string? webresourceRoot)
+        string? webresourceRoot,
+        CancellationToken ct)
     {
         var sOld = await output.Status()
             .StartAsync($"Querying orphan components in [bold]{solutionName}[/]...",

@@ -56,7 +56,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var sNew = ParseSolutionXml(slnFolder);
         var service  = await ConnectToDataverseAsync(dataverseConnector, targetUrl, cancellationToken);
         var webresourceRoot = Path.Combine(slnFolder, "WebResources");
-        var deferred = await orphanCleanupService.RunPreImportAsync(service, sln.Name, sNew, runMode, cancellationToken, webresourceRoot);
+        var deferred = await orphanCleanupService.RunPreImportAsync(service, sln.Name, sNew, runMode, webresourceRoot, cancellationToken);
 
         var packagePath = await PackSolutionAsync(sln, slnFolder, settings, cancellationToken);
         await ImportSolutionAsync(packagePath, targetEnv, sln.Name, cancellationToken);
