@@ -47,7 +47,13 @@ public enum WebResourceAction
     Skip
 }
 
-public record LocalWebResource(string Name, string RelativePath, string Path, string DisplayName, WebResourceType Type, string? Content);
+public record DependencyLibrary(string Name, string DisplayName, Guid LibraryUniqueId);
+
+public record LocalWebResource(string Name, string RelativePath, string Path, string DisplayName, WebResourceType Type, string? Content, IReadOnlyList<string> DependsOn)
+{
+    public LocalWebResource(string Name, string RelativePath, string Path, string DisplayName, WebResourceType Type, string? Content)
+        : this(Name, RelativePath, Path, DisplayName, Type, Content, []) { }
+}
 
 public record DataverseWebResource(
     Guid Id,
@@ -56,7 +62,8 @@ public record DataverseWebResource(
     WebResourceType Type,
     string? Content,
     Entity Entity,
-    WebResourceOwnership Ownership);
+    WebResourceOwnership Ownership,
+    string? DependencyXml = null);
 
 public record WebResourceOwnership(int NonDefaultUnmanagedSolutionCount, bool IsInCurrentUnmanagedSolution);
 
