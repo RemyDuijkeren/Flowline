@@ -37,6 +37,7 @@ public class SolutionChangeSummary
             .WithWorkingDirectory(workingDirectory)
             .WithArguments(args => args
                 .Add("-c").Add("core.quotepath=false")
+                .Add("-c").Add("core.safecrlf=false")
                 .Add("status").Add("--porcelain").Add("-uall")
                 .Add("--").Add(srcRelPath))
             .WithToolExecutionLog(verbose)
@@ -57,6 +58,7 @@ public class SolutionChangeSummary
             .WithWorkingDirectory(workingDirectory)
             .WithArguments(args => args
                 .Add("-c").Add("core.quotepath=false")
+                .Add("-c").Add("core.safecrlf=false")
                 .Add("diff").Add("HEAD").Add("--numstat")
                 .Add("--").Add(srcRelPath))
             .WithToolExecutionLog(verbose)
