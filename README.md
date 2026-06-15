@@ -98,4 +98,4 @@ For full setup, auth, and project workflow: **[Getting Started](https://github.c
 
 See the [Wiki for the full documentation.](https://github.com/RemyDuijkeren/Flowline/wiki)
 
-Coming from another tool? [Migration from spkl](https://github.com/RemyDuijkeren/Flowline/wiki/08-Migration-from-spkl) · [Migration from Daxif](https://github.com/RemyDuijkeren/Flowline/wiki/09-Migration-from-Daxif) · [Migration from PACX](https://github.com/RemyDuijkeren/Flowline/wiki/10-Migration-from-PACX)
+Coming from another tool? [Migration from spkl](https://github.com/RemyDuijkeren/Flowline/wiki/10-Migration-from-spkl) · [Migration from Daxif](https://github.com/RemyDuijkeren/Flowline/wiki/11-Migration-from-Daxif) · [Migration from PACX](https://github.com/RemyDuijkeren/Flowline/wiki/12-Migration-from-PACX)
