@@ -324,6 +324,23 @@ public class SolutionChangeSummaryComputeTests : IDisposable
     }
 
     [Fact]
+    public async Task ComputeAsync_WithDeletedPluginStep_ResolvesNameFromGitHistory()
+    {
+        var guid = Guid.NewGuid().ToString("D");
+        var xml = $"""<SdkMessageProcessingStep Name="MyPlugin: Create of account" SdkMessageId="{guid}" />""";
+        var relPath = $"SdkMessageProcessingSteps/{{{guid}}}.xml";
+        CommitFile(relPath, xml);
+        DeleteFile(relPath);
+
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root);
+
+        result.TotalFiles.Should().Be(1);
+        result.Groups.Should().ContainSingle(g => g.Label == "Plugin Steps");
+        result.Groups[0].Items.Should().ContainSingle(i => i.ComponentName == "MyPlugin: Create of account");
+        result.Groups[0].Items[0].Status.Should().Be(SolutionChangeSummary.ChangeStatus.Deleted);
+    }
+
+    [Fact]
     public async Task ComputeAsync_MultipleEntities_GroupsCorrectly()
     {
         WriteFile("Entities/Account/Entity.xml", "<entity/>");

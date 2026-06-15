@@ -375,13 +375,22 @@ public class SolutionChangeSummary
         else
         {
             var gitPath = srcRelPath.TrimEnd('/') + "/" + relPath;
-            var result = await Cli.Wrap("git")
+            var logResult = await Cli.Wrap("git")
                 .WithWorkingDirectory(workingDirectory)
-                .WithArguments(args => args.Add("show").Add($"HEAD:{gitPath}"))
+                .WithArguments(args => args.Add("log").Add("-n1").Add("--format=%H").Add("--").Add(gitPath))
                 .WithValidation(CommandResultValidation.None)
                 .ExecuteBufferedAsync(ct);
-            if (result.ExitCode == 0)
-                xml = result.StandardOutput;
+            var commitHash = logResult.StandardOutput.Trim();
+            if (!string.IsNullOrEmpty(commitHash))
+            {
+                var showResult = await Cli.Wrap("git")
+                    .WithWorkingDirectory(workingDirectory)
+                    .WithArguments(args => args.Add("show").Add($"{commitHash}:{gitPath}"))
+                    .WithValidation(CommandResultValidation.None)
+                    .ExecuteBufferedAsync(ct);
+                if (showResult.ExitCode == 0)
+                    xml = showResult.StandardOutput;
+            }
         }
 
         var fallback = parsed.FallbackName ?? Path.GetFileNameWithoutExtension(relPath);
