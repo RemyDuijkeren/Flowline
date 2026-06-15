@@ -402,7 +402,8 @@ public class SolutionChangeSummary
         if (xml == null || xmlRead == XmlRead.None) return null;
         try
         {
-            var doc = XDocument.Parse(xml);
+            // git show preserves the UTF-8 BOM; XDocument.Parse rejects a leading BOM
+            var doc = XDocument.Parse(xml.TrimStart('﻿'));
             var title = xmlRead switch
             {
                 XmlRead.StepName or XmlRead.WorkflowName => (string?)doc.Root?.Attribute("Name"),

@@ -327,7 +327,11 @@ public class SolutionChangeSummaryComputeTests : IDisposable
     public async Task ComputeAsync_WithDeletedPluginStep_ResolvesNameFromGitHistory()
     {
         var guid = Guid.NewGuid().ToString("D");
-        var xml = $"""<SdkMessageProcessingStep Name="MyPlugin: Create of account" SdkMessageId="{guid}" />""";
+        // Leading BOM + xml declaration mirrors real Dataverse-exported XML; git show preserves the BOM
+        var xml = $"""
+            ﻿<?xml version="1.0" encoding="utf-8"?>
+            <SdkMessageProcessingStep Name="MyPlugin: Create of account" SdkMessageId="{guid}" />
+            """;
         var relPath = $"SdkMessageProcessingSteps/{{{guid}}}.xml";
         CommitFile(relPath, xml);
         DeleteFile(relPath);
