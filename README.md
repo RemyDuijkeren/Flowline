@@ -36,6 +36,8 @@ Familiar with [spkl](https://github.com/scottdurow/SparkleXrm/wiki/spkl)? Flowli
 - **Web resource dependencies auto-wired** — RESX files linked to parent JS by base name; `// flowline:depends` for JS-to-JS; registered on every push, no Maker Portal visit needed
 - **Full Git-based ALM** — `clone → push → sync → deploy` in one tool, unmanaged or managed
 
+![flowline sync summary](docs/images/sync-summary.png)
+
 > Pipelines are buried steel — permits, compressors, years to commission. A flowline goes where the pipeline can't.
 
 ---
