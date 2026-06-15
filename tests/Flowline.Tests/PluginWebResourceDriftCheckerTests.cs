@@ -3,14 +3,14 @@ using Flowline.Utils;
 
 namespace Flowline.Tests;
 
-public class DriftCheckerTests : IDisposable
+public class PluginWebResourceDriftCheckerTests : IDisposable
 {
     readonly string _root;
     readonly string _pkg;
 
-    public DriftCheckerTests()
+    public PluginWebResourceDriftCheckerTests()
     {
-        _root = Path.Combine(Path.GetTempPath(), $"DriftCheckerTests_{Guid.NewGuid():N}");
+        _root = Path.Combine(Path.GetTempPath(), $"PluginWebResourceDriftCheckerTests_{Guid.NewGuid():N}");
         _pkg = Path.Combine(_root, "Package");
         Directory.CreateDirectory(_root);
     }
@@ -34,7 +34,7 @@ public class DriftCheckerTests : IDisposable
     }
 
     List<DriftWarning> Check(string? publisherPrefix = null) =>
-        DriftChecker.Check(_root, _pkg, publisherPrefix);
+        PluginWebResourceDriftChecker.Check(_root, _pkg, publisherPrefix);
 
     // ── no artifacts → nothing to check ─────────────────────────────────────
 

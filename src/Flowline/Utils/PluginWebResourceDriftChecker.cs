@@ -6,7 +6,7 @@ public record DriftWarning(DriftCategory Category, string RelativePath);
 
 public enum DriftCategory { ContentDiffers, NewInDataverse, OnlyLocal, PluginSizeMismatch, OrphanAssembly }
 
-public static class DriftChecker
+public static class PluginWebResourceDriftChecker
 {
     private const long PluginSizeThresholdBytes = 10 * 1024; // 10 KB
 

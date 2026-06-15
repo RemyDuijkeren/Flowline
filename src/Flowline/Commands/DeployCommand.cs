@@ -167,7 +167,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             throw new FlowlineException(ExitCode.NotFound,
                 $"No solution found at '{cdsprojPath}' — run 'clone' first.");
 
-        var drift = DriftChecker.Check(slnFolder, PackageFolder(slnFolder), cancellationToken: ct)
+        var drift = PluginWebResourceDriftChecker.Check(slnFolder, PackageFolder(slnFolder), cancellationToken: ct)
             .Where(w => w.Category is DriftCategory.OnlyLocal or DriftCategory.PluginSizeMismatch)
             .ToList();
 

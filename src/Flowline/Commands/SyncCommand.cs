@@ -120,23 +120,23 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         }
 
         // Check for drift between local solution (Plugins/WebResources) and Dataverse (/src)
-        var driftWarnings = DriftChecker.Check(slnFolder, PackageFolder(slnFolder), slnInfo.PublisherPrefix, cancellationToken);
+        var driftWarnings = PluginWebResourceDriftChecker.Check(slnFolder, PackageFolder(slnFolder), slnInfo.PublisherPrefix, cancellationToken);
         if (driftWarnings.Count == 0)
         {
-            Console.Ok("Local solution matches Dataverse");
+            Console.Ok("Plugins / WebResources match Dataverse");
         }
         else
         {
-            Console.Warning("Drift detected between local solution and Dataverse:");
+            Console.Warning("Dataverse doesn't match local Plugins / WebResources:");
             foreach (var w in driftWarnings)
             {
                 var hint = w.Category switch
                 {
-                    DriftCategory.ContentDiffers => $"- Check who changed '{w.RelativePath}' in Dataverse — run 'flowline push' to re-sync",
-                    DriftCategory.NewInDataverse => $"- Check who added '{w.RelativePath}' in Dataverse — add to local WebResources and run 'flowline push' to re-sync",
-                    DriftCategory.OnlyLocal => $"- Local file '{w.RelativePath}' not in Dataverse — run 'flowline push' to re-sync",
-                    DriftCategory.PluginSizeMismatch => $"- Local plugin build may not match Dataverse — rebuild and push if intentional ({w.RelativePath})",
-                    DriftCategory.OrphanAssembly => $"- '{w.RelativePath}' in Dataverse — no local source. Flowline won't manage it.",
+                    DriftCategory.ContentDiffers => $"- '{w.RelativePath}' changed in Dataverse — push to overwrite with local",
+                    DriftCategory.NewInDataverse => $"- '{w.RelativePath}' added in Dataverse — add to local WebResources, or push to remove",
+                    DriftCategory.OnlyLocal => $"- '{w.RelativePath}' local only, not in Dataverse — push to upload",
+                    DriftCategory.PluginSizeMismatch => $"- '{w.RelativePath}' plugin size differs — rebuild and push if local is current",
+                    DriftCategory.OrphanAssembly => $"- '{w.RelativePath}' in Dataverse — no local plugin source, won't manage",
                     _ => $"- {w.RelativePath}"
                 };
                 Console.MarkupLine($"  {hint}");
