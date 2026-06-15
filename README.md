@@ -91,9 +91,11 @@ For full setup, auth, and project workflow: **[Getting Started](https://github.c
 | [`sync [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#sync) | Pull the current solution state from DEV into source control |
 | [`deploy <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#deploy) | Pack from the repo and import into `test`, `uat`, `prod`, or a URL |
 | [`provision [dev\|test]`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#provision) | Provision a DEV or TEST environment by copying from production |
-| [`generate [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#generate) | Generate early-bound C# types into `Plugins/Models/` |
+| [`generate [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/05-Generate) | Generate early-bound C# types into `Plugins/Models/` |
 | [`status`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#status) | Show environment info, Flowline version, and PAC CLI status |
 
 **Plugin attributes NuGet:** [Flowline.Attributes](src/Flowline.Attributes/README.md) — add to your plugin project to use `[Step]`, `[Filter]`, `[CustomApi]`, and friends — full reference: [Plugin Registration](https://github.com/RemyDuijkeren/Flowline/wiki/04-Plugin-Registration)
 
 See the [Wiki for the full documentation.](https://github.com/RemyDuijkeren/Flowline/wiki)
+
+Coming from another tool? [Migration from spkl](https://github.com/RemyDuijkeren/Flowline/wiki/08-Migration-from-spkl) · [Migration from Daxif](https://github.com/RemyDuijkeren/Flowline/wiki/09-Migration-from-Daxif) · [Migration from PACX](https://github.com/RemyDuijkeren/Flowline/wiki/10-Migration-from-PACX)
