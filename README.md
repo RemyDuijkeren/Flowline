@@ -23,21 +23,20 @@ and a fast push to DEV without the enterprise overhead.
 
 ---
 
-**PAC CLI gives you the primitives — Flowline gives you the workflow.** Clone, push, sync, and deploy are a defined loop
-with attribute-driven plugin registration, automatic web resource dependency registration, and a direct push that skips
-the pack/import/register cycle. Where PAC CLI already handles it, Flowline wraps — it doesn't re-implement.
-Unlike Power Platform Pipelines, Flowline requires neither Managed Environments nor managed solutions.
+**PAC CLI gives you the primitives — Flowline gives you the workflow.**
 
-`flowline push` goes beyond syncing file content:
-- **Plugin assemblies** — registered and published from `[Step]` / `[Filter]` / `[CustomApi]` attributes; no `spkl.json` or PAC registration step
-- **Web resource dependencies** — RESX files auto-linked to their parent JS by base-name; JS-to-JS dependencies declared with `// flowline:depends`; dependency changes diffed and written only when needed
-- **Orphan cleanup** — annotation-referenced external resources are exempt from deletion during `flowline deploy`
+Attribute-driven plugin registration that covers Custom APIs, a full Git-based ALM loop from dev to prod, and automatic web resource dependency registration — in one tool. Where PAC CLI already handles it, Flowline wraps — it doesn't re-implement. Unlike Power Platform Pipelines, Flowline requires neither Managed Environments nor managed solutions.
+
+Familiar with [spkl](https://github.com/scottdurow/SparkleXrm/wiki/spkl)? Flowline is its actively maintained successor (last meaningful commit 2021).
+
+`flowline push` goes beyond file sync:
+
+- **Plugins registered from attributes** — `[Step]`, `[Filter]`, `[CustomApi]` with sensible defaults; less boilerplate than `[CrmPluginRegistration]`, no Plugin Registration Tool
+- **Web resources pushed from folder structure** — no `spkl.json` mapping; orphaned Dataverse records deleted or removed automatically on every push
+- **Web resource dependencies auto-wired** — RESX files linked to parent JS by base name; `// flowline:depends` for JS-to-JS; registered on every push, no Maker Portal visit needed
+- **Full Git-based ALM** — `clone → push → sync → deploy` in one tool, unmanaged or managed
 
 > Pipelines are buried steel — permits, compressors, years to commission. A flowline goes where the pipeline can't.
-
-Flowline is the opinionated successor to [spkl](https://github.com/scottdurow/SparkleXrm/wiki/spkl) — the same
-attribute-driven plugin registration that now supports Custom APIs, push web resources without `spkl.json` mapping,
-a full Git-based ALM workflow, and modern PAC auth.
 
 ---
 
