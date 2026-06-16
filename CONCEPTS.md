@@ -14,6 +14,14 @@ A solution component present in the Dataverse environment that is absent from th
 A Dataverse solution whose components can be created, modified, and deleted individually in the target environment. Flowline prefers to targets unmanaged solutions, but can also work with managed solutions. Because unmanaged imports are additive, deployed components are never automatically removed — orphan cleanup must run explicitly to remove components deleted from source.
 *managed solution (distinct — a locked distributable solution package whose imports overwrite existing layers and do remove components)*
 
+## Sync
+
+### Sync change summary
+The structured record of all Dataverse solution component changes detected between the working tree and the last git commit after a `flowline sync`. Surfaced in the terminal as a labelled tree and written in full to `CHANGES.md` in the solution folder. Groups components by type (Entities, OptionSets, etc.) and annotates each with an added/removed/modified status.
+
+### Sub-change
+A change *within* a component — for example, an attribute added to an entity, a column removed from a view, or an option label changed on an option set. Sub-changes are the child entries under their parent component in both the terminal tree and `CHANGES.md`. The terminal caps the number of named sub-changes shown per component; `CHANGES.md` always contains the full list.
+
 ## Web Resources
 
 ### Logical name
