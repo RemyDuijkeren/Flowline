@@ -440,6 +440,363 @@ public class SolutionChangeSummaryComputeTests : IDisposable
     }
 }
 
+public class SolutionChangeSummarySubChangesTests : IDisposable
+{
+    readonly string _root = Path.Combine(Path.GetTempPath(), "flowline-tests-sub", Guid.NewGuid().ToString("N"));
+    readonly string _srcFolder;
+
+    public SolutionChangeSummarySubChangesTests()
+    {
+        _srcFolder = Path.Combine(_root, "solutions", "TestSln", "src");
+        Directory.CreateDirectory(_srcFolder);
+        RunGit("init");
+        RunGit("config", "user.email", "test@example.com");
+        RunGit("config", "user.name", "Test");
+        File.WriteAllText(Path.Combine(_root, ".gitkeep"), "");
+        RunGit("add", ".gitkeep");
+        RunGit("commit", "-m", "init");
+    }
+
+    public void Dispose()
+    {
+        if (!Directory.Exists(_root)) return;
+        foreach (var f in Directory.GetFiles(_root, "*", SearchOption.AllDirectories))
+            try { File.SetAttributes(f, FileAttributes.Normal); } catch { }
+        Directory.Delete(_root, true);
+    }
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    static string EntityXml(params (string logicalName, string type)[] attribs) => $"""
+        <Entity>
+          <EntityInfo>
+            <entity Name="Account">
+              <attributes>
+                {string.Join("\n    ", attribs.Select(a => $"<attribute><LogicalName>{a.logicalName}</LogicalName><Type>{a.type}</Type></attribute>"))}
+              </attributes>
+            </entity>
+          </EntityInfo>
+        </Entity>
+        """;
+
+    static string SavedQueryXml(string[] cols, string? filter = null, string? orderAttr = null) => $"""
+        <savedqueries>
+          <savedquery>
+            <LocalizedNames><LocalizedName languagecode="1033" description="Test View" /></LocalizedNames>
+            <layoutxml><grid><row id="id">{string.Join("", cols.Select(c => $"<cell name=\"{c}\" />"))}</row></grid></layoutxml>
+            <fetchxml><fetch><entity name="account">
+              {string.Join("", cols.Select(c => $"<attribute name=\"{c}\" />"))}
+              {(filter != null ? $"<filter><condition attribute=\"{filter}\" operator=\"eq\" value=\"1\" /></filter>" : "")}
+              {(orderAttr != null ? $"<order attribute=\"{orderAttr}\" descending=\"false\" />" : "")}
+            </entity></fetch></fetchxml>
+          </savedquery>
+        </savedqueries>
+        """;
+
+    static string OptionSetXml(params (string value, string label)[] opts) => $"""
+        <optionsets>
+          <optionset Name="av_status">
+            <options>
+              {string.Join("\n  ", opts.Select(o => $"<option value=\"{o.value}\"><labels><label languagecode=\"1033\" description=\"{o.label}\" /></labels></option>"))}
+            </options>
+          </optionset>
+        </optionsets>
+        """;
+
+    static string FormXml(string[] fields, string[] sections = null!, string[] tabs = null!)
+    {
+        var fieldRows = string.Join("", fields.Select(f => $"<row><cell datafieldname=\"{f}\" /></row>"));
+        var sectionXml = string.Join("\n", (sections ?? ["section1"]).Select(s =>
+            $"<section name=\"{s}\"><labels><label languagecode=\"1033\" description=\"{s}\" /></labels>" +
+            $"<rows>{fieldRows}</rows></section>"));
+        var tabXml = string.Join("\n", (tabs ?? ["tab1"]).Select(t =>
+            $"<tab name=\"{t}\"><labels><label languagecode=\"1033\" description=\"{t}\" /></labels>" +
+            $"<columns><column><sections>{sectionXml}</sections></column></columns></tab>"));
+        return $"""
+            <forms><systemform>
+              <LocalizedNames><LocalizedName languagecode="1033" description="Main Form" /></LocalizedNames>
+              <form><tabs>{tabXml}</tabs></form>
+            </systemform></forms>
+            """;
+    }
+
+    void WriteFile(string relativePath, string content)
+    {
+        var full = Path.Combine(_srcFolder, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        File.WriteAllText(full, content);
+    }
+
+    void CommitFile(string relativePath, string content)
+    {
+        WriteFile(relativePath, content);
+        var srcRelPath = Path.GetRelativePath(_root, _srcFolder).Replace('\\', '/');
+        RunGit("add", srcRelPath + "/" + relativePath);
+        RunGit("commit", "-m", "add");
+    }
+
+    void RunGit(params string[] args)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo("git")
+        {
+            WorkingDirectory = _root,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        foreach (var arg in args) psi.ArgumentList.Add(arg);
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        p.WaitForExit();
+    }
+
+    async Task<SolutionChangeSummary.ChangeItem> GetSingleItemAsync()
+    {
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root);
+        return result.Groups.SelectMany(g => g.Items).Single();
+    }
+
+    // ── Entity.xml attribute diff ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task Entity_AttributeAdded_SubChangeShowsNameAndType()
+    {
+        CommitFile("Entities/Account/Entity.xml", EntityXml(("av_existing", "Text")));
+        WriteFile("Entities/Account/Entity.xml", EntityXml(("av_existing", "Text"), ("av_new", "Lookup")));
+
+        var item = await GetSingleItemAsync();
+
+        item.SubChanges.Should().ContainSingle(s =>
+            s.Status == SolutionChangeSummary.ChangeStatus.Added &&
+            s.Description == "av_new (Lookup)");
+    }
+
+    [Fact]
+    public async Task Entity_AttributeRemoved_SubChangeShowsNameOnly()
+    {
+        CommitFile("Entities/Account/Entity.xml", EntityXml(("av_keep", "Text"), ("av_remove", "bit")));
+        WriteFile("Entities/Account/Entity.xml", EntityXml(("av_keep", "Text")));
+
+        var item = await GetSingleItemAsync();
+
+        item.SubChanges.Should().ContainSingle(s =>
+            s.Status == SolutionChangeSummary.ChangeStatus.Deleted &&
+            s.Description == "av_remove");
+    }
+
+    [Fact]
+    public async Task Entity_AttributeModified_SubChangeShowsNameOnly()
+    {
+        CommitFile("Entities/Account/Entity.xml", EntityXml(("av_field", "Text")));
+        WriteFile("Entities/Account/Entity.xml", EntityXml(("av_field", "Memo"))); // type changed
+
+        var item = await GetSingleItemAsync();
+
+        item.SubChanges.Should().ContainSingle(s =>
+            s.Status == SolutionChangeSummary.ChangeStatus.Modified &&
+            s.Description == "av_field");
+    }
+
+    [Fact]
+    public async Task Entity_NewFile_NoSubChanges()
+    {
+        WriteFile("Entities/Account/Entity.xml", EntityXml(("av_new", "Text")));
+
+        var item = await GetSingleItemAsync();
+
+        item.SubChanges.Should().BeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task Entity_SubChangesOrderedAddedRemovedModified()
+    {
+        CommitFile("Entities/Account/Entity.xml", EntityXml(("av_remove", "Text"), ("av_modify", "Text")));
+        WriteFile("Entities/Account/Entity.xml", EntityXml(("av_add", "Lookup"), ("av_modify", "Memo")));
+
+        var item = await GetSingleItemAsync();
+
+        var changes = item.SubChanges!.ToList();
+        changes[0].Status.Should().Be(SolutionChangeSummary.ChangeStatus.Added);
+        changes[1].Status.Should().Be(SolutionChangeSummary.ChangeStatus.Deleted);
+        changes[2].Status.Should().Be(SolutionChangeSummary.ChangeStatus.Modified);
+    }
+
+    // ── SavedQuery view diff ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task View_ColumnAdded_SubChangeShowsColumnName()
+    {
+        var guid = Guid.NewGuid().ToString("D");
+        CommitFile($"Entities/Account/SavedQueries/{{{guid}}}.xml", SavedQueryXml(["name", "telephone1"]));
+        WriteFile($"Entities/Account/SavedQueries/{{{guid}}}.xml", SavedQueryXml(["name", "telephone1", "emailaddress1"]));
+
+        var item = await GetSingleItemAsync();
+
+        item.SubChanges.Should().ContainSingle(s =>
+            s.Status == SolutionChangeSummary.ChangeStatus.Added &&
+            s.Description == "emailaddress1");
+    }
+
+    [Fact]
+    public async Task View_ColumnRemoved_SubChangeShowsColumnName()
+    {
+        var guid = Guid.NewGuid().ToString("D");
+        CommitFile($"Entities/Account/SavedQueries/{{{guid}}}.xml", SavedQueryXml(["name", "telephone1"]));
+        WriteFile($"Entities/Account/SavedQueries/{{{guid}}}.xml", SavedQueryXml(["name"]));
+
+        var item = await GetSingleItemAsync();
+
+        item.SubChanges.Should().ContainSingle(s =>
+            s.Status == SolutionChangeSummary.ChangeStatus.Deleted &&
+            s.Description == "telephone1");
+    }
+
+    [Fact]
+    public async Task View_FilterChanged_SubChangeShowsFilterFlag()
+    {
+        var guid = Guid.NewGuid().ToString("D");
+        CommitFile($"Entities/Account/SavedQueries/{{{guid}}}.xml", SavedQueryXml(["name"]));
+        WriteFile($"Entities/Account/SavedQueries/{{{guid}}}.xml", SavedQueryXml(["name"], filter: "statecode"));
+
+        var item = await GetSingleItemAsync();
+
+        item.SubChanges.Should().ContainSingle(s =>
+            s.Status == SolutionChangeSummary.ChangeStatus.Modified &&
+            s.Description == "filter changed");
+    }
+
+    [Fact]
+    public async Task View_SortChanged_SubChangeShowsSortFlag()
+    {
+        var guid = Guid.NewGuid().ToString("D");
+        CommitFile($"Entities/Account/SavedQueries/{{{guid}}}.xml", SavedQueryXml(["name"]));
+        WriteFile($"Entities/Account/SavedQueries/{{{guid}}}.xml", SavedQueryXml(["name"], orderAttr: "name"));
+
+        var item = await GetSingleItemAsync();
+
+        item.SubChanges.Should().ContainSingle(s =>
+            s.Status == SolutionChangeSummary.ChangeStatus.Modified &&
+            s.Description == "sort changed");
+    }
+
+    [Fact]
+    public async Task View_ColumnAddedOnly_NoFalseFilterFlag()
+    {
+        var guid = Guid.NewGuid().ToString("D");
+        CommitFile($"Entities/Account/SavedQueries/{{{guid}}}.xml", SavedQueryXml(["name"]));
+        WriteFile($"Entities/Account/SavedQueries/{{{guid}}}.xml", SavedQueryXml(["name", "telephone1"]));
+
+        var item = await GetSingleItemAsync();
+
+        item.SubChanges.Should().NotContain(s => s.Description == "filter changed");
+    }
+
+    // ── OptionSet diff ────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task OptionSet_OptionAdded_SubChangeShowsLabelAndValue()
+    {
+        CommitFile("OptionSets/av_status.xml", OptionSetXml(("100000000", "Active"), ("100000001", "Inactive")));
+        WriteFile("OptionSets/av_status.xml", OptionSetXml(("100000000", "Active"), ("100000001", "Inactive"), ("100000002", "Pending")));
+
+        var item = await GetSingleItemAsync();
+
+        item.SubChanges.Should().ContainSingle(s =>
+            s.Status == SolutionChangeSummary.ChangeStatus.Added &&
+            s.Description == "Pending (100000002)");
+    }
+
+    [Fact]
+    public async Task OptionSet_OptionRemoved_SubChangeShowsLabelAndValue()
+    {
+        CommitFile("OptionSets/av_status.xml", OptionSetXml(("100000000", "Active"), ("100000001", "Inactive")));
+        WriteFile("OptionSets/av_status.xml", OptionSetXml(("100000000", "Active")));
+
+        var item = await GetSingleItemAsync();
+
+        item.SubChanges.Should().ContainSingle(s =>
+            s.Status == SolutionChangeSummary.ChangeStatus.Deleted &&
+            s.Description == "Inactive (100000001)");
+    }
+
+    [Fact]
+    public async Task OptionSet_LabelChanged_SubChangeShowsNewLabelAndValue()
+    {
+        CommitFile("OptionSets/av_status.xml", OptionSetXml(("100000000", "Active")));
+        WriteFile("OptionSets/av_status.xml", OptionSetXml(("100000000", "Enabled")));
+
+        var item = await GetSingleItemAsync();
+
+        item.SubChanges.Should().ContainSingle(s =>
+            s.Status == SolutionChangeSummary.ChangeStatus.Modified &&
+            s.Description == "Enabled (100000000)");
+    }
+
+    [Fact]
+    public async Task OptionSet_NewFile_NoSubChanges()
+    {
+        WriteFile("OptionSets/av_status.xml", OptionSetXml(("100000000", "Active")));
+
+        var item = await GetSingleItemAsync();
+
+        item.SubChanges.Should().BeNullOrEmpty();
+    }
+
+    // ── FormXml diff ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Form_FieldAdded_SubChangeShowsFieldName()
+    {
+        var guid = Guid.NewGuid().ToString("D");
+        CommitFile($"Entities/Account/FormXml/main/{{{guid}}}.xml", FormXml(["av_field1"]));
+        WriteFile($"Entities/Account/FormXml/main/{{{guid}}}.xml", FormXml(["av_field1", "av_field2"]));
+
+        var item = await GetSingleItemAsync();
+
+        item.SubChanges.Should().ContainSingle(s =>
+            s.Status == SolutionChangeSummary.ChangeStatus.Added &&
+            s.Description == "av_field2");
+    }
+
+    [Fact]
+    public async Task Form_FieldRemoved_SubChangeShowsFieldName()
+    {
+        var guid = Guid.NewGuid().ToString("D");
+        CommitFile($"Entities/Account/FormXml/main/{{{guid}}}.xml", FormXml(["av_field1", "av_field2"]));
+        WriteFile($"Entities/Account/FormXml/main/{{{guid}}}.xml", FormXml(["av_field1"]));
+
+        var item = await GetSingleItemAsync();
+
+        item.SubChanges.Should().ContainSingle(s =>
+            s.Status == SolutionChangeSummary.ChangeStatus.Deleted &&
+            s.Description == "av_field2");
+    }
+
+    [Fact]
+    public async Task Form_SectionAdded_SubChangeShowsSectionPrefix()
+    {
+        var guid = Guid.NewGuid().ToString("D");
+        CommitFile($"Entities/Account/FormXml/main/{{{guid}}}.xml", FormXml([], ["section1"]));
+        WriteFile($"Entities/Account/FormXml/main/{{{guid}}}.xml", FormXml([], ["section1", "section2"]));
+
+        var item = await GetSingleItemAsync();
+
+        item.SubChanges.Should().ContainSingle(s =>
+            s.Status == SolutionChangeSummary.ChangeStatus.Added &&
+            s.Description.StartsWith("section:"));
+    }
+
+    [Fact]
+    public async Task Form_NewFile_NoSubChanges()
+    {
+        var guid = Guid.NewGuid().ToString("D");
+        WriteFile($"Entities/Account/FormXml/main/{{{guid}}}.xml", FormXml(["av_field1"]));
+
+        var item = await GetSingleItemAsync();
+
+        item.SubChanges.Should().BeNullOrEmpty();
+    }
+}
+
 public class SolutionChangeSummaryWriteTests
 {
     static SolutionChangeSummary Build(int totalFiles, int added, int removed, params SolutionChangeSummary.ChangeGroup[] groups) =>

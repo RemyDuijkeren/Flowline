@@ -146,6 +146,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         // Summary of changes
         var summary = await SolutionChangeSummary.ComputeAsync(srcPath, RootFolder, settings.Verbose, cancellationToken);
         summary.WriteTree(Console, devEnv.DisplayName, settings.Verbose);
+        await summary.WriteChangesFileAsync(slnFolder, projectSln.Name, devEnv.DisplayName, cancellationToken);
 
         Console.Done($"Synced {tagVersion}. Run 'git commit' to save a checkpoint and 'git tag {tagVersion}' to tag it.");
 
