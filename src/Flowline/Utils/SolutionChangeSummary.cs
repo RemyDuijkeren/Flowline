@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Xml;
 using System.Xml.Linq;
 using CliWrap;
 using CliWrap.Buffered;
@@ -13,7 +14,7 @@ public class SolutionChangeSummary
     public record SubChange(string Description, ChangeStatus Status);
     public record ChangeItem(string ComponentName, IReadOnlyList<string> FilePaths, ChangeStatus Status = ChangeStatus.Modified, IReadOnlyList<SubChange>? SubChanges = null);
 
-    private const int SubChangeDisplayThreshold = 5;
+    internal static int SubChangeDisplayThreshold = 5;
     public record ChangeGroup(string Label, IReadOnlyList<ChangeItem> Items, bool IsEntity = false);
 
     internal enum XmlRead { None, FormTitle, ViewTitle, DashboardName, StepName, WorkflowName }
@@ -206,6 +207,7 @@ public class SolutionChangeSummary
         }
 
         var outputPath = Path.Combine(slnFolder, "CHANGES.md");
+        Directory.CreateDirectory(slnFolder);
         await File.WriteAllTextAsync(outputPath, sb.ToString(), ct);
     }
 
@@ -480,6 +482,7 @@ public class SolutionChangeSummary
         if (File.Exists(fullPath))
         {
             try { xml = await File.ReadAllTextAsync(fullPath, ct); }
+            catch (OperationCanceledException) { throw; }
             catch { }
         }
         else
@@ -521,7 +524,7 @@ public class SolutionChangeSummary
             };
             return nameSuffix != null && title != null ? $"{title} ({nameSuffix})" : title;
         }
-        catch { return null; }
+        catch (XmlException) { return null; }
     }
 
     static async Task<IReadOnlyList<SubChange>?> ResolveSubChangesAsync(
@@ -529,8 +532,8 @@ public class SolutionChangeSummary
         string srcRelPath, ChangeStatus status, CancellationToken ct)
     {
         bool isEntityMeta = parsed.ComponentKey.EndsWith("/entity", StringComparison.OrdinalIgnoreCase);
-        bool isView       = parsed.ComponentKey.Contains("/view/", StringComparison.OrdinalIgnoreCase);
-        bool isForm       = parsed.ComponentKey.Contains("/form/", StringComparison.OrdinalIgnoreCase);
+        bool isView       = parsed.XmlRead == XmlRead.ViewTitle;
+        bool isForm       = parsed.XmlRead == XmlRead.FormTitle;
         bool isOptionSet  = string.Equals(parsed.Group, "OptionSets", StringComparison.OrdinalIgnoreCase);
 
         if (!isEntityMeta && !isView && !isForm && !isOptionSet) return null;
@@ -567,6 +570,7 @@ public class SolutionChangeSummary
         var fullPath = Path.Combine(srcFolder, relPath.Replace('/', Path.DirectorySeparatorChar));
         if (!File.Exists(fullPath)) return null;
         try { return await File.ReadAllTextAsync(fullPath, ct); }
+        catch (OperationCanceledException) { throw; }
         catch { return null; }
     }
 
@@ -630,13 +634,13 @@ public class SolutionChangeSummary
                 var clone = new XElement(el);
                 clone.Descendants("order").Remove();
                 clone.Descendants("attribute").Remove();
-                return clone.ToString();
+                return clone.ToString(SaveOptions.DisableFormatting);
             }
             if (StripColumnsAndOrders(oldFetch) != StripColumnsAndOrders(newFetch))
                 flags.Add(new SubChange("filter changed", ChangeStatus.Modified));
 
             static string OrdersOnly(XElement? el) =>
-                string.Concat(el?.Descendants("order").Select(o => o.ToString()) ?? []);
+                string.Concat(el?.Descendants("order").Select(o => o.ToString(SaveOptions.DisableFormatting)) ?? []);
             if (OrdersOnly(oldFetch) != OrdersOnly(newFetch))
                 flags.Add(new SubChange("sort changed", ChangeStatus.Modified));
         }
@@ -706,6 +710,7 @@ public class SolutionChangeSummary
                     removed.Add(new SubChange(prefix != null ? $"{prefix}: {label(el)}" : label(el), ChangeStatus.Deleted));
         }
 
+        // Fields appearing in multiple sections deduplicate by first-seen — moving a field between sections produces no sub-change.
         DiffElements(oldFields, newFields, el => (string?)el.Attribute("datafieldname") ?? string.Empty);
         DiffElements(oldTabs, newTabs, el => ResolveLabel(el) ?? string.Empty, "tab");
         DiffElements(oldSections, newSections, el => ResolveLabel(el) ?? string.Empty, "section");
@@ -722,11 +727,12 @@ public class SolutionChangeSummary
             var doc = XDocument.Parse(xml.TrimStart('﻿'));
             return doc.Descendants(elementName)
                 .Select(e => (key: keySelector(e), el: e))
-                .Where(t => !string.IsNullOrEmpty(t.key) && (!skipEmpty || t.key != null))
+                .Where(t => !string.IsNullOrEmpty(t.key))
                 .GroupBy(t => t.key!, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.First().el, StringComparer.OrdinalIgnoreCase);
         }
-        catch { return null; }
+        catch (XmlException) { return null; }
+        catch (InvalidOperationException) { return null; }
     }
 
     static string? GetLocalizedName(XDocument doc)

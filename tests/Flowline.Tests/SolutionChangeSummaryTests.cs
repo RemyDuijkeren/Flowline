@@ -795,6 +795,121 @@ public class SolutionChangeSummarySubChangesTests : IDisposable
 
         item.SubChanges.Should().BeNullOrEmpty();
     }
+
+    // ── Deleted-file sub-change path ──────────────────────────────────────────
+
+    [Fact]
+    public async Task Entity_FileDeleted_SubChangesShowAllAttributesAsDeleted()
+    {
+        CommitFile("Entities/Account/Entity.xml", EntityXml(("av_field1", "Text"), ("av_field2", "Lookup")));
+        File.Delete(Path.Combine(_srcFolder, "Entities", "Account", "Entity.xml"));
+
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root);
+        var item = result.Groups.SelectMany(g => g.Items).Single();
+
+        item.SubChanges.Should().HaveCount(2);
+        item.SubChanges!.Should().OnlyContain(s => s.Status == SolutionChangeSummary.ChangeStatus.Deleted);
+        item.SubChanges!.Should().Contain(s => s.Description == "av_field1");
+        item.SubChanges!.Should().Contain(s => s.Description == "av_field2");
+    }
+}
+
+public class SolutionChangeSummaryChangesFileTests : IDisposable
+{
+    readonly string _tempFolder = Path.Combine(Path.GetTempPath(), "flowline-changes-file-tests", Guid.NewGuid().ToString("N"));
+
+    public SolutionChangeSummaryChangesFileTests() => Directory.CreateDirectory(_tempFolder);
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_tempFolder))
+            Directory.Delete(_tempFolder, true);
+    }
+
+    static SolutionChangeSummary Build(params SolutionChangeSummary.ChangeGroup[] groups) =>
+        new(groups.SelectMany(g => g.Items).Count(), 0, 0, groups);
+
+    static SolutionChangeSummary.ChangeItem Item(string name, SolutionChangeSummary.ChangeStatus status,
+        params SolutionChangeSummary.SubChange[] subChanges) =>
+        new(name, [], status, subChanges.Length > 0 ? subChanges : null);
+
+    [Fact]
+    public async Task WritesFile_WithEntitySubChanges()
+    {
+        var summary = Build(
+            new SolutionChangeSummary.ChangeGroup("Account", [
+                Item("entity metadata", SolutionChangeSummary.ChangeStatus.Modified,
+                    new SolutionChangeSummary.SubChange("av_newfield (Text)", SolutionChangeSummary.ChangeStatus.Added),
+                    new SolutionChangeSummary.SubChange("av_oldfield", SolutionChangeSummary.ChangeStatus.Deleted))
+            ], IsEntity: true));
+
+        await summary.WriteChangesFileAsync(_tempFolder, "TestSln", "Dev");
+
+        var content = await File.ReadAllTextAsync(Path.Combine(_tempFolder, "CHANGES.md"));
+        content.Should().Contain("# Changes — TestSln");
+        content.Should().Contain("Synced from: Dev");
+        content.Should().Contain("## Entities");
+        content.Should().Contain("### Account");
+        content.Should().Contain("**entity metadata**");
+        content.Should().Contain("`+` av_newfield (Text)");
+        content.Should().Contain("`-` av_oldfield");
+    }
+
+    [Fact]
+    public async Task WritesFile_WithOptionSetSubChanges()
+    {
+        var summary = Build(
+            new SolutionChangeSummary.ChangeGroup("OptionSets", [
+                Item("av_status", SolutionChangeSummary.ChangeStatus.Modified,
+                    new SolutionChangeSummary.SubChange("Active (100000000)", SolutionChangeSummary.ChangeStatus.Added))
+            ]));
+
+        await summary.WriteChangesFileAsync(_tempFolder, "TestSln", "Dev");
+
+        var content = await File.ReadAllTextAsync(Path.Combine(_tempFolder, "CHANGES.md"));
+        content.Should().Contain("## OptionSets");
+        content.Should().Contain("### av_status");
+        content.Should().Contain("`+` Active (100000000)");
+    }
+
+    [Fact]
+    public async Task WritesFile_EntityWithoutSubChanges_ShowsIconLine()
+    {
+        var summary = Build(
+            new SolutionChangeSummary.ChangeGroup("Account", [
+                Item("entity metadata", SolutionChangeSummary.ChangeStatus.Added)
+            ], IsEntity: true));
+
+        await summary.WriteChangesFileAsync(_tempFolder, "TestSln", null);
+
+        var content = await File.ReadAllTextAsync(Path.Combine(_tempFolder, "CHANGES.md"));
+        content.Should().Contain("`+` entity metadata");
+        content.Should().NotContain("Synced from:");
+    }
+
+    [Fact]
+    public async Task DoesNotWriteFile_WhenNoChanges()
+    {
+        var summary = new SolutionChangeSummary(0, 0, 0, []);
+
+        await summary.WriteChangesFileAsync(_tempFolder, "TestSln", "Dev");
+
+        File.Exists(Path.Combine(_tempFolder, "CHANGES.md")).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CreatesFolder_WhenSlnFolderMissing()
+    {
+        var missingFolder = Path.Combine(_tempFolder, "nonexistent");
+        var summary = Build(
+            new SolutionChangeSummary.ChangeGroup("Account", [
+                Item("entity metadata", SolutionChangeSummary.ChangeStatus.Modified)
+            ], IsEntity: true));
+
+        await summary.WriteChangesFileAsync(missingFolder, "TestSln", "Dev");
+
+        File.Exists(Path.Combine(missingFolder, "CHANGES.md")).Should().BeTrue();
+    }
 }
 
 public class SolutionChangeSummaryWriteTests
