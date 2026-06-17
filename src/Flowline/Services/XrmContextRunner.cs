@@ -38,8 +38,10 @@ public class XrmContextRunner(IAnsiConsole console, FlowlineRuntimeOptions runti
             .WithArguments(args);
 
         await console.Status().FlowlineSpinner().StartAsync(
-            $"Running XrmContext for [bold]{solutionName}[/]...",
+            $"Generating early-bound types...",
             ctx => cmd.WithToolExecutionLog(runtimeOptions.IsVerbose, ctx, toolDisplayName: Path.GetFileName(exePath)).ExecuteAsync(cancellationToken).Task);
+
+        console.Ok("Early-bound types generated");
     }
 
     internal static string[] BuildArgs(

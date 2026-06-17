@@ -178,9 +178,9 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
         {
             // ROPC flow — no browser or PAC profile required
             if (username.IndexOfAny([';', '=']) >= 0)
-                throw new FlowlineException(ExitCode.NotAuthenticated, "XrmContext username must not contain ';' or '='.");
+                throw new FlowlineException(ExitCode.NotAuthenticated, "XrmContext username must not contain ';' or '='. Remove those characters from --username.");
             if (password.IndexOfAny([';', '=']) >= 0)
-                throw new FlowlineException(ExitCode.NotAuthenticated, "XrmContext password must not contain ';' or '='.");
+                throw new FlowlineException(ExitCode.NotAuthenticated, "XrmContext password must not contain ';' or '='. Remove those characters from --password.");
             return $"AuthType=OAuth;Username={username};Password={password};Url={normalizedUrl};AppId={appId};RedirectUri=http://localhost;LoginPrompt=Never;TokenCacheStorePath={tokenCachePath};";
         }
 

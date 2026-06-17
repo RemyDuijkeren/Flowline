@@ -228,7 +228,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
                 // Browser OAuth via method:OAuth — single CrmServiceClient with one ADAL auth context;
                 // one browser window for MFA, token cached internally by XrmContext after first login
                 if (!ConsoleHelper.IsInteractive(settings))
-                    throw new FlowlineException(ExitCode.NotAuthenticated, "XrmContext browser OAuth requires interactive login. Provide --xrm-client-id + --xrm-client-secret for non-interactive auth.");
+                    throw new FlowlineException(ExitCode.NotAuthenticated, "XrmContext browser OAuth requires interactive login. Use --xrm-client-id + --xrm-client-secret for non-interactive auth.");
                 auth = new XrmContextAuth.BrowserOAuth(xrmClientId);
             }
 
