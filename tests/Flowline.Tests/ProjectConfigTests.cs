@@ -197,3 +197,46 @@ public class ProjectConfigTests
         json.Should().NotContain("Namespace");
     }
 }
+
+public class GeneratorTypeSerializationTests
+{
+    [Fact]
+    public void GenerateConfig_XrmContext_SerializesAsEnumName()
+    {
+        var config = new GenerateConfig { Generator = GeneratorType.XrmContext };
+
+        var json = JsonSerializer.Serialize(config);
+
+        json.Should().Contain("\"Generator\"").And.Contain("\"XrmContext\"");
+    }
+
+    [Fact]
+    public void GenerateConfig_NullGenerator_OmittedFromJson()
+    {
+        var config = new GenerateConfig { Generator = null };
+
+        var json = JsonSerializer.Serialize(config);
+
+        json.Should().NotContain("Generator");
+    }
+
+    [Fact]
+    public void GenerateConfig_PacJson_DeserializesToPac()
+    {
+        var json = """{"Generator":"Pac"}""";
+
+        var config = JsonSerializer.Deserialize<GenerateConfig>(json)!;
+
+        config.Generator.Should().Be(GeneratorType.Pac);
+    }
+
+    [Fact]
+    public void GenerateConfig_XrmContextJson_DeserializesToXrmContext()
+    {
+        var json = """{"Generator":"XrmContext"}""";
+
+        var config = JsonSerializer.Deserialize<GenerateConfig>(json)!;
+
+        config.Generator.Should().Be(GeneratorType.XrmContext);
+    }
+}

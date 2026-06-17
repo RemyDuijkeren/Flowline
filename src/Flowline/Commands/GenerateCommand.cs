@@ -35,6 +35,9 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         [CommandOption("-o|--output <PATH>")]
         [Description("Output folder for generated types (required outside a Flowline project)")]
         public string? Output { get; set; }
+
+        [CommandOption("--generator")]
+        public GeneratorType? Generator { get; set; }
     }
 
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)

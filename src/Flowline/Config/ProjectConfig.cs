@@ -273,6 +273,13 @@ public class ProjectConfig
     }
 }
 
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter))]
+public enum GeneratorType
+{
+    Pac,
+    XrmContext,
+}
+
 public class GenerateConfig
 {
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
@@ -280,6 +287,9 @@ public class GenerateConfig
 
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string[]? ExtraTables { get; set; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratorType? Generator { get; set; }
 }
 
 public class ProjectSolution
