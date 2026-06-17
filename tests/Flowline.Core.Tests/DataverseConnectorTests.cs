@@ -138,4 +138,60 @@ public class DataverseConnectorTests
             }
         }
     }
+
+    [Fact]
+    public void BuildXrmContextConnectionString_UniversalProfile_ReturnsOAuthConnectionString()
+    {
+        var profiles = new List<PacProfile>
+        {
+            new() { Kind = "UNIVERSAL", Resource = "https://contoso.crm4.dynamics.com" }
+        };
+
+        var result = DataverseConnector.BuildXrmContextConnectionString("https://contoso.crm4.dynamics.com", profiles);
+
+        Assert.Contains("AuthType=OAuth", result);
+        Assert.Contains("Url=https://contoso.crm4.dynamics.com", result);
+        Assert.Contains("AppId=1950a258-227b-4e31-a9cf-717495945fc2", result);
+    }
+
+    [Fact]
+    public void BuildXrmContextConnectionString_TrailingSlashNormalized_UrlHasNoTrailingSlash()
+    {
+        var profiles = new List<PacProfile>
+        {
+            new() { Kind = "UNIVERSAL", Resource = "https://contoso.crm4.dynamics.com" }
+        };
+
+        var result = DataverseConnector.BuildXrmContextConnectionString("https://contoso.crm4.dynamics.com/", profiles);
+
+        Assert.Contains("Url=https://contoso.crm4.dynamics.com;", result);
+        Assert.DoesNotContain("Url=https://contoso.crm4.dynamics.com/", result);
+    }
+
+    [Fact]
+    public void BuildXrmContextConnectionString_NoProfileFound_ThrowsInvalidOperationException()
+    {
+        var result = Assert.Throws<InvalidOperationException>(
+            () => DataverseConnector.BuildXrmContextConnectionString(
+                "https://no-such-env.crm.dynamics.com",
+                Enumerable.Empty<PacProfile>()));
+
+        Assert.Contains("No PAC profile found", result.Message);
+    }
+
+    [Fact]
+    public void BuildXrmContextConnectionString_ServicePrincipalProfile_ThrowsInvalidOperationException()
+    {
+        // PAC CLI does not store raw client secrets; XrmContext ClientSecret auth is not possible from a PAC profile alone.
+        var profiles = new List<PacProfile>
+        {
+            new() { Kind = "ServicePrincipal", Resource = "https://contoso.crm4.dynamics.com", ApplicationId = "some-app-id" }
+        };
+
+        var result = Assert.Throws<InvalidOperationException>(
+            () => DataverseConnector.BuildXrmContextConnectionString("https://contoso.crm4.dynamics.com", profiles));
+
+        Assert.Contains("service principal", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("client secret", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
 }

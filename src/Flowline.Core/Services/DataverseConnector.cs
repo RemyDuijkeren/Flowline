@@ -156,6 +156,33 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
         });
     }
 
+    public string BuildXrmContextConnectionString(string environmentUrl)
+    {
+        var profiles = GetPacProfiles();
+        return BuildXrmContextConnectionString(environmentUrl, profiles);
+    }
+
+    internal static string BuildXrmContextConnectionString(string environmentUrl, IEnumerable<PacProfile> profiles)
+    {
+        var normalizedUrl = environmentUrl.TrimEnd('/');
+        var profile = profiles
+            .FirstOrDefault(p => p.Resource?.TrimEnd('/').Equals(normalizedUrl, StringComparison.OrdinalIgnoreCase) == true)
+            ?? profiles.FirstOrDefault(p => p.IsUniversal);
+
+        if (profile is null)
+            throw new InvalidOperationException(
+                $"No PAC profile found for {normalizedUrl}. Run 'pac auth create --environment {normalizedUrl}' first.");
+
+        if (profile.IsServicePrincipal)
+            // PAC CLI stores MSAL tokens, not the raw client secret — XrmContext ClientSecret auth is not possible.
+            throw new InvalidOperationException(
+                "XrmContext does not support service principal PAC profiles. PAC CLI does not store raw client secrets, which XrmContext requires. Use '--generator pac' or re-authenticate with a UNIVERSAL profile ('pac auth create --environment <url>').");
+
+        // UNIVERSAL or other interactive profile — use OAuth connection string
+        var tokenCachePath = Path.Combine(GetPacCliDataDirectory(), "auth");
+        return $"AuthType=OAuth;Url={normalizedUrl};AppId=1950a258-227b-4e31-a9cf-717495945fc2;RedirectUri=http://localhost;TokenCacheStorePath={tokenCachePath};";
+    }
+
     public IEnumerable<PacProfile> GetPacProfiles()
     {
         var profiles = LoadPacAuthProfiles();
