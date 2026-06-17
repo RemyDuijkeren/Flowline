@@ -1,3 +1,4 @@
+using Flowline;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Client.Extensions.Msal;
 using Microsoft.PowerPlatform.Dataverse.Client;
@@ -9,6 +10,8 @@ namespace Flowline.Core.Services;
 
 public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
 {
+    public const string PacCliAppId = "51f81489-12ee-4a9e-aaae-a2591f45987d";
+
     /// <summary>
     /// Connects to Dataverse by re-using the token that PAC CLI already acquired.
     /// PAC CLI writes its token cache in MSAL Extensions v3 (DPAPI-encrypted) format,
@@ -113,13 +116,12 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
         MsalCacheHelper cacheHelper, CancellationToken cancellationToken)
     {
         // must match PAC CLI's client registration
-        const string pacClientId = "51f81489-12ee-4a9e-aaae-a2591f45987d";
         const string redirectUri = "http://localhost";
 
         var scopes = new[] { $"{resourceUrl}/.default" };
 
         var app = PublicClientApplicationBuilder
-            .Create(pacClientId)
+            .Create(PacCliAppId)
             .WithAuthority(authority)
             .WithRedirectUri(redirectUri)
             .Build();
@@ -166,20 +168,7 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
         string? username = null, string? password = null, string? clientId = null)
     {
         var normalizedUrl = environmentUrl.TrimEnd('/');
-        var profile = profiles
-            .FirstOrDefault(p => p.Resource?.TrimEnd('/').Equals(normalizedUrl, StringComparison.OrdinalIgnoreCase) == true)
-            ?? profiles.FirstOrDefault(p => p.IsUniversal);
-
-        if (profile is null)
-            throw new InvalidOperationException(
-                $"No PAC profile found for {normalizedUrl}. Run 'pac auth create --environment {normalizedUrl}' first.");
-
-        if (profile.IsServicePrincipal)
-            throw new InvalidOperationException(
-                "XrmContext doesn't support service principal profiles — PAC doesn't store client secrets. Use '--generator pac' instead.");
-
-        // XrmContext uses ADAL. Use a Flowline-owned ADAL cache dir separate from PAC's MSAL cache.
-        var appId = clientId ?? "51f81489-12ee-4a9e-aaae-a2591f45987d"; // PAC CLI app — already consented
+        var appId = clientId ?? PacCliAppId;
         var tokenCachePath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Flowline", "auth", "xrmcontext");
@@ -187,9 +176,26 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
         if (!string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password))
         {
-            // ROPC flow — no browser required
+            // ROPC flow — no browser or PAC profile required
+            if (username.IndexOfAny([';', '=']) >= 0)
+                throw new FlowlineException(ExitCode.NotAuthenticated, "XrmContext username must not contain ';' or '='.");
+            if (password.IndexOfAny([';', '=']) >= 0)
+                throw new FlowlineException(ExitCode.NotAuthenticated, "XrmContext password must not contain ';' or '='.");
             return $"AuthType=OAuth;Username={username};Password={password};Url={normalizedUrl};AppId={appId};RedirectUri=http://localhost;LoginPrompt=Never;TokenCacheStorePath={tokenCachePath};";
         }
+
+        // Browser OAuth — PAC profile validates the environment exists in auth store
+        var profile = profiles
+            .FirstOrDefault(p => p.Resource?.TrimEnd('/').Equals(normalizedUrl, StringComparison.OrdinalIgnoreCase) == true)
+            ?? profiles.FirstOrDefault(p => p.IsUniversal);
+
+        if (profile is null)
+            throw new FlowlineException(ExitCode.NotAuthenticated,
+                $"No PAC profile found for {normalizedUrl}. Run 'pac auth create --environment {normalizedUrl}' first.");
+
+        if (profile.IsServicePrincipal)
+            throw new FlowlineException(ExitCode.NotAuthenticated,
+                "XrmContext doesn't support service principal profiles — PAC doesn't store client secrets. Use '--generator pac' instead.");
 
         // Interactive browser OAuth — LoginPrompt=Auto opens browser only when no cached token
         return $"AuthType=OAuth;Url={normalizedUrl};AppId={appId};RedirectUri=http://localhost;LoginPrompt=Auto;TokenCacheStorePath={tokenCachePath};";

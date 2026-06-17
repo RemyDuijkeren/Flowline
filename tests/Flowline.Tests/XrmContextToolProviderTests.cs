@@ -244,13 +244,34 @@ public class XrmContextToolProviderTests : IDisposable
             Task.FromResult(handler(request));
     }
 
-    /// <summary>
-    /// Subclass that overrides the two OS-specific paths so tests can inject temp directories.
-    /// The OS guard is not exercised here (tests run on the current OS); it is verified by inspection.
-    /// </summary>
+    // ── OS guard ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetExePathAsync_ThrowsConfigInvalid_OnNonWindows()
+    {
+        var provider = new NonWindowsXrmContextToolProvider(
+            MakeHttpClient(_ => throw new Exception("should not be called")),
+            nugetGlobalCache: Path.Combine(_tempRoot, "nuget"),
+            flowlineCache: Path.Combine(_tempRoot, "flowline"));
+
+        var act = () => provider.GetExePathAsync();
+
+        await act.Should().ThrowAsync<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.ConfigInvalid);
+    }
+
     private class TestableXrmContextToolProvider(
         HttpClient httpClient,
         string nugetGlobalCache,
         string flowlineCache)
         : XrmContextToolProvider(httpClient, new TestConsole(), new FlowlineRuntimeOptions(), nugetGlobalCache, flowlineCache);
+
+    private class NonWindowsXrmContextToolProvider(
+        HttpClient httpClient,
+        string nugetGlobalCache,
+        string flowlineCache)
+        : XrmContextToolProvider(httpClient, new TestConsole(), new FlowlineRuntimeOptions(), nugetGlobalCache, flowlineCache)
+    {
+        protected override bool IsWindows() => false;
+    }
 }

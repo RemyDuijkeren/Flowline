@@ -1,5 +1,6 @@
 using CliWrap;
 using Flowline.Core;
+using Flowline.Core.Services;
 using Flowline.Utils;
 using Spectre.Console;
 
@@ -11,7 +12,7 @@ public abstract record XrmContextAuth
     public sealed record ClientSecret(string ClientId, string Secret) : XrmContextAuth;
     /// <summary>Browser OAuth via XrmContext's native /method:OAuth — single auth context,
     /// single browser window after first login.</summary>
-    public sealed record BrowserOAuth : XrmContextAuth;
+    public sealed record BrowserOAuth(string? AppId = null) : XrmContextAuth;
 }
 
 public class XrmContextRunner(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions)
@@ -51,7 +52,6 @@ public class XrmContextRunner(IAnsiConsole console, FlowlineRuntimeOptions runti
     {
         var args = new List<string>();
 
-        const string pacClientId = "51f81489-12ee-4a9e-aaae-a2591f45987d";
         switch (auth)
         {
             case XrmContextAuth.ConnectionString cs:
@@ -65,15 +65,17 @@ public class XrmContextRunner(IAnsiConsole console, FlowlineRuntimeOptions runti
                 args.Add($"/mfaAppId:{clientSecret.ClientId}");
                 args.Add($"/mfaClientSecret:{clientSecret.Secret}");
                 break;
-            case XrmContextAuth.BrowserOAuth:
+            case XrmContextAuth.BrowserOAuth browserOAuth:
                 // method:OAuth creates a single CrmServiceClient with one ADAL auth context.
                 // All entity metadata queries share that context — only one browser window opens.
                 // tokenCacheStorePath is not supported in method:OAuth for XrmContext 3.0.1.
                 args.Add($"/url:{environmentUrl.TrimEnd('/')}/XRMServices/2011/Organization.svc");
                 args.Add("/method:OAuth");
-                args.Add($"/mfaAppId:{pacClientId}");
+                args.Add($"/mfaAppId:{browserOAuth.AppId ?? DataverseConnector.PacCliAppId}");
                 args.Add("/mfaReturnUrl:http://localhost");
                 break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(auth));
         }
 
         // https://github.com/delegateas/XrmContext/wiki/Generate-Context#generation-arguments

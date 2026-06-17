@@ -19,7 +19,13 @@ public static class CommandExtensions
         var prefix = toolDisplayName ?? command.TargetFilePath;
         if (verbose)
         {
-            AnsiConsole.MarkupLine($"[dim]Executing: [italic]{Markup.Escape(prefix.ToString())}[/][/]");
+            var cmdStr = command.ToString();
+            var hasCredentials = cmdStr.Contains("secret", StringComparison.OrdinalIgnoreCase)
+                || cmdStr.Contains("password", StringComparison.OrdinalIgnoreCase);
+            var execLine = hasCredentials
+                ? $"{Markup.Escape(command.TargetFilePath)} [args redacted]"
+                : Markup.Escape(cmdStr);
+            AnsiConsole.MarkupLine($"[dim]Executing: [italic]{execLine}[/][/]");
 
             return command
                    .WithStandardOutputPipe(PipeTarget.ToDelegate(s =>

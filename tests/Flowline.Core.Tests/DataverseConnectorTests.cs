@@ -1,5 +1,6 @@
-using Flowline.Core.Services;
+using Flowline;
 using Flowline.Core;
+using Flowline.Core.Services;
 using Microsoft.Crm.Sdk.Messages;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Spectre.Console.Testing;
@@ -200,18 +201,19 @@ public class DataverseConnectorTests
     }
 
     [Fact]
-    public void BuildXrmContextConnectionString_NoProfileFound_ThrowsInvalidOperationException()
+    public void BuildXrmContextConnectionString_NoProfileFound_ThrowsFlowlineException()
     {
-        var result = Assert.Throws<InvalidOperationException>(
+        var ex = Assert.Throws<FlowlineException>(
             () => DataverseConnector.BuildXrmContextConnectionString(
                 "https://no-such-env.crm.dynamics.com",
                 Enumerable.Empty<PacProfile>()));
 
-        Assert.Contains("No PAC profile found", result.Message);
+        Assert.Equal(ExitCode.NotAuthenticated, ex.ExitCode);
+        Assert.Contains("No PAC profile found", ex.Message);
     }
 
     [Fact]
-    public void BuildXrmContextConnectionString_ServicePrincipalProfile_ThrowsInvalidOperationException()
+    public void BuildXrmContextConnectionString_ServicePrincipalProfile_ThrowsFlowlineException()
     {
         // PAC CLI does not store raw client secrets; XrmContext ClientSecret auth is not possible from a PAC profile alone.
         var profiles = new List<PacProfile>
@@ -219,10 +221,50 @@ public class DataverseConnectorTests
             new() { Kind = "ServicePrincipal", Resource = "https://contoso.crm4.dynamics.com", ApplicationId = "some-app-id" }
         };
 
-        var result = Assert.Throws<InvalidOperationException>(
+        var ex = Assert.Throws<FlowlineException>(
             () => DataverseConnector.BuildXrmContextConnectionString("https://contoso.crm4.dynamics.com", profiles));
 
-        Assert.Contains("service principal", result.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("client secret", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(ExitCode.NotAuthenticated, ex.ExitCode);
+        Assert.Contains("service principal", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildXrmContextConnectionString_WithUsernameAndPassword_NoProfileRequired()
+    {
+        // ROPC path does not require a PAC profile
+        var result = DataverseConnector.BuildXrmContextConnectionString(
+            "https://contoso.crm4.dynamics.com",
+            Enumerable.Empty<PacProfile>(),
+            username: "user@contoso.com",
+            password: "pass");
+
+        Assert.Contains("Username=user@contoso.com", result);
+        Assert.Contains("LoginPrompt=Never", result);
+    }
+
+    [Fact]
+    public void BuildXrmContextConnectionString_UsernameSemicolon_ThrowsFlowlineException()
+    {
+        var ex = Assert.Throws<FlowlineException>(
+            () => DataverseConnector.BuildXrmContextConnectionString(
+                "https://contoso.crm4.dynamics.com",
+                Enumerable.Empty<PacProfile>(),
+                username: "user;evil=inject",
+                password: "pass"));
+
+        Assert.Equal(ExitCode.NotAuthenticated, ex.ExitCode);
+    }
+
+    [Fact]
+    public void BuildXrmContextConnectionString_PasswordSemicolon_ThrowsFlowlineException()
+    {
+        var ex = Assert.Throws<FlowlineException>(
+            () => DataverseConnector.BuildXrmContextConnectionString(
+                "https://contoso.crm4.dynamics.com",
+                Enumerable.Empty<PacProfile>(),
+                username: "user@contoso.com",
+                password: "pa;LoginPrompt=Auto"));
+
+        Assert.Equal(ExitCode.NotAuthenticated, ex.ExitCode);
     }
 }

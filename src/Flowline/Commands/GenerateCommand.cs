@@ -194,6 +194,8 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
 
         var outputLabel = standaloneMode ? modelsFolder : $"{solutionName}/Plugins/Models";
 
+        string? generationDuration = null;
+
         if (generator == GeneratorType.XrmContext)
         {
             var exePath = await xrmContextToolProvider.GetExePathAsync(cancellationToken);
@@ -213,17 +215,21 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             {
                 // ROPC — explicit credentials; works only when MFA is not required
                 if (string.IsNullOrEmpty(xrmPassword))
+                {
+                    if (!ConsoleHelper.IsInteractive(settings))
+                        throw new FlowlineException(ExitCode.NotAuthenticated, "Password required in non-interactive mode — pass --password <PASS>.");
                     xrmPassword = Console.Prompt(new TextPrompt<string>("[dim]XrmContext password:[/]").Secret('*'));
-                string connectionString;
-                try { connectionString = dataverseConnector.BuildXrmContextConnectionString(devUrl, xrmUsername, xrmPassword, xrmClientId); }
-                catch (InvalidOperationException ex) { throw new FlowlineException(ExitCode.NotAuthenticated, ex.Message); }
+                }
+                var connectionString = dataverseConnector.BuildXrmContextConnectionString(devUrl, xrmUsername, xrmPassword, xrmClientId);
                 auth = new XrmContextAuth.ConnectionString(connectionString);
             }
             else
             {
                 // Browser OAuth via method:OAuth — single CrmServiceClient with one ADAL auth context;
                 // one browser window for MFA, token cached internally by XrmContext after first login
-                auth = new XrmContextAuth.BrowserOAuth();
+                if (!ConsoleHelper.IsInteractive(settings))
+                    throw new FlowlineException(ExitCode.NotAuthenticated, "XrmContext browser OAuth requires interactive login. Provide --xrm-client-id + --xrm-client-secret for non-interactive auth.");
+                auth = new XrmContextAuth.BrowserOAuth(xrmClientId);
             }
 
             try
@@ -244,29 +250,6 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
                     Directory.Delete(tempFolder, recursive: true);
                 throw;
             }
-
-            if (!Directory.Exists(tempFolder))
-                throw new FlowlineException(ExitCode.BuildFailed, "XrmContext reported success but produced no output folder.");
-
-            if (Directory.Exists(modelsFolder))
-                Directory.Delete(modelsFolder, recursive: true);
-            Directory.Move(tempFolder, modelsFolder);
-
-            // Save to .flowline — project mode only, skipped when --output overrides the path
-            if (!standaloneMode && projectSln != null && string.IsNullOrWhiteSpace(settings.Output))
-            {
-                projectSln.Generate ??= new GenerateConfig();
-                if (namespaceWasDerived)
-                    projectSln.Generate.Namespace = modelNamespace;
-                projectSln.Generate.Generator = generator;
-                if (!string.IsNullOrEmpty(settings.XrmClientId))
-                    projectSln.Generate.XrmClientId = settings.XrmClientId;
-                if (!string.IsNullOrEmpty(settings.XrmUsername))
-                    projectSln.Generate.XrmUsername = settings.XrmUsername;
-                Config!.Save(RootFolder);
-            }
-
-            Console.Done($"Types generated into [bold]{outputLabel}[/]. Namespace: [bold]{modelNamespace}[/]");
         }
         else
         {
@@ -347,26 +330,39 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             }
 
             Console.Ok("Early-bound types generated");
-
-            if (!Directory.Exists(tempFolder))
-                throw new FlowlineException(ExitCode.BuildFailed, "pac modelbuilder build reported success but produced no output folder.");
-            if (Directory.Exists(modelsFolder))
-                Directory.Delete(modelsFolder, recursive: true);
-            Directory.Move(tempFolder, modelsFolder);
-
-            // Save to .flowline — project mode only, skipped when --output overrides the path (R5)
-            if (!standaloneMode && projectSln != null && string.IsNullOrWhiteSpace(settings.Output))
-            {
-                projectSln.Generate ??= new GenerateConfig();
-                if (namespaceWasDerived)
-                    projectSln.Generate.Namespace = modelNamespace;
-                projectSln.Generate.Generator = generator;
-                Config!.Save(RootFolder);
-            }
-
-            var duration = FormatDuration(result.RunTime);
-            Console.Done($"Types generated into [bold]{outputLabel}[/] in {duration}. Namespace: [bold]{modelNamespace}[/]");
+            generationDuration = FormatDuration(result.RunTime);
         }
+
+        // --- Shared tail (both generators) ---
+        if (!Directory.EnumerateFiles(tempFolder, "*", SearchOption.AllDirectories).Any())
+            throw new FlowlineException(ExitCode.BuildFailed,
+                "Generator reported success but produced no output. Re-run with --verbose to see tool output.");
+
+        if (Directory.Exists(modelsFolder))
+            Directory.Delete(modelsFolder, recursive: true);
+        Directory.Move(tempFolder, modelsFolder);
+
+        // Save to .flowline — project mode only, skipped when --output overrides the path
+        if (!standaloneMode && projectSln != null && string.IsNullOrWhiteSpace(settings.Output))
+        {
+            projectSln.Generate ??= new GenerateConfig();
+            if (namespaceWasDerived)
+                projectSln.Generate.Namespace = modelNamespace;
+            projectSln.Generate.Generator = generator;
+            if (generator == GeneratorType.XrmContext)
+            {
+                if (!string.IsNullOrEmpty(settings.XrmClientId))
+                    projectSln.Generate.XrmClientId = settings.XrmClientId;
+                if (!string.IsNullOrEmpty(settings.XrmUsername))
+                    projectSln.Generate.XrmUsername = settings.XrmUsername;
+            }
+            Config!.Save(RootFolder);
+        }
+
+        var doneMsg = generationDuration != null
+            ? $"Types generated into [bold]{outputLabel}[/] in {generationDuration}. Namespace: [bold]{modelNamespace}[/]"
+            : $"Types generated into [bold]{outputLabel}[/]. Namespace: [bold]{modelNamespace}[/]";
+        Console.Done(doneMsg);
 
         return 0;
     }
