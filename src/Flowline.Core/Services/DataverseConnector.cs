@@ -176,7 +176,7 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
         if (profile.IsServicePrincipal)
             // PAC CLI stores MSAL tokens, not the raw client secret — XrmContext ClientSecret auth is not possible.
             throw new InvalidOperationException(
-                "XrmContext does not support service principal PAC profiles. PAC CLI does not store raw client secrets, which XrmContext requires. Use '--generator pac' or re-authenticate with a UNIVERSAL profile ('pac auth create --environment <url>').");
+                "XrmContext doesn't support service principal profiles — PAC doesn't store client secrets. Use '--generator pac' instead.");
 
         // UNIVERSAL or other interactive profile — use OAuth connection string
         var tokenCachePath = Path.Combine(GetPacCliDataDirectory(), "auth");

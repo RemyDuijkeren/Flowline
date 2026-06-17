@@ -108,7 +108,7 @@ public class XrmContextToolProvider
 
         if (exePath == null)
             throw new FlowlineException(ExitCode.BuildFailed,
-                "XrmContext.exe not found in downloaded package. Please report this at github.com/RemyDuijkeren/Flowline/issues.");
+                "XrmContext.exe not found in downloaded package. Report this at github.com/RemyDuijkeren/Flowline/issues.");
 
         return exePath;
     }
