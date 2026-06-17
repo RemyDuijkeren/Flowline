@@ -41,6 +41,22 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         [CommandOption("--generator")]
         [Description("Model builder generator to use (pac|xrmcontext), default: pac")]
         public GeneratorType? Generator { get; set; }
+
+        [CommandOption("--username <USER>")]
+        [Description("Username for XrmContext auth — saved to .flowline for reuse")]
+        public string? XrmUsername { get; set; }
+
+        [CommandOption("--password <PASS>")]
+        [Description("Password for XrmContext auth — never saved")]
+        public string? XrmPassword { get; set; }
+
+        [CommandOption("--xrm-client-id <ID>")]
+        [Description("Azure App Registration client ID — for browser OAuth or service principal auth")]
+        public string? XrmClientId { get; set; }
+
+        [CommandOption("--xrm-client-secret <SECRET>")]
+        [Description("Azure App Registration client secret — enables service principal auth, never saved")]
+        public string? XrmClientSecret { get; set; }
     }
 
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
@@ -182,18 +198,43 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         {
             var exePath = await xrmContextToolProvider.GetExePathAsync(cancellationToken);
 
-            string connectionString;
-            try { connectionString = dataverseConnector.BuildXrmContextConnectionString(devUrl); }
-            catch (InvalidOperationException ex) { throw new FlowlineException(ExitCode.NotAuthenticated, ex.Message); }
+            var xrmClientId = settings.XrmClientId ?? projectSln?.Generate?.XrmClientId;
+            var xrmClientSecret = settings.XrmClientSecret;
+            var xrmUsername = settings.XrmUsername ?? projectSln?.Generate?.XrmUsername;
+            var xrmPassword = settings.XrmPassword;
+
+            XrmContextAuth auth;
+            if (!string.IsNullOrEmpty(xrmClientId) && !string.IsNullOrEmpty(xrmClientSecret))
+            {
+                // Service principal — no user interaction
+                auth = new XrmContextAuth.ClientSecret(xrmClientId, xrmClientSecret);
+            }
+            else if (!string.IsNullOrEmpty(xrmUsername))
+            {
+                // ROPC — explicit credentials; works only when MFA is not required
+                if (string.IsNullOrEmpty(xrmPassword))
+                    xrmPassword = Console.Prompt(new TextPrompt<string>("[dim]XrmContext password:[/]").Secret('*'));
+                string connectionString;
+                try { connectionString = dataverseConnector.BuildXrmContextConnectionString(devUrl, xrmUsername, xrmPassword, xrmClientId); }
+                catch (InvalidOperationException ex) { throw new FlowlineException(ExitCode.NotAuthenticated, ex.Message); }
+                auth = new XrmContextAuth.ConnectionString(connectionString);
+            }
+            else
+            {
+                // Browser OAuth via method:OAuth — single CrmServiceClient with one ADAL auth context;
+                // one browser window for MFA, token cached internally by XrmContext after first login
+                auth = new XrmContextAuth.BrowserOAuth();
+            }
 
             try
             {
                 await xrmContextRunner.RunAsync(
                     exePath: exePath,
+                    environmentUrl: devUrl,
+                    auth: auth,
                     solutionName: solutionName,
                     extraTables: extraTables.Length > 0 ? extraTables : null,
                     modelNamespace: modelNamespace,
-                    connectionString: connectionString,
                     tempOutputPath: tempFolder,
                     cancellationToken: cancellationToken);
             }
@@ -218,6 +259,10 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
                 if (namespaceWasDerived)
                     projectSln.Generate.Namespace = modelNamespace;
                 projectSln.Generate.Generator = generator;
+                if (!string.IsNullOrEmpty(settings.XrmClientId))
+                    projectSln.Generate.XrmClientId = settings.XrmClientId;
+                if (!string.IsNullOrEmpty(settings.XrmUsername))
+                    projectSln.Generate.XrmUsername = settings.XrmUsername;
                 Config!.Save(RootFolder);
             }
 

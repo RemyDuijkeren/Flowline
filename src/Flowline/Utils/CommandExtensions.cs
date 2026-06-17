@@ -14,8 +14,9 @@ public static class CommandExtensions
         return command;
     }
 
-    public static Command WithToolExecutionLog(this Command command, bool verbose = true, StatusContext? ctx = null, Func<string, string>? lineTransform = null)
+    public static Command WithToolExecutionLog(this Command command, bool verbose = true, StatusContext? ctx = null, Func<string, string>? lineTransform = null, string? toolDisplayName = null)
     {
+        var prefix = toolDisplayName ?? command.TargetFilePath;
         if (verbose)
         {
             AnsiConsole.MarkupLine($"[dim]Executing: [italic]{Markup.Escape(command.ToString())}[/][/]");
@@ -26,7 +27,7 @@ public static class CommandExtensions
                        SetStatusWithExecutionTime(ctx, s);
 
                        // Skip if the output is an error message
-                       if (DisplayErrorMessage(s, command.TargetFilePath)) return;
+                       if (DisplayErrorMessage(s, prefix)) return;
 
                        // Skip if the output is PAC async operation progress
                        if (s.StartsWith("Processing asynchronous operation...")) return;
@@ -35,18 +36,18 @@ public static class CommandExtensions
                        if (string.IsNullOrWhiteSpace(s)) return;
 
                        var display = lineTransform != null ? lineTransform(s) : s;
-                       AnsiConsole.MarkupLineInterpolated($"[dim]{command.TargetFilePath}: {display}[/]");
+                       AnsiConsole.MarkupLineInterpolated($"[dim]{prefix}: {display}[/]");
                    }))
-                   .WithStandardErrorPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[red]{command.TargetFilePath}: {s}[/]")));
+                   .WithStandardErrorPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[red]{prefix}: {s}[/]")));
         }
 
         return command
                .WithStandardOutputPipe(PipeTarget.ToDelegate(s =>
                {
                    SetStatusWithExecutionTime(ctx, s);
-                   DisplayErrorMessage(s, command.TargetFilePath);
+                   DisplayErrorMessage(s, prefix);
                }))
-               .WithStandardErrorPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[red]{command.TargetFilePath}: {s}[/]")));
+               .WithStandardErrorPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[red]{prefix}: {s}[/]")));
     }
 
     static void SetStatusWithExecutionTime(StatusContext? ctx, string s)

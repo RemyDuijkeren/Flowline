@@ -151,7 +151,38 @@ public class DataverseConnectorTests
 
         Assert.Contains("AuthType=OAuth", result);
         Assert.Contains("Url=https://contoso.crm4.dynamics.com", result);
-        Assert.Contains("AppId=1950a258-227b-4e31-a9cf-717495945fc2", result);
+        Assert.Contains("AppId=51f81489-12ee-4a9e-aaae-a2591f45987d", result); // PAC CLI app — already consented
+    }
+
+    [Fact]
+    public void BuildXrmContextConnectionString_WithUsernamePassword_IncludesCredentialsAndLoginPromptNever()
+    {
+        var profiles = new List<PacProfile>
+        {
+            new() { Kind = "UNIVERSAL", Resource = "https://contoso.crm4.dynamics.com" }
+        };
+
+        var result = DataverseConnector.BuildXrmContextConnectionString(
+            "https://contoso.crm4.dynamics.com", profiles, username: "user@contoso.com", password: "secret");
+
+        Assert.Contains("Username=user@contoso.com", result);
+        Assert.Contains("Password=secret", result);
+        Assert.Contains("LoginPrompt=Never", result);
+    }
+
+    [Fact]
+    public void BuildXrmContextConnectionString_CustomClientId_UsesProvidedAppId()
+    {
+        var profiles = new List<PacProfile>
+        {
+            new() { Kind = "UNIVERSAL", Resource = "https://contoso.crm4.dynamics.com" }
+        };
+
+        var result = DataverseConnector.BuildXrmContextConnectionString(
+            "https://contoso.crm4.dynamics.com", profiles, clientId: "my-custom-app-id");
+
+        Assert.Contains("AppId=my-custom-app-id", result);
+        Assert.DoesNotContain("AppId=51f81489", result);
     }
 
     [Fact]

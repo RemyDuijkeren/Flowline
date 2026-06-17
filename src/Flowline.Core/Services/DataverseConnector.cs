@@ -156,13 +156,14 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
         });
     }
 
-    public string BuildXrmContextConnectionString(string environmentUrl)
+    public string BuildXrmContextConnectionString(string environmentUrl, string? username = null, string? password = null, string? clientId = null)
     {
         var profiles = GetPacProfiles();
-        return BuildXrmContextConnectionString(environmentUrl, profiles);
+        return BuildXrmContextConnectionString(environmentUrl, profiles, username, password, clientId);
     }
 
-    internal static string BuildXrmContextConnectionString(string environmentUrl, IEnumerable<PacProfile> profiles)
+    internal static string BuildXrmContextConnectionString(string environmentUrl, IEnumerable<PacProfile> profiles,
+        string? username = null, string? password = null, string? clientId = null)
     {
         var normalizedUrl = environmentUrl.TrimEnd('/');
         var profile = profiles
@@ -174,13 +175,24 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 $"No PAC profile found for {normalizedUrl}. Run 'pac auth create --environment {normalizedUrl}' first.");
 
         if (profile.IsServicePrincipal)
-            // PAC CLI stores MSAL tokens, not the raw client secret — XrmContext ClientSecret auth is not possible.
             throw new InvalidOperationException(
                 "XrmContext doesn't support service principal profiles — PAC doesn't store client secrets. Use '--generator pac' instead.");
 
-        // UNIVERSAL or other interactive profile — use OAuth connection string
-        var tokenCachePath = Path.Combine(GetPacCliDataDirectory(), "auth");
-        return $"AuthType=OAuth;Url={normalizedUrl};AppId=1950a258-227b-4e31-a9cf-717495945fc2;RedirectUri=http://localhost;TokenCacheStorePath={tokenCachePath};";
+        // XrmContext uses ADAL. Use a Flowline-owned ADAL cache dir separate from PAC's MSAL cache.
+        var appId = clientId ?? "51f81489-12ee-4a9e-aaae-a2591f45987d"; // PAC CLI app — already consented
+        var tokenCachePath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Flowline", "auth", "xrmcontext");
+        Directory.CreateDirectory(tokenCachePath);
+
+        if (!string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password))
+        {
+            // ROPC flow — no browser required
+            return $"AuthType=OAuth;Username={username};Password={password};Url={normalizedUrl};AppId={appId};RedirectUri=http://localhost;LoginPrompt=Never;TokenCacheStorePath={tokenCachePath};";
+        }
+
+        // Interactive browser OAuth — LoginPrompt=Auto opens browser only when no cached token
+        return $"AuthType=OAuth;Url={normalizedUrl};AppId={appId};RedirectUri=http://localhost;LoginPrompt=Auto;TokenCacheStorePath={tokenCachePath};";
     }
 
     public IEnumerable<PacProfile> GetPacProfiles()
