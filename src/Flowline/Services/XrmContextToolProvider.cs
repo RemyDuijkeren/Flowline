@@ -1,6 +1,9 @@
 using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using Flowline.Core;
+using Flowline.Utils;
+using Spectre.Console;
 
 namespace Flowline.Services;
 
@@ -11,20 +14,24 @@ public class XrmContextToolProvider
     private const string ExeName = "XrmContext.exe";
 
     private readonly HttpClient _httpClient;
+    private readonly IAnsiConsole _console;
+    private readonly FlowlineRuntimeOptions _runtimeOptions;
     private readonly string _nugetGlobalCache;
     private readonly string _flowlineCache;
 
-    public XrmContextToolProvider(HttpClient httpClient)
+    public XrmContextToolProvider(HttpClient httpClient, IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions)
         : this(
-            httpClient,
+            httpClient, console, runtimeOptions,
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget", "packages", "delegate.xrmcontext"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Flowline", "tools", "xrmcontext"))
     {
     }
 
-    protected XrmContextToolProvider(HttpClient httpClient, string nugetGlobalCache, string flowlineCache)
+    protected XrmContextToolProvider(HttpClient httpClient, IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, string nugetGlobalCache, string flowlineCache)
     {
         _httpClient = httpClient;
+        _console = console;
+        _runtimeOptions = runtimeOptions;
         _nugetGlobalCache = nugetGlobalCache;
         _flowlineCache = flowlineCache;
     }
@@ -39,14 +46,20 @@ public class XrmContextToolProvider
         {
             var exePath = FindExeInVersionedDir(_nugetGlobalCache);
             if (exePath != null)
+            {
+                _console.Verbose($"XrmContext: {exePath}", _runtimeOptions.IsVerbose);
                 return exePath;
+            }
         }
 
         if (Directory.Exists(_flowlineCache))
         {
             var exePath = FindExeInVersionedDir(_flowlineCache);
             if (exePath != null)
+            {
+                _console.Verbose($"XrmContext: {exePath}", _runtimeOptions.IsVerbose);
                 return exePath;
+            }
         }
 
         return await DownloadAndExtractAsync(cancellationToken);
@@ -56,12 +69,14 @@ public class XrmContextToolProvider
     {
         foreach (var versionDir in Directory.EnumerateDirectories(baseDir))
         {
-            var toolsDir = Path.Combine(versionDir, "tools");
-            if (!Directory.Exists(toolsDir))
-                continue;
+            // prefer content/XrmContext/ — has all DLLs alongside the exe
+            var contentExe = Path.Combine(versionDir, "content", "XrmContext", ExeName);
+            if (File.Exists(contentExe))
+                return contentExe;
 
+            // fallback for non-standard layouts
             var exePath = Directory
-                .EnumerateFiles(toolsDir, ExeName, SearchOption.AllDirectories)
+                .EnumerateFiles(versionDir, ExeName, SearchOption.AllDirectories)
                 .FirstOrDefault();
 
             if (exePath != null)
@@ -74,42 +89,50 @@ public class XrmContextToolProvider
     private async Task<string> DownloadAndExtractAsync(CancellationToken cancellationToken)
     {
         var version = await ResolveLatestVersionAsync(cancellationToken);
-
         var downloadUrl = string.Format(NuGetDownloadUrlTemplate, version);
-        using var downloadResponse = await _httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-
-        if (!downloadResponse.IsSuccessStatusCode)
-            throw new FlowlineException(ExitCode.BuildFailed,
-                $"Failed to download XrmContext from NuGet: {(int)downloadResponse.StatusCode}. Check your internet connection and retry.");
-
         var extractDir = Path.Combine(_flowlineCache, version);
-        Directory.CreateDirectory(extractDir);
 
-        await using var stream = await downloadResponse.Content.ReadAsStreamAsync(cancellationToken);
-        using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: false);
+        string? exePath = null;
+        await _console.Status().FlowlineSpinner().StartAsync(
+            $"Downloading XrmContext [bold]{version}[/]...",
+            async _ =>
+            {
+                using var downloadResponse = await _httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
-        foreach (var entry in archive.Entries)
-        {
-            if (!entry.FullName.StartsWith("tools/", StringComparison.OrdinalIgnoreCase))
-                continue;
+                if (!downloadResponse.IsSuccessStatusCode)
+                    throw new FlowlineException(ExitCode.BuildFailed,
+                        $"Failed to download XrmContext from NuGet: {(int)downloadResponse.StatusCode}. Check your internet connection and retry.");
 
-            var relativePath = entry.FullName.Replace('/', Path.DirectorySeparatorChar);
-            var destPath = Path.Combine(extractDir, relativePath);
+                Directory.CreateDirectory(extractDir);
 
-            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+                await using var stream = await downloadResponse.Content.ReadAsStreamAsync(cancellationToken);
+                using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: false);
 
-            if (entry.Name.Length > 0)
-                entry.ExtractToFile(destPath, overwrite: true);
-        }
+                foreach (var entry in archive.Entries)
+                {
+                    if (!entry.FullName.StartsWith("content/XrmContext/", StringComparison.OrdinalIgnoreCase))
+                        continue;
 
-        var exePath = Directory
-            .EnumerateFiles(extractDir, ExeName, SearchOption.AllDirectories)
-            .FirstOrDefault();
+                    var relativePath = entry.FullName.Replace('/', Path.DirectorySeparatorChar);
+                    var destPath = Path.Combine(extractDir, relativePath);
+
+                    Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+
+                    if (entry.Name.Length > 0)
+                        entry.ExtractToFile(destPath, overwrite: true);
+                }
+
+                exePath = Directory
+                    .EnumerateFiles(extractDir, ExeName, SearchOption.AllDirectories)
+                    .FirstOrDefault();
+            });
 
         if (exePath == null)
             throw new FlowlineException(ExitCode.BuildFailed,
                 "XrmContext.exe not found in downloaded package. Report this at github.com/RemyDuijkeren/Flowline/issues.");
 
+        _console.Ok("XrmContext ready");
+        _console.Verbose($"Extracted to: {extractDir}", _runtimeOptions.IsVerbose);
         return exePath;
     }
 

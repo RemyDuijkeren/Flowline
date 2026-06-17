@@ -2,7 +2,9 @@ using System.IO.Compression;
 using System.Net;
 using System.Text;
 using FluentAssertions;
+using Flowline.Core;
 using Flowline.Services;
+using Spectre.Console.Testing;
 
 namespace Flowline.Tests;
 
@@ -66,8 +68,8 @@ public class XrmContextToolProviderTests : IDisposable
 
             if (includeExe)
             {
-                WriteEntry(zip, "tools/net462/XrmContext.exe", "fake-exe");
-                WriteEntry(zip, "tools/net462/FSharp.Core.dll", "fake-dll");
+                WriteEntry(zip, "content/XrmContext/XrmContext.exe", "fake-exe");
+                WriteEntry(zip, "content/XrmContext/FSharp.Core.dll", "fake-dll");
             }
         }
         return ms.ToArray();
@@ -82,7 +84,10 @@ public class XrmContextToolProviderTests : IDisposable
     }
 
     XrmContextToolProvider MakeProvider(HttpClient? client = null) =>
-        new(client ?? MakeDownloadClient());
+        new TestableXrmContextToolProvider(
+            client ?? MakeDownloadClient(),
+            nugetGlobalCache: Path.Combine(_tempRoot, "nuget-cache", "delegate.xrmcontext"),
+            flowlineCache: Path.Combine(_tempRoot, "flowline-cache"));
 
     // ── NuGet global cache ───────────────────────────────────────────────────
 
@@ -90,7 +95,7 @@ public class XrmContextToolProviderTests : IDisposable
     public async Task GetExePathAsync_ReturnsPath_WhenExeInNuGetCache()
     {
         var nugetCache = Path.Combine(_tempRoot, "nuget-cache", "delegate.xrmcontext");
-        var exePath = Path.Combine(nugetCache, "3.0.1", "tools", "net462", "XrmContext.exe");
+        var exePath = Path.Combine(nugetCache, "3.0.1", "content", "XrmContext", "XrmContext.exe");
         Directory.CreateDirectory(Path.GetDirectoryName(exePath)!);
         File.WriteAllText(exePath, "fake");
 
@@ -110,7 +115,7 @@ public class XrmContextToolProviderTests : IDisposable
     public async Task GetExePathAsync_ReturnsPath_WhenExeInFlowlineCache()
     {
         var flowlineCache = Path.Combine(_tempRoot, "flowline-cache");
-        var exePath = Path.Combine(flowlineCache, "3.0.1", "tools", "net462", "XrmContext.exe");
+        var exePath = Path.Combine(flowlineCache, "3.0.1", "content", "XrmContext", "XrmContext.exe");
         Directory.CreateDirectory(Path.GetDirectoryName(exePath)!);
         File.WriteAllText(exePath, "fake");
 
@@ -158,7 +163,7 @@ public class XrmContextToolProviderTests : IDisposable
 
         await provider.GetExePathAsync();
 
-        var exeDir = Path.Combine(flowlineCache, "3.0.1", "tools", "net462");
+        var exeDir = Path.Combine(flowlineCache, "3.0.1", "content", "XrmContext");
         File.Exists(Path.Combine(exeDir, "FSharp.Core.dll")).Should().BeTrue();
     }
 
@@ -247,5 +252,5 @@ public class XrmContextToolProviderTests : IDisposable
         HttpClient httpClient,
         string nugetGlobalCache,
         string flowlineCache)
-        : XrmContextToolProvider(httpClient, nugetGlobalCache, flowlineCache);
+        : XrmContextToolProvider(httpClient, new TestConsole(), new FlowlineRuntimeOptions(), nugetGlobalCache, flowlineCache);
 }
