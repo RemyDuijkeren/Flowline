@@ -6,6 +6,7 @@
 .env
 .junie
 .codex
+.claude/worktrees/
 .compound-engineering/*.local.yaml
 docs/comparison/
 
