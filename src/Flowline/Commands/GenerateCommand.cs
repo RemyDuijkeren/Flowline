@@ -3,6 +3,7 @@ using CliWrap;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Services;
+using Flowline.Services;
 using Flowline.Utils;
 using Flowline.Validation;
 using Microsoft.PowerPlatform.Dataverse.Client;
@@ -11,7 +12,8 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseConnector, FlowlineRuntimeOptions runtimeOptions)
+public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseConnector, FlowlineRuntimeOptions runtimeOptions,
+    XrmContextToolProvider xrmContextToolProvider, XrmContextRunner xrmContextRunner)
     : FlowlineCommand<GenerateCommand.Settings>(console, runtimeOptions)
 {
     public sealed class Settings : FlowlineSettings
@@ -151,6 +153,8 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             }
         }
 
+        var generator = settings.Generator ?? projectSln?.Generate?.Generator ?? GeneratorType.Pac;
+
         // --- Connect and validate ---
         var service = await ConnectToDataverseAsync(dataverseConnector, devUrl, cancellationToken);
 
@@ -166,111 +170,157 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             (_, remoteSln) = await GetAndCheckSolutionAsync(solutionName, devEnv.EnvironmentUrl!, cancellationToken: cancellationToken, settings: settings);
         }
 
-        // --- Discover entities and custom APIs in parallel (R10–R12) ---
-        var entityTask = Console.Status().FlowlineSpinner().StartAsync(
-            "Discovering solution entities...",
-            _ => GenerateReader.GetSolutionEntityLogicalNamesAsync(service, remoteSln.Id, cancellationToken));
-        var customApiTask = GenerateReader.GetSolutionCustomApiMessageNamesAsync(service, remoteSln.Id, cancellationToken);
-
-        var solutionEntities = await entityTask;
-        var customApiNames = await customApiTask;
-
-        // Deduplicate entity filter (R14): solution entities + extraTables
-        var entityFilter = solutionEntities
-            .Concat(extraTables)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Order(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        Console.Ok($"Found [bold]{entityFilter.Count}[/] entities" +
-                   (customApiNames.Count > 0 ? $", [bold]{customApiNames.Count}[/] custom APIs" : ""));
-
-        if (settings.Verbose)
-        {
-            foreach (var entity in entityFilter)
-                Console.Verbose($"  entity: {entity}", isVerbose: true);
-            foreach (var api in customApiNames)
-                Console.Verbose($"  custom api: {api}", isVerbose: true);
-        }
-
-        // --- Build and run pac modelbuilder build ---
         var tempFolder = modelsFolder + "~";
 
         if (Directory.Exists(tempFolder))
             Directory.Delete(tempFolder, recursive: true);
 
-        var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
+        var outputLabel = standaloneMode ? modelsFolder : $"{solutionName}/Plugins/Models";
 
-        var pacCommand = Cli.Wrap(cmdName)
-            .WithArguments(args =>
+        if (generator == GeneratorType.XrmContext)
+        {
+            var exePath = await xrmContextToolProvider.GetExePathAsync(cancellationToken);
+
+            string connectionString;
+            try { connectionString = dataverseConnector.BuildXrmContextConnectionString(devUrl); }
+            catch (InvalidOperationException ex) { throw new FlowlineException(ExitCode.NotAuthenticated, ex.Message); }
+
+            try
             {
-                args.AddIfNotNull(prefixArgs)
-                    .Add("modelbuilder").Add("build")
-                    .Add("-o").Add(tempFolder)
-                    .Add("-enf").Add(string.Join(";", entityFilter))
-                    .Add("-sgca")
-                    .Add("--suppressINotifyPattern")
-                    .Add("--emitfieldsclasses")
-                    .Add("-n").Add(modelNamespace);
+                await xrmContextRunner.RunAsync(
+                    exePath: exePath,
+                    solutionName: solutionName,
+                    extraTables: extraTables.Length > 0 ? extraTables : null,
+                    modelNamespace: modelNamespace,
+                    connectionString: connectionString,
+                    tempOutputPath: tempFolder,
+                    cancellationToken: cancellationToken);
+            }
+            catch
+            {
+                if (Directory.Exists(tempFolder))
+                    Directory.Delete(tempFolder, recursive: true);
+                throw;
+            }
 
-                if (customApiNames.Count > 0)
+            if (!Directory.Exists(tempFolder))
+                throw new FlowlineException(ExitCode.BuildFailed, "XrmContext reported success but produced no output folder.");
+
+            if (Directory.Exists(modelsFolder))
+                Directory.Delete(modelsFolder, recursive: true);
+            Directory.Move(tempFolder, modelsFolder);
+
+            // Save to .flowline — project mode only, skipped when --output overrides the path
+            if (!standaloneMode && projectSln != null && string.IsNullOrWhiteSpace(settings.Output))
+            {
+                projectSln.Generate ??= new GenerateConfig();
+                if (namespaceWasDerived)
+                    projectSln.Generate.Namespace = modelNamespace;
+                projectSln.Generate.Generator = generator;
+                Config!.Save(RootFolder);
+            }
+
+            Console.Done($"Types generated into [bold]{outputLabel}[/]. Namespace: [bold]{modelNamespace}[/]");
+        }
+        else
+        {
+            // --- Discover entities and custom APIs in parallel (R10–R12) ---
+            var entityTask = Console.Status().FlowlineSpinner().StartAsync(
+                "Discovering solution entities...",
+                _ => GenerateReader.GetSolutionEntityLogicalNamesAsync(service, remoteSln.Id, cancellationToken));
+            var customApiTask = GenerateReader.GetSolutionCustomApiMessageNamesAsync(service, remoteSln.Id, cancellationToken);
+
+            var solutionEntities = await entityTask;
+            var customApiNames = await customApiTask;
+
+            // Deduplicate entity filter (R14): solution entities + extraTables
+            var entityFilter = solutionEntities
+                .Concat(extraTables)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            Console.Ok($"Found [bold]{entityFilter.Count}[/] entities" +
+                       (customApiNames.Count > 0 ? $", [bold]{customApiNames.Count}[/] custom APIs" : ""));
+
+            if (settings.Verbose)
+            {
+                foreach (var entity in entityFilter)
+                    Console.Verbose($"  entity: {entity}", isVerbose: true);
+                foreach (var api in customApiNames)
+                    Console.Verbose($"  custom api: {api}", isVerbose: true);
+            }
+
+            // --- Build and run pac modelbuilder build ---
+            var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
+
+            var pacCommand = Cli.Wrap(cmdName)
+                .WithArguments(args =>
                 {
-                    args.Add("--generatesdkmessages")
-                        .Add("--messagenamesfilter").Add(string.Join(";", customApiNames));
-                }
-            })
-            .WithValidation(CommandResultValidation.None);
+                    args.AddIfNotNull(prefixArgs)
+                        .Add("modelbuilder").Add("build")
+                        .Add("-o").Add(tempFolder)
+                        .Add("-enf").Add(string.Join(";", entityFilter))
+                        .Add("-sgca")
+                        .Add("--suppressINotifyPattern")
+                        .Add("--emitfieldsclasses")
+                        .Add("-n").Add(modelNamespace);
 
-        var tempPrefix = tempFolder + Path.DirectorySeparatorChar;
-        var outputFolderName = Path.GetFileName(modelsFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        string ShortenPacLine(string line) => line.Replace(tempPrefix, outputFolderName + "/");
+                    if (customApiNames.Count > 0)
+                    {
+                        args.Add("--generatesdkmessages")
+                            .Add("--messagenamesfilter").Add(string.Join(";", customApiNames));
+                    }
+                })
+                .WithValidation(CommandResultValidation.None);
 
-        var outputLabel = standaloneMode
-            ? modelsFolder
-            : $"{solutionName}/Plugins/Models";
+            var tempPrefix = tempFolder + Path.DirectorySeparatorChar;
+            var outputFolderName = Path.GetFileName(modelsFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            string ShortenPacLine(string line) => line.Replace(tempPrefix, outputFolderName + "/");
 
-        CommandResult result;
-        try
-        {
-            result = await Console.Status().FlowlineSpinner().StartAsync(
-                $"Generating early-bound types into [bold]{outputLabel}[/]...",
-                ctx => pacCommand.WithToolExecutionLog(settings.Verbose, ctx, ShortenPacLine).ExecuteAsync(cancellationToken).Task);
+            CommandResult result;
+            try
+            {
+                result = await Console.Status().FlowlineSpinner().StartAsync(
+                    $"Generating early-bound types into [bold]{outputLabel}[/]...",
+                    ctx => pacCommand.WithToolExecutionLog(settings.Verbose, ctx, ShortenPacLine).ExecuteAsync(cancellationToken).Task);
+            }
+            catch
+            {
+                if (Directory.Exists(tempFolder))
+                    Directory.Delete(tempFolder, recursive: true);
+                throw;
+            }
+
+            if (!result.IsSuccess)
+            {
+                if (Directory.Exists(tempFolder))
+                    Directory.Delete(tempFolder, recursive: true);
+
+                throw new FlowlineException(ExitCode.BuildFailed, "pac modelbuilder build failed — check the output above.");
+            }
+
+            Console.Ok("Early-bound types generated");
+
+            if (!Directory.Exists(tempFolder))
+                throw new FlowlineException(ExitCode.BuildFailed, "pac modelbuilder build reported success but produced no output folder.");
+            if (Directory.Exists(modelsFolder))
+                Directory.Delete(modelsFolder, recursive: true);
+            Directory.Move(tempFolder, modelsFolder);
+
+            // Save to .flowline — project mode only, skipped when --output overrides the path (R5)
+            if (!standaloneMode && projectSln != null && string.IsNullOrWhiteSpace(settings.Output))
+            {
+                projectSln.Generate ??= new GenerateConfig();
+                if (namespaceWasDerived)
+                    projectSln.Generate.Namespace = modelNamespace;
+                projectSln.Generate.Generator = generator;
+                Config!.Save(RootFolder);
+            }
+
+            var duration = FormatDuration(result.RunTime);
+            Console.Done($"Types generated into [bold]{outputLabel}[/] in {duration}. Namespace: [bold]{modelNamespace}[/]");
         }
-        catch
-        {
-            if (Directory.Exists(tempFolder))
-                Directory.Delete(tempFolder, recursive: true);
-            throw;
-        }
-
-        if (!result.IsSuccess)
-        {
-            if (Directory.Exists(tempFolder))
-                Directory.Delete(tempFolder, recursive: true);
-
-            throw new FlowlineException(ExitCode.BuildFailed, "pac modelbuilder build failed — check the output above.");
-        }
-
-        Console.Ok("Early-bound types generated");
-
-        if (!Directory.Exists(tempFolder))
-            throw new FlowlineException(ExitCode.BuildFailed, "pac modelbuilder build reported success but produced no output folder.");
-        if (Directory.Exists(modelsFolder))
-            Directory.Delete(modelsFolder, recursive: true);
-        Directory.Move(tempFolder, modelsFolder);
-
-        // Save to .flowline — project mode only, skipped when --output overrides the path (R5)
-        if (!standaloneMode && projectSln != null && string.IsNullOrWhiteSpace(settings.Output) &&
-            (namespaceWasDerived || settings.Namespace != null || settings.ExtraTables != null))
-        {
-            projectSln.Generate ??= new GenerateConfig();
-            if (namespaceWasDerived)
-                projectSln.Generate.Namespace = modelNamespace;
-            Config!.Save(RootFolder);
-        }
-
-        var duration = FormatDuration(result.RunTime);
-        Console.Done($"Types generated into [bold]{outputLabel}[/] in {duration}. Namespace: [bold]{modelNamespace}[/]");
 
         return 0;
     }
