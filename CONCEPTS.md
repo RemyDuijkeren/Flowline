@@ -22,6 +22,11 @@ The structured record of all Dataverse solution component changes detected betwe
 ### Sub-change
 A change *within* a component — for example, an attribute added to an entity, a column removed from a view, or an option label changed on an option set. Sub-changes are the child entries under their parent component in both the terminal tree and `CHANGES.md`. The terminal caps the number of named sub-changes shown per component; `CHANGES.md` always contains the full list.
 
+## Code Generation
+
+### Generator
+The code generation backend used by `flowline generate` to produce C# model files from Dataverse entity metadata. Two backends are supported: **pac** (Microsoft's modelbuilder via PAC CLI, produces early-bound classes) and **xrmcontext** (Delegate.XrmContext NuGet package, produces early-bound classes via ADAL OAuth). The generator determines the auth flow, output format, and toolchain invoked. Stored in `.flowline` config so subsequent runs don't require re-specifying it.
+
 ## Web Resources
 
 ### Logical name
