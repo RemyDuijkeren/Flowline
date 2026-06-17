@@ -19,7 +19,7 @@ public static class CommandExtensions
         var prefix = toolDisplayName ?? command.TargetFilePath;
         if (verbose)
         {
-            AnsiConsole.MarkupLine($"[dim]Executing: [italic]{Markup.Escape(command.ToString())}[/][/]");
+            AnsiConsole.MarkupLine($"[dim]Executing: [italic]{Markup.Escape(prefix.ToString())}[/][/]");
 
             return command
                    .WithStandardOutputPipe(PipeTarget.ToDelegate(s =>
