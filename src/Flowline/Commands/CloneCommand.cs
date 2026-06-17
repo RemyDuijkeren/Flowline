@@ -34,9 +34,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         public string? DevUrl { get; set; }
 
         [CommandOption("--managed")]
-        [Description("Include managed artifacts")]
-        [DefaultValue(false)]
-        public bool IncludeManaged { get; set; } = false;
+        [Description("Include managed artifacts (--managed false resets to default)")]
+        public FlagValue<bool> IncludeManaged { get; set; } = null!;
     }
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
@@ -66,7 +65,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         var artifactsFolder = Path.Combine(slnFolder, "artifacts");
         Directory.CreateDirectory(artifactsFolder);
         if (await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, false, settings.Verbose, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
-        if (settings.IncludeManaged &&
+        if (projectSln.IncludeManaged &&
             await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, true, settings.Verbose, cancellationToken) != 0)
         {
             return (int)ExitCode.BuildFailed;
@@ -74,7 +73,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
         // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
         if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
-        if (settings.IncludeManaged &&
+        if (projectSln.IncludeManaged &&
             await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
         {
             return (int)ExitCode.BuildFailed;
@@ -187,7 +186,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
             var env = await GetAndCheckEnvironmentInfoAsync(role, null, settings, cancellationToken);
             var (sln, info) = await GetAndCheckSolutionAsync(
-                settings.Solution, env.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken);
+                settings.Solution, env.EnvironmentUrl!, settings.IncludeManaged.IsSet ? settings.IncludeManaged.Value : (bool?)null, settings, cancellationToken);
 
             if (info.IsManaged)
             {

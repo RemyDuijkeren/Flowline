@@ -24,9 +24,8 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         public string? Solution { get; set; }
 
         [CommandOption("--managed")]
-        [Description("Deploy the managed package")]
-        [DefaultValue(false)]
-        public bool Managed { get; set; } = false;
+        [Description("Deploy the managed package (--managed false resets to default)")]
+        public FlagValue<bool> Managed { get; set; } = null!;
 
         [CommandOption("--skip-dtap-check")]
         [Description("Skip DTAP promotion checks")]
@@ -45,7 +44,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         var runMode = settings.NoDelete ? RunMode.NoDelete : RunMode.Normal;
         var targetUrl = ResolveTargetUrl(settings);
-        var sln = Config!.GetOrUpdateSolution(settings.Solution, settings.Managed, settings)
+        var sln = Config!.GetOrUpdateSolution(settings.Solution, settings.Managed.IsSet ? settings.Managed.Value : (bool?)null, settings)
             ?? throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — use --solution <name>.");
         var slnFolder = Path.Combine(RootFolder, "solutions", sln.Name);
 
@@ -113,10 +112,10 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         if (existingSolution != null)
         {
-            if (settings.Managed && !existingSolution.IsManaged)
+            if (sln.IncludeManaged && !existingSolution.IsManaged)
                 throw new FlowlineException(ExitCode.ValidationFailed,
                     $"'{sln.Name}' is unmanaged in {targetEnv.DisplayName} — importing managed is irreversible. Deploy solution as unmanaged.");
-            if (!settings.Managed && existingSolution.IsManaged)
+            if (!sln.IncludeManaged && existingSolution.IsManaged)
                 throw new FlowlineException(ExitCode.ValidationFailed,
                     $"'{sln.Name}' is managed in {targetEnv.DisplayName} — can't import unmanaged over managed. Deploy managed instead.");
         }
@@ -214,8 +213,8 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var artifactsFolder = Path.Combine(slnFolder, "artifacts");
         Directory.CreateDirectory(artifactsFolder);
 
-        var suffix      = settings.Managed ? "_managed" : "_unmanaged";
-        var packageType = settings.Managed ? "Managed" : "Unmanaged";
+        var suffix      = sln.IncludeManaged ? "_managed" : "_unmanaged";
+        var packageType = sln.IncludeManaged ? "Managed" : "Unmanaged";
         var packagePath = Path.Combine(artifactsFolder, $"{sln.Name}{suffix}.zip");
 
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(ct);

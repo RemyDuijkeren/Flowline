@@ -25,9 +25,8 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         public string? DevUrl { get; set; }
 
         [CommandOption("--managed")]
-        [Description("Include managed artifacts")]
-        [DefaultValue(false)]
-        public bool IncludeManaged { get; set; } = false;
+        [Description("Include managed artifacts (--managed false resets to default)")]
+        public FlagValue<bool> IncludeManaged { get; set; } = null!;
 
         [CommandOption("--bump")]
         [Description("Version component to increment: patch, minor, or major (default: patch)")]
@@ -41,7 +40,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         var devEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, settings.DevUrl, settings, cancellationToken);
 
         // Solution name is required
-        var (projectSln, slnInfo) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, settings.IncludeManaged, settings, cancellationToken);
+        var (projectSln, slnInfo) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, settings.IncludeManaged.IsSet ? settings.IncludeManaged.Value : (bool?)null, settings, cancellationToken);
         if (slnInfo.IsManaged)
             throw new FlowlineException(ExitCode.ValidationFailed, "Managed solutions are not supported for sync");
 
@@ -107,7 +106,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         // Pack the solution in pac to validate it
         var artifactsFolder = Path.Combine(slnFolder, "artifacts");
         if (await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, false, settings.Verbose, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
-        if (settings.IncludeManaged &&
+        if (projectSln.IncludeManaged &&
             await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, true, settings.Verbose, cancellationToken) != 0)
         {
             return (int)ExitCode.BuildFailed;
