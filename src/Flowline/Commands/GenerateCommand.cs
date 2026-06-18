@@ -1,8 +1,9 @@
 using System.ComponentModel;
-using CliWrap;
+using System.Diagnostics;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Services;
+using Flowline.Generators;
 using Flowline.Services;
 using Flowline.Utils;
 using Flowline.Validation;
@@ -13,7 +14,7 @@ using Spectre.Console.Cli;
 namespace Flowline.Commands;
 
 public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseConnector, FlowlineRuntimeOptions runtimeOptions,
-    XrmContextToolProvider xrmContextToolProvider, XrmContextRunner xrmContextRunner)
+    IEnumerable<IGenerator> generators)
     : FlowlineCommand<GenerateCommand.Settings>(console, runtimeOptions)
 {
     public sealed class Settings : FlowlineSettings
@@ -170,7 +171,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             }
         }
 
-        var generator = settings.Generator ?? projectSln?.Generate?.Generator ?? GeneratorType.Pac;
+        var resolvedGeneratorType = settings.Generator ?? projectSln?.Generate?.Generator ?? GeneratorType.Pac;
 
         // --- Connect and validate ---
         var service = await ConnectToDataverseAsync(dataverseConnector, devUrl, cancellationToken);
@@ -194,22 +195,19 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
 
         var outputLabel = standaloneMode ? modelsFolder : $"{solutionName}/Plugins/Models";
 
-        string? generationDuration = null;
-
-        if (generator == GeneratorType.XrmContext3)
+        // Auth resolution for xrmcontext3 — reads CLI flags, stays at command tier
+        XrmContextAuth? xrmContextAuth = null;
+        if (resolvedGeneratorType == GeneratorType.XrmContext3)
         {
-            var exePath = await xrmContextToolProvider.GetExePathAsync(cancellationToken);
-
             var xrmClientId = settings.XrmClientId ?? projectSln?.Generate?.XrmClientId;
             var xrmClientSecret = settings.XrmClientSecret;
             var xrmUsername = settings.XrmUsername ?? projectSln?.Generate?.XrmUsername;
             var xrmPassword = settings.XrmPassword;
 
-            XrmContextAuth auth;
             if (!string.IsNullOrEmpty(xrmClientId) && !string.IsNullOrEmpty(xrmClientSecret))
             {
                 // Service principal — no user interaction
-                auth = new XrmContextAuth.ClientSecret(xrmClientId, xrmClientSecret);
+                xrmContextAuth = new XrmContextAuth.ClientSecret(xrmClientId, xrmClientSecret);
             }
             else if (!string.IsNullOrEmpty(xrmUsername))
             {
@@ -221,7 +219,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
                     xrmPassword = Console.Prompt(new TextPrompt<string>("[dim]XrmContext password:[/]").Secret('*'));
                 }
                 var connectionString = dataverseConnector.BuildXrmContextConnectionString(devUrl, xrmUsername, xrmPassword, xrmClientId);
-                auth = new XrmContextAuth.ConnectionString(connectionString);
+                xrmContextAuth = new XrmContextAuth.ConnectionString(connectionString);
             }
             else
             {
@@ -229,111 +227,40 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
                 // one browser window for MFA, token cached internally by XrmContext after first login
                 if (!ConsoleHelper.IsInteractive(settings))
                     throw new FlowlineException(ExitCode.NotAuthenticated, "XrmContext browser OAuth requires interactive login. Use --xrm-client-id + --xrm-client-secret for non-interactive auth.");
-                auth = new XrmContextAuth.BrowserOAuth(xrmClientId);
-            }
-
-            try
-            {
-                await xrmContextRunner.RunAsync(
-                    exePath: exePath,
-                    environmentUrl: devUrl,
-                    auth: auth,
-                    solutionName: solutionName,
-                    extraTables: extraTables.Length > 0 ? extraTables : null,
-                    modelNamespace: modelNamespace,
-                    tempOutputPath: tempFolder,
-                    cancellationToken: cancellationToken);
-            }
-            catch
-            {
-                if (Directory.Exists(tempFolder))
-                    Directory.Delete(tempFolder, recursive: true);
-                throw;
+                xrmContextAuth = new XrmContextAuth.BrowserOAuth(xrmClientId);
             }
         }
-        else
+
+        // --- Dispatch generator ---
+        var generationContext = new GenerationContext(
+            Service: service,
+            RemoteSolution: remoteSln,
+            SolutionName: solutionName,
+            DevUrl: devUrl,
+            ModelNamespace: modelNamespace,
+            ExtraTables: extraTables,
+            TempOutputPath: tempFolder,
+            XrmContextAuth: xrmContextAuth,
+            Verbose: settings.Verbose,
+            OutputLabel: outputLabel
+        );
+
+        var generator = generators.Single(g => g.Type == resolvedGeneratorType);
+
+        var sw = Stopwatch.StartNew();
+        try
         {
-            // --- Discover entities and custom APIs in parallel (R10–R12) ---
-            var entityTask = Console.Status().FlowlineSpinner().StartAsync(
-                "Discovering solution entities...",
-                _ => GenerateReader.GetSolutionEntityLogicalNamesAsync(service, remoteSln.Id, cancellationToken));
-            var customApiTask = GenerateReader.GetSolutionCustomApiMessageNamesAsync(service, remoteSln.Id, cancellationToken);
-
-            var solutionEntities = await entityTask;
-            var customApiNames = await customApiTask;
-
-            // Deduplicate entity filter (R14): solution entities + extraTables
-            var entityFilter = solutionEntities
-                .Concat(extraTables)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Order(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            Console.Ok($"Found [bold]{entityFilter.Count}[/] entities" +
-                       (customApiNames.Count > 0 ? $", [bold]{customApiNames.Count}[/] custom APIs" : ""));
-
-            if (settings.Verbose)
-            {
-                foreach (var entity in entityFilter)
-                    Console.Verbose($"  entity: {entity}", isVerbose: true);
-                foreach (var api in customApiNames)
-                    Console.Verbose($"  custom api: {api}", isVerbose: true);
-            }
-
-            // --- Build and run pac modelbuilder build ---
-            var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-
-            var pacCommand = Cli.Wrap(cmdName)
-                .WithArguments(args =>
-                {
-                    args.AddIfNotNull(prefixArgs)
-                        .Add("modelbuilder").Add("build")
-                        .Add("-o").Add(tempFolder)
-                        .Add("-enf").Add(string.Join(";", entityFilter))
-                        .Add("-sgca")
-                        .Add("--suppressINotifyPattern")
-                        .Add("--emitfieldsclasses")
-                        .Add("-n").Add(modelNamespace);
-
-                    if (customApiNames.Count > 0)
-                    {
-                        args.Add("--generatesdkmessages")
-                            .Add("--messagenamesfilter").Add(string.Join(";", customApiNames));
-                    }
-                })
-                .WithValidation(CommandResultValidation.None);
-
-            var tempPrefix = tempFolder + Path.DirectorySeparatorChar;
-            var outputFolderName = Path.GetFileName(modelsFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            string ShortenPacLine(string line) => line.Replace(tempPrefix, outputFolderName + "/");
-
-            CommandResult result;
-            try
-            {
-                result = await Console.Status().FlowlineSpinner().StartAsync(
-                    $"Generating early-bound types into [bold]{outputLabel}[/]...",
-                    ctx => pacCommand.WithToolExecutionLog(settings.Verbose, ctx, ShortenPacLine).ExecuteAsync(cancellationToken).Task);
-            }
-            catch
-            {
-                if (Directory.Exists(tempFolder))
-                    Directory.Delete(tempFolder, recursive: true);
-                throw;
-            }
-
-            if (!result.IsSuccess)
-            {
-                if (Directory.Exists(tempFolder))
-                    Directory.Delete(tempFolder, recursive: true);
-
-                throw new FlowlineException(ExitCode.BuildFailed, "pac modelbuilder build failed — check the output above.");
-            }
-
-            Console.Ok("Early-bound types generated");
-            generationDuration = FormatDuration(result.RunTime);
+            await generator.RunAsync(generationContext, cancellationToken);
         }
+        catch
+        {
+            if (Directory.Exists(tempFolder))
+                Directory.Delete(tempFolder, recursive: true);
+            throw;
+        }
+        sw.Stop();
 
-        // --- Shared tail (both generators) ---
+        // --- Shared tail (all generators) ---
         if (!Directory.EnumerateFiles(tempFolder, "*", SearchOption.AllDirectories).Any())
             throw new FlowlineException(ExitCode.BuildFailed,
                 "Generator reported success but produced no output. Re-run with --verbose to see tool output.");
@@ -348,8 +275,8 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             projectSln.Generate ??= new GenerateConfig();
             if (namespaceWasDerived)
                 projectSln.Generate.Namespace = modelNamespace;
-            projectSln.Generate.Generator = generator;
-            if (generator == GeneratorType.XrmContext3)
+            projectSln.Generate.Generator = resolvedGeneratorType;
+            if (resolvedGeneratorType == GeneratorType.XrmContext3)
             {
                 if (!string.IsNullOrEmpty(settings.XrmClientId))
                     projectSln.Generate.XrmClientId = settings.XrmClientId;
@@ -359,10 +286,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             Config!.Save(RootFolder);
         }
 
-        var doneMsg = generationDuration != null
-            ? $"Types generated into [bold]{outputLabel}[/] in {generationDuration}. Namespace: [bold]{modelNamespace}[/]"
-            : $"Types generated into [bold]{outputLabel}[/]. Namespace: [bold]{modelNamespace}[/]";
-        Console.Done(doneMsg);
+        Console.Done($"Types generated into [bold]{outputLabel}[/] in {FormatDuration(sw.Elapsed)}. Namespace: [bold]{modelNamespace}[/]");
 
         return 0;
     }

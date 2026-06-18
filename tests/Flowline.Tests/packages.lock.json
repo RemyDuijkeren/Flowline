@@ -67,44 +67,10 @@
           "System.Diagnostics.EventLog": "6.0.0"
         }
       },
-      "FSharp.Core": {
-        "type": "Transitive",
-        "resolved": "4.7.2",
-        "contentHash": "w3XFVTnyZUbC8e2QT6a85ern6y7eQPPk+MYemz1FP0iBfgZcembL+wmo5cIZ1kxB8jfoXC8Q9KVkOMsGpkBKbA=="
-      },
       "Microsoft.CodeCoverage": {
         "type": "Transitive",
         "resolved": "18.5.1",
         "contentHash": "vMFDR1ZjqzzgKmM0zrPie7Gv9Y+ZppjODB5Quzu9Eq0TlIusUfUCYFPEawO91zQuqwzvdFbJSU7WHNtjStffJQ=="
-      },
-      "Microsoft.CrmSdk.Deployment": {
-        "type": "Transitive",
-        "resolved": "9.0.2.23",
-        "contentHash": "/gq2GMpL3eZSU1MuKXQOIHZxcqWfPC5tEXBNjnkmZiwxhJq/8LUCkwRgXAUr7WnIYJf8uFSanC89DbJJCCSBvw==",
-        "dependencies": {
-          "Microsoft.CrmSdk.CoreAssemblies": "9.0.2"
-        }
-      },
-      "Microsoft.CrmSdk.Workflow": {
-        "type": "Transitive",
-        "resolved": "9.0.2.23",
-        "contentHash": "9Me3WHUS9cFdI4cBYl3zspoWayInx3l1mf+Tj2UIwE+7A+ru0tEGxHooPbm/H/6ecXlPeIVuJfxEtumYwoO+2Q==",
-        "dependencies": {
-          "Microsoft.CrmSdk.CoreAssemblies": "9.0.2"
-        }
-      },
-      "Microsoft.CrmSdk.XrmTooling.CoreAssembly": {
-        "type": "Transitive",
-        "resolved": "9.1.0.51",
-        "contentHash": "7rkcYueaB3JCLwyhMvZRky6Hm8Zls3neNh3BU+eKmUR3zXcBphHj1j31mzMbUfohVG6LBOuYbH72NL4GmSFbMw==",
-        "dependencies": {
-          "Microsoft.CrmSdk.CoreAssemblies": "9.0.2.23",
-          "Microsoft.CrmSdk.Deployment": "9.0.2.23",
-          "Microsoft.CrmSdk.Workflow": "9.0.2.23",
-          "Microsoft.IdentityModel.Clients.ActiveDirectory": "3.19.8",
-          "Microsoft.Rest.ClientRuntime": "2.3.20",
-          "Newtonsoft.Json": "10.0.3"
-        }
       },
       "Microsoft.Extensions.Caching.Abstractions": {
         "type": "Transitive",
@@ -251,27 +217,6 @@
         "resolved": "8.14.0",
         "contentHash": "iwbCpSjD3ehfTwBhtSNEtKPK0ICun6ov7Ibx6ISNA9bfwIyzI2Siwyi9eJFCJBwxowK9xcA1mj+jBWiigeqgcQ=="
       },
-      "Microsoft.IdentityModel.Clients.ActiveDirectory": {
-        "type": "Transitive",
-        "resolved": "3.19.8",
-        "contentHash": "PRTE+0vg/e+wNFDBEPdZlDVVwopyOZtGnbg0B4ANxR0eeZKoEwfumBoAIO6iC91jRLMTpCfYXTArmn8BpyLIIg==",
-        "dependencies": {
-          "NETStandard.Library": "1.6.0"
-        }
-      },
-      "Microsoft.NETCore.Platforms": {
-        "type": "Transitive",
-        "resolved": "1.0.1",
-        "contentHash": "2G6OjjJzwBfNOO8myRV/nFrbTw5iA+DEm0N+qUqhrOmaVtn4pC77h38I1jsXGw5VH55+dPfQsqHD0We9sCl9FQ=="
-      },
-      "Microsoft.Rest.ClientRuntime": {
-        "type": "Transitive",
-        "resolved": "2.3.20",
-        "contentHash": "bw/H1nO4JdnhTagPHWIFQwtlQ6rb2jqw5RTrqPsPqzrjhJxc7P6MyNGdf4pgHQdzdpBSNOfZTEQifoUkxmzYXQ==",
-        "dependencies": {
-          "Newtonsoft.Json": "10.0.3"
-        }
-      },
       "Microsoft.TestPlatform.ObjectModel": {
         "type": "Transitive",
         "resolved": "18.5.1",
@@ -290,14 +235,6 @@
         "type": "Transitive",
         "resolved": "6.0.0",
         "contentHash": "hqTM5628jSsQiv+HGpiq3WKBl2c8v1KZfby2J6Pr7pEPlK9waPdgEO6b8A/+/xn/yZ9ulv8HuqK71ONy2tg67A=="
-      },
-      "NETStandard.Library": {
-        "type": "Transitive",
-        "resolved": "1.6.0",
-        "contentHash": "ypsCvIdCZ4IoYASJHt6tF2fMo7N30NLgV1EbmC+snO490OMl9FvVxmumw14rhReWU3j3g7BYudG6YCrchwHJlA==",
-        "dependencies": {
-          "Microsoft.NETCore.Platforms": "1.0.1"
-        }
       },
       "Newtonsoft.Json": {
         "type": "Transitive",
@@ -442,7 +379,6 @@
       "flowline.core": {
         "type": "Project",
         "dependencies": {
-          "Delegate.XrmContext": "[3.0.1, )",
           "Flowline.Attributes": "[1.0.0, )",
           "Microsoft.Identity.Client.Extensions.Msal": "[4.84.1, )",
           "Microsoft.PowerPlatform.Dataverse.Client": "[1.2.10, )",
@@ -456,22 +392,6 @@
         "requested": "[3.10.1, )",
         "resolved": "3.10.1",
         "contentHash": "C+WzXwzpQsJVNqvuh19ZO/bw/vR43L+DC/CmvK+PATUBkail2AWYE6an17dOGgWaVGzF9sU28YwRwfNfkPrQdg=="
-      },
-      "Delegate.XrmContext": {
-        "type": "CentralTransitive",
-        "requested": "[3.0.1, )",
-        "resolved": "3.0.1",
-        "contentHash": "fDpLbfZWLUKtgW5Dxd+8cYJe3FVDAm4bOiziUKwmBEawpjUE58u3uKL4T2Z152vpmtzWotYC9xXnWmHDzLOvgw==",
-        "dependencies": {
-          "FSharp.Core": "4.7.2",
-          "Microsoft.CrmSdk.XrmTooling.CoreAssembly": "9.1.0.51"
-        }
-      },
-      "Microsoft.CrmSdk.CoreAssemblies": {
-        "type": "CentralTransitive",
-        "requested": "[9.0.2.49, )",
-        "resolved": "9.0.2.23",
-        "contentHash": "mzLhNKXBgrgKyzXzqHPuJSWnUFILLWAju8x+/cq03jE3NKCpe+IG4P4OGDEC6b8LP4KxLJM3f+oGQFalLDd54w=="
       },
       "Microsoft.Extensions.Logging.Console": {
         "type": "CentralTransitive",

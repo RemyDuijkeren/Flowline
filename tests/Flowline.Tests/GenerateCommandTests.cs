@@ -59,6 +59,22 @@ public class GeneratorResolutionTests
 
         result.Should().Be(GeneratorType.Pac);
     }
+
+    [Fact]
+    public void Resolve_SettingsXrmContext_NoConfig_ReturnsXrmContext()
+    {
+        var result = Resolve(GeneratorType.XrmContext, configGenerator: null);
+
+        result.Should().Be(GeneratorType.XrmContext);
+    }
+
+    [Fact]
+    public void Resolve_SettingsNull_ConfigXrmContext_ReturnsXrmContext()
+    {
+        var result = Resolve(settingsGenerator: null, configGenerator: GeneratorType.XrmContext);
+
+        result.Should().Be(GeneratorType.XrmContext);
+    }
 }
 
 public class XrmContextAuthResolutionTests
