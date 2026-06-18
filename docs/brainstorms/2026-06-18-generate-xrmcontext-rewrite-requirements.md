@@ -57,9 +57,16 @@ existing `XrmContext3` member (serializes as `"XrmContext3"`) remains for the F#
 
 **Tool availability**
 
-- R4. Before invoking, Flowline checks that `XrmContext` v4 is available as a dotnet tool.
-  If not found, throw `FlowlineException(ExitCode.BuildFailed)` with a message instructing
-  the user to run `dotnet tool install -g XrmContext`. No auto-install.
+- R4. Before invoking, Flowline resolves the best available invocation for `XrmContext` v4,
+  in priority order:
+  1. `dnx XrmContext --prerelease` — if `dnx` is available (.NET 10 one-shot runner), prefer
+     this; no install required, same pattern as the PAC `dnx microsoft.powerapps.cli.tool`
+     path. `--prerelease` is a `dnx` option (controls NuGet resolution, not forwarded to
+     XrmContext); required while v4 is in beta. Drop it once v4 hits stable.
+     Invocation shape: `dnx <packageId> [commandArguments...] [dnx-options]`.
+  2. `dotnet tool run xrmcontext` — if XrmContext is installed as a global or local dotnet tool.
+  3. Fail with `FlowlineException(ExitCode.BuildFailed)` instructing the user to run
+     `dotnet tool install -g XrmContext`. No auto-install.
 - R5. Availability check mirrors the PAC PATH check pattern — validate and fail fast.
 
 **Configuration**
@@ -125,7 +132,7 @@ it ships.
 
 **In scope**
 - `GeneratorType.XrmContext` enum member (new, serializes as `"XrmContext"`)
-- Tool availability validator
+- Tool availability resolver — `dnx XrmContext` (priority 1) or `dotnet tool run xrmcontext` (priority 2), fail with instructions if neither
 - `XrmContextRewriteAppsettingsBuilder` — builds temp `appsettings.json` from `.flowline`
 - `XrmContextRewriteRunner` — CliWrap invocation with working directory set to temp config dir
 - `GenerateCommand` branch for `XrmContext`
@@ -134,7 +141,7 @@ it ships.
 **Deferred**
 - Nullable types opt-in (`NullableTypes: true`) — expose when user demand exists
 - Intersection interfaces, alternate key helpers — v4 supports them; expose when requested
-- .NET 10 DNX runner — adapt availability check when Flowline targets .NET 10
+- .NET 10 DNX runner — covered by R4 (priority 1); moved to in-scope
 
 **Out of scope**
 - `XrmContextToolProvider` (exe extraction) — only needed for xrmcontext3
@@ -192,3 +199,7 @@ it ships.
 - `docs/brainstorms/2026-06-18-flowline-generator-strategy-requirements.md` — generator strategy
 - `src/Flowline/Commands/GenerateCommand.cs` — PAC invocation, temp-swap, save behavior
 - `src/Flowline.Core/Services/DataverseConnector.cs` — `FindBestProfile`, PAC auth patterns
+- `src/Flowline/Utils/PacUtils.cs` — `GetBestPacCommandAsync` dnx resolution pattern to mirror
+- `dnx XrmContext --prerelease --help` *(verified 2026-06-18)*: `--prerelease` is a `dnx` option
+  (NuGet resolver, not forwarded to the tool); invocation shape is
+  `dotnet dnx <packageId> [commandArguments...] [options]`
