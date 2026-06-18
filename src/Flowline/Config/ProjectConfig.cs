@@ -278,6 +278,7 @@ public enum GeneratorType
 {
     Pac,
     XrmContext3,
+    XrmContext,
 }
 
 public class GenerateConfig

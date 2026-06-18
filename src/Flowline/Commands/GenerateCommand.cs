@@ -39,7 +39,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         public string? Output { get; set; }
 
         [CommandOption("--generator")]
-        [Description("Model builder generator to use (pac|xrmcontext3), default: pac")]
+        [Description("Model builder generator to use (pac|xrmcontext3|xrmcontext), default: pac")]
         public GeneratorType? Generator { get; set; }
 
         [CommandOption("--username <USER>")]

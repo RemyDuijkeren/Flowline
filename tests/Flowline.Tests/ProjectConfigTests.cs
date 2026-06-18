@@ -239,4 +239,24 @@ public class GeneratorTypeSerializationTests
 
         config.Generator.Should().Be(GeneratorType.XrmContext3);
     }
+
+    [Fact]
+    public void GenerateConfig_XrmContext_SerializesAsEnumName()
+    {
+        var config = new GenerateConfig { Generator = GeneratorType.XrmContext };
+
+        var json = JsonSerializer.Serialize(config);
+
+        json.Should().Contain("\"Generator\"").And.Contain("\"XrmContext\"");
+    }
+
+    [Fact]
+    public void GenerateConfig_XrmContextJson_DeserializesToXrmContext()
+    {
+        var json = """{"Generator":"XrmContext"}""";
+
+        var config = JsonSerializer.Deserialize<GenerateConfig>(json)!;
+
+        config.Generator.Should().Be(GeneratorType.XrmContext);
+    }
 }
