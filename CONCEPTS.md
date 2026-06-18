@@ -25,7 +25,7 @@ A change *within* a component — for example, an attribute added to an entity, 
 ## Code Generation
 
 ### Generator
-The code generation backend used by `flowline generate` to produce C# model files from Dataverse entity metadata. Two backends are supported: **pac** (Microsoft's modelbuilder via PAC CLI, produces early-bound classes) and **xrmcontext** (Delegate.XrmContext NuGet package, produces early-bound classes via ADAL OAuth). The generator determines the auth flow, output format, and toolchain invoked. Stored in `.flowline` config so subsequent runs don't require re-specifying it.
+The code generation backend used by `flowline generate` to produce C# model files from Dataverse entity metadata. Three backends are supported: **pac** (Microsoft's modelbuilder via PAC CLI, default), **xrmcontext** (XrmContext v4 dotnet tool, `DefaultAzureCredential` auth, cross-platform), and **xrmcontext3** (Delegate.XrmContext v3 F# exe, connection-string auth, Windows only, bridge). The generator determines the auth flow, output format, and toolchain invoked. Stored in `.flowline` config so subsequent runs don't require re-specifying it.
 
 ## Web Resources
 
