@@ -23,7 +23,7 @@ public class XrmContextToolProvider
         : this(
             httpClient, console, runtimeOptions,
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget", "packages", "delegate.xrmcontext"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Flowline", "tools", "xrmcontext"))
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Flowline", "tools", "xrmcontext3"))
     {
     }
 

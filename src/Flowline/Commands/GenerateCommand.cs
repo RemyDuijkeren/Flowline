@@ -39,7 +39,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         public string? Output { get; set; }
 
         [CommandOption("--generator")]
-        [Description("Model builder generator to use (pac|xrmcontext), default: pac")]
+        [Description("Model builder generator to use (pac|xrmcontext3), default: pac")]
         public GeneratorType? Generator { get; set; }
 
         [CommandOption("--username <USER>")]
@@ -196,7 +196,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
 
         string? generationDuration = null;
 
-        if (generator == GeneratorType.XrmContext)
+        if (generator == GeneratorType.XrmContext3)
         {
             var exePath = await xrmContextToolProvider.GetExePathAsync(cancellationToken);
 
@@ -349,7 +349,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             if (namespaceWasDerived)
                 projectSln.Generate.Namespace = modelNamespace;
             projectSln.Generate.Generator = generator;
-            if (generator == GeneratorType.XrmContext)
+            if (generator == GeneratorType.XrmContext3)
             {
                 if (!string.IsNullOrEmpty(settings.XrmClientId))
                     projectSln.Generate.XrmClientId = settings.XrmClientId;

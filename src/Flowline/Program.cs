@@ -121,7 +121,7 @@ app.Configure(config =>
           .WithExample("generate", "ContosoCustomizations")
           .WithExample("generate", "--namespace", "Contoso.Plugins.Models")
           .WithExample("generate", "--extra-tables", "account,contact")
-          .WithExample("generate", "--generator", "xrmcontext");
+          .WithExample("generate", "--generator", "xrmcontext3");
 });
 
 return await app.RunAsync(args, cancellationTokenSource.Token);

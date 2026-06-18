@@ -171,7 +171,7 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
         var appId = clientId ?? PacCliAppId;
         var tokenCachePath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Flowline", "auth", "xrmcontext");
+            "Flowline", "auth", "xrmcontext3");
         Directory.CreateDirectory(tokenCachePath);
 
         if (!string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password))

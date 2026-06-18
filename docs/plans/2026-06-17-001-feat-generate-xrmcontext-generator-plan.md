@@ -9,9 +9,9 @@ origin: docs/brainstorms/2026-06-17-generate-xrmcontext-support-requirements.md
 
 ## Summary
 
-Add `--generator {pac|xrmcontext-fs}` to `flowline generate`. PAC remains the default. When `xrmcontext-fs` is selected, Flowline auto-restores `Delegate.XrmContext` from NuGet, builds a connection string from the active PAC profile, and invokes XrmContext as an external process using the same temp-swap output pattern as the PAC path.
+Add `--generator {pac|xrmcontext3}` to `flowline generate`. PAC remains the default. When `xrmcontext3` is selected, Flowline auto-restores `Delegate.XrmContext` from NuGet, builds a connection string from the active PAC profile, and invokes XrmContext as an external process using the same temp-swap output pattern as the PAC path.
 
-**Note:** The flag value for this generator is `xrmcontext-fs` (F# exe bridge). The value `xrmcontext` is reserved for the DataverseProxyGenerator rewrite — see `docs/brainstorms/2026-06-18-generate-xrmcontext-rewrite-requirements.md`.
+**Note:** The flag value for this generator is `xrmcontext3` (F# exe bridge). The value `xrmcontext` is reserved for the DataverseProxyGenerator rewrite — see `docs/brainstorms/2026-06-18-generate-xrmcontext-rewrite-requirements.md`.
 
 ---
 
@@ -67,7 +67,7 @@ The `rewrite` branch at [delegateas/XrmContext](https://github.com/delegateas/Xr
 
 **Generator selection**
 
-- R1. `flowline generate` accepts `--generator {pac|xrmcontext-fs}`; default `pac` when flag and config are both absent.
+- R1. `flowline generate` accepts `--generator {pac|xrmcontext3}`; default `pac` when flag and config are both absent.
 - R2. Generator choice persists to `.flowline` under `generate.generator` per solution on every run — including when defaulting to `pac`. First `flowline generate` in a project writes `generator: pac` without requiring an explicit flag.
 - R3. CLI `--generator` overrides the saved config value for that run and updates `.flowline` with the new value.
 
@@ -94,7 +94,7 @@ The `rewrite` branch at [delegateas/XrmContext](https://github.com/delegateas/Xr
 
 **Version resolved to latest at restore time; no pinning.** The NuGet version index endpoint returns available versions; Flowline picks the highest stable. No `generate.xrmcontextVersion` config field. *(see origin Key Decisions: version resolved to latest)*
 
-**`GeneratorType` enum, not string, for type safety in config and code.** Stored as lowercase string in JSON (`"pac"`, `"xrmcontext-fs"`) via `JsonStringEnumConverter` with lowercase naming policy. Typed enum prevents accidental string comparisons in the branch logic. The member `GeneratorType.XrmContext` serializes as `"xrmcontext-fs"`; `"xrmcontext"` is reserved for `GeneratorType.XrmContextRewrite` added by the rewrite plan.
+**`GeneratorType` enum, not string, for type safety in config and code.** Stored as lowercase string in JSON (`"pac"`, `"xrmcontext3"`) via `JsonStringEnumConverter` with lowercase naming policy. Typed enum prevents accidental string comparisons in the branch logic. The member `GeneratorType.XrmContext` serializes as `"xrmcontext3"`; `"xrmcontext"` is reserved for `GeneratorType.XrmContextRewrite` added by the rewrite plan.
 
 **Save behavior: always write the resolved generator.** Unlike `--namespace` (which saves only when explicitly passed), the generator is always saved — whether the user passed `--generator` or accepted the default. This ensures `.flowline` reflects the active generator on every run without requiring an explicit flag on first use. `--generator` changes the saved value going forward. *(see origin R2, R3)*
 
@@ -204,13 +204,13 @@ flowchart TB
 **Patterns to follow:** `GenerateConfig.Namespace` and `GenerateConfig.ExtraTables` for nullable field + `JsonIgnore` pattern. `[CommandOption]` usage in any existing `Settings` class.
 
 **Test scenarios:**
-- `GenerateConfig { Generator = GeneratorType.XrmContext }` serializes to `"generator": "xrmcontext-fs"` and round-trips cleanly.
+- `GenerateConfig { Generator = GeneratorType.XrmContext }` serializes to `"generator": "xrmcontext3"` and round-trips cleanly.
 - `GenerateConfig { Generator = null }` omits `generator` field from JSON.
 - `GenerateConfig` with `"generator": "pac"` deserializes to `GeneratorType.Pac`.
-- `GenerateCommand.Settings` with `--generator xrmcontext-fs` parses to `GeneratorType.XrmContext`.
+- `GenerateCommand.Settings` with `--generator xrmcontext3` parses to `GeneratorType.XrmContext`.
 - `GenerateCommand.Settings` with no `--generator` flag leaves `Settings.Generator` null.
 
-**Verification:** `ProjectConfigTests` pass. `GenerateCommand.Settings` resolves `--generator xrmcontext-fs` to `GeneratorType.XrmContext` in a unit test.
+**Verification:** `ProjectConfigTests` pass. `GenerateCommand.Settings` resolves `--generator xrmcontext3` to `GeneratorType.XrmContext` in a unit test.
 
 ---
 
@@ -332,7 +332,7 @@ flowchart TB
 - `src/Flowline/Commands/GenerateCommand.cs` — add generator resolution + XrmContext branch
 - `src/Flowline/Program.cs` — register `XrmContextToolProvider` and `XrmContextRunner` in DI
 - `tests/Flowline.Tests/GenerateCommandTests.cs` — extend from U1 with routing tests
-- `../Flowline.wiki/Command-Reference.md` — document `--generator xrmcontext-fs` as Windows-only under the `generate` command flags
+- `../Flowline.wiki/Command-Reference.md` — document `--generator xrmcontext3` as Windows-only under the `generate` command flags
 
 **Approach:**
 - **Generator resolution** (after namespace derivation, before dirty-tree guard): `var generator = settings.Generator ?? projectSln?.Generate?.Generator ?? GeneratorType.Pac;`
@@ -344,13 +344,13 @@ flowchart TB
 **Patterns to follow:** Existing `if (customApiNames.Count > 0)` branching in PAC invocation. `namespaceWasDerived` save-condition pattern. DI registration in `Program.cs` alongside `DataverseConnector`.
 
 **Test scenarios:**
-- `--generator xrmcontext-fs` with no config → XrmContext path runs; generator saved to config.
+- `--generator xrmcontext3` with no config → XrmContext path runs; generator saved to config.
 - `--generator pac` with no config → PAC path runs; `pac` saved to config.
-- No flag, config has `generator: xrmcontext-fs` → XrmContext path runs; config unchanged.
+- No flag, config has `generator: xrmcontext3` → XrmContext path runs; config unchanged.
 - No flag, no config → PAC path runs; `generator: pac` saved to config.
-- `--generator pac` with config `generator: xrmcontext-fs` → PAC runs; config updated to `generator: pac`.
+- `--generator pac` with config `generator: xrmcontext3` → PAC runs; config updated to `generator: pac`.
 - Custom API discovery skipped when XrmContext is active.
 - Custom API discovery runs when PAC is active.
 - Temp-swap applies to XrmContext output folder on success.
 
-**Verification:** `flowline generate --generator xrmcontext-fs` against a real Dataverse environment produces `Plugins/Models/` with XrmContext-style generated classes. PAC path behaviour unchanged.
+**Verification:** `flowline generate --generator xrmcontext3` against a real Dataverse environment produces `Plugins/Models/` with XrmContext-style generated classes. PAC path behaviour unchanged.

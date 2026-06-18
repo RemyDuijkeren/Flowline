@@ -201,13 +201,13 @@ public class ProjectConfigTests
 public class GeneratorTypeSerializationTests
 {
     [Fact]
-    public void GenerateConfig_XrmContext_SerializesAsEnumName()
+    public void GenerateConfig_XrmContext3_SerializesAsEnumName()
     {
-        var config = new GenerateConfig { Generator = GeneratorType.XrmContext };
+        var config = new GenerateConfig { Generator = GeneratorType.XrmContext3 };
 
         var json = JsonSerializer.Serialize(config);
 
-        json.Should().Contain("\"Generator\"").And.Contain("\"XrmContext\"");
+        json.Should().Contain("\"Generator\"").And.Contain("\"XrmContext3\"");
     }
 
     [Fact]
@@ -231,12 +231,12 @@ public class GeneratorTypeSerializationTests
     }
 
     [Fact]
-    public void GenerateConfig_XrmContextJson_DeserializesToXrmContext()
+    public void GenerateConfig_XrmContext3Json_DeserializesToXrmContext3()
     {
-        var json = """{"Generator":"XrmContext"}""";
+        var json = """{"Generator":"XrmContext3"}""";
 
         var config = JsonSerializer.Deserialize<GenerateConfig>(json)!;
 
-        config.Generator.Should().Be(GeneratorType.XrmContext);
+        config.Generator.Should().Be(GeneratorType.XrmContext3);
     }
 }

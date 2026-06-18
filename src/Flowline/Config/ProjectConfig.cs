@@ -277,7 +277,7 @@ public class ProjectConfig
 public enum GeneratorType
 {
     Pac,
-    XrmContext,
+    XrmContext3,
 }
 
 public class GenerateConfig

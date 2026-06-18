@@ -20,11 +20,11 @@ public class GeneratorResolutionTests
     }
 
     [Fact]
-    public void Resolve_SettingsXrmContext_NoConfig_ReturnsXrmContext()
+    public void Resolve_SettingsXrmContext3_NoConfig_ReturnsXrmContext3()
     {
-        var result = Resolve(GeneratorType.XrmContext, configGenerator: null);
+        var result = Resolve(GeneratorType.XrmContext3, configGenerator: null);
 
-        result.Should().Be(GeneratorType.XrmContext);
+        result.Should().Be(GeneratorType.XrmContext3);
     }
 
     [Fact]
@@ -36,11 +36,11 @@ public class GeneratorResolutionTests
     }
 
     [Fact]
-    public void Resolve_SettingsNull_ConfigXrmContext_ReturnsXrmContext()
+    public void Resolve_SettingsNull_ConfigXrmContext3_ReturnsXrmContext3()
     {
-        var result = Resolve(settingsGenerator: null, configGenerator: GeneratorType.XrmContext);
+        var result = Resolve(settingsGenerator: null, configGenerator: GeneratorType.XrmContext3);
 
-        result.Should().Be(GeneratorType.XrmContext);
+        result.Should().Be(GeneratorType.XrmContext3);
     }
 
     [Fact]
@@ -52,10 +52,10 @@ public class GeneratorResolutionTests
     }
 
     [Fact]
-    public void Resolve_SettingsPac_ConfigXrmContext_ReturnsPac()
+    public void Resolve_SettingsPac_ConfigXrmContext3_ReturnsPac()
     {
         // CLI flag wins over saved config
-        var result = Resolve(GeneratorType.Pac, configGenerator: GeneratorType.XrmContext);
+        var result = Resolve(GeneratorType.Pac, configGenerator: GeneratorType.XrmContext3);
 
         result.Should().Be(GeneratorType.Pac);
     }
