@@ -38,7 +38,7 @@ public class XrmContextToolProvider
 
     protected virtual bool IsWindows() => RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
-    public async Task<string> GetExePathAsync(CancellationToken cancellationToken = default)
+    public virtual async Task<string> GetExePathAsync(CancellationToken cancellationToken = default)
     {
         if (!IsWindows())
             throw new FlowlineException(ExitCode.ConfigInvalid,

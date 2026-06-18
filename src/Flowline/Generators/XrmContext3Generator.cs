@@ -1,0 +1,35 @@
+using Flowline.Config;
+using Flowline.Core;
+using Flowline.Services;
+using Spectre.Console;
+
+namespace Flowline.Generators;
+
+public class XrmContext3Generator(
+    IAnsiConsole console,
+    FlowlineRuntimeOptions runtimeOptions,
+    XrmContextToolProvider xrmContextToolProvider,
+    XrmContextRunner xrmContextRunner)
+    : IGenerator
+{
+    public GeneratorType Type => GeneratorType.XrmContext3;
+
+    public async Task RunAsync(GenerationContext context, CancellationToken cancellationToken = default)
+    {
+        if (context.XrmContextAuth is null)
+            throw new FlowlineException(ExitCode.ConfigInvalid,
+                "XrmContext3 generator requires auth credentials — pass --xrm-client-id/--xrm-client-secret or --username/--password.");
+
+        var exePath = await xrmContextToolProvider.GetExePathAsync(cancellationToken);
+
+        await xrmContextRunner.RunAsync(
+            exePath: exePath,
+            environmentUrl: context.DevUrl,
+            auth: context.XrmContextAuth,
+            solutionName: context.SolutionName,
+            extraTables: context.ExtraTables.Length > 0 ? context.ExtraTables : null,
+            modelNamespace: context.ModelNamespace,
+            tempOutputPath: context.TempOutputPath,
+            cancellationToken: cancellationToken);
+    }
+}

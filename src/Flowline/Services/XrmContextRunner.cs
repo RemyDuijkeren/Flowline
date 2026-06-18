@@ -17,7 +17,7 @@ public abstract record XrmContextAuth
 
 public class XrmContextRunner(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions)
 {
-    public async Task RunAsync(
+    public virtual async Task RunAsync(
         string exePath,
         string environmentUrl,
         XrmContextAuth auth,
