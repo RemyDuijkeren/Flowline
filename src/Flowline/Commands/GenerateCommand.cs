@@ -43,21 +43,13 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         [Description("Model builder generator to use (pac|xrmcontext3|xrmcontext), default: pac")]
         public GeneratorType? Generator { get; set; }
 
-        [CommandOption("--username <USER>")]
-        [Description("Username for XrmContext auth — saved to .flowline for reuse")]
-        public string? XrmUsername { get; set; }
+        [CommandOption("--client-id <ID>")]
+        [Description("Override client ID for generator subprocess (XrmContext/XrmContext3 only)")]
+        public string? ClientId { get; set; }
 
-        [CommandOption("--password <PASS>")]
-        [Description("Password for XrmContext auth — never saved")]
-        public string? XrmPassword { get; set; }
-
-        [CommandOption("--xrm-client-id <ID>")]
-        [Description("Azure App Registration client ID — for browser OAuth or service principal auth")]
-        public string? XrmClientId { get; set; }
-
-        [CommandOption("--xrm-client-secret <SECRET>")]
-        [Description("Azure App Registration client secret — enables service principal auth, never saved")]
-        public string? XrmClientSecret { get; set; }
+        [CommandOption("--secret <SECRET>")]
+        [Description("Client secret for generator subprocess (XrmContext/XrmContext3 only)")]
+        public string? Secret { get; set; }
 
         [CommandOption("--service-context-name <NAME>")]
         [Description("Name of the generated OrganizationServiceContext class — saved to .flowline")]
@@ -66,6 +58,9 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
 
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
+        if (settings.ClientId != null && settings.Secret == null)
+            throw new FlowlineException("--client-id requires --secret");
+
         if (!IsStandaloneMode())
             return await base.ExecuteAsync(context, settings, cancellationToken);
 
@@ -206,41 +201,8 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
 
         var outputLabel = standaloneMode ? modelsFolder : $"{solutionName}/Plugins/Models";
 
-        // Auth resolution for xrmcontext3 — reads CLI flags, stays at command tier
+        // Auth resolution comes in U5/U6 — placeholder for now
         XrmContextAuth? xrmContextAuth = null;
-        if (resolvedGeneratorType == GeneratorType.XrmContext3)
-        {
-            var xrmClientId = settings.XrmClientId ?? projectSln?.Generate?.XrmClientId;
-            var xrmClientSecret = settings.XrmClientSecret;
-            var xrmUsername = settings.XrmUsername ?? projectSln?.Generate?.XrmUsername;
-            var xrmPassword = settings.XrmPassword;
-
-            if (!string.IsNullOrEmpty(xrmClientId) && !string.IsNullOrEmpty(xrmClientSecret))
-            {
-                // Service principal — no user interaction
-                xrmContextAuth = new XrmContextAuth.ClientSecret(xrmClientId, xrmClientSecret);
-            }
-            else if (!string.IsNullOrEmpty(xrmUsername))
-            {
-                // ROPC — explicit credentials; works only when MFA is not required
-                if (string.IsNullOrEmpty(xrmPassword))
-                {
-                    if (!ConsoleHelper.IsInteractive(settings))
-                        throw new FlowlineException(ExitCode.NotAuthenticated, "Password required in non-interactive mode — pass --password <PASS>.");
-                    xrmPassword = Console.Prompt(new TextPrompt<string>("[dim]XrmContext password:[/]").Secret('*'));
-                }
-                var connectionString = dataverseConnector.BuildXrmContextConnectionString(devUrl, xrmUsername, xrmPassword, xrmClientId);
-                xrmContextAuth = new XrmContextAuth.ConnectionString(connectionString);
-            }
-            else
-            {
-                // Browser OAuth via method:OAuth — single CrmServiceClient with one ADAL auth context;
-                // one browser window for MFA, token cached internally by XrmContext after first login
-                if (!ConsoleHelper.IsInteractive(settings))
-                    throw new FlowlineException(ExitCode.NotAuthenticated, "XrmContext browser OAuth requires interactive login. Use --xrm-client-id + --xrm-client-secret for non-interactive auth.");
-                xrmContextAuth = new XrmContextAuth.BrowserOAuth(xrmClientId);
-            }
-        }
 
         // --- Dispatch generator ---
         var generationContext = new GenerationContext(
@@ -289,13 +251,6 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             if (namespaceWasDerived)
                 projectSln.Generate.Namespace = modelNamespace;
             projectSln.Generate.Generator = resolvedGeneratorType;
-            if (resolvedGeneratorType == GeneratorType.XrmContext3)
-            {
-                if (!string.IsNullOrEmpty(settings.XrmClientId))
-                    projectSln.Generate.XrmClientId = settings.XrmClientId;
-                if (!string.IsNullOrEmpty(settings.XrmUsername))
-                    projectSln.Generate.XrmUsername = settings.XrmUsername;
-            }
             Config!.Save(RootFolder);
         }
 
