@@ -25,9 +25,10 @@ public class XrmContextRunner(IAnsiConsole console, FlowlineRuntimeOptions runti
         string[]? extraTables,
         string modelNamespace,
         string tempOutputPath,
+        string serviceContextName = "XrmContext",
         CancellationToken cancellationToken = default)
     {
-        var args = BuildArgs(environmentUrl, auth, solutionName, extraTables, modelNamespace, tempOutputPath);
+        var args = BuildArgs(environmentUrl, auth, solutionName, extraTables, modelNamespace, tempOutputPath, serviceContextName);
 
         // XrmContext does not create the output directory itself — it fails if it doesn't exist
         Directory.CreateDirectory(tempOutputPath);
@@ -50,7 +51,8 @@ public class XrmContextRunner(IAnsiConsole console, FlowlineRuntimeOptions runti
         string solutionName,
         string[]? extraTables,
         string modelNamespace,
-        string tempOutputPath)
+        string tempOutputPath,
+        string serviceContextName = "XrmContext")
     {
         var args = new List<string>();
 
@@ -85,7 +87,7 @@ public class XrmContextRunner(IAnsiConsole console, FlowlineRuntimeOptions runti
         args.Add($"/namespace:{modelNamespace}");
         args.Add($"/out:{tempOutputPath}");
         args.Add("/oneFile:false");
-        args.Add("/servicecontextname:XrmContext");
+        args.Add($"/servicecontextname:{serviceContextName}");
         args.Add("/deprecatedprefix:ZZ_");
 
         if (extraTables is { Length: > 0 })

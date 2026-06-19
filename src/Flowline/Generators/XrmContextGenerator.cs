@@ -29,14 +29,23 @@ public class XrmContextGenerator(IAnsiConsole console, FlowlineRuntimeOptions ru
         var (cmdName, prefixArgs, suffixArgs) = await GetBestXrmContextCommandAsync(cancellationToken);
 
         var tempAppsettingsDir = Path.Combine(Path.GetTempPath(), $"flowline-xrmcontext-{Guid.NewGuid()}");
-        Directory.CreateDirectory(tempAppsettingsDir);
 
         try
         {
-            var json = BuildAppSettingsJson(context.DevUrl, context.TempOutputPath, context.ModelNamespace, context.SolutionName, context.ExtraTables);
+            Directory.CreateDirectory(tempAppsettingsDir);
+
+            var json = BuildAppSettingsJson(context.DevUrl, context.TempOutputPath, context.ModelNamespace, context.SolutionName, context.ExtraTables, context.ServiceContextName ?? "XrmContext");
             await File.WriteAllTextAsync(Path.Combine(tempAppsettingsDir, "appsettings.json"), json, cancellationToken);
 
             var profile = dataverseConnector.FindBestProfile(context.DevUrl);
+
+            if (profile?.IsServicePrincipal == true &&
+                Environment.GetEnvironmentVariable("AZURE_CLIENT_SECRET") is null)
+            {
+                throw new FlowlineException(ExitCode.ConfigInvalid,
+                    "AZURE_CLIENT_SECRET is required when authenticating with a Service Principal. Set the environment variable before running.");
+            }
+
             var envVars = BuildEnvVars(profile);
 
             var command = Cli.Wrap(cmdName)
@@ -64,19 +73,20 @@ public class XrmContextGenerator(IAnsiConsole console, FlowlineRuntimeOptions ru
     internal virtual Task<CommandResult> ExecuteCommandAsync(Command command, GenerationContext context, CancellationToken cancellationToken)
     {
         return console.Status().FlowlineSpinner().StartAsync(
-            "Generating early-bound types...",
+            $"Generating early-bound types into [bold]{context.OutputLabel}[/]...",
             ctx => command.WithToolExecutionLog(context.Verbose, ctx, toolDisplayName: "xrmcontext").ExecuteAsync(cancellationToken).Task);
     }
 
-    internal static string BuildAppSettingsJson(string devUrl, string outputDirectory, string modelNamespace, string solutionName, string[] extraTables)
+    internal static string BuildAppSettingsJson(string devUrl, string outputDirectory, string modelNamespace, string solutionName, string[] extraTables, string serviceContextName = "XrmContext")
     {
         var xrmContext = new JsonObject
         {
             ["OutputDirectory"] = outputDirectory,
             ["NamespaceSetting"] = modelNamespace,
-            ["ServiceContextName"] = "XrmContext",
+            ["ServiceContextName"] = serviceContextName,
             ["Solutions"] = new JsonArray(solutionName),
             ["GenerateCustomApis"] = true,
+            ["DeprecatedPrefix"] = "ZZ_",
         };
 
         if (extraTables is { Length: > 0 })
@@ -150,6 +160,10 @@ public class XrmContextGenerator(IAnsiConsole console, FlowlineRuntimeOptions ru
                 .WithArguments(args)
                 .ExecuteBufferedAsync(cancellationToken);
             return (result.ExitCode == 0, result.StandardOutput + result.StandardError);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch
         {

@@ -16,7 +16,6 @@ public class PacGenerator(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
     public async Task RunAsync(GenerationContext context, CancellationToken cancellationToken = default)
     {
-        // --- Discover entities and custom APIs in parallel (R10–R12) ---
         var entityTask = console.Status().FlowlineSpinner().StartAsync(
             "Discovering solution entities...",
             _ => GenerateReader.GetSolutionEntityLogicalNamesAsync(context.Service, context.RemoteSolution.Id, cancellationToken));
@@ -25,7 +24,6 @@ public class PacGenerator(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         var solutionEntities = await entityTask;
         var customApiNames = await customApiTask;
 
-        // Deduplicate entity filter (R14): solution entities + extraTables
         var entityFilter = solutionEntities
             .Concat(context.ExtraTables)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -43,10 +41,9 @@ public class PacGenerator(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
                 console.Verbose($"  custom api: {api}", isVerbose: true);
         }
 
-        // --- Build and run pac modelbuilder build ---
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
 
-        var modelArgs = BuildArgs(solutionEntities, context.ExtraTables, customApiNames, context.ModelNamespace, context.TempOutputPath);
+        var modelArgs = BuildArgs(solutionEntities, context.ExtraTables, customApiNames, context.ModelNamespace, context.TempOutputPath, context.ServiceContextName);
 
         var pacCommand = Cli.Wrap(cmdName)
             .WithArguments(args =>
@@ -58,7 +55,7 @@ public class PacGenerator(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             .WithValidation(CommandResultValidation.None);
 
         var tempPrefix = context.TempOutputPath + Path.DirectorySeparatorChar;
-        var outputFolderName = Path.GetFileName(context.TempOutputPath).TrimEnd('~');
+        var outputFolderName = Path.GetFileName(context.TempOutputPath[..^1].TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         string ShortenPacLine(string line) => line.Replace(tempPrefix, outputFolderName + "/");
 
         var result = await console.Status().FlowlineSpinner().StartAsync(
@@ -71,16 +68,13 @@ public class PacGenerator(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         console.Ok("Early-bound types generated");
     }
 
-    /// <summary>
-    /// Builds the modelbuilder argument vector (excludes command name and prefix args).
-    /// Deduplicates solutionEntities + extraTables by ordinal-ignore-case.
-    /// </summary>
     internal static string[] BuildArgs(
         IEnumerable<string> solutionEntities,
         IEnumerable<string> extraTables,
         IReadOnlyList<string> customApiNames,
         string modelNamespace,
-        string tempOutputPath)
+        string tempOutputPath,
+        string? serviceContextName = null)
     {
         var entityFilter = solutionEntities
             .Concat(extraTables)
@@ -98,6 +92,12 @@ public class PacGenerator(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             "--emitfieldsclasses",
             "-n", modelNamespace
         };
+
+        if (serviceContextName is not null)
+        {
+            args.Add("--serviceContextName");
+            args.Add(serviceContextName);
+        }
 
         if (customApiNames.Count > 0)
         {

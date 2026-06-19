@@ -14,5 +14,6 @@ public record GenerationContext(
     string TempOutputPath,
     XrmContextAuth? XrmContextAuth,
     bool Verbose,
-    string OutputLabel
+    string OutputLabel,
+    string? ServiceContextName = null
 );

@@ -1,12 +1,10 @@
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Services;
-using Spectre.Console;
 
 namespace Flowline.Generators;
 
 public class XrmContext3Generator(
-    IAnsiConsole console,
     FlowlineRuntimeOptions runtimeOptions,
     XrmContextToolProvider xrmContextToolProvider,
     XrmContextRunner xrmContextRunner)
@@ -30,6 +28,7 @@ public class XrmContext3Generator(
             extraTables: context.ExtraTables.Length > 0 ? context.ExtraTables : null,
             modelNamespace: context.ModelNamespace,
             tempOutputPath: context.TempOutputPath,
+            serviceContextName: context.ServiceContextName ?? "XrmContext",
             cancellationToken: cancellationToken);
     }
 }

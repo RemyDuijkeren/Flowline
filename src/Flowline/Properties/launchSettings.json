@@ -24,6 +24,16 @@
       "commandName": "Project",
       "commandLineArgs": "sync --verbose --force",
       "workingDirectory": "E:/Code/TryOut/MyFlowTest"
+    },
+    "generate xrmcontext3": {
+      "commandName": "Project",
+      "commandLineArgs": "generate --verbose --generator xrmcontext3",
+      "workingDirectory": "E:/Code/TryOut/MyFlowTest"
+    },
+    "generate xrmcontext": {
+      "commandName": "Project",
+      "commandLineArgs": "generate --verbose --generator xrmcontext",
+      "workingDirectory": "E:/Code/TryOut/MyFlowTest"
     }
   }
 }

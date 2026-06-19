@@ -29,13 +29,13 @@ public class XrmContext3GeneratorTests
 
         _toolProvider = Substitute.For<XrmContextToolProvider>(new HttpClient(), console, runtimeOptions);
         _runner = Substitute.For<XrmContextRunner>(console, runtimeOptions);
-        _generator = new XrmContext3Generator(console, runtimeOptions, _toolProvider, _runner);
+        _generator = new XrmContext3Generator(runtimeOptions, _toolProvider, _runner);
 
         _toolProvider.GetExePathAsync(Arg.Any<CancellationToken>()).Returns(ExePath);
         _runner.RunAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<XrmContextAuth>(),
             Arg.Any<string>(), Arg.Any<string[]>(), Arg.Any<string>(),
-            Arg.Any<string>(), Arg.Any<CancellationToken>())
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
     }
 

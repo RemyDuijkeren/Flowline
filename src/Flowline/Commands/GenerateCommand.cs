@@ -58,6 +58,10 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         [CommandOption("--xrm-client-secret <SECRET>")]
         [Description("Azure App Registration client secret — enables service principal auth, never saved")]
         public string? XrmClientSecret { get; set; }
+
+        [CommandOption("--service-context-name <NAME>")]
+        [Description("Name of the generated OrganizationServiceContext class — saved to .flowline")]
+        public string? ServiceContextName { get; set; }
     }
 
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
@@ -144,6 +148,12 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
                 projectSln.Generate.ExtraTables = tables.Length > 0 ? tables : null;
             }
 
+            if (!string.IsNullOrWhiteSpace(settings.ServiceContextName))
+            {
+                projectSln.Generate ??= new GenerateConfig();
+                projectSln.Generate.ServiceContextName = settings.ServiceContextName.Trim();
+            }
+
             var slnFolder = Path.Combine(RootFolder, AllSolutionsFolderName, solutionName);
 
             // Derive namespace if not yet set (R4)
@@ -172,6 +182,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         }
 
         var resolvedGeneratorType = settings.Generator ?? projectSln?.Generate?.Generator ?? GeneratorType.Pac;
+        var serviceContextName = settings.ServiceContextName ?? projectSln?.Generate?.ServiceContextName;
 
         // --- Connect and validate ---
         var service = await ConnectToDataverseAsync(dataverseConnector, devUrl, cancellationToken);
@@ -242,10 +253,12 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             TempOutputPath: tempFolder,
             XrmContextAuth: xrmContextAuth,
             Verbose: settings.Verbose,
-            OutputLabel: outputLabel
+            OutputLabel: outputLabel,
+            ServiceContextName: serviceContextName
         );
 
-        var generator = generators.Single(g => g.Type == resolvedGeneratorType);
+        var generator = generators.SingleOrDefault(g => g.Type == resolvedGeneratorType)
+            ?? throw new FlowlineException(ExitCode.ConfigInvalid, $"Generator '{resolvedGeneratorType}' is not registered. This is a bug.");
 
         var sw = Stopwatch.StartNew();
         try
