@@ -14,8 +14,8 @@ using Spectre.Console.Cli;
 namespace Flowline.Commands;
 
 public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseConnector, FlowlineRuntimeOptions runtimeOptions,
-    IEnumerable<IGenerator> generators)
-    : FlowlineCommand<GenerateCommand.Settings>(console, runtimeOptions)
+    IEnumerable<IGenerator> generators, ProfileResolutionService profileResolutionService)
+    : FlowlineCommand<GenerateCommand.Settings>(console, runtimeOptions, profileResolutionService)
 {
     public sealed class Settings : FlowlineSettings
     {
@@ -180,7 +180,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         var serviceContextName = settings.ServiceContextName ?? projectSln?.Generate?.ServiceContextName;
 
         // --- Connect and validate ---
-        var service = await ConnectToDataverseAsync(dataverseConnector, devUrl, cancellationToken);
+        var (service, resolvedProfile) = await ConnectToDataverseAsync(dataverseConnector, devUrl, cancellationToken);
 
         // TODO U2: ConnectToDataverseAsync will return (IOrganizationServiceAsync2, PacProfile) — wire resolvedProfile here.
         // TODO U4 guard (activate once U2 merges):

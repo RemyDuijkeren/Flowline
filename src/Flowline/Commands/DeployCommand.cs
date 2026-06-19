@@ -4,6 +4,7 @@ using CliWrap;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Services;
+using Flowline.Services;
 using Flowline.Utils;
 using Flowline.Validation;
 using Spectre.Console;
@@ -11,7 +12,7 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseConnector, OrphanCleanupService orphanCleanupService, FlowlineRuntimeOptions runtimeOptions) : FlowlineCommand<DeployCommand.Settings>(console, runtimeOptions)
+public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseConnector, OrphanCleanupService orphanCleanupService, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService) : FlowlineCommand<DeployCommand.Settings>(console, runtimeOptions, profileResolutionService)
 {
     public sealed class Settings : FlowlineSettings
     {
@@ -53,7 +54,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         ValidateLocalState(slnFolder, settings, cancellationToken);
 
         var sNew = ParseSolutionXml(slnFolder);
-        var service  = await ConnectToDataverseAsync(dataverseConnector, targetUrl, cancellationToken);
+        var (service, _) = await ConnectToDataverseAsync(dataverseConnector, targetUrl, cancellationToken);
         var webresourceRoot = Path.Combine(slnFolder, "WebResources");
         var deferred = await orphanCleanupService.RunPreImportAsync(service, sln.Name, sNew, runMode, webresourceRoot, cancellationToken);
 

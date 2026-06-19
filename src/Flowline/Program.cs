@@ -29,6 +29,7 @@ var services = new ServiceCollection();
 services.AddSingleton<IAnsiConsole>(AnsiConsole.Console);
 services.AddSingleton<FlowlineRuntimeOptions>();
 services.AddSingleton<DataverseConnector>();
+services.AddSingleton<ProfileResolutionService>();
 services.AddSingleton<HttpClient>();
 services.AddSingleton<XrmContextToolProvider>();
 services.AddSingleton<XrmContextRunner>();

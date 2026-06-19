@@ -3,6 +3,7 @@ using CliWrap;
 using CliWrap.Buffered;
 using Flowline.Config;
 using Flowline.Core;
+using Flowline.Services;
 using Flowline.Utils;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -11,8 +12,8 @@ namespace Flowline.Commands;
 
 public enum BumpComponent { Patch, Minor, Major }
 
-public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions) :
-    FlowlineCommand<SyncCommand.Settings>(console, runtimeOptions)
+public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService) :
+    FlowlineCommand<SyncCommand.Settings>(console, runtimeOptions, profileResolutionService)
 {
     public sealed class Settings : FlowlineSettings
     {

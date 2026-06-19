@@ -2,14 +2,15 @@ using System.ComponentModel;
 using CliWrap;
 using Flowline.Config;
 using Flowline.Core;
+using Flowline.Services;
 using Flowline.Utils;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions) :
-    FlowlineCommand<CloneCommand.Settings>(console, runtimeOptions)
+public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService) :
+    FlowlineCommand<CloneCommand.Settings>(console, runtimeOptions, profileResolutionService)
 {
     public sealed class Settings : FlowlineSettings
     {

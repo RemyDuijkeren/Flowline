@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using CliWrap;
 using Flowline.Core;
+using Flowline.Services;
 using Flowline.Utils;
 using Flowline.Validation;
 using Spectre.Console;
@@ -12,7 +13,7 @@ public enum Role { Dev, Test, Uat }
 
 public enum CopyType { Minimal, Full }
 
-public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions) : FlowlineCommand<ProvisionCommand.Settings>(console, runtimeOptions)
+public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService) : FlowlineCommand<ProvisionCommand.Settings>(console, runtimeOptions, profileResolutionService)
 {
     public sealed class Settings : FlowlineSettings
     {
