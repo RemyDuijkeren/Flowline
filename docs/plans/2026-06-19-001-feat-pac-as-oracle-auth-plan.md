@@ -34,7 +34,6 @@ ROPC (the OAuth flow behind `--username`/`--password`) fails on MFA-enabled tena
 - R5. For SP profiles: `ApplicationId` and `TenantId` are read from the profile; the client secret is always resolved from process env or runtime input, never from PAC profiles or `.flowline`.
 - R6. For UNIVERSAL profiles: use PAC CLI App ID for XrmContext3 BrowserOAuth; inherit the parent env for XrmContext v4 `DefaultAzureCredential`.
 - R7. In verbose mode, log the matched profile, derived auth method, and command name.
-- R7a. If the selected profile's `ExpiresOn` is in the past, emit a warning before proceeding: `PAC profile '<Name>' token may be expired — run pac auth create --environment <url> to refresh.`
 
 **PAC profile resilience — all commands**
 
@@ -114,16 +113,14 @@ flowchart TB
   LOAD -->|Loaded| FIND[FindBestProfile\nURL match + Current-active preference]
 
   FIND -->|No match| ERR_NONE[R10: error — pac auth create + name suggestion]
-  FIND -->|One match or one active| EXPIRY{ExpiresOn in past? R7a}
+  FIND -->|One match or one active| STATUS
   FIND -->|Multiple candidates, none active| AMBIG{Interactive? R3}
 
   AMBIG -->|Yes| PICKER[SelectionPrompt — name · kind · URL]
   AMBIG -->|No| ERR_AMBIG[error — candidate list + pac auth select]
-  PICKER --> EXPIRY
+  PICKER --> STATUS
 
-  EXPIRY -->|Yes| WARN[R7a: warning — token may be expired]
-  EXPIRY -->|No| STATUS
-  WARN --> STATUS[R4: Using PAC profile 'Name' Kind]
+  STATUS[R4: Using PAC profile 'Name' Kind]
 
   STATUS -->|non-generate command| CONNECT[DataverseConnector.ConnectViaPacAsync\nPAC MSAL token cache — no raw secret needed]
   STATUS -->|generate command| GEN[Generator auth sub-flow]
@@ -183,7 +180,6 @@ flowchart TB
 - **PAC profile JSON schema stability.** `authprofiles_v2.json` is an undocumented internal format. Schema changes break all Dataverse connections across all commands. Mitigation: R9 defensive parsing with a clear error naming the PAC CLI version.
 - **XrmContext3 ClientSecret method (Q1).** If this path does not work, XrmContext3 SP auth in non-interactive mode has no fallback (R19 is the only non-interactive path). Affects CI pipelines still using XrmContext3. XrmContext v4 is the recommended upgrade path.
 - **ADAL deprecation.** XrmContext3 uses ADAL v4 (deprecated). No action in this plan — XrmContext3 is a bridge generator.
-- **`ExpiresOn` field.** Already typed as `DateTime?` in `PacProfile` (`DataverseConnector.cs:276–277`); System.Text.Json handles ISO 8601 natively. Null (absent or unparseable) = expiry unknown → skip the R7a warning rather than blocking.
 
 ---
 
@@ -219,11 +215,11 @@ flowchart TB
 
 ---
 
-### U2. Profile resolution CLI wrapper — picker, status line, expiry warning
+### U2. Profile resolution CLI wrapper — picker, status line
 
-**Goal:** Bridge `ProfileResolutionResult` from Core to the Spectre UI layer; emit status line and expiry warning for all commands.
+**Goal:** Bridge `ProfileResolutionResult` from Core to the Spectre UI layer; emit status line for all commands.
 
-**Requirements:** R3, R4, R7, R7a
+**Requirements:** R3, R4, R7
 
 **Dependencies:** U1
 
@@ -233,7 +229,7 @@ flowchart TB
 - `tests/Flowline.Tests/Services/ProfileResolutionServiceTests.cs` (new)
 
 **Approach:** `ProfileResolutionService.ResolveAsync(string environmentUrl)` calls `DataverseConnector.FindBestProfile(url)` and dispatches on the result:
-- `ProfileFound` → check `ExpiresOn` (already `DateTime?`; null = expiry unknown, skip warning); emit warning if past; emit status line; return profile.
+- `ProfileFound` → emit status line; return profile.
 - `ProfileAmbiguous` + interactive → show `SelectionPrompt<PacProfile>` with display strings `'<Name>' (Kind) — <URL>` or `(unnamed, Kind) — <URL>`; emit status line for chosen profile; return it.
 - `ProfileAmbiguous` + non-interactive → throw `FlowlineException` with candidate list and `pac auth select` instruction.
 - `ProfileNotFound` → throw `FlowlineException` (see U7 for message format).
@@ -246,9 +242,6 @@ Status line: `Using PAC profile '<Name>' (Kind)` when `Name` is set; `Using PAC 
 
 **Test scenarios:**
 - `ProfileFound` → status line emitted, no picker, profile returned
-- `ProfileFound`, `ExpiresOn` past → expiry warning emitted before status line
-- `ProfileFound`, `ExpiresOn` future → no warning
-- `ProfileFound`, `ExpiresOn` unparseable → no warning, no error
 - `ProfileFound`, `Name` empty → status line uses `(unnamed, Kind) — URL` format
 - `ProfileAmbiguous`, interactive → picker shown with all candidates; selection emitted as status line (Covers AE8)
 - `ProfileAmbiguous`, non-interactive → `FlowlineException` with candidate list and `pac auth select` (Covers AE9)

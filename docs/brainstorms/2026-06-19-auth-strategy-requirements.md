@@ -67,7 +67,6 @@ Using the PAC CLI App ID (`51f81489-12ee-4a9e-aaae-a2591f45987d`) is a deliberat
 - R5. For SP profiles: `ApplicationId` and `TenantId` are read from the profile; the client secret is never stored in PAC profiles or `.flowline` — always resolved from process env or runtime input (see R15).
 - R6. For UNIVERSAL profiles: Flowline uses the PAC CLI App ID for XrmContext3 BrowserOAuth, and inherits the parent environment for XrmContext v4 `DefaultAzureCredential`.
 - R7. In verbose mode, Flowline logs which PAC profile was matched, which auth method was derived, and for which command.
-- R7a. If the selected profile's `ExpiresOn` is in the past, emit a warning before proceeding: `PAC profile 'Dev' token may be expired — run pac auth create --environment <url> to refresh.` Do not skip the profile; PAC may still be able to refresh the token silently. The warning surfaces a likely cause if the connection subsequently fails.
 
 **Core: PAC profile resilience (all commands)**
 

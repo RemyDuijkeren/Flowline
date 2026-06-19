@@ -34,6 +34,11 @@
       "commandName": "Project",
       "commandLineArgs": "generate --verbose --generator xrmcontext",
       "workingDirectory": "E:/Code/TryOut/MyFlowTest"
+    },
+    "generate pac": {
+      "commandName": "Project",
+      "commandLineArgs": "generate --verbose --generator pac",
+      "workingDirectory": "E:/Code/TryOut/MyFlowTest"
     }
   }
 }

@@ -20,21 +20,15 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
 
         return result switch
         {
-            ProfileFound found       => HandleFound(found.Profile, environmentUrl),
+            ProfileFound found       => HandleFound(found.Profile),
             ProfileAmbiguous ambig   => HandleAmbiguousAsync(ambig.Candidates, environmentUrl, cancellationToken),
             ProfileNotFound notFound => throw BuildNotFoundError(notFound.EnvironmentUrl),
             _                        => throw new InvalidOperationException($"Unexpected ProfileResolutionResult: {result.GetType().Name}")
         };
     }
 
-    Task<PacProfile> HandleFound(PacProfile profile, string environmentUrl)
+    Task<PacProfile> HandleFound(PacProfile profile)
     {
-        if (profile.ExpiresOn.HasValue && profile.ExpiresOn.Value < DateTime.UtcNow)
-        {
-            var url = environmentUrl.TrimEnd('/');
-            console.Warning($"PAC profile '{profile.Name}' token may be expired — run pac auth create --environment {url} to refresh.");
-        }
-
         EmitStatusLine(profile);
 
         if (opt.IsVerbose)

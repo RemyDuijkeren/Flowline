@@ -23,8 +23,8 @@ public class ProfileResolutionServiceTests
     }
 
     static PacProfile MakeProfile(string? name = "MyProfile", string? kind = "DATAVERSE",
-        string? resource = "https://automatevalue-dev.crm4.dynamics.com", DateTime? expiresOn = null)
-        => new() { Name = name, Kind = kind, Resource = resource, ExpiresOn = expiresOn };
+        string? resource = "https://automatevalue-dev.crm4.dynamics.com")
+        => new() { Name = name, Kind = kind, Resource = resource };
 
     // ── ProfileFound ─────────────────────────────────────────────────────────
 
@@ -74,55 +74,6 @@ public class ProfileResolutionServiceTests
         // TestConsole may word-wrap long lines; assert the key parts appear in output
         console.Output.Should().Contain("Using PAC profile (unnamed, DATAVERSE)");
         console.Output.Should().Contain(EnvironmentUrl);
-    }
-
-    [Fact]
-    public async Task ProfileFound_ExpiresOnPast_EmitsExpiryWarning()
-    {
-        var past = DateTime.UtcNow.AddHours(-1);
-        var profile = MakeProfile(expiresOn: past);
-        var svc = MakeService(out var console, new ProfileFound(profile));
-
-        await svc.ResolveAsync(EnvironmentUrl);
-
-        console.Output.Should().Contain("token may be expired");
-    }
-
-    [Fact]
-    public async Task ProfileFound_ExpiresOnFuture_NoWarning()
-    {
-        var future = DateTime.UtcNow.AddHours(1);
-        var profile = MakeProfile(expiresOn: future);
-        var svc = MakeService(out var console, new ProfileFound(profile));
-
-        await svc.ResolveAsync(EnvironmentUrl);
-
-        console.Output.Should().NotContain("expired");
-    }
-
-    [Fact]
-    public async Task ProfileFound_ExpiresOnNull_NoWarning()
-    {
-        var profile = MakeProfile(expiresOn: null);
-        var svc = MakeService(out var console, new ProfileFound(profile));
-
-        await svc.ResolveAsync(EnvironmentUrl);
-
-        console.Output.Should().NotContain("expired");
-    }
-
-    [Fact]
-    public async Task ProfileFound_ExpiryWarning_AppearsBeforeStatusLine()
-    {
-        var past = DateTime.UtcNow.AddHours(-1);
-        var profile = MakeProfile(expiresOn: past);
-        var svc = MakeService(out var console, new ProfileFound(profile));
-
-        await svc.ResolveAsync(EnvironmentUrl);
-
-        var warningIndex = console.Output.IndexOf("token may be expired", StringComparison.Ordinal);
-        var statusIndex = console.Output.IndexOf("Using PAC profile", StringComparison.Ordinal);
-        warningIndex.Should().BeLessThan(statusIndex);
     }
 
     // ── ProfileAmbiguous — non-interactive ───────────────────────────────────
