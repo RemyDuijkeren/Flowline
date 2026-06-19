@@ -32,6 +32,7 @@ services.AddSingleton<DataverseConnector>();
 services.AddSingleton<HttpClient>();
 services.AddSingleton<XrmContextToolProvider>();
 services.AddSingleton<XrmContextRunner>();
+services.AddSingleton<SecretResolver>();
 services.AddSingleton<IGenerator, PacGenerator>();
 services.AddSingleton<IGenerator, XrmContext3Generator>();
 services.AddSingleton<IGenerator, XrmContextGenerator>();

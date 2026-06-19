@@ -187,6 +187,12 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         // --- Connect and validate ---
         var service = await ConnectToDataverseAsync(dataverseConnector, devUrl, cancellationToken);
 
+        // TODO U2: ConnectToDataverseAsync will return (IOrganizationServiceAsync2, PacProfile) — wire resolvedProfile here.
+        // TODO U4 guard (activate once U2 merges):
+        //   if (settings.Secret != null && resolvedProfile.IsUniversal && settings.ClientId == null)
+        //       throw new FlowlineException(ExitCode.ValidationFailed,
+        //           "--secret requires a service principal profile or --client-id override");
+
         SolutionInfo remoteSln;
         if (standaloneMode)
         {
