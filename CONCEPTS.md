@@ -22,6 +22,11 @@ The structured record of all Dataverse solution component changes detected betwe
 ### Sub-change
 A change *within* a component — for example, an attribute added to an entity, a column removed from a view, or an option label changed on an option set. Sub-changes are the child entries under their parent component in both the terminal tree and `CHANGES.md`. The terminal caps the number of named sub-changes shown per component; `CHANGES.md` always contains the full list.
 
+## Auth
+
+### UNIVERSAL profile
+A PAC auth profile created via browser/user login (`pac auth create` with no `--applicationId`). Stores the user's identity and an MSAL token cache entry. Can connect to any Dataverse environment the user has access to in their tenant. Multiple UNIVERSAL profiles can coexist — typically one per named environment (`Dev`, `Prod`, etc.) — each pointing to a different URL but using the same underlying user account. Contrast with a ServicePrincipal profile, which stores an application ID and tenant for headless/CI use.
+
 ## Code Generation
 
 ### Generator
