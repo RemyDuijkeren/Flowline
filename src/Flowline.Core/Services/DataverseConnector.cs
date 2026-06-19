@@ -2,6 +2,7 @@ using Flowline;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Client.Extensions.Msal;
 using Microsoft.PowerPlatform.Dataverse.Client;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Spectre.Console;
@@ -204,7 +205,7 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
     public IEnumerable<PacProfile> GetPacProfiles()
     {
         var profiles = LoadPacAuthProfiles();
-        return profiles?.Profiles ?? Enumerable.Empty<PacProfile>();
+        return profiles.Profiles ?? Enumerable.Empty<PacProfile>();
     }
 
     public ProfileResolutionResult FindBestProfile(string environmentUrl)
@@ -263,25 +264,78 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
         return Path.Combine(localAppData, "Microsoft", "PowerAppsCLI");
     }
 
-    PacAuthProfiles? LoadPacAuthProfiles()
-    {
-        var authProfilesPath = Path.Combine(GetPacCliDataDirectory(), "authprofiles_v2.json");
+    PacAuthProfiles LoadPacAuthProfiles() =>
+        LoadPacAuthProfiles(Path.Combine(GetPacCliDataDirectory(), "authprofiles_v2.json"));
 
+    internal PacAuthProfiles LoadPacAuthProfiles(string authProfilesPath)
+    {
         if (!File.Exists(authProfilesPath))
         {
-            output.Verbose($"PAC auth profiles file not found: {authProfilesPath}", opt.IsVerbose);
-            return null;
+            var version = GetPacCliVersion();
+            throw new FlowlineException(ExitCode.NotAuthenticated,
+                $"PAC auth profile file not found: {authProfilesPath}\n" +
+                $"PAC CLI version: {version}\n" +
+                "Run: pac auth create --environment <url> --name \"<Name>\" to create a profile.\n" +
+                "If this error persists, update PAC CLI or file a bug.");
         }
 
         try
         {
             var json = File.ReadAllText(authProfilesPath);
-            return JsonSerializer.Deserialize<PacAuthProfiles>(json);
+            var profiles = JsonSerializer.Deserialize<PacAuthProfiles>(json);
+            if (profiles == null)
+                throw new JsonException("Profile file deserialized to null.");
+
+            output.Verbose($"Loaded {profiles.Profiles?.Count ?? 0} PAC auth profile(s) from {authProfilesPath}", opt.IsVerbose);
+
+            return profiles;
         }
-        catch (Exception ex)
+        catch (JsonException ex)
         {
-            output.Verbose($"Failed to read PAC auth profiles: {ex.Message}", opt.IsVerbose);
-            return null;
+            var version = GetPacCliVersion();
+            throw new FlowlineException(ExitCode.NotAuthenticated,
+                $"Failed to parse PAC auth profiles ({authProfilesPath}): {ex.Message}\n" +
+                $"PAC CLI version: {version}\n" +
+                "Update PAC CLI or run: pac auth create --environment <url> to reinitialize.");
+        }
+        catch (IOException ex)
+        {
+            var version = GetPacCliVersion();
+            throw new FlowlineException(ExitCode.NotAuthenticated,
+                $"Failed to read PAC auth profiles ({authProfilesPath}): {ex.Message}\n" +
+                $"PAC CLI version: {version}\n" +
+                "Check file permissions or run: pac auth create --environment <url>.");
+        }
+        // Other exceptions bubble up
+    }
+
+    string GetPacCliVersion()
+    {
+        try
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "pac",
+                    Arguments = "--version",
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+            process.Start();
+            var outputText = process.StandardOutput.ReadToEnd();
+            if (!process.WaitForExit(2000))
+            {
+                process.Kill();
+                return "unknown (timeout)";
+            }
+            return string.IsNullOrWhiteSpace(outputText) ? "unknown" : outputText.Trim();
+        }
+        catch
+        {
+            return "unknown (pac CLI not found)";
         }
     }
 }

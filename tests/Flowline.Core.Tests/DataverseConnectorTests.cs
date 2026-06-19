@@ -392,4 +392,72 @@ public class DataverseConnectorTests
 
         Assert.Equal(ExitCode.NotAuthenticated, ex.ExitCode);
     }
+
+    [Fact]
+    public void LoadPacAuthProfiles_FileNotFound_ThrowsFlowlineExceptionWithActionableMessage()
+    {
+        var nonExistentPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json");
+
+        var ex = Assert.Throws<FlowlineException>(() => _service.LoadPacAuthProfiles(nonExistentPath));
+
+        Assert.Equal(ExitCode.NotAuthenticated, ex.ExitCode);
+        Assert.Contains("pac auth create", ex.Message);
+    }
+
+    [Fact]
+    public void LoadPacAuthProfiles_MalformedJson_ThrowsFlowlineExceptionWithParseMessage()
+    {
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(tempFile, "{ this is not valid json }}}");
+
+            var ex = Assert.Throws<FlowlineException>(() => _service.LoadPacAuthProfiles(tempFile));
+
+            Assert.Equal(ExitCode.NotAuthenticated, ex.ExitCode);
+            Assert.Contains("parse", ex.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void LoadPacAuthProfiles_JsonDeserializesToNull_ThrowsFlowlineException()
+    {
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(tempFile, "null");
+
+            var ex = Assert.Throws<FlowlineException>(() => _service.LoadPacAuthProfiles(tempFile));
+
+            Assert.Equal(ExitCode.NotAuthenticated, ex.ExitCode);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void LoadPacAuthProfiles_ValidJson_ReturnsProfiles()
+    {
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var json = """{"Profiles":[{"Kind":"DATAVERSE","Resource":"https://contoso.crm4.dynamics.com"}],"Current":{}}""";
+            File.WriteAllText(tempFile, json);
+
+            var result = _service.LoadPacAuthProfiles(tempFile);
+
+            Assert.NotNull(result);
+            Assert.Single(result.Profiles!);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
 }
