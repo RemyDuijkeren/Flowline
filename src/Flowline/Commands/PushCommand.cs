@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Services;
+using Flowline.Services;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using Flowline.Utils;
@@ -9,8 +10,8 @@ using Flowline.Validation;
 
 namespace Flowline.Commands;
 
-public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConnector, PluginService pluginService, WebResourceService webResourceService, FlowlineRuntimeOptions runtimeOptions)
-    : FlowlineCommand<PushCommand.Settings>(console, runtimeOptions)
+public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConnector, PluginService pluginService, WebResourceService webResourceService, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService)
+    : FlowlineCommand<PushCommand.Settings>(console, runtimeOptions, profileResolutionService)
 {
     [Flags]
     public enum PushScope
@@ -113,7 +114,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             ? await PrepareWebResourcesForPushAsync(standaloneMode, settings, solutionName, standaloneParams, cancellationToken)
             : null;
 
-        var conn = await ConnectToDataverseAsync(dataverseConnector, environmentUrl, cancellationToken);
+        var (conn, _) = await ConnectToDataverseAsync(dataverseConnector, environmentUrl, cancellationToken);
 
         if (pluginsDll != null)
         {

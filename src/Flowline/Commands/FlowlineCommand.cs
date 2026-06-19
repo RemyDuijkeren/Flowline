@@ -1,6 +1,7 @@
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Services;
+using Flowline.Services;
 using Flowline.Utils;
 using Flowline.Validation;
 using Microsoft.PowerPlatform.Dataverse.Client;
@@ -11,7 +12,7 @@ namespace Flowline.Commands;
 
 public enum EnvironmentRole { Prod, Uat, Test, Dev }
 
-public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions) : AsyncCommand<TSettings>
+public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService) : AsyncCommand<TSettings>
     where TSettings : FlowlineSettings
 {
     protected const string AllSolutionsFolderName = "solutions";
@@ -116,20 +117,20 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         return env;
     }
 
-    protected async Task<IOrganizationServiceAsync2> ConnectToDataverseAsync(DataverseConnector dataverseConnector, string environmentUrl, CancellationToken cancellationToken)
+    protected async Task<(IOrganizationServiceAsync2 Connection, PacProfile Profile)> ConnectToDataverseAsync(
+        DataverseConnector dataverseConnector, string environmentUrl, CancellationToken cancellationToken)
     {
+        PacProfile? resolvedProfile = null;
         IOrganizationServiceAsync2? conn = null;
 
         await Console.Status().FlowlineSpinner().StartAsync("Connecting to Dataverse...", async _ =>
         {
-            if (dataverseConnector.FindBestProfile(environmentUrl) is not ProfileFound { Profile: var profile })
-                throw new FlowlineException(ExitCode.NotAuthenticated, "Not authenticated — run: pac auth create --environment <url>");
-
-            conn = await dataverseConnector.ConnectViaPacAsync(profile, environmentUrl, cancellationToken);
+            resolvedProfile = await profileResolutionService.ResolveAsync(environmentUrl, cancellationToken);
+            conn = await dataverseConnector.ConnectViaPacAsync(resolvedProfile, environmentUrl, cancellationToken);
         });
 
         Console.Ok("Connected to Dataverse");
-        return conn!;
+        return (conn!, resolvedProfile!);
     }
 
     protected async Task<(ProjectSolution projectSolution, SolutionInfo solutionInfo)> GetAndCheckSolutionAsync(
