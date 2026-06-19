@@ -30,11 +30,9 @@ public static class ConsoleHelper
     public static bool IsInteractive(FlowlineSettings? settings)
     {
         // CI Environment detection
-        if (Environment.GetEnvironmentVariable("CI") != null ||
-            Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != null ||
+        if (Environment.GetEnvironmentVariable("CI") != null || // Most CI systems
             Environment.GetEnvironmentVariable("TF_BUILD") != null || // Azure DevOps
-            Environment.GetEnvironmentVariable("GITLAB_CI") != null ||
-            Environment.GetEnvironmentVariable("JENKINS_URL") != null)
+            Environment.GetEnvironmentVariable("JENKINS_URL") != null) // Jenkins
         {
             return false;
         }
