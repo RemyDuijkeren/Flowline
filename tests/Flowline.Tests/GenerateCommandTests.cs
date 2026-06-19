@@ -1,5 +1,5 @@
+using System.Text.Json;
 using Flowline.Config;
-using Flowline.Services;
 using FluentAssertions;
 
 namespace Flowline.Tests;
@@ -77,58 +77,76 @@ public class GeneratorResolutionTests
     }
 }
 
-public class XrmContextAuthResolutionTests
+public class GenerateCommandEarlyValidationTests
 {
-    // Mirrors the auth branch selection in GenerateCommand.ExecuteFlowlineAsync:
-    //   if clientId + clientSecret → ClientSecret
-    //   else if username          → ConnectionString (ROPC)
-    //   else                      → BrowserOAuth(xrmClientId)
+    // Mirrors early validation in GenerateCommand.ExecuteAsync:
+    //   if (settings.ClientId != null && settings.Secret == null) throw FlowlineException
 
-    static Type ResolveAuthBranch(string? clientId, string? clientSecret, string? username)
+    static void Validate(string? clientId, string? secret)
     {
-        if (!string.IsNullOrEmpty(clientId) && !string.IsNullOrEmpty(clientSecret))
-            return typeof(XrmContextAuth.ClientSecret);
-        if (!string.IsNullOrEmpty(username))
-            return typeof(XrmContextAuth.ConnectionString);
-        return typeof(XrmContextAuth.BrowserOAuth);
-    }
-
-    static string? ResolveAppId(string? clientId, string? clientSecret)
-    {
-        // BrowserOAuth is constructed with xrmClientId when no clientSecret present
-        if (!string.IsNullOrEmpty(clientId) && string.IsNullOrEmpty(clientSecret))
-            return clientId;
-        return null;
+        if (clientId != null && secret == null)
+            throw new FlowlineException("--client-id requires --secret");
     }
 
     [Fact]
-    public void Auth_ClientIdAndSecret_SelectsClientSecret()
+    public void ClientIdWithoutSecret_ThrowsFlowlineException()
     {
-        ResolveAuthBranch("my-id", "my-secret", username: null)
-            .Should().Be(typeof(XrmContextAuth.ClientSecret));
+        var act = () => Validate("my-client-id", secret: null);
+
+        act.Should().Throw<FlowlineException>().WithMessage("--client-id requires --secret");
     }
 
     [Fact]
-    public void Auth_UsernameOnly_SelectsConnectionString()
+    public void ClientIdWithSecret_NoException()
     {
-        ResolveAuthBranch(clientId: null, clientSecret: null, username: "user@contoso.com")
-            .Should().Be(typeof(XrmContextAuth.ConnectionString));
+        var act = () => Validate("my-client-id", "my-secret");
+
+        act.Should().NotThrow();
     }
 
     [Fact]
-    public void Auth_NoCredentials_SelectsBrowserOAuth()
+    public void SecretAlone_NoException()
     {
-        ResolveAuthBranch(clientId: null, clientSecret: null, username: null)
-            .Should().Be(typeof(XrmContextAuth.BrowserOAuth));
+        var act = () => Validate(clientId: null, "my-secret");
+
+        act.Should().NotThrow();
     }
 
     [Fact]
-    public void Auth_ClientIdWithoutSecret_SelectsBrowserOAuth_PassesClientIdAsAppId()
+    public void NeitherClientIdNorSecret_NoException()
     {
-        // xrmClientId without xrmClientSecret → BrowserOAuth with xrmClientId as AppId
-        ResolveAuthBranch(clientId: "my-id", clientSecret: null, username: null)
-            .Should().Be(typeof(XrmContextAuth.BrowserOAuth));
+        var act = () => Validate(clientId: null, secret: null);
 
-        ResolveAppId("my-id", clientSecret: null).Should().Be("my-id");
+        act.Should().NotThrow();
+    }
+}
+
+public class GenerateConfigJsonTests
+{
+    [Fact]
+    public void GenerateConfig_Serialized_NoXrmClientIdOrXrmUsername()
+    {
+        var config = new GenerateConfig { Namespace = "A.Models", Generator = GeneratorType.XrmContext3 };
+
+        var json = JsonSerializer.Serialize(config);
+
+        json.Should().NotContain("XrmClientId")
+            .And.NotContain("XrmUsername")
+            .And.NotContain("xrmClientId")
+            .And.NotContain("xrmUsername");
+    }
+
+    [Fact]
+    public void GenerateConfig_WithUnknownFields_DeserializesWithoutError()
+    {
+        // Old .flowline files may contain xrmClientId — JSON should ignore unknown properties
+        var json = """{"Namespace":"A.Models","Generator":"XrmContext3","xrmClientId":"old-id","xrmUsername":"user@contoso.com"}""";
+
+        var act = () => JsonSerializer.Deserialize<GenerateConfig>(json);
+
+        act.Should().NotThrow();
+        var config = act();
+        config!.Namespace.Should().Be("A.Models");
+        config.Generator.Should().Be(GeneratorType.XrmContext3);
     }
 }
