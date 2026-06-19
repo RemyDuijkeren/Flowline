@@ -207,11 +207,38 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
         return profiles?.Profiles ?? Enumerable.Empty<PacProfile>();
     }
 
-    public PacProfile? FindBestProfile(string environmentUrl)
+    public ProfileResolutionResult FindBestProfile(string environmentUrl)
+        => FindBestProfile(environmentUrl, LoadPacAuthProfiles());
+
+    internal static ProfileResolutionResult FindBestProfile(string environmentUrl, PacAuthProfiles? profiles)
     {
-        var profiles = GetPacProfiles().ToList();
-        return profiles.FirstOrDefault(p => p.Resource?.TrimEnd('/').Equals(environmentUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase) == true)
-            ?? profiles.FirstOrDefault(p => p.IsUniversal);
+        var normalizedUrl = environmentUrl.TrimEnd('/');
+        var candidates = profiles?.Profiles?
+            .Where(p => p.Resource?.TrimEnd('/').Equals(normalizedUrl, StringComparison.OrdinalIgnoreCase) == true)
+            .ToList() ?? [];
+
+        if (candidates.Count == 1)
+            return new ProfileFound(candidates[0]);
+
+        if (candidates.Count > 1)
+        {
+            // Prefer the profile that is currently active for its Kind
+            foreach (var candidate in candidates)
+            {
+                if (candidate.Kind is null) continue;
+                if (profiles?.Current?.TryGetValue(candidate.Kind, out var activeProfile) == true
+                    && activeProfile == candidate)
+                    return new ProfileFound(activeProfile);
+            }
+            return new ProfileAmbiguous(candidates);
+        }
+
+        // No URL match — check Current for a UNIVERSAL fallback
+        var universal = profiles?.Current?.Values.FirstOrDefault(p => p.IsUniversal);
+        if (universal is not null)
+            return new ProfileFound(universal);
+
+        return new ProfileNotFound(environmentUrl);
     }
 
     public PacProfile? GetCurrentResourceSpecificPacProfile()
