@@ -39,6 +39,8 @@ XrmContext v4 uses `DefaultAzureCredential` from Azure.Identity. Its token acqui
 
 **XrmContext3 always uses BrowserOAuth for UNIVERSAL profiles.** MSAL→ADAL token injection is impossible. The only working interactive path for UNIVERSAL users is ADAL's own browser OAuth via `/method:OAuth` with the PAC CLI App ID. ADAL caches the token after the first login; subsequent runs reuse it without opening a browser.
 
+Using the PAC CLI App ID (`51f81489-12ee-4a9e-aaae-a2591f45987d`) is a deliberate choice. It is a Microsoft-registered multi-tenant app with Dataverse permissions pre-consented in Microsoft tenants; browser OAuth requires no client secret, so using it carries no credential risk. The known risk — Microsoft could revoke or change this App ID — is acceptable: XrmContext3 is a bridge generator being phased out in favour of XrmContext v4, so registering a Flowline-specific Azure AD app is not warranted. This App ID is already used in the existing `XrmContextRunner.cs` and is publicly documented.
+
 **XrmContext3 with SP profile: verify ClientSecret method.** Passing PAC profile `ApplicationId` + `AZURE_CLIENT_SECRET` directly as XrmContext3 CLI args (`/method:ClientSecret`) is different from token cache injection (which is confirmed impossible). This explicit-credential path needs a test run to confirm. See Outstanding Questions.
 
 **XrmContext v4 auth is unchanged.** SP profile → inject `AZURE_CLIENT_ID` + `AZURE_TENANT_ID` from profile + `AZURE_CLIENT_SECRET` from env. UNIVERSAL profile → no injection; `DefaultAzureCredential` inherits the parent environment and finds credentials via its own chain (Windows: `SharedTokenCacheCredential` finds PAC's MSAL cache; Linux/Mac: falls through to `AzureCliCredential` or `InteractiveBrowserCredential`).
