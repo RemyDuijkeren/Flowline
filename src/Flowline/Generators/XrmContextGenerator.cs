@@ -37,7 +37,7 @@ public class XrmContextGenerator(IAnsiConsole console, FlowlineRuntimeOptions ru
             var json = BuildAppSettingsJson(context.DevUrl, context.TempOutputPath, context.ModelNamespace, context.SolutionName, context.ExtraTables, context.ServiceContextName ?? "XrmContext");
             await File.WriteAllTextAsync(Path.Combine(tempAppsettingsDir, "appsettings.json"), json, cancellationToken);
 
-            var profile = dataverseConnector.FindBestProfile(context.DevUrl);
+            var profile = dataverseConnector.FindBestProfile(context.DevUrl) is ProfileFound f ? f.Profile : null;
 
             if (profile?.IsServicePrincipal == true &&
                 Environment.GetEnvironmentVariable("AZURE_CLIENT_SECRET") is null)
