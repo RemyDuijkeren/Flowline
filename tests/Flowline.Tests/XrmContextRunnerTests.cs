@@ -143,6 +143,17 @@ public class XrmContextRunnerTests
         args.Should().Contain($"/url:{EnvironmentUrl}/XRMServices/2011/Organization.svc");
     }
 
+    [Fact]
+    public void BuildArgs_BrowserOAuth_ExplicitAppId_UsesProvidedAppId()
+    {
+        var auth = new XrmContextAuth.BrowserOAuth(AppId: ClientId);
+
+        var args = XrmContextRunner.BuildArgs(EnvironmentUrl, auth, SolutionName, null, Namespace, OutputPath);
+
+        args.Should().Contain($"/mfaAppId:{ClientId}");
+        args.Should().NotContain("/mfaAppId:51f81489-12ee-4a9e-aaae-a2591f45987d");
+    }
+
     // ── Common args (both methods) ───────────────────────────────────────────
 
     [Theory]

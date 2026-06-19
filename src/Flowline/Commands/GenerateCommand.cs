@@ -14,7 +14,7 @@ using Spectre.Console.Cli;
 namespace Flowline.Commands;
 
 public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseConnector, FlowlineRuntimeOptions runtimeOptions,
-    IEnumerable<IGenerator> generators, ProfileResolutionService profileResolutionService)
+    IEnumerable<IGenerator> generators, ProfileResolutionService profileResolutionService, SecretResolver secretResolver)
     : FlowlineCommand<GenerateCommand.Settings>(console, runtimeOptions, profileResolutionService)
 {
     public sealed class Settings : FlowlineSettings
@@ -182,11 +182,15 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         // --- Connect and validate ---
         var (service, resolvedProfile) = await ConnectToDataverseAsync(dataverseConnector, devUrl, cancellationToken);
 
-        // TODO U2: ConnectToDataverseAsync will return (IOrganizationServiceAsync2, PacProfile) — wire resolvedProfile here.
-        // TODO U4 guard (activate once U2 merges):
-        //   if (settings.Secret != null && resolvedProfile.IsUniversal && settings.ClientId == null)
-        //       throw new FlowlineException(ExitCode.ValidationFailed,
-        //           "--secret requires a service principal profile or --client-id override");
+        // Guard: --secret with UNIVERSAL profile requires --client-id override
+        if (settings.Secret != null && resolvedProfile.IsUniversal && settings.ClientId == null)
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                "--secret requires a service principal profile or --client-id override");
+
+        // Apply --client-id override (substitutes ApplicationId for env injection and ClientSecret auth)
+        var effectiveProfile = settings.ClientId != null
+            ? resolvedProfile with { ApplicationId = settings.ClientId }
+            : resolvedProfile;
 
         SolutionInfo remoteSln;
         if (standaloneMode)
@@ -207,8 +211,31 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
 
         var outputLabel = standaloneMode ? modelsFolder : $"{solutionName}/Plugins/Models";
 
-        // Auth resolution comes in U5/U6 — placeholder for now
         XrmContextAuth? xrmContextAuth = null;
+        string? resolvedSecret = null;
+
+        if (resolvedGeneratorType is GeneratorType.XrmContext3)
+        {
+            if (effectiveProfile.IsUniversal)
+            {
+                if (!ConsoleHelper.IsInteractive(settings))
+                    throw new FlowlineException(ExitCode.ConfigInvalid,
+                        "XrmContext3 requires browser OAuth which is not available in non-interactive mode. Use --generator xrmcontext (XrmContext v4) for non-interactive use.");
+                xrmContextAuth = new XrmContextAuth.BrowserOAuth(DataverseConnector.PacCliAppId);
+            }
+            else if (effectiveProfile.IsServicePrincipal)
+            {
+                if (string.IsNullOrEmpty(effectiveProfile.ApplicationId))
+                    throw new FlowlineException(ExitCode.ConfigInvalid, "Service principal profile is missing ApplicationId.");
+                resolvedSecret = await secretResolver.ResolveAsync(effectiveProfile, settings.Secret);
+                xrmContextAuth = new XrmContextAuth.ClientSecret(effectiveProfile.ApplicationId, resolvedSecret);
+            }
+        }
+        else if (resolvedGeneratorType is GeneratorType.XrmContext && effectiveProfile.IsServicePrincipal)
+        {
+            // XrmContext v4 SP: resolve secret for env injection (U6 uses context.ResolvedSecret)
+            resolvedSecret = await secretResolver.ResolveAsync(effectiveProfile, settings.Secret);
+        }
 
         // --- Dispatch generator ---
         var generationContext = new GenerationContext(
@@ -222,7 +249,9 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             XrmContextAuth: xrmContextAuth,
             Verbose: settings.Verbose,
             OutputLabel: outputLabel,
-            ServiceContextName: serviceContextName
+            ServiceContextName: serviceContextName,
+            ResolvedProfile: effectiveProfile,
+            ResolvedSecret: resolvedSecret
         );
 
         var generator = generators.SingleOrDefault(g => g.Type == resolvedGeneratorType)
