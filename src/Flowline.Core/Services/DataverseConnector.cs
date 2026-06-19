@@ -325,15 +325,16 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 }
             };
             process.Start();
-            var outputText = process.StandardOutput.ReadToEnd();
+            var outputTask = process.StandardOutput.ReadToEndAsync();
             if (!process.WaitForExit(2000))
             {
                 process.Kill();
                 return "unknown (timeout)";
             }
+            var outputText = outputTask.GetAwaiter().GetResult();
             return string.IsNullOrWhiteSpace(outputText) ? "unknown" : outputText.Trim();
         }
-        catch
+        catch (Exception)
         {
             return "unknown (pac CLI not found)";
         }

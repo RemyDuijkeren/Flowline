@@ -58,8 +58,11 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
 
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
+        if (settings.ClientId != null && string.IsNullOrWhiteSpace(settings.ClientId))
+            throw new FlowlineException(ExitCode.ValidationFailed, "--client-id must not be empty");
+
         if (settings.ClientId != null && settings.Secret == null)
-            throw new FlowlineException("--client-id requires --secret");
+            throw new FlowlineException(ExitCode.ValidationFailed, "--client-id requires --secret");
 
         if (!IsStandaloneMode())
             return await base.ExecuteAsync(context, settings, cancellationToken);
@@ -187,9 +190,9 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             throw new FlowlineException(ExitCode.ValidationFailed,
                 "--secret requires a service principal profile or --client-id override");
 
-        // Apply --client-id override (substitutes ApplicationId for env injection and ClientSecret auth)
+        // Apply --client-id override: substitutes ApplicationId and promotes to SP kind so auth routing works
         var effectiveProfile = settings.ClientId != null
-            ? resolvedProfile with { ApplicationId = settings.ClientId }
+            ? resolvedProfile with { ApplicationId = settings.ClientId, Kind = "ServicePrincipal" }
             : resolvedProfile;
 
         SolutionInfo remoteSln;
@@ -229,6 +232,11 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
                     throw new FlowlineException(ExitCode.ConfigInvalid, "Service principal profile is missing ApplicationId.");
                 resolvedSecret = await secretResolver.ResolveAsync(effectiveProfile, settings.Secret);
                 xrmContextAuth = new XrmContextAuth.ClientSecret(effectiveProfile.ApplicationId, resolvedSecret);
+            }
+            else
+            {
+                throw new FlowlineException(ExitCode.ConfigInvalid,
+                    $"PAC profile kind '{effectiveProfile.Kind}' is not supported by XrmContext3. Use a UNIVERSAL or service principal profile, or switch to --generator pac.");
             }
         }
         else if (resolvedGeneratorType is GeneratorType.XrmContext && effectiveProfile.IsServicePrincipal)

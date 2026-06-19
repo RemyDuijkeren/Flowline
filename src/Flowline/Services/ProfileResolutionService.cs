@@ -21,7 +21,7 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
         return result switch
         {
             ProfileFound found       => HandleFound(found.Profile),
-            ProfileAmbiguous ambig   => HandleAmbiguousAsync(ambig.Candidates, environmentUrl, cancellationToken),
+            ProfileAmbiguous ambig   => HandleAmbiguousAsync(ambig.Candidates, environmentUrl),
             ProfileNotFound notFound => throw BuildNotFoundError(notFound.EnvironmentUrl),
             _                        => throw new InvalidOperationException($"Unexpected ProfileResolutionResult: {result.GetType().Name}")
         };
@@ -30,14 +30,11 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
     Task<PacProfile> HandleFound(PacProfile profile)
     {
         EmitStatusLine(profile);
-
-        if (opt.IsVerbose)
-            console.Verbose($"Matched profile: {profile.Name ?? "(unnamed)"}, Kind: {profile.Kind}, URL: {profile.Resource}", isVerbose: true);
-
+        console.Verbose($"Matched profile: {profile.Name ?? "(unnamed)"}, Kind: {profile.Kind}, URL: {profile.Resource}", opt.IsVerbose);
         return Task.FromResult(profile);
     }
 
-    async Task<PacProfile> HandleAmbiguousAsync(IReadOnlyList<PacProfile> candidates, string environmentUrl, CancellationToken cancellationToken)
+    Task<PacProfile> HandleAmbiguousAsync(IReadOnlyList<PacProfile> candidates, string environmentUrl)
     {
         if (!ConsoleHelper.IsInteractive(settings: null))
         {
@@ -51,10 +48,10 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
             .UseConverter(FormatCandidate)
             .AddChoices(candidates);
 
-        var selected = await Task.Run(() => console.Prompt(prompt), cancellationToken);
+        var selected = console.Prompt(prompt);
 
         EmitStatusLine(selected);
-        return selected;
+        return Task.FromResult(selected);
     }
 
     FlowlineException BuildNotFoundError(string environmentUrl)
@@ -68,15 +65,15 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
     void EmitStatusLine(PacProfile profile)
     {
         var status = string.IsNullOrEmpty(profile.Name)
-            ? $"Using PAC profile (unnamed, {profile.Kind}) — {profile.Resource}"
-            : $"Using PAC profile '{profile.Name}' ({profile.Kind})";
+            ? $"Using PAC profile (unnamed, {Markup.Escape(profile.Kind ?? "")}) — {Markup.Escape(profile.Resource ?? "")}"
+            : $"Using PAC profile '{Markup.Escape(profile.Name)}' ({Markup.Escape(profile.Kind ?? "")})";
         console.MarkupLine(status);
     }
 
     static string FormatCandidate(PacProfile p) =>
         string.IsNullOrEmpty(p.Name)
-            ? $"(unnamed, {p.Kind}) — {p.Resource}"
-            : $"'{p.Name}' ({p.Kind}) — {p.Resource}";
+            ? $"(unnamed, {Markup.Escape(p.Kind ?? "")}) — {Markup.Escape(p.Resource ?? "")}"
+            : $"'{Markup.Escape(p.Name)}' ({Markup.Escape(p.Kind ?? "")}) — {Markup.Escape(p.Resource ?? "")}";
 
     internal static string BuildNameSuggestion(string environmentUrl)
     {

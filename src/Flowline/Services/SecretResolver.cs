@@ -18,11 +18,11 @@ public class SecretResolver(IAnsiConsole console)
     /// </summary>
     public Task<string> ResolveAsync(PacProfile profile, string? secretFlag)
     {
-        if (secretFlag != null)
+        if (!string.IsNullOrEmpty(secretFlag))
             return Task.FromResult(secretFlag);
 
         var envSecret = Environment.GetEnvironmentVariable("AZURE_CLIENT_SECRET");
-        if (envSecret != null)
+        if (!string.IsNullOrEmpty(envSecret))
             return Task.FromResult(envSecret);
 
         if (IsInteractive())
@@ -35,7 +35,7 @@ public class SecretResolver(IAnsiConsole console)
         }
 
         throw new FlowlineException(ExitCode.NotAuthenticated,
-            "Client secret required — set AZURE_CLIENT_SECRET env var or use --secret flag");
+            $"Client secret required for '{profile.Name ?? profile.ApplicationId ?? "unknown"}' — set AZURE_CLIENT_SECRET env var or use --secret flag");
     }
 
     protected virtual bool IsInteractive() => ConsoleHelper.IsInteractive(null);
