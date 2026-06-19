@@ -243,6 +243,131 @@ public class DataverseConnectorTests
     }
 
     [Fact]
+    public void FindBestProfile_SingleCandidateMatchesUrl_ReturnsProfileFound()
+    {
+        var profile = new PacProfile { Kind = "DATAVERSE", Resource = "https://contoso.crm4.dynamics.com" };
+        var profiles = new PacAuthProfiles { Profiles = [profile] };
+
+        var result = DataverseConnector.FindBestProfile("https://contoso.crm4.dynamics.com", profiles);
+
+        var found = Assert.IsType<ProfileFound>(result);
+        Assert.Same(profile, found.Profile);
+    }
+
+    [Fact]
+    public void FindBestProfile_MultipleCandidates_OneMatchesCurrent_ReturnsProfileFound()
+    {
+        var profileA = new PacProfile { Kind = "DATAVERSE", Resource = "https://contoso.crm4.dynamics.com", User = "a@contoso.com" };
+        var profileB = new PacProfile { Kind = "DATAVERSE", Resource = "https://contoso.crm4.dynamics.com", User = "b@contoso.com" };
+        var profiles = new PacAuthProfiles
+        {
+            Profiles = [profileA, profileB],
+            Current = new Dictionary<string, PacProfile> { ["DATAVERSE"] = profileB }
+        };
+
+        var result = DataverseConnector.FindBestProfile("https://contoso.crm4.dynamics.com", profiles);
+
+        var found = Assert.IsType<ProfileFound>(result);
+        Assert.Same(profileB, found.Profile);
+    }
+
+    [Fact]
+    public void FindBestProfile_MultipleCandidates_NoneMatchesCurrent_ReturnsProfileAmbiguous()
+    {
+        var profileA = new PacProfile { Kind = "DATAVERSE", Resource = "https://contoso.crm4.dynamics.com", User = "a@contoso.com" };
+        var profileB = new PacProfile { Kind = "DATAVERSE", Resource = "https://contoso.crm4.dynamics.com", User = "b@contoso.com" };
+        var other    = new PacProfile { Kind = "DATAVERSE", Resource = "https://contoso.crm4.dynamics.com", User = "c@contoso.com" };
+        var profiles = new PacAuthProfiles
+        {
+            Profiles = [profileA, profileB],
+            Current = new Dictionary<string, PacProfile> { ["DATAVERSE"] = other }
+        };
+
+        var result = DataverseConnector.FindBestProfile("https://contoso.crm4.dynamics.com", profiles);
+
+        var ambiguous = Assert.IsType<ProfileAmbiguous>(result);
+        Assert.Equal(2, ambiguous.Candidates.Count);
+    }
+
+    [Fact]
+    public void FindBestProfile_MultipleCandidatesMultipleMatchCurrent_ReturnsFirstActiveMatch()
+    {
+        // Two different Kinds both active and both matching the URL — first candidate whose Kind hits Current wins
+        var profileA = new PacProfile { Kind = "DATAVERSE",    Resource = "https://contoso.crm4.dynamics.com", User = "a@contoso.com" };
+        var profileB = new PacProfile { Kind = "ServicePrincipal", Resource = "https://contoso.crm4.dynamics.com", ApplicationId = "app-id" };
+        var profiles = new PacAuthProfiles
+        {
+            Profiles = [profileA, profileB],
+            Current = new Dictionary<string, PacProfile>
+            {
+                ["DATAVERSE"]        = profileA,
+                ["ServicePrincipal"] = profileB
+            }
+        };
+
+        var result = DataverseConnector.FindBestProfile("https://contoso.crm4.dynamics.com", profiles);
+
+        var found = Assert.IsType<ProfileFound>(result);
+        Assert.Same(profileA, found.Profile); // profileA comes first in Profiles list
+    }
+
+    [Fact]
+    public void FindBestProfile_NoUrlMatch_UniversalInCurrent_ReturnsProfileFound()
+    {
+        var universal = new PacProfile { Kind = "UNIVERSAL" };
+        var profiles = new PacAuthProfiles
+        {
+            Profiles = [new PacProfile { Kind = "DATAVERSE", Resource = "https://other.crm4.dynamics.com" }],
+            Current = new Dictionary<string, PacProfile> { ["UNIVERSAL"] = universal }
+        };
+
+        var result = DataverseConnector.FindBestProfile("https://contoso.crm4.dynamics.com", profiles);
+
+        var found = Assert.IsType<ProfileFound>(result);
+        Assert.Same(universal, found.Profile);
+    }
+
+    [Fact]
+    public void FindBestProfile_NoUrlMatch_NoUniversal_ReturnsProfileNotFound()
+    {
+        var profiles = new PacAuthProfiles
+        {
+            Profiles = [new PacProfile { Kind = "DATAVERSE", Resource = "https://other.crm4.dynamics.com" }],
+            Current = new Dictionary<string, PacProfile>
+            {
+                ["DATAVERSE"] = new PacProfile { Kind = "DATAVERSE", Resource = "https://other.crm4.dynamics.com" }
+            }
+        };
+
+        var result = DataverseConnector.FindBestProfile("https://contoso.crm4.dynamics.com", profiles);
+
+        var notFound = Assert.IsType<ProfileNotFound>(result);
+        Assert.Equal("https://contoso.crm4.dynamics.com", notFound.EnvironmentUrl);
+    }
+
+    [Fact]
+    public void FindBestProfile_EmptyProfiles_ReturnsProfileNotFound()
+    {
+        var profiles = new PacAuthProfiles { Profiles = [] };
+
+        var result = DataverseConnector.FindBestProfile("https://contoso.crm4.dynamics.com", profiles);
+
+        Assert.IsType<ProfileNotFound>(result);
+    }
+
+    [Fact]
+    public void FindBestProfile_CurrentIsNull_SingleUrlMatch_ReturnsProfileFound()
+    {
+        var profile = new PacProfile { Kind = "DATAVERSE", Resource = "https://contoso.crm4.dynamics.com" };
+        var profiles = new PacAuthProfiles { Profiles = [profile], Current = null };
+
+        var result = DataverseConnector.FindBestProfile("https://contoso.crm4.dynamics.com", profiles);
+
+        var found = Assert.IsType<ProfileFound>(result);
+        Assert.Same(profile, found.Profile);
+    }
+
+    [Fact]
     public void BuildXrmContextConnectionString_UsernameSemicolon_ThrowsFlowlineException()
     {
         var ex = Assert.Throws<FlowlineException>(

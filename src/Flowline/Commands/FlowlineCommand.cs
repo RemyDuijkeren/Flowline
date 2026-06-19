@@ -122,8 +122,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
 
         await Console.Status().FlowlineSpinner().StartAsync("Connecting to Dataverse...", async _ =>
         {
-            var profile = dataverseConnector.FindBestProfile(environmentUrl);
-            if (profile == null)
+            if (dataverseConnector.FindBestProfile(environmentUrl) is not ProfileFound { Profile: var profile })
                 throw new FlowlineException(ExitCode.NotAuthenticated, "Not authenticated — run: pac auth create --environment <url>");
 
             conn = await dataverseConnector.ConnectViaPacAsync(profile, environmentUrl, cancellationToken);
