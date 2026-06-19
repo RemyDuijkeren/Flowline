@@ -13,7 +13,7 @@ using Spectre.Console;
 
 namespace Flowline.Generators;
 
-public class XrmContextGenerator(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, DataverseConnector dataverseConnector)
+public class XrmContextGenerator(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions)
     : IGenerator
 {
     static (string Command, string[]? PrefixArgs, string[]? SuffixArgs)? _cachedXrmContextCommand;
@@ -37,16 +37,7 @@ public class XrmContextGenerator(IAnsiConsole console, FlowlineRuntimeOptions ru
             var json = BuildAppSettingsJson(context.DevUrl, context.TempOutputPath, context.ModelNamespace, context.SolutionName, context.ExtraTables, context.ServiceContextName ?? "XrmContext");
             await File.WriteAllTextAsync(Path.Combine(tempAppsettingsDir, "appsettings.json"), json, cancellationToken);
 
-            var profile = dataverseConnector.FindBestProfile(context.DevUrl) is ProfileFound f ? f.Profile : null;
-
-            if (profile?.IsServicePrincipal == true &&
-                Environment.GetEnvironmentVariable("AZURE_CLIENT_SECRET") is null)
-            {
-                throw new FlowlineException(ExitCode.ConfigInvalid,
-                    "AZURE_CLIENT_SECRET is required when authenticating with a Service Principal. Set the environment variable before running.");
-            }
-
-            var envVars = BuildEnvVars(profile);
+            var envVars = BuildEnvVars(context.ResolvedProfile, context.ResolvedSecret);
 
             var command = Cli.Wrap(cmdName)
                 .WithArguments(args =>
@@ -106,7 +97,7 @@ public class XrmContextGenerator(IAnsiConsole console, FlowlineRuntimeOptions ru
         return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
     }
 
-    internal static IReadOnlyDictionary<string, string?> BuildEnvVars(PacProfile? profile)
+    internal static IReadOnlyDictionary<string, string?> BuildEnvVars(PacProfile? profile, string? resolvedSecret = null)
     {
         var envVars = new Dictionary<string, string?>();
 
@@ -118,7 +109,9 @@ public class XrmContextGenerator(IAnsiConsole console, FlowlineRuntimeOptions ru
             if (profile.TenantId is not null)
                 envVars["AZURE_TENANT_ID"] = profile.TenantId;
 
-            var secret = Environment.GetEnvironmentVariable("AZURE_CLIENT_SECRET");
+            // resolvedSecret (from --secret flag or SecretResolver) takes precedence for subprocess.
+            // If not provided, fall back to AZURE_CLIENT_SECRET from parent env.
+            var secret = resolvedSecret ?? Environment.GetEnvironmentVariable("AZURE_CLIENT_SECRET");
             if (secret is not null)
                 envVars["AZURE_CLIENT_SECRET"] = secret;
         }

@@ -276,7 +276,6 @@ public class XrmContextGeneratorTests : IDisposable
         var generator = new CapturingXrmContextGenerator(
             new TestConsole(),
             new Flowline.Core.FlowlineRuntimeOptions(),
-            FakeDataverseConnector(),
             (cmd, ctx, ct) =>
             {
                 capturedWorkingDir = cmd.WorkingDirPath;
@@ -301,7 +300,6 @@ public class XrmContextGeneratorTests : IDisposable
         var generator = new CapturingXrmContextGenerator(
             new TestConsole(),
             new Flowline.Core.FlowlineRuntimeOptions(),
-            FakeDataverseConnector(),
             (cmd, ctx, ct) =>
             {
                 capturedWorkingDir = cmd.WorkingDirPath;
@@ -323,7 +321,6 @@ public class XrmContextGeneratorTests : IDisposable
         var generator = new CapturingXrmContextGenerator(
             new TestConsole(),
             new Flowline.Core.FlowlineRuntimeOptions(),
-            FakeDataverseConnector(),
             (cmd, ctx, ct) =>
             {
                 capturedWorkingDir = cmd.WorkingDirPath;
@@ -334,6 +331,56 @@ public class XrmContextGeneratorTests : IDisposable
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         Directory.Exists(capturedWorkingDir).Should().BeFalse();
+    }
+
+    // ── Env vars — resolvedSecret precedence ─────────────────────────────────
+
+    [Fact]
+    public void BuildEnvVars_ResolvedSecret_WinsOverProcessEnv_WhenBothSet()
+    {
+        var originalSecret = Environment.GetEnvironmentVariable("AZURE_CLIENT_SECRET");
+        try
+        {
+            Environment.SetEnvironmentVariable("AZURE_CLIENT_SECRET", "env-secret");
+            var profile = new PacProfile { Kind = "ServicePrincipal", ApplicationId = "my-app-id", TenantId = "my-tenant" };
+
+            var envVars = XrmContextGenerator.BuildEnvVars(profile, resolvedSecret: "resolved-secret");
+
+            envVars.Should().ContainKey("AZURE_CLIENT_SECRET").WhoseValue.Should().Be("resolved-secret");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("AZURE_CLIENT_SECRET", originalSecret);
+        }
+    }
+
+    [Fact]
+    public void BuildEnvVars_ResolvedSecret_InjectedDirectly_WhenProvided()
+    {
+        var originalSecret = Environment.GetEnvironmentVariable("AZURE_CLIENT_SECRET");
+        try
+        {
+            Environment.SetEnvironmentVariable("AZURE_CLIENT_SECRET", null);
+            var profile = new PacProfile { Kind = "ServicePrincipal", ApplicationId = "my-app-id", TenantId = "my-tenant" };
+
+            var envVars = XrmContextGenerator.BuildEnvVars(profile, resolvedSecret: "resolved-secret");
+
+            envVars.Should().ContainKey("AZURE_CLIENT_SECRET").WhoseValue.Should().Be("resolved-secret");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("AZURE_CLIENT_SECRET", originalSecret);
+        }
+    }
+
+    [Fact]
+    public void BuildEnvVars_Empty_WhenUniversalProfile()
+    {
+        var profile = new PacProfile { Kind = "UNIVERSAL" };
+
+        var envVars = XrmContextGenerator.BuildEnvVars(profile);
+
+        envVars.Should().BeEmpty();
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -350,22 +397,14 @@ public class XrmContextGeneratorTests : IDisposable
         Verbose: false,
         OutputLabel: "Test");
 
-    static DataverseConnector FakeDataverseConnector()
-    {
-        // DataverseConnector needs real IAnsiConsole + options, but FindBestProfile reads disk
-        // In tests with no PAC auth file present, it returns null — that's fine
-        return new DataverseConnector(new TestConsole(), new Flowline.Core.FlowlineRuntimeOptions());
-    }
-
     static CommandResult MakeSuccessResult() =>
         new(0, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddSeconds(1));
 
     private class CapturingXrmContextGenerator(
         Spectre.Console.IAnsiConsole console,
         Flowline.Core.FlowlineRuntimeOptions runtimeOptions,
-        DataverseConnector dataverseConnector,
         Func<Command, GenerationContext, CancellationToken, Task<CommandResult>> executeFunc)
-        : XrmContextGenerator(console, runtimeOptions, dataverseConnector)
+        : XrmContextGenerator(console, runtimeOptions)
     {
         internal override Task<CommandResult> ExecuteCommandAsync(Command command, GenerationContext context, CancellationToken cancellationToken) =>
             executeFunc(command, context, cancellationToken);
