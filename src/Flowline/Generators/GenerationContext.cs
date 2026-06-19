@@ -1,3 +1,4 @@
+using Flowline.Core.Services;
 using Flowline.Services;
 using Flowline.Utils;
 using Microsoft.PowerPlatform.Dataverse.Client;
@@ -15,5 +16,7 @@ public record GenerationContext(
     XrmContextAuth? XrmContextAuth,
     bool Verbose,
     string OutputLabel,
-    string? ServiceContextName = null
+    string? ServiceContextName = null,
+    PacProfile? ResolvedProfile = null,
+    string? ResolvedSecret = null
 );
