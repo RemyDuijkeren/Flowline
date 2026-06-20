@@ -41,7 +41,10 @@ namespace Flowline.Attributes
         CreateInstance,
         CreateKnowledgeArticleTranslation,
         CreateKnowledgeArticleVersion,
+        CreateMultiple,
         Delete,
+        /// <summary>Elastic tables only. Using on a standard table fails at runtime.</summary>
+        DeleteMultiple,
         DeleteOpenInstances,
         DeliverIncoming,
         DeliverPromote,
@@ -97,6 +100,9 @@ namespace Flowline.Attributes
         UnlockInvoicePricing,
         UnlockSalesOrderPricing,
         Update,
+        UpdateMultiple,
+        Upsert,
+        UpsertMultiple,
         ValidateRecurrenceRule,
         Win,
     }

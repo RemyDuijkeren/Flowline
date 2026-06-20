@@ -21,8 +21,8 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
     // https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#define-entity-images
     private static readonly HashSet<string> ImageSupportedMessages =
     [
-        "Assign", "Create", "Delete", "DeliverIncoming", "DeliverPromote",
-        "Merge", "Route", "Send", "SetState", "Update"
+        "Assign", "Create", "CreateMultiple", "Delete", "DeliverIncoming", "DeliverPromote",
+        "Merge", "Route", "Send", "SetState", "Update", "UpdateMultiple"
     ];
 
     // Maps C# type full names to CustomApiFieldType values.
@@ -547,7 +547,7 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
 
     internal static void ValidateFilter(string className, string message, string? filteringColumns)
     {
-        if (filteringColumns == null || message == "Update") return;
+        if (filteringColumns == null || message is "Update" or "UpdateMultiple") return;
 
         throw new InvalidOperationException(
             $"{className}: [Filter] has no effect on {message} — column filtering only applies to Update steps. " +
@@ -593,11 +593,17 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
                 $"{className}: [[Step]] has no table — this step will fire for all tables. " +
                 $"If intentional, specify [[Step(\"none\")]] to suppress this warning.");
 
-        if (message == "Update" && filteringColumns == null)
+        if (message is "Update" or "UpdateMultiple" && filteringColumns == null)
             warnings.Add(
                 $"{className}: Update step has no [[Filter]] — it will fire on every update to the table, regardless of which columns changed. " +
                 $"Add [[Filter]] with the columns your plugin cares about. " +
                 $"See https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#set-filtering-attributes");
+
+        if (message == "DeleteMultiple")
+            warnings.Add(
+                $"{className}: DeleteMultiple is only supported on elastic tables. " +
+                $"Using it on a standard table will fail at runtime with 'DeleteMultiple has not yet been implemented.' " +
+                $"Verify your table is elastic before pushing.");
 
         if (message is "Associate" or "Disassociate")
         {

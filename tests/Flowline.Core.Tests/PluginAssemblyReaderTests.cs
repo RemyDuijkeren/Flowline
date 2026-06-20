@@ -499,6 +499,92 @@ public class PluginAssemblyReaderTests
         Assert.Equal("RetrieveMultiple", msg);
     }
 
+    // ---- Bulk operation message tests ----
+
+    [Fact]
+    public void ValidateFilter_FilterOnUpdateMultiple_DoesNotThrow()
+    {
+        PluginAssemblyReader.ValidateFilter("MockPostUpdateMultiplePlugin", "UpdateMultiple", "name,telephone1");
+    }
+
+    [Fact]
+    public void ValidateFilter_FilterOnDeleteMultiple_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            PluginAssemblyReader.ValidateFilter("MockPreDeleteMultiplePlugin", "DeleteMultiple", "name"));
+        Assert.Contains("[Filter]", ex.Message);
+        Assert.Contains("DeleteMultiple", ex.Message);
+    }
+
+    [Fact]
+    public void Analyze_UpdateMultiplePluginWithoutFilter_AddsWarning()
+    {
+        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockNoFilterPostUpdateMultiplePlugin)).Steps);
+
+        Assert.Single(step.Warnings);
+        Assert.Contains("[Filter]", step.Warnings[0]);
+    }
+
+    [Fact]
+    public void Analyze_DeleteMultiplePlugin_AddsElasticTableWarning()
+    {
+        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockPreDeleteMultiplePlugin)).Steps);
+
+        Assert.Single(step.Warnings);
+        Assert.Contains("elastic", step.Warnings[0]);
+        Assert.Contains("DeleteMultiple", step.Warnings[0]);
+    }
+
+    [Fact]
+    public void ValidateImages_ImageOnCreateMultiple_DoesNotThrow()
+    {
+        var images = new List<PluginImageMetadata> { new("Post Image", "postimage", (int)ImageType.PostImage, "name") };
+        PluginAssemblyReader.ValidateImages("MockPostCreateMultiplePlugin", "CreateMultiple", (int)ProcessingStage.PostOperation, images);
+    }
+
+    [Fact]
+    public void ValidateImages_ImageOnUpdateMultiple_DoesNotThrow()
+    {
+        var images = new List<PluginImageMetadata> { new("Pre Image", "preimage", (int)ImageType.PreImage, "name") };
+        PluginAssemblyReader.ValidateImages("MockPostUpdateMultiplePlugin", "UpdateMultiple", (int)ProcessingStage.PostOperation, images);
+    }
+
+    [Fact]
+    public void TryParseClassName_PostCreateMultiple_MatchesBeforeCreate()
+    {
+        Assert.True(PluginAssemblyReader.TryParseClassName("AccountPostCreateMultiplePlugin", out var msg, out _, out _));
+        Assert.Equal("CreateMultiple", msg);
+    }
+
+    [Fact]
+    public void TryParseClassName_PostUpdateMultiple_MatchesBeforeUpdate()
+    {
+        Assert.True(PluginAssemblyReader.TryParseClassName("AccountPostUpdateMultiplePlugin", out var msg, out _, out _));
+        Assert.Equal("UpdateMultiple", msg);
+    }
+
+    [Fact]
+    public void TryParseClassName_PostUpsert_ParsesCorrectly()
+    {
+        Assert.True(PluginAssemblyReader.TryParseClassName("AccountPostUpsertPlugin", out var msg, out var stage, out _));
+        Assert.Equal("Upsert", msg);
+        Assert.Equal((int)ProcessingStage.PostOperation, stage);
+    }
+
+    [Fact]
+    public void TryParseClassName_PostUpsertMultiple_MatchesBeforeUpsert()
+    {
+        Assert.True(PluginAssemblyReader.TryParseClassName("AccountPostUpsertMultiplePlugin", out var msg, out _, out _));
+        Assert.Equal("UpsertMultiple", msg);
+    }
+
+    [Fact]
+    public void TryParseClassName_PreDeleteMultiple_MatchesBeforeDelete()
+    {
+        Assert.True(PluginAssemblyReader.TryParseClassName("AccountPreDeleteMultiplePlugin", out var msg, out _, out _));
+        Assert.Equal("DeleteMultiple", msg);
+    }
+
     // ---- [Handles] tests ----
 
     [Fact]
@@ -730,6 +816,19 @@ public class MockHandlesWithoutStepPlugin : IPlugin
 [Step("contact", SecondaryTable = "account")]
 [Handles(Message.Associate, Stage.PostOperation)]
 public class MockHandlesAssociatePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+// Bulk operation mock plugins
+[Step("account")]
+public class MockNoFilterPostUpdateMultiplePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+[Step("account")]
+public class MockPreDeleteMultiplePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
