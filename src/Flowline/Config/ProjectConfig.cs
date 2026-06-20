@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Flowline.Utils;
 using Spectre.Console;
+using System.Text.Json.Serialization;
 
 namespace Flowline.Config;
 
@@ -273,7 +274,7 @@ public class ProjectConfig
     }
 }
 
-[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter))]
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum GeneratorType
 {
     Pac,
@@ -283,17 +284,20 @@ public enum GeneratorType
 
 public class GenerateConfig
 {
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Namespace { get; set; }
 
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string[]? ExtraTables { get; set; }
 
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public GeneratorType? Generator { get; set; }
 
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ServiceContextName { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? OutputPath { get; set; }
 }
 
 public class ProjectSolution
@@ -303,7 +307,7 @@ public class ProjectSolution
     public string Name { get; init; } = null!;
     public bool IncludeManaged { get; set; } = false;
 
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public GenerateConfig? Generate { get; set; }
 
     private sealed class ProjectSolutionNameComparer : IEqualityComparer<ProjectSolution>

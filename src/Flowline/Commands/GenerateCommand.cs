@@ -40,7 +40,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         public string? DevUrl { get; set; }
 
         [CommandOption("-o|--output <PATH>")]
-        [Description("Output folder for generated types (required outside a Flowline project)")]
+        [Description("Output folder for generated types — saved to .flowline (required outside a Flowline project)")]
         public string? Output { get; set; }
 
         [CommandOption("--generator")]
@@ -152,6 +152,12 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
                 projectSln.Generate.ServiceContextName = settings.ServiceContextName.Trim();
             }
 
+            if (!string.IsNullOrWhiteSpace(settings.Output))
+            {
+                projectSln.Generate ??= new GenerateConfig();
+                projectSln.Generate.OutputPath = Path.GetRelativePath(RootFolder, Path.GetFullPath(settings.Output));
+            }
+
             var slnFolder = Path.Combine(RootFolder, AllSolutionsFolderName, solutionName);
 
             // Derive namespace if not yet set (R4)
@@ -163,10 +169,13 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
                 Console.Verbose($"Derived namespace: [bold]{modelNamespace}[/]", settings.Verbose);
             }
 
-            // Resolve output path — --output overrides convention, not saved to .flowline
+            // Resolve output path: --output flag > saved OutputPath > convention
+            var savedOutputPath = projectSln.Generate?.OutputPath;
             modelsFolder = !string.IsNullOrWhiteSpace(settings.Output)
                 ? Path.GetFullPath(settings.Output)
-                : Path.Combine(slnFolder, PluginsName, "Models");
+                : !string.IsNullOrWhiteSpace(savedOutputPath)
+                    ? Path.GetFullPath(Path.Combine(RootFolder, savedOutputPath))
+                    : Path.Combine(slnFolder, PluginsName, "Models");
 
             extraTables = projectSln.Generate?.ExtraTables ?? [];
 
