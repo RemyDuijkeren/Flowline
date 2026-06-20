@@ -25,7 +25,9 @@ and a fast push to DEV without the enterprise overhead.
 
 **PAC CLI gives you the primitives — Flowline gives you the workflow.**
 
-Attribute-driven plugin registration that covers Custom APIs, a full Git-based ALM loop from dev to prod, and automatic web resource dependency registration — in one tool. Where PAC CLI already handles it, Flowline wraps — it doesn't re-implement. Unlike Power Platform Pipelines, Flowline requires neither Managed Environments nor managed solutions.
+A professional Git-based workflow for plugin developers and solution architects, without the overhead of Power Platform Pipelines or managed solutions. `clone → push → sync → deploy`, from the inner dev loop to production, in one tool.
+
+Where PAC CLI already handles it, Flowline wraps — it doesn't re-implement. Where PAC has no answer, Flowline fills the gap.
 
 Familiar with [spkl](https://github.com/scottdurow/SparkleXrm/wiki/spkl)? Flowline is its actively maintained successor (last meaningful commit 2021).
 
