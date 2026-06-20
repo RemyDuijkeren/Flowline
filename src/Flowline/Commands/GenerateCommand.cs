@@ -28,7 +28,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         public string? Namespace { get; set; }
 
         [CommandOption("--service-context-name <NAME>")]
-        [Description("Name of the generated OrganizationServiceContext class — saved to .flowline")]
+        [Description("Name of the generated OrganizationServiceContext class (default: XrmContext) — saved to .flowline")]
         public string? ServiceContextName { get; set; }
 
         [CommandOption("--extra-tables <TABLES>")]
@@ -175,7 +175,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             {
                 var modelsSummary = await SolutionChangeSummary.ComputeAsync(modelsFolder, RootFolder, settings.Verbose, cancellationToken);
                 if (modelsSummary.TotalFiles > 0)
-                    Console.Warning($"Uncommitted changes in '{Path.GetRelativePath(RootFolder, modelsFolder)}' will be overwritten.");
+                    Console.Warning($"'{Path.GetRelativePath(RootFolder, modelsFolder)}' has uncommitted changes — they will be overwritten. Commit them first if you want to review what changed.");
             }
         }
 
