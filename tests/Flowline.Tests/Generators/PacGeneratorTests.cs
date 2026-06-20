@@ -148,6 +148,28 @@ public class PacGeneratorTests
         args[nIndex + 1].Should().Be(Namespace);
     }
 
+    // ── ServiceContextName ───────────────────────────────────────────────────
+
+    [Fact]
+    public void BuildArgs_ServiceContextName_DefaultsToXrmContext()
+    {
+        var args = PacGenerator.BuildArgs([], [], [], Namespace, TempOutputPath);
+
+        var idx = Array.IndexOf(args, "--serviceContextName");
+        idx.Should().BeGreaterThanOrEqualTo(0);
+        args[idx + 1].Should().Be("XrmContext");
+    }
+
+    [Fact]
+    public void BuildArgs_ServiceContextName_UsesProvidedName()
+    {
+        var args = PacGenerator.BuildArgs([], [], [], Namespace, TempOutputPath, serviceContextName: "MyContext");
+
+        var idx = Array.IndexOf(args, "--serviceContextName");
+        idx.Should().BeGreaterThanOrEqualTo(0);
+        args[idx + 1].Should().Be("MyContext");
+    }
+
     // ── Command prefix ───────────────────────────────────────────────────────
 
     [Fact]

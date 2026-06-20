@@ -93,11 +93,8 @@ public class PacGenerator(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             "-n", modelNamespace
         };
 
-        if (serviceContextName is not null)
-        {
-            args.Add("--serviceContextName");
-            args.Add(serviceContextName);
-        }
+        args.Add("--serviceContextName");
+        args.Add(serviceContextName ?? "XrmContext");
 
         if (customApiNames.Count > 0)
         {
