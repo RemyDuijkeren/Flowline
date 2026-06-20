@@ -424,10 +424,12 @@ public class DataverseContextGenerator(IAnsiConsole console)
                         ?? (string?)savedQuery?.Attribute("name")
                         ?? "View";
 
-            // Columns from layoutxml
+            // Columns from layoutxml — strip auto-generated GUID link-entity aliases (a_<32hex>.field)
+            var guidAliasPrefix = new System.Text.RegularExpressions.Regex(@"^a_[0-9a-f]{32}\.", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
             var columns = doc.Descendants("cell")
                 .Select(c => (string?)c.Attribute("name"))
                 .Where(n => !string.IsNullOrEmpty(n))
+                .Select(n => guidAliasPrefix.Replace(n!, string.Empty))
                 .Distinct()
                 .ToList();
 
