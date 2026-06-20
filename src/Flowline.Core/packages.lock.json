@@ -4,11 +4,11 @@
     "net10.0": {
       "Microsoft.Identity.Client.Extensions.Msal": {
         "type": "Direct",
-        "requested": "[4.84.1, )",
-        "resolved": "4.84.1",
-        "contentHash": "DnfUWKfkRnSIXEnMWKHc9q893Xqaaal26PkznsIdC/IR8P2BaYsgEItoK9wSU++UNO/TapLg6XydI5XwcdykBQ==",
+        "requested": "[4.85.0, )",
+        "resolved": "4.85.0",
+        "contentHash": "LYEoarSjBJpQcy+LZ0/PPGmjepaYTIIGZ8plqjE13Lr+Lub6uM5UFa4hm1ArooRTzCdmrqP7c+mRKT4TUtT55w==",
         "dependencies": {
-          "Microsoft.Identity.Client": "4.84.1",
+          "Microsoft.Identity.Client": "4.85.0",
           "System.Security.Cryptography.ProtectedData": "4.5.0"
         }
       },
@@ -41,26 +41,26 @@
       },
       "Spectre.Console": {
         "type": "Direct",
-        "requested": "[0.55.2, )",
-        "resolved": "0.55.2",
-        "contentHash": "yc0g12YJpmZHofGJLTQX02/uqfzJ6XHRx6pe9rANNjleQptXMHPxD9KI2/DWkXiJWddc+4oizEdGox15c89hhw==",
+        "requested": "[0.57.0, )",
+        "resolved": "0.57.0",
+        "contentHash": "X5+4ZsUYTPlTs5PEoKRlxUuKOa1AkEoAGM34pUeJPjsBdtOnvnaVb31hqewhooomihl1i9fEBid1fz8XxZTacQ==",
         "dependencies": {
-          "Spectre.Console.Ansi": "0.55.2"
+          "Spectre.Console.Ansi": "0.57.0"
         }
       },
       "System.Reflection.MetadataLoadContext": {
         "type": "Direct",
-        "requested": "[10.0.8, )",
-        "resolved": "10.0.8",
-        "contentHash": "w9sjhVDe4AKkyswUctVK3oCmZHaA7g+ZUG/xDmzgbsOGxmeRQA6lCQeAh6r75K0lcsLlfBzZXmsNblndyNJhxw=="
+        "requested": "[10.0.9, )",
+        "resolved": "10.0.9",
+        "contentHash": "R/Zuc7ZM2rKeBM/b1Y9oS+WaRGgqw64maJiULAx4JlGL4eYZEXti3CxGq+dlthfGRx4UP1ie8T7T9n8MD3hKQw=="
       },
       "System.Security.Cryptography.Xml": {
         "type": "Direct",
-        "requested": "[10.0.8, )",
-        "resolved": "10.0.8",
-        "contentHash": "Fb+L55vEJaf8RCOzrzN564sfyCL8SZEfce9z6XkuhHg+294SBfyS4fIoLU3EljofDCkp+EKDeleI8ug5WO2NtA==",
+        "requested": "[10.0.9, )",
+        "resolved": "10.0.9",
+        "contentHash": "RxJRvzbS1rZpGF8389e+TEwTMHIhkNHEUQuAyN2oQkCGsZZ/EKhUUViwteKrs3IeHRzoJPqzB3Z1lJsQg3+Nxg==",
         "dependencies": {
-          "System.Security.Cryptography.Pkcs": "10.0.8"
+          "System.Security.Cryptography.Pkcs": "10.0.9"
         }
       },
       "Microsoft.Extensions.Caching.Abstractions": {
@@ -166,8 +166,8 @@
       },
       "Microsoft.Identity.Client": {
         "type": "Transitive",
-        "resolved": "4.84.1",
-        "contentHash": "60+xPFQgNattMRnVksYten6wRUHNCDzjlJnerGF2C2xXpsCkUHgLE4jkaoXKuIPtmq4zubs09I6sIsWVpZBsSA==",
+        "resolved": "4.85.0",
+        "contentHash": "6Ygh1H8f2nzip3rcdYMjGXb3dOS7x0a+bUtH8O9u1CVRAjJjoIIo8wa/cgZW0w1vzF2pqfLCVF+ZHaAhIX95AA==",
         "dependencies": {
           "Microsoft.IdentityModel.Abstractions": "8.14.0"
         }
@@ -189,8 +189,8 @@
       },
       "Spectre.Console.Ansi": {
         "type": "Transitive",
-        "resolved": "0.55.2",
-        "contentHash": "tN3KEJQQZwLW9HJnG5YTSAxfBwxsmg1wVuGvhGG2rM+pbl+NGaHU8pDcNofPlOXlgpkbpBMxI5t9o9qPfy3sHQ=="
+        "resolved": "0.57.0",
+        "contentHash": "DGeYljyWAIHSeUAoUGqyzyOqS8WlsHKW+y4zOZ0OO61oqrhx90jHS+XG5Kpq/wWz6ovIs2VL/0CTKpUVa7tdWg=="
       },
       "System.Configuration.ConfigurationManager": {
         "type": "Transitive",
@@ -224,8 +224,8 @@
       },
       "System.Security.Cryptography.Pkcs": {
         "type": "Transitive",
-        "resolved": "10.0.8",
-        "contentHash": "2wOycCqMyg9Tu+SDP03FFwDEWBni/3xOKgt0bRXplOvyeIcUJmWO7m3gTCF2mIdtQLROLtOP5VwWRT8YBwP/bA=="
+        "resolved": "10.0.9",
+        "contentHash": "aud6Ox9eSPayMBNu6qL+Zk7yDB6ShrRxg1aMJ1uPqFTGAFVisrjFeKj6RE9SimjNKcbl+chwmiYIK4b3hvc61A=="
       },
       "System.Security.Cryptography.ProtectedData": {
         "type": "Transitive",
