@@ -37,6 +37,12 @@ AI agents (Claude Code, Codex) assisting with Dataverse development need to unde
   - **Outcome:** Reference chain is always consistent after sync regardless of how the project was set up
   - **Covered by:** R9, R10, R11
 
+- F4. **AGENTS.md absent during sync**
+  - **Trigger:** `flowline sync` generates DATAVERSE_CONTEXT.md in a project where AGENTS.md does not exist at all
+  - **Steps:** After writing the file, detect AGENTS.md is absent → emit warning advising `flowline clone` → skip all AGENTS.md mutation
+  - **Outcome:** DATAVERSE_CONTEXT.md is written and usable; developer is told how to get the full AI context chain wired up. `flowline clone` is idempotent and safe to re-run.
+  - **Covered by:** R9
+
 ---
 
 ## Requirements
@@ -60,7 +66,7 @@ AI agents (Claude Code, Codex) assisting with Dataverse development need to unde
 
 **Self-healing reference check**
 
-- R9. After writing DATAVERSE_CONTEXT.md, `DataverseContextGenerator` checks AGENTS.md for an `@solutions/<SolutionName>/DATAVERSE_CONTEXT.md` import line; if absent, it appends the line to the end of the file (if AGENTS.md does not exist, call `ScaffoldAgentsFileAsync` to create the full scaffold first, then append the import to the end)
+- R9. After writing DATAVERSE_CONTEXT.md, `DataverseContextGenerator` checks whether AGENTS.md exists; if absent, emit a warning advising the developer to run `flowline clone` to scaffold it, and skip all AGENTS.md mutation for this run. If AGENTS.md exists, check for an `@solutions/<SolutionName>/DATAVERSE_CONTEXT.md` import line and append it to the end of the file if missing
 - R10. After writing DATAVERSE_CONTEXT.md, `DataverseContextGenerator` checks AGENTS.md for a markdown link to the context file in a "Dataverse schema context" section; if absent, it appends the section and link
 - R11. The self-healing check runs on every clone and sync — idempotent; a reference that already exists is never duplicated
 
@@ -148,7 +154,7 @@ AI agents (Claude Code, Codex) assisting with Dataverse development need to unde
 
 - AE8. **Covers R9, R10, R11.** An existing project was cloned before this feature — AGENTS.md exists but has no context file references. After `flowline sync` generates DATAVERSE_CONTEXT.md, the "Dataverse schema context" section and `@` import are appended to the end of AGENTS.md. Running sync again does not add duplicate lines.
 
-- AE9. **Covers R9.** A project has no AGENTS.md at all. After sync generates DATAVERSE_CONTEXT.md, `DataverseContextGenerator` calls `ScaffoldAgentsFileAsync` to create the full AGENTS.md scaffold (daily dev loop, command reference, project structure, exit codes), then appends the `@` import line to the end.
+- AE9. **Covers R9.** A project has no AGENTS.md at all. After sync generates DATAVERSE_CONTEXT.md, `DataverseContextGenerator` emits a warning: `AGENTS.md not found — run 'flowline clone' to scaffold it and wire up the AI context chain.` AGENTS.md is not created or modified. (`flowline clone` is safe to re-run on an existing project — it skips steps that already exist.)
 
 - AE10. **Covers R2, R3.** `DataverseContextGenerator` can be instantiated and called in a unit test by providing a local `Package/src/` path and a solution name — no `IOrganizationServiceAsync2` mock, no `SyncCommand` or `CloneCommand` dependencies required.
 
@@ -187,7 +193,7 @@ AI agents (Claude Code, Codex) assisting with Dataverse development need to unde
 - **Two callers, one class:** `DataverseContextGenerator` is called from both `CloneCommand` (after PAC solution clone unpacks XML) and `SyncCommand` (after PAC solution sync). No live Dataverse connection required — all content comes from local XML. A shared class keeps the logic consistent and independently testable.
 - **Warn on dirty, don't block:** The context file is generated output, not source. Blocking sync on an uncommitted context file is too strict — same treatment as `Plugins/Models/`.
 - **AGENTS.md only — one file, all agents:** Claude Code, Codex, and GitHub Copilot all read AGENTS.md. No CLAUDE.md needed. The `@` import syntax at the top of AGENTS.md auto-loads the schema into Claude Code; other agents that don't support `@` see it as harmless text and still get the full workflow contract.
-- **Self-healing over manual setup:** `DataverseContextGenerator` owns the reference chain. After writing the context file it checks and repairs AGENTS.md (both the `@` import and the markdown link). Existing projects heal on first sync — no migration script, no manual editing.
+- **Self-healing over manual setup (append-only):** `DataverseContextGenerator` owns the reference chain when AGENTS.md already exists. After writing the context file it checks and appends missing entries (both the `@` import and the markdown link). If AGENTS.md is absent, it emits a warning advising `flowline clone` — sync does not scaffold project files. `flowline clone` is idempotent and safe to re-run on an existing project.
 - **Condensed output over verbatim:** Forms and views are summarized (field list, filter summary) rather than reproduced as raw XML. Raw XML is available in `Package/src/` for tools that need it — the context file optimises for AI token efficiency.
 - **Incremental component coverage:** The content section list (R12–R35) is expected to grow as more PAC XML schemas are verified against real unpack output. New component types (custom APIs, environment variables, app modules, etc.) are added by implementing a new XML reader and markdown renderer — no changes to the core generation loop. Only components with verified XML examples are included in a given version.
 

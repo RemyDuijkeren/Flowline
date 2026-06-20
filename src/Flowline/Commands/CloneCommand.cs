@@ -81,6 +81,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         }
 
         await ScaffoldAgentsFileAsync(projectSln.Name, cancellationToken);
+        await new DataverseContextGenerator(Console).GenerateAsync(
+            Path.Combine(PackageFolder(slnFolder), "src"), projectSln.Name, RootFolder, settings.Verbose, cancellationToken);
 
         Console.Done("Cloned! Use 'push' and 'sync' to keep it in flow.");
         return 0;
@@ -164,6 +166,11 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             ## Environments
 
             Defined in `.flowline`. Use `flowline status` to verify connectivity before running commands.
+
+            ## Dataverse schema context
+            - [{{solutionName}}](solutions/{{solutionName}}/DATAVERSE_CONTEXT.md)
+
+            @solutions/{{solutionName}}/DATAVERSE_CONTEXT.md
             """;
 
         await File.WriteAllTextAsync(agentsPath, content, cancellationToken);
