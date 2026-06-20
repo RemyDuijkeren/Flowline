@@ -98,8 +98,10 @@ public class DataverseContextGenerator(IAnsiConsole console)
 
         // Solution header
         var solutionXmlPath = Path.Combine(packageSrcPath, "Other", "Solution.xml");
-        var solutionHeader = ReadSolutionHeader(TryReadFile(solutionXmlPath));
+        var solutionXml = TryReadFile(solutionXmlPath);
+        var solutionHeader = ReadSolutionHeader(solutionXml);
         if (solutionHeader != null) sb.Append(solutionHeader);
+        var publisherPrefix = ReadPublisherPrefix(solutionXml);
 
         // Entities (attributes, relationships, forms, views)
         var entitiesPath = Path.Combine(packageSrcPath, "Entities");
@@ -112,7 +114,7 @@ public class DataverseContextGenerator(IAnsiConsole console)
                 var entityXml = TryReadFile(entityXmlPath);
                 if (entityXml == null) continue;
 
-                var entitySection = ReadEntity(entityXml);
+                var entitySection = ReadEntity(entityXml, publisherPrefix);
                 if (entitySection == null) continue;
                 sb.Append(entitySection);
 
@@ -215,9 +217,20 @@ public class DataverseContextGenerator(IAnsiConsole console)
         catch (XmlException) { return null; }
     }
 
+    internal static string ReadPublisherPrefix(string? xml)
+    {
+        if (xml == null) return string.Empty;
+        try
+        {
+            var doc = XDocument.Parse(xml.TrimStart('﻿'));
+            return (string?)doc.Root?.Element("SolutionManifest")?.Element("Publisher")?.Element("CustomizationPrefix") ?? string.Empty;
+        }
+        catch (XmlException) { return string.Empty; }
+    }
+
     // ── U4: Entity, attributes, option sets ─────────────────────────────────
 
-    internal static string? ReadEntity(string? xml)
+    internal static string? ReadEntity(string? xml, string publisherPrefix = "")
     {
         if (xml == null) return null;
         try
@@ -236,14 +249,16 @@ public class DataverseContextGenerator(IAnsiConsole console)
             var ownershipType = (string?)entity?.Element("OwnershipTypeMask") ?? (string?)entity?.Element("OwnershipType") ?? string.Empty;
             var isActivity    = (string?)entity?.Element("IsActivity") switch { "1" => "true", "0" => "false", var v => v ?? "false" };
 
+            var isCustomEntity = !string.IsNullOrEmpty(publisherPrefix)
+                              && logicalName.StartsWith(publisherPrefix + "_", StringComparison.OrdinalIgnoreCase);
+            var docsUrl = isCustomEntity
+                ? null
+                : $"https://learn.microsoft.com/en-us/power-apps/developer/data-platform/reference/entities/{logicalName.ToLowerInvariant()}";
+
+            var activitySuffix = isActivity == "true" ? " — activity" : string.Empty;
+            var docsSuffix = docsUrl != null ? $" — [docs]({docsUrl})" : string.Empty;
             var sb = new StringBuilder();
-            sb.AppendLine($"## Entity: {displayName} (`{logicalName}`)");
-            sb.AppendLine();
-            sb.AppendLine($"| | |");
-            sb.AppendLine($"|-|-|");
-            sb.AppendLine($"| OData collection | `{entitySet}` |");
-            sb.AppendLine($"| Ownership | {ownershipType} |");
-            sb.AppendLine($"| Is activity | {isActivity} |");
+            sb.AppendLine($"## Entity: {displayName} (`{logicalName}` / `{entitySet}`){activitySuffix}{docsSuffix}");
             sb.AppendLine();
 
             var attributes = entity?.Descendants("attribute").ToList() ?? [];
@@ -260,7 +275,7 @@ public class DataverseContextGenerator(IAnsiConsole console)
                     var attrDisplay = GetLocalizedName(attr.Element("displaynames")) ?? attrName;
                     var attrType    = (string?)attr.Element("Type") ?? string.Empty;
                     var required    = (string?)attr.Element("RequiredLevel") ?? string.Empty;
-                    var isCustom    = (string?)attr.Element("IsCustomField") ?? "false";
+                    var isCustom    = (string?)attr.Element("IsCustomField") == "1" ? "yes" : "no";
                     var description = StripGuids(
                         attr.Element("Descriptions")?.Elements("Description")
                             .FirstOrDefault(d => (string?)d.Attribute("languagecode") == "1033")
@@ -382,10 +397,12 @@ public class DataverseContextGenerator(IAnsiConsole console)
             foreach (var tabGroup in fields.GroupBy(f => f.tab))
             {
                 sb.AppendLine($"**{tabGroup.Key}**");
+                sb.AppendLine();
                 foreach (var secGroup in tabGroup.GroupBy(f => f.section))
                 {
                     sb.AppendLine($"- {secGroup.Key}: {string.Join(", ", secGroup.Select(f => $"`{f.field}`"))}");
                 }
+                sb.AppendLine();
             }
             sb.AppendLine();
             return sb.ToString();
@@ -417,7 +434,12 @@ public class DataverseContextGenerator(IAnsiConsole console)
             // Filter summary from fetchxml
             var conditions = doc.Descendants("condition")
                 .Where(c => c.Attribute("attribute") != null)
-                .Select(c => $"`{c.Attribute("attribute")!.Value}` {c.Attribute("operator")?.Value}")
+                .Select(c => {
+                    var attr = c.Attribute("attribute")!.Value;
+                    var op   = c.Attribute("operator")?.Value ?? string.Empty;
+                    var val  = c.Attribute("value")?.Value;
+                    return val != null ? $"`{attr}` {op} `{val}`" : $"`{attr}` {op}";
+                })
                 .Where(s => !string.IsNullOrEmpty(s))
                 .ToList();
 
@@ -432,12 +454,20 @@ public class DataverseContextGenerator(IAnsiConsole console)
             sb.AppendLine($"### View: {viewName}");
             sb.AppendLine();
             if (columns.Count > 0)
+            {
                 sb.AppendLine($"Columns: {string.Join(", ", columns.Select(c => $"`{c}`"))}");
+                sb.AppendLine();
+            }
             if (conditions.Count > 0)
+            {
                 sb.AppendLine($"Filter: {string.Join(", ", conditions)}");
+                sb.AppendLine();
+            }
             if (linkedEntities.Count > 0)
+            {
                 sb.AppendLine($"Links: {string.Join(", ", linkedEntities.Select(e => $"`{e}`"))}");
-            sb.AppendLine();
+                sb.AppendLine();
+            }
             return sb.ToString();
         }
         catch (XmlException) { return null; }
