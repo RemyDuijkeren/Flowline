@@ -9,7 +9,7 @@ public class SecretResolver(IAnsiConsole console)
 {
     /// <summary>
     /// Resolves the client secret using the following chain:
-    /// 1. --secret flag (secretFlag parameter)
+    /// 1. --client-secret flag (secretFlag parameter)
     /// 2. AZURE_CLIENT_SECRET environment variable
     /// 3. Interactive prompt (when running interactively)
     /// 4. Throws FlowlineException (non-interactive with no secret available)
@@ -35,7 +35,7 @@ public class SecretResolver(IAnsiConsole console)
         }
 
         throw new FlowlineException(ExitCode.NotAuthenticated,
-            $"Client secret required for '{profile.Name ?? profile.ApplicationId ?? "unknown"}' — set AZURE_CLIENT_SECRET env var or use --secret flag");
+            $"Client secret required for '{profile.Name ?? profile.ApplicationId ?? "unknown"}' — set AZURE_CLIENT_SECRET env var or use --client-secret flag");
     }
 
     protected virtual bool IsInteractive() => ConsoleHelper.IsInteractive(null);

@@ -80,20 +80,20 @@ public class GeneratorResolutionTests
 public class GenerateCommandEarlyValidationTests
 {
     // Mirrors early validation in GenerateCommand.ExecuteAsync:
-    //   if (settings.ClientId != null && settings.Secret == null) throw FlowlineException
+    //   if (settings.ClientId != null && settings.ClientSecret == null) throw FlowlineException
 
-    static void Validate(string? clientId, string? secret)
+    static void Validate(string? clientId, string? clientSecret)
     {
-        if (clientId != null && secret == null)
-            throw new FlowlineException("--client-id requires --secret");
+        if (clientId != null && clientSecret == null)
+            throw new FlowlineException("--client-id requires --client-secret");
     }
 
     [Fact]
     public void ClientIdWithoutSecret_ThrowsFlowlineException()
     {
-        var act = () => Validate("my-client-id", secret: null);
+        var act = () => Validate("my-client-id", clientSecret: null);
 
-        act.Should().Throw<FlowlineException>().WithMessage("--client-id requires --secret");
+        act.Should().Throw<FlowlineException>().WithMessage("--client-id requires --client-secret");
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public class GenerateCommandEarlyValidationTests
     [Fact]
     public void NeitherClientIdNorSecret_NoException()
     {
-        var act = () => Validate(clientId: null, secret: null);
+        var act = () => Validate(clientId: null, clientSecret: null);
 
         act.Should().NotThrow();
     }

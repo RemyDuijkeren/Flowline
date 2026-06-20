@@ -27,6 +27,10 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         [Description("Model namespace — saved to .flowline for future runs")]
         public string? Namespace { get; set; }
 
+        [CommandOption("--service-context-name <NAME>")]
+        [Description("Name of the generated OrganizationServiceContext class — saved to .flowline")]
+        public string? ServiceContextName { get; set; }
+
         [CommandOption("--extra-tables <TABLES>")]
         [Description("Comma-separated extra tables to include; replaces the saved list")]
         public string? ExtraTables { get; set; }
@@ -47,13 +51,9 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         [Description("Override client ID for generator subprocess (XrmContext/XrmContext3 only)")]
         public string? ClientId { get; set; }
 
-        [CommandOption("--secret <SECRET>")]
+        [CommandOption("--client-secret <SECRET>")]
         [Description("Client secret for generator subprocess (XrmContext/XrmContext3 only)")]
-        public string? Secret { get; set; }
-
-        [CommandOption("--service-context-name <NAME>")]
-        [Description("Name of the generated OrganizationServiceContext class — saved to .flowline")]
-        public string? ServiceContextName { get; set; }
+        public string? ClientSecret { get; set; }
     }
 
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
@@ -61,8 +61,8 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         if (settings.ClientId != null && string.IsNullOrWhiteSpace(settings.ClientId))
             throw new FlowlineException(ExitCode.ValidationFailed, "--client-id must not be empty");
 
-        if (settings.ClientId != null && settings.Secret == null)
-            throw new FlowlineException(ExitCode.ValidationFailed, "--client-id requires --secret");
+        if (settings.ClientId != null && settings.ClientSecret == null)
+            throw new FlowlineException(ExitCode.ValidationFailed, "--client-id requires --client-secret");
 
         if (!IsStandaloneMode())
             return await base.ExecuteAsync(context, settings, cancellationToken);
@@ -185,10 +185,10 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         // --- Connect and validate ---
         var (service, resolvedProfile) = await ConnectToDataverseAsync(dataverseConnector, devUrl, cancellationToken);
 
-        // Guard: --secret with UNIVERSAL profile requires --client-id override
-        if (settings.Secret != null && resolvedProfile.IsUniversal && settings.ClientId == null)
+        // Guard: --client-secret with UNIVERSAL profile requires --client-id override
+        if (settings.ClientSecret != null && resolvedProfile.IsUniversal && settings.ClientId == null)
             throw new FlowlineException(ExitCode.ValidationFailed,
-                "--secret requires a service principal profile or --client-id override");
+                "--client-secret requires a service principal profile or --client-id override");
 
         // Apply --client-id override: substitutes ApplicationId and promotes to SP kind so auth routing works
         var effectiveProfile = settings.ClientId != null
@@ -230,7 +230,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             {
                 if (string.IsNullOrEmpty(effectiveProfile.ApplicationId))
                     throw new FlowlineException(ExitCode.ConfigInvalid, "Service principal profile is missing ApplicationId.");
-                resolvedSecret = await secretResolver.ResolveAsync(effectiveProfile, settings.Secret);
+                resolvedSecret = await secretResolver.ResolveAsync(effectiveProfile, settings.ClientSecret);
                 xrmContextAuth = new XrmContextAuth.ClientSecret(effectiveProfile.ApplicationId, resolvedSecret);
             }
             else
@@ -242,7 +242,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         else if (resolvedGeneratorType is GeneratorType.XrmContext && effectiveProfile.IsServicePrincipal)
         {
             // XrmContext v4 SP: resolve secret for env injection (U6 uses context.ResolvedSecret)
-            resolvedSecret = await secretResolver.ResolveAsync(effectiveProfile, settings.Secret);
+            resolvedSecret = await secretResolver.ResolveAsync(effectiveProfile, settings.ClientSecret);
         }
 
         // --- Dispatch generator ---

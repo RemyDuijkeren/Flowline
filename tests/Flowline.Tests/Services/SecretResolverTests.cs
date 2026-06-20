@@ -85,7 +85,7 @@ public class SecretResolverTests
             var act = async () => await resolver.ResolveAsync(SpProfile(), secretFlag: null);
 
             await act.Should().ThrowAsync<FlowlineException>()
-                .Where(ex => ex.Message.Contains("AZURE_CLIENT_SECRET") && ex.Message.Contains("--secret"));
+                .Where(ex => ex.Message.Contains("AZURE_CLIENT_SECRET") && ex.Message.Contains("--client-secret"));
         }
         finally
         {
