@@ -150,7 +150,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         await new DataverseContextGenerator(Console).GenerateAsync(
             srcPath, projectSln.Name, RootFolder, settings.Verbose, cancellationToken);
 
-        Console.Done($"Synced {tagVersion}. Run 'git commit' to save a checkpoint and 'git tag {tagVersion}' to tag it.");
+        Console.Done($"Synced {tagVersion}. Run 'git commit' to save a checkpoint and 'git tag {tagVersion}' to tag it. ◝(ᵔᵕᵔ)◜");
 
         return 0;
     }

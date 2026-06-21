@@ -68,7 +68,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             return (int)ExitCode.PartialSuccess;
         }
 
-        Console.Done("Deployed! Your solution is live.");
+        Console.Done("Deployed! Your solution is live. (⌐■_■)");
         return 0;
     }
 

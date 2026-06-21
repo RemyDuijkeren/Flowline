@@ -129,7 +129,11 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder, solutionName, runMode: runMode, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
-        Console.Done("Assets pushed! Use 'sync' to keep it in flow.");
+        Console.Done(runMode == RunMode.DryRun
+            ? "Air push complete. Dataverse remains oblivious. (•ᴗ•)و"
+            : standaloneMode
+                ? "Assets pushed! (•ᴗ•)و"
+                : "Assets pushed! Use 'sync' to keep it in flow. (•ᴗ•)و");
 
         return 0;
     }

@@ -159,7 +159,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
                  .Task);
 
         Config!.Save();
-        Console.Done($"Provisioned! See [link]{targetEnv.EnvironmentUrl}[/]. You can now run 'clone' or 'sync'");
+        Console.Done($"Provisioned! See [link]{targetEnv.EnvironmentUrl}[/]. You can now run 'clone' or 'sync' ٩(◕‿◕｡)۶");
 
         return 0;
 

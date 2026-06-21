@@ -306,7 +306,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             Config!.Save(RootFolder);
         }
 
-        Console.Done($"Types generated into [bold]{outputLabel}[/] in {FormatDuration(sw.Elapsed)}. Namespace: [bold]{modelNamespace}[/]");
+        Console.Done($"Types generated into [bold]{outputLabel}[/] in {FormatDuration(sw.Elapsed)}. Namespace: [bold]{modelNamespace}[/] ᕦ(ò_óˇ)ᕤ");
 
         return 0;
     }

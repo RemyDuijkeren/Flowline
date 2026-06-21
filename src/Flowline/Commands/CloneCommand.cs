@@ -84,7 +84,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         await new DataverseContextGenerator(Console).GenerateAsync(
             Path.Combine(PackageFolder(slnFolder), "src"), projectSln.Name, RootFolder, settings.Verbose, cancellationToken);
 
-        Console.Done("Cloned! Use 'push' and 'sync' to keep it in flow.");
+        Console.Done("Cloned! Use 'push' and 'sync' to keep it in flow. ヽ(•‿•)ノ");
         return 0;
     }
 
