@@ -72,7 +72,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
         if (runMode == RunMode.DryRun)
         {
-            output.Info($"Assembly '{metadata.Name} ({metadata.Version})' — would update content");
+            output.Info($"  [yellow]~[/] Assembly '{metadata.Name} ({metadata.Version})' — would update content");
             output.Ok("Dry run: 1 update. Run without --dry-run to apply.");
             return;
         }
@@ -286,7 +286,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         {
             if (runMode == RunMode.DryRun)
             {
-                output.Skip($"Assembly '{metadata.Name}' — would create");
+                output.Info($"  [green]+[/] Assembly '{metadata.Name}' — would create");
                 // Return a dummy entity so that the caller can continue with the dry-run
                 return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false);
             }
@@ -356,21 +356,21 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
     void WriteDryRunSummary(PluginAssemblyMetadata metadata, bool needsUpdate, RegistrationPlan plan)
     {
         if (needsUpdate)
-            output.Info($"Assembly '{metadata.Name} ({metadata.Version})' — would update content");
+            output.Info($"  [yellow]~[/] Assembly '{metadata.Name} ({metadata.Version})' — would update content");
 
-        foreach (var a in plan.PluginTypes.Deletes)   output.Info($"Plugin type '{a.Name}' — would delete");
-        foreach (var a in plan.Steps.Deletes)         output.Info($"Step '{a.Name}' — would delete");
-        foreach (var a in plan.Images.Deletes)        output.Info($"Image '{a.Name}' — would delete");
-        foreach (var a in plan.CustomApis.Deletes)    output.Info($"Custom API '{a.Name}' — would delete");
-        foreach (var a in plan.RequestParams.Deletes) output.Info($"Request parameter '{a.Name}' — would delete");
-        foreach (var a in plan.ResponseProps.Deletes) output.Info($"Response property '{a.Name}' — would delete");
+        foreach (var a in plan.PluginTypes.Deletes)   output.Info($"  [red]-[/] Plugin type '{a.Name}' — would delete");
+        foreach (var a in plan.Steps.Deletes)         output.Info($"  [red]-[/] Step '{a.Name}' — would delete");
+        foreach (var a in plan.Images.Deletes)        output.Info($"  [red]-[/] Image '{a.Name}' — would delete");
+        foreach (var a in plan.CustomApis.Deletes)    output.Info($"  [red]-[/] Custom API '{a.Name}' — would delete");
+        foreach (var a in plan.RequestParams.Deletes) output.Info($"  [red]-[/] Request parameter '{a.Name}' — would delete");
+        foreach (var a in plan.ResponseProps.Deletes) output.Info($"  [red]-[/] Response property '{a.Name}' — would delete");
 
-        foreach (var ups in plan.PluginTypes.Upserts)   output.Info($"Plugin type '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
-        foreach (var ups in plan.Steps.Upserts)         output.Info($"Step '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
-        foreach (var ups in plan.Images.Upserts)        output.Info($"Image '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
-        foreach (var ups in plan.CustomApis.Upserts)    output.Info($"Custom API '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
-        foreach (var ups in plan.RequestParams.Upserts) output.Info($"Request parameter '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
-        foreach (var ups in plan.ResponseProps.Upserts) output.Info($"Response property '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var ups in plan.PluginTypes.Upserts)   output.Info($"  {(ups.IsCreate ? "[green]+[/]" : "[yellow]~[/]")} Plugin type '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var ups in plan.Steps.Upserts)         output.Info($"  {(ups.IsCreate ? "[green]+[/]" : "[yellow]~[/]")} Step '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var ups in plan.Images.Upserts)        output.Info($"  {(ups.IsCreate ? "[green]+[/]" : "[yellow]~[/]")} Image '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var ups in plan.CustomApis.Upserts)    output.Info($"  {(ups.IsCreate ? "[green]+[/]" : "[yellow]~[/]")} Custom API '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var ups in plan.RequestParams.Upserts) output.Info($"  {(ups.IsCreate ? "[green]+[/]" : "[yellow]~[/]")} Request parameter '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
+        foreach (var ups in plan.ResponseProps.Upserts) output.Info($"  {(ups.IsCreate ? "[green]+[/]" : "[yellow]~[/]")} Response property '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
 
         var creates = plan.PluginTypes.Upserts.Count(u => u.IsCreate)
                       + plan.Steps.Upserts.Count(u => u.IsCreate)
