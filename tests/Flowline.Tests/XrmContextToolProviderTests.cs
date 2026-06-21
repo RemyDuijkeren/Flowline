@@ -264,7 +264,10 @@ public class XrmContextToolProviderTests : IDisposable
         HttpClient httpClient,
         string nugetGlobalCache,
         string flowlineCache)
-        : XrmContextToolProvider(httpClient, new TestConsole(), new FlowlineRuntimeOptions(), nugetGlobalCache, flowlineCache);
+        : XrmContextToolProvider(httpClient, new TestConsole(), new FlowlineRuntimeOptions(), nugetGlobalCache, flowlineCache)
+    {
+        protected override bool IsWindows() => true;
+    }
 
     private class NonWindowsXrmContextToolProvider(
         HttpClient httpClient,
