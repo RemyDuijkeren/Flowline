@@ -7,27 +7,175 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-21
+
 ### Added
 
--
+- **AI-native schema context**: `sync` writes `DATAVERSE_CONTEXT.md` — entities, attributes, option sets, forms, views, workflows, and plugin steps extracted from solution XML. Claude Code, Copilot, and Codex load it automatically via `AGENTS.md`.
+- **AGENTS.md scaffolding and self-healing**: `clone` creates `AGENTS.md` at the repo root; `sync` keeps it up to date with a pointer to `DATAVERSE_CONTEXT.md`.
+- **`generate --output` saved to `.flowline`**: the output path is persisted in the project config and reused on subsequent runs.
+- **Deploy orphan cleanup**: `deploy` detects solution components removed since the last import and removes or reports them.
+- **DTAP gate on deploy**: `deploy` refuses to promote unless the source environment matches what has been synced — prevents deploying untested configuration drift.
+- **Managed/unmanaged type guard on deploy**: pre-flight check blocks deploying a managed solution to an unmanaged target and vice versa.
+- **Sync sub-change summaries and `CHANGES.md`**: `sync` drills into attribute, option set, and view column changes — full detail written to `CHANGES.md` after every sync.
+- **XrmContext v4 generator** (`--generator xrmcontext`): uses the `xrmcontext` dotnet global tool for early-bound type generation. Supports `--service-context-name`. Binary auto-downloaded and cached via NuGet.
+- **Auth: automatic profile selection**: Flowline picks the best PAC auth profile automatically (active profile preferred), shows an interactive picker when ambiguous, and warns when tokens are nearing expiry.
+- **Auth: client secret resolution chain**: `--client-secret` flag → environment variable → interactive prompt → fail.
+- **`--client-id` and `--client-secret` flags** on `generate` for service-principal auth to XrmContext.
+- **Bulk operation messages**: `[Step]` and `[CustomApi]` attributes now accept bulk operation messages (`BulkDetect`, `BulkExport`, etc.).
+- **`push --no-build`**: skip the npm/dotnet build and push the existing `dist/` directly. Includes a mass-delete guard when `dist/` is empty.
+- **UAT environment**: `deploy uat` promotes to a UAT tier alongside `test` and `prod`.
+- **Web resource dependency enrichment**: annotation parser and dependency diffing harden dependency registration. Annotation-referenced web resources are exempted from orphan deletion.
+- **Verbatim mode**: web resource folders already carrying the publisher prefix are pushed as-is, without double-prefixing.
+- **Typed exit codes**: `Success`, `ConfigInvalid`, `AuthFailed`, `BuildFailed`, `PartialSuccess` — CI pipelines and agents can distinguish failure modes.
 
 ### Changed
 
--
-
-### Deprecated
-
--
-
-### Removed
-
--
+- Generator name `xrmcontext` (v3) renamed to `xrmcontext3`; `--generator xrmcontext` now targets XrmContext v4.
+- `--secret` renamed to `--client-secret` on `generate`.
+- Dependencies bumped: CliWrap, Spectre.Console, Microsoft.Extensions.*, Microsoft.Identity.Client.Extensions.Msal, System.Security.Cryptography.Xml.
 
 ### Fixed
 
--
+- GUID-based link-entity alias prefix (`a_<32hex>.fieldname`) stripped from view column names in `DATAVERSE_CONTEXT.md`.
+- UTF-8 output encoding set explicitly — prevents logo and spinner corruption in some Windows terminals.
+- Deleted plugin step names resolved from git history when generating sync change summaries.
+- UTF-8 BOM stripped from solution XML before parsing change summaries.
+- CRLF line-ending warning suppressed during sync change summary generation.
+- Web resource dependency enrichment hardened; RESX cross-folder matching fixed.
+- XrmContext NuGet extraction path corrected — binary lands in the expected `content/XrmContext/` directory.
+- XrmContext authentication uses `method:OAuth` for MFA-enforced tenants.
+- Orphan cleanup hardened: component ID count limit enforced, unknown components handled gracefully, `PartialSuccess` exit code returned on partial failure.
 
 ### Security
 
--
+- CI workflows: `contents: read` permission scoped explicitly; GitHub Actions pinned to latest versions; `GITHUB_TOKEN` added to NuGet cache cleanup step.
 
+---
+
+## [0.6.0] - 2026-06-05
+
+### Added
+
+- **Scaffolded WebResources project**: `clone` creates a TypeScript + Rollup project under `WebResources/` — wired to `push` from day one.
+- **`push --assemblyonly`**: push only the plugin assembly, skipping web resource sync.
+- **`push --force`**: force-register a plugin assembly even when the content hash has not changed.
+- **Solution version in `status`**: `flowline status` shows the solution version alongside environment and auth info.
+- **`generate` standalone mode**: `flowline generate` runs outside a full Flowline project context.
+
+### Changed
+
+- `push --save` renamed to `push --no-delete` — opts out of orphan cleanup.
+- `push --dll` renamed to `push --pluginFile`.
+- PAC clone/sync output moved into `Package/` subfolder — repo root stays clean.
+- `--json` flag removed from commands.
+
+### Fixed
+
+- `Flowline.Attributes` NuGet: `PackagePath` corrected for content files so the source-only package distributes correctly.
+
+---
+
+## [0.5.0] - 2026-05-29
+
+### Added
+
+- **`flowline generate`**: generates early-bound C# types into `Plugins/Models/`. Supports PAC generator (`--generator pac`) and XrmContext v3 (`--generator xrmcontext3`). Output path configurable and persisted in `.flowline`.
+- **Sync change summary**: `sync` translates the XML diff into plain language — entities and components added, changed, or removed. Written to `CHANGES.md` after every sync.
+- **Pre-sync dirty-tree guard**: `sync` refuses if the working tree has uncommitted changes. `--force` bypasses.
+- **Deploy guard**: `deploy` blocks if local changes have not been synced — enforces `push → sync → deploy`. `--force` bypasses.
+- **Solution versioning**: `sync --bump` auto-increments the patch version in Dataverse and tags the commit. `--no-tag` skips the git tag.
+- **`[Handles]` attribute**: annotate plugin classes that handle multiple messages — no more duplicating `[Step]` for each message.
+- **`flowline status`**: shows environment connectivity, auth profile details, Dataverse health, and solution version.
+- **No mapping files**: `deploy` packs via `pac solution pack` — `MappingPac.xml` and `MappingBuild.xml` no longer generated or needed.
+- **Publisher customization prefix**: fetched from Dataverse and applied automatically for web resource naming.
+- **Unmanaged solution guard on `provision`**: `provision` validates the source is an unmanaged solution before copying.
+
+### Changed
+
+- `SecondaryEntityAttribute` renamed to `SecondaryTableAttribute`; migrated into `[Step]` as `SecondaryTable`.
+- `MessageName` and `ParameterName` enums removed — use `Message` string constants instead.
+- Environment name "Staging" standardized to "Test" throughout.
+
+### Fixed
+
+- R7 false positive in `[Handles]` attribute validation.
+- Empty `[Handles]` message now produces a clear validation error.
+- Drift checker includes the release folder in orphan assembly detection.
+- Unlinked custom APIs cleaned up in verbose tree output.
+
+---
+
+## [0.4.0] - 2026-05-07
+
+### Added
+
+- **Tree-based operation output**: plugin and web resource operations render as a tree — readable for large solutions.
+- **Global web resources to solution**: web resources found outside a solution component are added to the solution automatically during sync.
+
+### Fixed
+
+- `FaultException<OrganizationServiceFault>` caught specifically — meaningful error messages instead of generic exceptions.
+- Invalid web resource file names reported as errors instead of unhandled exceptions.
+- Deprecated Silverlight/XAP files detected and skipped with a warning.
+
+---
+
+## [0.3.0] - 2026-05-05
+
+### Added
+
+- **`[CustomApi]` attribute**: define Dataverse Custom APIs directly in C# — request parameters, response properties, and binding. Registered alongside plugin steps in one pass.
+- **`[PreImage]` and `[PostImage]`**: registered in Dataverse automatically.
+- **`[RunAs]` on plugin steps**: impersonate a system user during step execution.
+- **`DeleteJobOnSuccess`**: auto-delete the async system job on success for async post-operation steps. Defaults to `true`.
+- **`push --dry-run`**: shows every registration, update, and deletion Flowline would perform — without touching Dataverse.
+- **Hash-based change detection**: plugin assembly updates trigger a Dataverse write only when content has changed.
+- **FQN change handling**: `push` handles assembly identity changes (public key token, culture, version) with delete-and-recreate.
+- **Standalone `push`**: `push --dll <path>` and `push --webresources` work outside a full project context.
+- **Managed solution awareness**: `clone`, `push`, and `sync` detect managed solutions and adapt.
+- **Web resource sync**: orphan detection and planning for web resources — resources absent from source are detected and cleaned up.
+
+### Changed
+
+- `[Entity]` attribute renamed to `[Step]` — matches Dataverse terminology.
+
+### Fixed
+
+- Filtering attribute values trimmed and de-duped on load.
+- Plugin step registration runs sequentially — prevents `GrantInheritedAccess` race conditions in Dataverse.
+
+---
+
+## [0.2.0] - 2026-04-19
+
+### Added
+
+- **`Flowline.Attributes` NuGet**: source-only package with `[Step]`, `[Filter]`, and `[Image]` for attribute-driven plugin registration. No `spkl.json`, no Plugin Registration Tool.
+- **`flowline deploy`**: pack from the repo and import to any target environment.
+- **`flowline clone`**: bootstrap an existing Dataverse solution into the repo from a source environment.
+- **`flowline provision`**: provision a DEV or TEST environment by copying from production.
+
+### Changed
+
+- Project renamed to **Flowline** and namespaces reorganized.
+- `BootstrapCommand`, `StageCommand`, `ReleaseCommand` removed — superseded by `clone` and `deploy`.
+
+---
+
+## [0.1.0] - 2025-06-28
+
+### Added
+
+- Initial Flowline CLI project scaffolding.
+- GitHub Actions CI and release workflows.
+
+
+[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.7.0...HEAD
+[0.7.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.6.0...0.7.0
+[0.6.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.5.0...0.6.0
+[0.5.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.4.0...0.5.0
+[0.4.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.3.0...0.4.0
+[0.3.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.2.0...0.3.0
+[0.2.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.1.0...0.2.0
+[0.1.0]: https://github.com/RemyDuijkeren/Flowline/releases/tag/0.1.0
