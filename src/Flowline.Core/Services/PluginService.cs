@@ -161,7 +161,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
         if (!needsUpdate && plan.TotalChanges == 0)
         {
-            output.Ok("Plugins already up to date — skipping");
+            output.Skip("Plugins already up to date — skipping");
             return;
         }
 
@@ -211,7 +211,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         {
             await _executor.ExecuteUpsertsAsync(service, plan, solutionName, cancellationToken).ConfigureAwait(false);
         }
-        if (plan.TotalUpserts > 0) output.Info($"[green]{plan.TotalUpserts} component(s) synced[/]");
+        if (plan.TotalUpserts > 0) output.Ok($"{plan.TotalUpserts} component(s) synced");
 
         var addToSolutionCount = CountAddToSolutionComponents(plan);
         if (addToSolutionCount > 0)
