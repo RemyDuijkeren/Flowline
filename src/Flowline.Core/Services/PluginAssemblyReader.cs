@@ -449,6 +449,7 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
         var anyPreImageCompatible = false;
         var anyPostImageCompatible = false;
         var steps = new List<PluginStepMetadata>();
+        var nudgeEmitted = false;
 
         foreach (var (msg, s, m, stageSuffix) in handles)
         {
@@ -476,7 +477,7 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
             var stepName = qualifyWithStage ? $"{baseName} at {stageSuffix}" : baseName;
 
             var stepWarnings = BuildStepWarnings(type.Name, msg, table, stepFilter, secondaryTable, stepImages);
-            stepWarnings.Add(nudgeWarning);
+            if (!nudgeEmitted) { stepWarnings.Add(nudgeWarning); nudgeEmitted = true; }
 
             var deleteJobOnSuccess = m == (int)ProcessingMode.Asynchronous && (deleteJobOnSuccessExplicit ?? true);
             if (deleteJobOnSuccessExplicit == true && m != (int)ProcessingMode.Asynchronous)

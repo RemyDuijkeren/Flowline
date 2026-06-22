@@ -201,7 +201,7 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
 
                 if (!changed)
                 {
-                    imagesPlan.Add(PlanImages(snapshot, dvStep, asmStep.Images, asmStep.Message));
+                    imagesPlan.Add(PlanImages(snapshot, dvStep, asmStep.Images, asmStep.Message, asmStep.Name));
                     continue;
                 }
 
@@ -276,7 +276,7 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
                 }
             }
 
-            imagesPlan.Add(PlanImages(snapshot, dvStep, asmStep.Images, asmStep.Message));
+            imagesPlan.Add(PlanImages(snapshot, dvStep, asmStep.Images, asmStep.Message, asmStep.Name));
         }
 
         foreach (var obsoleteStep in dvSteps.Where(s =>
@@ -289,14 +289,14 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
             foreach (var obsoleteImage in snapshot.Images.Where(i => (i.GetAttributeValue<EntityReference>("sdkmessageprocessingstepid")?.Id ?? Guid.Empty) == obsoleteStep.Value.Id))
             {
                 var imageName = obsoleteImage.GetAttributeValue<string>("name");
-                imagesPlan.Deletes.Add(new DeleteAction(imageName, "sdkmessageprocessingstepimage", obsoleteImage.Id));
+                imagesPlan.Deletes.Add(new DeleteAction($"{imageName}' on '{stepName}", "sdkmessageprocessingstepimage", obsoleteImage.Id));
             }
         }
 
         return (stepPlan, imagesPlan);
     }
 
-    ActionPlan PlanImages(RegistrationSnapshot snapshot, Entity stepEntity, List<PluginImageMetadata> asmImages, string message)
+    ActionPlan PlanImages(RegistrationSnapshot snapshot, Entity stepEntity, List<PluginImageMetadata> asmImages, string message, string stepName)
     {
         ActionPlan plan = new();
 
@@ -321,7 +321,7 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
                 dvImage["imagetype"]   = new OptionSetValue(asmImage.ImageType);
                 dvImage["attributes"]  = asmImage.Attributes;
 
-                plan.Upserts.Add(new UpsertAction(asmImage.Name, dvImage, IsCreate: false));
+                plan.Upserts.Add(new UpsertAction($"{asmImage.Name}' on '{stepName}", dvImage, IsCreate: false));
             }
             else
             {
@@ -341,12 +341,12 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
                     ["description"]                = $"{FlowlineMarker} Created at {DateTime.UtcNow:u}"
                 };
 
-                plan.Upserts.Add(new UpsertAction(asmImage.Name, entity, IsCreate: true));
+                plan.Upserts.Add(new UpsertAction($"{asmImage.Name}' on '{stepName}", entity, IsCreate: true));
             }
         }
 
         foreach (var obsoleteImage in dvImages.Where(i => asmImages.All(a => a.Name != i.Key)))
-            plan.Deletes.Add(new DeleteAction(obsoleteImage.Key, "sdkmessageprocessingstepimage", obsoleteImage.Value.Id));
+            plan.Deletes.Add(new DeleteAction($"{obsoleteImage.Key}' on '{stepName}", "sdkmessageprocessingstepimage", obsoleteImage.Value.Id));
 
         return plan;
     }

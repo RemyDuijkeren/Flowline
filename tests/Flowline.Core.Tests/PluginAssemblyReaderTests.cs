@@ -715,12 +715,12 @@ public class PluginAssemblyReaderTests
     }
 
     [Fact]
-    public void Analyze_MultiHandles_NudgeWarningPresentOnEachStep()
+    public void Analyze_MultiHandles_NudgeWarningPresentOnFirstStepOnly()
     {
         var plugin = GetPlugin(Analyze(), nameof(MockMultiHandlesCreateAndUpdatePlugin));
 
-        Assert.All(plugin.Steps, s =>
-            Assert.Contains(s.Warnings, w => w.Contains("multiple [[Handles]] detected")));
+        Assert.Contains(plugin.Steps[0].Warnings, w => w.Contains("multiple [[Handles]] detected"));
+        Assert.DoesNotContain(plugin.Steps[1].Warnings, w => w.Contains("multiple [[Handles]] detected"));
     }
 
     [Fact]
