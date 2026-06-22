@@ -646,6 +646,176 @@ public class PluginAssemblyReaderTests
         Assert.Empty(step.Warnings);
     }
 
+    // ---- multi-[Handles] tests ----
+
+    [Fact]
+    public void Analyze_MultiHandles_DistinctMessages_ProducesTwoStepsWithoutStageSuffix()
+    {
+        var plugin = GetPlugin(Analyze(), nameof(MockMultiHandlesCreateAndUpdatePlugin));
+
+        Assert.Equal(2, plugin.Steps.Count);
+        var create = plugin.Steps.Single(s => s.Message == "Create");
+        var update = plugin.Steps.Single(s => s.Message == "Update");
+        Assert.DoesNotContain(" at ", create.Name);
+        Assert.DoesNotContain(" at ", update.Name);
+    }
+
+    [Fact]
+    public void Analyze_MultiHandles_SameMessageTwoStages_ProducesStageSuffix()
+    {
+        var plugin = GetPlugin(Analyze(), nameof(MockMultiHandlesUpdateTwoStagesPlugin));
+
+        Assert.Equal(2, plugin.Steps.Count);
+        var pre = plugin.Steps.Single(s => s.Stage == (int)ProcessingStage.PreOperation);
+        var post = plugin.Steps.Single(s => s.Stage == (int)ProcessingStage.PostOperation);
+        Assert.EndsWith(" at PreOperation", pre.Name);
+        Assert.EndsWith(" at PostOperation", post.Name);
+    }
+
+    [Fact]
+    public void Analyze_MultiHandles_ThreeHandlesOneMessageRepeats_AllStepsQualified()
+    {
+        var plugin = GetPlugin(Analyze(), nameof(MockMultiHandlesThreeHandlesPlugin));
+
+        Assert.Equal(3, plugin.Steps.Count);
+        Assert.All(plugin.Steps, s => Assert.Contains(" at ", s.Name));
+    }
+
+    [Fact]
+    public void Analyze_MultiHandles_FilterOnlyAppliedToUpdateStep()
+    {
+        var plugin = GetPlugin(Analyze(), nameof(MockMultiHandlesFilterCreateUpdatePlugin));
+
+        var create = plugin.Steps.Single(s => s.Message == "Create");
+        var update = plugin.Steps.Single(s => s.Message == "Update");
+        Assert.Null(create.FilteringColumns);
+        Assert.Equal("name", update.FilteringColumns);
+    }
+
+    [Fact]
+    public void Analyze_MultiHandles_PreImageOnlyAppliedToNonCreateStep()
+    {
+        var plugin = GetPlugin(Analyze(), nameof(MockMultiHandlesPreImagePlugin));
+
+        var create = plugin.Steps.Single(s => s.Message == "Create");
+        var update = plugin.Steps.Single(s => s.Message == "Update");
+        Assert.Empty(create.Images);
+        Assert.Single(update.Images);
+    }
+
+    [Fact]
+    public void Analyze_MultiHandles_PostImageOnlyAppliedToNonDeletePostOpStep()
+    {
+        var plugin = GetPlugin(Analyze(), nameof(MockMultiHandlesPostImagePlugin));
+
+        var delete = plugin.Steps.Single(s => s.Message == "Delete");
+        var update = plugin.Steps.Single(s => s.Message == "Update");
+        Assert.Empty(delete.Images);
+        Assert.Single(update.Images);
+    }
+
+    [Fact]
+    public void Analyze_MultiHandles_NudgeWarningPresentOnEachStep()
+    {
+        var plugin = GetPlugin(Analyze(), nameof(MockMultiHandlesCreateAndUpdatePlugin));
+
+        Assert.All(plugin.Steps, s =>
+            Assert.Contains(s.Warnings, w => w.Contains("multiple [[Handles]] detected")));
+    }
+
+    [Fact]
+    public void Analyze_SingleHandles_NoNudgeWarning()
+    {
+        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockHandlesUpdatePrePlugin)).Steps);
+
+        Assert.DoesNotContain(step.Warnings, w => w.Contains("multiple [[Handles]] detected"));
+    }
+
+    [Fact]
+    public void Analyze_MultiHandles_PostOperationAsyncSuffix_DistinguishesFromSync()
+    {
+        var plugin = GetPlugin(Analyze(), nameof(MockMultiHandlesUpdateSyncAndAsyncPlugin));
+
+        Assert.Equal(2, plugin.Steps.Count);
+        var sync = plugin.Steps.Single(s => s.Mode == (int)ProcessingMode.Synchronous);
+        var async_ = plugin.Steps.Single(s => s.Mode == (int)ProcessingMode.Asynchronous);
+        Assert.EndsWith(" at PostOperation", sync.Name);
+        Assert.EndsWith(" at PostOperationAsync", async_.Name);
+    }
+
+    [Theory]
+    [InlineData("MyPlugin", false, false)]
+    [InlineData("MyPlugin", true, true)]
+    public void ValidateMultiHandlesFilter_NoThrow(string name, bool hasFilter, bool anyCompatible)
+    {
+        PluginAssemblyReader.ValidateMultiHandlesFilter(name, hasFilter, anyCompatible);
+    }
+
+    [Fact]
+    public void ValidateMultiHandlesFilter_FilterPresentNoCompatible_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            PluginAssemblyReader.ValidateMultiHandlesFilter("MyPlugin", hasFilter: true, anyFilterCompatible: false));
+        Assert.Contains("[Filter]", ex.Message);
+        Assert.Contains("Update", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("MyPlugin", false, false)]
+    [InlineData("MyPlugin", true, true)]
+    public void ValidateMultiHandlesPreImage_NoThrow(string name, bool hasPreImage, bool anyCompatible)
+    {
+        PluginAssemblyReader.ValidateMultiHandlesPreImage(name, hasPreImage, anyCompatible);
+    }
+
+    [Fact]
+    public void ValidateMultiHandlesPreImage_PreImagePresentNoCompatible_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            PluginAssemblyReader.ValidateMultiHandlesPreImage("MyPlugin", hasPreImage: true, anyPreImageCompatible: false));
+        Assert.Contains("[PreImage]", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("MyPlugin", false, false)]
+    [InlineData("MyPlugin", true, true)]
+    public void ValidateMultiHandlesPostImage_NoThrow(string name, bool hasPostImage, bool anyCompatible)
+    {
+        PluginAssemblyReader.ValidateMultiHandlesPostImage(name, hasPostImage, anyCompatible);
+    }
+
+    [Fact]
+    public void ValidateMultiHandlesPostImage_PostImagePresentNoCompatible_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            PluginAssemblyReader.ValidateMultiHandlesPostImage("MyPlugin", hasPostImage: true, anyPostImageCompatible: false));
+        Assert.Contains("[PostImage]", ex.Message);
+    }
+
+    [Fact]
+    public void TryBuildSteps_MultiHandles_FilterNoCompatibleMessage_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            PluginAssemblyReader.TryBuildSteps(typeof(MockErrMultiHandlesFilterNoCompatiblePlugin)).ToList());
+        Assert.Contains("[Filter]", ex.Message);
+    }
+
+    [Fact]
+    public void TryBuildSteps_MultiHandles_PreImageNoCompatibleMessage_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            PluginAssemblyReader.TryBuildSteps(typeof(MockErrMultiHandlesPreImageNoCompatiblePlugin)).ToList());
+        Assert.Contains("[PreImage]", ex.Message);
+    }
+
+    [Fact]
+    public void TryBuildSteps_MultiHandles_PostImageNoCompatibleMessage_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            PluginAssemblyReader.TryBuildSteps(typeof(MockErrMultiHandlesPostImageNoCompatiblePlugin)).ToList());
+        Assert.Contains("[PostImage]", ex.Message);
+    }
+
 }
 
 // -- Mock plugin types used by the integration tests above --
@@ -829,6 +999,104 @@ public class MockNoFilterPostUpdateMultiplePlugin : IPlugin
 
 [Step("account")]
 public class MockPreDeleteMultiplePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+// Multi-[Handles] fixtures
+
+// Two distinct messages → no stage suffix in names
+[Step("account")]
+[Handles(Message.Create, Stage.PostOperation)]
+[Handles(Message.Update, Stage.PostOperation)]
+public class MockMultiHandlesCreateAndUpdatePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+// Same message at two stages → stage suffix in all names
+[Step("account")]
+[Handles(Message.Update, Stage.PreOperation)]
+[Handles(Message.Update, Stage.PostOperation)]
+public class MockMultiHandlesUpdateTwoStagesPlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+// Three handles, one message repeats → all names qualified
+[Step("account")]
+[Handles(Message.Create, Stage.PostOperation)]
+[Handles(Message.Update, Stage.PreOperation)]
+[Handles(Message.Update, Stage.PostOperation)]
+public class MockMultiHandlesThreeHandlesPlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+// [Filter] with Create + Update → filter only on Update step
+[Step("account")]
+[Filter("name")]
+[Handles(Message.Create, Stage.PostOperation)]
+[Handles(Message.Update, Stage.PostOperation)]
+public class MockMultiHandlesFilterCreateUpdatePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+// [PreImage] with Create + Update → PreImage only on Update step
+[Step("account")]
+[PreImage("pre", "name")]
+[Handles(Message.Create, Stage.PostOperation)]
+[Handles(Message.Update, Stage.PostOperation)]
+public class MockMultiHandlesPreImagePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+// [PostImage] with Update + Delete → PostImage only on Update step
+[Step("account")]
+[PostImage("post", "name")]
+[Handles(Message.Update, Stage.PostOperation)]
+[Handles(Message.Delete, Stage.PostOperation)]
+public class MockMultiHandlesPostImagePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+// Same message, PostOperation sync + async → both steps name-qualified with mode
+[Step("account")]
+[Handles(Message.Update, Stage.PostOperation)]
+[Handles(Message.Update, Stage.PostOperationAsync)]
+public class MockMultiHandlesUpdateSyncAndAsyncPlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+// Internal fixtures for error-path reader tests — internal keeps them out of Analyze() (which filters IsPublic: true)
+
+[Step("account")]
+[Filter("name")]
+[Handles(Message.Create, Stage.PostOperation)]
+[Handles(Message.Delete, Stage.PostOperation)]
+internal class MockErrMultiHandlesFilterNoCompatiblePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+[Step("account")]
+[PreImage("name")]
+[Handles(Message.Create, Stage.PreOperation)]
+[Handles(Message.Create, Stage.PostOperation)]
+internal class MockErrMultiHandlesPreImageNoCompatiblePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+[Step("account")]
+[PostImage("name")]
+[Handles(Message.Delete, Stage.PreOperation)]
+[Handles(Message.Delete, Stage.PostOperation)]
+internal class MockErrMultiHandlesPostImageNoCompatiblePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }

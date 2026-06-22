@@ -35,7 +35,7 @@ namespace Flowline.Attributes
     /// public class AccountPlugin : IPlugin { ... }
     /// </code>
     /// </remarks>
-    [AttributeUsage(AttributeTargets.Class)]
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
     public sealed class HandlesAttribute : Attribute
     {
         /// <summary>

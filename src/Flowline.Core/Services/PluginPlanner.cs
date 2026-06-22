@@ -155,6 +155,9 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
             .ToDictionary(s => s.GetAttributeValue<string>("name"), s => s, StringComparer.OrdinalIgnoreCase)
             .AsReadOnly();
 
+        var secondaryMatchedIds = new HashSet<Guid>();
+        var asmStepNames = new HashSet<string>(asmPluginSteps.Select(p => p.Name), StringComparer.OrdinalIgnoreCase);
+
         foreach (var asmStep in asmPluginSteps)
         {
             if (!snapshot.SdkMessageIds.TryGetValue(asmStep.Message, out var messageId))
@@ -216,31 +219,69 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
             }
             else
             {
-                var entity = new Entity("sdkmessageprocessingstep", Guid.NewGuid())
-                {
-                    ["name"]               = asmStep.Name,
-                    ["plugintypeid"]       = typeEntity.ToEntityReference(),
-                    ["sdkmessageid"]       = new EntityReference("sdkmessage", messageId),
-                    ["stage"]              = new OptionSetValue(asmStep.Stage),
-                    ["mode"]               = new OptionSetValue(asmStep.Mode),
-                    ["rank"]               = asmStep.Order,
-                    ["filteringattributes"] = asmStep.FilteringColumns,
-                    ["configuration"]      = asmStep.Configuration,
-                    ["asyncautodelete"]    = asmStep.AsyncAutoDelete,
-                    ["impersonatinguserid"] = asmStep.RunAs.HasValue ? new EntityReference("systemuser", asmStep.RunAs.Value) : null,
-                    ["description"]        = $"{FlowlineMarker} Created at {DateTime.UtcNow:u}"
-                };
-                if (filterId.HasValue)
-                    entity["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId.Value);
+                // Secondary match: (messageId + filterId + stage) within the same plugin type.
+                // Catches steps renamed by multi-[Handles] stage-qualification and prevents delete + create.
+                var secondaryMatch = dvSteps.Values.FirstOrDefault(s =>
+                    s.GetAttributeValue<EntityReference?>("sdkmessageid")?.Id == messageId &&
+                    s.GetAttributeValue<EntityReference?>("sdkmessagefilterid")?.Id == filterId &&
+                    s.GetAttributeValue<OptionSetValue>("stage")?.Value == asmStep.Stage &&
+                    !asmStepNames.Contains(s.GetAttributeValue<string>("name")));
 
-                stepPlan.Upserts.Add(new UpsertAction(asmStep.Name, entity, IsCreate: true, SolutionName: solutionName));
-                dvStep = entity;
+                if (secondaryMatch != null)
+                {
+                    dvStep = secondaryMatch;
+                    secondaryMatchedIds.Add(dvStep.Id);
+
+                    if (!IsInSolution(snapshot, dvStep.Id, solutionName))
+                    {
+                        stepPlan.AddSolutionComponents.Add(
+                            new AddToSolutionAction(asmStep.Name, "sdkmessageprocessingstep", dvStep.Id, solutionName,
+                                snapshot.ComponentTypeById.GetValueOrDefault(dvStep.Id, 92)));
+                    }
+
+                    dvStep["name"]                = asmStep.Name;
+                    dvStep["stage"]               = new OptionSetValue(asmStep.Stage);
+                    dvStep["mode"]                = new OptionSetValue(asmStep.Mode);
+                    dvStep["rank"]                = asmStep.Order;
+                    dvStep["filteringattributes"] = asmStep.FilteringColumns;
+                    dvStep["configuration"]       = asmStep.Configuration;
+                    dvStep["asyncautodelete"]     = asmStep.AsyncAutoDelete;
+                    dvStep["impersonatinguserid"] = asmStep.RunAs.HasValue ? new EntityReference("systemuser", asmStep.RunAs.Value) : null;
+                    dvStep["sdkmessageid"]        = new EntityReference("sdkmessage", messageId);
+                    dvStep["sdkmessagefilterid"]  = filterId.HasValue ? new EntityReference("sdkmessagefilter", filterId.Value) : null;
+
+                    stepPlan.Upserts.Add(new UpsertAction(asmStep.Name, dvStep, IsCreate: false));
+                }
+                else
+                {
+                    var entity = new Entity("sdkmessageprocessingstep", Guid.NewGuid())
+                    {
+                        ["name"]               = asmStep.Name,
+                        ["plugintypeid"]       = typeEntity.ToEntityReference(),
+                        ["sdkmessageid"]       = new EntityReference("sdkmessage", messageId),
+                        ["stage"]              = new OptionSetValue(asmStep.Stage),
+                        ["mode"]               = new OptionSetValue(asmStep.Mode),
+                        ["rank"]               = asmStep.Order,
+                        ["filteringattributes"] = asmStep.FilteringColumns,
+                        ["configuration"]      = asmStep.Configuration,
+                        ["asyncautodelete"]    = asmStep.AsyncAutoDelete,
+                        ["impersonatinguserid"] = asmStep.RunAs.HasValue ? new EntityReference("systemuser", asmStep.RunAs.Value) : null,
+                        ["description"]        = $"{FlowlineMarker} Created at {DateTime.UtcNow:u}"
+                    };
+                    if (filterId.HasValue)
+                        entity["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId.Value);
+
+                    stepPlan.Upserts.Add(new UpsertAction(asmStep.Name, entity, IsCreate: true, SolutionName: solutionName));
+                    dvStep = entity;
+                }
             }
 
             imagesPlan.Add(PlanImages(snapshot, dvStep, asmStep.Images, asmStep.Message));
         }
 
-        foreach (var obsoleteStep in dvSteps.Where(s => asmPluginSteps.All(p => p.Name != s.Key)))
+        foreach (var obsoleteStep in dvSteps.Where(s =>
+            asmPluginSteps.All(p => p.Name != s.Key) &&
+            !secondaryMatchedIds.Contains(s.Value.Id)))
         {
             var stepName = obsoleteStep.Value.GetAttributeValue<string>("name");
             stepPlan.Deletes.Add(new DeleteAction(stepName, "sdkmessageprocessingstep", obsoleteStep.Value.Id));

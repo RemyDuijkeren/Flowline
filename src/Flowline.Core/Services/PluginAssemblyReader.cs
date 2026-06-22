@@ -155,12 +155,15 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
                     continue;
                 }
 
-                var step = TryBuildStep(type);
-                if (step != null)
+                var steps = TryBuildSteps(type).ToList();
+                if (steps.Count > 0)
                 {
-                    output.Verbose($"Found Plugin {type.FullName} with plugin step {step.Name}", isVerbose);
-                    foreach (var warning in step.Warnings) output.Warning(warning);
-                    pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, [step], [], isWorkflow));
+                    foreach (var s in steps)
+                    {
+                        output.Verbose($"Found Plugin {type.FullName} with plugin step {s.Name}", isVerbose);
+                        foreach (var warning in s.Warnings) output.Warning(warning);
+                    }
+                    pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, steps, [], isWorkflow));
                 }
                 else
                 {
@@ -295,11 +298,11 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
         return (requestParams, responseProps);
     }
 
-    private static PluginStepMetadata? TryBuildStep(Type type)
+    internal static IEnumerable<PluginStepMetadata> TryBuildSteps(Type type)
     {
         var stepAttr = type.GetCustomAttributesData()
             .FirstOrDefault(a => a.AttributeType.FullName == "Flowline.Attributes.StepAttribute");
-        if (stepAttr == null) return null;
+        if (stepAttr == null) return [];
 
         var table = stepAttr.ConstructorArguments.Count > 0
             ? (string?)stepAttr.ConstructorArguments[0].Value
@@ -320,15 +323,24 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
 
         ValidateLogicalName(type.Name, table);
         ValidateSecondaryLogicalName(type.Name, secondaryTable);
+        ValidateCustomApiAttributesOnStep(type.Name, HasCustomApiAttributes(type));
 
+        Guid? runAs = runAsString != null && Guid.TryParse(runAsString, out var parsed) ? parsed : (Guid?)null;
+
+        var allHandlesAttrs = type.GetCustomAttributesData()
+            .Where(a => a.AttributeType.FullName == "Flowline.Attributes.HandlesAttribute")
+            .ToList();
+
+        if (allHandlesAttrs.Count >= 2)
+            return BuildMultiHandlesSteps(type, allHandlesAttrs, table, order, configuration, runAs, runAsString, deleteJobOnSuccessExplicit, secondaryTable);
+
+        // Single-[Handles] or convention path
         string message;
         int stage;
         int mode;
         var handlesUsed = false;
 
-        var handlesAttr = type.GetCustomAttributesData()
-            .FirstOrDefault(a => a.AttributeType.FullName == "Flowline.Attributes.HandlesAttribute");
-
+        var handlesAttr = allHandlesAttrs.Count == 1 ? allHandlesAttrs[0] : null;
         if (handlesAttr != null)
         {
             handlesUsed = true;
@@ -356,7 +368,6 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
         }
 
         ValidateExecutionMode(type.Name, stage, mode);
-        ValidateCustomApiAttributesOnStep(type.Name, HasCustomApiAttributes(type));
 
         var filteringColumns = ReadFilterAttributes(type);
         ValidateFilter(type.Name, message, filteringColumns);
@@ -365,11 +376,10 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
 
         var images = ReadImageAttributes(type);
         ValidateImages(type.Name, message, stage, images);
-        Guid? runAs = runAsString != null && Guid.TryParse(runAsString, out var parsed) ? parsed : (Guid?)null;
 
         var warnings = BuildStepWarnings(type.Name, message, table, filteringColumns, secondaryTable, images);
 
-        // R7: [Handles] is redundant only when the class name parses to the same message+stage+mode.
+        // [Handles] is redundant when the class name parses to the same message+stage+mode.
         if (handlesUsed &&
             TryParseClassName(type.Name, out var parsedMsg, out var parsedStage, out var parsedMode) &&
             parsedMsg == message && parsedStage == stage && parsedMode == mode)
@@ -388,7 +398,111 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
             ? $"{type.FullName}: {message} of {tableDisplay} with {secondaryTable}"
             : $"{type.FullName}: {message} of {tableDisplay}";
 
-        return new PluginStepMetadata(stepName, message, table, stage, mode, order, filteringColumns, configuration, images, warnings, secondaryTable, deleteJobOnSuccess, runAs);
+        return [new PluginStepMetadata(stepName, message, table, stage, mode, order, filteringColumns, configuration, images, warnings, secondaryTable, deleteJobOnSuccess, runAs)];
+    }
+
+    private static IEnumerable<PluginStepMetadata> BuildMultiHandlesSteps(
+        Type type,
+        List<CustomAttributeData> allHandlesAttrs,
+        string? table, int order, string? configuration, Guid? runAs, string? runAsString,
+        bool? deleteJobOnSuccessExplicit, string? secondaryTable)
+    {
+        var handles = new List<(string Message, int Stage, int Mode, string StageSuffix)>();
+        foreach (var hAttr in allHandlesAttrs)
+        {
+            string msg;
+            var onArg = hAttr.ConstructorArguments[0];
+            if (onArg.ArgumentType.FullName == "System.String")
+            {
+                msg = (string)onArg.Value!;
+                if (string.IsNullOrWhiteSpace(msg))
+                    throw new InvalidOperationException(
+                        $"{type.Name}: [Handles] message name cannot be empty or whitespace — specify a valid Dataverse message name.");
+            }
+            else
+            {
+                var enumValue = Convert.ToInt32(onArg.Value);
+                if (!MessageValueToName.TryGetValue(enumValue, out msg!))
+                    throw new InvalidOperationException(
+                        $"{type.Name}: [Handles] uses an unknown Message enum value ({enumValue}).");
+            }
+
+            var (s, m) = MapHandlesStage(Convert.ToInt32(hAttr.ConstructorArguments[1].Value), type.Name);
+            ValidateExecutionMode(type.Name, s, m);
+            // Mode captured in suffix so PostOperation sync vs async produce distinct names
+            var stageSuffix = m == (int)ProcessingMode.Asynchronous
+                ? "PostOperationAsync"
+                : ((ProcessingStage)s).ToString();
+            handles.Add((msg, s, m, stageSuffix));
+        }
+
+        var qualifyWithStage = handles.GroupBy(h => h.Message).Any(g => g.Count() > 1);
+        var filteringColumns = ReadFilterAttributes(type);
+        var allImages = ReadImageAttributes(type);
+        var hasFilter = filteringColumns != null;
+        var hasPreImage = allImages.Any(i => i.ImageType == (int)ImageType.PreImage);
+        var hasPostImage = allImages.Any(i => i.ImageType == (int)ImageType.PostImage);
+
+        var tableDisplay = table ?? "any";
+        var nudgeWarning = $"{type.Name}: multiple [[Handles]] detected — prefer splitting into named subclasses for long-term maintainability.";
+        var anyFilterCompatible = false;
+        var anyPreImageCompatible = false;
+        var anyPostImageCompatible = false;
+        var steps = new List<PluginStepMetadata>();
+
+        foreach (var (msg, s, m, stageSuffix) in handles)
+        {
+            var stepFilter = msg is "Update" or "UpdateMultiple" ? filteringColumns : null;
+            if (stepFilter != null) anyFilterCompatible = true;
+
+            var preImageOk = msg != "Create" && ImageSupportedMessages.Contains(msg);
+            var postImageOk = msg != "Delete" && s == (int)ProcessingStage.PostOperation && ImageSupportedMessages.Contains(msg);
+
+            var stepImages = new List<PluginImageMetadata>();
+            if (preImageOk)
+            {
+                anyPreImageCompatible = true;
+                stepImages.AddRange(allImages.Where(i => i.ImageType == (int)ImageType.PreImage));
+            }
+            if (postImageOk)
+            {
+                anyPostImageCompatible = true;
+                stepImages.AddRange(allImages.Where(i => i.ImageType == (int)ImageType.PostImage));
+            }
+
+            var baseName = secondaryTable != null
+                ? $"{type.FullName}: {msg} of {tableDisplay} with {secondaryTable}"
+                : $"{type.FullName}: {msg} of {tableDisplay}";
+            var stepName = qualifyWithStage ? $"{baseName} at {stageSuffix}" : baseName;
+
+            var stepWarnings = BuildStepWarnings(type.Name, msg, table, stepFilter, secondaryTable, stepImages);
+            stepWarnings.Add(nudgeWarning);
+
+            var deleteJobOnSuccess = m == (int)ProcessingMode.Asynchronous && (deleteJobOnSuccessExplicit ?? true);
+            if (deleteJobOnSuccessExplicit == true && m != (int)ProcessingMode.Asynchronous)
+                stepWarnings.Add($"DeleteJobOnSuccess = true has no effect on synchronous step '{type.Name}'.");
+            if (runAsString != null && runAs == null)
+                stepWarnings.Add($"RunAs value '{runAsString}' on '{type.Name}' is not a valid GUID — impersonatinguserid will not be set.");
+
+            steps.Add(new PluginStepMetadata(stepName, msg, table, s, m, order, stepFilter, configuration, stepImages, stepWarnings, secondaryTable, deleteJobOnSuccess, runAs));
+        }
+
+        // R7: class-level checks — error if attribute is present but no step is compatible
+        ValidateMultiHandlesFilter(type.Name, hasFilter, anyFilterCompatible);
+        ValidateMultiHandlesPreImage(type.Name, hasPreImage, anyPreImageCompatible);
+        ValidateMultiHandlesPostImage(type.Name, hasPostImage, anyPostImageCompatible);
+
+        // Uniqueness guard: two [Handles] with the same (message + stage + mode) produce identical names
+        var seenNames = new HashSet<string>();
+        foreach (var step in steps)
+        {
+            if (!seenNames.Add(step.Name))
+                throw new InvalidOperationException(
+                    $"{type.Name}: two or more [[Handles]] attributes produce the same step name '{step.Name}'. " +
+                    $"Each registration must be uniquely identifiable — avoid duplicate [[Handles]] attributes.");
+        }
+
+        return steps;
     }
 
     internal static void ValidateStepUsage(string className, bool hasStepAttribute, bool isPlugin)
@@ -582,6 +696,30 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
             throw new InvalidOperationException(
                 $"{className}: [PostImage] is only available in PostOperation — the record state is unknown before the operation completes. " +
                 $"See https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#define-entity-images");
+    }
+
+    internal static void ValidateMultiHandlesFilter(string className, bool hasFilter, bool anyFilterCompatible)
+    {
+        if (!hasFilter || anyFilterCompatible) return;
+        throw new InvalidOperationException(
+            $"{className}: [Filter] is present but none of the [[Handles]] registrations are Update or UpdateMultiple — filtering columns have no effect. " +
+            $"Remove [Filter] or add an Update or UpdateMultiple [[Handles]].");
+    }
+
+    internal static void ValidateMultiHandlesPreImage(string className, bool hasPreImage, bool anyPreImageCompatible)
+    {
+        if (!hasPreImage || anyPreImageCompatible) return;
+        throw new InvalidOperationException(
+            $"{className}: [PreImage] is present but none of the [[Handles]] registrations support pre-images. " +
+            $"Remove [PreImage] or add a non-Create [[Handles]] on a supported message.");
+    }
+
+    internal static void ValidateMultiHandlesPostImage(string className, bool hasPostImage, bool anyPostImageCompatible)
+    {
+        if (!hasPostImage || anyPostImageCompatible) return;
+        throw new InvalidOperationException(
+            $"{className}: [PostImage] is present but no [[Handles]] registration is compatible — [PostImage] requires a PostOperation step on a non-Delete message. " +
+            $"Remove [PostImage] or add a compatible [[Handles]].");
     }
 
     private static List<string> BuildStepWarnings(string className, string message, string? table, string? filteringColumns, string? secondaryTable, List<PluginImageMetadata> images)

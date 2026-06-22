@@ -312,6 +312,33 @@ public class AccountPlugin : IPlugin { ... }
 
 If the class name would also parse to the same registration (message, stage, and mode all match), Flowline warns that `[Handles]` is redundant.
 
+#### Stacking `[Handles]` — migration from spkl / Daxif
+
+Stack multiple `[Handles]` attributes on one class to register multiple Dataverse steps. This is a migration stepping-stone for codebases where one class covered multiple registrations in spkl or Daxif:
+
+```csharp
+[Step("account")]
+[Handles(Message.Create, Stage.PostOperation)]
+[Handles(Message.Update, Stage.PostOperation)]
+public class AccountPlugin : IPlugin { ... }
+```
+
+Each `[Handles]` produces one step. Step names are derived from the class name and the message:
+
+- `MyNamespace.AccountPlugin: Create of account`
+- `MyNamespace.AccountPlugin: Update of account`
+
+When two handles share the same message (e.g., `Update PreOperation + Update PostOperation`), all step names in the class include the stage to stay distinct:
+
+- `MyNamespace.AccountPlugin: Update of account at PreOperation`
+- `MyNamespace.AccountPlugin: Update of account at PostOperation`
+
+`[Filter]`, `[PreImage]`, and `[PostImage]` are applied per-step based on compatibility — `[Filter]` applies only to Update/UpdateMultiple steps; `[PreImage]` not on Create; `[PostImage]` not on Delete at PostOperation.
+
+**Flowline emits a per-step warning** nudging you to split the class into named subclasses — each covering one step — as the long-term goal.
+
+**Splitting warning:** renaming the class after splitting changes the Dataverse step names. The next `flowline push` deletes the old steps and creates new ones. Plan the split for a maintenance window to avoid registered-step downtime.
+
 ### Lifecycle
 
 Flowline treats the DLL as the source of truth. On every `flowline push`:

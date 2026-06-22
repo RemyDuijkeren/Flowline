@@ -833,4 +833,180 @@ public class PluginPlannerTests
         Assert.Empty(plan.RequestParams.AddSolutionComponents);
         Assert.Empty(plan.ResponseProps.AddSolutionComponents);
     }
+
+    // -- Secondary match (R9/R10) --
+
+    [Fact]
+    public void Plan_StepRenamedToStageQualified_SecondaryMatchProducesUpdate()
+    {
+        // Simulate a class that gained a second [Handles], causing the step name to acquire
+        // a stage suffix. The snapshot still holds the old (unsuffixed) name.
+        var typeId    = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var filterId  = Guid.NewGuid();
+        var stepId    = Guid.NewGuid();
+        const string oldName = "MyNamespace.MyPlugin: Update of account";
+        const string newName = "MyNamespace.MyPlugin: Update of account at PreOperation";
+
+        var existingStep = new Entity("sdkmessageprocessingstep", stepId)
+        {
+            ["name"]                = oldName,
+            ["plugintypeid"]        = new EntityReference("plugintype", typeId),
+            ["stage"]               = new OptionSetValue(20),
+            ["mode"]                = new OptionSetValue(0),
+            ["rank"]                = 1,
+            ["filteringattributes"] = (string?)null,
+            ["configuration"]       = (string?)null,
+            ["sdkmessageid"]        = new EntityReference("sdkmessage", messageId),
+            ["sdkmessagefilterid"]  = new EntityReference("sdkmessagefilter", filterId),
+            ["asyncautodelete"]     = false
+        };
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            steps: [existingStep],
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            filterIds: new() { [(messageId, "account", null)] = filterId });
+
+        var step = new PluginStepMetadata(newName, "Update", "account", 20, 0, 1, null, null, [], []);
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
+
+        var upsert = Assert.Single(plan.Steps.Upserts);
+        Assert.Equal(newName, upsert.Name);
+        Assert.False(upsert.IsCreate);
+        Assert.Empty(plan.Steps.Deletes);
+    }
+
+    [Fact]
+    public void Plan_SecondaryMatch_DoesNotDeleteOldStepName()
+    {
+        var typeId    = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var filterId  = Guid.NewGuid();
+        var stepId    = Guid.NewGuid();
+        const string oldName = "MyNamespace.MyPlugin: Update of account";
+        const string newName = "MyNamespace.MyPlugin: Update of account at PreOperation";
+
+        var existingStep = new Entity("sdkmessageprocessingstep", stepId)
+        {
+            ["name"]               = oldName,
+            ["plugintypeid"]       = new EntityReference("plugintype", typeId),
+            ["stage"]              = new OptionSetValue(20),
+            ["mode"]               = new OptionSetValue(0),
+            ["rank"]               = 1,
+            ["sdkmessageid"]       = new EntityReference("sdkmessage", messageId),
+            ["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId),
+            ["asyncautodelete"]    = false
+        };
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            steps: [existingStep],
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            filterIds: new() { [(messageId, "account", null)] = filterId });
+
+        var step = new PluginStepMetadata(newName, "Update", "account", 20, 0, 1, null, null, [], []);
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
+
+        Assert.DoesNotContain(plan.Steps.Deletes, d => d.Id == stepId);
+    }
+
+    [Fact]
+    public void Plan_PrimaryMatchPreferredOverSecondary()
+    {
+        // The assembly step name matches snapshot step A by name.
+        // Snapshot also has step B with the same (message+table+stage) but different name.
+        // Primary match (A) should be used; B should be treated as obsolete.
+        var typeId     = Guid.NewGuid();
+        var messageId  = Guid.NewGuid();
+        var filterId   = Guid.NewGuid();
+        var stepAId    = Guid.NewGuid();
+        var stepBId    = Guid.NewGuid();
+        const string stepName = "MyNamespace.MyPlugin: Update of account at PreOperation";
+
+        var stepA = new Entity("sdkmessageprocessingstep", stepAId)
+        {
+            ["name"]               = stepName,
+            ["plugintypeid"]       = new EntityReference("plugintype", typeId),
+            ["stage"]              = new OptionSetValue(20),
+            ["mode"]               = new OptionSetValue(0),
+            ["rank"]               = 1,
+            ["sdkmessageid"]       = new EntityReference("sdkmessage", messageId),
+            ["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId),
+            ["asyncautodelete"]    = false
+        };
+        var stepB = new Entity("sdkmessageprocessingstep", stepBId)
+        {
+            ["name"]               = "MyNamespace.MyPlugin: Update of account",
+            ["plugintypeid"]       = new EntityReference("plugintype", typeId),
+            ["stage"]              = new OptionSetValue(20),
+            ["mode"]               = new OptionSetValue(0),
+            ["rank"]               = 1,
+            ["sdkmessageid"]       = new EntityReference("sdkmessage", messageId),
+            ["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId),
+            ["asyncautodelete"]    = false
+        };
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            steps: [stepA, stepB],
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            filterIds: new() { [(messageId, "account", null)] = filterId });
+
+        var step = new PluginStepMetadata(stepName, "Update", "account", 20, 0, 1, null, null, [], []);
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
+
+        // Primary match used → no upsert (no changes detected), step B is obsolete → deleted
+        Assert.Empty(plan.Steps.Upserts);
+        Assert.Contains(plan.Steps.Deletes, d => d.Id == stepBId);
+        Assert.DoesNotContain(plan.Steps.Deletes, d => d.Id == stepAId);
+    }
+
+    [Fact]
+    public void Plan_NoNameMatchNoSecondaryMatch_CreatesStep()
+    {
+        var typeId    = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var filterId  = Guid.NewGuid();
+        var stepId    = Guid.NewGuid();
+
+        // Snapshot has a Create step; assembly wants an Update step
+        var existingStep = new Entity("sdkmessageprocessingstep", stepId)
+        {
+            ["name"]               = "MyNamespace.MyPlugin: Create of account",
+            ["plugintypeid"]       = new EntityReference("plugintype", typeId),
+            ["stage"]              = new OptionSetValue(40),
+            ["mode"]               = new OptionSetValue(0),
+            ["rank"]               = 1,
+            ["sdkmessageid"]       = new EntityReference("sdkmessage", Guid.NewGuid()),
+            ["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", Guid.NewGuid()),
+            ["asyncautodelete"]    = false
+        };
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            steps: [existingStep],
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            filterIds: new() { [(messageId, "account", null)] = filterId });
+
+        const string newStepName = "MyNamespace.MyPlugin: Update of account";
+        var step = new PluginStepMetadata(newStepName, "Update", "account", 20, 0, 1, null, null, [], []);
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
+
+        var upsert = Assert.Single(plan.Steps.Upserts);
+        Assert.Equal(newStepName, upsert.Name);
+        Assert.True(upsert.IsCreate);
+    }
 }
