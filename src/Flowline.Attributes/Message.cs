@@ -2,7 +2,7 @@ namespace Flowline.Attributes
 {
     /// <summary>
     /// Identifies the Dataverse SDK message a plugin step fires on.
-    /// Used as the <c>on</c> parameter in <see cref="HandlesAttribute"/> to override
+    /// Used as the <c>message</c> parameter in <see cref="HandlesAttribute"/> to override
     /// the naming-convention parser.
     /// </summary>
     /// <remarks>

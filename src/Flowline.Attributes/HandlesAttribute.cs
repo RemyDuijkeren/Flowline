@@ -41,11 +41,11 @@ namespace Flowline.Attributes
         /// <summary>
         /// Declares message and stage for a built-in Dataverse message.
         /// </summary>
-        /// <param name="on">The Dataverse message this step fires on.</param>
+        /// <param name="message">The Dataverse message this step fires on.</param>
         /// <param name="stage">The pipeline stage and execution mode.</param>
-        public HandlesAttribute(Message on, Stage stage)
+        public HandlesAttribute(Message message, Stage stage)
         {
-            On = on.ToString();
+            Message = message.ToString();
             Stage = stage;
             IsCustomMessage = false;
         }
@@ -53,14 +53,14 @@ namespace Flowline.Attributes
         /// <summary>
         /// Declares message and stage for a Custom API message.
         /// </summary>
-        /// <param name="on">
+        /// <param name="message">
         /// The unique name of the Custom API message, e.g. <c>"mynamespace_MyAction"</c>.
         /// </param>
         /// <param name="stage">The pipeline stage and execution mode.</param>
-        public HandlesAttribute(string on, Stage stage)
+        public HandlesAttribute(string message, Stage stage)
         {
-            if (on == null) throw new ArgumentNullException(nameof(on));
-            On = on;
+            if (message == null) throw new ArgumentNullException(nameof(message));
+            Message = message;
             Stage = stage;
             IsCustomMessage = true;
         }
@@ -70,7 +70,7 @@ namespace Flowline.Attributes
         /// For built-in messages this is the <see cref="Message"/> member name (e.g. <c>"Update"</c>).
         /// For Custom API messages this is the unique name supplied at decoration time.
         /// </summary>
-        public string On { get; }
+        public string Message { get; }
 
         /// <summary>
         /// The pipeline stage and execution mode.
