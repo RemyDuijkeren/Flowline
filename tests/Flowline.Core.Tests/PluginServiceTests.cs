@@ -312,7 +312,8 @@ public class PluginServiceTests
 
         await _service.SyncSolutionAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyActivity", "MyNamespace.MyActivity", [], [], true)), "MySolution");
 
-        await _serviceMock.Received(1).RetrieveMultipleAsync(
+        // at least once; orphan snapshot also queries steps (mock returns same assembly for all queries)
+        await _serviceMock.Received().RetrieveMultipleAsync(
             Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep"),
             Arg.Any<CancellationToken>());
     }

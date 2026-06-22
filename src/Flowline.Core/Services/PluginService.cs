@@ -126,7 +126,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         var (assembly, needsUpdate, cascadeDeleteCount) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, force, cancellationToken).ConfigureAwait(false);
         output.Ok($"Assembly registered [bold]{metadata.Name}[/] ({metadata.Version})");
 
-        await WarnOrphanAssembliesAsync(service, metadata.Name, solutionName, force, cancellationToken).ConfigureAwait(false);
+        await WarnOrphanAssembliesAsync(service, metadata.Name, solutionName, force, runMode, cancellationToken).ConfigureAwait(false);
 
         // Phase 2: Load snapshot (all Dataverse state in parallel)
         var snapshot = await output.Status()
@@ -235,6 +235,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         string managedAssemblyName,
         string solutionName,
         bool force,
+        RunMode runMode,
         CancellationToken cancellationToken)
     {
         var query = new QueryExpression("pluginassembly")
@@ -251,15 +252,36 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         foreach (var entity in result.Entities)
         {
             var name = entity.GetAttributeValue<string>("name");
-            if (force)
+
+            var willDelete = force && runMode == RunMode.Normal;
+            var showCascade = force || runMode == RunMode.DryRun;
+
+            output.Warning(willDelete
+                ? $"[bold]{Safe(name)}.dll[/] in environment — no local source. Deleting."
+                : $"[bold]{Safe(name)}.dll[/] in environment — no local source. Use --force to delete.");
+
+            if (showCascade)
             {
-                output.Warning($"[bold]{Safe(name)}.dll[/] in environment — no local source. Deleting.");
+                // Load cascade info — stub metadata skips SDK message/filter/user lookups (not needed here)
+                var stub = new PluginAssemblyMetadata("", "", [], "", "", null, "", []);
+                var orphanSnapshot = await _reader.LoadSnapshotAsync(service, entity.Id, stub, solutionName, cancellationToken).ConfigureAwait(false);
+
+                foreach (var typeName in orphanSnapshot.PluginTypes.Keys.OrderBy(n => n, StringComparer.OrdinalIgnoreCase))
+                    output.Info(willDelete
+                        ? $"  {Safe(typeName)} — cascade delete"
+                        : $"  [red]-[/] {Safe(typeName)} — would delete (cascade)");
+                foreach (var step in orphanSnapshot.Steps)
+                    output.Info(willDelete
+                        ? $"  {Safe(step.GetAttributeValue<string>("name"))} — cascade delete"
+                        : $"  [red]-[/] {Safe(step.GetAttributeValue<string>("name"))} — would delete (cascade)");
+                foreach (var image in orphanSnapshot.Images)
+                    output.Info(willDelete
+                        ? $"  {Safe(image.GetAttributeValue<string>("name"))} — cascade delete"
+                        : $"  [red]-[/] {Safe(image.GetAttributeValue<string>("name"))} — would delete (cascade)");
+            }
+
+            if (willDelete)
                 await service.DeleteAsync("pluginassembly", entity.Id, cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                output.Warning($"[bold]{Safe(name)}.dll[/] in environment — no local source. Use --force to delete.");
-            }
         }
     }
 
