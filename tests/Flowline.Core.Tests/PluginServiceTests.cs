@@ -433,14 +433,9 @@ public class PluginServiceTests
 
         await _service.SyncSolutionAsync(_serviceMock, metadata, "MySolution", RunMode.DryRun);
 
-        Assert.Contains("Registration plan", _console.Output);
-        Assert.Contains("Summary: 0 delete(s), 1 upsert(s), 0 add-to-solution action(s)", _console.Output);
-        Assert.Contains("Plugin types", _console.Output);
-        Assert.Contains("Upserts (1)", _console.Output);
+        // Option A tree: type nodes are labelled by asmPluginType.Name (short name), not full name
         Assert.Contains("MyPlugin", _console.Output);
-        Assert.Contains("[create]", _console.Output);
-        Assert.Contains("workflow=False", _console.Output);
-        Assert.Contains("Steps", _console.Output);
+        Assert.Contains("would create", _console.Output);
     }
 
     [Fact]

@@ -137,10 +137,8 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
         // Phase 3: Plan registration (pure, synchronous)
         var plan = _planner.Plan(snapshot, metadata, assembly, solutionName);
-        WritePlanVerbose(plan);
         output.Info("Registration plan ready");
 
-        // Output cross-solution warnings before execution
         foreach (var warning in plan.Warnings)
             output.Warning(warning);
 
@@ -156,12 +154,10 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 output.Warning($"Updating assembly '{metadata.Name}' which also exists in other solutions: {string.Join(", ", otherSolutions)}.");
         }
 
-        // Dry-run: print preview and return without making any changes
+        WritePlanTree(metadata, needsUpdate, plan, runMode, cascadeDeleteCount);
+
         if (runMode == RunMode.DryRun)
-        {
-            WriteDryRunSummary(metadata, needsUpdate, plan, cascadeDeleteCount);
             return;
-        }
 
         if (!needsUpdate && plan.TotalChanges == 0)
         {
@@ -389,34 +385,172 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             output.Info($"Image '{image.GetAttributeValue<string>("name")}' — cascade delete");
     }
 
-    void WriteDryRunSummary(PluginAssemblyMetadata metadata, bool needsUpdate, RegistrationPlan plan, int cascadeDeleteCount = 0)
+    void WritePlanTree(PluginAssemblyMetadata metadata, bool needsUpdate, RegistrationPlan plan, RunMode runMode, int cascadeDeleteCount = 0)
     {
-        if (needsUpdate)
-            output.Info($"  [yellow]~[/] Assembly '{metadata.Name} ({metadata.Version})' — would update content");
+        if (runMode != RunMode.DryRun && !opt.IsVerbose) return;
 
-        foreach (var a in plan.PluginTypes.Deletes)   output.Info($"  [red]-[/] Plugin type '{a.Name}' — would delete");
-        foreach (var a in plan.Steps.Deletes)         output.Info($"  [red]-[/] Step '{a.Name}' — would delete");
-        foreach (var a in plan.Images.Deletes)        output.Info($"  [red]-[/] Image '{a.Name}' — would delete");
-        foreach (var a in plan.CustomApis.Deletes)    output.Info($"  [red]-[/] Custom API '{a.Name}' — would delete");
-        foreach (var a in plan.RequestParams.Deletes) output.Info($"  [red]-[/] Request parameter '{a.Name}' — would delete");
-        foreach (var a in plan.ResponseProps.Deletes) output.Info($"  [red]-[/] Response property '{a.Name}' — would delete");
+        // --- Name parse helpers ---
+        static string TypeFromStep(string stepName)
+        {
+            var idx = stepName.IndexOf(": ", StringComparison.Ordinal);
+            return idx > 0 ? stepName[..idx] : stepName;
+        }
+        static string DescFromStep(string stepName)
+        {
+            var idx = stepName.IndexOf(": ", StringComparison.Ordinal);
+            return idx > 0 ? stepName[(idx + 2)..] : stepName;
+        }
+        static string ImageShortName(string imageName)
+        {
+            const string marker = "' on '";
+            var idx = imageName.IndexOf(marker, StringComparison.Ordinal);
+            return idx > 0 ? imageName[..idx] : imageName;
+        }
+        static string StepFromImage(string imageName)
+        {
+            const string marker = "' on '";
+            var idx = imageName.IndexOf(marker, StringComparison.Ordinal);
+            return idx > 0 ? imageName[(idx + marker.Length)..] : imageName;
+        }
 
-        foreach (var ups in plan.PluginTypes.Upserts)   output.Info($"  {(ups.IsCreate ? "[green]+[/]" : "[yellow]~[/]")} Plugin type '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
-        foreach (var ups in plan.Steps.Upserts)         output.Info($"  {(ups.IsCreate ? "[green]+[/]" : "[yellow]~[/]")} Step '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
-        foreach (var ups in plan.Images.Upserts)        output.Info($"  {(ups.IsCreate ? "[green]+[/]" : "[yellow]~[/]")} Image '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
-        foreach (var ups in plan.CustomApis.Upserts)    output.Info($"  {(ups.IsCreate ? "[green]+[/]" : "[yellow]~[/]")} Custom API '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
-        foreach (var ups in plan.RequestParams.Upserts) output.Info($"  {(ups.IsCreate ? "[green]+[/]" : "[yellow]~[/]")} Request parameter '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
-        foreach (var ups in plan.ResponseProps.Upserts) output.Info($"  {(ups.IsCreate ? "[green]+[/]" : "[yellow]~[/]")} Response property '{ups.Name}' — would {(ups.IsCreate ? "create" : "update")}");
+        // --- Symbol / verb helpers ---
+        static string Sym(bool delete, bool create) =>
+            delete ? "[red]-[/]" : (create ? "[green]+[/]" : "[yellow]~[/]");
+        string Verb(bool delete, bool create) => runMode == RunMode.DryRun
+            ? (delete ? "would delete" : create ? "would create" : "would update")
+            : (delete ? "delete" : create ? "create" : "update");
 
-        var creates = plan.PluginTypes.Upserts.Count(u => u.IsCreate)
-                      + plan.Steps.Upserts.Count(u => u.IsCreate)
-                      + plan.CustomApis.Upserts.Count(u => u.IsCreate)
-                      + plan.Images.Upserts.Count(u => u.IsCreate)
-                      + plan.RequestParams.Upserts.Count(u => u.IsCreate)
-                      + plan.ResponseProps.Upserts.Count(u => u.IsCreate);
-        var updates = plan.TotalUpserts - creates;
+        // --- Lookups ---
+        // Steps use the fully-qualified class name; type actions may use only the short name.
+        // Build a short→full map from step names so both sides resolve to the same key.
+        static string ShortName(string name)
+        {
+            var idx = name.LastIndexOf('.');
+            return idx >= 0 ? name[(idx + 1)..] : name;
+        }
 
-        output.Ok($"Dry run: {plan.TotalDeletes + cascadeDeleteCount} delete(s), {creates} create(s), {updates} update(s). Run without --dry-run to apply.");
+        var shortToFull = plan.Steps.Deletes.Select(d => TypeFromStep(d.Name))
+            .Concat(plan.Steps.Upserts.Select(u => TypeFromStep(u.Name)))
+            .Where(n => n.Contains('.'))
+            .GroupBy(ShortName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        string ResolveFullName(string name) =>
+            shortToFull.TryGetValue(name, out var full) ? full : name;
+
+        var typeDeletes = plan.PluginTypes.Deletes
+            .ToDictionary(d => ResolveFullName(d.Name), StringComparer.OrdinalIgnoreCase);
+        var typeUpserts = plan.PluginTypes.Upserts
+            .ToDictionary(u => ResolveFullName(u.Name), StringComparer.OrdinalIgnoreCase);
+
+        var stepDelsByType = plan.Steps.Deletes
+            .GroupBy(d => TypeFromStep(d.Name), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+        var stepUpsByType = plan.Steps.Upserts
+            .GroupBy(u => TypeFromStep(u.Name), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var imgDelsByStep = plan.Images.Deletes
+            .GroupBy(d => StepFromImage(d.Name), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+        var imgUpsByStep = plan.Images.Upserts
+            .GroupBy(u => StepFromImage(u.Name), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        // All type names: explicit type actions + types implied by step names
+        var allTypeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        allTypeNames.UnionWith(typeDeletes.Keys);
+        allTypeNames.UnionWith(typeUpserts.Keys);
+        allTypeNames.UnionWith(stepDelsByType.Keys);
+        allTypeNames.UnionWith(stepUpsByType.Keys);
+
+        // --- Assembly root ---
+        var assemblyLabel = needsUpdate
+            ? $"[yellow]~[/] {Safe(metadata.Name)} ({Safe(metadata.Version)}) — {Verb(false, false)} content"
+            : $"{Safe(metadata.Name)} ({Safe(metadata.Version)})";
+        var tree = new Tree(assemblyLabel);
+
+        // --- Plugin types → Steps → Images ---
+        foreach (var typeName in allTypeNames.OrderBy(n => n, StringComparer.OrdinalIgnoreCase))
+        {
+            string typeLabel;
+            if (typeDeletes.ContainsKey(typeName))
+                typeLabel = $"{Sym(true, false)} {Safe(typeName)} — {Verb(true, false)}";
+            else if (typeUpserts.TryGetValue(typeName, out var tu))
+                typeLabel = $"{Sym(false, tu.IsCreate)} {Safe(typeName)} — {Verb(false, tu.IsCreate)}";
+            else
+                typeLabel = $"[dim]{Safe(typeName)}[/]";
+
+            var typeNode = tree.AddNode(typeLabel);
+
+            var delSteps = stepDelsByType.GetValueOrDefault(typeName) ?? [];
+            var upsSteps = stepUpsByType.GetValueOrDefault(typeName) ?? [];
+
+            var allStepNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            allStepNames.UnionWith(delSteps.Select(d => d.Name));
+            allStepNames.UnionWith(upsSteps.Select(u => u.Name));
+
+            foreach (var stepName in allStepNames.OrderBy(DescFromStep, StringComparer.OrdinalIgnoreCase))
+            {
+                string stepDesc = DescFromStep(stepName);
+                string stepLabel;
+                if (delSteps.Any(d => string.Equals(d.Name, stepName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    stepLabel = $"{Sym(true, false)} {Safe(stepDesc)} — {Verb(true, false)}";
+                }
+                else
+                {
+                    var su = upsSteps.First(u => string.Equals(u.Name, stepName, StringComparison.OrdinalIgnoreCase));
+                    var meta = $"stage={OptionValue(su.Entity, "stage")} mode={OptionValue(su.Entity, "mode")} rank={OptionValue(su.Entity, "rank")}";
+                    stepLabel = $"{Sym(false, su.IsCreate)} {Safe(stepDesc)} [dim]{meta}[/] — {Verb(false, su.IsCreate)}";
+                }
+
+                var stepNode = typeNode.AddNode(stepLabel);
+
+                var delImgs = imgDelsByStep.GetValueOrDefault(stepName) ?? [];
+                var upsImgs = imgUpsByStep.GetValueOrDefault(stepName) ?? [];
+
+                foreach (var img in delImgs.OrderBy(d => ImageShortName(d.Name), StringComparer.OrdinalIgnoreCase))
+                    stepNode.AddNode($"{Sym(true, false)} {Safe(ImageShortName(img.Name))} — {Verb(true, false)}");
+
+                foreach (var img in upsImgs.OrderBy(u => ImageShortName(u.Name), StringComparer.OrdinalIgnoreCase))
+                {
+                    var alias  = Safe(img.Entity.GetAttributeValue<string>("entityalias") ?? "(none)");
+                    var itype  = OptionValue(img.Entity, "imagetype");
+                    var attrs  = Safe(img.Entity.GetAttributeValue<string>("attributes") ?? "(all)");
+                    stepNode.AddNode($"{Sym(false, img.IsCreate)} {Safe(ImageShortName(img.Name))} [dim]alias={alias} type={itype} attributes={attrs}[/] — {Verb(false, img.IsCreate)}");
+                }
+            }
+        }
+
+        // --- Flat sections for Custom APIs / RequestParams / ResponseProps ---
+        void AddFlatSection(IHasTreeNodes parent, string title, ActionPlan ap, Func<UpsertAction, string> detail)
+        {
+            if (ap.Deletes.Count == 0 && ap.Upserts.Count == 0) return;
+            var section = parent.AddNode($"[dim]{title}[/]");
+            foreach (var d in ap.Deletes.OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase))
+                section.AddNode($"{Sym(true, false)} {Safe(d.Name)} — {Verb(true, false)}");
+            foreach (var u in ap.Upserts.OrderBy(u => u.Name, StringComparer.OrdinalIgnoreCase))
+                section.AddNode($"{Sym(false, u.IsCreate)} {Safe(u.Name)} [dim]{detail(u)}[/] — {Verb(false, u.IsCreate)}");
+        }
+
+        AddFlatSection(tree, "Custom APIs",          plan.CustomApis,    u => $"binding={OptionValue(u.Entity, "bindingtype")} function={BoolValue(u.Entity, "isfunction")} private={BoolValue(u.Entity, "isprivate")}");
+        AddFlatSection(tree, "Request parameters",   plan.RequestParams, u => $"type={OptionValue(u.Entity, "type")} optional={BoolValue(u.Entity, "isoptional")}");
+        AddFlatSection(tree, "Response properties",  plan.ResponseProps, u => $"type={OptionValue(u.Entity, "type")}");
+
+        output.Write(tree);
+
+        if (runMode == RunMode.DryRun)
+        {
+            var creates = plan.PluginTypes.Upserts.Count(u => u.IsCreate)
+                          + plan.Steps.Upserts.Count(u => u.IsCreate)
+                          + plan.CustomApis.Upserts.Count(u => u.IsCreate)
+                          + plan.Images.Upserts.Count(u => u.IsCreate)
+                          + plan.RequestParams.Upserts.Count(u => u.IsCreate)
+                          + plan.ResponseProps.Upserts.Count(u => u.IsCreate);
+            var updates = plan.TotalUpserts - creates;
+            output.Ok($"Dry run: {plan.TotalDeletes + cascadeDeleteCount} delete(s), {creates} create(s), {updates} update(s). Run without --dry-run to apply.");
+        }
     }
 
     void WriteSnapshotVerbose(RegistrationSnapshot snapshot)
@@ -447,10 +581,6 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                     var stepNode = stepsNode.AddNode(
                         $"[dim]{Safe(step.GetAttributeValue<string>("name") ?? stepId.ToString())} " +
                         $"stage={OptionValue(step, "stage")} mode={OptionValue(step, "mode")} rank={OptionValue(step, "rank")}[/]");
-
-                    var description = step.GetAttributeValue<string>("description");
-                    if (!string.IsNullOrWhiteSpace(description))
-                        stepNode.AddNode($"[dim]Description: {Safe(description)}[/]");
 
                     var filteringAttributes = step.GetAttributeValue<string>("filteringattributes");
                     if (!string.IsNullOrWhiteSpace(filteringAttributes))
@@ -538,15 +668,23 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         if (snapshot.SdkMessageIds.Count > 0)
         {
             var messagesNode = tree.AddNode($"[dim]SDK messages ({snapshot.SdkMessageIds.Count})[/]");
-            foreach (var (name, id) in snapshot.SdkMessageIds.OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
-                messagesNode.AddNode($"[dim]{Safe(name)}: {id}[/]");
+            foreach (var (name, _) in snapshot.SdkMessageIds.OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
+                messagesNode.AddNode($"[dim]{Safe(name)}[/]");
         }
 
         if (snapshot.FilterIds.Count > 0)
         {
+            var msgById = snapshot.SdkMessageIds.ToDictionary(kvp => kvp.Value, kvp => kvp.Key);
             var filtersNode = tree.AddNode($"[dim]SDK message filters ({snapshot.FilterIds.Count})[/]");
-            foreach (var (key, id) in snapshot.FilterIds.OrderBy(kvp => $"{kvp.Key.MessageId}:{kvp.Key.EntityName}:{kvp.Key.SecondaryEntity}", StringComparer.OrdinalIgnoreCase))
-                filtersNode.AddNode($"[dim]message={key.MessageId} entity={Safe(key.EntityName ?? "(any)")} secondary={Safe(key.SecondaryEntity ?? "(none)")}: {id?.ToString() ?? "(none)"}[/]");
+            foreach (var (key, _) in snapshot.FilterIds
+                .OrderBy(kvp => msgById.TryGetValue(kvp.Key.MessageId, out var n) ? n : kvp.Key.MessageId.ToString(), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(kvp => kvp.Key.EntityName, StringComparer.OrdinalIgnoreCase))
+            {
+                var msgName = msgById.TryGetValue(key.MessageId, out var resolvedName) ? resolvedName : key.MessageId.ToString()[..8] + "…";
+                var entity  = key.EntityName ?? "(any)";
+                var secondary = key.SecondaryEntity != null ? $" · {Safe(key.SecondaryEntity)}" : "";
+                filtersNode.AddNode($"[dim]{Safe(msgName)} on {Safe(entity)}{secondary}[/]");
+            }
         }
 
         if (snapshot.SystemUserIds.Count > 0)
@@ -576,61 +714,6 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         var section = tree.AddNode($"[dim]{title} ({unlinked.Count})[/]");
         foreach (var item in unlinked)
             section.AddNode($"[dim]{Safe(NameForEntity(item))} ({item.Id})[/]");
-    }
-
-    void WritePlanVerbose(RegistrationPlan plan)
-    {
-        if (!opt.IsVerbose)
-            return;
-
-        var addToSolutionCount = CountAddToSolutionComponents(plan);
-        var tree = new Tree("[dim]Registration plan[/]") { Style = Style.Parse("dim") };
-        tree.AddNode($"[dim]Summary: {plan.TotalDeletes} delete(s), {plan.TotalUpserts} upsert(s), {addToSolutionCount} add-to-solution action(s)[/]");
-
-        AddActionPlanNode(tree, "Plugin types", plan.PluginTypes,
-            e => $"workflow={BoolValue(e, "isworkflowactivity")}");
-        AddActionPlanNode(tree, "Steps", plan.Steps,
-            e => $"stage={OptionValue(e, "stage")} mode={OptionValue(e, "mode")} rank={OptionValue(e, "rank")}");
-        AddActionPlanNode(tree, "Images", plan.Images,
-            e => $"alias={Safe(e.GetAttributeValue<string>("entityalias") ?? "(none)")} type={OptionValue(e, "imagetype")} attributes={Safe(e.GetAttributeValue<string>("attributes") ?? "(all)")}");
-        AddActionPlanNode(tree, "Custom APIs", plan.CustomApis,
-            e => $"binding={OptionValue(e, "bindingtype")} function={BoolValue(e, "isfunction")} private={BoolValue(e, "isprivate")}");
-        AddActionPlanNode(tree, "Request parameters", plan.RequestParams,
-            e => $"type={OptionValue(e, "type")} optional={BoolValue(e, "isoptional")} entity={Safe(e.GetAttributeValue<string>("logicalentityname") ?? "(none)")}");
-        AddActionPlanNode(tree, "Response properties", plan.ResponseProps,
-            e => $"type={OptionValue(e, "type")} entity={Safe(e.GetAttributeValue<string>("logicalentityname") ?? "(none)")}");
-
-        output.Write(tree);
-    }
-
-    void AddActionPlanNode(IHasTreeNodes parent, string title, ActionPlan actionPlan, Func<Entity, string> entityDetail)
-    {
-        var section = parent.AddNode($"[dim]{title}[/]");
-
-        if (actionPlan.Deletes.Count > 0)
-        {
-            var deletesNode = section.AddNode($"[dim]Deletes ({actionPlan.Deletes.Count})[/]");
-            foreach (var action in actionPlan.Deletes.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-                deletesNode.AddNode($"[dim]{Safe(action.Name)}[/]");
-        }
-
-        if (actionPlan.Upserts.Count > 0)
-        {
-            var upsertsNode = section.AddNode($"[dim]Upserts ({actionPlan.Upserts.Count})[/]");
-            foreach (var action in actionPlan.Upserts.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-            {
-                var detail = entityDetail(action.Entity);
-                var solution = string.IsNullOrWhiteSpace(action.SolutionName) ? "" : $" solution={Safe(action.SolutionName)}";
-                upsertsNode.AddNode($"[dim]{Safe(action.Name)} [[{(action.IsCreate ? "create" : "update")}]] {detail}{solution}[/]");
-            }
-        }
-
-        if (actionPlan.AddSolutionComponents.Count > 0)
-        {
-            var addNode = section.AddNode($"[dim]Add to solution ({actionPlan.AddSolutionComponents.Count})[/]");
-            foreach (var action in actionPlan.AddSolutionComponents.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-                addNode.AddNode($"[dim]{Safe(action.Name)} solution={Safe(action.SolutionName)} componenttype={action.ComponentType}[/]");
-        }
     }
 
     async Task UpdateAssemblyContentAsync(IOrganizationServiceAsync2 service, Entity entity, PluginAssemblyMetadata metadata, CancellationToken cancellationToken)
