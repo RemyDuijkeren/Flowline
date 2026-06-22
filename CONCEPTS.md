@@ -32,6 +32,14 @@ A PAC auth profile created via browser/user login (`pac auth create` with no `--
 ### Generator
 The code generation backend used by `flowline generate` to produce C# model files from Dataverse entity metadata. Three backends are supported: **pac** (Microsoft's modelbuilder via PAC CLI, default), **xrmcontext** (XrmContext v4 dotnet tool, `DefaultAzureCredential` auth, cross-platform), and **xrmcontext3** (Delegate.XrmContext v3 F# exe, connection-string auth, Windows only, bridge). The generator determines the auth flow, output format, and toolchain invoked. Stored in `.flowline` config so subsequent runs don't require re-specifying it.
 
+## Plugin Registration
+
+### Secondary match
+A fallback lookup strategy used during step reconciliation when a Dataverse step's name no longer matches the assembly step's name — typically after a multi-`[Handles]` migration renames a step. Instead of concluding the old step is obsolete and the new one must be created, the planner searches existing Dataverse steps by content: messageId, filterId, stage, and mode. A content match is treated as a rename rather than a delete+create pair. If no content match is found, the old step is deleted and the new one is created.
+
+### Step identity
+The tuple of Dataverse field values that uniquely identifies a plugin step variant independent of its name: `sdkmessageid`, `sdkmessagefilterid`, `stage`, and `mode`. Stage alone is insufficient because `PostOperation` (value 40) is shared by both synchronous (mode=0) and asynchronous (mode=1) steps. All step-matching predicates — primary and secondary — must include all four fields to avoid ambiguous matches between sync and async PostOperation registrations.
+
 ## Web Resources
 
 ### Logical name
