@@ -816,6 +816,14 @@ public class PluginAssemblyReaderTests
         Assert.Contains("[PostImage]", ex.Message);
     }
 
+    [Fact]
+    public void TryBuildSteps_MultiHandles_DuplicateHandles_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            PluginAssemblyReader.TryBuildSteps(typeof(MockErrMultiHandlesDuplicatePlugin)).ToList());
+        Assert.Contains("same step name", ex.Message);
+    }
+
 }
 
 // -- Mock plugin types used by the integration tests above --
@@ -1097,6 +1105,14 @@ internal class MockErrMultiHandlesPreImageNoCompatiblePlugin : IPlugin
 [Handles(Message.Delete, Stage.PreOperation)]
 [Handles(Message.Delete, Stage.PostOperation)]
 internal class MockErrMultiHandlesPostImageNoCompatiblePlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+[Step("account")]
+[Handles(Message.Update, Stage.PostOperation)]
+[Handles(Message.Update, Stage.PostOperation)]
+internal class MockErrMultiHandlesDuplicatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }

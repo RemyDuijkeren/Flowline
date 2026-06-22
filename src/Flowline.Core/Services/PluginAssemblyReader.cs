@@ -344,22 +344,7 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
         if (handlesAttr != null)
         {
             handlesUsed = true;
-            var onArg = handlesAttr.ConstructorArguments[0];
-            if (onArg.ArgumentType.FullName == "System.String")
-            {
-                message = (string)onArg.Value!;
-                if (string.IsNullOrWhiteSpace(message))
-                    throw new InvalidOperationException(
-                        $"{type.Name}: [Handles] message name cannot be empty or whitespace — specify a valid Dataverse message name.");
-            }
-            else
-            {
-                var enumValue = Convert.ToInt32(onArg.Value);
-                if (!MessageValueToName.TryGetValue(enumValue, out message!))
-                    throw new InvalidOperationException(
-                        $"{type.Name}: [Handles] uses an unknown Message enum value ({enumValue}).");
-            }
-
+            message = ParseHandlesMessage(handlesAttr, type.Name);
             (stage, mode) = MapHandlesStage(Convert.ToInt32(handlesAttr.ConstructorArguments[1].Value), type.Name);
         }
         else
@@ -410,23 +395,8 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
         var handles = new List<(string Message, int Stage, int Mode, string StageSuffix)>();
         foreach (var hAttr in allHandlesAttrs)
         {
-            string msg;
-            var onArg = hAttr.ConstructorArguments[0];
-            if (onArg.ArgumentType.FullName == "System.String")
-            {
-                msg = (string)onArg.Value!;
-                if (string.IsNullOrWhiteSpace(msg))
-                    throw new InvalidOperationException(
-                        $"{type.Name}: [Handles] message name cannot be empty or whitespace — specify a valid Dataverse message name.");
-            }
-            else
-            {
-                var enumValue = Convert.ToInt32(onArg.Value);
-                if (!MessageValueToName.TryGetValue(enumValue, out msg!))
-                    throw new InvalidOperationException(
-                        $"{type.Name}: [Handles] uses an unknown Message enum value ({enumValue}).");
-            }
-
+            var msg = ParseHandlesMessage(hAttr, type.Name);
+            ValidateSecondaryTable(type.Name, msg, secondaryTable);
             var (s, m) = MapHandlesStage(Convert.ToInt32(hAttr.ConstructorArguments[1].Value), type.Name);
             ValidateExecutionMode(type.Name, s, m);
             // Mode captured in suffix so PostOperation sync vs async produce distinct names
@@ -831,6 +801,24 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
         if (className.EndsWith("Api", StringComparison.Ordinal))       return className[..^3];
         if (className.EndsWith("Plugin", StringComparison.Ordinal))    return className[..^6];
         return className;
+    }
+
+    private static string ParseHandlesMessage(CustomAttributeData attr, string className)
+    {
+        var onArg = attr.ConstructorArguments[0];
+        if (onArg.ArgumentType.FullName == "System.String")
+        {
+            var msg = (string)onArg.Value!;
+            if (string.IsNullOrWhiteSpace(msg))
+                throw new InvalidOperationException(
+                    $"{className}: [Handles] message name cannot be empty or whitespace — specify a valid Dataverse message name.");
+            return msg;
+        }
+        var enumValue = Convert.ToInt32(onArg.Value);
+        if (!MessageValueToName.TryGetValue(enumValue, out var named))
+            throw new InvalidOperationException(
+                $"{className}: [Handles] uses an unknown Message enum value ({enumValue}).");
+        return named;
     }
 
     // Maps a Stage enum int value (0-3) to the internal ProcessingStage/ProcessingMode pair.

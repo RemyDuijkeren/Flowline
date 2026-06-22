@@ -2,6 +2,7 @@ using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Query;
 using Microsoft.PowerPlatform.Dataverse.Client;
+using Flowline;
 using Flowline.Core.Models;
 using Spectre.Console;
 
@@ -122,7 +123,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         output.Info("Solution found and supported");
 
         // Phase 1: Get or register assembly
-        var (assembly, needsUpdate) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+        var (assembly, needsUpdate, cascadeDeleteCount) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, force, cancellationToken).ConfigureAwait(false);
         output.Ok($"Assembly registered [bold]{metadata.Name}[/] ({metadata.Version})");
 
         await WarnOrphanAssembliesAsync(service, metadata.Name, solutionName, force, cancellationToken).ConfigureAwait(false);
@@ -158,7 +159,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         // Dry-run: print preview and return without making any changes
         if (runMode == RunMode.DryRun)
         {
-            WriteDryRunSummary(metadata, needsUpdate, plan);
+            WriteDryRunSummary(metadata, needsUpdate, plan, cascadeDeleteCount);
             return;
         }
 
@@ -266,8 +267,8 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         }
     }
 
-    async Task<(Entity entity, bool needsUpdate)> GetOrRegisterAssemblyAsync(
-        IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName, RunMode runMode, CancellationToken cancellationToken = default)
+    async Task<(Entity entity, bool needsUpdate, int cascadeDeleteCount)> GetOrRegisterAssemblyAsync(
+        IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName, RunMode runMode, bool force = false, CancellationToken cancellationToken = default)
     {
         var query = new QueryExpression("pluginassembly")
         {
@@ -288,7 +289,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             {
                 output.Info($"  [green]+[/] Assembly '{metadata.Name}' — would create");
                 // Return a dummy entity so that the caller can continue with the dry-run
-                return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false);
+                return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false, 0);
             }
 
             var entity = new Entity("pluginassembly")
@@ -306,24 +307,39 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             output.Ok($"Assembly [bold]{metadata.Name}[/] added");
 
             entity.Id = response.id;
-            return (entity, false);
+            return (entity, false, 0);
         }
 
         var identityChanges = DetectIdentityChanges(existing, metadata);
         if (identityChanges != null)
         {
             var reason = string.Join(", ", identityChanges);
+            var isDowngrade = IsVersionDowngrade(existing, metadata);
+
+            if (isDowngrade && !force && runMode == RunMode.Normal)
+            {
+                output.Error($"Assembly '{metadata.Name}' version downgraded ({reason}) — Dataverse needs a delete and recreate. Use --force to allow downgrade.");
+                throw new FlowlineException(ExitCode.ForceRequired, $"Assembly '{metadata.Name}' version downgraded ({reason}). Use --force to allow.");
+            }
+
+            // Load existing registrations before deletion to show what cascades
+            var oldSnapshot = await _reader.LoadSnapshotAsync(service, existing.Id, metadata, solutionName, cancellationToken).ConfigureAwait(false);
+            var cascadeDeleteCount = oldSnapshot.PluginTypes.Count + oldSnapshot.Steps.Count + oldSnapshot.Images.Count;
 
             switch (runMode)
             {
                 case RunMode.DryRun:
-                    output.Skip($"Assembly '{metadata.Name}' identity changed ({reason}) — would delete and recreate");
-                    return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false);
+                    var downgradeNote = isDowngrade ? " — would be blocked without --force" : "";
+                    output.Warning($"Assembly '{metadata.Name}' identity changed ({reason}){downgradeNote} — would delete and recreate");
+                    WriteCascadePreview(oldSnapshot);
+                    return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false, cascadeDeleteCount);
                 case RunMode.NoDelete:
                     output.Error($"Assembly '{metadata.Name}' identity changed ({reason}) — Dataverse needs a delete and recreate. Re-run without --no-delete to apply, or use --dry-run to preview.");
                     throw new InvalidOperationException($"Assembly '{metadata.Name}' identity changed ({reason}). Cannot continue in no-delete mode — re-run without --no-delete to apply, or use --dry-run to preview.");
                 case RunMode.Normal:
-                    output.Warning($"Assembly '{metadata.Name}' identity changed ({reason}) — deleting and recreating plugin registrations.");
+                    var forceNote = isDowngrade ? " (version downgrade, --force)" : "";
+                    output.Warning($"Assembly '{metadata.Name}' identity changed ({reason}){forceNote} — deleting and recreating all registrations");
+                    WriteCascadeNormal(oldSnapshot);
                     await service.DeleteAsync("pluginassembly", existing.Id, cancellationToken).ConfigureAwait(false);
                     break;
                 default:
@@ -339,21 +355,41 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 ["description"]   = $"{FlowlineMarker} sha256={metadata.Hash}"
             };
 
-            var response = (CreateResponse)await service.ExecuteAsync(
+            var freshResponse = (CreateResponse)await service.ExecuteAsync(
                 new CreateRequest { Target = freshEntity, ["SolutionUniqueName"] = solutionName },
                 cancellationToken).ConfigureAwait(false);
 
-            freshEntity.Id = response.id;
+            freshEntity.Id = freshResponse.id;
             output.Ok($"Assembly [bold]{metadata.Name}[/] recreated");
-            return (freshEntity, false);
+            return (freshEntity, false, 0); // cascade items already logged; fresh assembly starts empty
         }
 
         await AddSolutionComponentAsync(service, existing.Id, solutionName, cancellationToken).ConfigureAwait(false);
         var storedHash = ParseStoredHash(existing.GetAttributeValue<string>("description"));
-        return (existing, storedHash != metadata.Hash);
+        return (existing, storedHash != metadata.Hash, 0);
     }
 
-    void WriteDryRunSummary(PluginAssemblyMetadata metadata, bool needsUpdate, RegistrationPlan plan)
+    void WriteCascadePreview(RegistrationSnapshot snapshot)
+    {
+        foreach (var name in snapshot.PluginTypes.Keys)
+            output.Info($"  [red]-[/] Plugin type '{name}' — would delete (cascade)");
+        foreach (var step in snapshot.Steps)
+            output.Info($"  [red]-[/] Step '{step.GetAttributeValue<string>("name")}' — would delete (cascade)");
+        foreach (var image in snapshot.Images)
+            output.Info($"  [red]-[/] Image '{image.GetAttributeValue<string>("name")}' — would delete (cascade)");
+    }
+
+    void WriteCascadeNormal(RegistrationSnapshot snapshot)
+    {
+        foreach (var name in snapshot.PluginTypes.Keys)
+            output.Info($"Plugin type '{name}' — cascade delete");
+        foreach (var step in snapshot.Steps)
+            output.Info($"Step '{step.GetAttributeValue<string>("name")}' — cascade delete");
+        foreach (var image in snapshot.Images)
+            output.Info($"Image '{image.GetAttributeValue<string>("name")}' — cascade delete");
+    }
+
+    void WriteDryRunSummary(PluginAssemblyMetadata metadata, bool needsUpdate, RegistrationPlan plan, int cascadeDeleteCount = 0)
     {
         if (needsUpdate)
             output.Info($"  [yellow]~[/] Assembly '{metadata.Name} ({metadata.Version})' — would update content");
@@ -380,7 +416,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                       + plan.ResponseProps.Upserts.Count(u => u.IsCreate);
         var updates = plan.TotalUpserts - creates;
 
-        output.Ok($"Dry run: {plan.TotalDeletes} delete(s), {creates} create(s), {updates} update(s). Run without --dry-run to apply.");
+        output.Ok($"Dry run: {plan.TotalDeletes + cascadeDeleteCount} delete(s), {creates} create(s), {updates} update(s). Run without --dry-run to apply.");
     }
 
     void WriteSnapshotVerbose(RegistrationSnapshot snapshot)
@@ -650,6 +686,14 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         if (!Version.TryParse(registered, out var reg)) return false;
         if (!Version.TryParse(local, out var loc))      return false;
         return reg.Major != loc.Major || reg.Minor != loc.Minor;
+    }
+
+    static bool IsVersionDowngrade(Entity existing, PluginAssemblyMetadata metadata)
+    {
+        var registeredVersion = existing.GetAttributeValue<string>("version");
+        if (!Version.TryParse(registeredVersion, out var reg)) return false;
+        if (!Version.TryParse(metadata.Version, out var loc)) return false;
+        return loc < reg;
     }
 
     static int CountAddToSolutionComponents(RegistrationPlan plan) =>

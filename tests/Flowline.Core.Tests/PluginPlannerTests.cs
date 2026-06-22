@@ -291,6 +291,29 @@ public class PluginPlannerTests
     }
 
     [Fact]
+    public void Plan_NewImage_UpsertNameIncludesStepContext()
+    {
+        var typeId    = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        const string stepName = "MyNamespace.MyPlugin: Update of account";
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId });
+
+        var image = new PluginImageMetadata("preimage", "preimage", 0, "name");
+        var step = new PluginStepMetadata(stepName, "Update", "account", 20, 0, 1, null, null, [image], []);
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
+
+        var imageAction = Assert.Single(plan.Images.Upserts);
+        Assert.Contains(" on ", imageAction.Name);
+        Assert.Contains(stepName, imageAction.Name);
+    }
+
+    [Fact]
     public void Plan_UnsupportedMessageForImage_ThrowsClearException()
     {
         var typeId = Guid.NewGuid();

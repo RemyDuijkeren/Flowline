@@ -225,7 +225,9 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
                     s.GetAttributeValue<EntityReference?>("sdkmessageid")?.Id == messageId &&
                     s.GetAttributeValue<EntityReference?>("sdkmessagefilterid")?.Id == filterId &&
                     s.GetAttributeValue<OptionSetValue>("stage")?.Value == asmStep.Stage &&
-                    !asmStepNames.Contains(s.GetAttributeValue<string>("name")));
+                    s.GetAttributeValue<OptionSetValue>("mode")?.Value == asmStep.Mode &&
+                    !asmStepNames.Contains(s.GetAttributeValue<string>("name")) &&
+                    !secondaryMatchedIds.Contains(s.Id));
 
                 if (secondaryMatch != null)
                 {

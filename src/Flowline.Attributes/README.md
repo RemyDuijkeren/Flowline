@@ -335,7 +335,7 @@ When two handles share the same message (e.g., `Update PreOperation + Update Pos
 
 `[Filter]`, `[PreImage]`, and `[PostImage]` are applied per-step based on compatibility — `[Filter]` applies only to Update/UpdateMultiple steps; `[PreImage]` not on Create; `[PostImage]` not on Delete at PostOperation.
 
-**Flowline emits a per-step warning** nudging you to split the class into named subclasses — each covering one step — as the long-term goal.
+**Flowline emits a warning** (once per class, on the first step) nudging you to split the class into named subclasses — each covering one step — as the long-term goal.
 
 **Splitting warning:** renaming the class after splitting changes the Dataverse step names. The next `flowline push` deletes the old steps and creates new ones. Plan the split for a maintenance window to avoid registered-step downtime.
 

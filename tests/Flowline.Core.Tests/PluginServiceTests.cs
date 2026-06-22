@@ -3,6 +3,7 @@ using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Query;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using NSubstitute;
+using Flowline;
 using Flowline.Core.Services;
 using Flowline.Core.Models;
 using Flowline.Core;
@@ -942,6 +943,132 @@ public class PluginServiceTests
     public void HasMajorOrMinorVersionChange_ReturnsExpected(string? registered, string local, bool expected)
     {
         Assert.Equal(expected, PluginService.HasMajorOrMinorVersionChange(registered, local));
+    }
+
+    // -- Version downgrade blocking --
+
+    [Fact]
+    public async Task SyncAsync_VersionDowngrade_NoForce_ThrowsFlowlineException()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, version: "3.4.0.0"));
+        SetupPluginTypes();
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, Metadata(version: "1.0.0.0"), "MySolution", RunMode.Normal));
+
+        Assert.Equal(ExitCode.ForceRequired, ex.ExitCode);
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+        Assert.Contains("--force", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncAsync_VersionDowngrade_WithForce_DeletesAndRecreates()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, version: "3.4.0.0"));
+        SetupPluginTypes();
+        SetupIdentityChangeExecuteAsync();
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "1.0.0.0"), "MySolution", RunMode.Normal, force: true);
+
+        // The mock returns the existing assembly for ALL pluginassembly queries (including the orphan check),
+        // so DeleteAsync may be called more than once — verify at least the identity-change delete happened
+        await _serviceMock.Received().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), Arg.Any<CancellationToken>());
+        Assert.Contains("version downgrade", _console.Output);
+        Assert.Contains("recreated", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncAsync_DryRun_VersionDowngrade_ShowsBlockedNote()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, version: "3.4.0.0"));
+        SetupPluginTypes();
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "1.0.0.0"), "MySolution", RunMode.DryRun);
+
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+        Assert.Contains("would be blocked without --force", _console.Output);
+        Assert.Contains("would delete and recreate", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncAsync_VersionUpgrade_NoForce_ProceedsWithoutBlocking()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, version: "1.0.0.0"));
+        SetupPluginTypes();
+        SetupIdentityChangeExecuteAsync();
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "3.4.0.0"), "MySolution", RunMode.Normal);
+
+        await _serviceMock.Received(1).DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncAsync_DryRun_IdentityChanged_ShowsCascadeItems()
+    {
+        var assemblyId = Guid.NewGuid();
+        var typeId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, pkt: "aabbccdd11223344"));
+        SetupPluginTypes(new Entity("plugintype", typeId) { ["typename"] = "MyPlugin.Handler", ["isworkflowactivity"] = false });
+        SetupSteps(new Entity("sdkmessageprocessingstep", Guid.NewGuid())
+        {
+            ["name"] = "MyPlugin.Handler: Create of contact",
+            ["plugintypeid"] = new EntityReference("plugintype", typeId)
+        });
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(pkt: "1122334455667788"), "MySolution", RunMode.DryRun);
+
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+        Assert.Contains("would delete (cascade)", _console.Output);
+        Assert.Contains("MyPlugin.Handler", _console.Output);
+        Assert.Contains("MyPlugin.Handler: Create of contact", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncAsync_Normal_IdentityChanged_ShowsCascadeItems()
+    {
+        var assemblyId = Guid.NewGuid();
+        var typeId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, pkt: "aabbccdd11223344"));
+        SetupPluginTypes(new Entity("plugintype", typeId) { ["typename"] = "MyPlugin.Handler", ["isworkflowactivity"] = false });
+        SetupSteps(new Entity("sdkmessageprocessingstep", Guid.NewGuid())
+        {
+            ["name"] = "MyPlugin.Handler: Create of contact",
+            ["plugintypeid"] = new EntityReference("plugintype", typeId)
+        });
+        SetupIdentityChangeExecuteAsync();
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(pkt: "1122334455667788"), "MySolution", RunMode.Normal);
+
+        Assert.Contains("cascade delete", _console.Output);
+        Assert.Contains("MyPlugin.Handler", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncAsync_DryRun_IdentityChanged_CascadeCountIncludedInSummary()
+    {
+        var assemblyId = Guid.NewGuid();
+        var typeId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, pkt: "aabbccdd11223344"));
+        SetupPluginTypes(new Entity("plugintype", typeId) { ["typename"] = "MyPlugin.Handler", ["isworkflowactivity"] = false });
+        SetupSteps(new Entity("sdkmessageprocessingstep", Guid.NewGuid())
+        {
+            ["name"] = "MyPlugin.Handler: Create of contact",
+            ["plugintypeid"] = new EntityReference("plugintype", typeId)
+        });
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(pkt: "1122334455667788"), "MySolution", RunMode.DryRun);
+
+        // The mock returns identical types/steps for both the cascade snapshot (old assembly)
+        // and the planning snapshot (fake new assembly), so the delete count is doubled vs production.
+        // In production, the fake-entity snapshot is empty and only cascadeDeleteCount contributes.
+        // Just verify that the summary line contains a non-zero delete count.
+        Assert.Contains("delete(s)", _console.Output);
+        Assert.DoesNotContain("0 delete(s)", _console.Output);
     }
 
     [Fact]
