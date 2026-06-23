@@ -1,6 +1,6 @@
 ---
 name: Flowline
-last_updated: 2026-06-12
+last_updated: 2026-06-23
 ---
 
 # Flowline Strategy
@@ -88,15 +88,20 @@ over unmanaged.
 - **2026-06-07** — AI agent improvements: typed exit codes (ExitCode enum), AGENTS.md scaffolding in `flowline clone`, expanded command help text ✓
 - **2026-06-10** — Deploy command complete ✓
 - **2026-06-15** — Orphan cleanup on deploy (`--no-delete`): auto-delete + report-only classification, cross-solution safety check ✓
-- **2026-06-20** — WebResource dependencies push support (requirements: `docs/brainstorms/2026-06-12-webresource-dependencies-requirements.md`)
-- **2026-06-22** — `flowline init` for greenfield projects (create publisher + solution in DEV, scaffold local structure)
+- **2026-06-21** — WebResource dependencies push support (`// flowline:depends`, RESX auto-link) ✓
+- **2026-06-21** — v0.7.0 released to NuGet ✓
 - **2026-06-24** — Migration guide and command reference on GitHub Wiki; README trimmed to overview + quick start ✓
-- **2026-06-27** — CHANGELOG with honest "not yet supported" section
+- **2026-06-27** — CHANGELOG with full version history (0.1.0–0.7.0) ✓
+- **2026-06-23** — `generate` safe deletion: user-owned files preserved via `IsGeneratorOwned` check during temp-swap ✓
+- **2026-06-23** — `provision` region guard: error on config-stored target URL in different region than prod ✓
+- **2026-06-26** — `deploy` orphan cleanup integration test: validate AE1–AE8 against real org; confirm `componenttype` constants in `ComponentClassifier`
+- **2026-06-28** — `deploy` pre-backup + `--skip-backup` opt-out (could-have)
 - **2026-07-01** — v1.0 release
 
-## Not working on
+## Deferred
 
-- Restore state of workflows on deploy (`--no-restore` flag, post-v1; requirements: `docs/brainstorms/2026-06-12-deploy-state-restoration-requirements.md`)
+- `flowline init` for greenfield projects (create publisher + solution in DEV, scaffold local structure) — post-v1
+- Restore state of workflows on deploy (`--no-restore` flag; requirements: `docs/brainstorms/2026-06-12-deploy-state-restoration-requirements.md`) — post-v1
 
 ## Marketing
 

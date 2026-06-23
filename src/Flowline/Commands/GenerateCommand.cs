@@ -288,22 +288,37 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         sw.Stop();
 
         // --- Shared tail (all generators) ---
-        if (!Directory.EnumerateFiles(tempFolder, "*", SearchOption.AllDirectories).Any())
-            throw new FlowlineException(ExitCode.BuildFailed,
-                "Generator reported success but produced no output. Re-run with --verbose to see tool output.");
-
-        if (Directory.Exists(modelsFolder))
+        try
         {
-            foreach (var file in Directory.EnumerateFiles(modelsFolder, "*", SearchOption.AllDirectories).Where(f => !IsGeneratorOwned(f)))
+            var generatorPaths = Directory.EnumerateFiles(tempFolder, "*", SearchOption.AllDirectories)
+                .Select(f => Path.GetRelativePath(tempFolder, f))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (generatorPaths.Count == 0)
+                throw new FlowlineException(ExitCode.BuildFailed,
+                    "Generator reported success but produced no output. Re-run with --verbose to see tool output.");
+
+            if (Directory.Exists(modelsFolder))
             {
-                var dest = Path.Combine(tempFolder, Path.GetRelativePath(modelsFolder, file));
-                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-                if (!File.Exists(dest))
+
+                foreach (var file in Directory.EnumerateFiles(modelsFolder, "*", SearchOption.AllDirectories))
+                {
+                    var rel = Path.GetRelativePath(modelsFolder, file);
+                    if (generatorPaths.Contains(rel) || IsGeneratorOwned(file)) continue;
+                    var dest = Path.Combine(tempFolder, rel);
+                    Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
                     File.Copy(file, dest);
+                }
+                Directory.Delete(modelsFolder, recursive: true);
             }
-            Directory.Delete(modelsFolder, recursive: true);
+            Directory.Move(tempFolder, modelsFolder);
         }
-        Directory.Move(tempFolder, modelsFolder);
+        catch
+        {
+            if (Directory.Exists(tempFolder))
+                Directory.Delete(tempFolder, recursive: true);
+            throw;
+        }
 
         // Save to .flowline — project mode only, skipped when --output overrides the path
         if (!standaloneMode && projectSln != null && string.IsNullOrWhiteSpace(settings.Output))
