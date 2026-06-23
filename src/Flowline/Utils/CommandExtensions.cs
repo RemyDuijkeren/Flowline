@@ -42,9 +42,9 @@ public static class CommandExtensions
                        if (string.IsNullOrWhiteSpace(s)) return;
 
                        var display = lineTransform != null ? lineTransform(s) : s;
-                       AnsiConsole.MarkupLineInterpolated($"[dim]{prefix}: {display}[/]");
+                       AnsiConsole.MarkupLine($"[dim]{Markup.Escape(prefix)}: {Markup.Escape(display)}[/]");
                    }))
-                   .WithStandardErrorPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[red]{prefix}: {s}[/]")));
+                   .WithStandardErrorPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLine($"[red]{Markup.Escape(prefix)}: {Markup.Escape(s)}[/]")));
         }
 
         return command
@@ -53,7 +53,7 @@ public static class CommandExtensions
                    SetStatusWithExecutionTime(ctx, s);
                    DisplayErrorMessage(s, prefix);
                }))
-               .WithStandardErrorPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLineInterpolated($"[red]{prefix}: {s}[/]")));
+               .WithStandardErrorPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLine($"[red]{Markup.Escape(prefix)}: {Markup.Escape(s)}[/]")));
     }
 
     static void SetStatusWithExecutionTime(StatusContext? ctx, string s)
@@ -74,19 +74,19 @@ public static class CommandExtensions
         // For PAC async operation errors, we want to output the error message explicitly
         if (s.Contains("Error: ") || s.Contains("The reason given was: "))
         {
-            AnsiConsole.MarkupLineInterpolated($"[red]{targetFilePath}: {s}[/]");
+            AnsiConsole.MarkupLine($"[red]{Markup.Escape(targetFilePath ?? string.Empty)}: {Markup.Escape(s)}[/]");
             return true;
         }
 
         // For dotnet errors, we want to output the error message explicitly
         if (s.Contains(": error"))
         {
-            AnsiConsole.MarkupLineInterpolated($"[red]{targetFilePath}: {s}[/]");
+            AnsiConsole.MarkupLine($"[red]{Markup.Escape(targetFilePath ?? string.Empty)}: {Markup.Escape(s)}[/]");
             return true;
         }
         if (s.Contains(": warning"))
         {
-            AnsiConsole.MarkupLineInterpolated($"[yellow]{targetFilePath}: {s}[/]");
+            AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(targetFilePath ?? string.Empty)}: {Markup.Escape(s)}[/]");
             return true;
         }
 
