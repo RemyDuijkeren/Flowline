@@ -53,10 +53,6 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
         EnvironmentUrlParts urlParts = PacUtils.GetPartsFromEnvUrl(prodEnv.EnvironmentUrl!);
         var targetUrl = $"https://{urlParts.Organization}-{suffix.ToLower()}.{urlParts.Host}/";
 
-        // TODO: verify if the target environment url is given, is in the same region. Is this needed?
-        // if <org> already ends with your suffix, don't duplicate.
-        // If your prod org is named contoso-prod, add a config "swap map" so -prod → -dev/-stg instead of appending.
-
         string? url = settings.Role switch
         {
             Role.Dev  => Config!.GetOrUpdateDevUrl(targetUrl, settings),
@@ -69,6 +65,14 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
         {
             Console.Error("Couldn't build a valid target URL — check your .flowline config");
             return (int)ExitCode.ConfigInvalid;
+        }
+
+        // Guard: config-stored URL might be from a previous provision in a different region
+        var storedUrlParts = PacUtils.GetPartsFromEnvUrl(url);
+        if (!string.Equals(storedUrlParts.Region, urlParts.Region, StringComparison.OrdinalIgnoreCase))
+        {
+            Console.Error($"[bold]{settings.Role}[/] URL in .flowline is in '{storedUrlParts.Region}' but prod is in '{urlParts.Region}' — cross-region copy isn't supported. Use environments in the same region.");
+            return (int)ExitCode.ValidationFailed;
         }
 
         // Validate target environment
