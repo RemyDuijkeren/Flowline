@@ -64,14 +64,14 @@ public class XrmContext3GeneratorTests
     // ── Null auth guard ───────────────────────────────────────────────────────
 
     [Fact]
-    public async Task RunAsync_NullAuth_ThrowsFlowlineExceptionConfigInvalid()
+    public async Task RunAsync_NullAuth_ThrowsFlowlineExceptionNotAuthenticated()
     {
         var context = MakeContext(auth: null);
 
         var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
             _generator.RunAsync(context, CancellationToken.None));
 
-        ex.ExitCode.Should().Be(ExitCode.ConfigInvalid);
+        ex.ExitCode.Should().Be(ExitCode.NotAuthenticated);
     }
 
     [Fact]

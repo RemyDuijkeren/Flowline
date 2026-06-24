@@ -41,7 +41,7 @@ public class XrmContextToolProvider
     public virtual async Task<string> GetExePathAsync(CancellationToken cancellationToken = default)
     {
         if (!IsWindows())
-            throw new FlowlineException(ExitCode.ConfigInvalid,
+            throw new FlowlineException(ExitCode.ValidationFailed,
                 "XrmContext generator requires Windows. Use --generator pac on Linux/macOS.");
 
         if (Directory.Exists(_nugetGlobalCache))

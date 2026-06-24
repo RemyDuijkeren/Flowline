@@ -247,7 +247,7 @@ public class XrmContextToolProviderTests : IDisposable
     // ── OS guard ────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetExePathAsync_ThrowsConfigInvalid_OnNonWindows()
+    public async Task GetExePathAsync_ThrowsValidationFailed_OnNonWindows()
     {
         var provider = new NonWindowsXrmContextToolProvider(
             MakeHttpClient(_ => throw new Exception("should not be called")),
@@ -257,7 +257,7 @@ public class XrmContextToolProviderTests : IDisposable
         var act = () => provider.GetExePathAsync();
 
         await act.Should().ThrowAsync<FlowlineException>()
-            .Where(e => e.ExitCode == ExitCode.ConfigInvalid);
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed);
     }
 
     private class TestableXrmContextToolProvider(

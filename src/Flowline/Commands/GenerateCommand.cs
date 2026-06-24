@@ -231,21 +231,25 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             if (effectiveProfile.IsUniversal)
             {
                 if (!ConsoleHelper.IsInteractive(settings))
-                    throw new FlowlineException(ExitCode.ConfigInvalid,
-                        "XrmContext3 requires browser OAuth which is not available in non-interactive mode. Use --generator xrmcontext (XrmContext v4) for non-interactive use.");
+                    throw new FlowlineException(ExitCode.NotAuthenticated,
+                        "xrmcontext3 uses ADAL browser OAuth for UNIVERSAL profiles — not available in non-interactive/CI mode. " +
+                        "Pass --client-id <CLIENT_ID> --client-secret <SECRET> to authenticate as a service principal. " +
+                        "Alternatively, upgrade to XrmContext v4 using --generator xrmcontext which produces a different output layout.");
                 xrmContextAuth = new XrmContextAuth.BrowserOAuth(DataverseConnector.PacCliAppId);
             }
             else if (effectiveProfile.IsServicePrincipal)
             {
                 if (string.IsNullOrEmpty(effectiveProfile.ApplicationId))
-                    throw new FlowlineException(ExitCode.ConfigInvalid, "Service principal profile is missing ApplicationId.");
+                    throw new FlowlineException(ExitCode.NotAuthenticated,
+                        "Service principal profile is missing ApplicationId — pass --client-id <CLIENT_ID> --client-secret <SECRET> to supply credentials directly.");
                 resolvedSecret = await secretResolver.ResolveAsync(effectiveProfile, settings.ClientSecret);
                 xrmContextAuth = new XrmContextAuth.ClientSecret(effectiveProfile.ApplicationId, resolvedSecret);
             }
             else
             {
-                throw new FlowlineException(ExitCode.ConfigInvalid,
-                    $"PAC profile kind '{effectiveProfile.Kind}' is not supported by XrmContext3. Use a UNIVERSAL or service principal profile, or switch to --generator pac.");
+                throw new FlowlineException(ExitCode.NotAuthenticated,
+                    $"PAC profile kind '{effectiveProfile.Kind}' is not supported by xrmcontext3 — switch to a service principal or UNIVERSAL profile, or pass --client-id <CLIENT_ID> --client-secret <SECRET>. " +
+                    $"run: pac auth select");
             }
         }
         else if (resolvedGeneratorType is GeneratorType.XrmContext && effectiveProfile.IsServicePrincipal)
@@ -272,7 +276,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         );
 
         var generator = generators.SingleOrDefault(g => g.Type == resolvedGeneratorType)
-            ?? throw new FlowlineException(ExitCode.ConfigInvalid, $"Generator '{resolvedGeneratorType}' is not registered. This is a bug.");
+            ?? throw new FlowlineException(ExitCode.GeneralError, $"Generator '{resolvedGeneratorType}' is not registered. This is a bug.");
 
         var sw = Stopwatch.StartNew();
         try
