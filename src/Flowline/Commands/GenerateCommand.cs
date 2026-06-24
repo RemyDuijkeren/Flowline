@@ -221,9 +221,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         if (Directory.Exists(tempFolder))
             Directory.Delete(tempFolder, recursive: true);
 
-        var outputLabel = standaloneMode
-            ? Path.GetRelativePath(RootFolder, modelsFolder).Replace('\\', '/')
-            : $"{solutionName}/Plugins/Models";
+        var outputLabel = Path.GetRelativePath(RootFolder, modelsFolder).Replace('\\', '/');
 
         XrmContextAuth? xrmContextAuth = null;
         string? resolvedSecret = null;

@@ -10,7 +10,7 @@ public static class CommandExtensions
     {
         if (verbose)
         {
-            AnsiConsole.MarkupLine($"[dim]Executing: [italic]{Markup.Escape(command.ToString())}[/][/]");
+            AnsiConsole.MarkupLine($"[dim]Executing: [italic]{Markup.Escape(RedactSensitiveArgs(command.ToString()))}[/][/]");
         }
         return command;
     }
@@ -54,11 +54,11 @@ public static class CommandExtensions
     }
 
     static readonly Regex s_sensitiveArgPattern =
-        new(@"(--client-secret)\s+\S+|(/mfaClientSecret:)\S+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        new(@"(?<dashFlag>--client-secret)\s+(?:""[^""]*""|\S+)|(?<colonFlag>/mfaClientSecret:)(?:""[^""]*""|\S+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     static string RedactSensitiveArgs(string cmdStr) =>
         s_sensitiveArgPattern.Replace(cmdStr, m =>
-            m.Groups[1].Success ? $"{m.Groups[1].Value} ***" : $"{m.Groups[2].Value}***");
+            m.Groups["dashFlag"].Success ? $"{m.Groups["dashFlag"].Value} ***" : $"{m.Groups["colonFlag"].Value}***");
 
     static void SetStatusWithExecutionTime(StatusContext? ctx, string s)
     {
