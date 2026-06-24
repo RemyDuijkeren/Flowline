@@ -108,7 +108,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
             throw new FlowlineException(ExitCode.ConnectionFailed, $"{label} environment not found — check the URL or your PAC login.");
 
         if (role == EnvironmentRole.Prod && env.Type != "Production")
-            throw new FlowlineException(ExitCode.ValidationFailed, "That environment isn't Production type.");
+            throw new FlowlineException(ExitCode.ValidationFailed, "That environment isn't Production type — verify the URL in .flowline points to a Production environment.");
 
         if (role != EnvironmentRole.Prod && env.Type == "Production")
             throw new FlowlineException(ExitCode.ValidationFailed, "That's a Production environment — use a sandbox or dev instead.");

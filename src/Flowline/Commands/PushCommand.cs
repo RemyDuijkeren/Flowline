@@ -266,7 +266,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         {
             scope = settings.Scopes.Aggregate(PushScope.None, (current, s) => current | s);
             if (scope.HasFlag(PushScope.AssemblyOnly) && scope.HasFlag(PushScope.Plugins))
-                throw new FlowlineException(ExitCode.GeneralError, "--scope assemblyonly and --scope plugins are mutually exclusive.");
+                throw new FlowlineException(ExitCode.ValidationFailed, "--scope assemblyonly and --scope plugins are mutually exclusive.");
         }
         else if (standaloneMode)
         {
@@ -282,9 +282,9 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (standaloneMode)
         {
             if ((scope.HasFlag(PushScope.Plugins) || scope.HasFlag(PushScope.AssemblyOnly)) && string.IsNullOrWhiteSpace(settings.PluginFile))
-                throw new FlowlineException(ExitCode.ConfigInvalid, "--scope plugins/assemblyonly requires --pluginFile.");
+                throw new FlowlineException(ExitCode.ValidationFailed, "--scope plugins/assemblyonly requires --pluginFile.");
             if (scope.HasFlag(PushScope.WebResources) && string.IsNullOrWhiteSpace(settings.WebResources))
-                throw new FlowlineException(ExitCode.ConfigInvalid, "--scope webresources requires --webresources.");
+                throw new FlowlineException(ExitCode.ValidationFailed, "--scope webresources requires --webresources.");
         }
 
         return scope;
@@ -293,7 +293,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     internal static void ValidateStandaloneMode(Settings settings, string rootFolder)
     {
         if (File.Exists(Path.Combine(rootFolder, ProjectConfig.s_configFileName)))
-            throw new FlowlineException(ExitCode.GeneralError, "--pluginFile and --webresources cannot be used inside a Flowline project folder. Use project mode or run standalone push from another folder.");
+            throw new FlowlineException(ExitCode.ValidationFailed, "--pluginFile and --webresources cannot be used inside a Flowline project folder. Use project mode or run standalone push from another folder.");
     }
 
     internal static string ResolveStandaloneSolutionName(Settings settings)
@@ -301,7 +301,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (!string.IsNullOrWhiteSpace(settings.Solution))
             return settings.Solution.Trim();
 
-        throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required in standalone mode — pass it as the first argument.");
+        throw new FlowlineException(ExitCode.ValidationFailed, "Solution name is required in standalone mode — pass it as the first argument.");
     }
 
     internal static string ResolveStandaloneEnvironmentUrl(Settings settings, DataverseConnector dataverseConnector)
@@ -313,7 +313,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (!string.IsNullOrWhiteSpace(profile?.Resource))
             return profile.Resource.Trim();
 
-        throw new FlowlineException(ExitCode.ConfigInvalid, "Dev URL is required in standalone mode — use --dev <URL> or select a resource-specific PAC profile.");
+        throw new FlowlineException(ExitCode.ValidationFailed, "Dev URL is required in standalone mode — use --dev <URL> or select a resource-specific PAC profile.");
     }
 
     internal static string ResolveStandalonePluginFilePath(Settings settings)
@@ -322,10 +322,10 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         var ext = Path.GetExtension(path);
 
         if (string.Equals(ext, ".nupkg", StringComparison.OrdinalIgnoreCase))
-            throw new FlowlineException(ExitCode.GeneralError, "NuGet packages not yet supported — use a .dll file.");
+            throw new FlowlineException(ExitCode.ValidationFailed, "NuGet packages not yet supported — use a .dll file.");
 
         if (!string.Equals(ext, ".dll", StringComparison.OrdinalIgnoreCase))
-            throw new FlowlineException(ExitCode.ConfigInvalid, "--pluginFile must point to a .dll file.");
+            throw new FlowlineException(ExitCode.ValidationFailed, "--pluginFile must point to a .dll file.");
 
         if (!File.Exists(path))
             throw new FlowlineException(ExitCode.NotFound, $"Plugin file not found: {path}");

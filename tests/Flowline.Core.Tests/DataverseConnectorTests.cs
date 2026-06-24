@@ -373,7 +373,7 @@ public class DataverseConnectorTests
                 username: "user;evil=inject",
                 password: "pass"));
 
-        Assert.Equal(ExitCode.NotAuthenticated, ex.ExitCode);
+        Assert.Equal(ExitCode.ValidationFailed, ex.ExitCode);
     }
 
     [Fact]
@@ -386,7 +386,7 @@ public class DataverseConnectorTests
                 username: "user@contoso.com",
                 password: "pa;LoginPrompt=Auto"));
 
-        Assert.Equal(ExitCode.NotAuthenticated, ex.ExitCode);
+        Assert.Equal(ExitCode.ValidationFailed, ex.ExitCode);
     }
 
     [Fact]

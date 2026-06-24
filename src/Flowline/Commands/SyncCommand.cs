@@ -43,7 +43,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         // Solution name is required
         var (projectSln, slnInfo) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, settings.IncludeManaged.IsSet ? settings.IncludeManaged.Value : (bool?)null, settings, cancellationToken);
         if (slnInfo.IsManaged)
-            throw new FlowlineException(ExitCode.ValidationFailed, "Managed solutions are not supported for sync");
+            throw new FlowlineException(ExitCode.ValidationFailed, "Managed solutions are not supported for sync — use an unmanaged solution.");
 
         // Validate that we have an initialized project
         var slnFolder = Path.Combine(RootFolder, "solutions", projectSln.Name);

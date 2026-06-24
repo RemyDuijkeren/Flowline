@@ -309,7 +309,7 @@ public static class PacUtils
             .ExecuteBufferedAsync(cancellationToken);
 
         if (result.ExitCode != 0)
-            throw new FlowlineException(ExitCode.ConnectionFailed, "Failed to read solution version from Dataverse.");
+            throw new FlowlineException(ExitCode.ConnectionFailed, "Failed to read solution version from Dataverse — check the environment URL and your PAC login.");
 
         var version = ParseVersionFromPacOutput(result.StandardOutput);
         if (string.IsNullOrEmpty(version))
@@ -334,7 +334,7 @@ public static class PacUtils
             .ExecuteBufferedAsync(cancellationToken);
 
         if (result.ExitCode != 0)
-            throw new FlowlineException(ExitCode.ConnectionFailed, $"Failed to set solution version to {version}.");
+            throw new FlowlineException(ExitCode.ConnectionFailed, $"Failed to set solution version to {version} — check the environment URL and your PAC login.");
     }
 
     public static async Task<WhoAmIInfo?> GetEnvWhoAsync(string environmentUrl, CancellationToken cancellationToken = default)

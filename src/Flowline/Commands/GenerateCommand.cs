@@ -104,11 +104,11 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         if (standaloneMode)
         {
             if (string.IsNullOrWhiteSpace(settings.Solution))
-                throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — pass it as the first argument.");
+                throw new FlowlineException(ExitCode.ValidationFailed, "Solution name is required — pass it as the first argument.");
             if (string.IsNullOrWhiteSpace(settings.DevUrl))
-                throw new FlowlineException(ExitCode.ConfigInvalid, "Dev URL is required in standalone mode — use --dev <URL>.");
+                throw new FlowlineException(ExitCode.ValidationFailed, "Dev URL is required in standalone mode — use --dev <URL>.");
             if (string.IsNullOrWhiteSpace(settings.Output))
-                throw new FlowlineException(ExitCode.ConfigInvalid, "Output folder is required in standalone mode — use -o <PATH> or --output <PATH>.");
+                throw new FlowlineException(ExitCode.ValidationFailed, "Output folder is required in standalone mode — use -o <PATH> or --output <PATH>.");
 
             solutionName = settings.Solution.Trim();
             devUrl = settings.DevUrl.Trim();
