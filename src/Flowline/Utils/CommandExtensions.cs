@@ -23,7 +23,7 @@ public static class CommandExtensions
             var hasCredentials = cmdStr.Contains("secret", StringComparison.OrdinalIgnoreCase)
                 || cmdStr.Contains("password", StringComparison.OrdinalIgnoreCase);
             var execLine = hasCredentials
-                ? $"{Markup.Escape(command.TargetFilePath)} [args redacted]"
+                ? $"{Markup.Escape(command.TargetFilePath)} {Markup.Escape("[args redacted]")}"
                 : Markup.Escape(cmdStr);
             AnsiConsole.MarkupLine($"[dim]Executing: [italic]{execLine}[/][/]");
 

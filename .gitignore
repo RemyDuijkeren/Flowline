@@ -8,7 +8,7 @@
 .codex
 .claude/worktrees/
 .compound-engineering/*.local.yaml
-docs/comparison/
+docs/others/
 
 # Build results
 [Bb]in/
