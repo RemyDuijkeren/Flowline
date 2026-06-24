@@ -86,7 +86,7 @@ Errors when the config-stored target URL is in a different region than prod. Cat
 - [ ] `generate` safe deletion tested (partial class, `.csproj`, stale entity all verified)
 - [x] `provision` region guard implemented
 - [ ] `deploy` orphan cleanup passes AE1–AE8 against real org
-- [ ] `componenttype` constants in `ComponentClassifier.cs` validated against real org
+- [x] `componenttype` constants confirmed via `PicklistAttributeMetadata` — low-numbered types are stable platform constants, one org sufficient
 - [ ] All tests pass (`dotnet test`)
 - [ ] Tone reviewed on any new CLI output (`/tone`)
 - [ ] CHANGELOG entry written for v1.0

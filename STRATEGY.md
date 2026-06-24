@@ -94,7 +94,8 @@ over unmanaged.
 - **2026-06-27** — CHANGELOG with full version history (0.1.0–0.7.0) ✓
 - **2026-06-23** — `generate` safe deletion: user-owned files preserved via `IsGeneratorOwned` check during temp-swap ✓
 - **2026-06-23** — `provision` region guard: error on config-stored target URL in different region than prod ✓
-- **2026-06-26** — `deploy` orphan cleanup integration test: validate AE1–AE8 against real org; confirm `componenttype` constants in `ComponentClassifier`
+- **2026-06-24** — `componenttype` constants confirmed via Dataverse `PicklistAttributeMetadata`; low-numbered types are stable platform constants ✓
+- **2026-06-26** — `deploy` orphan cleanup integration test: validate AE1–AE8 against real org
 - **2026-06-28** — `deploy` pre-backup + `--skip-backup` opt-out (could-have)
 - **2026-07-01** — v1.0 release
 

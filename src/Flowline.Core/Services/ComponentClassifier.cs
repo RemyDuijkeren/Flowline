@@ -7,16 +7,17 @@ public enum ComponentAction { AutoDelete, Manual }
 public static class ComponentClassifier
 {
     // solutioncomponent.componenttype values for AUTO-delete candidates.
-    // Low-numbered types (<100) are stable platform constants across all Dataverse orgs.
+    // Low-numbered types (<100) are stable platform constants — same across all Dataverse orgs.
+    // Confirmed via PicklistAttributeMetadata on automatevalue-dev (2026-06-24); one org is sufficient.
     // CustomApi family (10034/10036/10037) are environment-specific — they vary per org and
     // must be detected via entity-side queries (customapi/customapirequestparameter/
     // customapiresponseproperty), not by componenttype. See OrphanCleanupService.
-    private const int PluginAssembly                = 91;  // confirmed: PluginService.cs
-    private const int PluginType                    = 90;  // TODO: verify against real org
-    private const int SdkMessageProcessingStep      = 92;  // confirmed: PluginPlanner.cs
-    private const int SdkMessageProcessingStepImage = 93;  // TODO: verify against real org
-    private const int WebResource                   = 61;  // confirmed: WebResourceReader.cs
-    private const int Workflow                      = 29;  // TODO: verify against real org
+    private const int PluginAssembly                = 91;
+    private const int PluginType                    = 90;
+    private const int SdkMessageProcessingStep      = 92;
+    private const int SdkMessageProcessingStepImage = 93;
+    private const int WebResource                   = 61;
+    private const int Workflow                      = 29;
 
     static readonly HashSet<int> AutoTypes =
     [
