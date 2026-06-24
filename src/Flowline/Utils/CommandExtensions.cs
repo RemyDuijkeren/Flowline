@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using CliWrap;
 using Spectre.Console;
 
@@ -20,11 +21,7 @@ public static class CommandExtensions
         if (verbose)
         {
             var cmdStr = command.ToString();
-            var hasCredentials = cmdStr.Contains("secret", StringComparison.OrdinalIgnoreCase)
-                || cmdStr.Contains("password", StringComparison.OrdinalIgnoreCase);
-            var execLine = hasCredentials
-                ? $"{Markup.Escape(command.TargetFilePath)} {Markup.Escape("[args redacted]")}"
-                : Markup.Escape(cmdStr);
+            var execLine = Markup.Escape(RedactSensitiveArgs(cmdStr));
             AnsiConsole.MarkupLine($"[dim]Executing: [italic]{execLine}[/][/]");
 
             return command
@@ -55,6 +52,13 @@ public static class CommandExtensions
                }))
                .WithStandardErrorPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLine($"[red]{Markup.Escape(prefix)}: {Markup.Escape(s)}[/]")));
     }
+
+    static readonly Regex s_sensitiveArgPattern =
+        new(@"(--client-secret)\s+\S+|(/mfaClientSecret:)\S+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    static string RedactSensitiveArgs(string cmdStr) =>
+        s_sensitiveArgPattern.Replace(cmdStr, m =>
+            m.Groups[1].Success ? $"{m.Groups[1].Value} ***" : $"{m.Groups[2].Value}***");
 
     static void SetStatusWithExecutionTime(StatusContext? ctx, string s)
     {

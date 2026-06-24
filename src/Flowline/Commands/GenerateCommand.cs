@@ -221,7 +221,9 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         if (Directory.Exists(tempFolder))
             Directory.Delete(tempFolder, recursive: true);
 
-        var outputLabel = standaloneMode ? modelsFolder : $"{solutionName}/Plugins/Models";
+        var outputLabel = standaloneMode
+            ? Path.GetRelativePath(RootFolder, modelsFolder).Replace('\\', '/')
+            : $"{solutionName}/Plugins/Models";
 
         XrmContextAuth? xrmContextAuth = null;
         string? resolvedSecret = null;
@@ -334,7 +336,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             Config!.Save(RootFolder);
         }
 
-        Console.Done($"Types generated into [bold]{outputLabel}[/] in {FormatDuration(sw.Elapsed)}. Namespace: [bold]{modelNamespace}[/] ᕦ(ò_óˇ)ᕤ");
+        Console.Done($"Types generated into [bold]{outputLabel}[/] in {FormatDuration(sw.Elapsed)} ᕦ(ò_óˇ)ᕤ");
 
         return 0;
     }
