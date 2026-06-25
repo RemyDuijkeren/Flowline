@@ -43,13 +43,6 @@ Auto-backup the target environment before any deploy. Opt-out via `--skip-backup
 
 ---
 
-### 4. Resolve PluginPlanner mutability question
-`PluginPlanner.cs:458,522` — design question: are certain plugin attributes updatable (`IsValidForUpdate=true`) or must steps be recreated? Current logic is correct but the design intent is undocumented.
-
-**Status:** Code comment + decision note; minimal implementation work
-
----
-
 ## Skip (post-v1.0)
 
 - `--restore-state` — reactivate workflows after deploy (already scoped post-v1 in wiki)
@@ -62,7 +55,7 @@ Auto-backup the target environment before any deploy. Opt-out via `--skip-backup
 
 - [x] Pending commit pushed
 - [x] `generate` safe deletion implemented (`IsGeneratorOwned` + copy-before-swap)
-- [ ] `generate` safe deletion tested (partial class, `.csproj`, stale entity all verified)
+- [x] `generate` safe deletion tested (partial class, `.csproj`, stale entity all verified)
 - [x] `provision` region guard implemented
 - [ ] `deploy` full flow tested against real org (pack, import, DTAP gate, type guard, drift check, orphan cleanup AE1–AE8)
 - [x] `componenttype` constants confirmed via `PicklistAttributeMetadata` — low-numbered types are stable platform constants, one org sufficient

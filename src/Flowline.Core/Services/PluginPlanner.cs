@@ -455,7 +455,9 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
                 continue;
             }
 
-            // TODO: Maybe not immutable, because IsValidForUpdate=true? Check if we can update it.
+            // type, isoptional, logicalentityname: immutable after creation despite IsValidForUpdate=true in
+            // entity metadata. Platform ignores updates to these fields. Must delete+recreate on change.
+            // Source: https://learn.microsoft.com/power-apps/developer/data-platform/create-custom-api-solution#update-a-custom-api-in-a-solution
             var immutableChanged =
                 (dvParam.GetAttributeValue<OptionSetValue>("type")?.Value ?? 0) != asmParam.Type ||
                 dvParam.GetAttributeValue<bool>("isoptional") != asmParam.IsOptional ||
@@ -519,7 +521,9 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
                 continue;
             }
 
-            // TODO: Maybe not immutable, because IsValidForUpdate=true? Check if we can update it.
+            // type, logicalentityname: immutable after creation despite IsValidForUpdate=true in entity metadata.
+            // Platform ignores updates to these fields. Must delete+recreate on change.
+            // Source: https://learn.microsoft.com/power-apps/developer/data-platform/create-custom-api-solution#update-a-custom-api-in-a-solution
             var immutableChanged =
                 (dvProp.GetAttributeValue<OptionSetValue>("type")?.Value ?? 0) != asmProp.Type ||
                 dvProp.GetAttributeValue<string>("logicalentityname") != asmProp.EntityName;
