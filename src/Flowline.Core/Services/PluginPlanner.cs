@@ -37,7 +37,13 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
                 {
                     ["typename"]        = asmPluginType.FullName,
                     ["name"]            = asmPluginType.FullName,
-                    ["friendlyname"]    = asmPluginType.Name,
+                    // UQ1_PluginType constraint is on (friendlyname, solutionId, ...). All unmanaged
+                    // plugin types share the same "Active" solutionId, so friendlyname is effectively
+                    // org-globally unique. Using FullName (FQN) ensures classes in different namespaces
+                    // get distinct values — e.g. "Plugins.Foo" vs "Extensions.Foo". Do NOT change to
+                    // asmPluginType.Name: short names collide across assemblies ("Foo" from two different
+                    // namespaced assemblies share the same Name but have different FullNames).
+                    ["friendlyname"]    = asmPluginType.FullName,
                     ["pluginassemblyid"] = assembly.ToEntityReference(),
                     ["description"]     = $"{FlowlineMarker} Created at {DateTime.UtcNow:u}"
                 };

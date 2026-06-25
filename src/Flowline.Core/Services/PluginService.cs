@@ -156,6 +156,16 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
 
         WritePlanTree(metadata, needsUpdate, plan, runMode, cascadeDeleteCount);
 
+        // Pre-flight: UQ1_PluginType constraint is on (friendlyname, solutionId) — friendlyname must
+        // be unique org-wide. Check before executing so the failure is clear, not a raw SQL error.
+        var friendlyNamesToCreate = plan.PluginTypes.Upserts
+            .Where(u => u.IsCreate)
+            .Select(u => u.Entity.GetAttributeValue<string>("friendlyname"))
+            .OfType<string>()
+            .ToArray();
+        if (friendlyNamesToCreate.Length > 0)
+            await CheckFriendlyNameCollisionsAsync(service, assembly.Id, friendlyNamesToCreate, cancellationToken).ConfigureAwait(false);
+
         if (runMode == RunMode.DryRun)
             return;
 
@@ -385,6 +395,51 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         await AddSolutionComponentAsync(service, existing.Id, solutionName, cancellationToken).ConfigureAwait(false);
         var storedHash = ParseStoredHash(existing.GetAttributeValue<string>("description"));
         return (existing, storedHash != metadata.Hash, 0);
+    }
+
+    // UQ1_PluginType unique index on dbo.PluginTypeBase is (friendlyname, solutionId, isworkflowactivity, ...).
+    // All unmanaged plugin types share the "Active" solution (fd140aae-4df4-11dd-bd17-0019b9312238) as their
+    // solutionId, which makes friendlyname org-globally unique — not scoped to the assembly.
+    // This check queries friendlyname (not typename/name) because that is the actual constraint column.
+    async Task CheckFriendlyNameCollisionsAsync(
+        IOrganizationServiceAsync2 service,
+        Guid assemblyId,
+        string[] friendlyNames,
+        CancellationToken cancellationToken)
+    {
+        var query = new QueryExpression("plugintype")
+        {
+            ColumnSet = new ColumnSet("friendlyname", "typename", "pluginassemblyid"),
+            Criteria =
+            {
+                Conditions =
+                {
+                    new ConditionExpression("friendlyname", ConditionOperator.In, friendlyNames.Cast<object>().ToArray()),
+                    new ConditionExpression("pluginassemblyid", ConditionOperator.NotEqual, assemblyId)
+                }
+            }
+        };
+        var asmLink = query.AddLink("pluginassembly", "pluginassemblyid", "pluginassemblyid", JoinOperator.LeftOuter);
+        asmLink.Columns = new ColumnSet("name");
+        asmLink.EntityAlias = "asm";
+
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
+        if (result.Entities.Count == 0) return;
+
+        var conflicts = result.Entities
+            .Select(e => (
+                TypeName: e.GetAttributeValue<string>("typename") ?? e.GetAttributeValue<string>("friendlyname") ?? "(unknown)",
+                Assembly: (e.GetAttributeValue<AliasedValue>("asm.name")?.Value as string ?? "unknown") + ".dll"
+            ))
+            .ToList();
+
+        throw new FlowlineException(ExitCode.ValidationFailed,
+            $"Plugin type name collision — {conflicts.Count} type(s) already registered in another assembly. Add a namespace or rename the class(es).")
+            .WithDetail(console =>
+            {
+                foreach (var (typeName, assemblyName) in conflicts)
+                    console.MarkupLine($"  [yellow]{Safe(typeName)}[/] already registered in [bold]{Safe(assemblyName)}[/]");
+            });
     }
 
     void WriteCascadePreview(RegistrationSnapshot snapshot)
