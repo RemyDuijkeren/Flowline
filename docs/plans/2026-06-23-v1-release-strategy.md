@@ -32,6 +32,28 @@ Never been run end-to-end against a real org. Test the full flow, not just orpha
 
 ---
 
+### 2. Observability + bug reproduction
+
+Every invocation leaves enough context for a bug report without re-running. Implemented in three waves.
+
+**Wave 1 — Foundation (I1 + I2 + I3):**
+- I1: Always-on JSONL run log (`%LOCALAPPDATA%/Flowline/runs/<date>.jsonl`). Timestamp, command, redacted args, exit code, duration, tool versions. 30-day rotation. On failure, print path.
+- I2: Subprocess stderr capture — 50-line rolling buffer from PAC CLI / dotnet / git, regardless of `--verbose`. Attached to `FlowlineException.WithDetail` on failure.
+- I3: `ILogger<T>` debug file sink (`%LOCALAPPDATA%/Flowline/debug/<date>.log`). Warning by default; Debug when `--verbose` active. Wired into PluginService, WebResourceService, SolutionDiffService.
+
+**Wave 2 — Rich context (I4 + I6):**
+- I4: DiagnosticContext stage chain — `List<string>` scoped to command. Commands populate at each named stage. On failure: "Completed: A, B, C. Failed at: D." Single registration in `FlowlineCommand.ExecuteAsync`.
+- I6: Per-invocation correlation ID — reads `FLOWLINE_TRACE_ID` env var (CI); auto-generates 8-char hex if absent. Stamps every JSONL record and verbose line.
+
+**Wave 3 — Crash bundle (I5):**
+- I5: On unhandled exception, writes zip to `%LOCALAPPDATA%/Flowline/bug-reports/<timestamp>.zip` (last N JSONL records, redacted `.flowline` config, tool versions, exception). Prints: "Bug report saved: <path> — attach to issue at github.com/..."
+
+**Wave 4 — Telemetry (I7):** Separate product decision. Not a v1.0 blocker.
+
+**References:** `docs/ideation/2026-06-25-cli-observability-ideation.html`
+
+---
+
 ## Could-haves (nice before v1.0, not blockers)
 
 ### 3. `deploy` pre-backup + `--skip-backup`
@@ -58,6 +80,9 @@ Auto-backup the target environment before any deploy. Opt-out via `--skip-backup
 - [x] `generate` safe deletion tested (partial class, `.csproj`, stale entity all verified)
 - [x] `provision` region guard implemented
 - [ ] `deploy` full flow tested against real org (pack, import, DTAP gate, type guard, drift check, orphan cleanup AE1–AE8)
+- [ ] Observability Wave 1 implemented (I1 JSONL run log, I2 stderr capture, I3 ILogger file sink)
+- [ ] Observability Wave 2 implemented (I4 stage chain, I6 correlation ID)
+- [ ] Observability Wave 3 implemented (I5 crash bundle)
 - [x] `componenttype` constants confirmed via `PicklistAttributeMetadata` — low-numbered types are stable platform constants, one org sufficient
 - [ ] All tests pass (`dotnet test`)
 - [ ] Tone reviewed on any new CLI output (`/tone`)
