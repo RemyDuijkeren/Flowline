@@ -7,6 +7,9 @@ Shared domain vocabulary for this project — entities, named processes, and sta
 ### Solution component
 A membership record that tracks which objects (plugin assemblies, web resources, workflows, custom APIs, and similar) belong to a solution. Each component has an object identifier and a component type that classify what kind of object it references.
 
+### Component dependency
+A platform record that tracks when one solution component references another — for example, when a plugin step references a plugin type. Distinct from a [[Solution component]] (which records membership in a solution): removing a component from a solution does not clear its dependency records. Dataverse enforces these records during deletion — the dependency check fires before any cascade runs — so the required component cannot be deleted while any dependent component still holds a reference to it.
+
 ### Orphan component
 A solution component present in the Dataverse environment that is absent from the local solution source. Orphans accumulate because unmanaged solution imports are additive — Dataverse never removes components during import.
 

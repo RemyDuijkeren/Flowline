@@ -270,12 +270,17 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 ? $"[bold]{Safe(name)}.dll[/] in environment — no local source. Deleting."
                 : $"[bold]{Safe(name)}.dll[/] in environment — no local source. Use --force to delete.");
 
-            if (showCascade)
+            // Load snapshot for cascade display and/or explicit child deletion
+            RegistrationSnapshot? orphanSnapshot = null;
+            if (showCascade || willDelete)
             {
-                // Load cascade info — stub metadata skips SDK message/filter/user lookups (not needed here)
+                // Stub metadata — skips SDK message/filter/user lookups (not needed here)
                 var stub = new PluginAssemblyMetadata("", "", [], "", "", null, "", []);
-                var orphanSnapshot = await _reader.LoadSnapshotAsync(service, entity.Id, stub, solutionName, cancellationToken).ConfigureAwait(false);
+                orphanSnapshot = await _reader.LoadSnapshotAsync(service, entity.Id, stub, solutionName, cancellationToken).ConfigureAwait(false);
+            }
 
+            if (showCascade && orphanSnapshot != null)
+            {
                 foreach (var typeName in orphanSnapshot.PluginTypes.Keys.OrderBy(n => n, StringComparer.OrdinalIgnoreCase))
                     output.Info(willDelete
                         ? $"  {Safe(typeName)} — cascade delete"
@@ -290,8 +295,25 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
                         : $"  [red]-[/] {Safe(image.GetAttributeValue<string>("name"))} — would delete (cascade)");
             }
 
-            if (willDelete)
+            if (willDelete && orphanSnapshot != null)
+            {
+                // Dataverse blocks assembly DeleteAsync when its child plugin types are referenced by
+                // steps or custom API entries (dependency check fires before cascade runs).
+                // Must delete children manually in reverse dependency order — same as RunDeletesAsync.
+                foreach (var e in orphanSnapshot.Images)
+                    await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
+                foreach (var e in orphanSnapshot.ResponseProps)
+                    await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
+                foreach (var e in orphanSnapshot.RequestParams)
+                    await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
+                foreach (var e in orphanSnapshot.Steps)
+                    await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
+                foreach (var e in orphanSnapshot.CustomApis)
+                    await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
+                foreach (var (_, pluginType) in orphanSnapshot.PluginTypes)
+                    await service.DeleteAsync(pluginType.LogicalName, pluginType.Id, cancellationToken).ConfigureAwait(false);
                 await service.DeleteAsync("pluginassembly", entity.Id, cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 
