@@ -73,7 +73,7 @@ _ = runLogService.CleanOldLogsAsync(DateOnly.FromDateTime(DateTime.UtcNow));
 
 string? capturedExceptionType = null;
 string? capturedExceptionMessage = null;
-string[]? capturedSubprocessOutput = null;
+string[]? capturedVerboseOutput = null;
 
 // Configure and run the app
 var app = new CommandApp(new TypeRegistrar(services));
@@ -93,12 +93,15 @@ app.Configure(config =>
             case FlowlineException fe:
                 AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(fe.Message)}");
                 fe.Detail?.Invoke(AnsiConsole.Console);
+                if (!runtimeOptions.IsVerbose)
+                    foreach (var line in runtimeOptions.VerboseOutput.Lines)
+                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape(line)}[/]");
+                capturedVerboseOutput = runtimeOptions.VerboseOutput.Lines.ToArray();
                 if (fe.HelpLink is not null)
                     AnsiConsole.MarkupLine($"[dim]See: {fe.HelpLink}[/]");
                 AnsiConsole.MarkupLine($"[dim]Run log: {FlowlineStoragePaths.GetRunsPath(DateOnly.FromDateTime(DateTime.UtcNow))}[/]");
                 capturedExceptionType = ex.GetType().FullName;
                 capturedExceptionMessage = ex.Message;
-                capturedSubprocessOutput = fe.SubprocessOutput;
                 return (int)fe.ExitCode;
             case OperationCanceledException:
                 return (int)ExitCode.Cancelled;
@@ -189,7 +192,7 @@ if (!isHelpOrVersion)
         LogFilePath: FlowlineStoragePaths.GetLogsPath(today),
         ExceptionType: capturedExceptionType,
         ExceptionMessage: capturedExceptionMessage,
-        SubprocessOutput: capturedSubprocessOutput
+        SubprocessOutput: capturedVerboseOutput
     );
     await runLogService.AppendAsync(record);
 }

@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using CliWrap;
+using Flowline.Core;
 using Spectre.Console;
 
 namespace Flowline.Utils;
@@ -15,7 +16,7 @@ public static class CommandExtensions
         return command;
     }
 
-    public static Command WithToolExecutionLog(this Command command, bool verbose = true, StatusContext? ctx = null, Func<string, string>? lineTransform = null, string? toolDisplayName = null, SubprocessBuffer? buffer = null)
+    public static Command WithToolExecutionLog(this Command command, bool verbose = true, StatusContext? ctx = null, Func<string, string>? lineTransform = null, string? toolDisplayName = null)
     {
         var prefix = toolDisplayName ?? command.TargetFilePath;
         if (verbose)
@@ -30,11 +31,7 @@ public static class CommandExtensions
                        SetStatusWithExecutionTime(ctx, s);
 
                        // Skip if the output is an error message
-                       if (DisplayErrorMessage(s, prefix))
-                       {
-                           buffer?.Append(s);
-                           return;
-                       }
+                       if (DisplayErrorMessage(s, prefix)) return;
 
                        // Skip if the output is PAC async operation progress
                        if (s.StartsWith("Processing asynchronous operation...")) return;
@@ -47,29 +44,62 @@ public static class CommandExtensions
                    }))
                    .WithStandardErrorPipe(PipeTarget.ToDelegate(s =>
                    {
-                       buffer?.Append(s);
                        AnsiConsole.MarkupLine($"[red]{Markup.Escape(prefix)}: {Markup.Escape(s)}[/]");
                    }));
-        }
-
-        if (buffer == null)
-        {
-            return command
-                   .WithStandardOutputPipe(PipeTarget.ToDelegate(s =>
-                   {
-                       SetStatusWithExecutionTime(ctx, s);
-                       DisplayErrorMessage(s, prefix);
-                   }))
-                   .WithStandardErrorPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLine($"[red]{Markup.Escape(prefix)}: {Markup.Escape(s)}[/]")));
         }
 
         return command
                .WithStandardOutputPipe(PipeTarget.ToDelegate(s =>
                {
                    SetStatusWithExecutionTime(ctx, s);
-                   if (IsErrorLine(s)) buffer.Append(s);
+                   DisplayErrorMessage(s, prefix);
                }))
-               .WithStandardErrorPipe(PipeTarget.ToDelegate(s => buffer.Append(s)));
+               .WithStandardErrorPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLine($"[red]{Markup.Escape(prefix)}: {Markup.Escape(s)}[/]")));
+    }
+
+    public static Command WithToolExecutionLog(this Command command, FlowlineRuntimeOptions options, StatusContext? ctx = null, Func<string, string>? lineTransform = null, string? toolDisplayName = null)
+    {
+        var prefix = toolDisplayName ?? command.TargetFilePath;
+        if (options.IsVerbose)
+        {
+            var cmdStr = command.ToString();
+            var execLine = Markup.Escape(RedactSensitiveArgs(cmdStr));
+            AnsiConsole.MarkupLine($"[dim]Executing: [italic]{execLine}[/][/]");
+
+            return command
+                   .WithStandardOutputPipe(PipeTarget.ToDelegate(s =>
+                   {
+                       SetStatusWithExecutionTime(ctx, s);
+
+                       // Error lines: buffer and return (DisplayErrorMessage already prints them)
+                       if (DisplayErrorMessage(s, prefix))
+                       {
+                           options.VerboseOutput.Append(s);
+                           return;
+                       }
+
+                       // Skip PAC async operation progress and empty lines
+                       if (s.StartsWith("Processing asynchronous operation...")) return;
+                       if (string.IsNullOrWhiteSpace(s)) return;
+
+                       var display = lineTransform != null ? lineTransform(s) : s;
+                       AnsiConsole.MarkupLine($"[dim]{Markup.Escape(prefix)}: {Markup.Escape(display)}[/]");
+                       options.VerboseOutput.Append(display);
+                   }))
+                   .WithStandardErrorPipe(PipeTarget.ToDelegate(s =>
+                   {
+                       options.VerboseOutput.Append(s);
+                       AnsiConsole.MarkupLine($"[red]{Markup.Escape(prefix)}: {Markup.Escape(s)}[/]");
+                   }));
+        }
+
+        return command
+               .WithStandardOutputPipe(PipeTarget.ToDelegate(s =>
+               {
+                   SetStatusWithExecutionTime(ctx, s);
+                   if (IsErrorLine(s)) options.VerboseOutput.Append(s);
+               }))
+               .WithStandardErrorPipe(PipeTarget.ToDelegate(s => options.VerboseOutput.Append(s)));
     }
 
     static readonly Regex s_sensitiveArgPattern =
