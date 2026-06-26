@@ -15,7 +15,7 @@ public static class CommandExtensions
         return command;
     }
 
-    public static Command WithToolExecutionLog(this Command command, bool verbose = true, StatusContext? ctx = null, Func<string, string>? lineTransform = null, string? toolDisplayName = null)
+    public static Command WithToolExecutionLog(this Command command, bool verbose = true, StatusContext? ctx = null, Func<string, string>? lineTransform = null, string? toolDisplayName = null, SubprocessBuffer? buffer = null)
     {
         var prefix = toolDisplayName ?? command.TargetFilePath;
         if (verbose)
@@ -30,7 +30,11 @@ public static class CommandExtensions
                        SetStatusWithExecutionTime(ctx, s);
 
                        // Skip if the output is an error message
-                       if (DisplayErrorMessage(s, prefix)) return;
+                       if (DisplayErrorMessage(s, prefix))
+                       {
+                           buffer?.Append(s);
+                           return;
+                       }
 
                        // Skip if the output is PAC async operation progress
                        if (s.StartsWith("Processing asynchronous operation...")) return;
@@ -41,6 +45,21 @@ public static class CommandExtensions
                        var display = lineTransform != null ? lineTransform(s) : s;
                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape(prefix)}: {Markup.Escape(display)}[/]");
                    }))
+                   .WithStandardErrorPipe(PipeTarget.ToDelegate(s =>
+                   {
+                       buffer?.Append(s);
+                       AnsiConsole.MarkupLine($"[red]{Markup.Escape(prefix)}: {Markup.Escape(s)}[/]");
+                   }));
+        }
+
+        if (buffer == null)
+        {
+            return command
+                   .WithStandardOutputPipe(PipeTarget.ToDelegate(s =>
+                   {
+                       SetStatusWithExecutionTime(ctx, s);
+                       DisplayErrorMessage(s, prefix);
+                   }))
                    .WithStandardErrorPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLine($"[red]{Markup.Escape(prefix)}: {Markup.Escape(s)}[/]")));
         }
 
@@ -48,9 +67,9 @@ public static class CommandExtensions
                .WithStandardOutputPipe(PipeTarget.ToDelegate(s =>
                {
                    SetStatusWithExecutionTime(ctx, s);
-                   DisplayErrorMessage(s, prefix);
+                   if (IsErrorLine(s)) buffer.Append(s);
                }))
-               .WithStandardErrorPipe(PipeTarget.ToDelegate(s => AnsiConsole.MarkupLine($"[red]{Markup.Escape(prefix)}: {Markup.Escape(s)}[/]")));
+               .WithStandardErrorPipe(PipeTarget.ToDelegate(s => buffer.Append(s)));
     }
 
     static readonly Regex s_sensitiveArgPattern =
@@ -72,6 +91,9 @@ public static class CommandExtensions
         var status = (indexOf == -1) ? ctx.Status : ctx.Status[..indexOf];
         ctx.Status($"{status} ([italic]{execution}[/])");
     }
+
+    static bool IsErrorLine(string s) =>
+        s.Contains("Error: ") || s.Contains("The reason given was: ") || s.Contains(": error") || s.Contains(": warning");
 
     static bool DisplayErrorMessage(string s, string? targetFilePath = null)
     {

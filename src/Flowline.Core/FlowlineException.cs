@@ -14,9 +14,23 @@ public class FlowlineException : Exception
         ExitCode = exitCode;
     }
 
+    public string[]? SubprocessOutput { get; private set; }
+
     public FlowlineException WithDetail(Action<IAnsiConsole> detail)
     {
         Detail = detail;
+        return this;
+    }
+
+    public FlowlineException WithSubprocessBuffer(string[] lines, bool isVerbose)
+    {
+        SubprocessOutput = lines;
+        if (!isVerbose)
+            Detail = console =>
+            {
+                foreach (var line in lines)
+                    console.MarkupLine($"[dim]{Markup.Escape(line)}[/]");
+            };
         return this;
     }
 
