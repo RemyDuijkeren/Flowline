@@ -2,6 +2,7 @@ using System.ServiceModel;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Query;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using NSubstitute;
 using Flowline.Core.Services;
@@ -24,7 +25,7 @@ public class WebResourceServiceTests : IDisposable
         _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
         _console = new TestConsole();
         _runtimeOptions = new FlowlineRuntimeOptions();
-        _service = new WebResourceService(_console, _runtimeOptions);
+        _service = new WebResourceService(_console, _runtimeOptions, NullLogger<WebResourceService>.Instance);
         _webresourceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(_webresourceRoot);
 

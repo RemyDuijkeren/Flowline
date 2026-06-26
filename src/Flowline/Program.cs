@@ -44,6 +44,7 @@ services.AddSingleton<IGenerator, XrmContextGenerator>();
 services.AddSingleton<PluginService>();
 services.AddSingleton<WebResourceService>();
 services.AddSingleton<OrphanCleanupService>();
+services.AddSingleton<SolutionDiffService>();
 
 Serilog.ILogger? serilogLogger = null;
 try

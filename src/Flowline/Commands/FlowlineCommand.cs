@@ -42,6 +42,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
 
     protected override async Task<int> ExecuteAsync(CommandContext context, TSettings settings, CancellationToken cancellationToken)
     {
+        RuntimeOptions.CommandName = context.Name;
         InitializeRuntimeOptions(settings);
 
         if (ShowWelcome && ConsoleHelper.IsInteractive(settings) && FlowlineValidator.Default.ShouldShowWelcomeScreen(settings.NoCache))

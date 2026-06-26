@@ -1,14 +1,16 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Flowline.Core.Models;
 using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
+public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILogger<WebResourceService> logger)
 {
     readonly WebResourceReader _reader = new(output);
     readonly WebResourcePlanner _planner = new(output, opt.IsVerbose);
     readonly WebResourceExecutor _executor = new(output, opt.IsVerbose);
+    readonly ILogger<WebResourceService> _logger = logger;
 
     public async Task SyncSolutionAsync(
         IOrganizationServiceAsync2 service,
@@ -28,11 +30,15 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt)
             _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, cancellationToken)).ConfigureAwait(false);
         WriteSnapshotVerbose(snapshot);
         output.Ok("Snapshot web resources loaded");
+        _logger.LogInformation("Snapshot: {DataverseCount} Dataverse, {LocalCount} local resources",
+            snapshot.DataverseResources.Count, snapshot.LocalResources.Count);
 
         // Phase 2: Plan registration (pure, synchronous)
         var plan = _planner.Plan(snapshot);
         WritePlanReport(plan, PlanReportMode.Verbose, publishAfterSync);
         output.Ok("Web resource plan ready");
+        _logger.LogInformation("Plan: {Creates} creates, {Updates} updates, {Deletes} deletes",
+            plan.Creates.Count, plan.Updates.Count, plan.Deletes.Count);
 
         if (plan.TotalChanges == 0)
         {

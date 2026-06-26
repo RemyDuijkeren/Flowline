@@ -1,6 +1,7 @@
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Query;
+using Microsoft.Extensions.Logging;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Flowline;
 using Flowline.Core.Models;
@@ -8,7 +9,7 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
+public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILogger<PluginService> logger)
 {
     const string FlowlineMarker = "[flowline]";
 
@@ -17,6 +18,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
     readonly PluginExecutor _executor = new(output, opt.IsVerbose);
     readonly SolutionReader _solutionReader = new();
     readonly PluginAssemblyReader _assemblyReader = new(output, opt.IsVerbose);
+    readonly ILogger<PluginService> _logger = logger;
 
     public async Task SyncAssemblyOnlyAsync(
         IOrganizationServiceAsync2 service,
@@ -125,6 +127,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         // Phase 1: Get or register assembly
         var (assembly, needsUpdate, cascadeDeleteCount) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, force, cancellationToken).ConfigureAwait(false);
         output.Ok($"Assembly registered [bold]{metadata.Name}[/] ({metadata.Version})");
+        _logger.LogInformation("Assembly synced: {Name}", metadata.Name);
 
         await WarnOrphanAssembliesAsync(service, metadata.Name, solutionName, force, runMode, cancellationToken).ConfigureAwait(false);
 
@@ -138,6 +141,9 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt)
         // Phase 3: Plan registration (pure, synchronous)
         var plan = _planner.Plan(snapshot, metadata, assembly, solutionName);
         output.Info("Registration plan ready");
+        _logger.LogInformation("Registration plan ready: {PluginTypeCount} plugin types, {StepCount} steps",
+            plan.PluginTypes.Upserts.Count + plan.PluginTypes.Deletes.Count,
+            plan.Steps.Upserts.Count + plan.Steps.Deletes.Count);
 
         foreach (var warning in plan.Warnings)
             output.Warning(warning);

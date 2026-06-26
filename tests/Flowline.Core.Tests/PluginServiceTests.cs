@@ -1,6 +1,7 @@
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Query;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using NSubstitute;
 using Flowline;
@@ -23,7 +24,7 @@ public class PluginServiceTests
         _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
         _console = new TestConsole();
         _runtimeOptions = new FlowlineRuntimeOptions();
-        _service = new PluginService(_console, _runtimeOptions);
+        _service = new PluginService(_console, _runtimeOptions, NullLogger<PluginService>.Instance);
 
         // Default empty results for all queries
         _serviceMock.RetrieveMultipleAsync(Arg.Any<QueryExpression>())

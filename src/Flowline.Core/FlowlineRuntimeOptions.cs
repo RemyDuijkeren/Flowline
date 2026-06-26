@@ -4,4 +4,5 @@ public sealed class FlowlineRuntimeOptions
 {
     public bool IsVerbose { get; set; }
     public bool Force { get; set; }
+    public string? CommandName { get; set; }
 }
