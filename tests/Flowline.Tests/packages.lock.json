@@ -150,14 +150,6 @@
           "Microsoft.Extensions.Options": "10.0.9"
         }
       },
-      "Microsoft.Extensions.Logging.Abstractions": {
-        "type": "Transitive",
-        "resolved": "10.0.9",
-        "contentHash": "9S/DFt4cohlMPpzIxjG6kk0L8MuN2vDm9pbMCulxtJzzk82oJHVLBd8vuQxaPskaYQwKqmFmbannf5eoChgjYg==",
-        "dependencies": {
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.9"
-        }
-      },
       "Microsoft.Extensions.Logging.Configuration": {
         "type": "Transitive",
         "resolved": "10.0.9",
@@ -370,6 +362,9 @@
           "CliWrap": "[3.10.2, )",
           "Flowline.Core": "[1.0.0, )",
           "Microsoft.Extensions.Logging.Console": "[10.0.9, )",
+          "Serilog": "[4.2.0, )",
+          "Serilog.Extensions.Logging": "[9.0.0, )",
+          "Serilog.Sinks.File": "[6.0.0, )",
           "Spectre.Console.Cli": "[0.55.0, )"
         }
       },
@@ -380,6 +375,7 @@
         "type": "Project",
         "dependencies": {
           "Flowline.Attributes": "[1.0.0, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.0, )",
           "Microsoft.Identity.Client.Extensions.Msal": "[4.85.0, )",
           "Microsoft.PowerPlatform.Dataverse.Client": "[1.2.10, )",
           "Spectre.Console": "[0.57.0, )",
@@ -392,6 +388,15 @@
         "requested": "[3.10.2, )",
         "resolved": "3.10.2",
         "contentHash": "oW63Lh5Tr2dVRnGSn5UyV2ITAYTdyaGB8r4pGMcz7CwfzketV7ANyn2LvNJtOjXjL/tJbG0qDH8Xwgt3jgGMNg=="
+      },
+      "Microsoft.Extensions.Logging.Abstractions": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.0, )",
+        "resolved": "10.0.9",
+        "contentHash": "9S/DFt4cohlMPpzIxjG6kk0L8MuN2vDm9pbMCulxtJzzk82oJHVLBd8vuQxaPskaYQwKqmFmbannf5eoChgjYg==",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.9"
+        }
       },
       "Microsoft.Extensions.Logging.Console": {
         "type": "CentralTransitive",
@@ -435,6 +440,31 @@
           "System.Security.Permissions": "6.0.0",
           "System.ServiceModel.Http": "8.1.2",
           "System.ServiceModel.Primitives": "8.1.2"
+        }
+      },
+      "Serilog": {
+        "type": "CentralTransitive",
+        "requested": "[4.2.0, )",
+        "resolved": "4.2.0",
+        "contentHash": "gmoWVOvKgbME8TYR+gwMf7osROiWAURterc6Rt2dQyX7wtjZYpqFiA/pY6ztjGQKKV62GGCyOcmtP1UKMHgSmA=="
+      },
+      "Serilog.Extensions.Logging": {
+        "type": "CentralTransitive",
+        "requested": "[9.0.0, )",
+        "resolved": "9.0.0",
+        "contentHash": "NwSSYqPJeKNzl5AuXVHpGbr6PkZJFlNa14CdIebVjK3k/76kYj/mz5kiTRNVSsSaxM8kAIa1kpy/qyT9E4npRQ==",
+        "dependencies": {
+          "Microsoft.Extensions.Logging": "9.0.0",
+          "Serilog": "4.2.0"
+        }
+      },
+      "Serilog.Sinks.File": {
+        "type": "CentralTransitive",
+        "requested": "[6.0.0, )",
+        "resolved": "6.0.0",
+        "contentHash": "lxjg89Y8gJMmFxVkbZ+qDgjl+T4yC5F7WSLTvA+5q0R04tfKVLRL/EHpYoJ/MEQd2EeCKDuylBIVnAYMotmh2A==",
+        "dependencies": {
+          "Serilog": "4.0.0"
         }
       },
       "Spectre.Console": {

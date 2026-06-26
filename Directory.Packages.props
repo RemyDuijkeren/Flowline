@@ -4,6 +4,10 @@
   </PropertyGroup>
   <ItemGroup Label="Production">
     <PackageVersion Include="CliWrap" Version="3.10.2" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+    <PackageVersion Include="Serilog" Version="4.2.0" />
+    <PackageVersion Include="Serilog.Extensions.Logging" Version="9.0.0" />
+    <PackageVersion Include="Serilog.Sinks.File" Version="6.0.0" />
     <PackageVersion Include="Microsoft.CrmSdk.CoreAssemblies" Version="9.0.2.49" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.9" />
     <PackageVersion Include="Microsoft.PowerPlatform.Dataverse.Client" Version="1.2.10" />

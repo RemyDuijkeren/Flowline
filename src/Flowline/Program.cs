@@ -5,7 +5,11 @@ using Flowline.Core.Services;
 using Flowline.Generators;
 using Flowline.Infrastructure;
 using Flowline.Services;
+using Flowline.Utils;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Serilog;
+using Serilog.Events;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using System.Reflection;
@@ -40,6 +44,23 @@ services.AddSingleton<IGenerator, XrmContextGenerator>();
 services.AddSingleton<PluginService>();
 services.AddSingleton<WebResourceService>();
 services.AddSingleton<OrphanCleanupService>();
+
+Serilog.ILogger? serilogLogger = null;
+try
+{
+    var today = DateOnly.FromDateTime(DateTime.UtcNow);
+    var logPath = FlowlineStoragePaths.GetLogsPath(today);
+    try { Directory.CreateDirectory(Path.GetDirectoryName(logPath)!); } catch { }
+    serilogLogger = new LoggerConfiguration()
+        .MinimumLevel.Debug()
+        .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+        .MinimumLevel.Override("System", LogEventLevel.Warning)
+        .WriteTo.File(logPath, rollingInterval: RollingInterval.Infinite)
+        .CreateLogger();
+    Log.Logger = serilogLogger;
+}
+catch { }
+services.AddLogging(b => b.ClearProviders().AddSerilog(serilogLogger));
 
 // Configure and run the app
 var app = new CommandApp(new TypeRegistrar(services));
@@ -130,4 +151,6 @@ app.Configure(config =>
           .WithExample("generate", "--generator", "xrmcontext3");
 });
 
-return await app.RunAsync(args, cancellationTokenSource.Token);
+var exitCode = await app.RunAsync(args, cancellationTokenSource.Token);
+Log.CloseAndFlush();
+return exitCode;
