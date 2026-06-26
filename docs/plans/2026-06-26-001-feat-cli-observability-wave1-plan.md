@@ -12,7 +12,7 @@ origin: docs/brainstorms/2026-06-25-cli-observability-wave1-requirements.md
 Adds three observability features that together ensure every failed Flowline invocation leaves a durable, inspectable trace — without requiring `--verbose` in advance:
 
 - **I1 — Run log**: always-on JSONL record per invocation, written to `%LOCALAPPDATA%/Flowline/runs/<date>.jsonl` on both success and failure.
-- **I2 — Subprocess buffer**: rolling 50-line stderr capture surfaced in the terminal on non-verbose failures.
+- **I2 — Verbose output buffer**: rolling 50-line buffer of all verbose output (subprocess and Flowline's own) via a new `FlowlineConsoleExtensions.Verbose` overload; surfaced in the terminal on non-verbose failures.
 - **I3 — ILogger infrastructure**: MEL + Serilog file sink writing to `%LOCALAPPDATA%/Flowline/logs/<date>.log` at Debug level, with `LogInformation` milestones in `PluginService`, `WebResourceService`, and a new `SolutionDiffService` to prove end-to-end injection.
 
 ---
@@ -63,9 +63,9 @@ When a Flowline command fails on a CI server or a developer machine that wasn't 
 
 - **`SolutionDiffService` created as a new DI service in `src/Flowline/Services/`.** The brainstorm names `SolutionDiffService` as the third injection target, but that class doesn't exist — `SolutionChangeSummary` in `src/Flowline/Utils/` is a static utility called directly in `SyncCommand`. Plan: create `SolutionDiffService` in `src/Flowline/Services/` (CLI project, not Core — placing it in Core would create a circular project reference since `SolutionChangeSummary` lives in the CLI project). `SyncCommand` switches to constructor-injected `SolutionDiffService`.
 
-- **`SubprocessBuffer` as an explicit object passed to `WithToolExecutionLog`.** The buffer is held by the caller (a command), which controls when and whether to attach it to the thrown exception. `FlowlineException` gets a `string[]? SubprocessOutput` field and a `WithSubprocessBuffer(lines, isVerbose)` method: always sets `SubprocessOutput`, conditionally sets `Detail` for terminal rendering (omitted when verbose per R9).
+- **Verbose output buffered via existing `FlowlineConsoleExtensions.Verbose` overload.** `FlowlineConsoleExtensions` already has `Verbose(this IAnsiConsole, string, bool isVerbose)`. A new overload `Verbose(this IAnsiConsole, string, FlowlineRuntimeOptions)` buffers into `FlowlineRuntimeOptions.VerboseOutput` when `!IsVerbose`, or writes to the console immediately when `IsVerbose`. This captures both subprocess output and Flowline's own verbose lines in the same rolling 50-line buffer — no per-call buffer management. `WithToolExecutionLog` gains a `FlowlineRuntimeOptions` overload that uses this internally; commands pass `RuntimeOptions` instead of a `SubprocessBuffer`. `FlowlineException` needs no changes. The global exception handler reads `runtimeOptions.VerboseOutput.Lines` on failure.
 
-- **JSONL write integration in `Program.cs`, wrapping `app.RunAsync`.** A closure captures `(exceptionType, exceptionMessage, subprocessOutput)` from the `SetExceptionHandler` callback. A `Stopwatch` wraps `RunAsync`. After `RunAsync` returns, `RunLogService.AppendAsync` writes the record — this single write point handles both success and failure paths. `--help`/`-h`/`--version` are excluded by checking `args` before starting the timer.
+- **JSONL write integration in `Program.cs`, wrapping `app.RunAsync`.** A closure captures `(exceptionType, exceptionMessage)` from the `SetExceptionHandler` callback; verbose output comes from `runtimeOptions.VerboseOutput.Lines`. A `Stopwatch` wraps `RunAsync`. After `RunAsync` returns, `RunLogService.AppendAsync` writes the record — this single write point handles both success and failure paths. `--help`/`-h`/`--version` are excluded by checking `args` before starting the timer.
 
 - **30-day retention cleanup at startup.** Called fire-and-forget before `app.RunAsync`. Simple and reliable; on-write cleanup would add latency to every invocation.
 
@@ -201,44 +201,45 @@ flowchart TB
 
 ---
 
-### U3. SubprocessBuffer for I2 capture
+### U3. Verbose output buffer via FlowlineConsoleExtensions overload
 
-**Goal:** Add `SubprocessBuffer` and `WithSubprocessBuffer` to `FlowlineException`, modify `WithToolExecutionLog` to fill the buffer from stderr/stdout-error-lines.
+**Goal:** Add a rolling 50-line verbose output buffer to `FlowlineRuntimeOptions`. Add a `Verbose` overload to the existing `FlowlineConsoleExtensions` that buffers when non-verbose. Update `WithToolExecutionLog` with a `FlowlineRuntimeOptions` overload so all subprocess output flows through the same buffer automatically. Remove old `SubprocessBuffer` artifacts.
 
 **Requirements:** R7, R8, R9, R10
 
 **Dependencies:** none (independent of U1/U2)
 
 **Files:**
-- `src/Flowline/Utils/SubprocessBuffer.cs` — new file
-- `src/Flowline/Utils/CommandExtensions.cs` — add `buffer` parameter to `WithToolExecutionLog`
-- `src/Flowline.Core/FlowlineException.cs` — add `SubprocessOutput` property and `WithSubprocessBuffer` method
+- `src/Flowline.Core/FlowlineRuntimeOptions.cs` — add `VerboseOutput` rolling 50-line buffer
+- `src/Flowline.Core/FlowlineConsoleExtensions.cs` — add `Verbose(this IAnsiConsole, string, FlowlineRuntimeOptions)` overload
+- `src/Flowline/Utils/CommandExtensions.cs` — add `WithToolExecutionLog` overload taking `FlowlineRuntimeOptions`; remove `SubprocessBuffer` parameter
+- `src/Flowline.Core/FlowlineException.cs` — remove `SubprocessOutput` property and `WithSubprocessBuffer` method (if added in a prior pass)
+- `src/Flowline/Utils/SubprocessBuffer.cs` — delete (if created in a prior pass)
+- `tests/Flowline.Tests/Utils/SubprocessBufferTests.cs` — delete (if created in a prior pass)
 
 **Approach:**
-- `SubprocessBuffer`: internal rolling queue, max 50 lines. `Append(string line)` drops oldest when at cap. `Lines` exposes `IReadOnlyList<string>`. No public `AsDetail()` — rendering is handled by `FlowlineException.WithSubprocessBuffer`.
-- `WithToolExecutionLog` gets an optional `SubprocessBuffer? buffer = null` parameter. When provided:
-  - Non-verbose path: stderr delegate calls `buffer.Append(s)` INSTEAD OF writing to AnsiConsole. Stdout lines where `DisplayErrorMessage` returns `true` are buffered the same way, suppressing the immediate red output. This ensures failure output appears exactly once — as dim text via `WithDetail` when the exception is rendered — rather than twice (red during execution, then dim on failure).
-  - Verbose path: stderr delegate calls `buffer.Append(s)` AND writes to AnsiConsole as before (both). Buffer fills regardless of verbosity per R10, but verbose mode doesn't suppress real-time output.
-  - When `buffer == null`: existing behavior unchanged in both verbose and non-verbose paths.
-- `FlowlineException` additions:
-  - `public string[]? SubprocessOutput { get; private set; }`
-  - `WithSubprocessBuffer(SubprocessBuffer buffer, bool isVerbose)`: sets `SubprocessOutput = buffer.Lines.ToArray()`; if `!isVerbose`, sets `Detail` to render lines in `[dim]` Spectre markup. Returns `this`.
-- Call sites in commands that throw `FlowlineException` on subprocess failure adopt the pattern: create `SubprocessBuffer buffer = new()`, pass to `WithToolExecutionLog`, attach via `.WithSubprocessBuffer(buffer, RuntimeOptions.IsVerbose)` before throwing.
+- `FlowlineRuntimeOptions.VerboseOutput`: a simple rolling 50-line queue as a nested value type or small internal class. `Append(string markup)` drops oldest when at cap. `Lines` returns `IReadOnlyList<string>`. `Clear()` allows flush-and-reset.
+- New `Verbose` overload in `FlowlineConsoleExtensions`:
+  - `if (options.IsVerbose)`: call `console.MarkupLine($"[dim]{Markup.Escape(message)}[/]")`.
+  - `else`: call `options.VerboseOutput.Append(message)`.
+  - Existing `Verbose(this IAnsiConsole, string, bool)` overload stays unchanged — backward compat.
+- `WithToolExecutionLog` gains a new overload taking `FlowlineRuntimeOptions options` instead of `bool verbose` + `SubprocessBuffer? buffer`. Internally:
+  - Verbose path (`options.IsVerbose`): prints "Executing: ..." line, pipes stdout/stderr to console AND `options.VerboseOutput.Append(...)`.
+  - Non-verbose path: suppresses real-time output; pipes stderr and stdout error-lines to `options.VerboseOutput.Append(...)` only.
+  - Remove the old `SubprocessBuffer? buffer` parameter from the existing overload.
+- `FlowlineException` needs no changes — no `SubprocessOutput` property, no `WithSubprocessBuffer`. Exception handler reads `runtimeOptions.VerboseOutput.Lines` directly on failure.
 
-**Patterns to follow:** `WithToolExecutionLog` in `src/Flowline/Utils/CommandExtensions.cs:18-54`. `WithDetail` usage in `src/Flowline.Core/FlowlineException.cs:17-21`.
+**Patterns to follow:** Existing `Verbose(this IAnsiConsole, string, bool)` in `src/Flowline.Core/FlowlineConsoleExtensions.cs`. `WithToolExecutionLog` branching logic in `src/Flowline/Utils/CommandExtensions.cs`.
 
 **Test scenarios:**
-- `SubprocessBuffer` holds at most 50 lines; adding a 51st drops the first.
-- `SubprocessBuffer` with fewer than 50 lines returns all lines.
-- `WithSubprocessBuffer(buffer, isVerbose: false)` sets both `SubprocessOutput` and `Detail`.
-- `WithSubprocessBuffer(buffer, isVerbose: true)` sets `SubprocessOutput` but leaves `Detail` null.
-- `WithToolExecutionLog` with `buffer` provided and non-verbose: stderr line is appended to buffer and NOT printed to AnsiConsole in real-time (real-time output is suppressed when a buffer is present in non-verbose mode; output appears only once, as dim text via `WithDetail` on failure).
-- `WithToolExecutionLog` with `buffer` provided and verbose: stderr line is appended to buffer AND printed to AnsiConsole in red (verbose mode keeps real-time output; buffer still fills for JSONL per R10).
-- `WithToolExecutionLog` with `buffer == null`: existing behavior unchanged (non-verbose still prints stderr in red in real-time).
+- `VerboseOutput.Append` holds at most 50 lines; adding a 51st drops the first.
+- `VerboseOutput` with fewer than 50 lines returns all lines.
+- `Verbose(console, msg, options)` with `IsVerbose = true` writes to console and does NOT append to buffer.
+- `Verbose(console, msg, options)` with `IsVerbose = false` appends to buffer and does NOT write to console.
+- `WithToolExecutionLog(RuntimeOptions, ctx)` non-verbose: subprocess stderr appended to `VerboseOutput`, not printed live.
+- `WithToolExecutionLog(RuntimeOptions, ctx)` verbose: subprocess stderr printed live and appended to `VerboseOutput`.
 
-  *Note: The real-time suppression only applies in non-verbose mode with an active buffer. AE1's dim WithDetail rendering is the sole appearance of PAC output in non-verbose failures. Verification of the full terminal sequence is an integration concern handled in U5 test scenarios.*
-
-**Verification:** `dotnet build` passes. `SubprocessBuffer` unit tests pass. `FlowlineException` tests verify `SubprocessOutput` and `Detail` set correctly per verbosity.
+**Verification:** `dotnet build` passes. Unit tests pass.
 
 ---
 
@@ -278,44 +279,43 @@ flowchart TB
 
 ---
 
-### U5. Wire run log and subprocess buffer in Program.cs and command call sites
+### U5. Wire run log and verbose buffer in Program.cs and command call sites
 
-**Goal:** Integrate `RunLogService` and `SubprocessBuffer` into the CLI lifecycle: timing, exception handler path line, JSONL write, and subprocess failure attachment across affected commands.
+**Goal:** Integrate `RunLogService` and `VerboseOutput` buffer into the CLI lifecycle: timing, exception handler path line and buffer flush, JSONL write, and update command call sites to pass `RuntimeOptions` to `WithToolExecutionLog` instead of explicit `SubprocessBuffer`.
 
 **Requirements:** R1, R2, R4, R5, R6, R8, R9, R10 (integration)
 
-**Dependencies:** U3 (SubprocessBuffer), U4 (RunLogService)
+**Dependencies:** U3 (VerboseOutput buffer), U4 (RunLogService)
 
 **Files:**
-- `src/Flowline/Program.cs` — timing wrapper, closure capture, JSONL write, path line in exception handler, startup cleanup
-- `src/Flowline/Commands/SyncCommand.cs` — add SubprocessBuffer to PAC sync call
-- `src/Flowline/Commands/DeployCommand.cs` — add SubprocessBuffer to PAC import call (if applicable)
-- `src/Flowline/Commands/PushCommand.cs` — add SubprocessBuffer (if applicable)
+- `src/Flowline/Program.cs` — timing wrapper, closure capture, JSONL write, buffer flush in exception handler, path line
+- `src/Flowline/Commands/SyncCommand.cs` — switch to `WithToolExecutionLog(RuntimeOptions, ctx)`, remove explicit `SubprocessBuffer` management
+- `src/Flowline/Commands/DeployCommand.cs` — same as SyncCommand
+- `src/Flowline/Commands/PushCommand.cs` — same if applicable
 - `tests/Flowline.Tests/FlowlineCommandTests.cs` — extend with run-log integration scenarios
 
 **Approach:**
 - In `Program.cs`:
-  1. Before `app.Configure(...)`: resolve `RunLogService`, resolve `FlowlineVersion` from `Assembly.GetExecutingAssembly()`. Command name is read from `FlowlineRuntimeOptions.CommandName` (set by `FlowlineCommand.ExecuteAsync` via U2 changes) — not parsed from `args[]`.
-  2. `--help`/`-h`/`--version` check: if `args` contains any of `["--help", "-h", "--version"]` (case-insensitive), skip run log entirely and fall through to `app.RunAsync`.
-  3. Start `Stopwatch` before `app.RunAsync`.
-  4. In `SetExceptionHandler` closure: capture `ex.GetType().FullName`, `ex.Message`, and `(ex as FlowlineException)?.SubprocessOutput` into local closure variables. Print the dim `Run log: <path>` line after the error/detail output.
-  5. After `await app.RunAsync(...)`: call `await runLogService.AppendAsync(new RunLogRecord { ... })` — uses captured exception info if any, otherwise success fields.
-  6. `runLogService.CleanOldLogsAsync(DateOnly.FromDateTime(DateTime.UtcNow))` is fire-and-forgotten before `app.RunAsync`.
-- In affected commands (`SyncCommand`, `DeployCommand`, `PushCommand` — wherever `throw new FlowlineException(...)` follows a CliWrap `ExecuteAsync` with `CommandResultValidation.None`):
-  - Create `var buffer = new SubprocessBuffer()` before the subprocess call.
-  - Pass `buffer` to `WithToolExecutionLog(RuntimeOptions.IsVerbose, ctx, buffer: buffer)`.
-  - On non-zero exit, append `.WithSubprocessBuffer(buffer, RuntimeOptions.IsVerbose)` to the thrown exception.
+  1. `--help`/`-h`/`--version` check: skip run log entirely if present.
+  2. Start `Stopwatch` before `app.RunAsync`.
+  3. In `SetExceptionHandler` closure: capture `ex.GetType().FullName` and `ex.Message`. For `FlowlineException`: print error, render `fe.Detail` if set, print HelpLink if set, **flush `runtimeOptions.VerboseOutput.Lines` to console in `[dim]` if non-empty**, print the dim `Run log: <path>` line. Capture `runtimeOptions.VerboseOutput.Lines.ToArray()` into `capturedVerboseOutput`.
+  4. After `await app.RunAsync(...)`: call `await runLogService.AppendAsync(...)` with `SubprocessOutput: capturedVerboseOutput`.
+  5. `runLogService.CleanOldLogsAsync(...)` fire-and-forgotten before `app.RunAsync`.
+- In affected commands (`SyncCommand`, `DeployCommand`, `PushCommand`):
+  - Remove explicit `var buffer = new SubprocessBuffer()` creation.
+  - Replace `WithToolExecutionLog(settings.Verbose, ctx, buffer: buffer)` with `WithToolExecutionLog(RuntimeOptions, ctx)`.
+  - Remove `.WithSubprocessBuffer(buffer, RuntimeOptions.IsVerbose)` from thrown exceptions.
 
-**Patterns to follow:** Existing `SetExceptionHandler` shape in `src/Flowline/Program.cs:55-71`. `SyncCommand` subprocess pattern at lines 86-103.
+**Patterns to follow:** Existing `SetExceptionHandler` in `src/Flowline/Program.cs`. Subprocess call pattern in `SyncCommand`.
 
 **Test scenarios:**
 - Covers AE3: after a successful `RunAsync`, the JSONL file exists and contains a record with `exit_code: 0` and no exception fields.
 - Covers AE4: `RunLogService.AppendAsync` does not throw when the log directory is not writable; the command's own exit code is unaffected.
-- Covers AE1: on a non-verbose failure where a `SubprocessBuffer` is attached, the exception handler renders the buffer lines in dim style before the `Run log:` line.
-- Covers AE2: on a verbose failure, the buffer lines are NOT rendered by the exception handler; the `Run log:` line still appears.
+- Covers AE1: on a non-verbose failure with buffered verbose output, the exception handler renders the buffer lines in dim style before the `Run log:` line.
+- Covers AE2: on a verbose failure, the buffer lines are NOT rendered by the exception handler (buffer is empty — verbose mode outputs in real-time); the `Run log:` line still appears.
 - `Run log:` line is NOT printed on successful runs.
 - `--help` in `args` skips JSONL write entirely.
-- JSONL record for a failure contains `exception_type`, `exception_message`, and `subprocess_output` fields.
+- JSONL record for a failure contains `exception_type`, `exception_message`, and `subprocess_output` (verbose buffer lines).
 - `log_file` field in the JSONL record is a path ending with `logs/<today>.log`.
 
 **Verification:** `dotnet run -- sync --help` exits without creating a JSONL file. `dotnet run -- <any command>` creates `<root>/runs/<today>.jsonl` with one record. On a forced subprocess failure, the JSONL record has `subprocess_output` populated.
