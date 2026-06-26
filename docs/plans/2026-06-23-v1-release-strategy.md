@@ -84,6 +84,7 @@ Auto-backup the target environment before any deploy. Opt-out via `--skip-backup
 - [ ] Observability Wave 2 implemented (I4 stage chain, I6 correlation ID)
 - [ ] Observability Wave 3 implemented (I5 crash bundle)
 - [x] `componenttype` constants confirmed via `PicklistAttributeMetadata` — low-numbered types are stable platform constants, one org sufficient
+- [x] Greenfield getting-started path documented in wiki (`01-Getting-Started`, `14-Planned-Features`)
 - [ ] All tests pass (`dotnet test`)
 - [ ] Tone reviewed on any new CLI output (`/tone`)
 - [ ] CHANGELOG entry written for v1.0
