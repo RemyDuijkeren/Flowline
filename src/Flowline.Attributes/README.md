@@ -54,22 +54,22 @@ The _message, stage, and processing mode_ come from the **class name**; the _tab
 {DescriptiveName}{Stage keyword}{Message}[Async][Plugin]
 ```
 
-For the `DescriptiveName` you can use any name you like to describe the plugin.
+The `{DescriptiveName}` describes what the plugin does — it can include the table name but doesn't need to. The table is declared on `[Step]`.
 
-The `Stage keyword` is `Validation`, `Pre` or `Post` (see the pipeline above).
+The `{Stage keyword}` uses the shortened forms **Pre**, **Post**, and **Validation** to match Dataverse pipeline terminology (PreOperation, PostOperation, PreValidation). Shortened forms keep class names concise and readable. For async post-operation steps add the `Async` suffix, following normal C# convention.
 
-The `Message` is the action that the plugin should trigger on. Common messages: `Create`, `Update`, `Delete`, `Retrieve`, `RetrieveMultiple`, `Associate`, `Disassociate`, `Assign`, `SetState`. Names are case-sensitive.
+For **validation steps**, the `Validation` keyword already carries the intent — use a noun-based description so the keyword does double duty as part of the name's meaning. `OwnershipValidationDeletePlugin` reads as "ownership validation on delete." Avoid verb-first names like `ValidateOwnership` here: `ValidateOwnershipValidationDeletePlugin` stutters.
 
-For post-operation steps, you can add optional `Async` to make the operation asynchronous which is recommended.
+The `{Message}` is the Dataverse message: `Create`, `Update`, `Delete`, `Retrieve`, `RetrieveMultiple`, `Associate`, `Disassociate`, `Assign`, `SetState`, etc. Names are case-sensitive and must match Dataverse exactly.
 
 The `Plugin` suffix is optional but recommended. Flowline strips it before parsing.
 
 | Class name | Message | Stage | Mode |
 |---|---|---|---|
-| `AccountPostCreatePlugin` | Create | PostOperation | Synchronous |
-| `InvoicePreUpdatePlugin` | Update | PreOperation | Synchronous |
-| `ContactValidationDeletePlugin` | Delete | PreValidation | Synchronous |
-| `OrderPostUpdateAsyncPlugin` | Update | PostOperation | Asynchronous |
+| `SetNamePostCreatePlugin` | Create | PostOperation | Synchronous |
+| `RecalculateTotalsPreUpdatePlugin` | Update | PreOperation | Synchronous |
+| `OwnershipValidationDeletePlugin` | Delete | PreValidation | Synchronous |
+| `NotifyPostUpdateAsyncPlugin` | Update | PostOperation | Asynchronous |
 
 Classes without `[Step]` are skipped. Classes with `[Step]` must follow the naming convention;
 Flowline fails fast when it cannot parse the stage and message, because `[Step]` is explicit
@@ -83,7 +83,7 @@ Specifies the table logical name. Without it, Flowline ignores the class.
 
 ```csharp
 [Step("account")]
-public class AccountPostCreatePlugin : IPlugin { ... }
+public class SetNamePostCreatePlugin : IPlugin { ... }
 ```
 
 The logical name is always lowercase and found in the maker portal under **Table → Properties → Name**.
@@ -116,7 +116,7 @@ Use `RunAs` to run the plugin as a specific service account. Pass the string for
 
 ```csharp
 [Step("account", RunAs = "3b36b50c-03e5-4b5f-8882-123456789abc")]
-public class AccountPostCreatePlugin : IPlugin { ... }
+public class SetNamePostCreatePlugin : IPlugin { ... }
 ```
 
 > **Use environment-stable GUIDs.** The value is stored in source control and the solution XML. Avoid personal accounts or accounts whose GUID differs between environments.
@@ -125,11 +125,11 @@ Use `Config` to pass endpoint URLs, feature flags, or JSON settings. Receive the
 
 ```csharp
 [Step("account", Config = "{\"endpoint\":\"https://api.example.com\"}")]
-public class AccountPostCreatePlugin : IPlugin
+public class SetNamePostCreatePlugin : IPlugin
 {
     private readonly string _endpoint;
 
-    public AccountPostCreatePlugin(string unsecureConfig)
+    public SetNamePostCreatePlugin(string unsecureConfig)
     {
         _endpoint = JsonSerializer.Deserialize<Config>(unsecureConfig)!.Endpoint;
     }
@@ -182,7 +182,7 @@ Without `[Filter]`, an Update step fires on **every** update to the table, regar
 ```csharp
 [Step("account")]
 [Filter("name", "creditlimit")]
-public class AccountPreUpdatePlugin : IPlugin { ... }
+public class RecalculateTotalsPreUpdatePlugin : IPlugin { ... }
 ```
 
 Use `nameof` with early-bound classes for compile-time safety:
@@ -214,7 +214,7 @@ Specify only the columns your plugin needs. Omitting columns fetches all of them
 [Filter("name", "creditlimit")]
 [PreImage("name", "creditlimit")]
 [PostImage("name", "creditlimit")]
-public class AccountPostUpdatePlugin : IPlugin
+public class RecalculateTotalsPostUpdatePlugin : IPlugin
 {
     public void Execute(IServiceProvider sp)
     {
@@ -243,7 +243,7 @@ Default aliases are `"preimage"` and `"postimage"`. Override `Alias` when migrat
 ```csharp
 [Step("account")]
 [Filter("creditlimit")]
-public class AccountValidationUpdatePlugin : IPlugin
+public class CreditLimitValidationUpdatePlugin : IPlugin
 {
     public void Execute(IServiceProvider sp)
     {
@@ -260,7 +260,7 @@ public class AccountValidationUpdatePlugin : IPlugin
 
 ```csharp
 [Step("account")]
-public class AccountPreCreatePlugin : IPlugin
+public class SetSourceTagPreCreatePlugin : IPlugin
 {
     public void Execute(IServiceProvider sp)
     {
@@ -312,9 +312,14 @@ public class AccountPlugin : IPlugin { ... }
 
 If the class name would also parse to the same registration (message, stage, and mode all match), Flowline warns that `[Handles]` is redundant.
 
-#### Stacking `[Handles]` — migration from spkl / Daxif
+#### Stacking `[Handles]` — last resort for brownfield migration
 
-Stack multiple `[Handles]` attributes on one class to register multiple Dataverse steps. This is a migration stepping-stone for codebases where one class covered multiple registrations in spkl or Daxif:
+> [!CAUTION]
+> Stacking `[Handles]` goes against Flowline's intent. Flowline is designed around **one class = one step** — the class name carries the step's identity. Multi-step classes obscure that contract and make `push` output harder to read.
+>
+> **Hard limitation:** all stacked handles share the same `[Step]`, which sets the primary table. If any two steps fire on **different primary tables**, stacking cannot help — you need two separate classes regardless.
+
+Use only when migrating from a tool where one class handled multiple steps and splitting right now is not feasible. Split into named subclasses as soon as the migration window allows.
 
 ```csharp
 [Step("account")]
@@ -503,7 +508,7 @@ Each plugin class registers exactly one step. This constraint pays dividends:
 
 **Focused `Execute` bodies.** Without the rule, `Execute` needs branching logic to handle different messages. With it, every `Execute` does one thing — Dataverse guarantees which step fired because only one is registered.
 
-**Self-describing logs.** When a plugin throws, Dataverse logs the class name. `AccountPostCreatePlugin` tells you exactly what happened; `AccountPlugin` does not.
+**Self-describing logs.** When a plugin throws, Dataverse logs the class name. `SetNamePostCreatePlugin` tells you exactly what happened; `AccountPlugin` does not.
 
 **Shared logic via base classes.** The rule does not mean duplicating code. Put shared logic in a base class and declare one leaf class per step:
 
