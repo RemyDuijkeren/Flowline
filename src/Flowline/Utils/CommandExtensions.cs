@@ -75,7 +75,7 @@ public static class CommandExtensions
     static readonly Regex s_sensitiveArgPattern =
         new(@"(?<dashFlag>--client-secret)\s+(?:""[^""]*""|\S+)|(?<colonFlag>/mfaClientSecret:)(?:""[^""]*""|\S+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    static string RedactSensitiveArgs(string cmdStr) =>
+    internal static string RedactSensitiveArgs(string cmdStr) =>
         s_sensitiveArgPattern.Replace(cmdStr, m =>
             m.Groups["dashFlag"].Success ? $"{m.Groups["dashFlag"].Value} ***" : $"{m.Groups["colonFlag"].Value}***");
 

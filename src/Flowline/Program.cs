@@ -12,6 +12,7 @@ using Serilog;
 using Serilog.Events;
 using Spectre.Console;
 using Spectre.Console.Cli;
+using System.Diagnostics;
 using System.Reflection;
 using System.Text;
 
@@ -28,10 +29,13 @@ Console.CancelKeyPress += (_, e) =>
     Console.WriteLine("Cancelled.");
 };
 
+var runtimeOptions = new FlowlineRuntimeOptions();
+var runLogService = new RunLogService();
+
 // Register services
 var services = new ServiceCollection();
 services.AddSingleton<IAnsiConsole>(AnsiConsole.Console);
-services.AddSingleton<FlowlineRuntimeOptions>();
+services.AddSingleton(runtimeOptions);
 services.AddSingleton<DataverseConnector>();
 services.AddSingleton<ProfileResolutionService>();
 services.AddSingleton<HttpClient>();
@@ -45,7 +49,7 @@ services.AddSingleton<PluginService>();
 services.AddSingleton<WebResourceService>();
 services.AddSingleton<OrphanCleanupService>();
 services.AddSingleton<SolutionDiffService>();
-services.AddSingleton<RunLogService>();
+services.AddSingleton(runLogService);
 
 Serilog.ILogger? serilogLogger = null;
 try
@@ -63,6 +67,13 @@ try
 }
 catch { }
 services.AddLogging(b => b.ClearProviders().AddSerilog(serilogLogger));
+
+var isHelpOrVersion = args.Any(a => a is "--help" or "-h" or "--version");
+_ = runLogService.CleanOldLogsAsync(DateOnly.FromDateTime(DateTime.UtcNow));
+
+string? capturedExceptionType = null;
+string? capturedExceptionMessage = null;
+string[]? capturedSubprocessOutput = null;
 
 // Configure and run the app
 var app = new CommandApp(new TypeRegistrar(services));
@@ -84,11 +95,17 @@ app.Configure(config =>
                 fe.Detail?.Invoke(AnsiConsole.Console);
                 if (fe.HelpLink is not null)
                     AnsiConsole.MarkupLine($"[dim]See: {fe.HelpLink}[/]");
+                AnsiConsole.MarkupLine($"[dim]Run log: {FlowlineStoragePaths.GetRunsPath(DateOnly.FromDateTime(DateTime.UtcNow))}[/]");
+                capturedExceptionType = ex.GetType().FullName;
+                capturedExceptionMessage = ex.Message;
+                capturedSubprocessOutput = fe.SubprocessOutput;
                 return (int)fe.ExitCode;
             case OperationCanceledException:
                 return (int)ExitCode.Cancelled;
             default:
                 AnsiConsole.WriteException(ex, ExceptionFormats.ShortenPaths);
+                capturedExceptionType = ex.GetType().FullName;
+                capturedExceptionMessage = ex.Message;
                 return 1;
         }
     });
@@ -153,6 +170,28 @@ app.Configure(config =>
           .WithExample("generate", "--generator", "xrmcontext3");
 });
 
+var sw = Stopwatch.StartNew();
 var exitCode = await app.RunAsync(args, cancellationTokenSource.Token);
+sw.Stop();
+
+if (!isHelpOrVersion)
+{
+    var today = DateOnly.FromDateTime(DateTime.UtcNow);
+    var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version ?? "unknown";
+    var record = new RunLogRecord(
+        Timestamp: DateTimeOffset.UtcNow,
+        CommandName: runtimeOptions.CommandName ?? "unknown",
+        ArgsRedacted: CommandExtensions.RedactSensitiveArgs(string.Join(" ", args)),
+        ExitCode: exitCode,
+        DurationMs: sw.ElapsedMilliseconds,
+        FlowlineVersion: version,
+        ToolVersions: runLogService.ReadToolVersions(),
+        LogFilePath: FlowlineStoragePaths.GetLogsPath(today),
+        ExceptionType: capturedExceptionType,
+        ExceptionMessage: capturedExceptionMessage,
+        SubprocessOutput: capturedSubprocessOutput
+    );
+    await runLogService.AppendAsync(record);
+}
 Log.CloseAndFlush();
 return exitCode;

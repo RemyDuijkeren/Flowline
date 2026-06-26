@@ -219,6 +219,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var packagePath = Path.Combine(artifactsFolder, $"{sln.Name}{suffix}.zip");
 
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(ct);
+        var buffer = new SubprocessBuffer();
         var result = await Console.Status().FlowlineSpinner().StartAsync(
             $"Packing [bold]{sln.Name}[/]...",
             _ => Cli.Wrap(cmdName)
@@ -229,12 +230,13 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
                         .Add("--zipFile").Add(packagePath)
                         .Add("--packageType").Add(packageType))
                     .WithValidation(CommandResultValidation.None)
-                    .WithToolExecutionLog(settings.Verbose)
+                    .WithToolExecutionLog(settings.Verbose, buffer: buffer)
                     .ExecuteAsync(ct)
                     .Task);
 
         if (result.ExitCode != 0)
-            throw new FlowlineException(ExitCode.BuildFailed, "Pack failed — check your solution source.");
+            throw new FlowlineException(ExitCode.BuildFailed, "Pack failed — check your solution source.")
+                .WithSubprocessBuffer(buffer.Lines.ToArray(), settings.Verbose);
 
         return packagePath;
     }
@@ -242,6 +244,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     private async Task ImportSolutionAsync(string packagePath, EnvironmentInfo targetEnv, string slnName, CancellationToken ct)
     {
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(ct);
+        var buffer = new SubprocessBuffer();
         var result = await Console.Status().FlowlineSpinner().StartAsync(
             $"Deploying [bold]{slnName}[/] to [bold]{targetEnv.DisplayName}[/]...",
             _ => Cli.Wrap(cmdName)
@@ -252,14 +255,15 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
                         .Add("--environment").Add(targetEnv.EnvironmentUrl!)
                         .Add("--async"))
                     .WithValidation(CommandResultValidation.None)
-                    .WithToolExecutionLog()
-                    .WithStandardOutputPipe(PipeTarget.ToDelegate(s => Console.MarkupLineInterpolated($"[dim]PAC: {s}[/]")))
-                    .WithStandardErrorPipe(PipeTarget.ToDelegate(System.Console.Error.WriteLine))
+                    .WithToolExecutionLog(RuntimeOptions.IsVerbose)
+                    .WithStandardOutputPipe(PipeTarget.ToDelegate(s => { buffer.Append(s); if (RuntimeOptions.IsVerbose) Console.MarkupLineInterpolated($"[dim]PAC: {s}[/]"); }))
+                    .WithStandardErrorPipe(PipeTarget.ToDelegate(s => { buffer.Append(s); if (RuntimeOptions.IsVerbose) System.Console.Error.WriteLine(s); }))
                     .ExecuteAsync(ct)
                     .Task);
 
         if (result.ExitCode != 0)
-            throw new FlowlineException(ExitCode.BuildFailed, "Deploy failed — check the environment and your PAC login.");
+            throw new FlowlineException(ExitCode.BuildFailed, "Deploy failed — check the environment and your PAC login.")
+                .WithSubprocessBuffer(buffer.Lines.ToArray(), RuntimeOptions.IsVerbose);
     }
 
     // ── DTAP gate (static helpers, tested directly) ──────────────────────────

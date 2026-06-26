@@ -1,4 +1,5 @@
 using Flowline.Commands;
+using Flowline.Utils;
 using FluentAssertions;
 
 namespace Flowline.Tests;
@@ -21,6 +22,13 @@ public class FlowlineCommandTests
         var slnFolder = Path.Combine("solutions", "MySolution");
         FlowlineCommand<FlowlineSettings>.PackageFolder(slnFolder)
             .Should().Be(Path.Combine("solutions", "MySolution", "Package"));
+    }
+
+    [Fact]
+    public void RedactSensitiveArgs_ClientSecret_ReplacesWithAsterisks()
+    {
+        CommandExtensions.RedactSensitiveArgs("--client-secret abc123")
+            .Should().Contain("***");
     }
 
     [Theory]

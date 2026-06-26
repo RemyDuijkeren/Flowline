@@ -84,6 +84,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         // Sync solution from Dataverse
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
+        var buffer = new SubprocessBuffer();
         CommandResult result = await Console.Status().FlowlineSpinner().StartAsync(
             $"Syncing solution [bold]{projectSln.Name}[/]...",
             ctx => Cli.Wrap(cmdName)
@@ -96,12 +97,13 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
                               .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
                               .Add("--async"))
                       .WithValidation(CommandResultValidation.None)
-                      .WithToolExecutionLog(settings.Verbose, ctx)
+                      .WithToolExecutionLog(settings.Verbose, ctx, buffer: buffer)
                       .ExecuteAsync(cancellationToken)
                       .Task);
 
         if (!result.IsSuccess)
-            throw new FlowlineException(ExitCode.GeneralError, "Sync failed — check the environment and your PAC login. Use --verbose for more details.");
+            throw new FlowlineException(ExitCode.GeneralError, "Sync failed — check the environment and your PAC login. Use --verbose for more details.")
+                .WithSubprocessBuffer(buffer.Lines.ToArray(), settings.Verbose);
 
         Console.Ok($"Solution synced from Dataverse in {FormatDuration(result.RunTime)}");
 
