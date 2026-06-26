@@ -29,7 +29,7 @@ sealed class RunLogService
             var json = JsonSerializer.Serialize(record, s_jsonOptions);
             await File.AppendAllTextAsync(path, json + Environment.NewLine);
         }
-        catch { }
+        catch { } // Intentional: log failures must not affect command outcome (R16).
     }
 
     public Task CleanOldLogsAsync(DateOnly today)
@@ -39,7 +39,7 @@ sealed class RunLogService
             CleanDirectory(FlowlineStoragePaths.GetRunsPath(today), ".jsonl", today);
             CleanDirectory(FlowlineStoragePaths.GetLogsPath(today), ".log", today);
         }
-        catch { }
+        catch { } // Intentional: log failures must not affect command outcome (R16).
         return Task.CompletedTask;
     }
 
@@ -52,7 +52,7 @@ sealed class RunLogService
             var name = Path.GetFileNameWithoutExtension(file);
             if (DateOnly.TryParseExact(name, "yyyy-MM-dd", out var fileDate) && today.DayNumber - fileDate.DayNumber > 30)
             {
-                try { File.Delete(file); } catch { }
+                try { File.Delete(file); } catch { } // Intentional: log failures must not affect command outcome (R16).
             }
         }
     }

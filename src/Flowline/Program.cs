@@ -51,12 +51,13 @@ services.AddSingleton<OrphanCleanupService>();
 services.AddSingleton<SolutionDiffService>();
 services.AddSingleton(runLogService);
 
+var runDate = DateOnly.FromDateTime(DateTime.UtcNow);
+
 Serilog.ILogger? serilogLogger = null;
 try
 {
-    var today = DateOnly.FromDateTime(DateTime.UtcNow);
-    var logPath = FlowlineStoragePaths.GetLogsPath(today);
-    try { Directory.CreateDirectory(Path.GetDirectoryName(logPath)!); } catch { }
+    var logPath = FlowlineStoragePaths.GetLogsPath(runDate);
+    try { Directory.CreateDirectory(Path.GetDirectoryName(logPath)!); } catch { } // Intentional: dir creation failure must not block launch (R16).
     serilogLogger = new LoggerConfiguration()
         .MinimumLevel.Debug()
         .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
@@ -65,11 +66,11 @@ try
         .CreateLogger();
     Log.Logger = serilogLogger;
 }
-catch { }
+catch { } // Intentional: Serilog init failure must not block command launch (R16).
 services.AddLogging(b => b.ClearProviders().AddSerilog(serilogLogger));
 
 var isHelpOrVersion = args.Any(a => a is "--help" or "-h" or "--version");
-_ = runLogService.CleanOldLogsAsync(DateOnly.FromDateTime(DateTime.UtcNow));
+_ = runLogService.CleanOldLogsAsync(runDate);
 
 string? capturedExceptionType = null;
 string? capturedExceptionMessage = null;
@@ -99,7 +100,7 @@ app.Configure(config =>
                 capturedVerboseOutput = runtimeOptions.VerboseOutput.Lines.ToArray();
                 if (fe.HelpLink is not null)
                     AnsiConsole.MarkupLine($"[dim]See: {fe.HelpLink}[/]");
-                AnsiConsole.MarkupLine($"[dim]Run log: {FlowlineStoragePaths.GetRunsPath(DateOnly.FromDateTime(DateTime.UtcNow))}[/]");
+                AnsiConsole.MarkupLine($"[dim]Run log: {FlowlineStoragePaths.GetRunsPath(runDate)}[/]");
                 capturedExceptionType = ex.GetType().FullName;
                 capturedExceptionMessage = ex.Message;
                 return (int)fe.ExitCode;
@@ -109,6 +110,8 @@ app.Configure(config =>
                 AnsiConsole.WriteException(ex, ExceptionFormats.ShortenPaths);
                 capturedExceptionType = ex.GetType().FullName;
                 capturedExceptionMessage = ex.Message;
+                capturedVerboseOutput = runtimeOptions.VerboseOutput.Lines.ToArray();
+                AnsiConsole.MarkupLine($"[dim]Run log: {FlowlineStoragePaths.GetRunsPath(runDate)}[/]");
                 return 1;
         }
     });
@@ -179,7 +182,6 @@ sw.Stop();
 
 if (!isHelpOrVersion)
 {
-    var today = DateOnly.FromDateTime(DateTime.UtcNow);
     var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version ?? "unknown";
     var record = new RunLogRecord(
         Timestamp: DateTimeOffset.UtcNow,
@@ -189,7 +191,7 @@ if (!isHelpOrVersion)
         DurationMs: sw.ElapsedMilliseconds,
         FlowlineVersion: version,
         ToolVersions: runLogService.ReadToolVersions(),
-        LogFilePath: FlowlineStoragePaths.GetLogsPath(today),
+        LogFilePath: FlowlineStoragePaths.GetLogsPath(runDate),
         ExceptionType: capturedExceptionType,
         ExceptionMessage: capturedExceptionMessage,
         SubprocessOutput: capturedVerboseOutput

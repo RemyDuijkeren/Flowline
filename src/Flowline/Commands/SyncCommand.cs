@@ -73,10 +73,10 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             async ctx =>
             {
                 var currentVersion = await PacUtils.GetSolutionVersionAsync(slnInfo.SolutionUniqueName!, devEnv.EnvironmentUrl!, settings.Verbose, cancellationToken);
-                Console.Verbose($"[dim]Current version: {currentVersion}[/]", RuntimeOptions);
+                Console.Verbose($"Current version: {currentVersion}", RuntimeOptions);
                 var newVersion = BumpVersion(currentVersion, settings.Bump);
                 await PacUtils.SetSolutionVersionAsync(slnInfo.SolutionUniqueName!, newVersion, devEnv.EnvironmentUrl!, settings.Verbose, cancellationToken);
-                Console.Verbose($"[dim]New version: {newVersion}[/]", RuntimeOptions);
+                Console.Verbose($"New version: {newVersion}", RuntimeOptions);
                 var tagVersion = ToTagVersion(newVersion);
                 return tagVersion;
             });

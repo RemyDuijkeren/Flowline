@@ -11,16 +11,20 @@ public sealed class FlowlineRuntimeOptions
     {
         const int MaxLines = 50;
         readonly Queue<string> _lines = new();
+        readonly object _lock = new();
 
         public void Append(string markup)
         {
-            if (_lines.Count >= MaxLines)
-                _lines.Dequeue();
-            _lines.Enqueue(markup);
+            lock (_lock)
+            {
+                if (_lines.Count >= MaxLines)
+                    _lines.Dequeue();
+                _lines.Enqueue(markup);
+            }
         }
 
-        public IReadOnlyList<string> Lines => _lines.ToArray();
+        public IReadOnlyList<string> Lines { get { lock (_lock) return _lines.ToArray(); } }
 
-        public void Clear() => _lines.Clear();
+        public void Clear() { lock (_lock) _lines.Clear(); }
     }
 }

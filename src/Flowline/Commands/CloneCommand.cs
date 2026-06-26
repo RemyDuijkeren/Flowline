@@ -250,7 +250,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         }
 
         Console.Ok("WebResources/public seeded from src");
-        Console.Verbose($"[dim]{publicFolder}[/]", RuntimeOptions);
+        Console.Verbose(publicFolder, RuntimeOptions);
     }
 
     private async Task CloneSolutionFromDataverseAsync(ProjectSolution projectSln, string slnFolder, string cdsprojPath, string environmentUrl,
@@ -361,7 +361,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         }
 
         Console.Ok($"[bold]{PackageName}.cdsproj[/] added to solution file");
-        Console.Verbose($"[dim]{slnFilePath}[/]", RuntimeOptions);
+        Console.Verbose(slnFilePath, RuntimeOptions);
     }
 
     private async Task SetupPluginsProjectAsync(string slnFolder, Settings settings, CancellationToken cancellationToken)
