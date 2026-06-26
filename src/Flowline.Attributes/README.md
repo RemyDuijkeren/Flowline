@@ -48,7 +48,7 @@ The _message, stage, and processing mode_ come from the **class name**; the _tab
 | `Post` (sync) | After the record is saved | Yes | Follow-up writes that must be atomic with the triggering operation |
 | `Post` + `Async` | After the transaction closes | No | Notifications, external API calls, long-running work |
 
-### Class naming
+### Class naming convention
 
 ```
 {DescriptiveName}{Stage keyword}{Message}[Async][Plugin]
