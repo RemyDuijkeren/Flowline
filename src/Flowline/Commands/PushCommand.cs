@@ -209,7 +209,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
                 : $"{PluginsName}.dll not found — build the solution (Release) first, or drop --no-build.");
 
         Console.Info($"[bold]{Path.GetFileName(pluginsDll)}[/] found");
-        Console.Verbose($"{pluginsDll}", RuntimeOptions.IsVerbose);
+        Console.Verbose($"{pluginsDll}", RuntimeOptions);
 
         return pluginsDll;
     }

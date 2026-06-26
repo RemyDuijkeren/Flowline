@@ -166,7 +166,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             {
                 modelNamespace = NamespaceDeriver.Derive(slnFolder, solutionName);
                 namespaceWasDerived = true;
-                Console.Verbose($"Derived namespace: [bold]{modelNamespace}[/]", settings.Verbose);
+                Console.Verbose($"Derived namespace: [bold]{modelNamespace}[/]", RuntimeOptions);
             }
 
             // Resolve output path: --output flag > saved OutputPath > convention
