@@ -11,5 +11,6 @@ sealed record RunLogRecord(
     string LogFilePath,
     string? ExceptionType,
     string? ExceptionMessage,
-    string[]? SubprocessOutput
+    string? ExceptionStackTrace,
+    string[]? VerboseOutput
 );

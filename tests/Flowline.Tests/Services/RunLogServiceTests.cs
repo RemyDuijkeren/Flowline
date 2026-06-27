@@ -22,10 +22,11 @@ public class RunLogServiceTests : IDisposable
         DurationMs: 1234,
         FlowlineVersion: "1.0.0",
         ToolVersions: new Dictionary<string, string?> { ["dotnet"] = "9.0.0", ["pac"] = "1.30.0", ["git"] = "2.43.0" },
-        LogFilePath: "/tmp/logs/2026-06-26.log",
+        LogFilePath: "/tmp/logs/2026-06-27T082644Z.log",
         ExceptionType: null,
         ExceptionMessage: null,
-        SubprocessOutput: null
+        ExceptionStackTrace: null,
+        VerboseOutput: null
     );
 
     // 1. AppendToAsync creates the runs directory if it doesn't exist

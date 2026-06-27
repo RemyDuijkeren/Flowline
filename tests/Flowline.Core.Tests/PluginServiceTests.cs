@@ -162,9 +162,9 @@ public class PluginServiceTests
 
     private void SetupPluginTypes(params Entity[] types)
     {
-        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "plugintype"))
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "plugintype" && q.LinkEntities.Count == 0))
             .Returns(Task.FromResult(new EntityCollection(types.ToList())));
-        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "plugintype"), Arg.Any<CancellationToken>())
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "plugintype" && q.LinkEntities.Count == 0), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(types.ToList())));
     }
 

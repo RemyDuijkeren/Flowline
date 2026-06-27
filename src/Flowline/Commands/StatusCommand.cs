@@ -2,14 +2,17 @@ using System.ComponentModel;
 using Flowline.Config;
 using Flowline.Utils;
 using Flowline.Validation;
+using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class StatusCommand(IAnsiConsole console) : AsyncCommand<StatusCommand.Settings>
+public class StatusCommand(IAnsiConsole console, ILoggerFactory loggerFactory) : AsyncCommand<StatusCommand.Settings>
 {
     private readonly IAnsiConsole Console = console;
+    private ILogger? _logger;
+    protected ILogger Logger => _logger ??= loggerFactory.CreateLogger(GetType().Name);
 
     public sealed class Settings : FlowlineSettings
     {

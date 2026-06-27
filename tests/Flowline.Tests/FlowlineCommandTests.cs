@@ -7,7 +7,16 @@ namespace Flowline.Tests;
 public class FlowlineCommandTests
 {
     [Theory]
-    [InlineData(0,  "0s")]
+    [InlineData(  0, "0ms")]
+    [InlineData(500, "500ms")]
+    [InlineData(999, "999ms")]
+    public void FormatDuration_UnderOneSecond_ShowsMilliseconds(int ms, string expected)
+    {
+        FlowlineCommand<FlowlineSettings>.FormatDuration(TimeSpan.FromMilliseconds(ms))
+            .Should().Be(expected);
+    }
+
+    [Theory]
     [InlineData(1,  "1s")]
     [InlineData(59, "59s")]
     public void FormatDuration_UnderOneMinute_ShowsSeconds(int seconds, string expected)

@@ -5,6 +5,7 @@ using Flowline.Services;
 using Flowline.Utils;
 using Flowline.Validation;
 using Spectre.Console;
+using Microsoft.Extensions.Logging;
 using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
@@ -13,7 +14,7 @@ public enum Role { Dev, Test, Uat }
 
 public enum CopyType { Minimal, Full }
 
-public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService) : FlowlineCommand<ProvisionCommand.Settings>(console, runtimeOptions, profileResolutionService)
+public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory) : FlowlineCommand<ProvisionCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory)
 {
     public sealed class Settings : FlowlineSettings
     {

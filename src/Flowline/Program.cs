@@ -31,6 +31,7 @@ Console.CancelKeyPress += (_, e) =>
 
 var runtimeOptions = new FlowlineRuntimeOptions();
 var runLogService = new RunLogService();
+var runTime = DateTimeOffset.UtcNow;
 
 // Register services
 var services = new ServiceCollection();
@@ -48,7 +49,6 @@ services.AddSingleton<IGenerator, XrmContextGenerator>();
 services.AddSingleton<PluginService>();
 services.AddSingleton<WebResourceService>();
 services.AddSingleton<OrphanCleanupService>();
-services.AddSingleton<SolutionDiffService>();
 services.AddSingleton(runLogService);
 
 var runDate = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -56,7 +56,7 @@ var runDate = DateOnly.FromDateTime(DateTime.UtcNow);
 Serilog.ILogger? serilogLogger = null;
 try
 {
-    var logPath = FlowlineStoragePaths.GetLogsPath(runDate);
+    var logPath = FlowlineStoragePaths.GetLogsPath(runTime);
     try { Directory.CreateDirectory(Path.GetDirectoryName(logPath)!); } catch { } // Intentional: dir creation failure must not block launch (R16).
     serilogLogger = new LoggerConfiguration()
         .MinimumLevel.Debug()
@@ -70,10 +70,12 @@ catch { } // Intentional: Serilog init failure must not block command launch (R1
 services.AddLogging(b => b.ClearProviders().AddSerilog(serilogLogger));
 
 var isHelpOrVersion = args.Any(a => a is "--help" or "-h" or "--version");
+runtimeOptions.ArgsRedacted = CommandExtensions.RedactSensitiveArgs(string.Join(" ", args));
 _ = runLogService.CleanOldLogsAsync(runDate);
 
 string? capturedExceptionType = null;
 string? capturedExceptionMessage = null;
+string? capturedExceptionStackTrace = null;
 string[]? capturedVerboseOutput = null;
 
 // Configure and run the app
@@ -103,6 +105,7 @@ app.Configure(config =>
                 AnsiConsole.MarkupLine($"[dim]Run log: {FlowlineStoragePaths.GetRunsPath(runDate)}[/]");
                 capturedExceptionType = ex.GetType().FullName;
                 capturedExceptionMessage = ex.Message;
+                capturedExceptionStackTrace = ex.ToString();
                 return (int)fe.ExitCode;
             case OperationCanceledException:
                 return (int)ExitCode.Cancelled;
@@ -110,6 +113,7 @@ app.Configure(config =>
                 AnsiConsole.WriteException(ex, ExceptionFormats.ShortenPaths);
                 capturedExceptionType = ex.GetType().FullName;
                 capturedExceptionMessage = ex.Message;
+                capturedExceptionStackTrace = ex.ToString();
                 capturedVerboseOutput = runtimeOptions.VerboseOutput.Lines.ToArray();
                 AnsiConsole.MarkupLine($"[dim]Run log: {FlowlineStoragePaths.GetRunsPath(runDate)}[/]");
                 return 1;
@@ -191,10 +195,11 @@ if (!isHelpOrVersion)
         DurationMs: sw.ElapsedMilliseconds,
         FlowlineVersion: version,
         ToolVersions: runLogService.ReadToolVersions(),
-        LogFilePath: FlowlineStoragePaths.GetLogsPath(runDate),
+        LogFilePath: FlowlineStoragePaths.GetLogsPath(runTime),
         ExceptionType: capturedExceptionType,
         ExceptionMessage: capturedExceptionMessage,
-        SubprocessOutput: capturedVerboseOutput
+        ExceptionStackTrace: capturedExceptionStackTrace,
+        VerboseOutput: capturedVerboseOutput
     );
     await runLogService.AppendAsync(record);
 }

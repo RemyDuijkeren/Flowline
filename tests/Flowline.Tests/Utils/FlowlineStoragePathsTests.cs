@@ -25,12 +25,12 @@ public class FlowlineStoragePathsTests
     }
 
     [Fact]
-    public void GetLogsPath_ReturnsPathEndingWithLogsDateAndExtension()
+    public void GetLogsPath_ReturnsPathEndingWithLogsTimestampAndExtension()
     {
-        var date = new DateOnly(2026, 1, 15);
+        var runTime = new DateTimeOffset(2026, 1, 15, 8, 26, 44, TimeSpan.Zero);
 
-        var path = FlowlineStoragePaths.GetLogsPath(date);
+        var path = FlowlineStoragePaths.GetLogsPath(runTime);
 
-        path.Should().EndWith(Path.Combine("logs", "2026-01-15.log"));
+        path.Should().EndWith(Path.Combine("logs", "2026-01-15T082644Z.log"));
     }
 }

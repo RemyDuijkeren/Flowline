@@ -4,6 +4,8 @@ using Flowline.Core.Services;
 using Flowline.Services;
 using Flowline.Utils;
 using Flowline.Validation;
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -12,7 +14,7 @@ namespace Flowline.Commands;
 
 public enum EnvironmentRole { Prod, Uat, Test, Dev }
 
-public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService) : AsyncCommand<TSettings>
+public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory) : AsyncCommand<TSettings>
     where TSettings : FlowlineSettings
 {
     protected const string AllSolutionsFolderName = "solutions";
@@ -23,12 +25,14 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     public static string PackageFolder(string slnFolder) => Path.Combine(slnFolder, PackageName);
 
     public static string FormatDuration(TimeSpan elapsed) =>
-        elapsed.TotalMinutes >= 1
-            ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds}s"
-            : $"{(int)elapsed.TotalSeconds}s";
+        elapsed.TotalMinutes >= 1 ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds}s" :
+        elapsed.TotalSeconds  >= 1 ? $"{(int)elapsed.TotalSeconds}s" :
+                                     $"{(int)elapsed.TotalMilliseconds}ms";
 
     protected readonly IAnsiConsole Console = console;
     protected FlowlineRuntimeOptions RuntimeOptions { get; } = runtimeOptions;
+    private ILogger? _logger;
+    protected ILogger Logger => _logger ??= loggerFactory.CreateLogger(GetType().Name);
 
     protected string RootFolder { get; private set; } = Directory.GetCurrentDirectory();
     protected ProjectConfig? Config { get; private set; }
@@ -45,14 +49,23 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         RuntimeOptions.CommandName = context.Name;
         InitializeRuntimeOptions(settings);
 
+        var argsOnly = RuntimeOptions.ArgsRedacted is { } r && r.StartsWith(context.Name)
+            ? r[context.Name.Length..].TrimStart()
+            : RuntimeOptions.ArgsRedacted ?? "";
+        var sw = Stopwatch.StartNew();
+        Logger.LogInformation("Command: {Command} {Args}", context.Name, argsOnly);
+
         if (ShowWelcome && ConsoleHelper.IsInteractive(settings) && FlowlineValidator.Default.ShouldShowWelcomeScreen(settings.NoCache))
             ConsoleHelper.WelcomeScreen(Console);
 
         await CheckSetupAsync(settings, cancellationToken);
+        Logger.LogInformation("Setup check: {Duration}", FormatDuration(sw.Elapsed));
 
         Config = ProjectConfig.Load(RootFolder) ?? new ProjectConfig();
 
-        return await ExecuteFlowlineAsync(context, settings, cancellationToken);
+        var exitCode = await ExecuteFlowlineAsync(context, settings, cancellationToken);
+        Logger.LogInformation("Completed: {Command} exit={ExitCode} duration={Duration}", context.Name, exitCode, FormatDuration(sw.Elapsed));
+        return exitCode;
     }
 
     protected abstract Task<int> ExecuteFlowlineAsync(CommandContext context, TSettings settings, CancellationToken cancellationToken);

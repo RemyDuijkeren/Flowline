@@ -5,6 +5,7 @@ public sealed class FlowlineRuntimeOptions
     public bool IsVerbose { get; set; }
     public bool Force { get; set; }
     public string? CommandName { get; set; }
+    public string? ArgsRedacted { get; set; }
     public VerboseOutputBuffer VerboseOutput { get; } = new();
 
     public sealed class VerboseOutputBuffer

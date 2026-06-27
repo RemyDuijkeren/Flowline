@@ -6,16 +6,16 @@ using Flowline.Core;
 using Flowline.Services;
 using Flowline.Utils;
 using Spectre.Console;
+using Microsoft.Extensions.Logging;
 using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
 public enum BumpComponent { Patch, Minor, Major }
 
-public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, SolutionDiffService solutionDiffService) :
-    FlowlineCommand<SyncCommand.Settings>(console, runtimeOptions, profileResolutionService)
+public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory) :
+    FlowlineCommand<SyncCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory)
 {
-    readonly SolutionDiffService _solutionDiffService = solutionDiffService;
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "[solution]")]
@@ -54,7 +54,8 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         // Check for uncommitted changes
         var srcPath = Path.Combine(PackageFolder(slnFolder), "src");
-        var preSyncSummary = await _solutionDiffService.ComputeAsync(srcPath, RootFolder, settings.Verbose, cancellationToken);
+        var preSyncSummary = await SolutionChangeSummary.ComputeAsync(srcPath, RootFolder, settings.Verbose, cancellationToken);
+        Logger.LogInformation("Diff: {TotalFiles} files changed", preSyncSummary.TotalFiles);
         if (preSyncSummary.TotalFiles > 0)
         {
             if (!settings.Force)
@@ -145,7 +146,8 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         }
 
         // Summary of changes
-        var summary = await _solutionDiffService.ComputeAsync(srcPath, RootFolder, settings.Verbose, cancellationToken);
+        var summary = await SolutionChangeSummary.ComputeAsync(srcPath, RootFolder, settings.Verbose, cancellationToken);
+        Logger.LogInformation("Diff: {TotalFiles} files changed", summary.TotalFiles);
         summary.WriteTree(Console, devEnv.DisplayName, settings.Verbose);
         await summary.WriteChangesFileAsync(slnFolder, projectSln.Name, devEnv.DisplayName, cancellationToken);
         await new DataverseContextGenerator(Console).GenerateAsync(

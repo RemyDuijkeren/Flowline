@@ -28,7 +28,7 @@ When a Flowline command fails on a CI server or a developer machine that wasn't 
 **Run Log (I1)**
 
 - R1. Every `FlowlineCommand.ExecuteAsync` invocation appends one JSONL record to `<root>/runs/<yyyy-MM-dd>.jsonl` on success and failure alike. `--help` and `--version` are excluded.
-- R2. Each record contains: UTC timestamp, command name, args (redacted), exit code, duration in ms, Flowline version, cached tool versions (dotnet, pac, git), path to today's ILogger log file (`log_file`), and — on failure — exception type, message, and subprocess output.
+- R2. Each record contains: UTC timestamp, command name, args (redacted), exit code, duration in ms, Flowline version, cached tool versions (dotnet, pac, git), path to this invocation's ILogger log file (`log_file_path`), and — on failure — exception type, message, full stack trace (`exception_stacktrace`), and verbose output buffer (`verbose_output`).
 - R3. Storage root follows the same resolution chain as `ValidationCacheStore.GetDefaultCachePath()`: `%LOCALAPPDATA%` → `XDG_CACHE_HOME` → `~/.cache` → system temp.
 - R4. Files older than 30 days are deleted at startup. Directory created on first use.
 - R5. Args are redacted via the existing `RedactSensitiveArgs` before any write.
@@ -39,13 +39,13 @@ When a Flowline command fails on a CI server or a developer machine that wasn't 
 - R7. `WithToolExecutionLog` maintains a rolling 50-line buffer of subprocess output (stderr primary; stdout lines matching error patterns also captured).
 - R8. On non-zero subprocess exit, the buffer is attached to the thrown `FlowlineException` and rendered in the terminal between the Flowline error message and the run-log path line, using dim verbose style.
 - R9. When `--verbose` was active, the terminal rendering is omitted — output was already printed live. Buffer contents are still included in the JSONL record.
-- R10. Buffer contents are written to the JSONL record under `subprocess_output`.
+- R10. Buffer contents are written to the JSONL record under `verbose_output`.
 
 **ILogger Infrastructure (I3)**
 
 - R11. `Microsoft.Extensions.Logging` is registered in DI at startup.
-- R12. A Serilog file sink writes to `<root>/logs/<yyyy-MM-dd>.log` at Debug level, always-on. No ILogger output goes to the terminal.
-- R13. `ILogger<T>` is constructor-injected into `PluginService`, `WebResourceService`, and `SolutionDiffService`.
+- R12. A Serilog file sink writes to `<root>/logs/<yyyy-MM-ddTHHmmss>Z.log` (one file per invocation) at Debug level, always-on. No ILogger output goes to the terminal.
+- R13. `ILogger<T>` is constructor-injected into `PluginService` and `WebResourceService`. `ILoggerFactory` is constructor-injected into `FlowlineCommand<TSettings>` (base class) and `StatusCommand`, exposing a lazy `protected ILogger Logger` property to all commands. `SolutionDiffService` was removed — `SyncCommand` calls `SolutionChangeSummary.ComputeAsync` directly and logs via `Logger`.
 - R14. Wave 1 adds `LogInformation` outcome lines at key decision points in those three services (~5–8 call sites): step registration counts, web resource discovery totals, diff summaries. Verifies end-to-end injection.
 
 **Operational Resilience**
@@ -146,7 +146,7 @@ flowchart TB
 
 **Approach:**
 - `FlowlineStoragePaths` mirrors `ValidationCacheStore.GetDefaultCachePath()` root resolution: `%LOCALAPPDATA%` → `XDG_CACHE_HOME` → `~/.cache` → `Path.GetTempPath()`. Exposes `GetStorageRoot()`, `GetRunsPath(DateOnly date)`, and `GetLogsPath(DateOnly date)`.
-- Serilog configured with `WriteTo.File(path, rollingInterval: RollingInterval.Infinite)` pointing to `FlowlineStoragePaths.GetLogsPath(today)`. Using `RollingInterval.Infinite` because the path already embeds today's date — `RollingInterval.Day` would append a second date suffix, producing a double-dated filename that wouldn't match the `log_file` field. Minimum level: `Debug`; overrides: `Warning` for `Microsoft.*` and `System.*`.
+- Serilog configured with `WriteTo.File(path, rollingInterval: RollingInterval.Infinite)` pointing to `FlowlineStoragePaths.GetLogsPath(runTime)` where `runTime` is captured at startup. One log file per invocation, named `<yyyy-MM-ddTHHmmss>Z.log`. Using `RollingInterval.Infinite` — the path already embeds a unique timestamp so Serilog's rolling is not needed. Minimum level: `Debug`; overrides: `Warning` for `Microsoft.*` and `System.*`.
 - `services.AddLogging(b => b.ClearProviders().AddSerilog(...))` replaces any default console-to-logger wiring. No `AddConsole` — all terminal output stays through Spectre.Console.
 - Serilog logger is created before `services.Build()` and disposed after `app.RunAsync` returns.
 
@@ -156,7 +156,7 @@ flowchart TB
 - `FlowlineStoragePaths.GetStorageRoot()` returns a path under `%LOCALAPPDATA%` on Windows when that env var is set.
 - `FlowlineStoragePaths.GetStorageRoot()` falls back to `~/.cache` when `%LOCALAPPDATA%` is empty and `XDG_CACHE_HOME` is unset.
 - `GetRunsPath(today)` returns a path ending with `runs/<yyyy-MM-dd>.jsonl`.
-- `GetLogsPath(today)` returns a path ending with `logs/<yyyy-MM-dd>.log`.
+- `GetLogsPath(runTime)` returns a path ending with `logs/<yyyy-MM-ddTHHmmss>Z.log`.
 - Test expectation for the Serilog wiring itself: integration — the debug log file is created and non-empty after a command runs (verified in U5 integration test).
 
 **Verification:** `dotnet build` passes. `Directory.Packages.props` has the four new package entries. `FlowlineStoragePaths` compiles and has unit tests passing.
@@ -174,9 +174,7 @@ flowchart TB
 **Files:**
 - `src/Flowline.Core/Services/PluginService.cs` — add `ILogger<PluginService>` parameter + call sites
 - `src/Flowline.Core/Services/WebResourceService.cs` — add `ILogger<WebResourceService>` parameter + call sites
-- `src/Flowline/Services/SolutionDiffService.cs` — new file (in CLI project; see Risks)
-- `src/Flowline/Commands/SyncCommand.cs` — add `SolutionDiffService` constructor parameter; replace static `SolutionChangeSummary.ComputeAsync` calls
-- `src/Flowline/Program.cs` — register `SolutionDiffService` as singleton
+- `src/Flowline/Commands/SyncCommand.cs` — replaced static `SolutionChangeSummary.ComputeAsync` calls with direct calls + `Logger.LogInformation`
 - `src/Flowline/Infrastructure/FlowlineRuntimeOptions.cs` — add `string? CommandName` property
 - `src/Flowline/Commands/FlowlineCommand.cs` — store `CommandContext.Name` in `RuntimeOptions.CommandName` at the top of `ExecuteAsync`
 
@@ -257,7 +255,7 @@ flowchart TB
 - `tests/Flowline.Tests/Services/RunLogServiceTests.cs` — new test file
 
 **Approach:**
-- `RunLogRecord` is a record with all R2 fields: `DateTimeOffset Timestamp`, `string CommandName`, `string ArgsRedacted`, `int ExitCode`, `long DurationMs`, `string FlowlineVersion`, `Dictionary<string, string?> ToolVersions`, `string LogFilePath`, `string? ExceptionType`, `string? ExceptionMessage`, `string[]? SubprocessOutput`. `ArgsRedacted` is typed `string` (not `string[]`) because `RedactSensitiveArgs` matches two-token patterns (e.g. `--client-secret <value>`) against a joined string — splitting back after redaction would break multi-word quoted values.
+- `RunLogRecord` is a record with all R2 fields: `DateTimeOffset Timestamp`, `string CommandName`, `string ArgsRedacted`, `int ExitCode`, `long DurationMs`, `string FlowlineVersion`, `Dictionary<string, string?> ToolVersions`, `string LogFilePath`, `string? ExceptionType`, `string? ExceptionMessage`, `string? ExceptionStackTrace`, `string[]? VerboseOutput`. `ArgsRedacted` is typed `string` (not `string[]`) because `RedactSensitiveArgs` matches two-token patterns (e.g. `--client-secret <value>`) against a joined string — splitting back after redaction would break multi-word quoted values.
 - `RunLogService` is a plain non-static class registered as a DI singleton (`services.AddSingleton<RunLogService>()`). No constructor parameters — it calls `FlowlineStoragePaths` (a static helper) directly; no injection needed for a stateless utility.
   - `AppendAsync(RunLogRecord record)` wraps all I/O in `try { } catch { }` per R16/R17. Creates directory if needed; serializes record as single-line JSON; appends with a newline.
   - `CleanOldLogsAsync(DateOnly today)` deletes `.jsonl` files in `runs/` and `.log` files in `logs/` older than 30 days. Wrapped in `try { } catch { }`.

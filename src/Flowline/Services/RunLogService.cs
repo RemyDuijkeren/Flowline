@@ -37,7 +37,7 @@ sealed class RunLogService
         try
         {
             CleanDirectory(FlowlineStoragePaths.GetRunsPath(today), ".jsonl", today);
-            CleanDirectory(FlowlineStoragePaths.GetLogsPath(today), ".log", today);
+            CleanDirectory(FlowlineStoragePaths.GetLogsPath(DateTimeOffset.UtcNow), ".log", today);
         }
         catch { } // Intentional: log failures must not affect command outcome (R16).
         return Task.CompletedTask;
@@ -50,7 +50,8 @@ sealed class RunLogService
         foreach (var file in Directory.GetFiles(dir, "*" + extension))
         {
             var name = Path.GetFileNameWithoutExtension(file);
-            if (DateOnly.TryParseExact(name, "yyyy-MM-dd", out var fileDate) && today.DayNumber - fileDate.DayNumber > 30)
+            var datePart = name.Length >= 10 ? name[..10] : name;
+            if (DateOnly.TryParseExact(datePart, "yyyy-MM-dd", out var fileDate) && today.DayNumber - fileDate.DayNumber > 30)
             {
                 try { File.Delete(file); } catch { } // Intentional: log failures must not affect command outcome (R16).
             }

@@ -9,13 +9,14 @@ using Flowline.Utils;
 using Flowline.Validation;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Spectre.Console;
+using Microsoft.Extensions.Logging;
 using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
 public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseConnector, FlowlineRuntimeOptions runtimeOptions,
-    IEnumerable<IGenerator> generators, ProfileResolutionService profileResolutionService, SecretResolver secretResolver)
-    : FlowlineCommand<GenerateCommand.Settings>(console, runtimeOptions, profileResolutionService)
+    IEnumerable<IGenerator> generators, ProfileResolutionService profileResolutionService, SecretResolver secretResolver, ILoggerFactory loggerFactory)
+    : FlowlineCommand<GenerateCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory)
 {
     public sealed class Settings : FlowlineSettings
     {

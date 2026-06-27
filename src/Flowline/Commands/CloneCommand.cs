@@ -5,12 +5,13 @@ using Flowline.Core;
 using Flowline.Services;
 using Flowline.Utils;
 using Spectre.Console;
+using Microsoft.Extensions.Logging;
 using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService) :
-    FlowlineCommand<CloneCommand.Settings>(console, runtimeOptions, profileResolutionService)
+public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory) :
+    FlowlineCommand<CloneCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory)
 {
     public sealed class Settings : FlowlineSettings
     {

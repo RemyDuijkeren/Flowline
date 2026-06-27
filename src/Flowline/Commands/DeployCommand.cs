@@ -8,11 +8,12 @@ using Flowline.Services;
 using Flowline.Utils;
 using Flowline.Validation;
 using Spectre.Console;
+using Microsoft.Extensions.Logging;
 using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseConnector, OrphanCleanupService orphanCleanupService, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService) : FlowlineCommand<DeployCommand.Settings>(console, runtimeOptions, profileResolutionService)
+public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseConnector, OrphanCleanupService orphanCleanupService, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory) : FlowlineCommand<DeployCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory)
 {
     public sealed class Settings : FlowlineSettings
     {

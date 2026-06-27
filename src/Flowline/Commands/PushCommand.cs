@@ -4,14 +4,15 @@ using Flowline.Core;
 using Flowline.Core.Services;
 using Flowline.Services;
 using Spectre.Console;
+using Microsoft.Extensions.Logging;
 using Spectre.Console.Cli;
 using Flowline.Utils;
 using Flowline.Validation;
 
 namespace Flowline.Commands;
 
-public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConnector, PluginService pluginService, WebResourceService webResourceService, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService)
-    : FlowlineCommand<PushCommand.Settings>(console, runtimeOptions, profileResolutionService)
+public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConnector, PluginService pluginService, WebResourceService webResourceService, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory)
+    : FlowlineCommand<PushCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory)
 {
     [Flags]
     public enum PushScope

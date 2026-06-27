@@ -22,6 +22,6 @@ static class FlowlineStoragePaths
     public static string GetRunsPath(DateOnly date) =>
         Path.Combine(GetStorageRoot(), "runs", $"{date:yyyy-MM-dd}.jsonl");
 
-    public static string GetLogsPath(DateOnly date) =>
-        Path.Combine(GetStorageRoot(), "logs", $"{date:yyyy-MM-dd}.log");
+    public static string GetLogsPath(DateTimeOffset runTime) =>
+        Path.Combine(GetStorageRoot(), "logs", $"{runTime.UtcDateTime:yyyy-MM-ddTHHmmss}Z.log");
 }
