@@ -561,12 +561,19 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
             .GroupBy(u => StepFromImage(u.Name), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
 
-        // All type names: explicit type actions + types implied by step names
+        // Custom API groups by plugin type short name (for embedding under the type node)
+        var customApisByTypeName = plan.CustomApiGroups
+            .Where(g => g.PluginTypeName != null)
+            .GroupBy(g => g.PluginTypeName!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        // All type names: explicit type actions + types implied by step names + custom API plugin types
         var allTypeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         allTypeNames.UnionWith(typeDeletes.Keys);
         allTypeNames.UnionWith(typeUpserts.Keys);
         allTypeNames.UnionWith(stepDelsByType.Keys);
         allTypeNames.UnionWith(stepUpsByType.Keys);
+        allTypeNames.UnionWith(customApisByTypeName.Keys);
 
         // --- Assembly root ---
         var assemblyLabel = needsUpdate
@@ -579,11 +586,11 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
         {
             string typeLabel;
             if (typeDeletes.ContainsKey(typeName))
-                typeLabel = $"{Sym(true, false)} {Safe(typeName)} — {Verb(true, false)}";
+                typeLabel = $"{Sym(true, false)} [dim]plugin[/] {Safe(typeName)} — {Verb(true, false)}";
             else if (typeUpserts.TryGetValue(typeName, out var tu))
-                typeLabel = $"{Sym(false, tu.IsCreate)} {Safe(typeName)} — {Verb(false, tu.IsCreate)}";
+                typeLabel = $"{Sym(false, tu.IsCreate)} [dim]plugin[/] {Safe(typeName)} — {Verb(false, tu.IsCreate)}";
             else
-                typeLabel = $"[dim]{Safe(typeName)}[/]";
+                typeLabel = $"[dim]plugin {Safe(typeName)}[/]";
 
             var typeNode = tree.AddNode(typeLabel);
 
@@ -600,13 +607,13 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
                 string stepLabel;
                 if (delSteps.Any(d => string.Equals(d.Name, stepName, StringComparison.OrdinalIgnoreCase)))
                 {
-                    stepLabel = $"{Sym(true, false)} {Safe(stepDesc)} — {Verb(true, false)}";
+                    stepLabel = $"{Sym(true, false)} [dim]step[/] {Safe(stepDesc)} — {Verb(true, false)}";
                 }
                 else
                 {
                     var su = upsSteps.First(u => string.Equals(u.Name, stepName, StringComparison.OrdinalIgnoreCase));
                     var meta = $"stage={OptionValue(su.Entity, "stage")} mode={OptionValue(su.Entity, "mode")} rank={OptionValue(su.Entity, "rank")}";
-                    stepLabel = $"{Sym(false, su.IsCreate)} {Safe(stepDesc)} [dim]{meta}[/] — {Verb(false, su.IsCreate)}";
+                    stepLabel = $"{Sym(false, su.IsCreate)} [dim]step[/] {Safe(stepDesc)} [dim]{meta}[/] — {Verb(false, su.IsCreate)}";
                 }
 
                 var stepNode = typeNode.AddNode(stepLabel);
@@ -615,32 +622,81 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
                 var upsImgs = imgUpsByStep.GetValueOrDefault(stepName) ?? [];
 
                 foreach (var img in delImgs.OrderBy(d => ImageShortName(d.Name), StringComparer.OrdinalIgnoreCase))
-                    stepNode.AddNode($"{Sym(true, false)} {Safe(ImageShortName(img.Name))} — {Verb(true, false)}");
+                    stepNode.AddNode($"{Sym(true, false)} [dim]img[/] {Safe(ImageShortName(img.Name))} — {Verb(true, false)}");
 
                 foreach (var img in upsImgs.OrderBy(u => ImageShortName(u.Name), StringComparer.OrdinalIgnoreCase))
                 {
-                    var alias  = Safe(img.Entity.GetAttributeValue<string>("entityalias") ?? "(none)");
-                    var itype  = OptionValue(img.Entity, "imagetype");
-                    var attrs  = Safe(img.Entity.GetAttributeValue<string>("attributes") ?? "(all)");
-                    stepNode.AddNode($"{Sym(false, img.IsCreate)} {Safe(ImageShortName(img.Name))} [dim]alias={alias} type={itype} attributes={attrs}[/] — {Verb(false, img.IsCreate)}");
+                    var alias   = Safe(img.Entity.GetAttributeValue<string>("entityalias") ?? "(none)");
+                    var itype   = OptionValue(img.Entity, "imagetype");
+                    var attrs   = Safe(img.Entity.GetAttributeValue<string>("attributes") ?? "(all)");
+                    var imgType = itype == "0" ? "preimg" : itype == "1" ? "postimg" : "img";
+                    stepNode.AddNode($"{Sym(false, img.IsCreate)} [dim]{imgType}[/] {Safe(ImageShortName(img.Name))} [dim]alias={alias} attributes={attrs}[/] — {Verb(false, img.IsCreate)}");
+                }
+            }
+
+            // --- Custom APIs for this plugin type ---
+            if (customApisByTypeName.TryGetValue(ShortName(typeName), out var typeApiGroups))
+            {
+                foreach (var group in typeApiGroups.OrderBy(g => g.ApiName, StringComparer.OrdinalIgnoreCase))
+                {
+                    IHasTreeNodes apiNode;
+                    if (group.Api.Deletes.Count == 1 && group.Api.Upserts.Count == 0)
+                    {
+                        var d = group.Api.Deletes[0];
+                        apiNode = typeNode.AddNode($"{Sym(true, false)} [dim]api[/] {Safe(d.Name)} — {Verb(true, false)}");
+                    }
+                    else if (group.Api.Deletes.Count == 0 && group.Api.Upserts.Count == 1)
+                    {
+                        var u = group.Api.Upserts[0];
+                        apiNode = typeNode.AddNode($"{Sym(false, u.IsCreate)} [dim]api[/] {Safe(u.Name)} [dim]binding={OptionValue(u.Entity, "bindingtype")} function={BoolValue(u.Entity, "isfunction")} private={BoolValue(u.Entity, "isprivate")}[/] — {Verb(false, u.IsCreate)}");
+                    }
+                    else
+                    {
+                        apiNode = typeNode.AddNode($"[dim]{Safe(group.ApiName)}[/]");
+                        foreach (var d in group.Api.Deletes)
+                            apiNode.AddNode($"{Sym(true, false)} [dim]api[/] {Safe(d.Name)} — {Verb(true, false)}");
+                        foreach (var u in group.Api.Upserts)
+                            apiNode.AddNode($"{Sym(false, u.IsCreate)} [dim]api[/] {Safe(u.Name)} [dim]binding={OptionValue(u.Entity, "bindingtype")} function={BoolValue(u.Entity, "isfunction")} private={BoolValue(u.Entity, "isprivate")}[/] — {Verb(false, u.IsCreate)}");
+                    }
+
+                    foreach (var d in group.RequestParams.Deletes.OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase))
+                        apiNode.AddNode($"{Sym(true, false)} [dim]req[/] {Safe(d.Name)} — {Verb(true, false)}");
+                    foreach (var u in group.RequestParams.Upserts.OrderBy(u => u.Name, StringComparer.OrdinalIgnoreCase))
+                        apiNode.AddNode($"{Sym(false, u.IsCreate)} [dim]req[/] {Safe(u.Name)} [dim]type={OptionValue(u.Entity, "type")} optional={BoolValue(u.Entity, "isoptional")}[/] — {Verb(false, u.IsCreate)}");
+                    foreach (var d in group.ResponseProps.Deletes.OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase))
+                        apiNode.AddNode($"{Sym(true, false)} [dim]res[/] {Safe(d.Name)} — {Verb(true, false)}");
+                    foreach (var u in group.ResponseProps.Upserts.OrderBy(u => u.Name, StringComparer.OrdinalIgnoreCase))
+                        apiNode.AddNode($"{Sym(false, u.IsCreate)} [dim]res[/] {Safe(u.Name)} [dim]type={OptionValue(u.Entity, "type")}[/] — {Verb(false, u.IsCreate)}");
                 }
             }
         }
 
-        // --- Flat sections for Custom APIs / RequestParams / ResponseProps ---
-        void AddFlatSection(IHasTreeNodes parent, string title, ActionPlan ap, Func<UpsertAction, string> detail)
+        // --- Unlinked Custom APIs (no plugin type) ---
+        var unlinkedApiGroups = plan.CustomApiGroups.Where(g => g.PluginTypeName == null).ToList();
+        if (unlinkedApiGroups.Count > 0)
         {
-            if (ap.Deletes.Count == 0 && ap.Upserts.Count == 0) return;
-            var section = parent.AddNode($"[dim]{title}[/]");
-            foreach (var d in ap.Deletes.OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase))
-                section.AddNode($"{Sym(true, false)} {Safe(d.Name)} — {Verb(true, false)}");
-            foreach (var u in ap.Upserts.OrderBy(u => u.Name, StringComparer.OrdinalIgnoreCase))
-                section.AddNode($"{Sym(false, u.IsCreate)} {Safe(u.Name)} [dim]{detail(u)}[/] — {Verb(false, u.IsCreate)}");
-        }
+            var unlinkedNode = tree.AddNode("[dim]Custom APIs (unlinked)[/]");
+            foreach (var group in unlinkedApiGroups.OrderBy(g => g.ApiName, StringComparer.OrdinalIgnoreCase))
+            {
+                IHasTreeNodes apiNode;
+                if (group.Api.Deletes.Count == 1 && group.Api.Upserts.Count == 0)
+                {
+                    var d = group.Api.Deletes[0];
+                    apiNode = unlinkedNode.AddNode($"{Sym(true, false)} [dim]api[/] {Safe(d.Name)} — {Verb(true, false)}");
+                }
+                else
+                {
+                    apiNode = unlinkedNode.AddNode($"[dim]{Safe(group.ApiName)}[/]");
+                    foreach (var d in group.Api.Deletes)
+                        apiNode.AddNode($"{Sym(true, false)} [dim]api[/] {Safe(d.Name)} — {Verb(true, false)}");
+                }
 
-        AddFlatSection(tree, "Custom APIs",          plan.CustomApis,    u => $"binding={OptionValue(u.Entity, "bindingtype")} function={BoolValue(u.Entity, "isfunction")} private={BoolValue(u.Entity, "isprivate")}");
-        AddFlatSection(tree, "Request parameters",   plan.RequestParams, u => $"type={OptionValue(u.Entity, "type")} optional={BoolValue(u.Entity, "isoptional")}");
-        AddFlatSection(tree, "Response properties",  plan.ResponseProps, u => $"type={OptionValue(u.Entity, "type")}");
+                foreach (var d in group.RequestParams.Deletes.OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase))
+                    apiNode.AddNode($"{Sym(true, false)} [dim]req[/] {Safe(d.Name)} — {Verb(true, false)}");
+                foreach (var d in group.ResponseProps.Deletes.OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase))
+                    apiNode.AddNode($"{Sym(true, false)} [dim]res[/] {Safe(d.Name)} — {Verb(true, false)}");
+            }
+        }
 
         output.Write(tree);
 

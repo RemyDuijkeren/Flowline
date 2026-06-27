@@ -17,6 +17,9 @@ public class RegistrationPlan
     public ActionPlan RequestParams { get; } = new();
     public ActionPlan ResponseProps { get; } = new();
 
+    // Grouped per API for tree rendering only; execution uses the flat plans above.
+    public List<CustomApiGroup> CustomApiGroups { get; } = new();
+
     public List<string> Warnings { get; } = new();
 
     public int TotalDeletes => PluginTypes.Deletes.Count + Steps.Deletes.Count + Images.Deletes.Count
@@ -26,6 +29,8 @@ public class RegistrationPlan
                              + CustomApis.Upserts.Count + RequestParams.Upserts.Count + ResponseProps.Upserts.Count;
     public int TotalChanges => TotalDeletes + TotalUpserts;
 }
+
+public record CustomApiGroup(string ApiName, ActionPlan Api, ActionPlan RequestParams, ActionPlan ResponseProps, string? PluginTypeName = null);
 
 public class ActionPlan
 {

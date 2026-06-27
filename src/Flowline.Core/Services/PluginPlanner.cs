@@ -58,10 +58,11 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
 
             if (asmPluginType.IsCustomApi)
             {
-                var (customApiPlan, requestParamPlan, responsePropPlan) = PlanCustomApi(snapshot, dvPluginType, asmPluginType.CustomApis, solutionName);
+                var (customApiPlan, requestParamPlan, responsePropPlan, groups) = PlanCustomApi(snapshot, dvPluginType, asmPluginType.CustomApis, solutionName, asmPluginType.Name);
                 plan.CustomApis.Add(customApiPlan);
                 plan.RequestParams.Add(requestParamPlan);
                 plan.ResponseProps.Add(responsePropPlan);
+                plan.CustomApiGroups.AddRange(groups);
             }
             else
             {
@@ -81,10 +82,12 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
             }
 
             // Try both paths — only the one with registered items will produce actions
-            var (customApiPlan, requestParamPlan, responsePropPlan) = PlanCustomApi(snapshot, obsoletePluginType.Value, [], solutionName);
+            var typeShortName = obsoletePluginType.Key[(obsoletePluginType.Key.LastIndexOf('.') + 1)..];
+            var (customApiPlan, requestParamPlan, responsePropPlan, apiGroups) = PlanCustomApi(snapshot, obsoletePluginType.Value, [], solutionName, typeShortName);
             plan.CustomApis.Add(customApiPlan);
             plan.RequestParams.Add(requestParamPlan);
             plan.ResponseProps.Add(responsePropPlan);
+            plan.CustomApiGroups.AddRange(apiGroups);
 
             var obsoleteMetadata = new PluginTypeMetadata(
                 obsoletePluginType.Value.GetAttributeValue<string>("name") ?? obsoletePluginType.Key,
@@ -109,9 +112,14 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
         }))
         {
             var apiName = unlinkedApi.GetAttributeValue<string>("uniquename") ?? unlinkedApi.Id.ToString();
-            plan.CustomApis.Deletes.Add(new DeleteAction(apiName, "customapi", unlinkedApi.Id));
-            plan.RequestParams.Add(PlanRequestParameters(snapshot, snapshot.PublisherPrefix, unlinkedApi.Id, apiName, [], solutionName));
-            plan.ResponseProps.Add(PlanResponseProperties(snapshot, snapshot.PublisherPrefix, unlinkedApi.Id, apiName, [], solutionName));
+            var del    = new DeleteAction(apiName, "customapi", unlinkedApi.Id);
+            var pParam = PlanRequestParameters(snapshot, snapshot.PublisherPrefix, unlinkedApi.Id, apiName, [], solutionName);
+            var pProp  = PlanResponseProperties(snapshot, snapshot.PublisherPrefix, unlinkedApi.Id, apiName, [], solutionName);
+            plan.CustomApis.Deletes.Add(del);
+            plan.RequestParams.Add(pParam);
+            plan.ResponseProps.Add(pProp);
+            var sApi = new ActionPlan(); sApi.Deletes.Add(del);
+            plan.CustomApiGroups.Add(new CustomApiGroup(apiName, sApi, pParam, pProp));
         }
 
         AddCrossSolutionWarnings(plan, snapshot, solutionName);
@@ -359,15 +367,17 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
         return plan;
     }
 
-    (ActionPlan customApiPlan, ActionPlan requestParamPlan, ActionPlan responsePropPlan) PlanCustomApi(
-        RegistrationSnapshot snapshot, Entity typeEntity, List<CustomApiMetadata> asmCustomApis, string solutionName)
+    (ActionPlan customApiPlan, ActionPlan requestParamPlan, ActionPlan responsePropPlan, List<CustomApiGroup> groups) PlanCustomApi(
+        RegistrationSnapshot snapshot, Entity typeEntity, List<CustomApiMetadata> asmCustomApis, string solutionName, string? pluginTypeName = null)
     {
         ActionPlan apiPlan = new();
         ActionPlan paramPlan = new();
         ActionPlan propPlan = new();
+        List<CustomApiGroup> groups = new();
 
         var prefix = snapshot.PublisherPrefix;
         var dvApis = snapshot.CustomApis
+            .Where(e => e.GetAttributeValue<EntityReference>("plugintypeid")?.Id == typeEntity.Id)
             .ToDictionary(e => e.GetAttributeValue<string>("uniquename"), e => e)
             .AsReadOnly();
 
@@ -378,9 +388,14 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
             if (!dvApis.TryGetValue(fullApiName, out var dvApi))
             {
                 var newApi = NewCustomApiEntity(fullApiName, asmApi, typeEntity);
-                apiPlan.Upserts.Add(new UpsertAction(asmApi.UniqueName, newApi, IsCreate: true, SolutionName: solutionName));
-                paramPlan.Add(PlanRequestParameters(snapshot, prefix, newApi.Id, asmApi.UniqueName, asmApi.RequestParameters, solutionName));
-                propPlan.Add(PlanResponseProperties(snapshot, prefix, newApi.Id, asmApi.UniqueName, asmApi.ResponseProperties, solutionName));
+                var upsert = new UpsertAction(asmApi.UniqueName, newApi, IsCreate: true, SolutionName: solutionName);
+                var pParam = PlanRequestParameters(snapshot, prefix, newApi.Id, asmApi.UniqueName, asmApi.RequestParameters, solutionName);
+                var pProp  = PlanResponseProperties(snapshot, prefix, newApi.Id, asmApi.UniqueName, asmApi.ResponseProperties, solutionName);
+                apiPlan.Upserts.Add(upsert);
+                paramPlan.Add(pParam);
+                propPlan.Add(pProp);
+                var sApi = new ActionPlan(); sApi.Upserts.Add(upsert);
+                groups.Add(new CustomApiGroup(fullApiName, sApi, pParam, pProp, pluginTypeName));
                 continue;
             }
 
@@ -394,14 +409,21 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
             {
                 output.Warning($"Custom API '{fullApiName}' has immutable field changes — deleting and recreating.");
 
-                apiPlan.Deletes.Add(new DeleteAction(asmApi.UniqueName, "customapi", dvApi.Id));
-                paramPlan.Add(PlanRequestParameters(snapshot, prefix, dvApi.Id, fullApiName, [], solutionName));
-                propPlan.Add(PlanResponseProperties(snapshot, prefix, dvApi.Id, fullApiName, [], solutionName));
-
+                var del = new DeleteAction(asmApi.UniqueName, "customapi", dvApi.Id);
+                var pParamDel = PlanRequestParameters(snapshot, prefix, dvApi.Id, fullApiName, [], solutionName);
+                var pPropDel  = PlanResponseProperties(snapshot, prefix, dvApi.Id, fullApiName, [], solutionName);
                 var newApi = NewCustomApiEntity(fullApiName, asmApi, typeEntity);
-                apiPlan.Upserts.Add(new UpsertAction(asmApi.UniqueName, newApi, IsCreate: true, SolutionName: solutionName));
-                paramPlan.Add(PlanRequestParameters(snapshot, prefix, newApi.Id, fullApiName, asmApi.RequestParameters, solutionName));
-                propPlan.Add(PlanResponseProperties(snapshot, prefix, newApi.Id, fullApiName, asmApi.ResponseProperties, solutionName));
+                var upsert = new UpsertAction(asmApi.UniqueName, newApi, IsCreate: true, SolutionName: solutionName);
+                var pParamNew = PlanRequestParameters(snapshot, prefix, newApi.Id, fullApiName, asmApi.RequestParameters, solutionName);
+                var pPropNew  = PlanResponseProperties(snapshot, prefix, newApi.Id, fullApiName, asmApi.ResponseProperties, solutionName);
+                apiPlan.Deletes.Add(del);
+                apiPlan.Upserts.Add(upsert);
+                paramPlan.Add(pParamDel); paramPlan.Add(pParamNew);
+                propPlan.Add(pPropDel);   propPlan.Add(pPropNew);
+                var sApi   = new ActionPlan(); sApi.Deletes.Add(del); sApi.Upserts.Add(upsert);
+                var sParam = new ActionPlan(); sParam.Add(pParamDel); sParam.Add(pParamNew);
+                var sProp  = new ActionPlan(); sProp.Add(pPropDel);   sProp.Add(pPropNew);
+                groups.Add(new CustomApiGroup(fullApiName, sApi, sParam, sProp, pluginTypeName));
                 continue;
             }
 
@@ -410,8 +432,11 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
                 apiPlan.AddSolutionComponents.Add(new AddToSolutionAction(fullApiName, "customapi", dvApi.Id, solutionName,
                     snapshot.ComponentTypeById[dvApi.Id]));
             }
-            paramPlan.Add(PlanRequestParameters(snapshot, prefix, dvApi.Id, fullApiName, asmApi.RequestParameters, solutionName));
-            propPlan.Add(PlanResponseProperties(snapshot, prefix, dvApi.Id, fullApiName, asmApi.ResponseProperties, solutionName));
+
+            var pParam2 = PlanRequestParameters(snapshot, prefix, dvApi.Id, fullApiName, asmApi.RequestParameters, solutionName);
+            var pProp2  = PlanResponseProperties(snapshot, prefix, dvApi.Id, fullApiName, asmApi.ResponseProperties, solutionName);
+            paramPlan.Add(pParam2);
+            propPlan.Add(pProp2);
 
             var mutableChanged =
                 dvApi.GetAttributeValue<EntityReference>("plugintypeid")?.Id != typeEntity.Id ||
@@ -420,25 +445,41 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
                 dvApi.GetAttributeValue<bool>("isprivate") != asmApi.IsPrivate ||
                 dvApi.GetAttributeValue<string>("executeprivilegename") != asmApi.ExecutePrivilege;
 
-            if (!mutableChanged) continue;
+            ActionPlan singleApiPlan = new();
+            if (mutableChanged)
+            {
+                dvApi["plugintypeid"]         = typeEntity.ToEntityReference();
+                dvApi["displayname"]          = asmApi.DisplayName;
+                dvApi["description"]          = asmApi.Description;
+                dvApi["isprivate"]            = asmApi.IsPrivate;
+                dvApi["executeprivilegename"] = asmApi.ExecutePrivilege;
+                var upsert = new UpsertAction(asmApi.UniqueName, dvApi, IsCreate: false);
+                apiPlan.Upserts.Add(upsert);
+                singleApiPlan.Upserts.Add(upsert);
+            }
 
-            dvApi["plugintypeid"]       = typeEntity.ToEntityReference();
-            dvApi["displayname"]        = asmApi.DisplayName;
-            dvApi["description"]        = asmApi.Description;
-            dvApi["isprivate"]          = asmApi.IsPrivate;
-            dvApi["executeprivilegename"] = asmApi.ExecutePrivilege;
-            apiPlan.Upserts.Add(new UpsertAction(asmApi.UniqueName, dvApi, IsCreate: false));
+            if (singleApiPlan.Upserts.Count > 0
+                || pParam2.Upserts.Count > 0 || pParam2.Deletes.Count > 0
+                || pProp2.Upserts.Count > 0  || pProp2.Deletes.Count > 0)
+            {
+                groups.Add(new CustomApiGroup(fullApiName, singleApiPlan, pParam2, pProp2, pluginTypeName));
+            }
         }
 
         // Fix: compare with prefix-qualified name so only truly absent APIs are treated as obsolete
         foreach (var obsoleteApi in dvApis.Where(a => asmCustomApis.All(c => $"{prefix}_{c.UniqueName}" != a.Key)))
         {
-            apiPlan.Deletes.Add(new DeleteAction(obsoleteApi.Key, "customapi", obsoleteApi.Value.Id));
-            paramPlan.Add(PlanRequestParameters(snapshot, prefix, obsoleteApi.Value.Id, obsoleteApi.Key, [], solutionName));
-            propPlan.Add(PlanResponseProperties(snapshot, prefix, obsoleteApi.Value.Id, obsoleteApi.Key, [], solutionName));
+            var del    = new DeleteAction(obsoleteApi.Key, "customapi", obsoleteApi.Value.Id);
+            var pParam = PlanRequestParameters(snapshot, prefix, obsoleteApi.Value.Id, obsoleteApi.Key, [], solutionName);
+            var pProp  = PlanResponseProperties(snapshot, prefix, obsoleteApi.Value.Id, obsoleteApi.Key, [], solutionName);
+            apiPlan.Deletes.Add(del);
+            paramPlan.Add(pParam);
+            propPlan.Add(pProp);
+            var sApi = new ActionPlan(); sApi.Deletes.Add(del);
+            groups.Add(new CustomApiGroup(obsoleteApi.Key, sApi, pParam, pProp, pluginTypeName));
         }
 
-        return (apiPlan, paramPlan, propPlan);
+        return (apiPlan, paramPlan, propPlan, groups);
     }
 
     ActionPlan PlanRequestParameters(
