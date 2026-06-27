@@ -191,6 +191,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
 
         var resolvedGeneratorType = settings.Generator ?? projectSln?.Generate?.Generator ?? GeneratorType.Pac;
         var serviceContextName = settings.ServiceContextName ?? projectSln?.Generate?.ServiceContextName;
+        Logger.LogInformation("solution={SolutionName} devUrl={DevUrl} generator={Generator} output={Output}", solutionName, devUrl, resolvedGeneratorType, modelsFolder);
 
         // --- Connect and validate ---
         var (service, resolvedProfile) = await ConnectToDataverseAsync(dataverseConnector, devUrl, cancellationToken);
@@ -279,6 +280,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         var generator = generators.SingleOrDefault(g => g.Type == resolvedGeneratorType)
             ?? throw new FlowlineException(ExitCode.GeneralError, $"Generator '{resolvedGeneratorType}' is not registered. This is a bug.");
 
+        Logger.LogInformation("Running generator: {Generator}", generator.Type);
         var sw = Stopwatch.StartNew();
         try
         {
@@ -291,6 +293,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             throw;
         }
         sw.Stop();
+        Logger.LogInformation("Generator ran in {Duration}", FormatDuration(sw.Elapsed));
 
         // --- Shared tail (all generators) ---
         try
@@ -298,6 +301,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             var generatorPaths = Directory.EnumerateFiles(tempFolder, "*", SearchOption.AllDirectories)
                 .Select(f => Path.GetRelativePath(tempFolder, f))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            Logger.LogInformation("Generator output: {FileCount} files", generatorPaths.Count);
 
             if (generatorPaths.Count == 0)
                 throw new FlowlineException(ExitCode.BuildFailed,

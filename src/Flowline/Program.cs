@@ -94,6 +94,7 @@ app.Configure(config =>
         switch (ex)
         {
             case FlowlineException fe:
+                serilogLogger?.Error(ex, "Command failed");
                 AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(fe.Message)}");
                 fe.Detail?.Invoke(AnsiConsole.Console);
                 if (!runtimeOptions.IsVerbose)
@@ -108,8 +109,10 @@ app.Configure(config =>
                 capturedExceptionStackTrace = ex.ToString();
                 return (int)fe.ExitCode;
             case OperationCanceledException:
+                serilogLogger?.Information("Command cancelled by user");
                 return (int)ExitCode.Cancelled;
             default:
+                serilogLogger?.Error(ex, "Unhandled exception");
                 AnsiConsole.WriteException(ex, ExceptionFormats.ShortenPaths);
                 capturedExceptionType = ex.GetType().FullName;
                 capturedExceptionMessage = ex.Message;

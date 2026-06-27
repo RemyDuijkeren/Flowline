@@ -46,6 +46,8 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         if (slnInfo.IsManaged)
             throw new FlowlineException(ExitCode.ValidationFailed, "Managed solutions are not supported for sync — use an unmanaged solution.");
 
+        Logger.LogInformation("target={EnvironmentUrl} solution={SolutionName} bump={Bump}", devEnv.EnvironmentUrl, projectSln.Name, settings.Bump);
+
         // Validate that we have an initialized project
         var slnFolder = Path.Combine(RootFolder, "solutions", projectSln.Name);
         var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
@@ -84,6 +86,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         Console.Ok($"Version bumped: {tagVersion}");
 
         // Sync solution from Dataverse
+        Logger.LogInformation("Syncing from Dataverse: {SolutionName}", projectSln.Name);
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
         CommandResult result = await Console.Status().FlowlineSpinner().StartAsync(
             $"Syncing solution [bold]{projectSln.Name}[/]...",
@@ -107,6 +110,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         Console.Ok($"Solution synced from Dataverse in {FormatDuration(result.RunTime)}");
 
         // Pack the solution in pac to validate it
+        Logger.LogInformation("Validating pack: {SolutionName}", projectSln.Name);
         var artifactsFolder = Path.Combine(slnFolder, "artifacts");
         if (await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, false, settings.Verbose, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
         if (projectSln.IncludeManaged &&
@@ -116,6 +120,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         }
 
         // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
+        Logger.LogInformation("Validating build: {SlnFolder}", slnFolder);
         if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken) != 0)
         {
             return (int)ExitCode.BuildFailed;
@@ -123,6 +128,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         // Check for drift between local solution (Plugins/WebResources) and Dataverse (/src)
         var driftWarnings = PluginWebResourceDriftChecker.Check(slnFolder, PackageFolder(slnFolder), slnInfo.PublisherPrefix, cancellationToken);
+        Logger.LogInformation("Drift: {DriftCount} warnings", driftWarnings.Count);
         if (driftWarnings.Count == 0)
         {
             Console.Ok("Plugins / WebResources match Dataverse");

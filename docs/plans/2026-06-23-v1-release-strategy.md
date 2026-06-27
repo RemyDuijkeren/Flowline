@@ -80,7 +80,7 @@ Auto-backup the target environment before any deploy. Opt-out via `--skip-backup
 - [x] `generate` safe deletion tested (partial class, `.csproj`, stale entity all verified)
 - [x] `provision` region guard implemented
 - [ ] `deploy` full flow tested against real org (pack, import, DTAP gate, type guard, drift check, orphan cleanup AE1–AE8)
-- [ ] Observability Wave 1 implemented (I1 JSONL run log, I2 stderr capture, I3 ILogger file sink)
+- [x] Observability Wave 1 implemented (I1 JSONL run log, I2 stderr capture, I3 ILogger file sink)
 - [ ] Observability Wave 2 implemented (I4 stage chain, I6 correlation ID)
 - [ ] Observability Wave 3 implemented (I5 crash bundle)
 - [x] `componenttype` constants confirmed via `PicklistAttributeMetadata` — low-numbered types are stable platform constants, one org sufficient

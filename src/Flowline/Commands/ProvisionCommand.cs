@@ -53,6 +53,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
         var targetDisplayName = $"{prodEnv.DisplayName} {suffix}";
         EnvironmentUrlParts urlParts = PacUtils.GetPartsFromEnvUrl(prodEnv.EnvironmentUrl!);
         var targetUrl = $"https://{urlParts.Organization}-{suffix.ToLower()}.{urlParts.Host}/";
+        Logger.LogInformation("source={ProdUrl} target={TargetUrl} role={Role}", prodEnv.EnvironmentUrl, targetUrl, settings.Role);
 
         string? url = settings.Role switch
         {
@@ -105,6 +106,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
         }
         else
         {
+            Logger.LogInformation("Environment already exists: {TargetUrl}", targetEnv.EnvironmentUrl);
             Console.Skip($"Environment already exists — [link]{targetEnv.EnvironmentUrl}[/]");
         }
 
@@ -144,6 +146,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
 
         // Test and UAT are always a FullCopy
         string copyType = (settings.Role is Role.Test or Role.Uat || settings.CopyType == CopyType.Full) ? "FullCopy" : "MinimalCopy";
+        Logger.LogInformation("Copying {CopyType} from {Source} to {Target}", copyType, prodEnv.EnvironmentUrl, targetEnv.EnvironmentUrl);
 
         var (cmdNameCopy, prefixArgsCopy, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
 

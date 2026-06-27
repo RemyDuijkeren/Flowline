@@ -106,8 +106,12 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (!standaloneMode)
             environmentUrl = devEnv.EnvironmentUrl!;
 
+        Logger.LogInformation("target={EnvironmentUrl} solution={SolutionName}", environmentUrl, solutionName);
+
         var pushScope = ResolveScope(settings, standaloneMode);
         var pushAssemblyOnly = pushScope.HasFlag(PushScope.AssemblyOnly);
+        Logger.LogInformation("scope={Scope} mode={RunMode} standalone={Standalone}", pushScope, runMode, standaloneMode);
+
         var pluginsDll = (pushAssemblyOnly || pushScope.HasFlag(PushScope.Plugins))
             ? await PreparePluginsForPushAsync(standaloneMode, settings, solutionName, standaloneParams, cancellationToken)
             : null;
@@ -120,14 +124,29 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (pluginsDll != null)
         {
             if (pushAssemblyOnly)
+            {
+                Logger.LogInformation("Pushing assembly only: {Dll}", pluginsDll);
                 await pluginService.SyncAssemblyOnlyAsync(conn, pluginsDll, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+            }
             else
+            {
+                Logger.LogInformation("Pushing plugins: {Dll}", pluginsDll);
                 await pluginService.SyncSolutionAsync(conn, pluginsDll, solutionName, runMode, settings.Force, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        else
+        {
+            Logger.LogDebug("Plugins skipped — not in scope");
         }
 
         if (webResourcesSyncFolder != null)
         {
+            Logger.LogInformation("Pushing web resources: {Folder}", webResourcesSyncFolder);
             await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder, solutionName, runMode: runMode, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            Logger.LogDebug("Web resources skipped — not in scope");
         }
 
         Console.Done(runMode == RunMode.DryRun

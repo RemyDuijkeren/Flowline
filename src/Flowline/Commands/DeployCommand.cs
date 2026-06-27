@@ -49,6 +49,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var sln = Config!.GetOrUpdateSolution(settings.Solution, settings.Managed.IsSet ? settings.Managed.Value : (bool?)null, settings)
             ?? throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — use --solution <name>.");
         var slnFolder = Path.Combine(RootFolder, "solutions", sln.Name);
+        Logger.LogInformation("target={TargetUrl} solution={SolutionName} mode={RunMode} managed={Managed}", targetUrl, sln.Name, runMode, sln.IncludeManaged);
 
         var targetEnv = await ValidateTargetAsync(targetUrl, sln, settings, cancellationToken);
         await ValidateDtapGateAsync(sln, slnFolder, targetUrl, settings, cancellationToken);
@@ -59,9 +60,12 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var webresourceRoot = Path.Combine(slnFolder, "WebResources");
         var deferred = await orphanCleanupService.RunPreImportAsync(service, sln.Name, sNew, runMode, webresourceRoot, cancellationToken);
 
+        Logger.LogInformation("Packing: {SolutionName}", sln.Name);
         var packagePath = await PackSolutionAsync(sln, slnFolder, settings, cancellationToken);
+        Logger.LogInformation("Importing to: {TargetUrl}", targetUrl);
         await ImportSolutionAsync(packagePath, targetEnv, sln.Name, cancellationToken);
         var cleanupFailures = await orphanCleanupService.RunPostImportAsync(service, sln.Name, sNew, deferred, runMode, cancellationToken);
+        Logger.LogInformation("Orphan cleanup: {Failures} failures", cleanupFailures);
 
         if (cleanupFailures > 0)
         {

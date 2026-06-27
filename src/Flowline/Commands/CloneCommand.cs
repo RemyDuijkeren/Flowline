@@ -49,6 +49,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         Config!.GetOrUpdateDevUrl(settings.DevUrl, settings);
 
         var (sourceEnv, projectSln, solutionInfo) = await FindUnmanagedSourceAsync(settings, cancellationToken);
+        Logger.LogInformation("source={EnvironmentUrl} solution={SolutionName}", sourceEnv.EnvironmentUrl, projectSln.Name);
 
         Config.Save();
         Console.Verbose($"Project configuration saved to {ProjectConfig.s_configFileName}", RuntimeOptions);
@@ -64,6 +65,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         SeedWebResourceDistFromSrc(slnFolder, solutionInfo.PublisherPrefix, projectSln.Name, settings);
 
         // Pack the solution in pac to validate it
+        Logger.LogInformation("Validating pack: {SolutionName}", projectSln.Name);
         var artifactsFolder = Path.Combine(slnFolder, "artifacts");
         Directory.CreateDirectory(artifactsFolder);
         if (await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, false, settings.Verbose, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
@@ -74,6 +76,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         }
 
         // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
+        Logger.LogInformation("Validating build: {SlnFolder}", slnFolder);
         if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
         if (projectSln.IncludeManaged &&
             await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
