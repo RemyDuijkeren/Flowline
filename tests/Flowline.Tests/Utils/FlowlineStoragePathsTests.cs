@@ -15,16 +15,6 @@ public class FlowlineStoragePathsTests
     }
 
     [Fact]
-    public void GetRunsPath_ReturnsPathEndingWithRunsDateAndExtension()
-    {
-        var date = new DateOnly(2026, 1, 15);
-
-        var path = FlowlineStoragePaths.GetRunsPath(date);
-
-        path.Should().EndWith(Path.Combine("runs", "2026-01-15.jsonl"));
-    }
-
-    [Fact]
     public void GetLogsPath_ReturnsPathEndingWithLogsTimestampAndExtension()
     {
         var runTime = new DateTimeOffset(2026, 1, 15, 8, 26, 44, TimeSpan.Zero);

@@ -12,7 +12,6 @@ using Serilog;
 using Serilog.Events;
 using Spectre.Console;
 using Spectre.Console.Cli;
-using System.Diagnostics;
 using System.Reflection;
 using System.Text;
 
@@ -30,7 +29,6 @@ Console.CancelKeyPress += (_, e) =>
 };
 
 var runtimeOptions = new FlowlineRuntimeOptions();
-var runLogService = new RunLogService();
 var runTime = DateTimeOffset.UtcNow;
 
 // Register services
@@ -49,9 +47,6 @@ services.AddSingleton<IGenerator, XrmContextGenerator>();
 services.AddSingleton<PluginService>();
 services.AddSingleton<WebResourceService>();
 services.AddSingleton<OrphanCleanupService>();
-services.AddSingleton(runLogService);
-
-var runDate = DateOnly.FromDateTime(DateTime.UtcNow);
 
 Serilog.ILogger? serilogLogger = null;
 try
@@ -69,14 +64,7 @@ try
 catch { } // Intentional: Serilog init failure must not block command launch (R16).
 services.AddLogging(b => b.ClearProviders().AddSerilog(serilogLogger));
 
-var isHelpOrVersion = args.Any(a => a is "--help" or "-h" or "--version");
 runtimeOptions.ArgsRedacted = CommandExtensions.RedactSensitiveArgs(string.Join(" ", args));
-_ = runLogService.CleanOldLogsAsync(runDate);
-
-string? capturedExceptionType = null;
-string? capturedExceptionMessage = null;
-string? capturedExceptionStackTrace = null;
-string[]? capturedVerboseOutput = null;
 
 // Configure and run the app
 var app = new CommandApp(new TypeRegistrar(services));
@@ -100,13 +88,9 @@ app.Configure(config =>
                 if (!runtimeOptions.IsVerbose)
                     foreach (var line in runtimeOptions.VerboseOutput.Lines)
                         AnsiConsole.MarkupLine($"[dim]{Markup.Escape(line)}[/]");
-                capturedVerboseOutput = runtimeOptions.VerboseOutput.Lines.ToArray();
                 if (fe.HelpLink is not null)
                     AnsiConsole.MarkupLine($"[dim]See: {fe.HelpLink}[/]");
-                AnsiConsole.MarkupLine($"[dim]Run log: {FlowlineStoragePaths.GetRunsPath(runDate)}[/]");
-                capturedExceptionType = ex.GetType().FullName;
-                capturedExceptionMessage = ex.Message;
-                capturedExceptionStackTrace = ex.ToString();
+                AnsiConsole.MarkupLine($"[dim]Log: {FlowlineStoragePaths.GetLogsPath(runTime)}[/]");
                 return (int)fe.ExitCode;
             case OperationCanceledException:
                 serilogLogger?.Information("Command cancelled by user");
@@ -114,11 +98,10 @@ app.Configure(config =>
             default:
                 serilogLogger?.Error(ex, "Unhandled exception");
                 AnsiConsole.WriteException(ex, ExceptionFormats.ShortenPaths);
-                capturedExceptionType = ex.GetType().FullName;
-                capturedExceptionMessage = ex.Message;
-                capturedExceptionStackTrace = ex.ToString();
-                capturedVerboseOutput = runtimeOptions.VerboseOutput.Lines.ToArray();
-                AnsiConsole.MarkupLine($"[dim]Run log: {FlowlineStoragePaths.GetRunsPath(runDate)}[/]");
+                if (!runtimeOptions.IsVerbose)
+                    foreach (var line in runtimeOptions.VerboseOutput.Lines)
+                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape(line)}[/]");
+                AnsiConsole.MarkupLine($"[dim]Log: {FlowlineStoragePaths.GetLogsPath(runTime)}[/]");
                 return 1;
         }
     });
@@ -183,28 +166,6 @@ app.Configure(config =>
           .WithExample("generate", "--generator", "xrmcontext3");
 });
 
-var sw = Stopwatch.StartNew();
 var exitCode = await app.RunAsync(args, cancellationTokenSource.Token);
-sw.Stop();
-
-if (!isHelpOrVersion)
-{
-    var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version ?? "unknown";
-    var record = new RunLogRecord(
-        Timestamp: DateTimeOffset.UtcNow,
-        CommandName: runtimeOptions.CommandName ?? "unknown",
-        ArgsRedacted: CommandExtensions.RedactSensitiveArgs(string.Join(" ", args)),
-        ExitCode: exitCode,
-        DurationMs: sw.ElapsedMilliseconds,
-        FlowlineVersion: version,
-        ToolVersions: runLogService.ReadToolVersions(),
-        LogFilePath: FlowlineStoragePaths.GetLogsPath(runTime),
-        ExceptionType: capturedExceptionType,
-        ExceptionMessage: capturedExceptionMessage,
-        ExceptionStackTrace: capturedExceptionStackTrace,
-        VerboseOutput: capturedVerboseOutput
-    );
-    await runLogService.AppendAsync(record);
-}
 Log.CloseAndFlush();
 return exitCode;
