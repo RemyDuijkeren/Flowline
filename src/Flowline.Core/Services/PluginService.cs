@@ -3,7 +3,6 @@ using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Query;
 using Microsoft.Extensions.Logging;
 using Microsoft.PowerPlatform.Dataverse.Client;
-using Flowline;
 using Flowline.Core.Models;
 using Spectre.Console;
 
@@ -525,7 +524,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
             : (delete ? "delete" : create ? "create" : "update");
 
         // --- Lookups ---
-        // Steps use the fully-qualified class name; type actions may use only the short name.
+        // Steps use the fully qualified class name; type actions may use only the short name.
         // Build a short→full map from step names so both sides resolve to the same key.
         static string ShortName(string name)
         {
@@ -629,7 +628,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
                     var alias   = Safe(img.Entity.GetAttributeValue<string>("entityalias") ?? "(none)");
                     var itype   = OptionValue(img.Entity, "imagetype");
                     var attrs   = Safe(img.Entity.GetAttributeValue<string>("attributes") ?? "(all)");
-                    var imgType = itype == "0" ? "preimg" : itype == "1" ? "postimg" : "img";
+                    var imgType = itype == "0" ? "pre-img" : itype == "1" ? "post-img" : "img";
                     stepNode.AddNode($"{Sym(false, img.IsCreate)} [dim]{imgType}[/] {Safe(ImageShortName(img.Name))} [dim]alias={alias} attributes={attrs}[/] — {Verb(false, img.IsCreate)}");
                 }
             }
@@ -660,13 +659,13 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
                     }
 
                     foreach (var d in group.RequestParams.Deletes.OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase))
-                        apiNode.AddNode($"{Sym(true, false)} [dim]req[/] {Safe(d.Name)} — {Verb(true, false)}");
+                        apiNode.AddNode($"{Sym(true, false)} [dim]req-param[/] {Safe(d.Name)} — {Verb(true, false)}");
                     foreach (var u in group.RequestParams.Upserts.OrderBy(u => u.Name, StringComparer.OrdinalIgnoreCase))
-                        apiNode.AddNode($"{Sym(false, u.IsCreate)} [dim]req[/] {Safe(u.Name)} [dim]type={OptionValue(u.Entity, "type")} optional={BoolValue(u.Entity, "isoptional")}[/] — {Verb(false, u.IsCreate)}");
+                        apiNode.AddNode($"{Sym(false, u.IsCreate)} [dim]req-param[/] {Safe(u.Name)} [dim]type={OptionValue(u.Entity, "type")} optional={BoolValue(u.Entity, "isoptional")}[/] — {Verb(false, u.IsCreate)}");
                     foreach (var d in group.ResponseProps.Deletes.OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase))
-                        apiNode.AddNode($"{Sym(true, false)} [dim]res[/] {Safe(d.Name)} — {Verb(true, false)}");
+                        apiNode.AddNode($"{Sym(true, false)} [dim]res=prop[/] {Safe(d.Name)} — {Verb(true, false)}");
                     foreach (var u in group.ResponseProps.Upserts.OrderBy(u => u.Name, StringComparer.OrdinalIgnoreCase))
-                        apiNode.AddNode($"{Sym(false, u.IsCreate)} [dim]res[/] {Safe(u.Name)} [dim]type={OptionValue(u.Entity, "type")}[/] — {Verb(false, u.IsCreate)}");
+                        apiNode.AddNode($"{Sym(false, u.IsCreate)} [dim]res-prop[/] {Safe(u.Name)} [dim]type={OptionValue(u.Entity, "type")}[/] — {Verb(false, u.IsCreate)}");
                 }
             }
         }

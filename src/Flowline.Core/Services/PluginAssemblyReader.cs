@@ -46,71 +46,7 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
 
     public PluginAssemblyMetadata Analyze(string dllPath)
     {
-        var runtimeDir = RuntimeEnvironment.GetRuntimeDirectory();
-        var paths = Directory.GetFiles(runtimeDir, "*.dll").ToList();
-
-        var assemblyDir = Path.GetDirectoryName(dllPath);
-        if (!string.IsNullOrWhiteSpace(assemblyDir) && Directory.Exists(assemblyDir))
-        {
-            foreach (var file in Directory.EnumerateFiles(assemblyDir, "*.dll", SearchOption.AllDirectories))
-                paths.Add(file);
-
-            var parentDir = Directory.GetParent(assemblyDir)?.FullName;
-            if (parentDir != null && Directory.Exists(parentDir))
-            {
-                foreach (var file in Directory.EnumerateFiles(parentDir, "*.dll", SearchOption.TopDirectoryOnly))
-                    paths.Add(file);
-            }
-
-            // Look for a 'lib' or 'ref' folder in the assembly directory or its parent
-            // This is useful for providing .NET Framework reference assemblies on Linux.
-            string[] libFolderNames = ["lib", "ref", "external"];
-            var searchDirs = new List<string> { assemblyDir };
-            if (parentDir != null) searchDirs.Add(parentDir);
-
-            foreach (var searchDir in searchDirs)
-            {
-                foreach (var libName in libFolderNames)
-                {
-                    var libPath = Path.Combine(searchDir, libName);
-                    if (Directory.Exists(libPath))
-                    {
-                        foreach (var file in Directory.EnumerateFiles(libPath, "*.dll", SearchOption.AllDirectories))
-                            paths.Add(file);
-                    }
-                }
-            }
-        }
-
-        // Include GAC (Global Assembly Cache) for .NET Framework assemblies like System.Activities
-        // This only works on Windows where .NET Framework is installed.
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            var windir = Environment.GetEnvironmentVariable("WINDIR");
-            if (!string.IsNullOrEmpty(windir))
-            {
-                var gacPath = Path.Combine(windir, "Microsoft.NET", "assembly");
-                if (Directory.Exists(gacPath))
-                {
-                    // We don't want to load every single DLL in the GAC as it's huge.
-                    // But we can add common dependencies if they are not already in paths.
-                    string[] commonGacAssemblies = ["System.Activities.dll", "System.Runtime.Serialization.dll", "System.ServiceModel.dll"];
-
-                    foreach (var gacAssemblyName in commonGacAssemblies)
-                    {
-                        if (paths.All(p => !p.Contains(gacAssemblyName, StringComparison.OrdinalIgnoreCase)))
-                        {
-                            var foundPath = Directory.EnumerateFiles(gacPath, gacAssemblyName, SearchOption.AllDirectories).FirstOrDefault();
-                            if (foundPath != null)
-                                paths.Add(foundPath);
-                        }
-                    }
-                }
-            }
-        }
-
-        paths.Add(dllPath);
-        var resolver = new PathAssemblyResolver(paths.Distinct());
+        var resolver = new PathAssemblyResolver(BuildResolverPaths(dllPath).Distinct());
         using var mlc = new MetadataLoadContext(resolver);
 
         var assembly = mlc.LoadFromAssemblyPath(dllPath);
@@ -126,15 +62,86 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
 
         output.Info($"Assembly {assemblyName.Name} loaded");
 
+        return new PluginAssemblyMetadata(
+            assemblyName.Name!,
+            assemblyName.FullName,
+            content,
+            hash,
+            assemblyName.Version!.ToString(),
+            publicKeyToken,
+            culture,
+            ScanPluginTypes(assembly));
+    }
+
+    private static List<string> BuildResolverPaths(string dllPath)
+    {
+        var runtimeDir = RuntimeEnvironment.GetRuntimeDirectory();
+        var paths = new List<string>(Directory.GetFiles(runtimeDir, "*.dll"));
+
+        var assemblyDir = Path.GetDirectoryName(dllPath);
+        if (!string.IsNullOrWhiteSpace(assemblyDir) && Directory.Exists(assemblyDir))
+        {
+            paths.AddRange(Directory.EnumerateFiles(assemblyDir, "*.dll", SearchOption.AllDirectories));
+
+            var parentDir = Directory.GetParent(assemblyDir)?.FullName;
+            if (parentDir != null && Directory.Exists(parentDir))
+                paths.AddRange(Directory.EnumerateFiles(parentDir, "*.dll", SearchOption.TopDirectoryOnly));
+
+            // Look for a 'lib' or 'ref' folder in the assembly directory or its parent
+            // This is useful for providing .NET Framework reference assemblies on Linux.
+            string[] libFolderNames = ["lib", "ref", "external"];
+            var searchDirs = new List<string> { assemblyDir };
+            if (parentDir != null) searchDirs.Add(parentDir);
+
+            foreach (var searchDir in searchDirs)
+                foreach (var libName in libFolderNames)
+                {
+                    var libPath = Path.Combine(searchDir, libName);
+                    if (Directory.Exists(libPath))
+                        paths.AddRange(Directory.EnumerateFiles(libPath, "*.dll", SearchOption.AllDirectories));
+                }
+        }
+
+        // Include GAC (Global Assembly Cache) for .NET Framework assemblies like System.Activities
+        // This only works on Windows where .NET Framework is installed.
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            var windir = Environment.GetEnvironmentVariable("WINDIR");
+            if (!string.IsNullOrEmpty(windir))
+            {
+                var gacPath = Path.Combine(windir, "Microsoft.NET", "assembly");
+                if (Directory.Exists(gacPath))
+                {
+                    // We don't want to load every single DLL in the GAC as it's huge.
+                    // But we can add common dependencies if they are not already in paths.
+                    string[] commonGacAssemblies = ["System.Activities.dll", "System.Runtime.Serialization.dll", "System.ServiceModel.dll"];
+                    foreach (var gacAssemblyName in commonGacAssemblies)
+                    {
+                        if (paths.All(p => !p.Contains(gacAssemblyName, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            var foundPath = Directory.EnumerateFiles(gacPath, gacAssemblyName, SearchOption.AllDirectories).FirstOrDefault();
+                            if (foundPath != null)
+                                paths.Add(foundPath);
+                        }
+                    }
+                }
+            }
+        }
+
+        paths.Add(dllPath);
+        return paths;
+    }
+
+    private List<PluginTypeMetadata> ScanPluginTypes(Assembly assembly)
+    {
         var pluginTypes = new List<PluginTypeMetadata>();
-        var potentialPluginTypes = assembly.GetTypes().Where(t => t is { IsClass: true, IsAbstract: false, IsPublic: true });
-        foreach (var type in potentialPluginTypes)
+        var candidates = assembly.GetTypes().Where(t => t is { IsClass: true, IsAbstract: false, IsPublic: true });
+        foreach (var type in candidates)
         {
             var isPlugin = IsDerivedFrom(type, "Microsoft.Xrm.Sdk.IPlugin");
             var isWorkflow = IsDerivedFrom(type, "System.Activities.CodeActivity");
-            var hasStep = HasStepAttribute(type);
 
-            ValidateStepUsage(type.Name, hasStep, isPlugin);
+            ValidateStepUsage(type.Name, HasStepAttribute(type), isPlugin);
 
             if (!isPlugin && !isWorkflow) continue;
 
@@ -145,43 +152,32 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
                 continue;
             }
 
-            if (isPlugin)
+            // isPlugin guaranteed true here: !isWorkflow and passed the (!isPlugin && !isWorkflow) guard above
+            var customApi = TryBuildCustomApi(type);
+            if (customApi != null)
             {
-                var customApi = TryBuildCustomApi(type);
-                if (customApi != null)
-                {
-                    output.Verbose($"Found Custom API {type.FullName}", isVerbose);
-                    pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, Steps: [], CustomApis: [customApi], IsWorkflow: false, IsCustomApi: true));
-                    continue;
-                }
+                output.Verbose($"Found Custom API {type.FullName}", isVerbose);
+                pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, Steps: [], CustomApis: [customApi], IsWorkflow: false, IsCustomApi: true));
+                continue;
+            }
 
-                var steps = TryBuildSteps(type).ToList();
-                if (steps.Count > 0)
+            var steps = TryBuildSteps(type).ToList();
+            if (steps.Count > 0)
+            {
+                foreach (var s in steps)
                 {
-                    foreach (var s in steps)
-                    {
-                        output.Verbose($"Found Plugin {type.FullName} with plugin step {s.Name}", isVerbose);
-                        foreach (var warning in s.Warnings) output.Warning(warning);
-                    }
-                    pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, steps, [], isWorkflow));
+                    output.Verbose($"Found Plugin {type.FullName} with plugin step {s.Name}", isVerbose);
+                    foreach (var warning in s.Warnings) output.Warning(warning);
                 }
-                else
-                {
-                    output.Verbose($"Found Plugin {type.FullName} with no [[Step]] or [[Custom API]]", isVerbose);
-                    pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, [], [], isWorkflow));
-                }
+                pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, steps, [], isWorkflow));
+            }
+            else
+            {
+                output.Verbose($"Found Plugin {type.FullName} with no [[Step]] or [[Custom API]]", isVerbose);
+                pluginTypes.Add(new PluginTypeMetadata(type.Name, type.FullName!, [], [], isWorkflow));
             }
         }
-
-        return new PluginAssemblyMetadata(
-            assemblyName.Name!,
-            assemblyName.FullName,
-            content,
-            hash,
-            assemblyName.Version!.ToString(),
-            publicKeyToken,
-            culture,
-            pluginTypes);
+        return pluginTypes;
     }
 
     private CustomApiMetadata? TryBuildCustomApi(Type type)
@@ -344,12 +340,11 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
         if (handlesAttr != null)
         {
             handlesUsed = true;
-            message = ParseHandlesMessage(handlesAttr, type.Name);
-            (stage, mode) = MapHandlesStage(Convert.ToInt32(handlesAttr.ConstructorArguments[1].Value), type.Name);
+            (message, stage, mode) = ParseHandlesAttr(handlesAttr, type.Name);
         }
         else
         {
-            ParseStepClassNameOrThrow(type.Name, out message, out stage, out mode);
+            (message, stage, mode) = ParseStepClassNameOrThrow(type.Name);
         }
 
         ValidateExecutionMode(type.Name, stage, mode);
@@ -369,8 +364,7 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
             TryParseClassName(type.Name, out var parsedMsg, out var parsedStage, out var parsedMode) &&
             parsedMsg == message && parsedStage == stage && parsedMode == mode)
             warnings.Add(
-                $"{type.Name}: [[Handles]] is redundant — the class name already parses to the same step registration. " +
-                $"Consider renaming the class to follow convention and removing [[Handles]].");
+                $"{type.Name}: [[Handles]] is redundant — the class name already encodes the same step registration. Remove [[Handles]] and rely on the naming convention.");
 
         var deleteJobOnSuccess = (mode == (int)ProcessingMode.Asynchronous) && (deleteJobOnSuccessExplicit ?? true);
         if (deleteJobOnSuccessExplicit == true && mode != (int)ProcessingMode.Asynchronous)
@@ -395,9 +389,8 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
         var handles = new List<(string Message, int Stage, int Mode, string StageSuffix)>();
         foreach (var hAttr in allHandlesAttrs)
         {
-            var msg = ParseHandlesMessage(hAttr, type.Name);
+            var (msg, s, m) = ParseHandlesAttr(hAttr, type.Name);
             ValidateSecondaryTable(type.Name, msg, secondaryTable);
-            var (s, m) = MapHandlesStage(Convert.ToInt32(hAttr.ConstructorArguments[1].Value), type.Name);
             ValidateExecutionMode(type.Name, s, m);
             // Mode captured in suffix so PostOperation sync vs async produce distinct names
             var stageSuffix = m == (int)ProcessingMode.Asynchronous
@@ -485,9 +478,10 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
             $"Remove [Step] or implement IPlugin.");
     }
 
-    internal static void ParseStepClassNameOrThrow(string className, out string message, out int stage, out int mode)
+    internal static (string message, int stage, int mode) ParseStepClassNameOrThrow(string className)
     {
-        if (TryParseClassName(className, out message, out stage, out mode)) return;
+        if (TryParseClassName(className, out var message, out var stage, out var mode))
+            return (message, stage, mode);
 
         var strippedName = className;
         if (strippedName.EndsWith("Plugin", StringComparison.Ordinal))
@@ -756,8 +750,8 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
             _ => (int)ImageType.PostImage
         };
 
-        string alias = imageType switch { 0 => "preimage", 1 => "postimage", _ => "image" };
-        string name = imageType switch { 0 => "Pre Image", 1 => "Post Image", _ => "Image" };
+        string alias = imageType == (int)ImageType.PreImage ? "preimage" : "postimage";
+        string name  = imageType == (int)ImageType.PreImage ? "Pre Image" : "Post Image";
 
         var attrs = imageData.ConstructorArguments.Count > 0
             ? ReadStringArray(imageData.ConstructorArguments[0])
@@ -803,28 +797,31 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
         return className;
     }
 
-    private static string ParseHandlesMessage(CustomAttributeData attr, string className)
+    private static (string message, int stage, int mode) ParseHandlesAttr(CustomAttributeData attr, string className)
     {
         var onArg = attr.ConstructorArguments[0];
+        string message;
         if (onArg.ArgumentType.FullName == "System.String")
         {
             var msg = (string)onArg.Value!;
             if (string.IsNullOrWhiteSpace(msg))
                 throw new InvalidOperationException(
                     $"{className}: [Handles] message name cannot be empty or whitespace — specify a valid Dataverse message name.");
-            return msg;
+            message = msg;
         }
-        var enumValue = Convert.ToInt32(onArg.Value);
-        if (!MessageValueToName.TryGetValue(enumValue, out var named))
-            throw new InvalidOperationException(
-                $"{className}: [Handles] uses an unknown Message enum value ({enumValue}).");
-        return named;
-    }
+        else
+        {
+            var enumValue = Convert.ToInt32(onArg.Value);
+            if (!MessageValueToName.TryGetValue(enumValue, out var named))
+                throw new InvalidOperationException(
+                    $"{className}: [Handles] uses an unknown Message enum value ({enumValue}).");
+            message = named;
+        }
 
-    // Maps a Stage enum int value (0-3) to the internal ProcessingStage/ProcessingMode pair.
-    // Throws NotSupportedException for unknown values so new enum members fail loudly.
-    private static (int stage, int mode) MapHandlesStage(int stageValue, string className) =>
-        stageValue switch
+        // Maps a Stage enum int value (0-3) to the internal ProcessingStage/ProcessingMode pair.
+        // Throws NotSupportedException for unknown values so new enum members fail loudly.
+        var stageValue = Convert.ToInt32(attr.ConstructorArguments[1].Value);
+        var (stage, mode) = stageValue switch
         {
             0 => ((int)ProcessingStage.PreValidation,  (int)ProcessingMode.Synchronous),
             1 => ((int)ProcessingStage.PreOperation,   (int)ProcessingMode.Synchronous),
@@ -834,6 +831,9 @@ public class PluginAssemblyReader(IAnsiConsole output, bool isVerbose)
                 $"{className}: [Handles] uses an unknown Stage enum value ({stageValue}). " +
                 $"Expected 0 (PreValidation), 1 (PreOperation), 2 (PostOperation), or 3 (PostOperationAsync).")
         };
+
+        return (message, stage, mode);
+    }
 
     // Splits PascalCase into "Title Case" words, e.g. "GetAccountRisk" → "Get Account Risk".
     internal static string SplitPascalCase(string name)

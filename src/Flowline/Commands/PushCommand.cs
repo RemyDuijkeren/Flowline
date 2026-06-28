@@ -142,7 +142,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         }
 
         Console.Done(runMode == RunMode.DryRun
-            ? "Air push complete. Dataverse remains oblivious. (•ᴗ•)و"
+            ? "Air push complete. Dataverse remains oblivious. Now do it for real without --dry-run!و"
             : standaloneMode
                 ? "Assets pushed! (•ᴗ•)و"
                 : "Assets pushed! Use 'sync' to keep it in flow. (•ᴗ•)و");
@@ -220,8 +220,9 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
                 ? $"Plugin file not found: {settings.PluginFile}"
                 : $"{PluginsName}.dll not found — build the solution (Release) first, or drop --no-build.");
 
-        Console.Info($"[bold]{Path.GetFileName(pluginsDll)}[/] found");
-        Console.Verbose($"{pluginsDll}", RuntimeOptions);
+        Logger.LogInformation("Found Plugin file: {PluginFile}", pluginsDll);
+        Console.Verbose($"Found {pluginsDll}", RuntimeOptions);
+        Console.Info($"[bold]{ConsolePath.FormatRelativePath(pluginsDll)}[/] found");
 
         return pluginsDll;
     }
@@ -248,6 +249,10 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             throw new FlowlineException(ExitCode.BuildFailed, "WebResources build failed — fix errors above.");
 
         EnsureBuiltWebResources(webResourcesSyncFolder);
+
+        Logger.LogInformation("Found WebResources folder: {WebResourcesFolder}", webResourcesSyncFolder);
+        Console.Verbose($"Found {webResourcesSyncFolder}", RuntimeOptions);
+        Console.Info($"[bold]{ConsolePath.FormatRelativePath(webResourcesSyncFolder)}[/] found");
 
         return webResourcesSyncFolder;
     }
