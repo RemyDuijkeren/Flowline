@@ -60,14 +60,17 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         Logger.LogInformation("Diff: {TotalFiles} files changed", preSyncSummary.TotalFiles);
         if (preSyncSummary.TotalFiles > 0)
         {
-            if (!settings.Force)
+            if (settings.Force)
             {
-                throw new FlowlineException(ExitCode.DirtyWorkingDirectory, $"Uncommitted changes in '{projectSln.Name}/{PackageName}/src/' — Commit or stash changes first, or re-run with --force.")
-                    .WithDetail(c => preSyncSummary.WriteFlat(c, settings.Verbose, "[dim]  "));
+                Console.Warning($"Uncommitted changes in '{projectSln.Name}/{PackageName}/src/' — overwriting.");
+                preSyncSummary.WriteFlat(Console, settings.Verbose, "[dim]  ");
             }
-
-            Console.Warning($"Uncommitted changes in '{projectSln.Name}/{PackageName}/src/' — overwriting.");
-            preSyncSummary.WriteFlat(Console, settings.Verbose, "[dim]  ");
+            else
+            {
+                Console.Warning($"Found uncommitted changes in '{projectSln.Name}/{PackageName}/src/'.");
+                preSyncSummary.WriteFlat(Console, settings.Verbose, "[dim]  ");
+                throw new FlowlineException(ExitCode.DirtyWorkingDirectory, $"Uncommitted changes in '{projectSln.Name}/{PackageName}/src/' — Commit or stash changes first, or re-run with --force.");
+            }
         }
 
         // Bump version in Dataverse before sync so the downloaded XML reflects the new version

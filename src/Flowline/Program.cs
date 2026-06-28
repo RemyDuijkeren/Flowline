@@ -14,6 +14,7 @@ using Spectre.Console;
 using Spectre.Console.Cli;
 using System.Reflection;
 using System.Text;
+using ILogger = Serilog.ILogger;
 
 Console.OutputEncoding = Encoding.UTF8;
 
@@ -84,12 +85,7 @@ app.Configure(config =>
             case FlowlineException fe:
                 serilogLogger?.Error(ex, "Command failed");
                 AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(fe.Message)}");
-                fe.Detail?.Invoke(AnsiConsole.Console);
-                if (!runtimeOptions.IsVerbose)
-                    foreach (var line in runtimeOptions.VerboseOutput.Lines)
-                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape(line)}[/]");
-                if (fe.HelpLink is not null)
-                    AnsiConsole.MarkupLine($"[dim]See: {fe.HelpLink}[/]");
+                FlushBufferedVerboseOutput(fe, runtimeOptions, serilogLogger);
                 AnsiConsole.MarkupLine($"[dim]Log: {FlowlineStoragePaths.GetLogsPath(runTime)}[/]");
                 return (int)fe.ExitCode;
             case OperationCanceledException:
@@ -98,9 +94,7 @@ app.Configure(config =>
             default:
                 serilogLogger?.Error(ex, "Unhandled exception");
                 AnsiConsole.WriteException(ex, ExceptionFormats.ShortenPaths);
-                if (!runtimeOptions.IsVerbose)
-                    foreach (var line in runtimeOptions.VerboseOutput.Lines)
-                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape(line)}[/]");
+                FlushBufferedVerboseOutput(ex, runtimeOptions, serilogLogger);
                 AnsiConsole.MarkupLine($"[dim]Log: {FlowlineStoragePaths.GetLogsPath(runTime)}[/]");
                 return 1;
         }
@@ -169,3 +163,22 @@ app.Configure(config =>
 var exitCode = await app.RunAsync(args, cancellationTokenSource.Token);
 Log.CloseAndFlush();
 return exitCode;
+
+void FlushBufferedVerboseOutput(Exception ex, FlowlineRuntimeOptions flowlineRuntimeOptions, ILogger? logger)
+{
+    foreach (var key in ex.Data.Keys)
+    {
+        AnsiConsole.MarkupLine($"[dim]{key}: {ex.Data[key]}[/]");
+        logger?.Debug("Context: {Key} = {Value}", key, ex.Data[key]);
+    }
+
+    foreach (var line in flowlineRuntimeOptions.VerboseOutput.Lines)
+        logger?.Debug("Context: {Line}", line);
+
+    if (!flowlineRuntimeOptions.IsVerbose)
+        foreach (var line in flowlineRuntimeOptions.VerboseOutput.Lines)
+            AnsiConsole.MarkupLine($"[dim]{Markup.Escape(line)}[/]");
+
+    if (ex.HelpLink is not null)
+        AnsiConsole.MarkupLine($"[dim]See: {ex.HelpLink}[/]");
+}

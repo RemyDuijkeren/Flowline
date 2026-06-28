@@ -178,21 +178,14 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         if (drift.Count == 0) return;
 
-        if (!settings.Force)
-            throw new FlowlineException(ExitCode.ValidationFailed,
-                "Local changes not in Dataverse — deploy would revert them. Run 'sync' first, or use --force to skip.")
-                .WithDetail(c =>
-                {
-                    foreach (var w in drift)
-                        c.Warning(w.Category == DriftCategory.OnlyLocal
-                            ? $"Only local: {w.RelativePath}"
-                            : $"Plugin size mismatch: {w.RelativePath}");
-                });
-
         foreach (var w in drift)
             Console.Warning(w.Category == DriftCategory.OnlyLocal
                 ? $"Only local: {w.RelativePath}"
                 : $"Plugin size mismatch: {w.RelativePath}");
+
+        if (!settings.Force)
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                "Local changes not in Dataverse — deploy would revert them. Run 'sync' first, or use --force to skip.");
     }
 
     private IReadOnlyList<(Guid ObjectId, int ComponentType)> ParseSolutionXml(string slnFolder)

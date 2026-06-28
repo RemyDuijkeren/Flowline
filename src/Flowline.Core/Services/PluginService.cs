@@ -460,11 +460,11 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
             .ToList();
 
         throw new FlowlineException(ExitCode.ValidationFailed,
-            $"Plugin type name collision — {conflicts.Count} type(s) already registered in another assembly. Add a namespace or rename the class(es).")
-            .WithDetail(console =>
+                $"Plugin type name collision — {conflicts.Count} type(s) already registered in another assembly. Add a namespace or rename the class(es).")
+            .WithData(data =>
             {
                 foreach (var (typeName, assemblyName) in conflicts)
-                    console.MarkupLine($"  [yellow]{Safe(typeName)}[/] already registered in [bold]{Safe(assemblyName)}[/]");
+                    data.Add(typeName, $"{Safe(typeName)} already registered in {Safe(assemblyName)}");
             });
     }
 

@@ -45,7 +45,7 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt,
             foreach (var a in plan.Skips)
                 output.Skip($"Web resource '{a.Name}' kept ({a.Reason})");
 
-            output.Ok("Web resources already up to date — skipping");
+            output.Skip("Web resources already up to date — skipping");
             return;
         }
 

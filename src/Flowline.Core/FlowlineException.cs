@@ -1,3 +1,4 @@
+using System.Collections;
 using Spectre.Console;
 
 namespace Flowline;
@@ -5,7 +6,6 @@ namespace Flowline;
 public class FlowlineException : Exception
 {
     public ExitCode ExitCode { get; init; } = ExitCode.GeneralError;
-    public Action<IAnsiConsole>? Detail { get; private set; }
 
     public FlowlineException(string message, Exception? inner = null) : base(message, inner) { }
 
@@ -14,9 +14,16 @@ public class FlowlineException : Exception
         ExitCode = exitCode;
     }
 
-    public FlowlineException WithDetail(Action<IAnsiConsole> detail)
+    public FlowlineException WithData(string key, object? value)
     {
-        Detail = detail;
+        Data[key] = value;
+        return this;
+    }
+
+    public FlowlineException WithData(Action<IDictionary> configure)
+    {
+        // ReSharper disable once ConditionalAccessQualifierIsNonNullableAccordingToAPIContract - we never want to crash if Data is null
+        configure?.Invoke(Data);
         return this;
     }
 
