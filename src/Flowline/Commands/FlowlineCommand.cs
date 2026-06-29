@@ -5,6 +5,7 @@ using Flowline.Services;
 using Flowline.Utils;
 using Flowline.Validation;
 using System.Diagnostics;
+using System.Reflection;
 using Microsoft.Extensions.Logging;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Spectre.Console;
@@ -90,13 +91,23 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
 
     protected virtual async Task CheckSetupAsync(TSettings settings, CancellationToken cancellationToken)
     {
+        ToolCheckResult? dotnet = null, pac = null, git = null;
         await Console.Status().FlowlineSpinner().StartAsync("Checking your setup...", async ctx =>
         {
-            await FlowlineValidator.Default.EnsureDotNetAsync(settings, cancellationToken);
-            await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
-            await FlowlineValidator.Default.EnsureGitAsync(settings, cancellationToken);
+            dotnet = await FlowlineValidator.Default.EnsureDotNetAsync(settings, cancellationToken);
+            pac = await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
+            git = await FlowlineValidator.Default.EnsureGitAsync(settings, cancellationToken);
             await FlowlineValidator.Default.EnsureGitRepoAsync(RootFolder, settings, cancellationToken);
         });
+
+        RuntimeOptions.ToolVersions = new FlowlineToolVersions(
+            FlowlineVersion: Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version ?? "0.0.0",
+            DotNetVersion: dotnet!.Version,
+            PacVersion: pac!.Version,
+            PacInstallType: pac.InstallType,
+            GitVersion: git!.Version,
+            GitBranch: git.Branch
+        );
 
         Console.Ok("Prerequisites all good, let's go!");
     }
