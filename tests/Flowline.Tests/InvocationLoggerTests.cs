@@ -23,24 +23,6 @@ public class InvocationLoggerTests
         ActivitySource.AddActivityListener(listener);
     }
 
-    [Theory]
-    [InlineData("https://contoso.crm4.dynamics.com/")]
-    [InlineData("https://example.com")]
-    public void HashUrl_ReturnsDeterministicEightCharLowercaseHex(string url)
-    {
-        var hash = InvocationLogger.HashUrl(url);
-        hash.Should().HaveLength(8);
-        hash.Should().MatchRegex("^[0-9a-f]+$");
-        InvocationLogger.HashUrl(url).Should().Be(hash);
-    }
-
-    [Fact]
-    public void HashUrl_DifferentUrls_ProduceDifferentHashes()
-    {
-        InvocationLogger.HashUrl("https://a.example.com")
-            .Should().NotBe(InvocationLogger.HashUrl("https://b.example.com"));
-    }
-
     [Fact]
     public void Log_DoesNotThrow_WhenToolVersionsNull()
     {

@@ -73,6 +73,7 @@ try
         .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
         .MinimumLevel.Override("System", LogEventLevel.Warning)
         .Enrich.With(new ActivityTraceEnricher())
+        .Enrich.With(new UrlScrubEnricher())
         .WriteTo.File(logPath, rollingInterval: RollingInterval.Infinite)
         .CreateLogger();
     Log.Logger = serilogLogger;

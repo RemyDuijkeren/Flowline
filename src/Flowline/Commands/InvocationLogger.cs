@@ -1,9 +1,8 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
-using System.Text;
 using Flowline.Config;
 using Flowline.Core;
+using Flowline.Logging;
 using Flowline.Utils;
 using Microsoft.Extensions.Logging;
 
@@ -11,9 +10,6 @@ namespace Flowline.Commands;
 
 internal static class InvocationLogger
 {
-    internal static string HashUrl(string url) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(url)))[..8].ToLowerInvariant();
-
     internal static void Log(ILogger logger, FlowlineRuntimeOptions runtimeOptions, ProjectConfig? config, string rootFolder, Activity? activity)
     {
         var tv = runtimeOptions.ToolVersions;
@@ -30,7 +26,7 @@ internal static class InvocationLogger
             if (!string.IsNullOrWhiteSpace(url))
             {
                 envTiers.Add(tier);
-                envHashes.Add($"{tier}={HashUrl(url)}");
+                envHashes.Add($"{tier}={UrlScrubEnricher.HashUrl(url)}");
             }
         }
 
