@@ -410,7 +410,7 @@ public class PluginAssemblyReaderTests
     public void ParseStepClassNameOrThrow_NoStageKeyword_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ParseStepClassNameOrThrow("AccountCreatePlugin", out _, out _, out _));
+            PluginAssemblyReader.ParseStepClassNameOrThrow("AccountCreatePlugin"));
 
         Assert.Contains("[Step]", ex.Message);
         Assert.Contains("no stage", ex.Message);
@@ -422,7 +422,7 @@ public class PluginAssemblyReaderTests
     public void ParseStepClassNameOrThrow_NoMessageKeyword_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ParseStepClassNameOrThrow("AccountPostPlugin", out _, out _, out _));
+            PluginAssemblyReader.ParseStepClassNameOrThrow("AccountPostPlugin"));
 
         Assert.Contains("[Step]", ex.Message);
         Assert.Contains("no message", ex.Message);
@@ -433,7 +433,7 @@ public class PluginAssemblyReaderTests
     public void ParseStepClassNameOrThrow_NoStageOrMessageKeyword_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ParseStepClassNameOrThrow("AccountPlugin", out _, out _, out _));
+            PluginAssemblyReader.ParseStepClassNameOrThrow("AccountPlugin"));
 
         Assert.Contains("[Step]", ex.Message);
         Assert.Contains("stage or message", ex.Message);

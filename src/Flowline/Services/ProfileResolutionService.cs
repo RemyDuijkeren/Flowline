@@ -67,7 +67,7 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
         var status = string.IsNullOrEmpty(profile.Name)
             ? $"Using PAC profile (unnamed, {Markup.Escape(profile.Kind ?? "")}) — {Markup.Escape(profile.Resource ?? "")}"
             : $"Using PAC profile '{Markup.Escape(profile.Name)}' ({Markup.Escape(profile.Kind ?? "")})";
-        console.MarkupLine(status);
+        console.Info(status);
     }
 
     static string FormatCandidate(PacProfile p) =>

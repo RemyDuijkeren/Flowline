@@ -7,9 +7,9 @@ public static class FlowlineConsoleExtensions
     public static void Ok(this IAnsiConsole console, string message) => console.MarkupLine($"[green]✓[/] {message}");
     public static void Done(this IAnsiConsole console, string message) => console.MarkupLine($"\n[bold green]:rocket: {message}[/]");
 
-    public static void Info(this IAnsiConsole console, string message) => console.MarkupLine(message);
+    public static void Info(this IAnsiConsole console, string message) => console.MarkupLine($"· {message}");
 
-    public static void Skip(this IAnsiConsole console, string message) => console.MarkupLine($"[dim]{message}[/]");
+    public static void Skip(this IAnsiConsole console, string message) => console.MarkupLine($"[dim]↷ {message}[/]");
 
     public static void Verbose(this IAnsiConsole console, string message, bool isVerbose)
     {

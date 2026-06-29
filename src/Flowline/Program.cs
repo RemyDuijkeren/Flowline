@@ -160,8 +160,14 @@ app.Configure(config =>
           .WithExample("generate", "--generator", "xrmcontext3");
 });
 
+var hookLoggerFactory = LoggerFactory.Create(b => b.AddSerilog(serilogLogger));
+AnsiConsole.Console.Pipeline.Attach(new LoggingRenderHook(
+    hookLoggerFactory.CreateLogger<LoggingRenderHook>()
+));
+
 var exitCode = await app.RunAsync(args, cancellationTokenSource.Token);
 Log.CloseAndFlush();
+hookLoggerFactory.Dispose();
 return exitCode;
 
 void FlushBufferedVerboseOutput(Exception ex, FlowlineRuntimeOptions flowlineRuntimeOptions, ILogger? logger)
