@@ -220,7 +220,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         {
             var pluginsFolder = Path.Combine(RootFolder, AllSolutionsFolderName, solutionName, PluginsName);
             if (settings.NoBuild)
-                Console.Skip("Build — skipping (--no-build active).");
+                Console.Skip("Build plugins — skipping (--no-build active)");
             else if (await DotNetUtils.BuildSolutionAsync(pluginsFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
                 throw new FlowlineException(ExitCode.BuildFailed, "Plugins build failed — fix errors above.");
 
@@ -252,14 +252,14 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
 
         if (!Directory.Exists(webResourcesFolder))
         {
-            Console.Skip("WebResources project not found — skipping");
+            Console.Skip("Web resources project not found — skipping");
             return null;
         }
 
         if (settings.NoBuild)
-            Console.Skip("Build skipped (--no-build).");
+            Console.Skip("Build web resources - skipping (--no-build active)");
         else if (await DotNetUtils.BuildSolutionAsync(webResourcesFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
-            throw new FlowlineException(ExitCode.BuildFailed, "WebResources build failed — fix errors above.");
+            throw new FlowlineException(ExitCode.BuildFailed, "Web resources build failed — fix errors above.");
 
         EnsureBuiltWebResources(webResourcesSyncFolder);
 
