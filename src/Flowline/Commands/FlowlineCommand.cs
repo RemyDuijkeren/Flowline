@@ -100,12 +100,15 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     protected virtual async Task CheckSetupAsync(TSettings settings, CancellationToken cancellationToken)
     {
         ToolCheckResult? dotnet = null, pac = null, git = null;
+        string? gitBranch = null;
         await Console.Status().FlowlineSpinner().StartAsync("Checking your setup...", async ctx =>
         {
             dotnet = await FlowlineValidator.Default.EnsureDotNetAsync(settings, cancellationToken);
             pac = await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
             git = await FlowlineValidator.Default.EnsureGitAsync(settings, cancellationToken);
             await FlowlineValidator.Default.EnsureGitRepoAsync(RootFolder, settings, cancellationToken);
+            // Fetched fresh (not cached) — branch changes too frequently for 7-day TTL
+            gitBranch = await GitUtils.GetCurrentBranchAsync(settings.Verbose, cancellationToken);
         });
 
         RuntimeOptions.ToolVersions = new FlowlineToolVersions(
@@ -114,7 +117,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
             PacVersion: pac!.Version,
             PacInstallType: pac.InstallType,
             GitVersion: git!.Version,
-            GitBranch: git.Branch
+            GitBranch: gitBranch
         );
 
         Console.Ok("Prerequisites all good, let's go!");

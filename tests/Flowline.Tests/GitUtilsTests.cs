@@ -42,6 +42,23 @@ public class GitUtilsTests : IDisposable
         p.WaitForExit();
     }
 
+    string ReadGitOutput(params string[] args)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo("git")
+        {
+            WorkingDirectory = _root,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        foreach (var arg in args)
+            psi.ArgumentList.Add(arg);
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        var output = p.StandardOutput.ReadToEnd();
+        p.WaitForExit();
+        return output.Trim();
+    }
+
     void CreateAndCommitFile(string relativePath, string content = "content")
     {
         var fullPath = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
@@ -155,5 +172,28 @@ public class GitUtilsTests : IDisposable
 
         var act = async () => await GitUtils.CreateTagAsync("1.0.1", _root, CancellationToken.None);
         await act.Should().ThrowAsync<FlowlineException>();
+    }
+
+    [Fact]
+    public async Task GetCurrentBranchAsync_OnDefaultBranch_ReturnsBranchName()
+    {
+        CreateAndCommitFile("readme.txt");
+
+        var branch = await GitUtils.GetCurrentBranchAsync(workingDirectory: _root);
+
+        branch.Should().NotBeNullOrEmpty();
+        branch.Should().NotBe("(detached)");
+    }
+
+    [Fact]
+    public async Task GetCurrentBranchAsync_InDetachedHeadState_ReturnsDetachedMarker()
+    {
+        CreateAndCommitFile("readme.txt");
+        var sha = ReadGitOutput("rev-parse", "HEAD");
+        RunGit("checkout", sha);
+
+        var branch = await GitUtils.GetCurrentBranchAsync(workingDirectory: _root);
+
+        branch.Should().Be("(detached)");
     }
 }

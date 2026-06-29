@@ -68,4 +68,39 @@ public class ConsoleHelperTests
             Environment.SetEnvironmentVariable("TF_BUILD", null);
         }
     }
+
+    static readonly string[] s_ciVars = ["GITHUB_ACTIONS", "TF_BUILD", "JENKINS_URL", "CI"];
+
+    static Dictionary<string, string?> SaveAndClearCiVars()
+    {
+        var saved = s_ciVars.ToDictionary(v => v, v => Environment.GetEnvironmentVariable(v));
+        foreach (var v in s_ciVars) Environment.SetEnvironmentVariable(v, null);
+        return saved;
+    }
+
+    static void RestoreCiVars(Dictionary<string, string?> saved)
+    {
+        foreach (var (k, v) in saved) Environment.SetEnvironmentVariable(k, v);
+    }
+
+    [Fact]
+    public void DetectCIPlatform_ShouldReturnNull_WhenNoCiVarsSet()
+    {
+        var saved = SaveAndClearCiVars();
+        try { ConsoleHelper.DetectCIPlatform().Should().BeNull(); }
+        finally { RestoreCiVars(saved); }
+    }
+
+    [Theory]
+    [InlineData("GITHUB_ACTIONS", "true", "github")]
+    [InlineData("TF_BUILD", "True", "azuredevops")]
+    [InlineData("JENKINS_URL", "http://jenkins.example.com", "jenkins")]
+    [InlineData("CI", "true", "unknown")]
+    public void DetectCIPlatform_ShouldReturnExpectedPlatform_ForKnownCiVar(string envVar, string envValue, string expected)
+    {
+        var saved = SaveAndClearCiVars();
+        Environment.SetEnvironmentVariable(envVar, envValue);
+        try { ConsoleHelper.DetectCIPlatform().Should().Be(expected); }
+        finally { RestoreCiVars(saved); }
+    }
 }

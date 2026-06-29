@@ -39,15 +39,19 @@ public static class GitUtils
         }
     }
 
-    public static async Task<string?> GetCurrentBranchAsync(bool verbose = false, CancellationToken cancellationToken = default)
+    public static async Task<string?> GetCurrentBranchAsync(bool verbose = false, CancellationToken cancellationToken = default, string? workingDirectory = null)
     {
         try
         {
-            var result = await Cli.Wrap("git")
-                                  .WithArguments("rev-parse --abbrev-ref HEAD")
-                                  .WithValidation(CommandResultValidation.None)
-                                  .WithToolExecutionLog(verbose)
-                                  .ExecuteBufferedAsync(cancellationToken);
+            var cmd = Cli.Wrap("git");
+            if (workingDirectory != null)
+                cmd = cmd.WithWorkingDirectory(workingDirectory);
+
+            var result = await cmd
+                              .WithArguments("rev-parse --abbrev-ref HEAD")
+                              .WithValidation(CommandResultValidation.None)
+                              .WithToolExecutionLog(verbose)
+                              .ExecuteBufferedAsync(cancellationToken);
 
             if (result.ExitCode != 0) return null;
             var branch = result.StandardOutput.Trim();

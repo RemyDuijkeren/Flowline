@@ -178,8 +178,8 @@
   <!-- STATS STRIP -->
   <div class="stats-strip" aria-label="Summary statistics">
     <div class="stat"><div class="stat-value green">3</div><div class="stat-label">shipped</div></div>
-    <div class="stat"><div class="stat-value gray">1</div><div class="stat-label">dropped</div></div>
-    <div class="stat"><div class="stat-value orange">4</div><div class="stat-label">planned</div></div>
+    <div class="stat"><div class="stat-value gray">2</div><div class="stat-label">dropped</div></div>
+    <div class="stat"><div class="stat-value orange">3</div><div class="stat-label">planned</div></div>
     <div class="stat"><div class="stat-value green">2</div><div class="stat-label">waves done</div></div>
     <div class="stat"><div class="stat-value">2</div><div class="stat-label">waves ahead</div></div>
   </div>
@@ -234,7 +234,7 @@
           <li>No interactive TTY — first-run disclosures must write to stderr and not block</li>
           <li>Ephemeral disk on GitHub-hosted runners — local files fine for job duration, not across runs</li>
           <li>Secrets in CI logs: args may contain connection strings, PAC auth tokens — must redact</li>
-          <li>App Insights: InMemoryChannel + mandatory FlushAsync() — buffer fires every 30s or 500 events, neither fires in sub-second CLI runs</li>
+          <li>App Insights via OTLP: <code>TracerProvider.ForceFlush()</code> + dispose before exit — replaces <code>InMemoryChannel</code>/<code>TelemetryClient.FlushAsync()</code> from the classic SDK; must complete before <code>Environment.Exit</code></li>
         </ul>
       </div>
     </div>
@@ -255,7 +255,7 @@
 
   <!-- RANKED IDEAS -->
   <section id="ranked-ideas" aria-labelledby="ideas-title">
-    <div class="section-eyebrow">3 Shipped · 1 Dropped · 4 Planned</div>
+    <div class="section-eyebrow">3 Shipped · 2 Dropped · 3 Planned</div>
     <h2 class="section-title" id="ideas-title">Ideas</h2>
 
     <nav class="jump-list" aria-label="Idea jump list">
@@ -265,10 +265,10 @@
         <li><a href="#i-2" class="shipped-link">I2. Subprocess Stderr Capture ✓</a></li>
         <li><a href="#i-3" class="shipped-link">I3. ILogger Debug File Sink ✓</a></li>
         <li><a href="#i-3b" class="shipped-link">I3b. Console-to-ILogger Tee ✓ (new)</a></li>
-        <li><a href="#i-4">I4. DiagnosticContext Stage Chain</a></li>
+        <li><a href="#i-4" class="dropped-link">I4. DiagnosticContext Stage Chain (dropped)</a></li>
         <li><a href="#i-5">I5. Crash-Initiated Support Bundle</a></li>
-        <li><a href="#i-6">I6. Per-Invocation Correlation ID</a></li>
-        <li><a href="#i-7">I7. App Insights Opt-Out Telemetry</a></li>
+        <li><a href="#i-6">I6. Per-Invocation Trace via ActivitySource</a></li>
+        <li><a href="#i-7">I7. App Insights Telemetry</a></li>
       </ol>
     </nav>
 
@@ -417,35 +417,24 @@
         </div>
       </article>
 
-      <!-- I4 — PLANNED -->
-      <article class="idea-card" id="i-4">
+      <!-- I4 — DROPPED -->
+      <article class="idea-card card-dropped" id="i-4">
         <div class="idea-header">
           <div class="idea-rank-title">
             <span class="idea-rank">I4.</span>
-            <h3 class="idea-title">DiagnosticContext Stage Chain</h3>
+            <h3 class="idea-title dropped">DiagnosticContext Stage Chain</h3>
           </div>
           <div class="idea-chips">
             <span class="chip axis-chip axis-dc">Diagnostic Capture</span>
-            <span class="chip conf-high">Confidence 85%</span>
-            <span class="chip cx-m">Complexity M</span>
-            <span class="chip status-planned">Planned · Wave 2</span>
+            <span class="chip status-dropped">Dropped</span>
           </div>
         </div>
         <div class="idea-body">
-          <p>Commands like Deploy, Sync, and Clone execute multiple named stages: connect to Dataverse, validate solution, run PAC sync, pack solution, drift check. Today, when a failure occurs mid-command, the exception says <em>"Deploy failed"</em> but not <em>which stage failed</em>. Introduce a lightweight <code>DiagnosticContext</code> — a <code>List&lt;string&gt;</code> scoped to the command execution lifetime — that commands populate at each named stage: <code>context.Stage("Connecting to Dataverse")</code>, <code>context.Stage("Running pac solution sync")</code>. On <code>FlowlineException</code> throw, the global handler flushes the chain, printing the stages completed and the one that failed. No-op on success. Single registration point in <code>FlowlineCommand.ExecuteAsync</code>.</p>
-
+          <p>Originally: a <code>List&lt;string&gt;</code> scoped to command execution, populated at each named stage, flushed to the failure output on exception. Dropped in favour of <code>ActivitySource</code> / <code>Activity</code> (absorbed into I6).</p>
           <div class="idea-fields">
             <div class="idea-field">
-              <span class="field-label">Basis</span>
-              <span class="field-value"><code>FlowlineCommand.ExecuteAsync</code> is the single entry point for all commands — one place to inject and dispose the DiagnosticContext. <code>FlowlineException.WithData</code> is already wired to the global handler; no new rendering code needed. The gap is confirmed: some exit paths log nothing to the failure output (CloneCommand exit codes, for example).</span>
-            </div>
-            <div class="idea-field">
-              <span class="field-label">Rationale</span>
-              <span class="field-value">Without a stage chain, a Deploy failure tells you the command failed but not whether it failed at connection, version bump, PAC sync, pack, or drift check — five different scenarios with five different root causes. The stage chain collapses these into one diagnostic line: "Completed: Connect, Validate, PackSolution. Failed at: PAC sync." Stage names also land in the ILogger file via the hook (they're printed to the console when each stage starts).</span>
-            </div>
-            <div class="idea-field">
-              <span class="field-label">Downsides</span>
-              <span class="field-value">Requires instrumenting each command's stage boundaries — mechanical work proportional to command count. Stage names are strings; a future enum or constant pool would be cleaner but is not required now. DiagnosticContext must be disposed cleanly even on success to avoid memory leaks on long-running sessions.</span>
+              <span class="field-label">Why Dropped</span>
+              <span class="field-value">Two reasons. First, <code>LoggingRenderHook</code> (I3b) already tees every terminal write to the log file sequentially — if a command prints "Connecting to Dataverse…", "Running PAC sync…", the log already has that trail; a collapsed stage summary in the exception output adds marginal value. Second, <code>DiagnosticContext</code> is a Serilog ASP.NET Core concept (request-scoped enricher for web middleware pipelines), not a .NET standard, and a poor fit for a single-invocation CLI. The same stage-chain value — and more — comes for free from <code>ActivitySource</code> child activities (I6): each stage becomes a named span with duration, status, and W3C-standard trace correlation, without any custom type.</span>
             </div>
           </div>
         </div>
@@ -490,30 +479,39 @@
         <div class="idea-header">
           <div class="idea-rank-title">
             <span class="idea-rank">I6.</span>
-            <h3 class="idea-title">Per-Invocation Correlation ID</h3>
+            <h3 class="idea-title">Per-Invocation Trace via ActivitySource</h3>
           </div>
           <div class="idea-chips">
             <span class="chip axis-chip axis-dc">Diagnostic Capture</span>
-            <span class="chip conf-high">Confidence 82%</span>
+            <span class="chip conf-high">Confidence 88%</span>
             <span class="chip cx-s">Complexity S</span>
             <span class="chip status-planned">Planned · Wave 2</span>
           </div>
         </div>
         <div class="idea-body">
-          <p>On startup, read <code>FLOWLINE_TRACE_ID</code> from the environment (CI pipelines set this to their run ID). If absent, auto-generate an 8-char hex ID. Store on <code>FlowlineRuntimeOptions</code> and include it in the ILogger log file name or as a Serilog enricher property so every log entry is stamped. When two verbose runs of the same command produce different outcomes, diffing the two log files becomes trivial. When a CI pipeline runs <code>flowline clone</code> then <code>flowline deploy</code>, both log files share the pipeline run ID and are trivially joinable.</p>
+          <p>In <code>FlowlineCommand.ExecuteAsync</code>, start a root <code>Activity</code> from a shared <code>FlowlineActivitySource</code> named after the command. This gives a W3C-standard 128-bit trace ID (<code>Activity.Current?.TraceId</code>) propagated automatically through all async code via <code>AsyncLocal</code> — no manual threading. Each named stage (connect, PAC sync, pack, drift check) starts a child <code>Activity</code>, absorbing the stage-chain value of the dropped I4 with a richer result: named spans with duration and status, not a flat string list. The root activity carries command-level tags: <code>flowline.version</code>, <code>ci</code>, <code>ci.platform</code>, <code>os.arch</code> — these flow to App Insights (I7) as searchable custom dimensions for cross-user and build-server analysis.</p>
+          <p style="margin-top:10px;">CI pipelines chain runs by setting a standard W3C <code>TRACEPARENT</code> env var (e.g. <code>TRACEPARENT=00-${{ github.run_id }}-...</code>); <code>Activity</code> picks this up automatically. No custom env var needed. The trace ID goes into the Serilog enricher — one line: <code>loggerConfig.Enrich.WithProperty("TraceId", Activity.Current?.TraceId)</code> — and into App Insights correlation automatically since the App Insights SDK reads <code>Activity.Current</code>.</p>
 
           <div class="idea-fields">
             <div class="idea-field">
               <span class="field-label">Basis</span>
-              <span class="field-value"><code>RuntimeOptions.IsVerbose</code> is confirmed as a bool propagated to all services via <code>FlowlineCommand.InitializeRuntimeOptions</code> — adding a string <code>TraceId</code> follows the identical threading pattern. With Serilog in place, adding a log enricher (<code>loggerConfig.Enrich.WithProperty("TraceId", traceId)</code>) is one line. Alternatively, embed the trace ID in the log file name — <code>&lt;timestamp&gt;-&lt;traceid&gt;Z.log</code> — for filesystem-level grouping without changing the Serilog output template.</span>
+              <span class="field-value"><code>System.Diagnostics.ActivitySource</code> + <code>Activity</code> are built into .NET 5+ — no extra NuGet for the API itself. App Insights SDK reads <code>Activity.Current</code> for correlation automatically; no additional wiring needed. <code>FlowlineCommand.ExecuteAsync</code> is the single entry point — one place to start and dispose the root activity. CI detection via standard env vars: <code>CI=true</code> (GitHub Actions, CircleCI), <code>GITHUB_ACTIONS=true</code>, <code>TF_BUILD</code> (Azure DevOps), <code>TEAMCITY_VERSION</code>. Machine identity without PII: <code>Environment.MachineName</code> hashed (stable across runs, not personally identifiable).</span>
+            </div>
+            <div class="idea-field">
+              <span class="field-label">Replaces I4</span>
+              <span class="field-value">Child activities replace the <code>DiagnosticContext</code> <code>List&lt;string&gt;</code>: each stage is <code>using var stage = _source.StartActivity("PacSync")</code>, disposed when the stage completes. On failure the activity carries status <code>Error</code> and the exception message. No custom type, no global state, no dispose-on-success concern. OTel-aligned: if an OTLP exporter replaces App Insights later, the instrumentation is unchanged.</span>
+            </div>
+            <div class="idea-field">
+              <span class="field-label">User &amp; CI tracking for App Insights</span>
+              <span class="field-value">Set as <code>Activity</code> tags on the root span and as OTel Resource attributes (I7): <code>user.id</code> = stable hash of <code>Environment.MachineName</code>; <code>ci</code> = true/false; <code>ci.platform</code> = "github" / "azuredevops" / "teamcity" / "other"; <code>flowline.version</code>; <code>os</code> = <code>RuntimeInformation.OSDescription</code>. Resource attributes set via <code>ResourceBuilder.AddService().AddAttributes()</code> — no <code>TelemetryInitializer</code> needed. Enables App Insights queries like "show all crashes on CI" or "which machine/user hits this exit code most."</span>
             </div>
             <div class="idea-field">
               <span class="field-label">Rationale</span>
-              <span class="field-value">CI pipelines often run multiple Flowline commands sequentially. Without a shared ID, the log files from a GitHub Actions workflow are independent — you can't tell which <code>flowline deploy</code> log belongs to which pipeline run. With <code>FLOWLINE_TRACE_ID=${{ github.run_id }}</code> in the workflow env block, log files from that run share a common identifier. Pairs with I3 to complete the CI observability story.</span>
+              <span class="field-value">Consolidates I4 and the original I6 into one standard mechanism. CI pipelines run multiple Flowline commands sequentially — without a shared trace ID, the log files are independent. With <code>TRACEPARENT</code> set from the pipeline run ID, all log files from that run share a W3C-standard identifier and are trivially joinable. Pairs with I3 (log files) and I7 (App Insights) to complete the observability story.</span>
             </div>
             <div class="idea-field">
               <span class="field-label">Downsides</span>
-              <span class="field-value">CI operators have to know to set <code>FLOWLINE_TRACE_ID</code> — opt-in (auto-generation handles the common case). Auto-generated IDs are random and not meaningful without a log.</span>
+              <span class="field-value">Stage child activities require a <code>using</code> block or explicit <code>Dispose()</code> at each stage boundary — same mechanical work as I4, but the result is richer. CI operators must know to set <code>TRACEPARENT</code> for cross-command correlation; auto-generated root IDs handle the common case. <code>ActivitySource.StartActivity</code> returns <code>null</code> when no listener is registered — all call sites must null-check or use the <code>?.SetTag()</code> pattern.</span>
             </div>
           </div>
         </div>
@@ -524,7 +522,7 @@
         <div class="idea-header">
           <div class="idea-rank-title">
             <span class="idea-rank">I7.</span>
-            <h3 class="idea-title">App Insights Opt-Out Telemetry</h3>
+            <h3 class="idea-title">App Insights Telemetry</h3>
           </div>
           <div class="idea-chips">
             <span class="chip axis-chip axis-rt">Remote Telemetry</span>
@@ -534,20 +532,51 @@
           </div>
         </div>
         <div class="idea-body">
-          <p>On unhandled exceptions or crash exits: send a minimal telemetry event to Azure Application Insights — exception type name, exit code enum value, command name (no args), Flowline version, OS/arch, CI flag. No PII: no file paths, no user identifiers, no Dataverse URLs. Disclose at first run to stderr. Opt-out via <code>FLOWLINE_TELEMETRY_OPTOUT=1</code> or <code>DO_NOT_TRACK=1</code>. Use <code>InMemoryChannel</code> and call <code>TelemetryClient.FlushAsync()</code> before process exit — mandatory for short-lived CLI processes. Store-and-forward queue for offline/firewall scenarios.</p>
+          <p>On any invocation: send traces and exception events to Azure Application Insights via the OTel OTLP exporter (<code>Azure.Monitor.OpenTelemetry.Exporter</code>). The <code>ActivitySource</code> from I6 feeds directly into an OTel <code>TracerProvider</code> configured with the Azure Monitor exporter — no <code>TelemetryClient</code>, no classic App Insights SDK. Payload: exception type name, exit code enum value, command name (no args), Flowline version, OS/arch, CI flag, hashed machine ID. No PII: no file paths, no Dataverse URLs, no user identifiers. Disclose at first run to stderr. Honor <code>FLOWLINE_TELEMETRY_OPTOUT=1</code> and <code>DO_NOT_TRACK=1</code> unconditionally. Consent model (opt-in vs. opt-out default) TBD — see field below. Before process exit: <code>tracerProvider.ForceFlush(TimeSpan.FromSeconds(5))</code> then dispose — the exporter drains its buffer synchronously.</p>
 
           <div class="idea-fields">
             <div class="idea-field">
+              <span class="field-label">Stack</span>
+              <span class="field-value">
+                <code>OpenTelemetry</code> SDK + <code>Azure.Monitor.OpenTelemetry.Exporter</code>. <code>TracerProvider</code> built in <code>Program.cs</code> before <code>app.RunAsync</code>; disposed after. I6's <code>FlowlineActivitySource</code> registered as a source on the provider — zero additional instrumentation. Resource attributes via <code>ResourceBuilder.AddService("flowline", version).AddAttributes([ci, os, user.id])</code> — these land as custom dimensions in App Insights and are queryable across all telemetry.
+              </span>
+            </div>
+            <div class="idea-field">
+              <span class="field-label">Why OTLP over classic SDK</span>
+              <span class="field-value">No <code>TelemetryClient</code>, no <code>InMemoryChannel</code>, no <code>TelemetryInitializer</code> boilerplate. Exporter is swappable: replacing <code>UseAzureMonitorExporter()</code> with <code>AddOtlpExporter()</code> points the same pipeline at any OTLP-compatible backend (Jaeger, Grafana, self-hosted collector) — instrumentation unchanged. Flush contract is simpler: <code>TracerProvider.ForceFlush()</code> is synchronous and guaranteed; classic SDK's <code>FlushAsync</code> had a 30s/500-event buffer that silently dropped events in sub-second CLI runs.</span>
+            </div>
+            <div class="idea-field">
               <span class="field-label">Basis</span>
-              <span class="field-value">dotnet CLI's opt-out model (DOTNET_CLI_TELEMETRY_OPTOUT, first-run disclosure, CI detection) is the established precedent. InMemoryChannel + mandatory <code>TelemetryClient.FlushAsync()</code> at process exit is the documented pattern for short-lived CLIs. DO_NOT_TRACK=1 convention respected by GitHub CLI and npm.</span>
+              <span class="field-value">dotnet CLI's opt-out model (<code>DOTNET_CLI_TELEMETRY_OPTOUT</code>, first-run disclosure, CI detection) is the established .NET precedent. <code>DO_NOT_TRACK=1</code> convention respected by GitHub CLI and npm. <code>Azure.Monitor.OpenTelemetry.Exporter</code> is Microsoft's recommended OTel-native path for App Insights as of .NET 8+ — the classic SDK is in maintenance mode.</span>
+            </div>
+            <div class="idea-field">
+              <span class="field-label">Prior Art — FetchXmlBuilder</span>
+              <span class="field-value">Jonas Rapp's FetchXmlBuilder (XrmToolBox plugin) uses two hardcoded Azure App Insights keys initialized on plugin load. Tracks: <code>Load</code>, <code>New</code>, <code>Clone</code>, <code>Close</code>, action names, assembly version. No opt-out documented anywhere. Aggregated stats published publicly at <code>jonasr.app/xtb-stats/</code>. Received no meaningful backlash — Power Platform community is small and non-privacy-vigilant; the data collected is minimal and the tool is beloved. <strong>False signal for Flowline:</strong> Flowline's enterprise target audience is more GDPR-exposed and security-scrutinized than the hobbyist XrmToolBox user base. Silence works in a small community but is fragile — one blog post from an enterprise user can flip the narrative.</span>
+            </div>
+            <div class="idea-field">
+              <span class="field-label">Ecosystem Precedents</span>
+              <span class="field-value">
+                <strong>dotnet CLI</strong> (<code>DOTNET_CLI_TELEMETRY_OPTOUT</code>): opt-out + first-run disclosure. Received backlash but established the accepted .NET precedent. Linux Mint shipped with it disabled by default.<br>
+                <strong>Go toolchain</strong>: proposed opt-out telemetry → massive backlash → backed off entirely.<br>
+                <strong>GitHub CLI v2.91.0 (Apr 2026)</strong>: silently enabled opt-out with no announcement → significant backlash. Lesson: silent enablement is the cardinal sin, not opt-out itself.<br>
+                Core principle: opt-out is defensible when disclosure is prominent and immediate. "If telemetry were genuinely beneficial for users, they would be loud about it" — the consent inversion is the ethical problem, not the data volume.
+              </span>
+            </div>
+            <div class="idea-field">
+              <span class="field-label">Consent Model — TBD</span>
+              <span class="field-value">
+                <strong>Opt-out (dotnet CLI model):</strong> higher telemetry signal early, broader dataset. Risk: enterprise users may object post-hoc; GDPR legitimate-interest argument required.<br>
+                <strong>Opt-in (interactive first-run prompt):</strong> explicit consent, no backlash risk, GDPR-clean. Risk: lower adoption rate means weaker signal when you most need it. Can always relax to opt-out once users trust the tool.<br>
+                Regardless of default: honor <code>FLOWLINE_TELEMETRY_OPTOUT=1</code> and <code>DO_NOT_TRACK=1</code> unconditionally. Publish exact field list on the wiki. Consider a <code>flowline telemetry</code> command to inspect and toggle the setting — removes the "hidden surveillance" framing before it starts.
+              </span>
             </div>
             <div class="idea-field">
               <span class="field-label">Rationale</span>
-              <span class="field-value">Local log files only tell you about bugs users report. Telemetry reveals what's actually breaking across all users — the silent majority of crashes that never turn into GitHub issues. For a developer tool in early adoption, aggregate crash data (which commands fail most, which exit codes are hit in the wild) is strategically valuable for prioritization. Ship Waves 1–3 first; telemetry is most valuable when local logging is already in place and you want aggregate signal beyond what local logs provide.</span>
+              <span class="field-value">Local log files only tell you about bugs users report. Telemetry reveals what's actually breaking across all users — the silent majority of crashes that never turn into GitHub issues. For a developer tool in early adoption, aggregate crash data (which commands fail most, which exit codes are hit in the wild, how many runs are CI vs. local) is strategically valuable for prioritization. Ship Waves 1–3 first; telemetry is most valuable once local logging is stable and you want aggregate signal beyond what local logs provide.</span>
             </div>
             <div class="idea-field">
               <span class="field-label">Downsides</span>
-              <span class="field-value"><strong>Enterprise egress constraint (major):</strong> enterprise GitHub Actions and self-hosted agents may block <code>dc.services.visualstudio.com</code>. Telemetry must never block or slow the CLI. <strong>Complexity:</strong> requires Azure App Insights resource, connection string distribution, ongoing maintenance. Lowest confidence (65%) — treat as a separate product decision.</span>
+              <span class="field-value"><strong>Enterprise egress (major):</strong> enterprise GitHub Actions and self-hosted agents may block <code>*.in.applicationinsights.azure.com</code> via L7 firewall. Telemetry must never block or slow the CLI — use a short <code>ForceFlush</code> timeout (5s) and swallow flush failures silently. <strong>GDPR/enterprise trust:</strong> Flowline targets enterprise Power Platform teams with legal obligations — highest-risk segment for telemetry pushback; corporate security reviews may flag any outbound data collection regardless of what is collected. <strong>Complexity:</strong> requires Azure App Insights resource, connection string distribution, ongoing maintenance. <strong>Consent model undecided</strong> — see TBD field above. Lowest confidence (65%) — treat as a separate product decision.</span>
             </div>
           </div>
         </div>
@@ -609,24 +638,20 @@
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
         <div style="background:#eef2ff;border-bottom:1px solid #c7d2fe;padding:12px 20px;display:flex;align-items:center;gap:12px;">
           <span style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--accent-text);">Wave 2 — Rich Context</span>
-          <span style="font-size:12px;color:var(--accent-text);font-weight:600;">I4 + I6 + cleanup</span>
+          <span style="font-size:12px;color:var(--accent-text);font-weight:600;">I6 + cleanup</span>
           <span style="font-size:12px;color:var(--text-3);margin-left:auto;">Small PR · same injection point</span>
         </div>
-        <div style="padding:14px 20px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+        <div style="padding:14px 20px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <div style="font-size:13.5px;color:var(--text-2);">
-            <strong style="color:var(--text);display:block;margin-bottom:4px;">I4 — DiagnosticContext Stage Chain</strong>
-            Adds "which stage failed" to every exception. Registers in <code>FlowlineCommand.ExecuteAsync</code>. Stage names print to console (captured by hook) and appear in the failure output.
-          </div>
-          <div style="font-size:13.5px;color:var(--text-2);">
-            <strong style="color:var(--text);display:block;margin-bottom:4px;">I6 — Per-Invocation Correlation ID</strong>
-            <code>FLOWLINE_TRACE_ID</code> env var or auto-generated 8-char hex. Stamped on <code>RuntimeOptions</code>, used as Serilog enricher property or embedded in log file name. Adds one field.
+            <strong style="color:var(--text);display:block;margin-bottom:4px;">I6 — Per-Invocation Trace via ActivitySource</strong>
+            Root <code>Activity</code> started in <code>FlowlineCommand.ExecuteAsync</code> from a shared <code>FlowlineActivitySource</code>. W3C trace ID automatically propagated through async code. Child activities per stage replace the dropped I4. Tags: <code>flowline.version</code>, <code>ci</code>, <code>ci.platform</code>, <code>os</code>, hashed <code>user.id</code>. Trace ID as Serilog enricher property — one line. CI pipelines chain via standard <code>TRACEPARENT</code> env var.
           </div>
           <div style="font-size:13.5px;color:var(--text-2);">
             <strong style="color:var(--text);display:block;margin-bottom:4px;">Cleanup — Wave 1 ILogger call sites</strong>
             Audit and remove explicit <code>LogInformation</code> calls in <code>PluginService</code>, <code>WebResourceService</code>, <code>SolutionDiffService</code> that now duplicate what the LoggingRenderHook already captures from terminal output. Keep only what the hook can't see (internal-only events with no corresponding console write).
           </div>
         </div>
-        <div style="padding:0 20px 14px;font-size:13px;color:var(--text-3);">Why together: I4 and I6 both touch <code>FlowlineCommand.ExecuteAsync</code> and <code>RuntimeOptions</code> — natural single pass. Cleanup is a consequence of the hook and belongs in the same PR to keep the logging picture coherent.</div>
+        <div style="padding:0 20px 14px;font-size:13px;color:var(--text-3);">Why together: I6 and cleanup both touch <code>FlowlineCommand.ExecuteAsync</code> — natural single pass. I4 dropped: its stage-chain value is absorbed by child activities in I6. Cleanup belongs in the same PR to keep the logging picture coherent.</div>
       </div>
 
       <!-- WAVE 3 — PLANNED -->
@@ -664,7 +689,7 @@
 
   <!-- REJECTION SUMMARY -->
   <section id="rejection-summary" aria-labelledby="rejection-title">
-    <div class="section-eyebrow">12 Considered &amp; Cut · 1 Dropped During Implementation</div>
+    <div class="section-eyebrow">12 Considered &amp; Cut · 2 Dropped During Implementation</div>
     <h2 class="section-title" id="rejection-title">Rejection Summary</h2>
     <table class="rejection-table">
       <thead>
@@ -676,6 +701,12 @@
         </tr>
       </thead>
       <tbody>
+        <tr>
+          <td>0</td>
+          <td class="idea-col">I4 — DiagnosticContext Stage Chain</td>
+          <td>Diagnostic Capture</td>
+          <td>Dropped during Wave 2 planning. <code>LoggingRenderHook</code> (I3b) already captures the terminal stage trail in the log file sequentially — a collapsed string summary at exception time adds marginal value. <code>DiagnosticContext</code> is a Serilog ASP.NET Core concept (request-scoped enricher for web middleware), not a .NET standard and a poor fit for a single-invocation CLI. Stage-chain value absorbed by <code>ActivitySource</code> child activities in the revised I6: each stage becomes a named span with duration and error status, without any custom type.</td>
+        </tr>
         <tr>
           <td>1</td>
           <td class="idea-col">I1 — Always-On JSONL Run Log</td>
@@ -761,7 +792,7 @@
 </div><!-- /page -->
 
 <footer class="composition-signal" style="max-width:920px;margin:0 auto;padding:20px 24px;">
-  Composed 2026-06-25 by ce-ideate · Updated 2026-06-29 to reflect Wave 1 + 1.5 implementation · Flowline CLI observability &amp; bug reproduction
+  Composed 2026-06-25 by ce-ideate · Updated 2026-06-29 to reflect Wave 1 + 1.5 implementation · Updated 2026-06-29 to drop I4, revise I6 to ActivitySource · Flowline CLI observability &amp; bug reproduction
 </footer>
 
 </body>
