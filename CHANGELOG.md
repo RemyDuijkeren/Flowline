@@ -15,6 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.8.0] - 2026-06-29
+
+### Added
+
+- **`push --no-publish`**: skip `PublishXml` after web resource sync — useful when chaining `push` into a pipeline that handles publish separately.
+- **Per-invocation log file**: Flowline writes a structured log file (Serilog) for each run to the Flowline storage path. Console output is tee'd to `ILogger` via a render hook — every command produces a machine-readable trace.
+- **Custom API grouping in plugin planner**: custom APIs are grouped and rendered as a tree alongside plugin steps — clearer output when a solution has many registrations.
+
+### Changed
+
+- **`[Handles].On` renamed to `[Handles].Message`**: aligns with the `Message` naming convention used by `[Step]`. Update any plugin class that uses `[Handles(On = "...")]` to `[Handles(Message = "...")]`.
+- **Multi-`[Handles]` step names are stage-qualified**: when a plugin class handles multiple messages, the registered step name now includes the stage suffix to ensure uniqueness.
+
+### Fixed
+
+- Orphan plugin assembly deletion no longer blocked by dependent steps — steps are cascade-deleted first.
+- `friendlyname` uniqueness validated across namespaces before execution, not mid-run.
+- `generate`: user-owned files preserved during temp-swap; deletions scoped to generator-owned files only; empty directories cleaned up after swap.
+- `generate`: output path handling corrected for standalone mode; success message formatting improved.
+- `generate`: exit codes and error messages corrected for `xrmcontext3` auth failures and general validation errors.
+- `provision`: region consistency validated — cross-region environment URL mismatch now fails early with a clear error.
+- Sensitive arguments (client secrets, tokens) redacted in verbose subprocess output.
+
 ## [0.7.0] - 2026-06-21
 
 ### Added
@@ -179,7 +202,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions CI and release workflows.
 
 
-[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.7.0...HEAD
+[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.8.0...HEAD
+[0.8.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.7.0...0.8.0
 [0.7.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.6.0...0.7.0
 [0.6.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.5.0...0.6.0
 [0.5.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.4.0...0.5.0
