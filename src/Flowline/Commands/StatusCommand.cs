@@ -40,7 +40,8 @@ public class StatusCommand(IAnsiConsole console, ILoggerFactory loggerFactory) :
         }
 
         // Show the current configuration
-        var config = ProjectConfig.Load();
+        var rootFolder = FlowlineCommand<Settings>.FindProjectRoot(Directory.GetCurrentDirectory());
+        var config = ProjectConfig.Load(rootFolder);
         Console.MarkupLine("\n[bold]Configuration[/]");
 
         if (config is null)

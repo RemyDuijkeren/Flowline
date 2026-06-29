@@ -37,6 +37,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     protected string RootFolder { get; private set; } = Directory.GetCurrentDirectory();
     protected ProjectConfig? Config { get; private set; }
     protected virtual bool ShowWelcome => true;
+    protected virtual bool RequiresProject => true;
 
     protected void InitializeRuntimeOptions(TSettings settings)
     {
@@ -44,10 +45,27 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         RuntimeOptions.Force = settings.Force;
     }
 
+    internal static string? FindProjectRoot(string startDir)
+    {
+        var dir = startDir;
+        while (dir != null)
+        {
+            if (File.Exists(Path.Combine(dir, ProjectConfig.s_configFileName)))
+                return dir;
+            dir = Directory.GetParent(dir)?.FullName;
+        }
+        return null;
+    }
+
     protected override async Task<int> ExecuteAsync(CommandContext context, TSettings settings, CancellationToken cancellationToken)
     {
         RuntimeOptions.CommandName = context.Name;
         InitializeRuntimeOptions(settings);
+
+        RootFolder = FindProjectRoot(Directory.GetCurrentDirectory())
+            ?? (RequiresProject
+                ? throw new FlowlineException(ExitCode.ConfigInvalid, "No Flowline project found — run 'flowline clone' to set up a project.")
+                : Directory.GetCurrentDirectory());
 
         var argsOnly = RuntimeOptions.ArgsRedacted is { } r && r.StartsWith(context.Name)
             ? r[context.Name.Length..].TrimStart()

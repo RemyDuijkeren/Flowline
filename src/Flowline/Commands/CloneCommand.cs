@@ -40,6 +40,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         public FlagValue<bool> IncludeManaged { get; set; } = null!;
     }
 
+    protected override bool RequiresProject => false;
+
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         // Save all provided URLs to config first (no API calls, just config update + prompt on conflict)

@@ -51,4 +51,40 @@ public class FlowlineCommandTests
         FlowlineCommand<FlowlineSettings>.FormatDuration(TimeSpan.FromSeconds(seconds))
             .Should().Be(expected);
     }
+
+    [Fact]
+    public void FindProjectRoot_WhenConfigInStartDir_ReturnsStartDir()
+    {
+        var root = Directory.CreateTempSubdirectory().FullName;
+        File.WriteAllText(Path.Combine(root, ".flowline"), "{}");
+
+        var result = FlowlineCommand<FlowlineSettings>.FindProjectRoot(root);
+
+        result.Should().Be(root);
+        Directory.Delete(root, recursive: true);
+    }
+
+    [Fact]
+    public void FindProjectRoot_WhenConfigInParentDir_ReturnsParent()
+    {
+        var root = Directory.CreateTempSubdirectory().FullName;
+        File.WriteAllText(Path.Combine(root, ".flowline"), "{}");
+        var sub = Directory.CreateDirectory(Path.Combine(root, "deep", "nested")).FullName;
+
+        var result = FlowlineCommand<FlowlineSettings>.FindProjectRoot(sub);
+
+        result.Should().Be(root);
+        Directory.Delete(root, recursive: true);
+    }
+
+    [Fact]
+    public void FindProjectRoot_WhenNoConfigAnywhere_ReturnsNull()
+    {
+        var isolated = Directory.CreateTempSubdirectory().FullName;
+
+        var result = FlowlineCommand<FlowlineSettings>.FindProjectRoot(isolated);
+
+        result.Should().BeNull();
+        Directory.Delete(isolated, recursive: true);
+    }
 }
