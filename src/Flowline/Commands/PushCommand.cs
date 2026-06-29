@@ -56,6 +56,11 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         [DefaultValue(false)]
         public bool NoBuild { get; set; } = false;
 
+        [CommandOption("--no-publish")]
+        [Description("Skip publishing web resources after sync — useful when publish is a separate CI step")]
+        [DefaultValue(false)]
+        public bool NoPublish { get; set; } = false;
+
         [CommandOption("--dry-run")]
         [Description("Preview changes without touching Dataverse")]
         [DefaultValue(false)]
@@ -138,7 +143,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (webResourcesSyncFolder != null)
         {
             Logger.LogInformation("Pushing web resources: {Folder}", webResourcesSyncFolder);
-            await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder, solutionName, runMode: runMode, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder, solutionName, publishAfterSync: !settings.NoPublish, runMode: runMode, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
         Console.Done(runMode == RunMode.DryRun

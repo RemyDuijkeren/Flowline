@@ -76,6 +76,24 @@ public class WebResourceServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SyncSolutionAsync_NoPublish_ShouldSyncWithoutPublishing()
+    {
+        File.WriteAllText(Path.Combine(_webresourceRoot, "test.js"), "console.log('test');");
+        var createdId = Guid.NewGuid();
+        var createResponse = new CreateResponse();
+        createResponse.Results["id"] = createdId;
+        _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(createResponse));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
+
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r =>
+            r.Target.GetAttributeValue<string>("name") == "my_MySolution/test.js"), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(
+            Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task SyncSolutionAsync_DryRun_ShouldNotMutate()
     {
         File.WriteAllText(Path.Combine(_webresourceRoot, "test.js"), "console.log('test');");
