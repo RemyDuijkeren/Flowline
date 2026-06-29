@@ -39,6 +39,26 @@ public static class GitUtils
         }
     }
 
+    public static async Task<string?> GetCurrentBranchAsync(bool verbose = false, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var result = await Cli.Wrap("git")
+                                  .WithArguments("rev-parse --abbrev-ref HEAD")
+                                  .WithValidation(CommandResultValidation.None)
+                                  .WithToolExecutionLog(verbose)
+                                  .ExecuteBufferedAsync(cancellationToken);
+
+            if (result.ExitCode != 0) return null;
+            var branch = result.StandardOutput.Trim();
+            return string.IsNullOrWhiteSpace(branch) ? null : branch == "HEAD" ? "(detached)" : branch;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public static async Task<(string? remoteName, string? remoteUrl)> GetRemoteUrlAsync(bool verbose = true, CancellationToken cancellationToken = default)
     {
         // Retrieve remote of the current branch and show it

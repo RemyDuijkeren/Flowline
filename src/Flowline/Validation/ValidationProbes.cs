@@ -13,6 +13,9 @@ public sealed class ValidationProbes
     public Func<bool, CancellationToken, Task<string>> CheckGitAsync { get; init; } =
         GitUtils.AssertGitInstalledAsync;
 
+    public Func<bool, CancellationToken, Task<string?>> GetGitBranchAsync { get; init; } =
+        GitUtils.GetCurrentBranchAsync;
+
     public Func<string, bool, CancellationToken, Task> CheckGitRepoAsync { get; init; } =
         GitUtils.AssertGitRepoAsync;
 

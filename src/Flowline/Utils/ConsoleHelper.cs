@@ -32,12 +32,22 @@ public static class ConsoleHelper
         // CI Environment detection
         if (Environment.GetEnvironmentVariable("CI") != null || // Most CI systems
             Environment.GetEnvironmentVariable("TF_BUILD") != null || // Azure DevOps
-            Environment.GetEnvironmentVariable("JENKINS_URL") != null) // Jenkins
+            Environment.GetEnvironmentVariable("JENKINS_URL") != null || // Jenkins
+            Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != null) // GitHub Actions
         {
             return false;
         }
 
         return AnsiConsole.Profile.Capabilities.Interactive;
+    }
+
+    internal static string? DetectCIPlatform()
+    {
+        if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != null) return "github";
+        if (Environment.GetEnvironmentVariable("TF_BUILD") != null) return "azuredevops";
+        if (Environment.GetEnvironmentVariable("JENKINS_URL") != null) return "jenkins";
+        if (Environment.GetEnvironmentVariable("CI") != null) return "unknown";
+        return null;
     }
 
     /// <summary>

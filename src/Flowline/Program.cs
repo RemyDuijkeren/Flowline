@@ -2,8 +2,10 @@ using Flowline;
 using Flowline.Commands;
 using Flowline.Core;
 using Flowline.Core.Services;
+using Flowline.Diagnostics;
 using Flowline.Generators;
 using Flowline.Infrastructure;
+using Flowline.Logging;
 using Flowline.Services;
 using Flowline.Utils;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,11 +14,23 @@ using Serilog;
 using Serilog.Events;
 using Spectre.Console;
 using Spectre.Console.Cli;
+using System.Diagnostics;
 using System.Reflection;
 using System.Text;
 using ILogger = Serilog.ILogger;
 
 Console.OutputEncoding = Encoding.UTF8;
+
+Activity.DefaultIdFormat = ActivityIdFormat.W3C;
+Activity.ForceDefaultIdFormat = true;
+
+var activityListener = new ActivityListener
+{
+    ShouldListenTo = s => s.Name == "Flowline.CLI",
+    Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+    SampleUsingParentId = (ref ActivityCreationOptions<string> _) => ActivitySamplingResult.AllData,
+};
+ActivitySource.AddActivityListener(activityListener);
 
 // Create a cancellation token source to handle Ctrl+C
 var cancellationTokenSource = new CancellationTokenSource();
@@ -58,6 +72,7 @@ try
         .MinimumLevel.Debug()
         .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
         .MinimumLevel.Override("System", LogEventLevel.Warning)
+        .Enrich.With(new ActivityTraceEnricher())
         .WriteTo.File(logPath, rollingInterval: RollingInterval.Infinite)
         .CreateLogger();
     Log.Logger = serilogLogger;

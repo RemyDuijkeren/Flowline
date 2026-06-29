@@ -21,6 +21,7 @@ public sealed class ToolCheckResult
 {
     public string Version { get; set; } = "";
     public string? InstallType { get; set; }
+    public string? Branch { get; set; }
 }
 
 public sealed class GitRepoCheckResult
