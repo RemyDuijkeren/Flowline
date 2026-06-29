@@ -54,6 +54,9 @@
     .stat { flex: 1; padding: 16px 20px; text-align: center; border-right: 1px solid var(--border); }
     .stat:last-child { border-right: none; }
     .stat-value { font-size: 24px; font-weight: 700; color: var(--accent); line-height: 1; }
+    .stat-value.green { color: #15803d; }
+    .stat-value.orange { color: #9a3412; }
+    .stat-value.gray { color: var(--text-3); }
     .stat-label { font-size: 12px; color: var(--text-2); margin-top: 4px; }
 
     /* SECTION */
@@ -73,6 +76,8 @@
     .grounding-card .gap-item::before { color: #dc2626; }
     .grounding-card .good-item { color: #15803d; }
     .grounding-card .good-item::before { color: #15803d; }
+    .grounding-card .new-item { color: #7e22ce; }
+    .grounding-card .new-item::before { color: #7e22ce; }
 
     /* TOPIC AXES */
     .axes-list { display: flex; flex-direction: column; gap: 8px; }
@@ -88,15 +93,21 @@
     @media (max-width: 640px) { .jump-list ol { grid-template-columns: 1fr; } }
     .jump-list li { font-size: 13.5px; }
     .jump-list a { color: var(--accent); font-weight: 500; }
+    .jump-list .shipped-link { color: #15803d; }
+    .jump-list .dropped-link { color: var(--text-3); text-decoration: line-through; }
 
     /* IDEA CARDS */
     .idea-cards { display: flex; flex-direction: column; gap: 32px; }
 
     article.idea-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    article.idea-card.card-shipped { border-color: #86efac; }
+    article.idea-card.card-dropped { opacity: 0.65; }
+    article.idea-card.card-new { border-color: #a78bfa; }
     .idea-header { padding: 20px 24px 14px; border-bottom: 1px solid var(--border); }
     .idea-rank-title { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
     .idea-rank { font-size: 13px; font-weight: 700; color: var(--text-3); min-width: 24px; }
     .idea-title { font-size: 18px; font-weight: 700; color: var(--text); }
+    .idea-title.dropped { text-decoration: line-through; color: var(--text-3); }
     .idea-chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
     /* axis chips */
@@ -114,6 +125,12 @@
     .cx-s { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
     .cx-m { background: #ffedd5; color: #9a3412; border: 1px solid #fed7aa; }
     .cx-l { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+
+    /* status chips */
+    .status-shipped { background: #dcfce7; color: #15803d; border: 1px solid #86efac; font-weight: 700; }
+    .status-dropped { background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; }
+    .status-planned { background: #dbeafe; color: #1d4ed8; border: 1px solid #93c5fd; }
+    .status-new     { background: #fdf4ff; color: #7e22ce; border: 1px solid #a78bfa; font-weight: 700; }
 
     .idea-body { padding: 20px 24px; }
     .idea-body p { color: var(--text-2); font-size: 14.5px; max-width: 72ch; margin-bottom: 0; line-height: 1.65; }
@@ -146,70 +163,68 @@
   <header class="doc-header">
     <div class="doc-meta">
       <span class="chip chip-type">Ideation</span>
-      <time class="chip chip-date" datetime="2026-06-25">2026-06-25</time>
+      <time class="chip chip-date" datetime="2026-06-25">2026-06-25 · updated 2026-06-29</time>
       <span class="chip chip-mode">repo-grounded</span>
     </div>
     <h1 class="doc-title">CLI Observability &amp; Bug Reproduction</h1>
     <p class="doc-focus">
       <strong>Focus:</strong> Flowline CLI runs on local developer machines and build servers. When bugs occur, there is no persistent diagnostic trace, making reproduction dependent on users re-running with <code>--verbose</code>. How can we capture as much information as possible — automatically, regardless of network availability?
     </p>
+    <p class="doc-focus" style="margin-top:8px;color:#15803d;">
+      <strong>Status (2026-06-29):</strong> Waves 1 and 1.5 shipped. ILogger/Serilog file sink, subprocess capture buffer, and console-to-ILogger tee all in production. Waves 2–4 planned below.
+    </p>
   </header>
 
   <!-- STATS STRIP -->
   <div class="stats-strip" aria-label="Summary statistics">
-    <div class="stat"><div class="stat-value">7</div><div class="stat-label">survivors</div></div>
-    <div class="stat"><div class="stat-value">18</div><div class="stat-label">raw candidates</div></div>
-    <div class="stat"><div class="stat-value">5</div><div class="stat-label">frames</div></div>
-    <div class="stat"><div class="stat-value">5</div><div class="stat-label">axes covered</div></div>
-    <div class="stat"><div class="stat-value">13</div><div class="stat-label">agents</div></div>
+    <div class="stat"><div class="stat-value green">3</div><div class="stat-label">shipped</div></div>
+    <div class="stat"><div class="stat-value gray">1</div><div class="stat-label">dropped</div></div>
+    <div class="stat"><div class="stat-value orange">4</div><div class="stat-label">planned</div></div>
+    <div class="stat"><div class="stat-value green">2</div><div class="stat-label">waves done</div></div>
+    <div class="stat"><div class="stat-value">2</div><div class="stat-label">waves ahead</div></div>
   </div>
 
   <!-- GROUNDING CONTEXT -->
   <section id="grounding-context" aria-labelledby="grounding-title">
-    <div class="section-eyebrow">Phase 1 Evidence</div>
+    <div class="section-eyebrow">Phase 1 Evidence · Updated post-implementation</div>
     <h2 class="section-title" id="grounding-title">Grounding Context</h2>
     <div class="grounding-grid">
       <div class="grounding-card">
-        <h3>Codebase — What Exists</h3>
+        <h3>Codebase — What Exists Now</h3>
         <ul>
           <li class="good-item">ExitCode enum (13 codes, stable public API)</li>
-          <li class="good-item">FlowlineException.WithDetail(Action&lt;IAnsiConsole&gt;) hook → global handler renders it</li>
+          <li class="good-item"><code>FlowlineException.WithData</code> — replaced <code>WithDetail</code>; stores arbitrary key/value context surfaced by global handler</li>
           <li class="good-item"><code>--verbose</code> flag → Console.Verbose() dimmed output; RuntimeOptions.IsVerbose propagated to all commands</li>
-          <li class="good-item">CliWrap stdout/stderr piped per-line via PipeTarget.ToDelegate in WithToolExecutionLog</li>
-          <li class="good-item">ToolCheckResult.Version cached from EnsureDotNet/EnsurePacCli/EnsureGit (never surfaced to user)</li>
-          <li class="good-item"><code>%LOCALAPPDATA%/Flowline/</code> already in use (validation-cache.json) with XDG_CACHE_HOME cross-platform fallback</li>
+          <li class="good-item"><code>FlowlineRuntimeOptions.VerboseOutput</code> — rolling 50-line buffer; fills on non-verbose runs; flushed to terminal on failure</li>
+          <li class="good-item">CliWrap stdout/stderr piped per-line via PipeTarget.ToDelegate in WithToolExecutionLog (passes RuntimeOptions, fills VerboseOutput)</li>
+          <li class="good-item"><code>ILogger</code> / MEL + Serilog file sink — one <code>&lt;timestamp&gt;Z.log</code> per invocation in <code>%LOCALAPPDATA%/Flowline/logs/</code></li>
+          <li class="good-item"><code>ILogger&lt;T&gt;</code> injected into PluginService, WebResourceService, SolutionDiffService; FlowlineCommand base has lazy Logger property</li>
+          <li class="new-item"><code>LoggingRenderHook</code> (IRenderHook) — tees every AnsiConsole Markup write to ILogger; level detected from visual prefix</li>
+          <li class="new-item">Visual prefixes: Info → <code>· </code>, Skip → <code>↷ </code>, Ok → <code>✓ </code>, Done → <code>🚀</code></li>
+          <li class="good-item"><code>FlowlineStoragePaths</code> — resolves <code>%LOCALAPPDATA%/Flowline/</code> with XDG_CACHE_HOME cross-platform fallback; used by ILogger and exception handler</li>
           <li class="good-item">RedactSensitiveArgs regex handles <code>--client-secret</code> and <code>/mfaClientSecret:</code></li>
+          <li class="good-item">ToolCheckResult.Version cached from EnsureDotNet/EnsurePacCli/EnsureGit</li>
         </ul>
       </div>
       <div class="grounding-card">
-        <h3>Confirmed Gaps</h3>
+        <h3>Remaining Gaps</h3>
         <ul>
-          <li class="gap-item">No persistent log files — zero trace after terminal closes</li>
-          <li class="gap-item">No ILogger, no structured logging, no telemetry</li>
-          <li class="gap-item">Subprocess stderr discarded in non-verbose runs; always requires re-run with <code>--verbose</code></li>
-          <li class="gap-item">No correlation IDs — multi-step CI pipelines produce disconnected log lines</li>
-          <li class="gap-item">No environment state snapshots — tool versions never surfaced on failure</li>
-          <li class="gap-item">FlowlineException.WithDetail used ad-hoc (not systematic) — some exit paths log nothing</li>
-          <li class="gap-item">Spectre spinners emit ANSI escape sequences that CI log renderers show as garbage</li>
+          <li class="gap-item">No correlation IDs — multi-step CI pipelines produce disconnected log files</li>
+          <li class="gap-item">No stage chain — failures say "Deploy failed" not "failed at PAC sync stage"</li>
+          <li class="gap-item">No persistent support bundle — on crash, no zip is created automatically</li>
+          <li class="gap-item">No remote telemetry — crash patterns invisible across users</li>
+          <li class="gap-item">Some Wave 1 ILogger call sites now duplicate terminal output captured by the tee — cleanup deferred</li>
+          <li class="gap-item">Verbose messages suppressed when <code>--verbose</code> off — hook never sees them; crash context handled by VerboseOutput buffer only</li>
         </ul>
       </div>
       <div class="grounding-card">
-        <h3>External Prior Art</h3>
+        <h3>What Was Originally a Gap (Now Closed)</h3>
         <ul>
-          <li>dotnet CLI: opt-out telemetry, CI env-var detection list, mandatory TelemetryClient.FlushAsync() at exit</li>
-          <li>npm: rotating log files in ~/.npm/_logs/, prints log path to stderr on failure automatically</li>
-          <li>cargo: JSONL timing logs to ~/.cargo/log/, one file per invocation with unique ID</li>
-          <li>Tailscale / velero: --bug-report support bundle (Collectors → Redactors → archive)</li>
-          <li>DO_NOT_TRACK=1 convention: respected by GitHub CLI, npm</li>
-        </ul>
-      </div>
-      <div class="grounding-card" style="grid-column: 1 / -1;">
-        <h3>Technology Approach — Why Not ILogger?</h3>
-        <ul>
-          <li>None of I1–I5 use <code>ILogger</code> / <code>Microsoft.Extensions.Logging</code>. Flowline has none today and these ideas don't add it.</li>
-          <li><strong>I1 (JSONL record) is an audit pattern, not a log stream.</strong> One structured JSON record per command invocation — command, args, exit code, duration, tool versions. A direct <code>File.AppendAllTextAsync</code> + <code>JsonSerializer</code> call is all it needs. Adding ILogger, a provider registration, and DI wiring for a single append per run is over-engineering.</li>
-          <li><code>ILogger</code> fits a different (heavier) use case: verbose debug tracing where every internal step emits a line. That pattern suits long-running services. If Flowline ever needs step-level debug output, ILogger with a rolling file sink (Serilog, <code>Microsoft.Extensions.Logging.File</code>) would be the right tool — but that is a separate feature not in scope here.</li>
-          <li><strong>I6 (App Insights):</strong> direct <code>TelemetryClient</code> is simpler than the <code>Microsoft.Extensions.Logging.ApplicationInsights</code> ILogger provider for a CLI. Both require mandatory <code>FlushAsync()</code> at process exit; direct client keeps the flush call explicit and visible.</li>
+          <li class="good-item">No persistent log files → ILogger/Serilog file sink (one file per invocation)</li>
+          <li class="good-item">No ILogger, no structured logging → MEL + Serilog + LoggingRenderHook</li>
+          <li class="good-item">Subprocess stderr discarded on non-verbose failure → VerboseOutput rolling buffer, rendered on failure</li>
+          <li class="good-item">Spectre spinners emit ANSI garbage in CI → IRenderHook filter excludes non-Markup renderables</li>
+          <li class="good-item">Dual writes required (console + logger) → LoggingRenderHook observes terminal, no per-call opt-in</li>
         </ul>
       </div>
       <div class="grounding-card">
@@ -240,15 +255,16 @@
 
   <!-- RANKED IDEAS -->
   <section id="ranked-ideas" aria-labelledby="ideas-title">
-    <div class="section-eyebrow">7 Survivors · Ranked</div>
-    <h2 class="section-title" id="ideas-title">Ranked Ideas</h2>
+    <div class="section-eyebrow">3 Shipped · 1 Dropped · 4 Planned</div>
+    <h2 class="section-title" id="ideas-title">Ideas</h2>
 
     <nav class="jump-list" aria-label="Idea jump list">
       <div class="jump-list-title">Jump to idea</div>
       <ol>
-        <li><a href="#i-1">I1. Always-On JSONL Run Log</a></li>
-        <li><a href="#i-2">I2. Subprocess Stderr Capture</a></li>
-        <li><a href="#i-3">I3. ILogger Debug File Sink</a></li>
+        <li><a href="#i-1" class="dropped-link">I1. Always-On JSONL Run Log (dropped)</a></li>
+        <li><a href="#i-2" class="shipped-link">I2. Subprocess Stderr Capture ✓</a></li>
+        <li><a href="#i-3" class="shipped-link">I3. ILogger Debug File Sink ✓</a></li>
+        <li><a href="#i-3b" class="shipped-link">I3b. Console-to-ILogger Tee ✓ (new)</a></li>
         <li><a href="#i-4">I4. DiagnosticContext Stage Chain</a></li>
         <li><a href="#i-5">I5. Crash-Initiated Support Bundle</a></li>
         <li><a href="#i-6">I6. Per-Invocation Correlation ID</a></li>
@@ -258,121 +274,61 @@
 
     <div class="idea-cards">
 
-      <!-- I1 -->
-      <article class="idea-card" id="i-1">
+      <!-- I1 — DROPPED -->
+      <article class="idea-card card-dropped" id="i-1">
         <div class="idea-header">
           <div class="idea-rank-title">
             <span class="idea-rank">I1.</span>
-            <h3 class="idea-title">Always-On Structured Run Log</h3>
+            <h3 class="idea-title dropped">Always-On Structured Run Log</h3>
           </div>
           <div class="idea-chips">
             <span class="chip axis-chip axis-lp">Local Persistence</span>
-            <span class="chip conf-high">Confidence 90%</span>
-            <span class="chip cx-s">Complexity S/M</span>
+            <span class="chip status-dropped">Dropped</span>
           </div>
         </div>
         <div class="idea-body">
-          <p>Every command invocation appends a single JSONL record to <code>%LOCALAPPDATA%/Flowline/runs/&lt;date&gt;.jsonl</code> — written always, regardless of success or failure, without any flag. Each record contains: UTC timestamp, command name, args (redacted via existing RedactSensitiveArgs), exit code, total duration, Flowline version, cached tool versions (dotnet, pac, git), and — on failure — the full exception chain. Log rotates by calendar day, 30-day retention, oldest deleted on startup. On failure, the global exception handler prints one dim line: <em>"Run log: %LOCALAPPDATA%\Flowline\runs\&lt;today&gt;.jsonl"</em>. The write is a fire-and-forget side-effect in Program.cs — zero latency impact on normal execution.</p>
-
-          <div class="diagram-wrap">
-            <svg width="580" height="190" viewBox="0 0 580 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Before and after comparison: without log vs with always-on JSONL log">
-              <!-- Before column -->
-              <rect x="10" y="10" width="250" height="170" rx="8" fill="#fef2f2" stroke="#fecaca" stroke-width="1"/>
-              <text x="135" y="30" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" font-weight="600" fill="#991b1b" letter-spacing="0.04em">WITHOUT LOG (today)</text>
-              <rect x="35" y="44" width="200" height="32" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
-              <text x="135" y="65" text-anchor="middle" font-family="Inter,sans-serif" font-size="13" fill="#1e293b">flowline deploy</text>
-              <!-- arrow down -->
-              <line x1="135" y1="77" x2="135" y2="100" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
-              <rect x="35" y="101" width="200" height="28" rx="6" fill="#fecaca" stroke="#fca5a5" stroke-width="1"/>
-              <text x="135" y="120" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" fill="#991b1b">Terminal output (volatile)</text>
-              <!-- arrow down -->
-              <line x1="135" y1="130" x2="135" y2="152" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
-              <text x="135" y="168" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="#dc2626" font-style="italic">"Re-run with --verbose"</text>
-
-              <!-- After column -->
-              <rect x="320" y="10" width="250" height="170" rx="8" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1"/>
-              <text x="445" y="30" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" font-weight="600" fill="#15803d" letter-spacing="0.04em">WITH ALWAYS-ON LOG</text>
-              <rect x="345" y="44" width="200" height="32" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
-              <text x="445" y="65" text-anchor="middle" font-family="Inter,sans-serif" font-size="13" fill="#1e293b">flowline deploy</text>
-              <!-- two arrows -->
-              <line x1="415" y1="77" x2="390" y2="101" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
-              <line x1="475" y1="77" x2="500" y2="101" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
-              <rect x="345" y="101" width="90" height="28" rx="6" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
-              <text x="390" y="120" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#15803d">runs/today.jsonl</text>
-              <rect x="455" y="101" width="90" height="28" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
-              <text x="500" y="120" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#475569">Terminal</text>
-              <!-- arrow from jsonl down -->
-              <line x1="390" y1="130" x2="390" y2="152" stroke="#15803d" stroke-width="1.5" marker-end="url(#arrow-green)"/>
-              <text x="445" y="168" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="#15803d" font-style="italic">"Run log: …/runs/2026-06-25.jsonl"</text>
-
-              <!-- divider -->
-              <line x1="285" y1="20" x2="285" y2="172" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="4 3"/>
-              <text x="285" y="98" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#94a3b8">vs</text>
-
-              <defs>
-                <marker id="arrow-gray" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
-                  <path d="M0,0 L8,3 L0,6 Z" fill="#94a3b8"/>
-                </marker>
-                <marker id="arrow-green" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
-                  <path d="M0,0 L8,3 L0,6 Z" fill="#15803d"/>
-                </marker>
-              </defs>
-            </svg>
-          </div>
-          <p class="diagram-caption">Every invocation produces a JSONL record. On failure, the path is printed. No flags, no re-runs.</p>
-
+          <p>Originally: append a single JSONL record per invocation to <code>%LOCALAPPDATA%/Flowline/runs/&lt;date&gt;.jsonl</code> — command name, args, exit code, duration, tool versions, exception chain on failure.</p>
           <div class="idea-fields">
             <div class="idea-field">
-              <span class="field-label">Basis</span>
-              <span class="field-value"><strong>direct:</strong> ValidationCacheStore.cs already writes to <code>%LOCALAPPDATA%/Flowline/</code> with cross-platform fallback chain (XDG_CACHE_HOME → ~/.cache → LOCALAPPDATA → TempPath) — the directory is confirmed writable. Program.cs global exception handler is the single capture point for all unhandled FlowlineExceptions — attaching a file write there requires no changes to any command. CommandExtensions.cs WithToolExecutionLog already accumulates stdout/stderr per-line via PipeTarget.ToDelegate — buffering into the record on failure is additive. <strong>external:</strong> npm rotating log pattern (~/.npm/_logs/, prints path on failure automatically).</span>
-            </div>
-            <div class="idea-field">
-              <span class="field-label">Rationale</span>
-              <span class="field-value">This is the foundation all other ideas build on. A future <code>--bug-report</code> zip reads from it. Correlation IDs stamp it. CI detection writes to it unconditionally. Without a persistent log, every bug report starts at zero. With it, the previous run's full trace is available immediately after the first failure — no user action required.</span>
-            </div>
-            <div class="idea-field">
-              <span class="field-label">Downsides</span>
-              <span class="field-value">Disk writes on every run (minimal: one JSON line). Log files accumulate on developer machines (~30-day rotation mitigates). Secrets must be carefully redacted — extend RedactSensitiveArgs to cover URL-embedded tokens and connection strings before logging any args. On air-gapped CI with no persistent disk across runs, the log is ephemeral (fine for the duration of a job).</span>
+              <span class="field-label">Why Dropped</span>
+              <span class="field-value">The ILogger/Serilog file sink (I3) already captures the full narrative, exception, and stack trace in one file per invocation. A parallel JSONL record would be a redundant second artifact — same data, two files. I3 subsumes I1's use case: "user sends logs for issue triage." One file is simpler than two. The JSONL format's machine-readability advantage disappears when the primary consumer is a human reading a bug report.</span>
             </div>
           </div>
         </div>
       </article>
 
-      <!-- I2 -->
-      <article class="idea-card" id="i-2">
+      <!-- I2 — SHIPPED -->
+      <article class="idea-card card-shipped" id="i-2">
         <div class="idea-header">
           <div class="idea-rank-title">
             <span class="idea-rank">I2.</span>
-            <h3 class="idea-title">Subprocess Stderr Capture Into Exception Detail</h3>
+            <h3 class="idea-title">Subprocess Stderr Capture Into Failure Output</h3>
           </div>
           <div class="idea-chips">
             <span class="chip axis-chip axis-dc">Diagnostic Capture</span>
             <span class="chip conf-high">Confidence 88%</span>
             <span class="chip cx-s">Complexity S</span>
+            <span class="chip status-shipped">Shipped · Wave 1</span>
           </div>
         </div>
         <div class="idea-body">
-          <p>When a CliWrap subprocess (pac CLI, dotnet, git) exits with a non-zero code, the subprocess's output is currently lost unless <code>--verbose</code> was set before the failure. Add a rolling 50-line buffer inside <code>WithToolExecutionLog</code> that accumulates stderr (and last N stdout lines) regardless of verbose mode. When CliWrap throws on non-zero exit, attach that buffer as the <code>FlowlineException.WithDetail</code> callback. The user sees the actual subprocess failure reason immediately — on screen and in the JSONL log — without needing to re-run with any flag. The global handler already renders <code>WithDetail</code>; no new wiring required.</p>
+          <p>Rolling 50-line <code>VerboseOutput</code> buffer on <code>FlowlineRuntimeOptions</code> accumulates subprocess output (and Flowline's own verbose lines) regardless of verbose mode. On non-zero subprocess exit, the buffer is rendered to the terminal between the Flowline error message and the dim <code>Log:</code> path line. When <code>--verbose</code> was already active, the buffer is suppressed — output was already printed live. Buffer fills via the <code>FlowlineConsoleExtensions.Verbose(console, message, options)</code> overload and the updated <code>WithToolExecutionLog(RuntimeOptions, ctx)</code> overload.</p>
 
           <div class="idea-fields">
             <div class="idea-field">
-              <span class="field-label">Basis</span>
-              <span class="field-value"><strong>direct:</strong> CommandExtensions.cs WithToolExecutionLog: non-verbose path writes stderr output to the console display but does not buffer it — the data is available per-line via PipeTarget.ToDelegate but discarded after display. Adding a <code>List&lt;string&gt;</code> accumulator (capped at 50 lines) to the existing pipe delegates is additive. FlowlineException.WithDetail(Action&lt;IAnsiConsole&gt;) — the hook is confirmed in Program.cs and renders on failure. SyncCommand.cs — on <code>!result.IsSuccess</code>, the current exception message explicitly defers to <code>--verbose</code> rather than including failure context. <strong>reasoned:</strong> The most common support ask ("re-run with --verbose and paste output") disappears when the buffer is always populated.</span>
+              <span class="field-label">Shipped as</span>
+              <span class="field-value"><code>FlowlineRuntimeOptions.VerboseOutput</code> (rolling queue, cap 50, <code>Append/Lines/Clear</code>). New <code>Verbose(IAnsiConsole, string, FlowlineRuntimeOptions)</code> overload: buffers when non-verbose, writes live when verbose. <code>WithToolExecutionLog</code> gains <code>FlowlineRuntimeOptions</code> overload; all command call sites migrated. Exception handler in <code>Program.cs</code> renders <code>runtimeOptions.VerboseOutput.Lines</code> in dim before the <code>Log:</code> line.</span>
             </div>
             <div class="idea-field">
-              <span class="field-label">Rationale</span>
-              <span class="field-value">This is the highest-leverage single change for bug reproduction. PAC CLI auth failures, dotnet build errors, and git failures all produce subprocess output that currently requires a re-run to capture. One change to <code>WithToolExecutionLog</code> propagates to every caller simultaneously — Clone, Sync, Deploy, Push, Generate — because they all go through the same helper. On CI where the spinner was already suppressed, this is the only mechanism that surfaces subprocess failure reasons. Extension: when <code>ConsoleHelper.IsInteractive()</code> returns false (CI env already detected via <code>CI</code>, <code>TF_BUILD</code>, <code>JENKINS_URL</code>), stream all subprocess stdout/stderr unconditionally in real time rather than only buffering on failure — pipeline operators need the full trace regardless of exit code, not just the last 50 lines attached to an exception.</span>
-            </div>
-            <div class="idea-field">
-              <span class="field-label">Downsides</span>
-              <span class="field-value">50-line buffer holds data in memory for the duration of each subprocess call — minimal cost. The buffer must be flushed to the JSONL log (I1) on failure, not just printed, otherwise CI jobs that lose the terminal get no trace. Subprocess output can contain secrets (connection strings in pac CLI args) — apply RedactSensitiveArgs before writing to log. Note: the verifier confirmed stderr is currently printed to the display in non-verbose runs, but not persisted — the goal of this idea is persistence and injection into the exception's Detail callback, not suppressing display.</span>
+              <span class="field-label">Differs from original</span>
+              <span class="field-value">Original idea attached the buffer to <code>FlowlineException.WithDetail</code>. Actual implementation keeps the buffer on <code>RuntimeOptions</code> and reads it directly in the exception handler — no changes to <code>FlowlineException</code> needed. Simpler: the exception handler already had the right access point.</span>
             </div>
           </div>
         </div>
       </article>
 
-      <!-- I3 -->
-      <article class="idea-card" id="i-3">
+      <!-- I3 — SHIPPED -->
+      <article class="idea-card card-shipped" id="i-3">
         <div class="idea-header">
           <div class="idea-rank-title">
             <span class="idea-rank">I3.</span>
@@ -382,29 +338,86 @@
             <span class="chip axis-chip axis-dc">Diagnostic Capture</span>
             <span class="chip conf-high">Confidence 85%</span>
             <span class="chip cx-m">Complexity M</span>
+            <span class="chip status-shipped">Shipped · Wave 1</span>
           </div>
         </div>
         <div class="idea-body">
-          <p>Register <code>Microsoft.Extensions.Logging</code> with a rolling file sink (Serilog or <code>Microsoft.Extensions.Logging.File</code>) writing to <code>%LOCALAPPDATA%/Flowline/debug/&lt;date&gt;.log</code>. Wire <code>ILogger&lt;T&gt;</code> into Flowline.Core services that process complex data: PluginService, WebResourceService, SolutionDiffService, and any service that iterates components or compares state. Log level: <code>Warning</code> by default; <code>Debug</code> when <code>--verbose</code> is active — RuntimeOptions.IsVerbose already propagates, wiring it to the minimum log level is one line. The debug file fills the gap I1 and I4 can't cover: <em>what specific data was being processed at the moment of failure</em> — which plugin step, which solution component, which comparison failed. I5's crash bundle picks up the debug log file automatically.</p>
+          <p>MEL + Serilog file sink writing to <code>%LOCALAPPDATA%/Flowline/logs/&lt;yyyy-MM-ddTHHmmss&gt;Z.log</code> — one file per invocation, always-on, no flag required. Minimum level: Debug; Serilog overrides: Warning for <code>Microsoft.*</code> and <code>System.*</code> (suppresses Dataverse client noise). <code>ILogger&lt;T&gt;</code> injected into <code>PluginService</code>, <code>WebResourceService</code>, and new <code>SolutionDiffService</code>. <code>FlowlineCommand</code> base class exposes a lazy <code>protected ILogger Logger</code> property. On failure the global exception handler prints a dim <code>Log: &lt;path&gt;</code> line.</p>
 
           <div class="idea-fields">
             <div class="idea-field">
-              <span class="field-label">Basis</span>
-              <span class="field-value"><strong>direct:</strong> Flowline has no <code>ILogger</code> today (confirmed gap). Flowline.Core confirmed to have complex in-process logic — PluginService (step registration comparison), WebResourceService (file sync), SolutionDiffService — with no diagnostic trace beyond exception stack frames. RuntimeOptions.IsVerbose already propagated via FlowlineCommand.InitializeRuntimeOptions — adding a log-level switch on it is one conditional in the logging config. <code>%LOCALAPPDATA%/Flowline/</code> confirmed writable; the debug subdirectory uses the same path resolution as I1. I5 (crash bundle) zips the runs directory — extend it to include the debug log file. <strong>external:</strong> <code>Microsoft.Extensions.Logging</code> is the .NET standard logging abstraction; Serilog rolling file and <code>Microsoft.Extensions.Logging.File</code> are established providers. dotnet CLI uses MEL throughout its command implementations for exactly this purpose. <strong>reasoned:</strong> <code>ILogger&lt;T&gt;</code> constructor injection is the standard .NET pattern — once the DI registration exists, each service adds one constructor parameter. Return per new log statement is high in data-processing loops where a single <code>LogDebug("Comparing step {Step} on {Plugin}: registered={R}, current={C}", ...)</code> call makes an otherwise opaque diff failure immediately reproducible.</span>
+              <span class="field-label">Shipped as</span>
+              <span class="field-value">Serilog packages: <code>Serilog</code>, <code>Serilog.Extensions.Logging</code>, <code>Serilog.Sinks.File</code>. <code>Microsoft.Extensions.Logging.Abstractions</code> in <code>Flowline.Core.csproj</code>. <code>FlowlineStoragePaths</code> helper for path resolution (mirrors <code>ValidationCacheStore.GetDefaultCachePath()</code>). <code>SolutionDiffService</code> created as a thin wrapper around <code>SolutionChangeSummary.ComputeAsync</code>. <code>Log.CloseAndFlush()</code> after <code>app.RunAsync</code>. Wave 1 adds ~5–8 <code>LogInformation</code> milestones across the three services.</span>
             </div>
             <div class="idea-field">
-              <span class="field-label">Rationale</span>
-              <span class="field-value">I1 and I2 cover the two most common failure classes — subprocess failures and the JSONL audit record. But commands that run heavy Flowline.Core logic (Deploy, Clone, Provision) fail in a third way: in-process data-dependent logic where the exception message alone is not reproducible. A crash in PluginService comparing step registrations gives you a stack frame but not which plugin, which step, or what attribute mismatch caused it. <code>LogDebug</code> calls at data-boundary decision points — before/after comparisons, at loop entry with the item being processed — make these failures immediately reproducible without a second run. The <code>--verbose</code> connection keeps the default run quiet; the debug file only grows when explicitly requested.</span>
-            </div>
-            <div class="idea-field">
-              <span class="field-label">Downsides</span>
-              <span class="field-value">Constructor injection changes across Flowline.Core services — mechanical but proportional to how many services are instrumented. Don't add <code>LogDebug</code> speculatively to every line — add it at data-boundary decision points: before/after comparisons, at loop entry with the item, at conditional branches with the condition values. Debug log files accumulate alongside I1's JSONL records — apply the same 30-day rotation. On CI with <code>--verbose</code> not set, the debug file stays empty; the runner's log is the stdout trace from I2.</span>
+              <span class="field-label">Note</span>
+              <span class="field-value">Wave 1 milestone LogInformation calls now partially overlap with what the LoggingRenderHook (I3b) captures from terminal output. Follow-up: audit and remove redundant explicit logger calls from Wave 1 services — deferred to Wave 2.</span>
             </div>
           </div>
         </div>
       </article>
 
-      <!-- I4 -->
+      <!-- I3b — NEW, SHIPPED -->
+      <article class="idea-card card-shipped card-new" id="i-3b">
+        <div class="idea-header">
+          <div class="idea-rank-title">
+            <span class="idea-rank">I3b.</span>
+            <h3 class="idea-title">Console-to-ILogger Tee via LoggingRenderHook</h3>
+          </div>
+          <div class="idea-chips">
+            <span class="chip axis-chip axis-dc">Diagnostic Capture</span>
+            <span class="chip status-new">New idea</span>
+            <span class="chip status-shipped">Shipped · Wave 1.5</span>
+          </div>
+        </div>
+        <div class="idea-body">
+          <p>Not in the original ideation. Emerged during Wave 1 implementation: every console extension method (<code>Ok</code>, <code>Info</code>, <code>Skip</code>, <code>Warning</code>, <code>Error</code>) produced terminal output that still required a companion <code>logger.Log(...)</code> call to appear in the file. Rather than adding dual writes everywhere, attach a single <code>IRenderHook</code> to <code>AnsiConsole.Console.Pipeline</code> that observes all terminal <code>Markup</code> writes, renders to plain text via a no-color console, and logs at the detected level. Terminal output is unaffected — the hook yields each renderable through before logging.</p>
+
+          <div class="diagram-wrap">
+            <svg width="560" height="110" viewBox="0 0 560 110" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LoggingRenderHook flow: AnsiConsole write → IRenderHook → terminal + ILogger">
+              <rect x="10" y="30" width="120" height="32" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+              <text x="70" y="48" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" fill="#1e293b">console.Info(...)</text>
+              <text x="70" y="60" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#94a3b8">MarkupLine("· msg")</text>
+              <line x1="130" y1="46" x2="170" y2="46" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrowg)"/>
+              <rect x="170" y="20" width="140" height="52" rx="6" fill="#eef2ff" stroke="#c7d2fe" stroke-width="1.5"/>
+              <text x="240" y="40" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" font-weight="600" fill="#3730a3">LoggingRenderHook</text>
+              <text x="240" y="54" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#4f46e5">IRenderHook.Process()</text>
+              <text x="240" y="66" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#64748b">yield return → then log</text>
+              <!-- branch to terminal -->
+              <line x1="310" y1="36" x2="360" y2="20" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrowg)"/>
+              <rect x="360" y="8" width="110" height="26" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+              <text x="415" y="25" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#475569">Terminal · · msg</text>
+              <!-- branch to logger -->
+              <line x1="310" y1="58" x2="360" y2="74" stroke="#15803d" stroke-width="1.5" marker-end="url(#arrowgrn)"/>
+              <rect x="360" y="62" width="110" height="26" rx="6" fill="#f0fdf4" stroke="#86efac" stroke-width="1"/>
+              <text x="415" y="75" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#15803d">LogInformation</text>
+              <text x="415" y="86" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#15803d">"· msg"</text>
+              <defs>
+                <marker id="arrowg" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#94a3b8"/></marker>
+                <marker id="arrowgrn" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#15803d"/></marker>
+              </defs>
+            </svg>
+          </div>
+          <p class="diagram-caption">One call writes to both terminal and log. Hook yields first (render pipeline unaffected), logs second. Non-Markup renderables (spinners, progress bars) pass through with zero logging.</p>
+
+          <div class="idea-fields">
+            <div class="idea-field">
+              <span class="field-label">Level detection</span>
+              <span class="field-value">After stripping Spectre markup: <code>✓ </code> / <code>· </code> / <code>↷ </code> / <code>🚀</code> → Information · <code>Warning:</code> → Warning · <code>Error:</code> → Error · empty/whitespace → skip · anything else → Debug. <code>Info</code> got new <code>· </code> prefix; <code>Skip</code> got <code>↷ </code> prefix to make them recognisable.</span>
+            </div>
+            <div class="idea-field">
+              <span class="field-label">Key constraints</span>
+              <span class="field-value"><code>yield return</code> before the try/catch — logging failure must never abort the render pipeline. Render at <code>int.MaxValue</code> width (not console width) — narrow CI terminals cause word-wrap, splitting one message across multiple log entries. <code>ILoggerFactory</code> created outside DI container (CommandApp doesn't expose IServiceProvider before RunAsync) and disposed after <code>Log.CloseAndFlush()</code>.</span>
+            </div>
+            <div class="idea-field">
+              <span class="field-label">Solution doc</span>
+              <span class="field-value"><code>docs/solutions/architecture-patterns/spectre-console-ilogger-render-hook.md</code> — full implementation with gotchas, test pattern, and when-to-apply guidance.</span>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- I4 — PLANNED -->
       <article class="idea-card" id="i-4">
         <div class="idea-header">
           <div class="idea-rank-title">
@@ -415,29 +428,30 @@
             <span class="chip axis-chip axis-dc">Diagnostic Capture</span>
             <span class="chip conf-high">Confidence 85%</span>
             <span class="chip cx-m">Complexity M</span>
+            <span class="chip status-planned">Planned · Wave 2</span>
           </div>
         </div>
         <div class="idea-body">
-          <p>Commands like Deploy, Sync, and Clone execute multiple named stages: connect to Dataverse, validate solution, run PAC sync, pack solution, drift check. Today, when a failure occurs mid-command, the exception says <em>"Deploy failed"</em> but not <em>which stage failed</em>. Introduce a lightweight <code>DiagnosticContext</code> — a <code>List&lt;string&gt;</code> scoped to the command execution lifetime — that commands populate at each named stage: <code>context.Stage("Connecting to Dataverse")</code>, <code>context.Stage("Running pac solution sync")</code>. On <code>FlowlineException</code> throw, the global handler flushes the chain via a registered <code>WithDetail</code> callback, printing the stages completed and the one that failed. No-op on success. Single registration point in <code>FlowlineCommand.ExecuteAsync</code>.</p>
+          <p>Commands like Deploy, Sync, and Clone execute multiple named stages: connect to Dataverse, validate solution, run PAC sync, pack solution, drift check. Today, when a failure occurs mid-command, the exception says <em>"Deploy failed"</em> but not <em>which stage failed</em>. Introduce a lightweight <code>DiagnosticContext</code> — a <code>List&lt;string&gt;</code> scoped to the command execution lifetime — that commands populate at each named stage: <code>context.Stage("Connecting to Dataverse")</code>, <code>context.Stage("Running pac solution sync")</code>. On <code>FlowlineException</code> throw, the global handler flushes the chain, printing the stages completed and the one that failed. No-op on success. Single registration point in <code>FlowlineCommand.ExecuteAsync</code>.</p>
 
           <div class="idea-fields">
             <div class="idea-field">
               <span class="field-label">Basis</span>
-              <span class="field-value"><strong>direct:</strong> FlowlineCommand.ExecuteAsync is the single entry point for all commands — confirmed. One place to inject and dispose the DiagnosticContext. FlowlineException.WithDetail is already wired to the global handler; no new rendering code needed. The gap is confirmed: Detail callback pattern is ad-hoc (Gap #8 in dossier) — some exit paths log nothing to Detail (CloneCommand exit codes, for example). <strong>reasoned:</strong> A <code>List&lt;string&gt;</code> scoped to the command avoids thread-safety concerns since commands execute sequentially. This is the lowest-complexity way to add structured stage tracking without introducing a logging framework.</span>
+              <span class="field-value"><code>FlowlineCommand.ExecuteAsync</code> is the single entry point for all commands — one place to inject and dispose the DiagnosticContext. <code>FlowlineException.WithData</code> is already wired to the global handler; no new rendering code needed. The gap is confirmed: some exit paths log nothing to the failure output (CloneCommand exit codes, for example).</span>
             </div>
             <div class="idea-field">
               <span class="field-label">Rationale</span>
-              <span class="field-value">Without a stage chain, a Deploy failure tells you the command failed but not whether it failed at connection, version bump, PAC sync, pack, or drift check — five different scenarios with five different root causes. The stage chain collapses these into one diagnostic line: "Completed: Connect, Validate, PackSolution. Failed at: PAC sync." This replaces the ad-hoc <code>WithDetail</code> pattern with a consistent mechanism every command automatically participates in once the base class is wired up. Stages also appear in the JSONL log record (I1), giving CI operators a machine-readable sequence to grep.</span>
+              <span class="field-value">Without a stage chain, a Deploy failure tells you the command failed but not whether it failed at connection, version bump, PAC sync, pack, or drift check — five different scenarios with five different root causes. The stage chain collapses these into one diagnostic line: "Completed: Connect, Validate, PackSolution. Failed at: PAC sync." Stage names also land in the ILogger file via the hook (they're printed to the console when each stage starts).</span>
             </div>
             <div class="idea-field">
               <span class="field-label">Downsides</span>
-              <span class="field-value">Requires instrumenting each command's stage boundaries — mechanical work but proportional to command count. Stage names are strings; a future enum or constant pool would be cleaner but is not required now. The DiagnosticContext must be disposed cleanly even when FlowlineException isn't thrown (normal-exit path), to avoid memory leaks on long-running sessions that run many commands.</span>
+              <span class="field-value">Requires instrumenting each command's stage boundaries — mechanical work proportional to command count. Stage names are strings; a future enum or constant pool would be cleaner but is not required now. DiagnosticContext must be disposed cleanly even on success to avoid memory leaks on long-running sessions.</span>
             </div>
           </div>
         </div>
       </article>
 
-      <!-- I5 -->
+      <!-- I5 — PLANNED -->
       <article class="idea-card" id="i-5">
         <div class="idea-header">
           <div class="idea-rank-title">
@@ -448,55 +462,30 @@
             <span class="chip axis-chip axis-br">Bug Report Packaging</span>
             <span class="chip conf-high">Confidence 87%</span>
             <span class="chip cx-m">Complexity M</span>
+            <span class="chip status-planned">Planned · Wave 3</span>
           </div>
         </div>
         <div class="idea-body">
-          <p>The assumption broken: the user initiates bug reporting. Today's global exception handler (<code>default:</code> branch in Program.cs for unhandled exceptions) prints a stack trace and exits — discarding the environment state at the moment of failure. Flip: on any unhandled exception, the handler atomically writes a zip to <code>%LOCALAPPDATA%/Flowline/bug-reports/&lt;timestamp&gt;.zip</code> containing: last N JSONL run records, the <code>.flowline</code> config (environment URLs and solution names — connection strings redacted), PAC auth profile names (not credentials), the env fingerprint (tool versions from the cached ToolCheckResult), and the full exception with stack trace. The handler prints a single line: <em>"Bug report saved: &lt;path&gt; — attach to issue at github.com/..."</em>. Zero user effort.</p>
-
-          <div class="diagram-wrap">
-            <svg width="480" height="130" viewBox="0 0 480 130" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Crash-initiated bundle flow: unhandled exception triggers automatic zip creation">
-              <rect x="10" y="10" width="130" height="32" rx="6" fill="#fee2e2" stroke="#fca5a5" stroke-width="1"/>
-              <text x="75" y="31" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" fill="#991b1b">Unhandled exception</text>
-              <line x1="140" y1="26" x2="175" y2="26" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a3-gray)"/>
-              <rect x="175" y="10" width="130" height="32" rx="6" fill="#fff7ed" stroke="#fed7aa" stroke-width="1"/>
-              <text x="240" y="24" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#9a3412">Program.cs</text>
-              <text x="240" y="37" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#9a3412">default: branch</text>
-              <line x1="305" y1="26" x2="340" y2="26" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a3-gray)"/>
-              <rect x="340" y="10" width="130" height="32" rx="6" fill="#f0fdf4" stroke="#86efac" stroke-width="1"/>
-              <text x="405" y="24" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#15803d">bug-reports/</text>
-              <text x="405" y="37" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#15803d">&lt;timestamp&gt;.zip</text>
-              <!-- Zip contents -->
-              <line x1="405" y1="42" x2="405" y2="62" stroke="#15803d" stroke-width="1" stroke-dasharray="3 2"/>
-              <text x="260" y="75" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#64748b">JSONL runs  ·  .flowline (redacted)  ·  tool versions  ·  exception</text>
-              <!-- Output line -->
-              <line x1="240" y1="80" x2="240" y2="100" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 2"/>
-              <rect x="60" y="100" width="360" height="24" rx="4" fill="#eef2ff" stroke="#c7d2fe" stroke-width="1"/>
-              <text x="240" y="116" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#3730a3">"Bug report saved: %LOCALAPPDATA%\Flowline\bug-reports\... — attach to issue"</text>
-              <defs>
-                <marker id="a3-gray" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#94a3b8"/></marker>
-              </defs>
-            </svg>
-          </div>
-          <p class="diagram-caption">Assumption flipped: the tool creates the bug report, not the user. Attaching the zip replaces pasting a stack trace.</p>
+          <p>On any unhandled exception, the handler atomically writes a zip to <code>%LOCALAPPDATA%/Flowline/bug-reports/&lt;timestamp&gt;.zip</code> containing: last N ILogger log files, the <code>.flowline</code> config (environment URLs and solution names — connection strings redacted), PAC auth profile names (not credentials), cached tool versions, and the full exception with stack trace. The handler prints a single line: <em>"Bug report saved: &lt;path&gt; — attach to issue at github.com/..."</em>. Zero user effort. Now supersedes the original JSONL bundle idea (I1 is gone) — the ILogger files become the primary log content in the zip.</p>
 
           <div class="idea-fields">
             <div class="idea-field">
               <span class="field-label">Basis</span>
-              <span class="field-value"><strong>direct:</strong> Program.cs <code>default:</code> branch for unhandled exceptions is confirmed — currently only calls <code>AnsiConsole.WriteException(ex, ExceptionFormats.ShortenPaths)</code> then exits; this is exactly where the bundle write attaches. RedactSensitiveArgs in CommandExtensions.cs is confirmed and reusable. <code>%LOCALAPPDATA%/Flowline/</code> is confirmed writable. <strong>external:</strong> dotnet CLI crash telemetry (automatic on crash, no user action). Velero debug bundle and Tailscale bugreport model (auto-package then hand to user).</span>
+              <span class="field-value"><code>Program.cs default:</code> branch for unhandled exceptions is confirmed — currently only calls <code>AnsiConsole.WriteException</code> then exits; this is exactly where the bundle write attaches. <code>RedactSensitiveArgs</code> in <code>CommandExtensions.cs</code> is confirmed and reusable. <code>FlowlineStoragePaths</code> already exists and resolves the correct base path. ILogger files (I3) are the log source — the bundle zips the most recent few from <code>logs/</code>.</span>
             </div>
             <div class="idea-field">
               <span class="field-label">Rationale</span>
-              <span class="field-value">Most unhandled Flowline exceptions come from edge-case PAC CLI state, MSAL cache mismatches, or Dataverse auth errors in environments where the developer didn't run <code>--verbose</code>. Every such failure currently produces zero useful diagnostic output beyond the exception message. The bundle-on-crash captures the exact environment state at the moment of failure — with no user action — and transforms the support conversation from "can you reproduce this?" to "attach the zip." The <code>%LOCALAPPDATA%/Flowline/bug-reports/</code> directory accumulates bundles over time; old ones can be pruned on startup.</span>
+              <span class="field-value">Most unhandled Flowline exceptions come from edge-case PAC CLI state, MSAL cache mismatches, or Dataverse auth errors. Every such failure currently produces zero useful diagnostic output beyond the exception message. The bundle-on-crash captures the exact environment state at the moment of failure and transforms the support conversation from "can you reproduce this?" to "attach the zip." With I3 shipped, the ILogger file already captures the full terminal session — the bundle just packages it.</span>
             </div>
             <div class="idea-field">
               <span class="field-label">Downsides</span>
-              <span class="field-value">File I/O in an exception handler must be robust — wrap in try/catch so a write failure doesn't mask the original exception. Zip creation adds ~50-100ms to crash paths (acceptable). Disk accumulation: bundle files are large (~50KB each) and developers may not notice them; add auto-prune at startup (keep last 10) or at least document the path. Requires I1 (JSONL log) to exist for the run entries — ship I1 first.</span>
+              <span class="field-value">File I/O in an exception handler must be robust — wrap in try/catch so a write failure doesn't mask the original exception. Zip creation adds ~50-100ms to crash paths (acceptable). Disk accumulation: prune to last 10 bundles on startup.</span>
             </div>
           </div>
         </div>
       </article>
 
-      <!-- I6 -->
+      <!-- I6 — PLANNED -->
       <article class="idea-card" id="i-6">
         <div class="idea-header">
           <div class="idea-rank-title">
@@ -507,29 +496,30 @@
             <span class="chip axis-chip axis-dc">Diagnostic Capture</span>
             <span class="chip conf-high">Confidence 82%</span>
             <span class="chip cx-s">Complexity S</span>
+            <span class="chip status-planned">Planned · Wave 2</span>
           </div>
         </div>
         <div class="idea-body">
-          <p>On startup, read <code>FLOWLINE_TRACE_ID</code> from the environment (CI pipelines set this to their run ID: <code>${{ github.run_id }}</code> in GitHub Actions, <code>$(Build.BuildId)</code> in Azure DevOps). If absent, auto-generate an 8-char hex ID. Store on <code>FlowlineRuntimeOptions</code> — same threading pattern as <code>IsVerbose</code> — and stamp every verbose output line and every JSONL log record with it. When two verbose runs of the same command produce different outcomes, diffing the two log records becomes a grep. When a CI pipeline runs <code>flowline clone</code> then <code>flowline deploy</code>, both records share the pipeline run ID and are trivially joinable.</p>
+          <p>On startup, read <code>FLOWLINE_TRACE_ID</code> from the environment (CI pipelines set this to their run ID). If absent, auto-generate an 8-char hex ID. Store on <code>FlowlineRuntimeOptions</code> and include it in the ILogger log file name or as a Serilog enricher property so every log entry is stamped. When two verbose runs of the same command produce different outcomes, diffing the two log files becomes trivial. When a CI pipeline runs <code>flowline clone</code> then <code>flowline deploy</code>, both log files share the pipeline run ID and are trivially joinable.</p>
 
           <div class="idea-fields">
             <div class="idea-field">
               <span class="field-label">Basis</span>
-              <span class="field-value"><strong>direct:</strong> RuntimeOptions.IsVerbose is confirmed as a bool propagated to all services via FlowlineCommand.InitializeRuntimeOptions — adding a string TraceId follows the identical threading pattern. The gap is confirmed: no correlation ID exists in the current codebase (Gap #1 in dossier). <strong>external:</strong> FLOWLINE_TRACE_ID follows the convention of W3C traceparent, OTEL correlation IDs, and dotnet CLI's CI detection via env vars — env-var correlation is the established pattern for developer CLIs. Git's GIT_TRACE per-invocation env var is the closest analogy. <strong>reasoned:</strong> FlowlineConsoleExtensions.Verbose() already has the right shape to accept an optional trace ID parameter (adding one with a null default is non-breaking).</span>
+              <span class="field-value"><code>RuntimeOptions.IsVerbose</code> is confirmed as a bool propagated to all services via <code>FlowlineCommand.InitializeRuntimeOptions</code> — adding a string <code>TraceId</code> follows the identical threading pattern. With Serilog in place, adding a log enricher (<code>loggerConfig.Enrich.WithProperty("TraceId", traceId)</code>) is one line. Alternatively, embed the trace ID in the log file name — <code>&lt;timestamp&gt;-&lt;traceid&gt;Z.log</code> — for filesystem-level grouping without changing the Serilog output template.</span>
             </div>
             <div class="idea-field">
               <span class="field-label">Rationale</span>
-              <span class="field-value">CI pipelines often run multiple Flowline commands sequentially. Without a shared ID, the JSONL log from a GitHub Actions workflow contains N disconnected records — you can't tell which <code>flowline deploy</code> record belongs to which pipeline run. With <code>FLOWLINE_TRACE_ID=${{ github.run_id }}</code> in the workflow env block, every record from that pipeline run is instantly filterable: <code>grep "$GITHUB_RUN_ID" ~/.local/share/Flowline/runs/2026-06-25.jsonl</code>. Pairs with I1 to complete the CI observability story.</span>
+              <span class="field-value">CI pipelines often run multiple Flowline commands sequentially. Without a shared ID, the log files from a GitHub Actions workflow are independent — you can't tell which <code>flowline deploy</code> log belongs to which pipeline run. With <code>FLOWLINE_TRACE_ID=${{ github.run_id }}</code> in the workflow env block, log files from that run share a common identifier. Pairs with I3 to complete the CI observability story.</span>
             </div>
             <div class="idea-field">
               <span class="field-label">Downsides</span>
-              <span class="field-value">CI operators have to know to set <code>FLOWLINE_TRACE_ID</code> — this is opt-in (auto-generation handles the common case, but CI correlation requires the env var). Auto-generated IDs are random and not meaningful without a log; developers looking at a JSONL record see an opaque hex string. The feature's value is proportional to how consistently users look at log files — low if I1 isn't shipped first.</span>
+              <span class="field-value">CI operators have to know to set <code>FLOWLINE_TRACE_ID</code> — opt-in (auto-generation handles the common case). Auto-generated IDs are random and not meaningful without a log.</span>
             </div>
           </div>
         </div>
       </article>
 
-      <!-- I7 -->
+      <!-- I7 — PLANNED -->
       <article class="idea-card" id="i-7">
         <div class="idea-header">
           <div class="idea-rank-title">
@@ -540,23 +530,24 @@
             <span class="chip axis-chip axis-rt">Remote Telemetry</span>
             <span class="chip conf-med">Confidence 65%</span>
             <span class="chip cx-l">Complexity L</span>
+            <span class="chip status-planned">Planned · Wave 4</span>
           </div>
         </div>
         <div class="idea-body">
-          <p>On unhandled exceptions or crash exits: send a minimal telemetry event to Azure Application Insights — exception type name, exit code enum value, command name (no args), Flowline version, OS/arch, CI flag. No PII: no file paths, no user identifiers, no Dataverse URLs. Disclose at first run to stderr (CI mode suppresses disclosure and proceeds silently). Opt-out via <code>FLOWLINE_TELEMETRY_OPTOUT=1</code> or <code>DO_NOT_TRACK=1</code>. Use <code>InMemoryChannel</code> (not ServerTelemetryChannel) and call <code>TelemetryClient.FlushAsync()</code> before process exit — this is mandatory for short-lived CLI processes since the 30s/500-event buffer never fires. Offline queue: on network failure, append to <code>%LOCALAPPDATA%/Flowline/telemetry-queue.ndjson</code> and retry on next invocation.</p>
+          <p>On unhandled exceptions or crash exits: send a minimal telemetry event to Azure Application Insights — exception type name, exit code enum value, command name (no args), Flowline version, OS/arch, CI flag. No PII: no file paths, no user identifiers, no Dataverse URLs. Disclose at first run to stderr. Opt-out via <code>FLOWLINE_TELEMETRY_OPTOUT=1</code> or <code>DO_NOT_TRACK=1</code>. Use <code>InMemoryChannel</code> and call <code>TelemetryClient.FlushAsync()</code> before process exit — mandatory for short-lived CLI processes. Store-and-forward queue for offline/firewall scenarios.</p>
 
           <div class="idea-fields">
             <div class="idea-field">
               <span class="field-label">Basis</span>
-              <span class="field-value"><strong>external:</strong> dotnet CLI's opt-out model (DOTNET_CLI_TELEMETRY_OPTOUT, first-run disclosure to stderr, CI env-var detection) is the established precedent for .NET developer tools. InMemoryChannel + mandatory TelemetryClient.FlushAsync() at process exit is the documented pattern for short-lived CLIs — without FlushAsync, telemetry is lost. DO_NOT_TRACK=1 convention is respected by GitHub CLI and npm. ServerTelemetryChannel stores events to disk during network outages for retry. <strong>reasoned:</strong> Local logs (I1) surface bugs that users bother to report. Telemetry surfaces crash patterns from users who never file issues — especially CI failures on build servers that fail silently.</span>
+              <span class="field-value">dotnet CLI's opt-out model (DOTNET_CLI_TELEMETRY_OPTOUT, first-run disclosure, CI detection) is the established precedent. InMemoryChannel + mandatory <code>TelemetryClient.FlushAsync()</code> at process exit is the documented pattern for short-lived CLIs. DO_NOT_TRACK=1 convention respected by GitHub CLI and npm.</span>
             </div>
             <div class="idea-field">
               <span class="field-label">Rationale</span>
-              <span class="field-value">Local log files only tell you about bugs users report. Telemetry reveals what's actually breaking across all users — the silent majority of crashes that never turn into GitHub issues. For a developer tool in early adoption, aggregate crash data (which commands fail most, which exit codes are hit in the wild, whether CI environments behave differently from local) is strategically valuable for prioritization. The store-and-forward queue makes it resilient to the CI egress firewall constraint — events accumulate locally and flush when connectivity allows.</span>
+              <span class="field-value">Local log files only tell you about bugs users report. Telemetry reveals what's actually breaking across all users — the silent majority of crashes that never turn into GitHub issues. For a developer tool in early adoption, aggregate crash data (which commands fail most, which exit codes are hit in the wild) is strategically valuable for prioritization. Ship Waves 1–3 first; telemetry is most valuable when local logging is already in place and you want aggregate signal beyond what local logs provide.</span>
             </div>
             <div class="idea-field">
               <span class="field-label">Downsides</span>
-              <span class="field-value"><strong>Enterprise egress constraint (major):</strong> enterprise GitHub Actions and Azure DevOps self-hosted agents may have L7 egress firewalls that block <code>dc.services.visualstudio.com</code> — the App Insights ingestion endpoint. This is a confirmed constraint in the grounding. Telemetry will silently fail for these users and must never block or slow the CLI. <strong>Consent controversy:</strong> GitHub CLI's April 2026 opt-out telemetry rollout drew significant community backlash — disclosure clarity and easy opt-out matter more than the mechanism. <strong>Complexity:</strong> requires Azure App Insights resource, connection string distribution, and ongoing maintenance. Recommend shipping I1–I6 first; telemetry is most valuable when local logging is already in place and you want aggregate signal beyond what local logs provide.</span>
+              <span class="field-value"><strong>Enterprise egress constraint (major):</strong> enterprise GitHub Actions and self-hosted agents may block <code>dc.services.visualstudio.com</code>. Telemetry must never block or slow the CLI. <strong>Complexity:</strong> requires Azure App Insights resource, connection string distribution, ongoing maintenance. Lowest confidence (65%) — treat as a separate product decision.</span>
             </div>
           </div>
         </div>
@@ -567,73 +558,97 @@
 
   <!-- IMPLEMENTATION WAVES -->
   <section id="implementation-waves" aria-labelledby="waves-title">
-    <div class="section-eyebrow">Sequencing Advice</div>
+    <div class="section-eyebrow">Sequencing — Actual + Planned</div>
     <h2 class="section-title" id="waves-title">Implementation Waves</h2>
 
-    <p style="font-size:14px;color:var(--text-2);margin-bottom:20px;max-width:72ch;">Four independently shippable waves. Each builds on the last — Wave 1 alone is already meaningful value. The groupings follow code locality and dependency, not just priority.</p>
+    <p style="font-size:14px;color:var(--text-2);margin-bottom:20px;max-width:72ch;">Waves 1 and 1.5 shipped. Wave 2 is the logical next step — small, high-value, touches the same injection points. Wave 3 depends on Wave 1 (ILogger files must exist for the bundle). Wave 4 is a separate product decision.</p>
 
     <div style="display:flex;flex-direction:column;gap:12px;">
 
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
-        <div style="background:#f0fdf4;border-bottom:1px solid #bbf7d0;padding:12px 20px;display:flex;align-items:center;gap:12px;">
+      <!-- WAVE 1 — DONE -->
+      <div style="background:var(--surface);border:2px solid #86efac;border-radius:10px;overflow:hidden;">
+        <div style="background:#f0fdf4;border-bottom:1px solid #86efac;padding:12px 20px;display:flex;align-items:center;gap:12px;">
           <span style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#15803d;">Wave 1 — Foundation</span>
-          <span style="font-size:12px;color:#15803d;font-weight:600;">I1 + I2 + I3</span>
-          <span style="font-size:12px;color:var(--text-3);margin-left:auto;">Do together · single PR</span>
-        </div>
-        <div style="padding:14px 20px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
-          <div style="font-size:13.5px;color:var(--text-2);">
-            <strong style="color:var(--text);display:block;margin-bottom:4px;">I1 — Always-On JSONL Log</strong>
-            Persistent per-invocation audit record. Every other idea writes to or reads from this file.
-          </div>
-          <div style="font-size:13.5px;color:var(--text-2);">
-            <strong style="color:var(--text);display:block;margin-bottom:4px;">I2 — Subprocess Stderr Capture</strong>
-            Rolling buffer flushes to I1's log on failure. Needs I1 to be more than a screen print.
-          </div>
-          <div style="font-size:13.5px;color:var(--text-2);">
-            <strong style="color:var(--text);display:block;margin-bottom:4px;">I3 — ILogger Debug File Sink</strong>
-            In-process detail for Flowline.Core commands. Same DI setup pass as I1; same output directory. Without this, heavy-logic commands (Deploy, Clone, Provision) still have blind spots.
-          </div>
-        </div>
-        <div style="padding:0 20px 14px;font-size:13px;color:var(--text-3);">Why together: I1 and I3 share the same DI registration pass and output directory. I2's buffer flush target is I1's log. Splitting them ships an incomplete foundation.</div>
-      </div>
-
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
-        <div style="background:#eef2ff;border-bottom:1px solid #c7d2fe;padding:12px 20px;display:flex;align-items:center;gap:12px;">
-          <span style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--accent-text);">Wave 2 — Rich Context</span>
-          <span style="font-size:12px;color:var(--accent-text);font-weight:600;">I4 + I6</span>
-          <span style="font-size:12px;color:var(--text-3);margin-left:auto;">Small PR · same injection point</span>
+          <span style="font-size:12px;color:#15803d;font-weight:600;">I2 + I3</span>
+          <span style="font-size:12px;padding:2px 8px;background:#dcfce7;color:#15803d;border:1px solid #86efac;border-radius:20px;font-weight:700;margin-left:auto;">✓ Shipped</span>
         </div>
         <div style="padding:14px 20px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <div style="font-size:13.5px;color:var(--text-2);">
+            <strong style="color:var(--text);display:block;margin-bottom:4px;">I2 — Subprocess Stderr Capture</strong>
+            Rolling 50-line <code>VerboseOutput</code> buffer on <code>FlowlineRuntimeOptions</code>. Rendered in terminal on non-verbose failure between the error and the <code>Log:</code> path line. Suppressed when <code>--verbose</code> was active (output already printed live).
+          </div>
+          <div style="font-size:13.5px;color:var(--text-2);">
+            <strong style="color:var(--text);display:block;margin-bottom:4px;">I3 — ILogger/Serilog File Sink</strong>
+            One <code>&lt;timestamp&gt;Z.log</code> per invocation in <code>%LOCALAPPDATA%/Flowline/logs/</code>. Injected into <code>PluginService</code>, <code>WebResourceService</code>, <code>SolutionDiffService</code>. <code>FlowlineCommand</code> base class has lazy <code>Logger</code>. <code>FlowlineStoragePaths</code> helper for path resolution.
+          </div>
+        </div>
+        <div style="padding:0 20px 14px;font-size:13px;color:#64748b;">
+          <strong style="color:#991b1b;">I1 dropped:</strong> ILogger file subsumes the JSONL record — same data, one artifact instead of two. On failure the dim <code>Log: &lt;path&gt;</code> line replaces the JSONL path print.
+        </div>
+      </div>
+
+      <!-- WAVE 1.5 — DONE -->
+      <div style="background:var(--surface);border:2px solid #a78bfa;border-radius:10px;overflow:hidden;">
+        <div style="background:#fdf4ff;border-bottom:1px solid #a78bfa;padding:12px 20px;display:flex;align-items:center;gap:12px;">
+          <span style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#7e22ce;">Wave 1.5 — Console Tee</span>
+          <span style="font-size:12px;color:#7e22ce;font-weight:600;">I3b (new)</span>
+          <span style="font-size:12px;padding:2px 8px;background:#f3e8ff;color:#7e22ce;border:1px solid #a78bfa;border-radius:20px;font-weight:700;margin-left:auto;">✓ Shipped</span>
+        </div>
+        <div style="padding:14px 20px;">
+          <div style="font-size:13.5px;color:var(--text-2);">
+            <strong style="color:var(--text);display:block;margin-bottom:4px;">I3b — LoggingRenderHook (not in original ideation)</strong>
+            <code>IRenderHook</code> attached to <code>AnsiConsole.Console.Pipeline</code>. Observes every <code>Markup</code> write — yields through first, then logs at the detected level. Eliminates dual writes: one call to <code>console.Ok()</code> / <code>console.Info()</code> / etc. is sufficient; the log file automatically mirrors what the user saw.<br><br>
+            Visual prefix changes: <code>Info</code> now emits <code>· msg</code>, <code>Skip</code> emits <code>↷ msg</code>. <code>Ok</code> was already <code>✓ </code>; <code>Done</code> was already <code>🚀</code>. These prefixes survive Spectre markup stripping and drive level detection in the hook.<br><br>
+            Also shipped in 1.5: <code>FlowlineException.WithDetail</code> → <code>WithData</code> refactor (more flexible key/value context storage).
+          </div>
+        </div>
+        <div style="padding:0 20px 14px;font-size:13px;color:var(--text-3);">Solution doc: <code>docs/solutions/architecture-patterns/spectre-console-ilogger-render-hook.md</code></div>
+      </div>
+
+      <!-- WAVE 2 — PLANNED -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+        <div style="background:#eef2ff;border-bottom:1px solid #c7d2fe;padding:12px 20px;display:flex;align-items:center;gap:12px;">
+          <span style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--accent-text);">Wave 2 — Rich Context</span>
+          <span style="font-size:12px;color:var(--accent-text);font-weight:600;">I4 + I6 + cleanup</span>
+          <span style="font-size:12px;color:var(--text-3);margin-left:auto;">Small PR · same injection point</span>
+        </div>
+        <div style="padding:14px 20px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+          <div style="font-size:13.5px;color:var(--text-2);">
             <strong style="color:var(--text);display:block;margin-bottom:4px;">I4 — DiagnosticContext Stage Chain</strong>
-            Adds "which stage failed" to every exception. Registers in <code>FlowlineCommand.ExecuteAsync</code>.
+            Adds "which stage failed" to every exception. Registers in <code>FlowlineCommand.ExecuteAsync</code>. Stage names print to console (captured by hook) and appear in the failure output.
           </div>
           <div style="font-size:13.5px;color:var(--text-2);">
             <strong style="color:var(--text);display:block;margin-bottom:4px;">I6 — Per-Invocation Correlation ID</strong>
-            Stamps every JSONL record and verbose line with a trace ID. Adds one field to <code>RuntimeOptions</code>.
+            <code>FLOWLINE_TRACE_ID</code> env var or auto-generated 8-char hex. Stamped on <code>RuntimeOptions</code>, used as Serilog enricher property or embedded in log file name. Adds one field.
+          </div>
+          <div style="font-size:13.5px;color:var(--text-2);">
+            <strong style="color:var(--text);display:block;margin-bottom:4px;">Cleanup — Wave 1 ILogger call sites</strong>
+            Audit and remove explicit <code>LogInformation</code> calls in <code>PluginService</code>, <code>WebResourceService</code>, <code>SolutionDiffService</code> that now duplicate what the LoggingRenderHook already captures from terminal output. Keep only what the hook can't see (internal-only events with no corresponding console write).
           </div>
         </div>
-        <div style="padding:0 20px 14px;font-size:13px;color:var(--text-3);">Why together: both enrich what the Wave 1 log captures. Both touch <code>FlowlineCommand.ExecuteAsync</code> and <code>RuntimeOptions</code> — natural single pass. I6 is near-trivial (one string field); don't ship it in isolation.</div>
+        <div style="padding:0 20px 14px;font-size:13px;color:var(--text-3);">Why together: I4 and I6 both touch <code>FlowlineCommand.ExecuteAsync</code> and <code>RuntimeOptions</code> — natural single pass. Cleanup is a consequence of the hook and belongs in the same PR to keep the logging picture coherent.</div>
       </div>
 
+      <!-- WAVE 3 — PLANNED -->
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
-        <div style="background:#fdf4ff;border-bottom:1px solid #e9d5ff;padding:12px 20px;display:flex;align-items:center;gap:12px;">
-          <span style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#7e22ce;">Wave 3 — Packaging</span>
-          <span style="font-size:12px;color:#7e22ce;font-weight:600;">I5</span>
+        <div style="background:#fff7ed;border-bottom:1px solid #fed7aa;padding:12px 20px;display:flex;align-items:center;gap:12px;">
+          <span style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#9a3412;">Wave 3 — Packaging</span>
+          <span style="font-size:12px;color:#9a3412;font-weight:600;">I5</span>
           <span style="font-size:12px;color:var(--text-3);margin-left:auto;">Focused PR · after Wave 1</span>
         </div>
         <div style="padding:14px 20px;">
           <div style="font-size:13.5px;color:var(--text-2);">
             <strong style="color:var(--text);display:block;margin-bottom:4px;">I5 — Crash-Initiated Support Bundle</strong>
-            On unhandled exception: zip I1's JSONL records + I3's debug log + redacted config → write to <code>bug-reports/</code> → print path. One focused change to <code>Program.cs default:</code> branch. Depends on I1 existing; I3's debug log makes the bundle substantially more useful. Ship after Wave 1; Wave 2 can precede or follow.
+            On unhandled exception: zip last N ILogger log files + redacted <code>.flowline</code> config + cached tool versions + exception → write to <code>bug-reports/</code> → print path. One focused change to <code>Program.cs default:</code> branch. Depends on I3 (ILogger files are the log content in the zip). I4's stage chain makes the bundle substantially more useful — ship after Wave 2 for best results.
           </div>
         </div>
       </div>
 
+      <!-- WAVE 4 — SEPARATE DECISION -->
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
-        <div style="background:#fff7ed;border-bottom:1px solid #fed7aa;padding:12px 20px;display:flex;align-items:center;gap:12px;">
-          <span style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#9a3412;">Wave 4 — Telemetry</span>
-          <span style="font-size:12px;color:#9a3412;font-weight:600;">I7</span>
+        <div style="background:#f8f9fc;border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;gap:12px;">
+          <span style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-3);">Wave 4 — Telemetry</span>
+          <span style="font-size:12px;color:var(--text-3);font-weight:600;">I7</span>
           <span style="font-size:12px;color:var(--text-3);margin-left:auto;">Separate product decision</span>
         </div>
         <div style="padding:14px 20px;">
@@ -649,7 +664,7 @@
 
   <!-- REJECTION SUMMARY -->
   <section id="rejection-summary" aria-labelledby="rejection-title">
-    <div class="section-eyebrow">12 Considered &amp; Cut</div>
+    <div class="section-eyebrow">12 Considered &amp; Cut · 1 Dropped During Implementation</div>
     <h2 class="section-title" id="rejection-title">Rejection Summary</h2>
     <table class="rejection-table">
       <thead>
@@ -663,75 +678,81 @@
       <tbody>
         <tr>
           <td>1</td>
-          <td class="idea-col">Print log path on failure</td>
-          <td>Diagnostic Capture</td>
-          <td>Merge into I1 — trivial one-liner that belongs inside the always-on log implementation</td>
+          <td class="idea-col">I1 — Always-On JSONL Run Log</td>
+          <td>Local Persistence</td>
+          <td>Dropped during Wave 1 implementation — ILogger/Serilog file (I3) captures the same data in a richer format; one artifact simpler than two. JSONL's machine-readability advantage is moot when the primary consumer is a human reading a bug report.</td>
         </tr>
         <tr>
           <td>2</td>
-          <td class="idea-col">Tool version fingerprint on failure</td>
+          <td class="idea-col">Print log path on failure</td>
           <td>Diagnostic Capture</td>
-          <td>Merge into I1 — tool versions (dotnet/pac/git) are a field in the JSONL record; no independent idea needed</td>
+          <td>Merge into I3 — the dim <code>Log: &lt;path&gt;</code> line in the exception handler covers this; no independent idea needed</td>
         </tr>
         <tr>
           <td>3</td>
-          <td class="idea-col"><code>flowline doctor</code> command</td>
-          <td>Bug Report Packaging</td>
-          <td>Sound but superseded — I5 auto-generates what <code>doctor</code> requires user action for; build on top of I1 later</td>
+          <td class="idea-col">Tool version fingerprint on failure</td>
+          <td>Diagnostic Capture</td>
+          <td>Merge into ILogger file — tool versions logged at startup as part of I3 milestones; no independent idea needed</td>
         </tr>
         <tr>
           <td>4</td>
-          <td class="idea-col"><code>flowline bug-report</code> zip (user-triggered)</td>
+          <td class="idea-col"><code>flowline doctor</code> command</td>
           <td>Bug Report Packaging</td>
-          <td>Depends on I1 existing; I5 (crash-initiated) is higher-value since it fires without user action</td>
+          <td>Superseded — I5 auto-generates what <code>doctor</code> requires user action for; build on top of I3 later if needed</td>
         </tr>
         <tr>
           <td>5</td>
+          <td class="idea-col"><code>flowline bug-report</code> zip (user-triggered)</td>
+          <td>Bug Report Packaging</td>
+          <td>Depends on I3 existing; I5 (crash-initiated) is higher-value since it fires without user action</td>
+        </tr>
+        <tr>
+          <td>6</td>
           <td class="idea-col">Subprocess exit code semantics (name PAC exit codes)</td>
           <td>Diagnostic Capture</td>
           <td>Basis partially fabricated — PAC exit code 2=auth failure not verified from any source; value absorbed by I2 (stderr capture)</td>
         </tr>
         <tr>
-          <td>6</td>
+          <td>7</td>
           <td class="idea-col">Typed <code>WithDetail</code> builders (factory methods)</td>
           <td>Diagnostic Capture</td>
-          <td>Complex implementation; concept merged into I4's DiagnosticContext which provides a simpler structured alternative</td>
+          <td>Complex implementation; superseded by <code>WithData</code> key/value refactor (shipped in Wave 1.5) which achieves the same structured context goal more simply</td>
         </tr>
         <tr>
-          <td>7</td>
+          <td>8</td>
           <td class="idea-col">Subprocess watchdog timer</td>
           <td>Diagnostic Capture</td>
           <td>Niche failure mode (PAC CLI hangs); universal value of I2+I4 supersedes for the common case; revisit when hangs are a confirmed pattern</td>
         </tr>
         <tr>
-          <td>8</td>
+          <td>9</td>
           <td class="idea-col">Surgical operation checklist (multi-step accounting)</td>
           <td>Diagnostic Capture</td>
           <td>Overlaps I4 — operation accounting (succeed/skip/fail counts) is a sub-case of the stage chain; can be added to I4's implementation</td>
         </tr>
         <tr>
-          <td>9</td>
+          <td>10</td>
           <td class="idea-col">SPC operation timing baseline</td>
           <td>Local Persistence</td>
-          <td>Overclaim — SPC requires hundreds of samples for meaningful control limits; timing is already a field in I1's JSONL record</td>
-        </tr>
-        <tr>
-          <td>10</td>
-          <td class="idea-col">Exception severity triage (Fatal/Degraded/Advisory/Noise)</td>
-          <td>Diagnostic Capture</td>
-          <td>Sound design concept but complexity/value ratio doesn't warrant a top-7 slot; implement after I1–I4 to have data to inform the policy</td>
+          <td>Overclaim — SPC requires hundreds of samples for meaningful control limits; timing can be added as a Serilog enricher property on I3 if needed later</td>
         </tr>
         <tr>
           <td>11</td>
-          <td class="idea-col">Air-gapped CI signed log export</td>
-          <td>Network-Constrained</td>
-          <td>Signing is load-bearing in the claim but has no infrastructure in the repo; without signing it reduces to I1 alone; revisit for enterprise tier</td>
+          <td class="idea-col">Exception severity triage (Fatal/Degraded/Advisory/Noise)</td>
+          <td>Diagnostic Capture</td>
+          <td>Sound concept but complexity/value ratio doesn't warrant a slot; implement after I1–I4 to have data to inform the policy</td>
         </tr>
         <tr>
           <td>12</td>
+          <td class="idea-col">Air-gapped CI signed log export</td>
+          <td>Network-Constrained</td>
+          <td>Signing is load-bearing in the claim but has no infrastructure in the repo; without signing it reduces to I3 alone; revisit for enterprise tier</td>
+        </tr>
+        <tr>
+          <td>13</td>
           <td class="idea-col">CI Detection Mode (standalone idea)</td>
           <td>Network-Constrained</td>
-          <td>Spinner suppression already handled by Spectre via stream redirection on hosted CI (GitHub Actions, CircleCI, Travis, Azure DevOps hosted). CI env var detection already exists in <code>ConsoleHelper.IsInteractive()</code> (covers <code>CI</code>, <code>TF_BUILD</code>, <code>JENKINS_URL</code>; TeamCity gap is a one-line fix). Only remaining unique value — auto-verbose subprocess streaming in CI — absorbed into I2's rationale</td>
+          <td>Spinner suppression already handled by Spectre via stream redirection on hosted CI. CI env var detection already in <code>ConsoleHelper.IsInteractive()</code>. Only remaining unique value — auto-verbose subprocess streaming in CI — absorbed into I2 (VerboseOutput buffer renders on failure unconditionally).</td>
         </tr>
       </tbody>
     </table>
@@ -740,7 +761,7 @@
 </div><!-- /page -->
 
 <footer class="composition-signal" style="max-width:920px;margin:0 auto;padding:20px 24px;">
-  Composed 2026-06-25 by ce-ideate · Flowline CLI observability &amp; bug reproduction · 5 frames · 13 agents · repo-grounded
+  Composed 2026-06-25 by ce-ideate · Updated 2026-06-29 to reflect Wave 1 + 1.5 implementation · Flowline CLI observability &amp; bug reproduction
 </footer>
 
 </body>
