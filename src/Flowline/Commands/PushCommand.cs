@@ -140,10 +140,15 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             }
         }
 
+        if (settings.NoPublish && !pushScope.HasFlag(PushScope.WebResources))
+            Console.Warning("--no-publish has no effect: web resources not in scope.");
+
         if (webResourcesSyncFolder != null)
         {
             Logger.LogInformation("Pushing web resources: {Folder}", webResourcesSyncFolder);
             await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder, solutionName, publishAfterSync: !settings.NoPublish, runMode: runMode, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (settings.NoPublish)
+                Console.Skip("Publish — skipping (--no-publish active).");
         }
 
         Console.Done(runMode == RunMode.DryRun
@@ -214,7 +219,9 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (!standaloneMode)
         {
             var pluginsFolder = Path.Combine(RootFolder, AllSolutionsFolderName, solutionName, PluginsName);
-            if (!settings.NoBuild && await DotNetUtils.BuildSolutionAsync(pluginsFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
+            if (settings.NoBuild)
+                Console.Skip("Build — skipping (--no-build active).");
+            else if (await DotNetUtils.BuildSolutionAsync(pluginsFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
                 throw new FlowlineException(ExitCode.BuildFailed, "Plugins build failed — fix errors above.");
 
             pluginsDll = Path.Combine(pluginsFolder, "bin", "Release", "net462", "publish", $"{PluginsName}.dll");
@@ -249,7 +256,9 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             return null;
         }
 
-        if (!settings.NoBuild && await DotNetUtils.BuildSolutionAsync(webResourcesFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
+        if (settings.NoBuild)
+            Console.Skip("Build skipped (--no-build).");
+        else if (await DotNetUtils.BuildSolutionAsync(webResourcesFolder, DotnetBuild.Release, settings.Verbose, cancellationToken) != 0)
             throw new FlowlineException(ExitCode.BuildFailed, "WebResources build failed — fix errors above.");
 
         EnsureBuiltWebResources(webResourcesSyncFolder);
