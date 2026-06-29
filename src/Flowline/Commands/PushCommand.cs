@@ -57,7 +57,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         public bool NoBuild { get; set; } = false;
 
         [CommandOption("--no-publish")]
-        [Description("Skip publishing web resources after sync — useful when publish is a separate CI step")]
+        [Description("Skip publishing web resources after sync")]
         [DefaultValue(false)]
         public bool NoPublish { get; set; } = false;
 
