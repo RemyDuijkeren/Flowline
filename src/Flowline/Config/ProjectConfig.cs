@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Flowline.Utils;
 using Spectre.Console;
-using System.Text.Json.Serialization;
 
 namespace Flowline.Config;
 
@@ -270,66 +269,6 @@ public class ProjectConfig
         {
             AnsiConsole.MarkupLine("[red]Failed to save configuration.[/]");
             AnsiConsole.WriteException(ex);
-        }
-    }
-}
-
-[JsonConverter(typeof(JsonStringEnumConverter))]
-public enum GeneratorType
-{
-    Pac,
-    XrmContext3,
-    XrmContext,
-}
-
-public class GenerateConfig
-{
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? Namespace { get; set; }
-
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string[]? ExtraTables { get; set; }
-
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public GeneratorType? Generator { get; set; }
-
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? ServiceContextName { get; set; }
-
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? OutputPath { get; set; }
-}
-
-public class ProjectSolution
-{
-    public static IEqualityComparer<ProjectSolution> NameComparer { get; } = new ProjectSolutionNameComparer();
-
-    public string Name { get; init; } = null!;
-    public bool IncludeManaged { get; set; } = false;
-
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public GenerateConfig? Generate { get; set; }
-
-    private sealed class ProjectSolutionNameComparer : IEqualityComparer<ProjectSolution>
-    {
-        public bool Equals(ProjectSolution? x, ProjectSolution? y)
-        {
-            if (ReferenceEquals(x, y))
-            {
-                return true;
-            }
-
-            if (x is null || y is null)
-            {
-                return false;
-            }
-
-            return StringComparer.OrdinalIgnoreCase.Equals(x.Name, y.Name);
-        }
-
-        public int GetHashCode(ProjectSolution obj)
-        {
-            return StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Name);
         }
     }
 }

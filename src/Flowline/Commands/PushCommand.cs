@@ -220,7 +220,6 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
                 ? $"Plugin file not found: {settings.PluginFile}"
                 : $"{PluginsName}.dll not found — build the solution (Release) first, or drop --no-build.");
 
-        Logger.LogInformation("Found Plugin file: {PluginFile}", pluginsDll);
         Console.Verbose($"Found {pluginsDll}", RuntimeOptions);
         Console.Info($"[bold]{ConsolePath.FormatRelativePath(pluginsDll)}[/] found");
 
@@ -250,7 +249,6 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
 
         EnsureBuiltWebResources(webResourcesSyncFolder);
 
-        Logger.LogInformation("Found WebResources folder: {WebResourcesFolder}", webResourcesSyncFolder);
         Console.Verbose($"Found {webResourcesSyncFolder}", RuntimeOptions);
         Console.Info($"[bold]{ConsolePath.FormatRelativePath(webResourcesSyncFolder)}[/] found");
 
