@@ -1,11 +1,15 @@
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Services;
+using Flowline.Diagnostics;
 using Flowline.Services;
 using Flowline.Utils;
 using Flowline.Validation;
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Spectre.Console;
@@ -77,10 +81,14 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         if (ShowWelcome && ConsoleHelper.IsInteractive(settings) && FlowlineValidator.Default.ShouldShowWelcomeScreen(settings.NoCache))
             ConsoleHelper.WelcomeScreen(Console);
 
+        using var activity = FlowlineActivitySource.Source.StartActivity(context.Name);
+
         await CheckSetupAsync(settings, cancellationToken);
         Logger.LogInformation("Setup check: {Duration}", FormatDuration(sw.Elapsed));
 
         Config = ProjectConfig.Load(RootFolder) ?? new ProjectConfig();
+
+        LogInvocationHeader(context.Name, activity);
 
         var exitCode = await ExecuteFlowlineAsync(context, settings, cancellationToken);
         Logger.LogInformation("Completed: {Command} exit={ExitCode} duration={Duration}", context.Name, exitCode, FormatDuration(sw.Elapsed));
@@ -197,4 +205,58 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
 
         return (projectSln, remoteSln);
     }
+
+    void LogInvocationHeader(string commandName, Activity? activity)
+    {
+        var tv = RuntimeOptions.ToolVersions;
+        if (tv is null) return;
+
+        var ciPlatform = ConsoleHelper.DetectCIPlatform();
+        var ci = ciPlatform is not null;
+
+        var envTiers = new List<string>(4);
+        var envHashes = new List<string>(4);
+        foreach (var (tier, url) in new[] { ("prod", Config!.ProdUrl), ("uat", Config.UatUrl), ("test", Config.TestUrl), ("dev", Config.DevUrl) })
+        {
+            if (!string.IsNullOrWhiteSpace(url))
+            {
+                envTiers.Add(tier);
+                envHashes.Add($"{tier}={HashUrl(url)}");
+            }
+        }
+
+        var solutionNames = string.Join(",", Config.Solutions.Select(s => s.Name));
+        var envConfigured = string.Join(",", envTiers);
+        var envHashStr = string.Join(",", envHashes);
+
+        Logger.LogInformation(
+            "Invocation: {FlowlineVersion} dotnet={DotNetVersion} pac={PacVersion}({PacInstallType}) git={GitVersion}@{GitBranch} os={Os} arch={OsArch} ci={Ci} ci.platform={CiPlatform} verbose={Verbose} force={Force} root={ProjectRoot} solutions={ProjectSolutions} env.configured={EnvConfigured} env.hashes={EnvHashes}",
+            tv.FlowlineVersion, tv.DotNetVersion, tv.PacVersion, tv.PacInstallType,
+            tv.GitVersion, tv.GitBranch,
+            RuntimeInformation.OSDescription, RuntimeInformation.OSArchitecture,
+            ci, ciPlatform,
+            RuntimeOptions.IsVerbose, RuntimeOptions.Force,
+            RootFolder, solutionNames, envConfigured, envHashStr);
+
+        if (activity is null) return;
+        activity.SetTag("flowline.version", tv.FlowlineVersion);
+        activity.SetTag("dotnet.version", tv.DotNetVersion);
+        activity.SetTag("pac.version", tv.PacVersion);
+        activity.SetTag("pac.installType", tv.PacInstallType);
+        activity.SetTag("git.version", tv.GitVersion);
+        activity.SetTag("git.branch", tv.GitBranch);
+        activity.SetTag("os", RuntimeInformation.OSDescription);
+        activity.SetTag("os.arch", RuntimeInformation.OSArchitecture.ToString());
+        activity.SetTag("ci", ci);
+        activity.SetTag("ci.platform", ciPlatform);
+        activity.SetTag("verbose", RuntimeOptions.IsVerbose);
+        activity.SetTag("force", RuntimeOptions.Force);
+        activity.SetTag("project.root", RootFolder);
+        activity.SetTag("project.solutions", solutionNames);
+        activity.SetTag("env.configured", envConfigured);
+        activity.SetTag("env.hashes", envHashStr);
+    }
+
+    static string HashUrl(string url) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(url)))[..8].ToLowerInvariant();
 }
