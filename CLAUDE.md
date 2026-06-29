@@ -62,6 +62,10 @@ Wiki pages and their scope:
 - `Migration-from-spkl.md`, `Migration-from-Daxif.md`, `Migration-from-PACX.md` — migration guides
 - `Known-Limitations.md` — unsupported features and planned work
 
+## Compound Engineering Workflow
+
+Before choosing `/ce-ideate`, `/ce-brainstorm`, `/ce-plan`, or going straight to implementation, consult [`docs/compound-engineering-workflow.md`](docs/compound-engineering-workflow.md). Covers when to use each skill, when to skip, and why certainty drives the choice more than size.
+
 ## Documented Solutions
 
 `docs/solutions/` — solutions to past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas.
