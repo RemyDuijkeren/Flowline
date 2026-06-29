@@ -24,7 +24,7 @@ Console.OutputEncoding = Encoding.UTF8;
 Activity.DefaultIdFormat = ActivityIdFormat.W3C;
 Activity.ForceDefaultIdFormat = true;
 
-var activityListener = new ActivityListener
+using var activityListener = new ActivityListener
 {
     ShouldListenTo = s => s.Name == "Flowline.CLI",
     Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,

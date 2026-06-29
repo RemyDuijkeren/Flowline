@@ -55,8 +55,7 @@ public sealed class FlowlineValidator
             cancellationToken,
             async () => new ToolCheckResult
             {
-                Version = await _probes.CheckGitAsync(settings.Verbose, cancellationToken),
-                Branch = await _probes.GetGitBranchAsync(settings.Verbose, cancellationToken)
+                Version = await _probes.CheckGitAsync(settings.Verbose, cancellationToken)
             });
     }
 

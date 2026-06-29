@@ -219,3 +219,4 @@ private sealed class CaptureLogger(List<(LogLevel, string)> entries)
 - `src/Flowline/Program.cs` — hook wiring and `ILoggerFactory` lifecycle
 - `tests/Flowline.Core.Tests/LoggingRenderHookTests.cs` — test suite
 - Flowline exception-handling convention — the try/catch here is a deliberate exception to the "no try/catch around service calls" rule (see `memory/feedback_exception_handling.md`)
+- [`activity-correlation-structured-logging.md`](activity-correlation-structured-logging.md) — complementary pattern: W3C TraceId correlation via ActivitySource/ActivityListener + Serilog enricher. Both patterns are wired in `Program.cs` and coexist without interference.
