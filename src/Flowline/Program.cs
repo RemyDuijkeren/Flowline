@@ -66,7 +66,7 @@ services.AddSingleton<OrphanCleanupService>();
 Serilog.ILogger? serilogLogger = null;
 try
 {
-    var logPath = FlowlineStoragePaths.GetLogsPath(runTime);
+    var logPath = FlowlineStoragePaths.GetLogsPath(runTime, args.FirstOrDefault());
     try { Directory.CreateDirectory(Path.GetDirectoryName(logPath)!); } catch { } // Intentional: dir creation failure must not block launch (R16).
     serilogLogger = new LoggerConfiguration()
         .MinimumLevel.Debug()
