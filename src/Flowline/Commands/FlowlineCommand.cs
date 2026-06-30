@@ -16,9 +16,10 @@ namespace Flowline.Commands;
 
 public enum EnvironmentRole { Prod, Uat, Test, Dev }
 
-public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory) : AsyncCommand<TSettings>
+public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture) : AsyncCommand<TSettings>
     where TSettings : FlowlineSettings
 {
+    protected readonly SubprocessCapture _capture = capture;
     protected const string AllSolutionsFolderName = "solutions";
     protected const string PackageName = "Package";
     protected const string WebResourcesName = "WebResources";
@@ -104,7 +105,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
             git = await FlowlineValidator.Default.EnsureGitAsync(settings, cancellationToken);
             await FlowlineValidator.Default.EnsureGitRepoAsync(RootFolder, settings, cancellationToken);
             // Fetched fresh (not cached) — branch changes too frequently for 7-day TTL
-            gitBranch = await GitUtils.GetCurrentBranchAsync(settings.Verbose, cancellationToken);
+            gitBranch = await GitUtils.GetCurrentBranchAsync(_capture, cancellationToken);
         });
 
         RuntimeOptions.ToolVersions = new FlowlineToolVersions(

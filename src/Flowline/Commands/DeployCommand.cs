@@ -13,7 +13,7 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseConnector, OrphanCleanupService orphanCleanupService, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory) : FlowlineCommand<DeployCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory)
+public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseConnector, OrphanCleanupService orphanCleanupService, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture) : FlowlineCommand<DeployCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture)
 {
     public sealed class Settings : FlowlineSettings
     {
@@ -42,7 +42,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        await GitUtils.AssertRepoCleanAsync(settings.Verbose, cancellationToken);
+        await GitUtils.AssertRepoCleanAsync(_capture, cancellationToken);
 
         var runMode = settings.NoDelete ? RunMode.NoDelete : RunMode.Normal;
         var targetUrl = ResolveTargetUrl(settings);

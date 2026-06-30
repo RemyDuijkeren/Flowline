@@ -15,8 +15,8 @@ using Spectre.Console.Cli;
 namespace Flowline.Commands;
 
 public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseConnector, FlowlineRuntimeOptions runtimeOptions,
-    IEnumerable<IGenerator> generators, ProfileResolutionService profileResolutionService, SecretResolver secretResolver, ILoggerFactory loggerFactory)
-    : FlowlineCommand<GenerateCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory)
+    IEnumerable<IGenerator> generators, ProfileResolutionService profileResolutionService, SecretResolver secretResolver, ILoggerFactory loggerFactory, SubprocessCapture capture)
+    : FlowlineCommand<GenerateCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture)
 {
     public sealed class Settings : FlowlineSettings
     {
@@ -183,7 +183,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             // Dirty-tree guard
             if (Directory.Exists(modelsFolder))
             {
-                var modelsSummary = await SolutionChangeSummary.ComputeAsync(modelsFolder, RootFolder, settings.Verbose, cancellationToken);
+                var modelsSummary = await SolutionChangeSummary.ComputeAsync(modelsFolder, RootFolder, _capture, cancellationToken);
                 if (modelsSummary.TotalFiles > 0)
                     Console.Warning($"'{Path.GetRelativePath(RootFolder, modelsFolder)}' has uncommitted changes — Flowline replaces generated files, preserves user files. Commit first to review the diff.");
             }

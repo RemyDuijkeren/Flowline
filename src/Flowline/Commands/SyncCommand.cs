@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using CliWrap;
-using CliWrap.Buffered;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Services;
@@ -13,8 +12,8 @@ namespace Flowline.Commands;
 
 public enum BumpComponent { Patch, Minor, Major }
 
-public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory) :
-    FlowlineCommand<SyncCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory)
+public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture) :
+    FlowlineCommand<SyncCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture)
 {
     public sealed class Settings : FlowlineSettings
     {
@@ -56,7 +55,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         // Check for uncommitted changes
         var srcPath = Path.Combine(PackageFolder(slnFolder), "src");
-        var preSyncSummary = await SolutionChangeSummary.ComputeAsync(srcPath, RootFolder, settings.Verbose, cancellationToken);
+        var preSyncSummary = await SolutionChangeSummary.ComputeAsync(srcPath, RootFolder, _capture, cancellationToken);
         Logger.LogInformation("Diff: {TotalFiles} files changed", preSyncSummary.TotalFiles);
         if (preSyncSummary.TotalFiles > 0)
         {
@@ -78,10 +77,10 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             $"Bump {settings.Bump} version [bold]{projectSln.Name}[/]...",
             async ctx =>
             {
-                var currentVersion = await PacUtils.GetSolutionVersionAsync(slnInfo.SolutionUniqueName!, devEnv.EnvironmentUrl!, settings.Verbose, cancellationToken);
+                var currentVersion = await PacUtils.GetSolutionVersionAsync(slnInfo.SolutionUniqueName!, devEnv.EnvironmentUrl!, _capture, cancellationToken);
                 Console.Verbose($"Current version: {currentVersion}", RuntimeOptions);
                 var newVersion = BumpVersion(currentVersion, settings.Bump);
-                await PacUtils.SetSolutionVersionAsync(slnInfo.SolutionUniqueName!, newVersion, devEnv.EnvironmentUrl!, settings.Verbose, cancellationToken);
+                await PacUtils.SetSolutionVersionAsync(slnInfo.SolutionUniqueName!, newVersion, devEnv.EnvironmentUrl!, _capture, cancellationToken);
                 Console.Verbose($"New version: {newVersion}", RuntimeOptions);
                 var tagVersion = ToTagVersion(newVersion);
                 return tagVersion;
@@ -115,16 +114,16 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         // Pack the solution in pac to validate it
         Logger.LogInformation("Validating pack: {SolutionName}", projectSln.Name);
         var artifactsFolder = Path.Combine(slnFolder, "artifacts");
-        if (await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, false, settings.Verbose, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
+        if (await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, false, _capture, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
         if (projectSln.IncludeManaged &&
-            await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, true, settings.Verbose, cancellationToken) != 0)
+            await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, true, _capture, cancellationToken) != 0)
         {
             return (int)ExitCode.BuildFailed;
         }
 
         // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
         Logger.LogInformation("Validating build: {SlnFolder}", slnFolder);
-        if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, settings.Verbose, cancellationToken) != 0)
+        if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, _capture, cancellationToken) != 0)
         {
             return (int)ExitCode.BuildFailed;
         }
@@ -155,7 +154,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         }
 
         // Summary of changes
-        var summary = await SolutionChangeSummary.ComputeAsync(srcPath, RootFolder, settings.Verbose, cancellationToken);
+        var summary = await SolutionChangeSummary.ComputeAsync(srcPath, RootFolder, _capture, cancellationToken);
         Logger.LogInformation("Diff: {TotalFiles} files changed", summary.TotalFiles);
         summary.WriteTree(Console, devEnv.DisplayName, settings.Verbose);
         await summary.WriteChangesFileAsync(slnFolder, projectSln.Name, devEnv.DisplayName, cancellationToken);
@@ -194,36 +193,4 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     internal static string ToTagVersion(string version) =>
         string.Join(".", version.Split('.').Take(3));
 
-    static async Task GitCommitChanges(IAnsiConsole console, CancellationToken cancellationToken)
-    {
-        // Add all files to the git staging area
-        await Cli.Wrap("git")
-                 .WithArguments("add -A")
-                 .WithStandardOutputPipe(PipeTarget.ToDelegate(s => console.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
-                 .WithStandardErrorPipe(PipeTarget.ToDelegate(System.Console.Error.WriteLine))
-                 .WithToolExecutionLog()
-                 .ExecuteAsync(cancellationToken);
-
-        // Check if there are changes to commit
-        var statusResult = await Cli.Wrap("git")
-                                    .WithArguments("status --porcelain")
-                                    .WithToolExecutionLog()
-                                    .ExecuteBufferedAsync(cancellationToken);
-
-        if (string.IsNullOrWhiteSpace(statusResult.StandardOutput))
-        {
-            console.Skip("No changes — skipping commit");
-            return;
-        }
-
-        // Commit the changes
-        await Cli.Wrap("git")
-                 .WithArguments(args => args
-                                        .Add("commit")
-                                        .Add("-m").Add("flowline: sync solution"))
-                 .WithStandardOutputPipe(PipeTarget.ToDelegate(s => console.MarkupLineInterpolated($"[dim]GIT: {s}[/]")))
-                 .WithStandardErrorPipe(PipeTarget.ToDelegate(System.Console.Error.WriteLine))
-                 .WithToolExecutionLog()
-                 .ExecuteAsync(cancellationToken);
-    }
 }

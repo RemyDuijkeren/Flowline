@@ -14,7 +14,7 @@ public enum Role { Dev, Test, Uat }
 
 public enum CopyType { Minimal, Full }
 
-public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory) : FlowlineCommand<ProvisionCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory)
+public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture) : FlowlineCommand<ProvisionCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture)
 {
     public sealed class Settings : FlowlineSettings
     {
@@ -129,8 +129,8 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
             "Checking solutions...",
             async _ =>
             {
-                var prodTask   = PacUtils.GetSolutionsAsync(prodEnv.EnvironmentUrl!,   settings.Verbose, cancellationToken);
-                var targetTask = PacUtils.GetSolutionsAsync(targetEnv.EnvironmentUrl!, settings.Verbose, cancellationToken);
+                var prodTask   = PacUtils.GetSolutionsAsync(prodEnv.EnvironmentUrl!,   _capture, cancellationToken);
+                var targetTask = PacUtils.GetSolutionsAsync(targetEnv.EnvironmentUrl!, _capture, cancellationToken);
                 await Task.WhenAll(prodTask, targetTask);
                 return (prodTask.Result, targetTask.Result);
             });

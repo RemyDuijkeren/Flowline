@@ -8,9 +8,10 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class StatusCommand(IAnsiConsole console, ILoggerFactory loggerFactory) : AsyncCommand<StatusCommand.Settings>
+public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILoggerFactory loggerFactory) : AsyncCommand<StatusCommand.Settings>
 {
     private readonly IAnsiConsole Console = console;
+    private readonly SubprocessCapture _capture = capture;
     private ILogger? _logger;
     protected ILogger Logger => _logger ??= loggerFactory.CreateLogger(GetType().Name);
 
@@ -81,7 +82,7 @@ public class StatusCommand(IAnsiConsole console, ILoggerFactory loggerFactory) :
                             string? version = null;
                             try
                             {
-                                version = await PacUtils.GetSolutionVersionAsync(sol.Name, e.Url!, cancellationToken: cancellationToken);
+                                version = await PacUtils.GetSolutionVersionAsync(sol.Name, e.Url!, _capture, cancellationToken);
                             }
                             catch (FlowlineException)
                             {
