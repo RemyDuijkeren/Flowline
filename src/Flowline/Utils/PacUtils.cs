@@ -172,7 +172,7 @@ public static class PacUtils
         throw new Exception("Power Platform CLI isn't available.");
     }
 
-    public static async Task<int> PackSolutionAsync(ProjectSolution projectSln, string packageFolder, string artifactsFolder, bool managed, bool verbose, CancellationToken cancellationToken)
+    public static async Task<int> PackSolutionAsync(ProjectSolution projectSln, string packageFolder, string artifactsFolder, bool managed, SubprocessCapture capture, CancellationToken cancellationToken)
     {
         var packageType = managed ? "Managed" : "Unmanaged";
         var suffix = managed ? "_managed" : "_unmanaged";
@@ -183,7 +183,8 @@ public static class PacUtils
         var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
         CommandResult result = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
             $"Validating {packageType.ToLower()} package...",
-            ctx => Cli.Wrap(cmdName)
+            ctx => capture.Apply(
+                      Cli.Wrap(cmdName)
                       .WithArguments(args =>
                           args.AddIfNotNull(prefixArgs)
                               .Add("solution")
@@ -191,10 +192,10 @@ public static class PacUtils
                               .Add("--folder").Add(Path.Combine(packageFolder, "src"))
                               .Add("--zipFile").Add(zipFile)
                               .Add("--packageType").Add(packageType))
-                      .WithValidation(CommandResultValidation.None)
-                      .WithToolExecutionLog(verbose, ctx)
-                      .ExecuteAsync(cancellationToken)
-                      .Task);
+                      .WithValidation(CommandResultValidation.None),
+                      ctx)
+                  .ExecuteAsync(cancellationToken)
+                  .Task);
 
         if (!result.IsSuccess)
         {
@@ -209,57 +210,57 @@ public static class PacUtils
         return 0;
     }
 
-    public static async Task<List<EnvironmentInfo>> GetEnvironmentsAsync(bool verbose = true, CancellationToken cancellationToken = default)
+    public static async Task<List<EnvironmentInfo>> GetEnvironmentsAsync(SubprocessCapture capture, CancellationToken cancellationToken = default)
     {
         var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
-        var result = await Cli.Wrap(cmdName).WithArguments(args => args
+        var result = await capture.Apply(
+            Cli.Wrap(cmdName).WithArguments(args => args
             .AddIfNotNull(prefixArgs)
             .Add("admin")
             .Add("list")
-            .Add("--json"))
-            .WithToolExecutionLog(verbose)
+            .Add("--json")))
             .ExecuteBufferedAsync(cancellationToken);
 
         return JsonSerializer.Deserialize<List<EnvironmentInfo>>(result.StandardOutput) ?? new List<EnvironmentInfo>();
     }
 
-    public static async Task<EnvironmentInfo?> GetEnvironmentInfoByUrlAsync(string environmentUrl, bool verbose = true, CancellationToken cancellationToken = default)
+    public static async Task<EnvironmentInfo?> GetEnvironmentInfoByUrlAsync(string environmentUrl, SubprocessCapture capture, CancellationToken cancellationToken = default)
     {
-        var environments = await GetEnvironmentsAsync(verbose, cancellationToken);
+        var environments = await GetEnvironmentsAsync(capture, cancellationToken);
         return environments.FirstOrDefault(e => e.EnvironmentUrl?.TrimEnd('/').Equals(environmentUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase) == true);
     }
 
-    public static async Task<List<SolutionInfo>> GetSolutionsAsync(string environmentUrl, bool verbose = true, CancellationToken cancellationToken = default)
+    public static async Task<List<SolutionInfo>> GetSolutionsAsync(string environmentUrl, SubprocessCapture capture, CancellationToken cancellationToken = default)
     {
         var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
-        var result = await Cli.Wrap(cmdName).WithArguments(args => args
+        var result = await capture.Apply(
+            Cli.Wrap(cmdName).WithArguments(args => args
             .AddIfNotNull(prefixArgs)
             .Add("solution")
             .Add("list")
             .Add("--environment")
             .Add(environmentUrl)
-            .Add("--json"))
-            .WithToolExecutionLog(verbose)
+            .Add("--json")))
             .ExecuteBufferedAsync(cancellationToken);
 
         return JsonSerializer.Deserialize<List<SolutionInfo>>(result.StandardOutput) ?? new List<SolutionInfo>();
     }
 
-    public static async Task<string?> GetPublisherCustomizationPrefixAsync(string environmentUrl, string publisherUniqueName, bool verbose = false, CancellationToken cancellationToken = default)
+    public static async Task<string?> GetPublisherCustomizationPrefixAsync(string environmentUrl, string publisherUniqueName, SubprocessCapture capture, CancellationToken cancellationToken = default)
     {
         var fetchXml = $"<fetch><entity name='publisher'><attribute name='customizationprefix'/>" +
                        $"<filter><condition attribute='uniquename' operator='eq' value='{publisherUniqueName}'/>" +
                        $"</filter></entity></fetch>";
 
         var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
-        var result = await Cli.Wrap(cmdName)
+        var result = await capture.Apply(
+            Cli.Wrap(cmdName)
             .WithArguments(args => args
                 .AddIfNotNull(prefixArgs)
                 .Add("env").Add("fetch")
                 .Add("--environment").Add(environmentUrl)
                 .Add("--xml").Add(fetchXml))
-            .WithToolExecutionLog(verbose)
-            .WithValidation(CommandResultValidation.None)
+            .WithValidation(CommandResultValidation.None))
             .ExecuteBufferedAsync(cancellationToken);
 
         var allLines = result.StandardOutput
@@ -294,18 +295,18 @@ public static class PacUtils
         return parts.Length == 2 ? parts[1].Trim() : null;
     }
 
-    public static async Task<string> GetSolutionVersionAsync(string solutionName, string environmentUrl, bool verbose = false, CancellationToken cancellationToken = default)
+    public static async Task<string> GetSolutionVersionAsync(string solutionName, string environmentUrl, SubprocessCapture capture, CancellationToken cancellationToken = default)
     {
         var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
-        var result = await Cli.Wrap(cmdName)
+        var result = await capture.Apply(
+            Cli.Wrap(cmdName)
             .WithArguments(args => args
                 .AddIfNotNull(prefixArgs)
                 .Add("solution")
                 .Add("online-version")
                 .Add("--solution-name").Add(solutionName)
                 .Add("--environment").Add(environmentUrl))
-            .WithValidation(CommandResultValidation.None)
-            .WithToolExecutionLog(verbose)
+            .WithValidation(CommandResultValidation.None))
             .ExecuteBufferedAsync(cancellationToken);
 
         if (result.ExitCode != 0)
@@ -318,10 +319,11 @@ public static class PacUtils
         return version;
     }
 
-    public static async Task SetSolutionVersionAsync(string solutionName, string version, string environmentUrl, bool verbose = false, CancellationToken cancellationToken = default)
+    public static async Task SetSolutionVersionAsync(string solutionName, string version, string environmentUrl, SubprocessCapture capture, CancellationToken cancellationToken = default)
     {
         var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
-        var result = await Cli.Wrap(cmdName)
+        var result = await capture.Apply(
+            Cli.Wrap(cmdName)
             .WithArguments(args => args
                 .AddIfNotNull(prefixArgs)
                 .Add("solution")
@@ -329,8 +331,7 @@ public static class PacUtils
                 .Add("--solution-name").Add(solutionName)
                 .Add("--environment").Add(environmentUrl)
                 .Add("--solution-version").Add(version))
-            .WithValidation(CommandResultValidation.None)
-            .WithToolExecutionLog(verbose)
+            .WithValidation(CommandResultValidation.None))
             .ExecuteBufferedAsync(cancellationToken);
 
         if (result.ExitCode != 0)

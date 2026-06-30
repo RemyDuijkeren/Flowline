@@ -10,16 +10,16 @@ public enum DotnetBuild { Release, Debug }
 public static class DotNetUtils
 {
 
-    public static async Task<int> BuildSolutionAsync(string workingDirectory, DotnetBuild configuration, bool verbose = true, CancellationToken cancellationToken = default)
+    public static async Task<int> BuildSolutionAsync(string workingDirectory, DotnetBuild configuration, SubprocessCapture capture, CancellationToken cancellationToken = default)
     {
         var relativeWorkingDirectory = ConsolePath.FormatRelativePath(workingDirectory);
 
         var buildResult = await AnsiConsole.Status().FlowlineSpinner().StartAsync($"Building {relativeWorkingDirectory}...", ctx =>
-            Cli.Wrap("dotnet")
-               .WithArguments(args => args.Add("build").Add("--configuration").Add(configuration.ToString()))
-               .WithWorkingDirectory(workingDirectory)
-               .WithValidation(CommandResultValidation.None)
-               .WithToolExecutionLog(verbose)
+            capture.Apply(
+                Cli.Wrap("dotnet")
+                   .WithArguments(args => args.Add("build").Add("--configuration").Add(configuration.ToString()))
+                   .WithWorkingDirectory(workingDirectory)
+                   .WithValidation(CommandResultValidation.None))
                .ExecuteAsync(cancellationToken).Task);
 
         if (!buildResult.IsSuccess)

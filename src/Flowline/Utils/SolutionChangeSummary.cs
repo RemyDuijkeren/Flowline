@@ -33,19 +33,19 @@ public class SolutionChangeSummary
         Groups = groups;
     }
 
-    public static async Task<SolutionChangeSummary> ComputeAsync(string srcFolder, string workingDirectory, bool verbose = false, CancellationToken ct = default)
+    public static async Task<SolutionChangeSummary> ComputeAsync(string srcFolder, string workingDirectory, SubprocessCapture capture, CancellationToken ct = default)
     {
         var srcRelPath = Path.GetRelativePath(workingDirectory, srcFolder).Replace('\\', '/');
 
-        var statusResult = await Cli.Wrap("git")
+        var statusResult = await capture.Apply(
+            Cli.Wrap("git")
             .WithWorkingDirectory(workingDirectory)
             .WithArguments(args => args
                 .Add("-c").Add("core.quotepath=false")
                 .Add("-c").Add("core.safecrlf=false")
                 .Add("status").Add("--porcelain").Add("-uall")
                 .Add("--").Add(srcRelPath))
-            .WithToolExecutionLog(verbose)
-            .WithValidation(CommandResultValidation.None)
+            .WithValidation(CommandResultValidation.None))
             .ExecuteBufferedAsync(ct);
 
         var changedFiles = statusResult.StandardOutput
@@ -58,15 +58,15 @@ public class SolutionChangeSummary
         if (changedFiles.Count == 0)
             return new SolutionChangeSummary(0, 0, 0, []);
 
-        var numstatResult = await Cli.Wrap("git")
+        var numstatResult = await capture.Apply(
+            Cli.Wrap("git")
             .WithWorkingDirectory(workingDirectory)
             .WithArguments(args => args
                 .Add("-c").Add("core.quotepath=false")
                 .Add("-c").Add("core.safecrlf=false")
                 .Add("diff").Add("HEAD").Add("--numstat")
                 .Add("--").Add(srcRelPath))
-            .WithToolExecutionLog(verbose)
-            .WithValidation(CommandResultValidation.None)
+            .WithValidation(CommandResultValidation.None))
             .ExecuteBufferedAsync(ct);
 
         var linesByPath = numstatResult.StandardOutput
