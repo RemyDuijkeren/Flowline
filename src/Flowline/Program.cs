@@ -66,7 +66,7 @@ services.AddSingleton<OrphanCleanupService>();
 Serilog.ILogger? serilogLogger = null;
 try
 {
-    var logPath = FlowlineStoragePaths.GetLogsPath(runTime, args.FirstOrDefault());
+    var logPath = FlowlineStoragePaths.GetLogsPath(runTime);
     try { Directory.CreateDirectory(Path.GetDirectoryName(logPath)!); } catch { } // Intentional: dir creation failure must not block launch (R16).
     serilogLogger = new LoggerConfiguration()
         .MinimumLevel.Debug()
@@ -177,6 +177,7 @@ app.Configure(config =>
 });
 
 var hookLoggerFactory = LoggerFactory.Create(b => b.AddSerilog(serilogLogger));
+AnsiConsole.Console.Pipeline.Attach(new VerboseFilterHook(runtimeOptions.IsVerbose));
 AnsiConsole.Console.Pipeline.Attach(new LoggingRenderHook(
     hookLoggerFactory.CreateLogger<LoggingRenderHook>()
 ));
