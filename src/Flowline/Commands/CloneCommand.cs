@@ -87,8 +87,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         }
 
         await ScaffoldAgentsFileAsync(projectSln.Name, cancellationToken);
-        await new DataverseContextGenerator(Console).GenerateAsync(
-            Path.Combine(PackageFolder(slnFolder), "src"), projectSln.Name, RootFolder, settings.Verbose, cancellationToken);
+        await new DataverseContextGenerator(Console, runtimeOptions).GenerateAsync(
+            Path.Combine(PackageFolder(slnFolder), "src"), projectSln.Name, RootFolder, cancellationToken);
 
         Console.Done("Cloned! Use 'push' and 'sync' to keep it in flow. ヽ(•‿•)ノ");
         return 0;

@@ -18,18 +18,11 @@ public static class FlowlineConsoleExtensions
 
     public static void Skip(this IAnsiConsole console, string message) => console.MarkupLine($"[dim]{SkipPrefix}{message}[/]");
 
-    public static void Verbose(this IAnsiConsole console, string message, bool isVerbose)
-    {
-        if (isVerbose)
-            console.MarkupLine($"[dim]{message}[/]");
-    }
-
     public static void Verbose(this IAnsiConsole console, string message, FlowlineRuntimeOptions options)
     {
-        if (options.IsVerbose)
-            console.MarkupLine($"[dim]{Markup.Escape(message)}[/]");
-        else
-            options.VerboseOutput.Append(message);
+        console.Write(new VerboseMarkup(message));
+        console.WriteLine();
+        options.VerboseOutput.Append(message);
     }
 
     public static void Warning(this IAnsiConsole console, string message) => console.MarkupLine($"[yellow]{WarningPrefix}[/]{message}");

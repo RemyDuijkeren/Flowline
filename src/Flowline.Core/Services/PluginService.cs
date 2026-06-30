@@ -16,7 +16,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
     readonly PluginPlanner _planner = new(output, opt.IsVerbose);
     readonly PluginExecutor _executor = new(output, opt.IsVerbose);
     readonly SolutionReader _solutionReader = new();
-    readonly PluginAssemblyReader _assemblyReader = new(output, opt.IsVerbose);
+    readonly PluginAssemblyReader _assemblyReader = new(output, opt);
 
     public async Task SyncAssemblyOnlyAsync(
         IOrganizationServiceAsync2 service,

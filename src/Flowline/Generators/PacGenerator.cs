@@ -36,9 +36,9 @@ public class PacGenerator(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         if (context.Verbose)
         {
             foreach (var entity in entityFilter)
-                console.Verbose($"  entity: {entity}", isVerbose: true);
+                console.Verbose($"  entity: {entity}", runtimeOptions);
             foreach (var api in customApiNames)
-                console.Verbose($"  custom api: {api}", isVerbose: true);
+                console.Verbose($"  custom api: {api}", runtimeOptions);
         }
 
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);

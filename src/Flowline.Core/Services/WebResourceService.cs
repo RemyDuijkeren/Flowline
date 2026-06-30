@@ -9,7 +9,7 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt,
 {
     readonly WebResourceReader _reader = new(output);
     readonly WebResourcePlanner _planner = new(output, opt.IsVerbose);
-    readonly WebResourceExecutor _executor = new(output, opt.IsVerbose);
+    readonly WebResourceExecutor _executor = new(output, opt);
     readonly ILogger<WebResourceService> _logger = logger;
 
     public async Task SyncSolutionAsync(
@@ -91,7 +91,7 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt,
             var localPath = Path.Combine(webresourceRoot, relativePath.Replace("/", Path.DirectorySeparatorChar.ToString()));
             Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
             await File.WriteAllBytesAsync(localPath, Convert.FromBase64String(resource.Content), cancellationToken).ConfigureAwait(false);
-            output.Verbose(name, opt.IsVerbose);
+            output.Verbose(name, opt);
             count++;
         }
 
@@ -150,7 +150,7 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt,
             return;
 
         Action<string> line = mode == PlanReportMode.Verbose
-            ? msg => output.Verbose(msg, opt.IsVerbose)
+            ? msg => output.Verbose(msg, opt)
             : output.Info;
 
         var publishCount = publishAfterSync ? plan.PublishCount : 0;

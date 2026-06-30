@@ -30,7 +30,7 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
     Task<PacProfile> HandleFound(PacProfile profile)
     {
         EmitStatusLine(profile);
-        console.Verbose($"Matched profile: {profile.Name ?? "(unnamed)"}, Kind: {profile.Kind}, URL: {profile.Resource}", opt.IsVerbose);
+        console.Verbose($"Matched profile: {profile.Name ?? "(unnamed)"}, Kind: {profile.Kind}, URL: {profile.Resource}", opt);
         return Task.FromResult(profile);
     }
 

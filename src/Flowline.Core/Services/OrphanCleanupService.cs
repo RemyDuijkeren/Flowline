@@ -403,7 +403,7 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
             }
 
             await PerformActionAsync(service, solutionName, entry, ct).ConfigureAwait(false);
-            output.Verbose($"{(isPostImport ? "Post-import: " : "")}{entry.DisplayName} {(entry.Action == OrphanAction.Delete ? "deleted" : "removed from solution")}", opt.IsVerbose);
+            output.Verbose($"{(isPostImport ? "Post-import: " : "")}{entry.DisplayName} {(entry.Action == OrphanAction.Delete ? "deleted" : "removed from solution")}", opt);
         }
         catch (FaultException<OrganizationServiceFault> ex) when (!isPostImport && IsDependencyError(ex))
         {

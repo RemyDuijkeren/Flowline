@@ -8,7 +8,7 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class WebResourceExecutor(IAnsiConsole output, bool isVerbose)
+public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions options)
 {
     const int MaxParallelism = 8;
     const int WebResourceComponentType = 61;
@@ -31,7 +31,7 @@ public class WebResourceExecutor(IAnsiConsole output, bool isVerbose)
             publishIds.AddRange(await output.Progress().StartAsync(ctx =>
                 ExecuteCreatesAsync(service, plan.Creates, failures,
                     ctx.AddTask("Creating web resources", maxValue: plan.Creates.Count), cancellationToken)).ConfigureAwait(false));
-            foreach (var a in plan.Creates) output.Verbose($"Web resource '{a.Name}' created", isVerbose);
+            foreach (var a in plan.Creates) output.Verbose($"Web resource '{a.Name}' created", options);
             output.Ok($"{plan.Creates.Count} web resource(s) created");
         }
 
@@ -48,7 +48,7 @@ public class WebResourceExecutor(IAnsiConsole output, bool isVerbose)
                     }
                     catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                 }, ctx.AddTask("Updating web resources", maxValue: plan.Updates.Count), cancellationToken)).ConfigureAwait(false);
-            foreach (var a in plan.Updates) output.Verbose($"Web resource '{a.Name}' updated", isVerbose);
+            foreach (var a in plan.Updates) output.Verbose($"Web resource '{a.Name}' updated", options);
             output.Ok($"{plan.Updates.Count} web resource(s) updated");
         }
 
@@ -61,7 +61,7 @@ public class WebResourceExecutor(IAnsiConsole output, bool isVerbose)
                     try { await AddToSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken).ConfigureAwait(false); }
                     catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                 }, ctx.AddTask("Adding web resources to solution", maxValue: plan.AddsToSolution.Count), cancellationToken)).ConfigureAwait(false);
-            foreach (var a in plan.AddsToSolution) output.Verbose($"Web resource '{a.Name}' added to solution", isVerbose);
+            foreach (var a in plan.AddsToSolution) output.Verbose($"Web resource '{a.Name}' added to solution", options);
             output.Ok($"{plan.AddsToSolution.Count} web resource(s) added to solution");
         }
 
@@ -76,7 +76,7 @@ public class WebResourceExecutor(IAnsiConsole output, bool isVerbose)
                         try { await service.DeleteAsync("webresource", action.Id!.Value, cancellationToken).ConfigureAwait(false); }
                         catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                     }, ctx.AddTask("Deleting web resources", maxValue: plan.Deletes.Count), cancellationToken)).ConfigureAwait(false);
-                foreach (var a in plan.Deletes) output.Verbose($"Web resource '{a.Name}' deleted", isVerbose);
+                foreach (var a in plan.Deletes) output.Verbose($"Web resource '{a.Name}' deleted", options);
                 output.Ok($"{plan.Deletes.Count} web resource(s) deleted");
             }
 
@@ -89,7 +89,7 @@ public class WebResourceExecutor(IAnsiConsole output, bool isVerbose)
                         try { await RemoveFromSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken).ConfigureAwait(false); }
                         catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                     }, ctx.AddTask("Removing web resources from solution", maxValue: plan.RemovesFromSolution.Count), cancellationToken)).ConfigureAwait(false);
-                foreach (var a in plan.RemovesFromSolution) output.Verbose($"Web resource '{a.Name}' removed from solution", isVerbose);
+                foreach (var a in plan.RemovesFromSolution) output.Verbose($"Web resource '{a.Name}' removed from solution", options);
                 output.Ok($"{plan.RemovesFromSolution.Count} web resource(s) removed from solution");
             }
         }

@@ -63,12 +63,12 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             if (settings.Force)
             {
                 Console.Warning($"Uncommitted changes in '{projectSln.Name}/{PackageName}/src/' — overwriting.");
-                preSyncSummary.WriteFlat(Console, settings.Verbose, "[dim]  ");
+                preSyncSummary.WriteFlat(Console, runtimeOptions, "[dim]  ");
             }
             else
             {
                 Console.Warning($"Found uncommitted changes in '{projectSln.Name}/{PackageName}/src/'.");
-                preSyncSummary.WriteFlat(Console, settings.Verbose, "[dim]  ");
+                preSyncSummary.WriteFlat(Console, runtimeOptions, "[dim]  ");
                 throw new FlowlineException(ExitCode.DirtyWorkingDirectory, $"Uncommitted changes in '{projectSln.Name}/{PackageName}/src/' — Commit or stash changes first, or re-run with --force.");
             }
         }
@@ -159,8 +159,8 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         Logger.LogInformation("Diff: {TotalFiles} files changed", summary.TotalFiles);
         summary.WriteTree(Console, devEnv.DisplayName, settings.Verbose);
         await summary.WriteChangesFileAsync(slnFolder, projectSln.Name, devEnv.DisplayName, cancellationToken);
-        await new DataverseContextGenerator(Console).GenerateAsync(
-            srcPath, projectSln.Name, RootFolder, settings.Verbose, cancellationToken);
+        await new DataverseContextGenerator(Console, runtimeOptions).GenerateAsync(
+            srcPath, projectSln.Name, RootFolder, cancellationToken);
 
         Console.Done($"Synced {tagVersion}. Run 'git commit' to save a checkpoint and 'git tag {tagVersion}' to tag it. ◝(ᵔᵕᵔ)◜");
 

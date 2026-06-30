@@ -7,7 +7,7 @@ using Spectre.Console;
 
 namespace Flowline.Services;
 
-public class DataverseContextGenerator(IAnsiConsole console)
+public class DataverseContextGenerator(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions)
 {
     static readonly Regex GuidPattern = new(
         @"\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?",
@@ -17,7 +17,6 @@ public class DataverseContextGenerator(IAnsiConsole console)
         string packageSrcPath,
         string solutionName,
         string repoRootPath,
-        bool verbose = false,
         CancellationToken ct = default)
     {
         var contextFilePath = Path.Combine(repoRootPath, "solutions", solutionName, "DATAVERSE_CONTEXT.md");
@@ -27,8 +26,8 @@ public class DataverseContextGenerator(IAnsiConsole console)
         Directory.CreateDirectory(Path.GetDirectoryName(contextFilePath)!);
         await File.WriteAllTextAsync(contextFilePath, markdown, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), ct);
 
-        if (verbose) console.WriteLine();
-        console.Verbose($"DATAVERSE_CONTEXT.md written to {Markup.Escape(contextFilePath)}", verbose);
+        if (runtimeOptions.IsVerbose) console.WriteLine();
+        console.Verbose($"DATAVERSE_CONTEXT.md written to {Markup.Escape(contextFilePath)}", runtimeOptions);
 
         await SelfHealAgentsMdAsync(repoRootPath, solutionName, ct);
     }

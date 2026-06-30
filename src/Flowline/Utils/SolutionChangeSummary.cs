@@ -211,7 +211,7 @@ public class SolutionChangeSummary
         await File.WriteAllTextAsync(outputPath, sb.ToString(), ct);
     }
 
-    public void WriteFlat(IAnsiConsole console, bool verbose, string? markupPrefix = null)
+    public void WriteFlat(IAnsiConsole console, FlowlineRuntimeOptions options, string? markupPrefix = null)
     {
         foreach (var group in Groups.OrderBy(g => g.IsEntity ? 0 : 1).ThenBy(g => g.Label))
         {
@@ -223,7 +223,7 @@ public class SolutionChangeSummary
                 else
                     console.Info(line);
                 foreach (var path in item.FilePaths)
-                    console.Verbose($"    {Markup.Escape(path)}", verbose);
+                    console.Verbose($"    {Markup.Escape(path)}", options);
             }
         }
     }
