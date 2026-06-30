@@ -15,7 +15,7 @@ public abstract record XrmContextAuth
     public sealed record BrowserOAuth(string? AppId = null) : XrmContextAuth;
 }
 
-public class XrmContextRunner(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions)
+public class XrmContextRunner(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, SubprocessCapture? capture = null)
 {
     public virtual async Task RunAsync(
         string exePath,
@@ -40,7 +40,7 @@ public class XrmContextRunner(IAnsiConsole console, FlowlineRuntimeOptions runti
 
         await console.Status().FlowlineSpinner().StartAsync(
             $"Generating early-bound types...",
-            ctx => cmd.WithToolExecutionLog(runtimeOptions, ctx, toolDisplayName: Path.GetFileName(exePath)).ExecuteAsync(cancellationToken).Task);
+            ctx => (capture?.Apply(cmd, ctx) ?? cmd).ExecuteAsync(cancellationToken).Task);
 
         console.Ok("Early-bound types generated");
     }

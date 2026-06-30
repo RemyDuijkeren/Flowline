@@ -82,7 +82,7 @@ try
 catch { } // Intentional: Serilog init failure must not block command launch (R16).
 services.AddLogging(b => b.ClearProviders().AddSerilog(serilogLogger));
 
-runtimeOptions.ArgsRedacted = CommandExtensions.RedactSensitiveArgs(string.Join(" ", args));
+runtimeOptions.ArgsRedacted = SubprocessCapture.RedactSensitiveArgs(string.Join(" ", args));
 
 // Configure and run the app
 var app = new CommandApp(new TypeRegistrar(services));

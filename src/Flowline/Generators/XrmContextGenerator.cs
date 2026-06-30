@@ -13,7 +13,7 @@ using Spectre.Console;
 
 namespace Flowline.Generators;
 
-public class XrmContextGenerator(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions)
+public class XrmContextGenerator(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, SubprocessCapture? capture = null)
     : IGenerator
 {
     static (string Command, string[]? PrefixArgs, string[]? SuffixArgs)? _cachedXrmContextCommand;
@@ -65,7 +65,7 @@ public class XrmContextGenerator(IAnsiConsole console, FlowlineRuntimeOptions ru
     {
         return console.Status().FlowlineSpinner().StartAsync(
             $"Generating early-bound types into [bold]{context.OutputLabel}[/]...",
-            ctx => command.WithToolExecutionLog(context.Verbose, ctx, toolDisplayName: "xrmcontext").ExecuteAsync(cancellationToken).Task);
+            ctx => (capture?.Apply(command, ctx) ?? command).ExecuteAsync(cancellationToken).Task);
     }
 
     internal static string BuildAppSettingsJson(string devUrl, string outputDirectory, string modelNamespace, string solutionName, string[] extraTables, string serviceContextName = "XrmContext")

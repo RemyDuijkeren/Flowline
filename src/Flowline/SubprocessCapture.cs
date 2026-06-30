@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using CliWrap;
 using Flowline.Core;
 using Microsoft.Extensions.Logging;
@@ -97,4 +98,11 @@ public sealed class SubprocessCapture
         var status = indexOf == -1 ? ctx.Status : ctx.Status[..indexOf];
         ctx.Status($"{status} ([italic]{execution}[/])");
     }
+
+    static readonly Regex s_sensitiveArgPattern =
+        new(@"(?<dashFlag>--client-secret)\s+(?:""[^""]*""|\S+)|(?<colonFlag>/mfaClientSecret:)(?:""[^""]*""|\S+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    public static string RedactSensitiveArgs(string cmdStr) =>
+        s_sensitiveArgPattern.Replace(cmdStr, m =>
+            m.Groups["dashFlag"].Success ? $"{m.Groups["dashFlag"].Value} ***" : $"{m.Groups["colonFlag"].Value}***");
 }

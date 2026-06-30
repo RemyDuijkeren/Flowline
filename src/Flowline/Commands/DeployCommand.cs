@@ -219,15 +219,15 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(ct);
         var result = await Console.Status().FlowlineSpinner().StartAsync(
             $"Packing [bold]{sln.Name}[/]...",
-            _ => Cli.Wrap(cmdName)
-                    .WithArguments(args => args
-                        .AddIfNotNull(prefixArgs)
-                        .Add("solution").Add("pack")
-                        .Add("--folder").Add(Path.Combine(PackageFolder(slnFolder), "src"))
-                        .Add("--zipFile").Add(packagePath)
-                        .Add("--packageType").Add(packageType))
-                    .WithValidation(CommandResultValidation.None)
-                    .WithToolExecutionLog(RuntimeOptions)
+            _ => _capture.Apply(
+                    Cli.Wrap(cmdName)
+                       .WithArguments(args => args
+                           .AddIfNotNull(prefixArgs)
+                           .Add("solution").Add("pack")
+                           .Add("--folder").Add(Path.Combine(PackageFolder(slnFolder), "src"))
+                           .Add("--zipFile").Add(packagePath)
+                           .Add("--packageType").Add(packageType))
+                       .WithValidation(CommandResultValidation.None))
                     .ExecuteAsync(ct)
                     .Task);
 
@@ -242,15 +242,15 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(ct);
         var result = await Console.Status().FlowlineSpinner().StartAsync(
             $"Deploying [bold]{slnName}[/] to [bold]{targetEnv.DisplayName}[/]...",
-            _ => Cli.Wrap(cmdName)
-                    .WithArguments(args => args
-                        .AddIfNotNull(prefixArgs)
-                        .Add("solution").Add("import")
-                        .Add("--path").Add(packagePath)
-                        .Add("--environment").Add(targetEnv.EnvironmentUrl!)
-                        .Add("--async"))
-                    .WithValidation(CommandResultValidation.None)
-                    .WithToolExecutionLog(RuntimeOptions)
+            _ => _capture.Apply(
+                    Cli.Wrap(cmdName)
+                       .WithArguments(args => args
+                           .AddIfNotNull(prefixArgs)
+                           .Add("solution").Add("import")
+                           .Add("--path").Add(packagePath)
+                           .Add("--environment").Add(targetEnv.EnvironmentUrl!)
+                           .Add("--async"))
+                       .WithValidation(CommandResultValidation.None))
                     .ExecuteAsync(ct)
                     .Task);
 

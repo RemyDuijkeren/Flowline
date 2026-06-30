@@ -39,7 +39,7 @@ public static class GitUtils
         }
     }
 
-    public static async Task<string?> GetCurrentBranchAsync(SubprocessCapture capture, CancellationToken cancellationToken = default, string? workingDirectory = null)
+    public static async Task<string?> GetCurrentBranchAsync(SubprocessCapture? capture = null, CancellationToken cancellationToken = default, string? workingDirectory = null)
     {
         try
         {
@@ -47,9 +47,9 @@ public static class GitUtils
             if (workingDirectory != null)
                 cmd = cmd.WithWorkingDirectory(workingDirectory);
 
-            var result = await capture.Apply(
-                              cmd.WithArguments("rev-parse --abbrev-ref HEAD")
-                                 .WithValidation(CommandResultValidation.None))
+            var finalCmd = cmd.WithArguments("rev-parse --abbrev-ref HEAD")
+                              .WithValidation(CommandResultValidation.None);
+            var result = await (capture?.Apply(finalCmd) ?? finalCmd)
                               .ExecuteBufferedAsync(cancellationToken);
 
             if (result.ExitCode != 0) return null;
@@ -147,7 +147,7 @@ public static class GitUtils
         return string.IsNullOrWhiteSpace(result.StandardOutput);
     }
 
-    public static async Task<IReadOnlyList<string>> GetUncommittedChangesInPathAsync(string path, SubprocessCapture capture, string? workingDirectory = null, CancellationToken cancellationToken = default)
+    public static async Task<IReadOnlyList<string>> GetUncommittedChangesInPathAsync(string path, string? workingDirectory = null, SubprocessCapture? capture = null, CancellationToken cancellationToken = default)
     {
         var cmd = Cli.Wrap("git");
         if (workingDirectory != null)
@@ -159,8 +159,8 @@ public static class GitUtils
             ? Path.GetRelativePath(workingDirectory, path)
             : path;
 
-        var result = await capture.Apply(
-                           cmd.WithArguments(args => args.Add("status").Add("--porcelain").Add("--").Add(pathArg)))
+        var finalCmd = cmd.WithArguments(args => args.Add("status").Add("--porcelain").Add("--").Add(pathArg));
+        var result = await (capture?.Apply(finalCmd) ?? finalCmd)
                            .ExecuteBufferedAsync(cancellationToken);
 
         return result.StandardOutput

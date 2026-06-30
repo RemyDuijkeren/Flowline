@@ -10,7 +10,7 @@ using System.Runtime.CompilerServices;
 
 namespace Flowline.Generators;
 
-public class PacGenerator(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions) : IGenerator
+public class PacGenerator(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, SubprocessCapture? capture = null) : IGenerator
 {
     public GeneratorType Type => GeneratorType.Pac;
 
@@ -60,7 +60,7 @@ public class PacGenerator(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
         var result = await console.Status().FlowlineSpinner().StartAsync(
             $"Generating early-bound types into [bold]{context.OutputLabel}[/]...",
-            ctx => pacCommand.WithToolExecutionLog(context.Verbose, ctx, ShortenPacLine).ExecuteAsync(cancellationToken).Task);
+            ctx => (capture?.Apply(pacCommand, ctx, ShortenPacLine) ?? pacCommand).ExecuteAsync(cancellationToken).Task);
 
         if (!result.IsSuccess)
             throw new FlowlineException(ExitCode.BuildFailed, "pac modelbuilder build failed — check the output above.");

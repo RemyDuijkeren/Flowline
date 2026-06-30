@@ -33,11 +33,14 @@ public class SolutionChangeSummary
         Groups = groups;
     }
 
-    public static async Task<SolutionChangeSummary> ComputeAsync(string srcFolder, string workingDirectory, SubprocessCapture capture, CancellationToken ct = default)
+    public static async Task<SolutionChangeSummary> ComputeAsync(string srcFolder, string workingDirectory, SubprocessCapture? capture = null, CancellationToken ct = default)
     {
         var srcRelPath = Path.GetRelativePath(workingDirectory, srcFolder).Replace('\\', '/');
 
-        var statusResult = await capture.Apply(
+        static Task<CliWrap.Buffered.BufferedCommandResult> Run(Command cmd, SubprocessCapture? cap, CancellationToken ct) =>
+            (cap?.Apply(cmd) ?? cmd).ExecuteBufferedAsync(ct);
+
+        var statusResult = await Run(
             Cli.Wrap("git")
             .WithWorkingDirectory(workingDirectory)
             .WithArguments(args => args
@@ -45,8 +48,8 @@ public class SolutionChangeSummary
                 .Add("-c").Add("core.safecrlf=false")
                 .Add("status").Add("--porcelain").Add("-uall")
                 .Add("--").Add(srcRelPath))
-            .WithValidation(CommandResultValidation.None))
-            .ExecuteBufferedAsync(ct);
+            .WithValidation(CommandResultValidation.None),
+            capture, ct);
 
         var changedFiles = statusResult.StandardOutput
             .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
@@ -58,7 +61,7 @@ public class SolutionChangeSummary
         if (changedFiles.Count == 0)
             return new SolutionChangeSummary(0, 0, 0, []);
 
-        var numstatResult = await capture.Apply(
+        var numstatResult = await Run(
             Cli.Wrap("git")
             .WithWorkingDirectory(workingDirectory)
             .WithArguments(args => args
@@ -66,8 +69,8 @@ public class SolutionChangeSummary
                 .Add("-c").Add("core.safecrlf=false")
                 .Add("diff").Add("HEAD").Add("--numstat")
                 .Add("--").Add(srcRelPath))
-            .WithValidation(CommandResultValidation.None))
-            .ExecuteBufferedAsync(ct);
+            .WithValidation(CommandResultValidation.None),
+            capture, ct);
 
         var linesByPath = numstatResult.StandardOutput
             .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)

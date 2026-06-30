@@ -1,5 +1,5 @@
+using Flowline;
 using Flowline.Commands;
-using Flowline.Utils;
 using FluentAssertions;
 
 namespace Flowline.Tests;
@@ -36,7 +36,7 @@ public class FlowlineCommandTests
     [Fact]
     public void RedactSensitiveArgs_ClientSecret_ReplacesWithAsterisks()
     {
-        CommandExtensions.RedactSensitiveArgs("--client-secret abc123")
+        SubprocessCapture.RedactSensitiveArgs("--client-secret abc123")
             .Should().Contain("***");
     }
 

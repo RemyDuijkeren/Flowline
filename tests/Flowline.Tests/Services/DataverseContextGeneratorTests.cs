@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Flowline.Core;
 using Flowline.Services;
 using Spectre.Console.Testing;
 
@@ -548,7 +549,7 @@ public class DataverseContextGeneratorTests
 
         try
         {
-            var generator = new DataverseContextGenerator(new TestConsole());
+            var generator = new DataverseContextGenerator(new TestConsole(), new FlowlineRuntimeOptions());
             await generator.GenerateAsync(packageSrc, "MySolution", root);
 
             var expectedPath = Path.Combine(root, "solutions", "MySolution", "DATAVERSE_CONTEXT.md");
@@ -576,7 +577,7 @@ public class DataverseContextGeneratorTests
         var console = new TestConsole();
         try
         {
-            var generator = new DataverseContextGenerator(console);
+            var generator = new DataverseContextGenerator(console, new FlowlineRuntimeOptions());
             await generator.SelfHealAgentsMdAsync(root, "MySolution", CancellationToken.None);
 
             File.Exists(Path.Combine(root, "AGENTS.md")).Should().BeFalse();
@@ -602,7 +603,7 @@ public class DataverseContextGeneratorTests
         var lastWrite = File.GetLastWriteTimeUtc(agentsPath);
         try
         {
-            var generator = new DataverseContextGenerator(new TestConsole());
+            var generator = new DataverseContextGenerator(new TestConsole(), new FlowlineRuntimeOptions());
             await generator.SelfHealAgentsMdAsync(root, "MySolution", CancellationToken.None);
 
             File.GetLastWriteTimeUtc(agentsPath).Should().Be(lastWrite, "file must not be written when no changes needed");
@@ -619,7 +620,7 @@ public class DataverseContextGeneratorTests
         await File.WriteAllTextAsync(agentsPath, "# Agent Instructions\n");
         try
         {
-            var generator = new DataverseContextGenerator(new TestConsole());
+            var generator = new DataverseContextGenerator(new TestConsole(), new FlowlineRuntimeOptions());
             await generator.SelfHealAgentsMdAsync(root, "MySolution", CancellationToken.None);
 
             var result = await File.ReadAllTextAsync(agentsPath);
@@ -640,7 +641,7 @@ public class DataverseContextGeneratorTests
             "# Agent Instructions\n## Dataverse schema context\n- [SolutionA](solutions/SolutionA/DATAVERSE_CONTEXT.md)\n\n@solutions/SolutionA/DATAVERSE_CONTEXT.md\n");
         try
         {
-            var generator = new DataverseContextGenerator(new TestConsole());
+            var generator = new DataverseContextGenerator(new TestConsole(), new FlowlineRuntimeOptions());
             await generator.SelfHealAgentsMdAsync(root, "SolutionB", CancellationToken.None);
 
             var result = await File.ReadAllTextAsync(agentsPath);
@@ -665,7 +666,7 @@ public class DataverseContextGeneratorTests
             "# Agent Instructions\n## Dataverse schema context\n- [MySolution](solutions/MySolution/DATAVERSE_CONTEXT.md)\n");
         try
         {
-            var generator = new DataverseContextGenerator(new TestConsole());
+            var generator = new DataverseContextGenerator(new TestConsole(), new FlowlineRuntimeOptions());
             await generator.SelfHealAgentsMdAsync(root, "MySolution", CancellationToken.None);
 
             var result = await File.ReadAllTextAsync(agentsPath);
@@ -683,7 +684,7 @@ public class DataverseContextGeneratorTests
         await File.WriteAllTextAsync(agentsPath, "# Agent Instructions\n");
         try
         {
-            var generator = new DataverseContextGenerator(new TestConsole());
+            var generator = new DataverseContextGenerator(new TestConsole(), new FlowlineRuntimeOptions());
             await generator.SelfHealAgentsMdAsync(root, "MySolution", CancellationToken.None);
             await generator.SelfHealAgentsMdAsync(root, "MySolution", CancellationToken.None);
 

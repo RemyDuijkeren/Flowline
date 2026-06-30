@@ -84,16 +84,16 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
             var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
             await Console.Status().FlowlineSpinner().StartAsync(
                 $"Creating [bold]{targetDisplayName}[/]...",
-                _ => Cli.Wrap(cmdName)
-                     .WithArguments(args => args
-                                            .AddIfNotNull(prefixArgs)
-                                            .Add("admin")
-                                            .Add("create")
-                                            .Add("--name").Add($"{targetDisplayName} (cloning)")
-                                            .Add("--domain").Add($"{urlParts.Organization}-{suffix.ToLower()}")
-                                            .Add("--region").Add(urlParts.Region)
-                                            .Add("--async"))
-                     .WithToolExecutionLog(settings.Verbose)
+                _ => _capture.Apply(
+                     Cli.Wrap(cmdName)
+                        .WithArguments(args => args
+                                               .AddIfNotNull(prefixArgs)
+                                               .Add("admin")
+                                               .Add("create")
+                                               .Add("--name").Add($"{targetDisplayName} (cloning)")
+                                               .Add("--domain").Add($"{urlParts.Organization}-{suffix.ToLower()}")
+                                               .Add("--region").Add(urlParts.Region)
+                                               .Add("--async")))
                      .ExecuteAsync(cancellationToken)
                      .Task);
 
@@ -152,17 +152,17 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
 
         await Console.Status().FlowlineSpinner().StartAsync(
             $"Copying prod to [bold]{targetDisplayName}[/]...",
-            _ => Cli.Wrap(cmdNameCopy)
-                 .WithArguments(args => args
-                                        .AddIfNotNull(prefixArgsCopy)
-                                        .Add("admin")
-                                        .Add("copy")
-                                        .Add("--name").Add(targetDisplayName)
-                                        .Add("--source-env").Add(prodEnv.EnvironmentUrl!)
-                                        .Add("--target-env").Add(targetEnv.EnvironmentUrl!)
-                                        .Add("--type").Add(copyType)
-                                        .Add("--async"))
-                 .WithToolExecutionLog(settings.Verbose)
+            _ => _capture.Apply(
+                 Cli.Wrap(cmdNameCopy)
+                    .WithArguments(args => args
+                                           .AddIfNotNull(prefixArgsCopy)
+                                           .Add("admin")
+                                           .Add("copy")
+                                           .Add("--name").Add(targetDisplayName)
+                                           .Add("--source-env").Add(prodEnv.EnvironmentUrl!)
+                                           .Add("--target-env").Add(targetEnv.EnvironmentUrl!)
+                                           .Add("--type").Add(copyType)
+                                           .Add("--async")))
                  .ExecuteAsync(cancellationToken)
                  .Task);
 

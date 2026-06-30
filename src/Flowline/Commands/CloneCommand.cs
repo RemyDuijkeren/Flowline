@@ -278,18 +278,19 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
         CommandResult result = await Console.Status().FlowlineSpinner().StartAsync(
             $"Cloning solution [bold]{projectSln.Name}[/] from Dataverse...",
-            ctx => Cli.Wrap(cmdName)
-                      .WithArguments(args =>
-                          args.AddIfNotNull(prefixArgs)
-                              .Add("solution")
-                              .Add("clone")
-                              .Add("--name").Add(projectSln.Name)
-                              .Add("--environment").Add(environmentUrl)
-                              .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
-                              .Add("--outputDirectory").Add(slnFolder)
-                              .Add("--async"))
-                      .WithValidation(CommandResultValidation.None)
-                      .WithToolExecutionLog(settings.Verbose, ctx)
+            ctx => _capture.Apply(
+                      Cli.Wrap(cmdName)
+                         .WithArguments(args =>
+                             args.AddIfNotNull(prefixArgs)
+                                 .Add("solution")
+                                 .Add("clone")
+                                 .Add("--name").Add(projectSln.Name)
+                                 .Add("--environment").Add(environmentUrl)
+                                 .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
+                                 .Add("--outputDirectory").Add(slnFolder)
+                                 .Add("--async"))
+                         .WithValidation(CommandResultValidation.None),
+                      ctx)
                       .ExecuteAsync(cancellationToken)
                       .Task);
 
@@ -315,14 +316,14 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             return;
         }
 
-        var result = await Cli.Wrap("dotnet")
-                              .WithArguments(args => args
-                                                     .Add("new")
-                                                     .Add("sln")
-                                                     .Add("--name").Add(projectSln.Name)
-                                                     .Add("--format").Add("sln"))
-                              .WithWorkingDirectory(slnFolder)
-                              .WithToolExecutionLog(settings.Verbose)
+        var result = await _capture.Apply(
+                              Cli.Wrap("dotnet")
+                                 .WithArguments(args => args
+                                                        .Add("new")
+                                                        .Add("sln")
+                                                        .Add("--name").Add(projectSln.Name)
+                                                        .Add("--format").Add("sln"))
+                                 .WithWorkingDirectory(slnFolder))
                               .ExecuteAsync(cancellationToken)
                               .Task.FlowlineSpinner();
 
@@ -340,13 +341,13 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             File.Move(cdsprojPath, csprojPath);
         }
 
-        await Cli.Wrap("dotnet")
-                 .WithArguments(args => args
-                                        .Add("sln")
-                                        .Add("add")
-                                        .Add(csprojPath))
-                 .WithWorkingDirectory(slnFolder)
-                 .WithToolExecutionLog(settings.Verbose)
+        await _capture.Apply(
+                 Cli.Wrap("dotnet")
+                    .WithArguments(args => args
+                                           .Add("sln")
+                                           .Add("add")
+                                           .Add(csprojPath))
+                    .WithWorkingDirectory(slnFolder))
                  .ExecuteAsync(cancellationToken)
                  .Task.FlowlineSpinner();
 
@@ -387,45 +388,45 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
                 Directory.CreateDirectory(pluginsFolder);
 
                 var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-                await Cli.Wrap(cmdName)
-                         .WithArguments(args => args
-                                                .AddIfNotNull(prefixArgs)
-                                                .Add("plugin")
-                                                .Add("init")) // --skip-signing
-                         .WithWorkingDirectory(pluginsFolder)
-                         .WithToolExecutionLog(settings.Verbose)
+                await _capture.Apply(
+                         Cli.Wrap(cmdName)
+                            .WithArguments(args => args
+                                                   .AddIfNotNull(prefixArgs)
+                                                   .Add("plugin")
+                                                   .Add("init")) // --skip-signing
+                            .WithWorkingDirectory(pluginsFolder))
                          .ExecuteAsync(cancellationToken);
 
                 // Add Flowline.Attributes NuGet package
-                await Cli.Wrap("dotnet")
-                         .WithArguments(args => args
-                                                .Add("add")
-                                                .Add(pluginsCsproj)
-                                                .Add("package")
-                                                .Add("Flowline.Attributes"))
-                         .WithWorkingDirectory(pluginsFolder)
-                         .WithToolExecutionLog(settings.Verbose)
+                await _capture.Apply(
+                         Cli.Wrap("dotnet")
+                            .WithArguments(args => args
+                                                   .Add("add")
+                                                   .Add(pluginsCsproj)
+                                                   .Add("package")
+                                                   .Add("Flowline.Attributes"))
+                            .WithWorkingDirectory(pluginsFolder))
                          .ExecuteAsync(cancellationToken);
 
                 // Add MinVer NuGet package
-                await Cli.Wrap("dotnet")
-                         .WithArguments(args => args
-                                                .Add("add")
-                                                .Add(pluginsCsproj)
-                                                .Add("package")
-                                                .Add("MinVer"))
-                         .WithWorkingDirectory(pluginsFolder)
-                         .WithToolExecutionLog(settings.Verbose)
+                await _capture.Apply(
+                         Cli.Wrap("dotnet")
+                            .WithArguments(args => args
+                                                   .Add("add")
+                                                   .Add(pluginsCsproj)
+                                                   .Add("package")
+                                                   .Add("MinVer"))
+                            .WithWorkingDirectory(pluginsFolder))
                          .ExecuteAsync(cancellationToken);
 
                 // Add Plugins.csproj to the solution
-                await Cli.Wrap("dotnet")
-                         .WithArguments(args => args
-                                                .Add("sln")
-                                                .Add("add")
-                                                .Add(pluginsCsproj))
-                         .WithWorkingDirectory(slnFolder)
-                         .WithToolExecutionLog(settings.Verbose)
+                await _capture.Apply(
+                         Cli.Wrap("dotnet")
+                            .WithArguments(args => args
+                                                   .Add("sln")
+                                                   .Add("add")
+                                                   .Add(pluginsCsproj))
+                            .WithWorkingDirectory(slnFolder))
                          .ExecuteAsync(cancellationToken);
             });
 
@@ -462,13 +463,13 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
                 Console.Verbose($"Created {ConsolePath.FormatRelativePath(webresourcesFolder)}", RuntimeOptions);
 
-                await Cli.Wrap("dotnet")
-                         .WithArguments(args => args
-                                                .Add("sln")
-                                                .Add(slnFilePath)
-                                                .Add("add")
-                                                .Add(webresourcesCsproj))
-                         .WithToolExecutionLog(settings.Verbose)
+                await _capture.Apply(
+                         Cli.Wrap("dotnet")
+                            .WithArguments(args => args
+                                                   .Add("sln")
+                                                   .Add(slnFilePath)
+                                                   .Add("add")
+                                                   .Add(webresourcesCsproj)))
                          .ExecuteAsync(cancellationToken);
 
                 Console.Verbose($"Added {WebResourcesName} project to solution", RuntimeOptions);
