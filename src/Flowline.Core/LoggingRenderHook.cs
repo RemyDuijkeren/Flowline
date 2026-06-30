@@ -14,9 +14,9 @@ public sealed class LoggingRenderHook(ILogger<LoggingRenderHook> logger) : IRend
 
             try
             {
-                if (renderable is Markup markup)
+                if (renderable is Markup or Tree or Panel or Table)
                 {
-                    var text = string.Concat(((IRenderable)markup).Render(options, int.MaxValue)
+                    var text = string.Concat(renderable.Render(options, int.MaxValue)
                         .Select(s => s.Text)).Trim();
 
                     var level = DetectLevel(text);

@@ -49,6 +49,20 @@ public class LoggingRenderHookTests
     }
 
     [Fact]
+    public void Write_Tree_LogsAtDebug()
+    {
+        var tree = new Tree("Dataverse snapshot");
+        tree.AddNode("Publisher prefix: av");
+
+        _console.Write(tree);
+
+        _logger.Entries.Should().ContainSingle(e =>
+            e.Level == LogLevel.Debug &&
+            e.Message.Contains("Dataverse snapshot") &&
+            e.Message.Contains("Publisher prefix: av"));
+    }
+
+    [Fact]
     public void Write_NonMarkupRenderable_DoesNotLog()
     {
         _console.Write(new Text("spinner noise"));
