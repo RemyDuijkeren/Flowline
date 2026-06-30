@@ -14,7 +14,7 @@ public sealed class LoggingRenderHook(ILogger<LoggingRenderHook> logger) : IRend
 
             try
             {
-                if (renderable is Markup or Tree or Panel or Table)
+                if (renderable is Markup or VerboseMarkup or Tree or Panel or Table)
                 {
                     var text = string.Concat(renderable.Render(options, int.MaxValue)
                         .Select(s => s.Text)).Trim();

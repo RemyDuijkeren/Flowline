@@ -49,6 +49,26 @@ public class LoggingRenderHookTests
     }
 
     [Fact]
+    public void Write_VerboseMarkup_LogsAtDebug()
+    {
+        _console.Write(new VerboseMarkup("checking version"));
+
+        _logger.Entries.Should().ContainSingle(e =>
+            e.Level == LogLevel.Debug &&
+            e.Message.Contains("checking version"));
+    }
+
+    [Fact]
+    public void Write_VerboseMarkup_WithMarkupChars_EscapesCorrectly()
+    {
+        _console.Write(new VerboseMarkup("[bold]"));
+
+        _logger.Entries.Should().ContainSingle(e =>
+            e.Level == LogLevel.Debug &&
+            e.Message.Contains("[bold]"));
+    }
+
+    [Fact]
     public void Write_Tree_LogsAtDebug()
     {
         var tree = new Tree("Dataverse snapshot");
