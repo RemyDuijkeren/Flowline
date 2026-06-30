@@ -62,6 +62,7 @@ services.AddSingleton<IGenerator, XrmContextGenerator>();
 services.AddSingleton<PluginService>();
 services.AddSingleton<WebResourceService>();
 services.AddSingleton<OrphanCleanupService>();
+services.AddSingleton<SubprocessCapture>();
 
 Serilog.ILogger? serilogLogger = null;
 try
@@ -194,9 +195,6 @@ void FlushBufferedVerboseOutput(Exception ex, FlowlineRuntimeOptions flowlineRun
         AnsiConsole.MarkupLine($"[dim]{key}: {ex.Data[key]}[/]");
         logger?.Debug("Context: {Key} = {Value}", key, ex.Data[key]);
     }
-
-    foreach (var line in flowlineRuntimeOptions.VerboseOutput.Lines)
-        logger?.Debug("Context: {Line}", line);
 
     if (!flowlineRuntimeOptions.IsVerbose)
         foreach (var line in flowlineRuntimeOptions.VerboseOutput.Lines)
