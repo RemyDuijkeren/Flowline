@@ -27,7 +27,7 @@ public class DataverseContextGenerator(IAnsiConsole console, FlowlineRuntimeOpti
         await File.WriteAllTextAsync(contextFilePath, markdown, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), ct);
 
         if (runtimeOptions.IsVerbose) console.WriteLine();
-        console.Verbose($"DATAVERSE_CONTEXT.md written to {Markup.Escape(contextFilePath)}", runtimeOptions);
+        console.Verbose($"DATAVERSE_CONTEXT.md written to {Markup.Escape(contextFilePath)}");
 
         await SelfHealAgentsMdAsync(repoRootPath, solutionName, ct);
     }

@@ -33,7 +33,7 @@ public class XrmContextRunner(IAnsiConsole console, FlowlineRuntimeOptions runti
         // XrmContext does not create the output directory itself — it fails if it doesn't exist
         Directory.CreateDirectory(tempOutputPath);
 
-        console.Verbose($"XrmContext exe: {exePath}", runtimeOptions);
+        console.Verbose($"XrmContext exe: {exePath}");
 
         var cmd = Cli.Wrap(exePath)
             .WithArguments(args);

@@ -97,16 +97,15 @@ public class SubprocessCaptureTests
         _logger.Entries.Should().BeEmpty(); // LRH (not direct ILogger) captures terminal lines
     }
 
-    // Test 6: stderr → always printed to terminal in red; LRH captures in production; VerboseOutputBuffer not written
+    // Test 6: stderr → always printed to terminal in red; LRH captures in production
     [Fact]
-    public async Task Apply_Stderr_PrintsRed_NotBuffered()
+    public async Task Apply_Stderr_PrintsRed()
     {
         var cmd = CreateCapture().Apply(BaseCmd());
 
         await PumpStderrAsync(cmd, "error on stderr");
 
         _console.Output.Should().Contain("error on stderr");
-        _options.VerboseOutput.Lines.Should().NotContain("error on stderr");
         _logger.Entries.Should().BeEmpty(); // LRH (not direct ILogger) captures terminal lines
     }
 

@@ -91,7 +91,7 @@ public class WebResourceService(IAnsiConsole console, FlowlineRuntimeOptions opt
             var localPath = Path.Combine(webresourceRoot, relativePath.Replace("/", Path.DirectorySeparatorChar.ToString()));
             Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
             await File.WriteAllBytesAsync(localPath, Convert.FromBase64String(resource.Content), cancellationToken).ConfigureAwait(false);
-            console.Verbose(name, opt);
+            console.Verbose(name);
             count++;
         }
 
@@ -150,7 +150,7 @@ public class WebResourceService(IAnsiConsole console, FlowlineRuntimeOptions opt
             return;
 
         Action<string> line = mode == PlanReportMode.Verbose
-            ? msg => console.Verbose(msg, opt)
+            ? msg => console.Verbose(msg)
             : console.Info;
 
         var publishCount = publishAfterSync ? plan.PublishCount : 0;

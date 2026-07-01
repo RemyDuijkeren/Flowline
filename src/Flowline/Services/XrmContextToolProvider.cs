@@ -49,7 +49,7 @@ public class XrmContextToolProvider
             var exePath = FindExeInVersionedDir(_nugetGlobalCache);
             if (exePath != null)
             {
-                _console.Verbose($"XrmContext: {exePath}", _runtimeOptions);
+                _console.Verbose($"XrmContext: {exePath}");
                 return exePath;
             }
         }
@@ -59,7 +59,7 @@ public class XrmContextToolProvider
             var exePath = FindExeInVersionedDir(_flowlineCache);
             if (exePath != null)
             {
-                _console.Verbose($"XrmContext: {exePath}", _runtimeOptions);
+                _console.Verbose($"XrmContext: {exePath}");
                 return exePath;
             }
         }
@@ -164,7 +164,7 @@ public class XrmContextToolProvider
         exePath = exePath.Replace(tempExtractDir, extractDir, StringComparison.OrdinalIgnoreCase);
 
         _console.Ok("XrmContext ready");
-        _console.Verbose($"Extracted to: {extractDir}", _runtimeOptions);
+        _console.Verbose($"Extracted to: {extractDir}");
         return exePath;
     }
 

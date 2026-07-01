@@ -31,7 +31,7 @@ public class WebResourceExecutor(IAnsiConsole console, FlowlineRuntimeOptions op
             publishIds.AddRange(await console.Progress().StartAsync(ctx =>
                 ExecuteCreatesAsync(service, plan.Creates, failures,
                     ctx.AddTask("Creating web resources", maxValue: plan.Creates.Count), cancellationToken)).ConfigureAwait(false));
-            foreach (var a in plan.Creates) console.Verbose($"Web resource '{a.Name}' created", options);
+            foreach (var a in plan.Creates) console.Verbose($"Web resource '{a.Name}' created");
             console.Ok($"{plan.Creates.Count} web resource(s) created");
         }
 
@@ -48,7 +48,7 @@ public class WebResourceExecutor(IAnsiConsole console, FlowlineRuntimeOptions op
                     }
                     catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                 }, ctx.AddTask("Updating web resources", maxValue: plan.Updates.Count), cancellationToken)).ConfigureAwait(false);
-            foreach (var a in plan.Updates) console.Verbose($"Web resource '{a.Name}' updated", options);
+            foreach (var a in plan.Updates) console.Verbose($"Web resource '{a.Name}' updated");
             console.Ok($"{plan.Updates.Count} web resource(s) updated");
         }
 
@@ -61,7 +61,7 @@ public class WebResourceExecutor(IAnsiConsole console, FlowlineRuntimeOptions op
                     try { await AddToSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken).ConfigureAwait(false); }
                     catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                 }, ctx.AddTask("Adding web resources to solution", maxValue: plan.AddsToSolution.Count), cancellationToken)).ConfigureAwait(false);
-            foreach (var a in plan.AddsToSolution) console.Verbose($"Web resource '{a.Name}' added to solution", options);
+            foreach (var a in plan.AddsToSolution) console.Verbose($"Web resource '{a.Name}' added to solution");
             console.Ok($"{plan.AddsToSolution.Count} web resource(s) added to solution");
         }
 
@@ -76,7 +76,7 @@ public class WebResourceExecutor(IAnsiConsole console, FlowlineRuntimeOptions op
                         try { await service.DeleteAsync("webresource", action.Id!.Value, cancellationToken).ConfigureAwait(false); }
                         catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                     }, ctx.AddTask("Deleting web resources", maxValue: plan.Deletes.Count), cancellationToken)).ConfigureAwait(false);
-                foreach (var a in plan.Deletes) console.Verbose($"Web resource '{a.Name}' deleted", options);
+                foreach (var a in plan.Deletes) console.Verbose($"Web resource '{a.Name}' deleted");
                 console.Ok($"{plan.Deletes.Count} web resource(s) deleted");
             }
 
@@ -89,7 +89,7 @@ public class WebResourceExecutor(IAnsiConsole console, FlowlineRuntimeOptions op
                         try { await RemoveFromSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken).ConfigureAwait(false); }
                         catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                     }, ctx.AddTask("Removing web resources from solution", maxValue: plan.RemovesFromSolution.Count), cancellationToken)).ConfigureAwait(false);
-                foreach (var a in plan.RemovesFromSolution) console.Verbose($"Web resource '{a.Name}' removed from solution", options);
+                foreach (var a in plan.RemovesFromSolution) console.Verbose($"Web resource '{a.Name}' removed from solution");
                 console.Ok($"{plan.RemovesFromSolution.Count} web resource(s) removed from solution");
             }
         }

@@ -18,11 +18,7 @@ public static class FlowlineConsoleExtensions
 
     public static void Skip(this IAnsiConsole console, string message) => console.MarkupLine($"[dim]{SkipPrefix}{message}[/]");
 
-    public static void Verbose(this IAnsiConsole console, string message, FlowlineRuntimeOptions options)
-    {
-        console.Write(new VerboseMarkup(message));
-        options.VerboseOutput.Append(message);
-    }
+    public static void Verbose(this IAnsiConsole console, string message) => console.Write(new VerboseMarkup(message));
 
     public static void Warning(this IAnsiConsole console, string message) => console.MarkupLine($"[yellow]{WarningPrefix}[/]{message}");
 

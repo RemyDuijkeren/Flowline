@@ -12,20 +12,9 @@ public class FlowlineConsoleExtensionsTests
         var console = new TestConsole();
         var options = new FlowlineRuntimeOptions();
 
-        console.Verbose("test message", options);
+        console.Verbose("test message");
 
         console.Output.Should().Contain("test message");
-    }
-
-    [Fact]
-    public void Verbose_AppendsMessageToVerboseOutputBuffer()
-    {
-        var console = new TestConsole();
-        var options = new FlowlineRuntimeOptions();
-
-        console.Verbose("buffered message", options);
-
-        options.VerboseOutput.Lines.Should().Contain("buffered message");
     }
 
     [Fact]
@@ -36,9 +25,8 @@ public class FlowlineConsoleExtensionsTests
         var console = new TestConsole();
         var options = new FlowlineRuntimeOptions { IsVerbose = false };
 
-        console.Verbose("always written", options);
+        console.Verbose("always written");
 
         console.Output.Should().Contain("always written");
-        options.VerboseOutput.Lines.Should().Contain("always written");
     }
 }

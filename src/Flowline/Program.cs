@@ -96,13 +96,16 @@ app.Configure(config =>
 #endif
     config.SetExceptionHandler((ex, _) =>
     {
+        var logFilePath = FlowlineStoragePaths.GetLogsPath(runTime, args.FirstOrDefault());
+        var logLink = $"[dim][link={new Uri(logFilePath).AbsoluteUri}]Log: {Markup.Escape(logFilePath)}[/][/]";
+
         switch (ex)
         {
             case FlowlineException fe:
                 serilogLogger?.Error(ex, "Command failed");
                 AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(fe.Message)}");
-                FlushBufferedVerboseOutput(fe, runtimeOptions, serilogLogger);
-                AnsiConsole.MarkupLine($"[dim]Log: {FlowlineStoragePaths.GetLogsPath(runTime)}[/]");
+                WriteExceptionContext(fe, serilogLogger);
+                AnsiConsole.MarkupLine(logLink);
                 return (int)fe.ExitCode;
             case OperationCanceledException:
                 serilogLogger?.Information("Command cancelled by user");
@@ -110,8 +113,8 @@ app.Configure(config =>
             default:
                 serilogLogger?.Error(ex, "Unhandled exception");
                 AnsiConsole.WriteException(ex, ExceptionFormats.ShortenPaths);
-                FlushBufferedVerboseOutput(ex, runtimeOptions, serilogLogger);
-                AnsiConsole.MarkupLine($"[dim]Log: {FlowlineStoragePaths.GetLogsPath(runTime)}[/]");
+                WriteExceptionContext(ex, serilogLogger);
+                AnsiConsole.MarkupLine(logLink);
                 return 1;
         }
     });
@@ -173,7 +176,7 @@ Log.CloseAndFlush();
 hookLoggerFactory.Dispose();
 return exitCode;
 
-void FlushBufferedVerboseOutput(Exception ex, FlowlineRuntimeOptions flowlineRuntimeOptions, ILogger? logger)
+void WriteExceptionContext(Exception ex, ILogger? logger)
 {
     foreach (var key in ex.Data.Keys)
     {
@@ -181,10 +184,6 @@ void FlushBufferedVerboseOutput(Exception ex, FlowlineRuntimeOptions flowlineRun
         logger?.Debug("Context: {Key} = {Value}", key, ex.Data[key]);
     }
 
-    if (!flowlineRuntimeOptions.IsVerbose)
-        foreach (var line in flowlineRuntimeOptions.VerboseOutput.Lines)
-            AnsiConsole.MarkupLine($"[dim]{Markup.Escape(line)}[/]");
-
     if (ex.HelpLink is not null)
-        AnsiConsole.MarkupLine($"[dim]See: {ex.HelpLink}[/]");
+        AnsiConsole.MarkupLine($"[dim][link={ex.HelpLink}]See: {Markup.Escape(ex.HelpLink)}[/][/]");
 }

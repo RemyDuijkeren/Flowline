@@ -226,7 +226,7 @@ public class SolutionChangeSummary
                 else
                     console.Info(line);
                 foreach (var path in item.FilePaths)
-                    console.Verbose($"    {Markup.Escape(path)}", options);
+                    console.Verbose($"    {Markup.Escape(path)}");
             }
         }
     }

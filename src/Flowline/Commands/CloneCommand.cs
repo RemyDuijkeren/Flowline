@@ -54,7 +54,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         Logger.LogInformation("source={EnvironmentUrl} solution={SolutionName}", sourceEnv.EnvironmentUrl, projectSln.Name);
 
         Config.Save();
-        Console.Verbose($"Project configuration saved to {ProjectConfig.s_configFileName}", RuntimeOptions);
+        Console.Verbose($"Project configuration saved to {ProjectConfig.s_configFileName}");
 
         var slnFolder = Path.Combine(RootFolder, AllSolutionsFolderName, projectSln.Name);
         var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
@@ -256,7 +256,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         }
 
         Console.Ok("WebResources/public seeded from src");
-        Console.Verbose(publicFolder, RuntimeOptions);
+        Console.Verbose(publicFolder);
     }
 
     private async Task CloneSolutionFromDataverseAsync(ProjectSolution projectSln, string slnFolder, string cdsprojPath, string environmentUrl,
@@ -336,7 +336,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         var csprojPath = Path.ChangeExtension(cdsprojPath, ".csproj");
         if (File.Exists(cdsprojPath))
         {
-            Console.Verbose($"Renaming '{cdsprojPath}' to '{csprojPath}'", RuntimeOptions);
+            Console.Verbose($"Renaming '{cdsprojPath}' to '{csprojPath}'");
             File.Move(cdsprojPath, csprojPath);
         }
 
@@ -353,21 +353,21 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         // Rename back to .cdsproj
         if (File.Exists(csprojPath))
         {
-            Console.Verbose($"Renaming '{csprojPath}' back to '{cdsprojPath}'", RuntimeOptions);
+            Console.Verbose($"Renaming '{csprojPath}' back to '{cdsprojPath}'");
             File.Move(csprojPath, cdsprojPath);
         }
 
         // Fix the XML in the .sln file
         if (File.Exists(slnFilePath))
         {
-            Console.Verbose("Fixing XML in .sln file...", RuntimeOptions);
+            Console.Verbose("Fixing XML in .sln file...");
             var slnContent = await File.ReadAllTextAsync(slnFilePath, cancellationToken);
             slnContent = slnContent.Replace(Path.GetFileName(csprojPath), Path.GetFileName(cdsprojPath));
             await File.WriteAllTextAsync(slnFilePath, slnContent, cancellationToken);
         }
 
         Console.Ok($"[bold]{PackageName}.cdsproj[/] added to solution file");
-        Console.Verbose(slnFilePath, RuntimeOptions);
+        Console.Verbose(slnFilePath);
     }
 
     private async Task SetupPluginsProjectAsync(string slnFolder, Settings settings, CancellationToken cancellationToken)
@@ -460,7 +460,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
                 Directory.CreateDirectory(Path.Combine(webresourcesFolder, "public"));
                 Directory.CreateDirectory(Path.Combine(webresourcesFolder, "dist"));
 
-                Console.Verbose($"Created {ConsolePath.FormatRelativePath(webresourcesFolder)}", RuntimeOptions);
+                Console.Verbose($"Created {ConsolePath.FormatRelativePath(webresourcesFolder)}");
 
                 await Cli.Wrap("dotnet")
                          .WithArguments(args => args
@@ -471,7 +471,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
                          .WithCapture(_capture)
                          .ExecuteAsync(cancellationToken);
 
-                Console.Verbose($"Added {WebResourcesName} project to solution", RuntimeOptions);
+                Console.Verbose($"Added {WebResourcesName} project to solution");
             });
 
         Console.Ok("WebResources project ready");
