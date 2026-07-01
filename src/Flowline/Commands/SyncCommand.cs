@@ -92,18 +92,17 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
         CommandResult result = await Console.Status().FlowlineSpinner().StartAsync(
             $"Syncing solution [bold]{projectSln.Name}[/]...",
-            ctx => _capture.Apply(
-                      Cli.Wrap(cmdName)
-                         .WithArguments(args =>
-                             args.AddIfNotNull(prefixArgs)
-                                 .Add("solution")
-                                 .Add("sync")
-                                 .Add("--solution-folder").Add(PackageFolder(slnFolder))
-                                 .Add("--environment").Add(devEnv.EnvironmentUrl!)
-                                 .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
-                                 .Add("--async"))
-                         .WithValidation(CommandResultValidation.None),
-                      ctx)
+            ctx => Cli.Wrap(cmdName)
+                      .WithArguments(args =>
+                          args.AddIfNotNull(prefixArgs)
+                              .Add("solution")
+                              .Add("sync")
+                              .Add("--solution-folder").Add(PackageFolder(slnFolder))
+                              .Add("--environment").Add(devEnv.EnvironmentUrl!)
+                              .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
+                              .Add("--async"))
+                      .WithValidation(CommandResultValidation.None)
+                      .WithCapture(_capture, ctx)
                       .ExecuteAsync(cancellationToken)
                       .Task);
 

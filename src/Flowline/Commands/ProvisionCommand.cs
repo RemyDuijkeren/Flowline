@@ -84,8 +84,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
             var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
             await Console.Status().FlowlineSpinner().StartAsync(
                 $"Creating [bold]{targetDisplayName}[/]...",
-                _ => _capture.Apply(
-                     Cli.Wrap(cmdName)
+                _ => Cli.Wrap(cmdName)
                         .WithArguments(args => args
                                                .AddIfNotNull(prefixArgs)
                                                .Add("admin")
@@ -93,9 +92,10 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
                                                .Add("--name").Add($"{targetDisplayName} (cloning)")
                                                .Add("--domain").Add($"{urlParts.Organization}-{suffix.ToLower()}")
                                                .Add("--region").Add(urlParts.Region)
-                                               .Add("--async")))
-                     .ExecuteAsync(cancellationToken)
-                     .Task);
+                                               .Add("--async"))
+                        .WithCapture(_capture)
+                        .ExecuteAsync(cancellationToken)
+                        .Task);
 
             targetEnv = await FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, settings, cancellationToken);
             if (targetEnv == null)
@@ -152,8 +152,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
 
         await Console.Status().FlowlineSpinner().StartAsync(
             $"Copying prod to [bold]{targetDisplayName}[/]...",
-            _ => _capture.Apply(
-                 Cli.Wrap(cmdNameCopy)
+            _ => Cli.Wrap(cmdNameCopy)
                     .WithArguments(args => args
                                            .AddIfNotNull(prefixArgsCopy)
                                            .Add("admin")
@@ -162,9 +161,10 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
                                            .Add("--source-env").Add(prodEnv.EnvironmentUrl!)
                                            .Add("--target-env").Add(targetEnv.EnvironmentUrl!)
                                            .Add("--type").Add(copyType)
-                                           .Add("--async")))
-                 .ExecuteAsync(cancellationToken)
-                 .Task);
+                                           .Add("--async"))
+                    .WithCapture(_capture)
+                    .ExecuteAsync(cancellationToken)
+                    .Task);
 
         Config!.Save();
         Console.Done($"Provisioned! See [link]{targetEnv.EnvironmentUrl}[/]. You can now run 'clone' or 'sync' ٩(◕‿◕｡)۶");
