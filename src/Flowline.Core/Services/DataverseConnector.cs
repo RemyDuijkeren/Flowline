@@ -9,7 +9,7 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
+public class DataverseConnector(IAnsiConsole console, FlowlineRuntimeOptions opt)
 {
     public const string PacCliAppId = "51f81489-12ee-4a9e-aaae-a2591f45987d";
 
@@ -33,7 +33,7 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
         var resourceUrl = environmentUrl.TrimEnd('/');
         var serviceUri  = new Uri(resourceUrl + "/");
 
-        output.Verbose($"Connecting via PAC profile '{profile.Name ?? profile.User}' at {resourceUrl}...", opt);
+        console.Verbose($"Connecting via PAC profile '{profile.Name ?? profile.User}' at {resourceUrl}...", opt);
 
         var authority = string.IsNullOrWhiteSpace(profile.Authority)
             ? "https://login.microsoftonline.com/organizations"
@@ -103,7 +103,7 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 $"Run 'pac auth create --kind ServicePrincipal --applicationId {appId} --clientSecret <secret>{tenantArg}' to authenticate.", ex);
         }
 
-        output.Verbose($"Token acquired for app '{appId}' (expires {initialToken.ExpiresOn:HH:mm})", opt);
+        console.Verbose($"Token acquired for app '{appId}' (expires {initialToken.ExpiresOn:HH:mm})", opt);
 
         return new ServiceClient(serviceUri, async _ =>
         {
@@ -149,7 +149,7 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
                 $"Run 'pac auth create --url {resourceUrl}' to re-authenticate.", ex);
         }
 
-        output.Verbose($"Token acquired silently for {initialToken.Account.Username} (expires {initialToken.ExpiresOn:HH:mm})", opt);
+        console.Verbose($"Token acquired silently for {initialToken.Account.Username} (expires {initialToken.ExpiresOn:HH:mm})", opt);
 
         var tokenAccount = initialToken.Account;
         return new ServiceClient(serviceUri, async _ =>
@@ -286,7 +286,7 @@ public class DataverseConnector(IAnsiConsole output, FlowlineRuntimeOptions opt)
             if (profiles == null)
                 throw new JsonException("Profile file deserialized to null.");
 
-            output.Verbose($"Loaded {profiles.Profiles?.Count ?? 0} PAC auth profile(s) from {authProfilesPath}", opt);
+            console.Verbose($"Loaded {profiles.Profiles?.Count ?? 0} PAC auth profile(s) from {authProfilesPath}", opt);
 
             return profiles;
         }

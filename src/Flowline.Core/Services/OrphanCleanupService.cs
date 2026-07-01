@@ -10,7 +10,7 @@ public enum OrphanAction { Delete, RemoveFromSolution, Manual }
 
 public sealed record OrphanEntry(Guid ObjectId, int ComponentType, string DisplayName, OrphanAction Action, string? EntityName = null);
 
-public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions opt)
+public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions opt)
 {
     // R8: step images → steps → types → assemblies; web resources; workflows
     // CustomApi family has env-specific componenttype — handled separately via entity-side detection.
@@ -36,14 +36,14 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
         string? webresourceRoot,
         CancellationToken ct)
     {
-        var sOld = await output.Status()
+        var sOld = await console.Status()
             .StartAsync($"Querying orphan components in [bold]{solutionName}[/]...",
                 _ => QuerySolutionComponentsAsync(service, solutionName, ct))
             .ConfigureAwait(false);
 
         if (sOld.Count == 0)
         {
-            output.Skip("No solution components in Dataverse — skipping orphan check.");
+            console.Skip("No solution components in Dataverse — skipping orphan check.");
             return [];
         }
 
@@ -51,7 +51,7 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
 
         if (sNew.Count == 0)
         {
-            output.Warning("No components in Solution.xml — orphan check skipped to prevent mass deletion.");
+            console.Warning("No components in Solution.xml — orphan check skipped to prevent mass deletion.");
             return [];
         }
 
@@ -59,7 +59,7 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
 
         if (orphans.Count == 0)
         {
-            output.Ok("No orphan components.");
+            console.Ok("No orphan components.");
             return [];
         }
 
@@ -79,7 +79,7 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                output.Warning($"CustomApi entity detection failed ({Markup.Escape(ex.Message)}) — unknown orphan components will be marked Manual.");
+                console.Warning($"CustomApi entity detection failed ({Markup.Escape(ex.Message)}) — unknown orphan components will be marked Manual.");
             }
         }
 
@@ -162,7 +162,7 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
         if (reEntries.Count == 0)
             return 0;
 
-        output.Skip("Post-import: retrying deferred orphan cleanup...");
+        console.Skip("Post-import: retrying deferred orphan cleanup...");
         var failed = await ExecuteInOrderAsync(service, solutionName, reEntries, isPostImport: true, ct).ConfigureAwait(false);
         return failed.Count;
     }
@@ -192,7 +192,7 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
 
         foreach (var (id, name) in orphanNames)
             if (exemptIds.Contains(id))
-                output.Skip($"'{name}' preserved — referenced in // flowline:depends annotation.");
+                console.Skip($"'{name}' preserved — referenced in // flowline:depends annotation.");
 
         return autoOrphans.Where(o => !exemptIds.Contains(o.ObjectId)).ToList();
     }
@@ -397,22 +397,22 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
                 var deactivated = await TryDeactivateWorkflowAsync(service, entry.ObjectId, ct).ConfigureAwait(false);
                 if (!deactivated)
                 {
-                    output.Warning($"'{entry.DisplayName}' — workflow deactivation failed, remove manually via maker portal.");
+                    console.Warning($"'{entry.DisplayName}' — workflow deactivation failed, remove manually via maker portal.");
                     return;
                 }
             }
 
             await PerformActionAsync(service, solutionName, entry, ct).ConfigureAwait(false);
-            output.Verbose($"{(isPostImport ? "Post-import: " : "")}{entry.DisplayName} {(entry.Action == OrphanAction.Delete ? "deleted" : "removed from solution")}", opt);
+            console.Verbose($"{(isPostImport ? "Post-import: " : "")}{entry.DisplayName} {(entry.Action == OrphanAction.Delete ? "deleted" : "removed from solution")}", opt);
         }
         catch (FaultException<OrganizationServiceFault> ex) when (!isPostImport && IsDependencyError(ex))
         {
-            output.MarkupLine($"[dim]Deferred: {Markup.Escape(entry.DisplayName)} — dependency, will retry post-import[/]");
+            console.MarkupLine($"[dim]Deferred: {Markup.Escape(entry.DisplayName)} — dependency, will retry post-import[/]");
             deferred.Add(entry);
         }
         catch (FaultException<OrganizationServiceFault> ex) when (isPostImport)
         {
-            output.Warning($"'{entry.DisplayName}' — post-import cleanup failed, remove manually: {Markup.Escape(ex.Message)}");
+            console.Warning($"'{entry.DisplayName}' — post-import cleanup failed, remove manually: {Markup.Escape(ex.Message)}");
             deferred.Add(entry);
         }
     }
@@ -462,20 +462,20 @@ public class OrphanCleanupService(IAnsiConsole output, FlowlineRuntimeOptions op
         var removeCount = entries.Count(e => e.Action == OrphanAction.RemoveFromSolution);
         var manualCount = entries.Count(e => e.Action == OrphanAction.Manual);
 
-        output.MarkupLine($"[bold]Orphan components ({entries.Count}):[/]");
+        console.MarkupLine($"[bold]Orphan components ({entries.Count}):[/]");
 
         foreach (var entry in entries.OrderBy(e => ExecutionOrderIndex(e.ComponentType, e.EntityName)))
         {
             var label = mode == RunMode.NoDelete && entry.Action != OrphanAction.Manual
                 ? NoDeleteLabel(entry.Action)
                 : ActionLabel(entry.Action);
-            output.MarkupLine($"  [{ActionColor(entry.Action)}]{Markup.Escape(entry.DisplayName)} — {label}[/]");
+            console.MarkupLine($"  [{ActionColor(entry.Action)}]{Markup.Escape(entry.DisplayName)} — {label}[/]");
         }
 
         if (mode == RunMode.NoDelete)
-            output.Skip($"{deleteCount} would be deleted, {removeCount} would be removed from solution, {manualCount} manual. (--no-delete active)");
+            console.Skip($"{deleteCount} would be deleted, {removeCount} would be removed from solution, {manualCount} manual. (--no-delete active)");
         else
-            output.Skip($"{deleteCount} to delete, {removeCount} to remove from solution, {manualCount} manual");
+            console.Skip($"{deleteCount} to delete, {removeCount} to remove from solution, {manualCount} manual");
     }
 
     static int ExecutionOrderIndex(int componentType, string? entityName)

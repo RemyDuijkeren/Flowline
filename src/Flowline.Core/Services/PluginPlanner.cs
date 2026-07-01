@@ -4,7 +4,7 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class PluginPlanner(IAnsiConsole output, bool isVerbose)
+public class PluginPlanner(IAnsiConsole console, bool isVerbose)
 {
     const string FlowlineMarker = "[flowline]";
 
@@ -407,7 +407,7 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
 
             if (immutableChanged)
             {
-                output.Warning($"Custom API '{fullApiName}' has immutable field changes — deleting and recreating.");
+                console.Warning($"Custom API '{fullApiName}' has immutable field changes — deleting and recreating.");
 
                 var del = new DeleteAction(asmApi.UniqueName, "customapi", dvApi.Id);
                 var pParamDel = PlanRequestParameters(snapshot, prefix, dvApi.Id, fullApiName, [], solutionName);
@@ -512,7 +512,7 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
 
             if (immutableChanged)
             {
-                output.Warning($"Request parameter '{asmParam.DisplayName}' has immutable field changes — deleting and recreating.");
+                console.Warning($"Request parameter '{asmParam.DisplayName}' has immutable field changes — deleting and recreating.");
                 plan.Deletes.Add(new DeleteAction(asmParam.UniqueName, "customapirequestparameter", dvParam.Id));
                 plan.Upserts.Add(new UpsertAction(asmParam.UniqueName,
                     NewRequestParameterEntity(asmParam, customApiId), IsCreate: true, SolutionName: solutionName));
@@ -577,7 +577,7 @@ public class PluginPlanner(IAnsiConsole output, bool isVerbose)
 
             if (immutableChanged)
             {
-                output.Warning($"Response Property '{asmProp.DisplayName}' has immutable field changes — deleting and recreating.");
+                console.Warning($"Response Property '{asmProp.DisplayName}' has immutable field changes — deleting and recreating.");
                 plan.Deletes.Add(new DeleteAction(asmProp.UniqueName, "customapiresponseproperty", dvProp.Id));
                 plan.Upserts.Add(new UpsertAction(asmProp.UniqueName,
                     NewResponsePropertyEntity(asmProp, customApiId), IsCreate: true, SolutionName: solutionName));

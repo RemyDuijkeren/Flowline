@@ -7,7 +7,7 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class WebResourceReader(IAnsiConsole output)
+public class WebResourceReader(IAnsiConsole console)
 {
     const int WebResourceComponentType = 61;
     const string DefaultSolutionUniqueName = "Default";
@@ -103,7 +103,7 @@ public class WebResourceReader(IAnsiConsole output)
                     resolved.AddRange(expanded);
                 else
                 {
-                    output.Warning($"'{name}': bare RESX reference '{dep}' has no LCID variants — kept as-is.");
+                    console.Warning($"'{name}': bare RESX reference '{dep}' has no LCID variants — kept as-is.");
                     resolved.Add(dep);
                 }
             }
@@ -131,14 +131,14 @@ public class WebResourceReader(IAnsiConsole output)
             if (!jsByBaseName.TryGetValue(baseName, out var jsMatches) || jsMatches.Count == 0)
             {
                 foreach (var resx in resxGroup)
-                    output.Warning($"'{resx.Name}': no JS file matches base name '{baseName}' — dependency not registered.");
+                    console.Warning($"'{resx.Name}': no JS file matches base name '{baseName}' — dependency not registered.");
                 continue;
             }
 
             if (jsMatches.Count > 1)
             {
                 foreach (var resx in resxGroup)
-                    output.Warning($"'{resx.Name}': multiple JS files match base name '{baseName}' — use // flowline:depends to specify the target.");
+                    console.Warning($"'{resx.Name}': multiple JS files match base name '{baseName}' — use // flowline:depends to specify the target.");
                 continue;
             }
 

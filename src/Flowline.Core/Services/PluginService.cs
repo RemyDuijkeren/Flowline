@@ -8,15 +8,15 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILogger<PluginService> logger)
+public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILogger<PluginService> logger)
 {
     const string FlowlineMarker = "[flowline]";
 
     readonly PluginReader _reader = new();
-    readonly PluginPlanner _planner = new(output, opt.IsVerbose);
-    readonly PluginExecutor _executor = new(output, opt.IsVerbose);
+    readonly PluginPlanner _planner = new(console, opt.IsVerbose);
+    readonly PluginExecutor _executor = new(console, opt.IsVerbose);
     readonly SolutionReader _solutionReader = new();
-    readonly PluginAssemblyReader _assemblyReader = new(output, opt);
+    readonly PluginAssemblyReader _assemblyReader = new(console, opt);
 
     public async Task SyncAssemblyOnlyAsync(
         IOrganizationServiceAsync2 service,
@@ -28,7 +28,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
         if (string.IsNullOrWhiteSpace(dllPath))
             throw new ArgumentException("dllPath is required and cannot be empty.", nameof(dllPath));
 
-        var metadata = output.Status().Start("Analyzing plugin assembly...", _ => _assemblyReader.Analyze(dllPath));
+        var metadata = console.Status().Start("Analyzing plugin assembly...", _ => _assemblyReader.Analyze(dllPath));
         await SyncAssemblyOnlyAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
     }
 
@@ -42,11 +42,11 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
         if (string.IsNullOrWhiteSpace(solutionName))
             throw new ArgumentException("solutionName is required and cannot be empty.", nameof(solutionName));
 
-        await output.Status()
+        await console.Status()
                     .StartAsync($"Looking up solution [bold]{solutionName}[/]...",
                         _ => _solutionReader.GetSupportedSolutionInfoAsync(service, solutionName, cancellationToken))
                     .ConfigureAwait(false);
-        output.Info("Solution found and supported");
+        console.Info("Solution found and supported");
 
         var query = new QueryExpression("pluginassembly")
         {
@@ -67,18 +67,18 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
         var storedHash = ParseStoredHash(existing.GetAttributeValue<string>("description"));
         if (storedHash == metadata.Hash)
         {
-            output.Skip("Assembly already up to date — skipping");
+            console.Skip("Assembly already up to date — skipping");
             return;
         }
 
         if (runMode == RunMode.DryRun)
         {
-            output.Info($"  [yellow]~[/] Assembly '{metadata.Name} ({metadata.Version})' — would update content");
-            output.Ok("Dry run: 1 update. Run without --dry-run to apply.");
+            console.Info($"  [yellow]~[/] Assembly '{metadata.Name} ({metadata.Version})' — would update content");
+            console.Ok("Dry run: 1 update. Run without --dry-run to apply.");
             return;
         }
 
-        await output.Progress()
+        await console.Progress()
             .StartAsync(async ctx =>
             {
                 var task = ctx.AddTask("Updating plugin assembly", maxValue: 1);
@@ -86,7 +86,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
                 task.Increment(1);
             })
             .ConfigureAwait(false);
-        output.Ok($"Assembly [bold]{metadata.Name}[/] ({metadata.Version}) updated");
+        console.Ok($"Assembly [bold]{metadata.Name}[/] ({metadata.Version}) updated");
     }
 
     public async Task SyncSolutionAsync(
@@ -100,7 +100,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
         if (string.IsNullOrWhiteSpace(dllPath))
             throw new ArgumentException("dllPath is required and cannot be empty.", nameof(dllPath));
 
-        var metadata = output.Status().Start("Analyzing plugin assembly...", ctx => _assemblyReader.Analyze(dllPath));
+        var metadata = console.Status().Start("Analyzing plugin assembly...", ctx => _assemblyReader.Analyze(dllPath));
         await SyncSolutionAsync(service, metadata, solutionName, runMode, force, cancellationToken).ConfigureAwait(false);
     }
 
@@ -116,35 +116,35 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
             throw new ArgumentException("solutionName is required and cannot be empty.", nameof(solutionName));
 
         // Phase 0: Check if solution exists and is supported
-        await output.Status()
+        await console.Status()
                     .StartAsync($"Looking up solution [bold]{solutionName}[/]...",
                         _ => _solutionReader.GetSupportedSolutionInfoAsync(service, solutionName, cancellationToken))
                     .ConfigureAwait(false);
-        output.Info("Solution found and supported");
+        console.Info("Solution found and supported");
 
         // Phase 1: Get or register assembly
         var (assembly, needsUpdate, cascadeDeleteCount) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, force, cancellationToken).ConfigureAwait(false);
-        output.Ok($"Assembly registered [bold]{metadata.Name}[/] ({metadata.Version})");
+        console.Ok($"Assembly registered [bold]{metadata.Name}[/] ({metadata.Version})");
         logger.LogInformation("Assembly synced: {Name}", metadata.Name);
 
         await WarnOrphanAssembliesAsync(service, metadata.Name, solutionName, force, runMode, cancellationToken).ConfigureAwait(false);
 
         // Phase 2: Load snapshot (all Dataverse state in parallel)
-        var snapshot = await output.Status()
+        var snapshot = await console.Status()
             .StartAsync("Loading plugin registration snapshot...", _ => _reader.LoadSnapshotAsync(service, assembly.Id, metadata, solutionName, cancellationToken))
             .ConfigureAwait(false);
         WriteSnapshotVerbose(snapshot);
-        output.Info("Snapshot plugins loaded");
+        console.Info("Snapshot plugins loaded");
 
         // Phase 3: Plan registration (pure, synchronous)
         var plan = _planner.Plan(snapshot, metadata, assembly, solutionName);
-        output.Info("Registration plan ready");
+        console.Info("Registration plan ready");
         logger.LogInformation("Registration plan ready: {PluginTypeCount} plugin types, {StepCount} steps",
             plan.PluginTypes.Upserts.Count + plan.PluginTypes.Deletes.Count,
             plan.Steps.Upserts.Count + plan.Steps.Deletes.Count);
 
         foreach (var warning in plan.Warnings)
-            output.Warning(warning);
+            console.Warning(warning);
 
         if (needsUpdate && snapshot.ComponentSolutionMembership.TryGetValue(assembly.Id, out var assemblyMembership))
         {
@@ -155,7 +155,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
                 .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
                 .ToList();
             if (otherSolutions.Count > 0)
-                output.Warning($"Updating assembly '{metadata.Name}' which also exists in other solutions: {string.Join(", ", otherSolutions)}.");
+                console.Warning($"Updating assembly '{metadata.Name}' which also exists in other solutions: {string.Join(", ", otherSolutions)}.");
         }
 
         WritePlanTree(metadata, needsUpdate, plan, runMode, cascadeDeleteCount);
@@ -175,7 +175,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
 
         if (!needsUpdate && plan.TotalChanges == 0)
         {
-            output.Skip("Plugins already up to date — skipping");
+            console.Skip("Plugins already up to date — skipping");
             return;
         }
 
@@ -186,7 +186,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
         }
         else
         {
-            await output.Progress()
+            await console.Progress()
                 .StartAsync(async ctx =>
                 {
                     var task = ctx.AddTask("Deleting stale plugin components", maxValue: plan.TotalDeletes);
@@ -194,12 +194,12 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
                 })
                 .ConfigureAwait(false);
         }
-        if (plan.TotalDeletes > 0) output.Ok($"{plan.TotalDeletes} stale component(s) deleted");
+        if (plan.TotalDeletes > 0) console.Ok($"{plan.TotalDeletes} stale component(s) deleted");
 
         // Phase 5: Update assembly content — must happen before new plugin types are registered
         if (needsUpdate)
         {
-            await output.Progress()
+            await console.Progress()
                 .StartAsync(async ctx =>
                 {
                     var task = ctx.AddTask("Updating plugin assembly", maxValue: 1);
@@ -207,13 +207,13 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
                     task.Increment(1);
                 })
                 .ConfigureAwait(false);
-            output.Ok($"Updated assembly content for [bold]{metadata.Name}[/]");
+            console.Ok($"Updated assembly content for [bold]{metadata.Name}[/]");
         }
 
         // Phase 6: Execute upserts and add to solution
         if (plan.TotalUpserts > 0)
         {
-            await output.Progress()
+            await console.Progress()
                 .StartAsync(async ctx =>
                 {
                     var task = ctx.AddTask("Syncing plugin components", maxValue: plan.TotalUpserts);
@@ -225,12 +225,12 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
         {
             await _executor.ExecuteUpsertsAsync(service, plan, solutionName, cancellationToken).ConfigureAwait(false);
         }
-        if (plan.TotalUpserts > 0) output.Ok($"{plan.TotalUpserts} component(s) synced");
+        if (plan.TotalUpserts > 0) console.Ok($"{plan.TotalUpserts} component(s) synced");
 
         var addToSolutionCount = CountAddToSolutionComponents(plan);
         if (addToSolutionCount > 0)
         {
-            await output.Progress()
+            await console.Progress()
                 .StartAsync(async ctx =>
                 {
                     var task = ctx.AddTask("Adding plugin components to solution", maxValue: addToSolutionCount);
@@ -270,7 +270,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
             var willDelete = force && runMode == RunMode.Normal;
             var showCascade = force || runMode == RunMode.DryRun;
 
-            output.Warning(willDelete
+            console.Warning(willDelete
                 ? $"[bold]{Safe(name)}.dll[/] in environment — no local source. Deleting."
                 : $"[bold]{Safe(name)}.dll[/] in environment — no local source. Use --force to delete.");
 
@@ -286,15 +286,15 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
             if (showCascade && orphanSnapshot != null)
             {
                 foreach (var typeName in orphanSnapshot.PluginTypes.Keys.OrderBy(n => n, StringComparer.OrdinalIgnoreCase))
-                    output.Info(willDelete
+                    console.Info(willDelete
                         ? $"  {Safe(typeName)} — cascade delete"
                         : $"  [red]-[/] {Safe(typeName)} — would delete (cascade)");
                 foreach (var step in orphanSnapshot.Steps)
-                    output.Info(willDelete
+                    console.Info(willDelete
                         ? $"  {Safe(step.GetAttributeValue<string>("name"))} — cascade delete"
                         : $"  [red]-[/] {Safe(step.GetAttributeValue<string>("name"))} — would delete (cascade)");
                 foreach (var image in orphanSnapshot.Images)
-                    output.Info(willDelete
+                    console.Info(willDelete
                         ? $"  {Safe(image.GetAttributeValue<string>("name"))} — cascade delete"
                         : $"  [red]-[/] {Safe(image.GetAttributeValue<string>("name"))} — would delete (cascade)");
             }
@@ -341,7 +341,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
         {
             if (runMode == RunMode.DryRun)
             {
-                output.Info($"  [green]+[/] Assembly '{metadata.Name}' — would create");
+                console.Info($"  [green]+[/] Assembly '{metadata.Name}' — would create");
                 // Return a dummy entity so that the caller can continue with the dry-run
                 return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false, 0);
             }
@@ -358,7 +358,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
             var response = (CreateResponse)await service.ExecuteAsync(
                 new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName }, cancellationToken).ConfigureAwait(false);
 
-            output.Ok($"Assembly [bold]{metadata.Name}[/] added");
+            console.Ok($"Assembly [bold]{metadata.Name}[/] added");
 
             entity.Id = response.id;
             return (entity, false, 0);
@@ -372,7 +372,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
 
             if (isDowngrade && !force && runMode == RunMode.Normal)
             {
-                output.Error($"Assembly '{metadata.Name}' version downgraded ({reason}) — Dataverse needs a delete and recreate. Use --force to allow downgrade.");
+                console.Error($"Assembly '{metadata.Name}' version downgraded ({reason}) — Dataverse needs a delete and recreate. Use --force to allow downgrade.");
                 throw new FlowlineException(ExitCode.ForceRequired, $"Assembly '{metadata.Name}' version downgraded ({reason}). Use --force to allow.");
             }
 
@@ -384,15 +384,15 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
             {
                 case RunMode.DryRun:
                     var downgradeNote = isDowngrade ? " — would be blocked without --force" : "";
-                    output.Warning($"Assembly '{metadata.Name}' identity changed ({reason}){downgradeNote} — would delete and recreate");
+                    console.Warning($"Assembly '{metadata.Name}' identity changed ({reason}){downgradeNote} — would delete and recreate");
                     WriteCascadePreview(oldSnapshot);
                     return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false, cascadeDeleteCount);
                 case RunMode.NoDelete:
-                    output.Error($"Assembly '{metadata.Name}' identity changed ({reason}) — Dataverse needs a delete and recreate. Re-run without --no-delete to apply, or use --dry-run to preview.");
+                    console.Error($"Assembly '{metadata.Name}' identity changed ({reason}) — Dataverse needs a delete and recreate. Re-run without --no-delete to apply, or use --dry-run to preview.");
                     throw new InvalidOperationException($"Assembly '{metadata.Name}' identity changed ({reason}). Cannot continue in no-delete mode — re-run without --no-delete to apply, or use --dry-run to preview.");
                 case RunMode.Normal:
                     var forceNote = isDowngrade ? " (version downgrade, --force)" : "";
-                    output.Warning($"Assembly '{metadata.Name}' identity changed ({reason}){forceNote} — deleting and recreating all registrations");
+                    console.Warning($"Assembly '{metadata.Name}' identity changed ({reason}){forceNote} — deleting and recreating all registrations");
                     WriteCascadeNormal(oldSnapshot);
                     await service.DeleteAsync("pluginassembly", existing.Id, cancellationToken).ConfigureAwait(false);
                     break;
@@ -414,7 +414,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
                 cancellationToken).ConfigureAwait(false);
 
             freshEntity.Id = freshResponse.id;
-            output.Ok($"Assembly [bold]{metadata.Name}[/] recreated");
+            console.Ok($"Assembly [bold]{metadata.Name}[/] recreated");
             return (freshEntity, false, 0); // cascade items already logged; fresh assembly starts empty
         }
 
@@ -471,21 +471,21 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
     void WriteCascadePreview(RegistrationSnapshot snapshot)
     {
         foreach (var name in snapshot.PluginTypes.Keys)
-            output.Info($"  [red]-[/] Plugin type '{name}' — would delete (cascade)");
+            console.Info($"  [red]-[/] Plugin type '{name}' — would delete (cascade)");
         foreach (var step in snapshot.Steps)
-            output.Info($"  [red]-[/] Step '{step.GetAttributeValue<string>("name")}' — would delete (cascade)");
+            console.Info($"  [red]-[/] Step '{step.GetAttributeValue<string>("name")}' — would delete (cascade)");
         foreach (var image in snapshot.Images)
-            output.Info($"  [red]-[/] Image '{image.GetAttributeValue<string>("name")}' — would delete (cascade)");
+            console.Info($"  [red]-[/] Image '{image.GetAttributeValue<string>("name")}' — would delete (cascade)");
     }
 
     void WriteCascadeNormal(RegistrationSnapshot snapshot)
     {
         foreach (var name in snapshot.PluginTypes.Keys)
-            output.Info($"Plugin type '{name}' — cascade delete");
+            console.Info($"Plugin type '{name}' — cascade delete");
         foreach (var step in snapshot.Steps)
-            output.Info($"Step '{step.GetAttributeValue<string>("name")}' — cascade delete");
+            console.Info($"Step '{step.GetAttributeValue<string>("name")}' — cascade delete");
         foreach (var image in snapshot.Images)
-            output.Info($"Image '{image.GetAttributeValue<string>("name")}' — cascade delete");
+            console.Info($"Image '{image.GetAttributeValue<string>("name")}' — cascade delete");
     }
 
     void WritePlanTree(PluginAssemblyMetadata metadata, bool needsUpdate, RegistrationPlan plan, RunMode runMode, int cascadeDeleteCount = 0)
@@ -697,7 +697,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
             }
         }
 
-        output.Write(tree);
+        console.Write(tree);
 
         if (runMode == RunMode.DryRun)
         {
@@ -708,7 +708,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
                           + plan.RequestParams.Upserts.Count(u => u.IsCreate)
                           + plan.ResponseProps.Upserts.Count(u => u.IsCreate);
             var updates = plan.TotalUpserts - creates;
-            output.Ok($"Dry run: {plan.TotalDeletes + cascadeDeleteCount} delete(s), {creates} create(s), {updates} update(s). Run without --dry-run to apply.");
+            console.Ok($"Dry run: {plan.TotalDeletes + cascadeDeleteCount} delete(s), {creates} create(s), {updates} update(s). Run without --dry-run to apply.");
         }
     }
 
@@ -853,7 +853,7 @@ public class PluginService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILog
                 usersNode.AddNode($"[dim]{id}[/]");
         }
 
-        output.Write(tree);
+        console.Write(tree);
     }
 
     void AddUnlinkedNodes(Tree tree, string title, IReadOnlyList<Entity> items,

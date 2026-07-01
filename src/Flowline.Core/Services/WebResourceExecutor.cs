@@ -8,7 +8,7 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions options)
+public class WebResourceExecutor(IAnsiConsole console, FlowlineRuntimeOptions options)
 {
     const int MaxParallelism = 8;
     const int WebResourceComponentType = 61;
@@ -23,22 +23,22 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
         var publishIds = new List<Guid>();
         var failures = new List<(string Name, Exception Error)>();
 
-        foreach (var a in plan.Skips) output.Skip($"Web resource '{a.Name}' kept ({a.Reason})");
+        foreach (var a in plan.Skips) console.Skip($"Web resource '{a.Name}' kept ({a.Reason})");
 
         // Create web resources — sequential, so no lock needed for progress
         if (plan.Creates.Count > 0)
         {
-            publishIds.AddRange(await output.Progress().StartAsync(ctx =>
+            publishIds.AddRange(await console.Progress().StartAsync(ctx =>
                 ExecuteCreatesAsync(service, plan.Creates, failures,
                     ctx.AddTask("Creating web resources", maxValue: plan.Creates.Count), cancellationToken)).ConfigureAwait(false));
-            foreach (var a in plan.Creates) output.Verbose($"Web resource '{a.Name}' created", options);
-            output.Ok($"{plan.Creates.Count} web resource(s) created");
+            foreach (var a in plan.Creates) console.Verbose($"Web resource '{a.Name}' created", options);
+            console.Ok($"{plan.Creates.Count} web resource(s) created");
         }
 
         // Update web resources — parallel, so lock needed for progress
         if (plan.Updates.Count > 0)
         {
-            await output.Progress().StartAsync(ctx =>
+            await console.Progress().StartAsync(ctx =>
                 ExecuteBoundedParallelAsync(plan.Updates, MaxParallelism, async action =>
                 {
                     try
@@ -48,21 +48,21 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
                     }
                     catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                 }, ctx.AddTask("Updating web resources", maxValue: plan.Updates.Count), cancellationToken)).ConfigureAwait(false);
-            foreach (var a in plan.Updates) output.Verbose($"Web resource '{a.Name}' updated", options);
-            output.Ok($"{plan.Updates.Count} web resource(s) updated");
+            foreach (var a in plan.Updates) console.Verbose($"Web resource '{a.Name}' updated", options);
+            console.Ok($"{plan.Updates.Count} web resource(s) updated");
         }
 
         // Add web resources to solution — parallel, so lock needed for progress
         if (plan.AddsToSolution.Count > 0)
         {
-            await output.Progress().StartAsync(ctx =>
+            await console.Progress().StartAsync(ctx =>
                 ExecuteBoundedParallelAsync(plan.AddsToSolution, MaxParallelism, async action =>
                 {
                     try { await AddToSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken).ConfigureAwait(false); }
                     catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                 }, ctx.AddTask("Adding web resources to solution", maxValue: plan.AddsToSolution.Count), cancellationToken)).ConfigureAwait(false);
-            foreach (var a in plan.AddsToSolution) output.Verbose($"Web resource '{a.Name}' added to solution", options);
-            output.Ok($"{plan.AddsToSolution.Count} web resource(s) added to solution");
+            foreach (var a in plan.AddsToSolution) console.Verbose($"Web resource '{a.Name}' added to solution", options);
+            console.Ok($"{plan.AddsToSolution.Count} web resource(s) added to solution");
         }
 
         if (!save)
@@ -70,50 +70,50 @@ public class WebResourceExecutor(IAnsiConsole output, FlowlineRuntimeOptions opt
             // Delete web resources — parallel, so lock needed for progress
             if (plan.Deletes.Count > 0)
             {
-                await output.Progress().StartAsync(ctx =>
+                await console.Progress().StartAsync(ctx =>
                     ExecuteBoundedParallelAsync(plan.Deletes, MaxParallelism, async action =>
                     {
                         try { await service.DeleteAsync("webresource", action.Id!.Value, cancellationToken).ConfigureAwait(false); }
                         catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                     }, ctx.AddTask("Deleting web resources", maxValue: plan.Deletes.Count), cancellationToken)).ConfigureAwait(false);
-                foreach (var a in plan.Deletes) output.Verbose($"Web resource '{a.Name}' deleted", options);
-                output.Ok($"{plan.Deletes.Count} web resource(s) deleted");
+                foreach (var a in plan.Deletes) console.Verbose($"Web resource '{a.Name}' deleted", options);
+                console.Ok($"{plan.Deletes.Count} web resource(s) deleted");
             }
 
             // Remove web resources from solution — parallel, so lock needed for progress
             if (plan.RemovesFromSolution.Count > 0)
             {
-                await output.Progress().StartAsync(ctx =>
+                await console.Progress().StartAsync(ctx =>
                     ExecuteBoundedParallelAsync(plan.RemovesFromSolution, MaxParallelism, async action =>
                     {
                         try { await RemoveFromSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken).ConfigureAwait(false); }
                         catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                     }, ctx.AddTask("Removing web resources from solution", maxValue: plan.RemovesFromSolution.Count), cancellationToken)).ConfigureAwait(false);
-                foreach (var a in plan.RemovesFromSolution) output.Verbose($"Web resource '{a.Name}' removed from solution", options);
-                output.Ok($"{plan.RemovesFromSolution.Count} web resource(s) removed from solution");
+                foreach (var a in plan.RemovesFromSolution) console.Verbose($"Web resource '{a.Name}' removed from solution", options);
+                console.Ok($"{plan.RemovesFromSolution.Count} web resource(s) removed from solution");
             }
         }
         else
         {
-            foreach (var a in plan.Deletes) output.Skip($"Web resource '{a.Name}' not in source — kept (--no-delete)");
-            if (plan.Deletes.Count > 0) output.Skip($"{plan.Deletes.Count} web resource(s) not in source — kept (--no-delete)");
-            foreach (var a in plan.RemovesFromSolution) output.Skip($"Web resource '{a.Name}' still in other solution — kept (--no-delete)");
-            if (plan.RemovesFromSolution.Count > 0) output.Skip($"{plan.RemovesFromSolution.Count} web resource(s) still in other solution — kept (--no-delete)");
+            foreach (var a in plan.Deletes) console.Skip($"Web resource '{a.Name}' not in source — kept (--no-delete)");
+            if (plan.Deletes.Count > 0) console.Skip($"{plan.Deletes.Count} web resource(s) not in source — kept (--no-delete)");
+            foreach (var a in plan.RemovesFromSolution) console.Skip($"Web resource '{a.Name}' still in other solution — kept (--no-delete)");
+            if (plan.RemovesFromSolution.Count > 0) console.Skip($"{plan.RemovesFromSolution.Count} web resource(s) still in other solution — kept (--no-delete)");
         }
 
         if (publishAfterSync && publishIds.Count > 0)
         {
             var distinctIds = publishIds.Distinct().ToList();
-            await output.Status()
+            await console.Status()
                         .StartAsync("Publishing web resources", ctx => PublishAsync(service, distinctIds, cancellationToken))
                         .ConfigureAwait(false);
-            output.Ok($"{distinctIds.Count} web resource(s) published");
+            console.Ok($"{distinctIds.Count} web resource(s) published");
         }
 
         if (failures.Count > 0)
         {
             foreach (var (name, ex) in failures)
-                output.Error($"'{name}' — {ex.Message}");
+                console.Error($"'{name}' — {ex.Message}");
             throw new InvalidOperationException($"{failures.Count} web resource operation(s) failed.");
         }
     }

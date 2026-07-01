@@ -5,7 +5,7 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class WebResourcePlanner(IAnsiConsole output, bool isVerbose)
+public class WebResourcePlanner(IAnsiConsole console, bool isVerbose)
 {
     static readonly Regex ValidFilePathRegex = new(@"^[a-zA-Z0-9_.\-]+(/[a-zA-Z0-9_.\-]+)*$", RegexOptions.Compiled);
 
@@ -177,11 +177,11 @@ public class WebResourcePlanner(IAnsiConsole output, bool isVerbose)
         if (errorCount <= 0) return;
 
         foreach (var filePath in unknownFiles)
-            output.Error($"Unsupported file extension: '{filePath}'");
+            console.Error($"Unsupported file extension: '{filePath}'");
         foreach (var filePath in invalidNames)
-            output.Error($"Invalid file name: '{filePath}'");
+            console.Error($"Invalid file name: '{filePath}'");
         foreach (var filePath in xapFiles)
-            output.Error($"Silverlight/XAP is deprecated: '{filePath}'");
+            console.Error($"Silverlight/XAP is deprecated: '{filePath}'");
 
         throw new InvalidOperationException($"{errorCount} web resource file(s) cannot be synced.");
     }

@@ -5,11 +5,11 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt, ILogger<WebResourceService> logger)
+public class WebResourceService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILogger<WebResourceService> logger)
 {
-    readonly WebResourceReader _reader = new(output);
-    readonly WebResourcePlanner _planner = new(output, opt.IsVerbose);
-    readonly WebResourceExecutor _executor = new(output, opt);
+    readonly WebResourceReader _reader = new(console);
+    readonly WebResourcePlanner _planner = new(console, opt.IsVerbose);
+    readonly WebResourceExecutor _executor = new(console, opt);
     readonly ILogger<WebResourceService> _logger = logger;
 
     public async Task SyncSolutionAsync(
@@ -26,26 +26,26 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt,
             throw new ArgumentException("solutionName is required.", nameof(solutionName));
 
         // Phase 1: Load snapshot (all Dataverse state in parallel)
-        var snapshot = await output.Status().StartAsync("Loading web resource snapshot...", _ =>
+        var snapshot = await console.Status().StartAsync("Loading web resource snapshot...", _ =>
             _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, cancellationToken)).ConfigureAwait(false);
         WriteSnapshotVerbose(snapshot);
-        output.Ok("Snapshot web resources loaded");
+        console.Ok("Snapshot web resources loaded");
         _logger.LogInformation("Snapshot: {DataverseCount} Dataverse, {LocalCount} local resources",
             snapshot.DataverseResources.Count, snapshot.LocalResources.Count);
 
         // Phase 2: Plan registration (pure, synchronous)
         var plan = _planner.Plan(snapshot);
         WritePlanReport(plan, PlanReportMode.Verbose, publishAfterSync);
-        output.Ok("Web resource plan ready");
+        console.Ok("Web resource plan ready");
         _logger.LogInformation("Plan: {Creates} creates, {Updates} updates, {Deletes} deletes",
             plan.Creates.Count, plan.Updates.Count, plan.Deletes.Count);
 
         if (plan.TotalChanges == 0)
         {
             foreach (var a in plan.Skips)
-                output.Skip($"Web resource '{a.Name}' kept ({a.Reason})");
+                console.Skip($"Web resource '{a.Name}' kept ({a.Reason})");
 
-            output.Skip("Web resources already up to date — skipping");
+            console.Skip("Web resources already up to date — skipping");
             return;
         }
 
@@ -66,14 +66,14 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt,
         string solutionName,
         CancellationToken cancellationToken = default)
     {
-        var snapshot = await output.Status().StartAsync(
+        var snapshot = await console.Status().StartAsync(
             $"Loading web resources for {solutionName}...",
             _ => _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, cancellationToken))
             .ConfigureAwait(false);
 
         if (snapshot.DataverseResources.Count == 0)
         {
-            output.Skip("No web resources in solution — skipping");
+            console.Skip("No web resources in solution — skipping");
             return;
         }
 
@@ -91,19 +91,19 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt,
             var localPath = Path.Combine(webresourceRoot, relativePath.Replace("/", Path.DirectorySeparatorChar.ToString()));
             Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
             await File.WriteAllBytesAsync(localPath, Convert.FromBase64String(resource.Content), cancellationToken).ConfigureAwait(false);
-            output.Verbose(name, opt);
+            console.Verbose(name, opt);
             count++;
         }
 
-        output.Ok($"[bold]{count}[/] web resource(s) downloaded");
+        console.Ok($"[bold]{count}[/] web resource(s) downloaded");
     }
 
     void WriteSnapshotVerbose(WebResourceSyncSnapshot snapshot)
     {
         if (!opt.IsVerbose) return;
 
-        output.Write(BuildResourceTree($"Dataverse ({snapshot.DataverseResources.Count})", snapshot.DataverseResources.Keys));
-        output.Write(BuildResourceTree($"Local ({snapshot.LocalResources.Count})", snapshot.LocalResources.Keys));
+        console.Write(BuildResourceTree($"Dataverse ({snapshot.DataverseResources.Count})", snapshot.DataverseResources.Keys));
+        console.Write(BuildResourceTree($"Local ({snapshot.LocalResources.Count})", snapshot.LocalResources.Keys));
     }
 
     static Tree BuildResourceTree(string label, IEnumerable<string> names)
@@ -150,8 +150,8 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt,
             return;
 
         Action<string> line = mode == PlanReportMode.Verbose
-            ? msg => output.Verbose(msg, opt)
-            : output.Info;
+            ? msg => console.Verbose(msg, opt)
+            : console.Info;
 
         var publishCount = publishAfterSync ? plan.PublishCount : 0;
         var counts = JoinCounts(
@@ -175,7 +175,7 @@ public class WebResourceService(IAnsiConsole output, FlowlineRuntimeOptions opt,
         if (mode != PlanReportMode.DryRun)
             return;
 
-        output.Ok($"Dry run: {counts}. Run without --dry-run to apply.");
+        console.Ok($"Dry run: {counts}. Run without --dry-run to apply.");
     }
 
     static string JoinCounts(params (int Count, string Label)[] parts)

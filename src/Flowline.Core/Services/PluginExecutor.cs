@@ -6,7 +6,7 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class PluginExecutor(IAnsiConsole output, bool isVerbose)
+public class PluginExecutor(IAnsiConsole console, bool isVerbose)
 {
 
     public Task ExecuteDeletesAsync(
@@ -26,12 +26,12 @@ public class PluginExecutor(IAnsiConsole output, bool isVerbose)
     {
         if (save)
         {
-            foreach (var a in plan.Images.Deletes)        output.Skip($"Image '{a.Name}' not in source — kept (--no-delete)");
-            foreach (var a in plan.ResponseProps.Deletes) output.Skip($"Response Property '{a.Name}' not in source — kept (--no-delete)");
-            foreach (var a in plan.RequestParams.Deletes) output.Skip($"Request Parameter '{a.Name}' not in source — kept (--no-delete)");
-            foreach (var a in plan.Steps.Deletes)         output.Skip($"Step '{a.Name}' not in source — kept (--no-delete)");
-            foreach (var a in plan.CustomApis.Deletes)    output.Skip($"Custom API '{a.Name}' not in source — kept (--no-delete)");
-            foreach (var a in plan.PluginTypes.Deletes)   output.Skip($"Plugin Type '{a.Name}' not in source — kept (--no-delete)");
+            foreach (var a in plan.Images.Deletes)        console.Skip($"Image '{a.Name}' not in source — kept (--no-delete)");
+            foreach (var a in plan.ResponseProps.Deletes) console.Skip($"Response Property '{a.Name}' not in source — kept (--no-delete)");
+            foreach (var a in plan.RequestParams.Deletes) console.Skip($"Request Parameter '{a.Name}' not in source — kept (--no-delete)");
+            foreach (var a in plan.Steps.Deletes)         console.Skip($"Step '{a.Name}' not in source — kept (--no-delete)");
+            foreach (var a in plan.CustomApis.Deletes)    console.Skip($"Custom API '{a.Name}' not in source — kept (--no-delete)");
+            foreach (var a in plan.PluginTypes.Deletes)   console.Skip($"Plugin Type '{a.Name}' not in source — kept (--no-delete)");
             return;
         }
 
@@ -44,51 +44,51 @@ public class PluginExecutor(IAnsiConsole output, bool isVerbose)
         {
             await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Info($"Image '{a.Name}' not in source — deleted");
+            console.Info($"Image '{a.Name}' not in source — deleted");
         }
-        if (plan.Images.Deletes.Count > 0) output.Info($"[green]{plan.Images.Deletes.Count} image(s) deleted[/]");
+        if (plan.Images.Deletes.Count > 0) console.Info($"[green]{plan.Images.Deletes.Count} image(s) deleted[/]");
 
         foreach (var a in plan.ResponseProps.Deletes)
         {
             await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Info($"Response Property '{a.Name}' not in source — deleted");
+            console.Info($"Response Property '{a.Name}' not in source — deleted");
         }
-        if (plan.ResponseProps.Deletes.Count > 0) output.Info($"[green]{plan.ResponseProps.Deletes.Count} response property record(s) deleted[/]");
+        if (plan.ResponseProps.Deletes.Count > 0) console.Info($"[green]{plan.ResponseProps.Deletes.Count} response property record(s) deleted[/]");
 
         foreach (var a in plan.RequestParams.Deletes)
         {
             await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Info($"Request Parameter '{a.Name}' not in source — deleted");
+            console.Info($"Request Parameter '{a.Name}' not in source — deleted");
         }
-        if (plan.RequestParams.Deletes.Count > 0) output.Info($"[green]{plan.RequestParams.Deletes.Count} request parameter(s) deleted[/]");
+        if (plan.RequestParams.Deletes.Count > 0) console.Info($"[green]{plan.RequestParams.Deletes.Count} request parameter(s) deleted[/]");
 
         // Level 2 — steps and custom APIs
         foreach (var a in plan.Steps.Deletes)
         {
             await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Info($"Step '{a.Name}' not in source — deleted");
+            console.Info($"Step '{a.Name}' not in source — deleted");
         }
-        if (plan.Steps.Deletes.Count > 0) output.Info($"[green]{plan.Steps.Deletes.Count} plugin step(s) deleted[/]");
+        if (plan.Steps.Deletes.Count > 0) console.Info($"[green]{plan.Steps.Deletes.Count} plugin step(s) deleted[/]");
 
         foreach (var a in plan.CustomApis.Deletes)
         {
             await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Info($"Custom API '{a.Name}' not in source — deleted");
+            console.Info($"Custom API '{a.Name}' not in source — deleted");
         }
-        if (plan.CustomApis.Deletes.Count > 0) output.Info($"[green]{plan.CustomApis.Deletes.Count} Custom API(s) deleted[/]");
+        if (plan.CustomApis.Deletes.Count > 0) console.Info($"[green]{plan.CustomApis.Deletes.Count} Custom API(s) deleted[/]");
 
         // Level 1 — plugin types
         foreach (var a in plan.PluginTypes.Deletes)
         {
             await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Info($"Plugin Type '{a.Name}' not in source — deleted");
+            console.Info($"Plugin Type '{a.Name}' not in source — deleted");
         }
-        if (plan.PluginTypes.Deletes.Count > 0) output.Info($"[green]{plan.PluginTypes.Deletes.Count} plugin type(s) deleted[/]");
+        if (plan.PluginTypes.Deletes.Count > 0) console.Info($"[green]{plan.PluginTypes.Deletes.Count} plugin type(s) deleted[/]");
     }
 
     async Task RunUpsertsAsync(
@@ -107,51 +107,51 @@ public class PluginExecutor(IAnsiConsole output, bool isVerbose)
         {
             await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Info($"Plugin type '{a.Name}' upserted");
+            console.Info($"Plugin type '{a.Name}' upserted");
         }
-        if (plan.PluginTypes.Upserts.Count > 0) output.Info($"[green]{plan.PluginTypes.Upserts.Count} plugin type(s) synced[/]");
+        if (plan.PluginTypes.Upserts.Count > 0) console.Info($"[green]{plan.PluginTypes.Upserts.Count} plugin type(s) synced[/]");
 
         // Level 2 — steps and custom APIs
         foreach (var a in plan.Steps.Upserts)
         {
             await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Info($"Step '{a.Name}' upserted");
+            console.Info($"Step '{a.Name}' upserted");
         }
-        if (plan.Steps.Upserts.Count > 0) output.Info($"[green]{plan.Steps.Upserts.Count} plugin step(s) synced[/]");
+        if (plan.Steps.Upserts.Count > 0) console.Info($"[green]{plan.Steps.Upserts.Count} plugin step(s) synced[/]");
 
         foreach (var a in plan.CustomApis.Upserts)
         {
             await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Info($"Custom API '{a.Name}' upserted");
+            console.Info($"Custom API '{a.Name}' upserted");
         }
-        if (plan.CustomApis.Upserts.Count > 0) output.Info($"[green]{plan.CustomApis.Upserts.Count} Custom API(s) synced[/]");
+        if (plan.CustomApis.Upserts.Count > 0) console.Info($"[green]{plan.CustomApis.Upserts.Count} Custom API(s) synced[/]");
 
         // Level 3 — leaf items
         foreach (var a in plan.Images.Upserts)
         {
             await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Info($"Image '{a.Name}' upserted");
+            console.Info($"Image '{a.Name}' upserted");
         }
-        if (plan.Images.Upserts.Count > 0) output.Info($"[green]{plan.Images.Upserts.Count} image(s) synced[/]");
+        if (plan.Images.Upserts.Count > 0) console.Info($"[green]{plan.Images.Upserts.Count} image(s) synced[/]");
 
         foreach (var a in plan.ResponseProps.Upserts)
         {
             await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Info($"Response property '{a.Name}' upserted");
+            console.Info($"Response property '{a.Name}' upserted");
         }
-        if (plan.ResponseProps.Upserts.Count > 0) output.Info($"[green]{plan.ResponseProps.Upserts.Count} response property record(s) synced[/]");
+        if (plan.ResponseProps.Upserts.Count > 0) console.Info($"[green]{plan.ResponseProps.Upserts.Count} response property record(s) synced[/]");
 
         foreach (var a in plan.RequestParams.Upserts)
         {
             await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Info($"Request Parameter '{a.Name}' upserted");
+            console.Info($"Request Parameter '{a.Name}' upserted");
         }
-        if (plan.RequestParams.Upserts.Count > 0) output.Info($"[green]{plan.RequestParams.Upserts.Count} request parameter(s) synced[/]");
+        if (plan.RequestParams.Upserts.Count > 0) console.Info($"[green]{plan.RequestParams.Upserts.Count} request parameter(s) synced[/]");
     }
 
     async Task RunAddSolutionComponentsAsync(IOrganizationServiceAsync2 service, RegistrationPlan plan, CancellationToken cancellationToken, ProgressTask? progressTask)
@@ -172,9 +172,9 @@ public class PluginExecutor(IAnsiConsole output, bool isVerbose)
         {
             await AddSolutionComponentAsync(service, a.EntityLogicalName, a.Id, a.ComponentType, a.SolutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            output.Info($"{a.EntityLogicalName} '{a.Id}' added to solution");
+            console.Info($"{a.EntityLogicalName} '{a.Id}' added to solution");
         }
-        if (all.Count > 0) output.Ok($"{all.Count} component(s) added to solution");
+        if (all.Count > 0) console.Ok($"{all.Count} component(s) added to solution");
     }
 
     async Task UpsertAsync(IOrganizationServiceAsync2 service, UpsertAction action, string solutionName, CancellationToken cancellationToken)
@@ -204,6 +204,6 @@ public class PluginExecutor(IAnsiConsole output, bool isVerbose)
         };
 
         await service.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
-        output.Info($"Added {entityLogicalName} '{componentId}' to solution '{solutionName}'.");
+        console.Info($"Added {entityLogicalName} '{componentId}' to solution '{solutionName}'.");
     }
 }
