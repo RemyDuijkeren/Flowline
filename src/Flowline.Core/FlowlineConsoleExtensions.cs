@@ -21,7 +21,6 @@ public static class FlowlineConsoleExtensions
     public static void Verbose(this IAnsiConsole console, string message, FlowlineRuntimeOptions options)
     {
         console.Write(new VerboseMarkup(message));
-        console.WriteLine();
         options.VerboseOutput.Append(message);
     }
 

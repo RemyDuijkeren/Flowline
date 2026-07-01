@@ -17,7 +17,8 @@ public class VerboseMarkupTests
         verboseConsole.Write(new VerboseMarkup("hello"));
         markupConsole.Write(new Markup("[dim]hello[/]"));
 
-        verboseConsole.Output.Should().Be(markupConsole.Output);
+        // VerboseMarkup includes a trailing newline so VerboseFilterHook can suppress it as a single unit.
+        verboseConsole.Output.Should().Be(markupConsole.Output + "\n");
     }
 
     [Fact]

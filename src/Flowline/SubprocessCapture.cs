@@ -58,7 +58,7 @@ public sealed class SubprocessCapture
                 else
                 {
                     // Suppressed from terminal → LoggingRenderHook never fires; log directly.
-                    _logger.LogDebug("{Line}", line);
+                    _logger.LogDebug("{Prefix}: {Line}", prefix, line);
                 }
             }))
             .WithStandardErrorPipe(PipeTarget.ToDelegate(line =>

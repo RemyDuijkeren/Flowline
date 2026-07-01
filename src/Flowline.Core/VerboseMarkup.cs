@@ -10,5 +10,10 @@ public sealed class VerboseMarkup(string message) : IRenderable
     private readonly IRenderable _markup = new Markup($"[dim]{Markup.Escape(message)}[/]");
 
     public Measurement Measure(RenderOptions options, int maxWidth) => _markup.Measure(options, maxWidth);
-    public IEnumerable<Segment> Render(RenderOptions options, int maxWidth) => _markup.Render(options, maxWidth);
+    public IEnumerable<Segment> Render(RenderOptions options, int maxWidth)
+    {
+        foreach (var segment in _markup.Render(options, maxWidth))
+            yield return segment;
+        yield return Segment.LineBreak;
+    }
 }
