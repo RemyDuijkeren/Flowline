@@ -109,6 +109,7 @@ Optional named properties:
 | `Order` | `int` | `1` | Execution order when multiple steps fire on the same event. Lower runs first. |
 | `RunAs` | `string?` | `null` | GUID of the Dataverse `systemuser` to impersonate (`impersonatinguserid`). `null` runs as the calling user. |
 | `Config` | `string?` | `null` | Passed to the plugin constructor as `unsecureConfig`. |
+| `Description` | `string?` | `null` | Description shown in the Plugin Registration Tool. |
 | `DeleteJobOnSuccess` | `bool` | `true` | Automatically delete the `AsyncOperation` job record when the step succeeds. Async post-operation steps only. Set to `false` to retain the record for auditing. |
 | `SecondaryTable` | `string?` | `null` | Secondary table for Associate / Disassociate steps. Pass `"none"` to fire on any secondary table without a warning. See [Associate / Disassociate](#associate--disassociate) below. |
 

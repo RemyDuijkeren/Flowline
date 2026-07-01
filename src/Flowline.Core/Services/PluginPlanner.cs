@@ -211,7 +211,8 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
                     dvStep.GetAttributeValue<EntityReference?>("sdkmessageid")?.Id != messageId ||
                     dvStep.GetAttributeValue<EntityReference?>("sdkmessagefilterid")?.Id != filterId ||
                     dvStep.GetAttributeValue<bool>("asyncautodelete") != asmStep.AsyncAutoDelete ||
-                    dvStep.GetAttributeValue<EntityReference?>("impersonatinguserid")?.Id != asmStep.RunAs;
+                    dvStep.GetAttributeValue<EntityReference?>("impersonatinguserid")?.Id != asmStep.RunAs ||
+                    dvStep.GetAttributeValue<string>("description") != asmStep.Description;
 
                 if (!changed)
                 {
@@ -224,6 +225,7 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
                 dvStep["rank"]                 = asmStep.Order;
                 dvStep["filteringattributes"]  = asmStep.FilteringColumns;
                 dvStep["configuration"]        = asmStep.Configuration;
+                dvStep["description"]          = asmStep.Description;
                 dvStep["asyncautodelete"]      = asmStep.AsyncAutoDelete;
                 dvStep["impersonatinguserid"]  = asmStep.RunAs.HasValue ? new EntityReference("systemuser", asmStep.RunAs.Value) : null;
                 dvStep["sdkmessageid"]         = new EntityReference("sdkmessage", messageId);
@@ -261,6 +263,7 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
                     dvStep["rank"]                = asmStep.Order;
                     dvStep["filteringattributes"] = asmStep.FilteringColumns;
                     dvStep["configuration"]       = asmStep.Configuration;
+                    dvStep["description"]         = asmStep.Description;
                     dvStep["asyncautodelete"]     = asmStep.AsyncAutoDelete;
                     dvStep["impersonatinguserid"] = asmStep.RunAs.HasValue ? new EntityReference("systemuser", asmStep.RunAs.Value) : null;
                     dvStep["sdkmessageid"]        = new EntityReference("sdkmessage", messageId);
@@ -282,7 +285,7 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
                         ["configuration"]      = asmStep.Configuration,
                         ["asyncautodelete"]    = asmStep.AsyncAutoDelete,
                         ["impersonatinguserid"] = asmStep.RunAs.HasValue ? new EntityReference("systemuser", asmStep.RunAs.Value) : null,
-                        ["description"]        = $"{FlowlineMarker} Created at {DateTime.UtcNow:u}"
+                        ["description"]        = asmStep.Description
                     };
                     if (filterId.HasValue)
                         entity["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId.Value);

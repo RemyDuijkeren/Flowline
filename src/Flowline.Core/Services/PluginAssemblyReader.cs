@@ -305,6 +305,7 @@ public class PluginAssemblyReader(IAnsiConsole console, FlowlineRuntimeOptions o
             : null;
         var order = 1;
         var configuration = (string?)null;
+        var description = (string?)null;
         var runAsString = (string?)null;
         bool? deleteJobOnSuccessExplicit = null;
         var secondaryTable = (string?)null;
@@ -312,6 +313,7 @@ public class PluginAssemblyReader(IAnsiConsole console, FlowlineRuntimeOptions o
         {
             if (arg.MemberName == "Order") order = Convert.ToInt32(arg.TypedValue.Value);
             else if (arg.MemberName == "Config") configuration = (string?)arg.TypedValue.Value;
+            else if (arg.MemberName == "Description") description = (string?)arg.TypedValue.Value;
             else if (arg.MemberName == "RunAs") runAsString = (string?)arg.TypedValue.Value;
             else if (arg.MemberName == "DeleteJobOnSuccess") deleteJobOnSuccessExplicit = (bool)arg.TypedValue.Value!;
             else if (arg.MemberName == "SecondaryTable") secondaryTable = (string?)arg.TypedValue.Value;
@@ -328,7 +330,7 @@ public class PluginAssemblyReader(IAnsiConsole console, FlowlineRuntimeOptions o
             .ToList();
 
         if (allHandlesAttrs.Count >= 2)
-            return BuildMultiHandlesSteps(type, allHandlesAttrs, table, order, configuration, runAs, runAsString, deleteJobOnSuccessExplicit, secondaryTable);
+            return BuildMultiHandlesSteps(type, allHandlesAttrs, table, order, configuration, description, runAs, runAsString, deleteJobOnSuccessExplicit, secondaryTable);
 
         // Single-[Handles] or convention path
         string message;
@@ -377,13 +379,13 @@ public class PluginAssemblyReader(IAnsiConsole console, FlowlineRuntimeOptions o
             ? $"{type.FullName}: {message} of {tableDisplay} with {secondaryTable}"
             : $"{type.FullName}: {message} of {tableDisplay}";
 
-        return [new PluginStepMetadata(stepName, message, table, stage, mode, order, filteringColumns, configuration, images, warnings, secondaryTable, deleteJobOnSuccess, runAs)];
+        return [new PluginStepMetadata(stepName, message, table, stage, mode, order, filteringColumns, configuration, images, warnings, secondaryTable, deleteJobOnSuccess, runAs, description)];
     }
 
     private static IEnumerable<PluginStepMetadata> BuildMultiHandlesSteps(
         Type type,
         List<CustomAttributeData> allHandlesAttrs,
-        string? table, int order, string? configuration, Guid? runAs, string? runAsString,
+        string? table, int order, string? configuration, string? description, Guid? runAs, string? runAsString,
         bool? deleteJobOnSuccessExplicit, string? secondaryTable)
     {
         var handles = new List<(string Message, int Stage, int Mode, string StageSuffix)>();
@@ -448,7 +450,7 @@ public class PluginAssemblyReader(IAnsiConsole console, FlowlineRuntimeOptions o
             if (runAsString != null && runAs == null)
                 stepWarnings.Add($"RunAs value '{runAsString}' on '{type.Name}' is not a valid GUID — impersonatinguserid will not be set.");
 
-            steps.Add(new PluginStepMetadata(stepName, msg, table, s, m, order, stepFilter, configuration, stepImages, stepWarnings, secondaryTable, deleteJobOnSuccess, runAs));
+            steps.Add(new PluginStepMetadata(stepName, msg, table, s, m, order, stepFilter, configuration, stepImages, stepWarnings, secondaryTable, deleteJobOnSuccess, runAs, description));
         }
 
         // R7: class-level checks — error if attribute is present but no step is compatible

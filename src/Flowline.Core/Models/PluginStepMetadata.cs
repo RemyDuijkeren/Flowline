@@ -13,4 +13,5 @@ public record PluginStepMetadata(
     List<string> Warnings,
     string? SecondaryTable = null,
     bool AsyncAutoDelete = false,
-    Guid? RunAs = null);
+    Guid? RunAs = null,
+    string? Description = null);

@@ -94,6 +94,12 @@ namespace Flowline.Attributes
         public string Table { get; }
 
         /// <summary>
+        /// Description shown in the Plugin Registration Tool.
+        /// Omit to leave the description blank in Dataverse.
+        /// </summary>
+        public string Description { get; set; }
+
+        /// <summary>
         /// Controls the execution order when multiple plugin steps are registered for the same
         /// message and stage on the same table. Lower numbers run first. Default is <c>1</c>.
         /// </summary>
