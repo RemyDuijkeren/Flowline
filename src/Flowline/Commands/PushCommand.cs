@@ -27,7 +27,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "[solution]")]
-        [Description("Solution to push")]
+        [Description("Solution to push (optional in project mode)")]
         public string? Solution { get; set; }
 
         [CommandOption("-s|--scope <SCOPE>")]

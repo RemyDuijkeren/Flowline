@@ -18,7 +18,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "[solution]")]
-        [Description("Solution to sync")]
+        [Description("Solution to sync (optional in project mode)")]
         public string? Solution { get; set; }
 
         [CommandOption("--dev <URL>")]

@@ -21,7 +21,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "[solution]")]
-        [Description("Solution to generate types for")]
+        [Description("Solution to generate types for (optional in project mode)")]
         public string? Solution { get; set; }
 
         [CommandOption("--namespace <NS>")]

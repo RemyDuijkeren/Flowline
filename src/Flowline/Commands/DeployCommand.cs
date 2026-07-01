@@ -22,7 +22,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         public string Target { get; set; } = null!;
 
         [CommandOption("--solution <name>")]
-        [Description("Solution to deploy")]
+        [Description("Solution to deploy (optional in project mode)")]
         public string? Solution { get; set; }
 
         [CommandOption("--managed")]

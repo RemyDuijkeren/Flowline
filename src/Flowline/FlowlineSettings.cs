@@ -6,14 +6,14 @@ namespace Flowline;
 public class FlowlineSettings : CommandSettings
 {
     [CommandOption("-v|--verbose")]
-    [Description("Show command details")]
+    [Description("Show detailed command output")]
     public bool Verbose { get; set; } = false;
 
     [CommandOption("-f|--force")]
-    [Description("Skip confirmation prompts")]
+    [Description("Allow operations that are blocked by default because they risk unrecoverable data loss")]
     public bool Force { get; set; } = false;
 
     [CommandOption("--no-cache")]
-    [Description("Refresh validation checks instead of using the local validation cache")]
+    [Description("Re-run all pre-flight checks instead of using cached results")]
     public bool NoCache { get; set; } = false;
 }
