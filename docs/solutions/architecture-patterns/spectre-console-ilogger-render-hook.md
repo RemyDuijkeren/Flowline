@@ -220,3 +220,4 @@ private sealed class CaptureLogger(List<(LogLevel, string)> entries)
 - `tests/Flowline.Core.Tests/LoggingRenderHookTests.cs` — test suite
 - Flowline exception-handling convention — the try/catch here is a deliberate exception to the "no try/catch around service calls" rule (see `memory/feedback_exception_handling.md`)
 - [`activity-correlation-structured-logging.md`](activity-correlation-structured-logging.md) — complementary pattern: W3C TraceId correlation via ActivitySource/ActivityListener + Serilog enricher. Both patterns are wired in `Program.cs` and coexist without interference.
+- [`../logic-errors/stale-bool-capture-hook-construction.md`](../logic-errors/stale-bool-capture-hook-construction.md) — sibling hook `VerboseFilterHook` must accept `FlowlineRuntimeOptions` (reference type) rather than `bool isVerbose` (value copy) so it reads the post-parse `--verbose` state. Stale-capture bug found in code review.

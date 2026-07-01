@@ -68,33 +68,26 @@ public sealed class SubprocessCapture
             }));
     }
 
+    static readonly string[] s_errorPatterns = ["Error: ", "The reason given was: ", ": error"];
+    static readonly string[] s_warningPatterns = [": warning"];
+
     void DisplayErrorMessage(string line, string prefix)
     {
-        if (line.Contains("Error: ") || line.Contains("The reason given was: "))
-        {
-            _console.MarkupLine($"[red]{Markup.Escape(prefix)}: {Markup.Escape(line)}[/]");
-            return;
-        }
-        if (line.Contains(": error"))
-        {
-            _console.MarkupLine($"[red]{Markup.Escape(prefix)}: {Markup.Escape(line)}[/]");
-            return;
-        }
-        if (line.Contains(": warning"))
-        {
-            _console.MarkupLine($"[yellow]{Markup.Escape(prefix)}: {Markup.Escape(line)}[/]");
-        }
+        var color = s_errorPatterns.Any(line.Contains) ? "red" : "yellow";
+        _console.MarkupLine($"[{color}]{Markup.Escape(prefix)}: {Markup.Escape(line)}[/]");
     }
 
     static bool IsErrorLine(string s) =>
-        s.Contains("Error: ") || s.Contains("The reason given was: ") || s.Contains(": error") || s.Contains(": warning");
+        s_errorPatterns.Any(s.Contains) || s_warningPatterns.Any(s.Contains);
 
     static void SetStatusWithExecutionTime(StatusContext? ctx, string s)
     {
         if (ctx is null || string.IsNullOrWhiteSpace(s) || !s.StartsWith("Processing asynchronous operation...")) return;
 
         // Extract execution time from e.g. "Processing asynchronous operation... execution time: 00:01:28 and 2.46% of max time allotted"
-        var execution = s.Split("... ")[1];
+        var parts = s.Split("... ", 2);
+        if (parts.Length < 2) return;
+        var execution = parts[1];
 
         // Append execution part to ctx.Status, replacing any existing "(…)" suffix
         var indexOf = ctx.Status.IndexOf(" (", StringComparison.Ordinal);

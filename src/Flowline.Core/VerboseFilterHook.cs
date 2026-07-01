@@ -3,13 +3,13 @@ using Spectre.Console.Rendering;
 
 namespace Flowline.Core;
 
-public sealed class VerboseFilterHook(bool isVerbose) : IRenderHook
+public sealed class VerboseFilterHook(FlowlineRuntimeOptions options) : IRenderHook
 {
-    public IEnumerable<IRenderable> Process(RenderOptions options, IEnumerable<IRenderable> renderables)
+    public IEnumerable<IRenderable> Process(RenderOptions renderOptions, IEnumerable<IRenderable> renderables)
     {
         foreach (var renderable in renderables)
         {
-            if (renderable is VerboseMarkup && !isVerbose)
+            if (renderable is VerboseMarkup && !options.IsVerbose)
                 continue;
             yield return renderable;
         }
