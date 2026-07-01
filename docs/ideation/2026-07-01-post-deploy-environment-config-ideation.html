@@ -1,0 +1,1148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ideation: Post-Deploy Environment Config — Flowline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface-raised: #21253a;
+    --border: #2e3347;
+    --border-subtle: #252840;
+    --text: #e2e4ef;
+    --text-muted: #7b82a0;
+    --text-faint: #4e5370;
+    --accent: #6c83ff;
+    --accent-soft: rgba(108,131,255,.10);
+    --accent-text: #8fa3ff;
+    --green: #3ecf8e;
+    --green-soft: rgba(62,207,142,.10);
+    --green-text: #5adba6;
+    --amber: #f59e42;
+    --amber-soft: rgba(245,158,66,.10);
+    --red: #f46a6a;
+    --red-soft: rgba(244,106,106,.09);
+    --purple: #b07bff;
+    --purple-soft: rgba(176,123,255,.10);
+    --teal: #38bdf8;
+    --teal-soft: rgba(56,189,248,.09);
+
+    --radius: 8px;
+    --radius-sm: 5px;
+    --radius-lg: 12px;
+
+    --font: 'Inter', system-ui, -apple-system, sans-serif;
+    --mono: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 15px;
+    line-height: 1.65;
+    padding: 0 1rem 4rem;
+  }
+
+  .page {
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  /* ── Header ── */
+  .doc-header {
+    padding: 3.5rem 0 2.5rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 2.5rem;
+  }
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent-text);
+    margin-bottom: .6rem;
+  }
+  .doc-header h1 {
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.2;
+    margin-bottom: 1rem;
+  }
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem .75rem;
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
+  .meta-row span { display: flex; align-items: center; gap: .3rem; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    padding: .15em .55em;
+    border-radius: var(--radius-sm);
+    font-size: 11.5px;
+    font-weight: 600;
+    border: 1px solid transparent;
+  }
+  .chip-accent { background: var(--accent-soft); color: var(--accent-text); border-color: rgba(108,131,255,.2); }
+  .chip-green  { background: var(--green-soft);  color: var(--green-text);  border-color: rgba(62,207,142,.2); }
+  .chip-amber  { background: var(--amber-soft);  color: var(--amber);       border-color: rgba(245,158,66,.2); }
+  .chip-red    { background: var(--red-soft);     color: var(--red);         border-color: rgba(244,106,106,.2); }
+  .chip-purple { background: var(--purple-soft);  color: var(--purple);      border-color: rgba(176,123,255,.2); }
+  .chip-teal   { background: var(--teal-soft);    color: var(--teal);        border-color: rgba(56,189,248,.2); }
+  .chip-muted  { background: rgba(255,255,255,.05); color: var(--text-muted); border-color: var(--border); }
+
+  /* ── Stats strip ── */
+  .stats-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 2.5rem;
+  }
+  .stat {
+    background: var(--surface);
+    padding: 1rem 1.25rem;
+    text-align: center;
+  }
+  .stat-value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1;
+    margin-bottom: .25rem;
+  }
+  .stat-label {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    font-weight: 500;
+  }
+
+  /* ── Section ── */
+  section { margin-bottom: 3rem; }
+  section > h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: .09em;
+    margin-bottom: 1rem;
+    padding-bottom: .5rem;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  /* ── Grounding & Axes ── */
+  .grounding-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  @media (max-width: 640px) { .grounding-grid { grid-template-columns: 1fr; } }
+
+  .grounding-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+  }
+  .grounding-card h3 {
+    font-size: 11.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .09em;
+    color: var(--text-muted);
+    margin-bottom: .65rem;
+  }
+  .grounding-card p, .grounding-card li {
+    font-size: 13.5px;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+  .grounding-card ul { padding-left: 1.1rem; }
+  .grounding-card li { margin-bottom: .25rem; }
+  .grounding-card code {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: rgba(255,255,255,.06);
+    padding: .05em .3em;
+    border-radius: 3px;
+    color: var(--accent-text);
+  }
+  .grounding-card.full { grid-column: 1 / -1; }
+
+  .axes-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    margin-top: .5rem;
+  }
+  .axis-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    padding: .35em .75em;
+    border-radius: 99px;
+    font-size: 12.5px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+  }
+  .axis-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── Sub-nav jump list ── */
+  .jump-list {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: .85rem 1.1rem;
+    margin-bottom: 1.75rem;
+  }
+  .jump-list p {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .09em;
+    color: var(--text-faint);
+    margin-bottom: .5rem;
+  }
+  .jump-list ol {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+  }
+  .jump-list li { display: flex; align-items: baseline; gap: .5rem; }
+  .jump-list .rank {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-faint);
+    min-width: 1.4rem;
+    font-family: var(--mono);
+  }
+  .jump-list a {
+    font-size: 13.5px;
+    color: var(--accent-text);
+    text-decoration: none;
+  }
+  .jump-list a:hover { text-decoration: underline; }
+  .jump-list .jmeta {
+    font-size: 11.5px;
+    color: var(--text-faint);
+    margin-left: auto;
+    white-space: nowrap;
+  }
+
+  /* ── Idea cards ── */
+  .idea-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    margin-bottom: 1.5rem;
+    overflow: hidden;
+  }
+  .card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: .75rem;
+    padding: 1.25rem 1.5rem 1rem;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .rank-badge {
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    font-family: var(--mono);
+    margin-top: .15rem;
+  }
+  .card-titles { flex: 1; min-width: 0; }
+  .card-titles h3 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #fff;
+    line-height: 1.3;
+    margin-bottom: .45rem;
+  }
+  .card-chips { display: flex; flex-wrap: wrap; gap: .35rem; }
+
+  .card-body { padding: 1.25rem 1.5rem; }
+  .card-body p { font-size: 14px; color: var(--text); line-height: 1.65; margin-bottom: 1rem; }
+  .card-body p:last-child { margin-bottom: 0; }
+
+  .field-block { margin-bottom: 1.1rem; }
+  .field-label {
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--text-faint);
+    margin-bottom: .3rem;
+  }
+  .field-value { font-size: 13.5px; color: var(--text-muted); line-height: 1.6; }
+  .field-value code {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: rgba(255,255,255,.06);
+    padding: .05em .3em;
+    border-radius: 3px;
+    color: var(--accent-text);
+  }
+  .basis-tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: var(--mono);
+    padding: .1em .4em;
+    border-radius: 3px;
+    margin-right: .35rem;
+  }
+  .basis-direct  { background: rgba(62,207,142,.15); color: var(--green-text); }
+  .basis-external{ background: rgba(108,131,255,.15); color: var(--accent-text); }
+  .basis-reasoned{ background: rgba(245,158,66,.15); color: var(--amber); }
+
+  .meta-dl {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .4rem .5rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-subtle);
+  }
+  @media (max-width: 500px) { .meta-dl { grid-template-columns: 1fr; } }
+  .meta-pair { display: flex; align-items: center; gap: .5rem; }
+  .meta-pair dt {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--text-faint);
+    white-space: nowrap;
+  }
+  .meta-pair dd { font-size: 13px; }
+
+  .confidence-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+  }
+  .confidence-bar {
+    flex: 1;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    max-width: 80px;
+  }
+  .confidence-bar-fill { height: 100%; border-radius: 2px; }
+
+  /* diagram */
+  .diagram-wrap {
+    margin: 1.25rem 0;
+    padding: 1rem;
+    background: var(--surface-raised);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius);
+    overflow-x: auto;
+  }
+  .diagram-wrap svg { display: block; margin: 0 auto; }
+
+  /* callout */
+  .callout {
+    border-radius: var(--radius);
+    padding: .75rem 1rem;
+    margin: 1rem 0 0;
+    font-size: 13px;
+  }
+  .callout-amber {
+    background: var(--amber-soft);
+    border: 1px solid rgba(245,158,66,.2);
+    color: var(--amber);
+  }
+  .callout-precondition {
+    background: rgba(108,131,255,.07);
+    border: 1px solid rgba(108,131,255,.18);
+    color: var(--accent-text);
+  }
+  .callout-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    display: block;
+    margin-bottom: .2rem;
+  }
+
+  /* ── Rejection table ── */
+  .rejection-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .rejection-table th {
+    text-align: left;
+    padding: .5rem .75rem;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .09em;
+    color: var(--text-faint);
+    border-bottom: 1px solid var(--border);
+  }
+  .rejection-table td {
+    padding: .55rem .75rem;
+    vertical-align: top;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .rejection-table tr:last-child td { border-bottom: none; }
+  .rejection-table td:first-child { font-weight: 600; color: var(--text); font-size: 13px; white-space: nowrap; }
+  .rejection-table td:nth-child(2) { color: var(--text-faint); font-size: 12.5px; }
+
+  /* ── Footer ── */
+  footer {
+    margin-top: 4rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-faint);
+    text-align: center;
+  }
+  footer code { font-family: var(--mono); font-size: 11.5px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ── Header ── -->
+<header class="doc-header">
+  <p class="eyebrow">Flowline CLI · Ideation</p>
+  <h1>Post-Deploy Environment Config</h1>
+  <div class="meta-row">
+    <span>Date: <time datetime="2026-07-01">2026-07-01</time></span>
+    <span>Mode: <span class="chip chip-accent">repo-grounded</span></span>
+    <span>Topic: <code style="font-family:var(--mono);font-size:12px;color:var(--text-muted)">post-deploy-environment-config</code></span>
+  </div>
+</header>
+
+<!-- ── Stats strip ── -->
+<div class="stats-strip" aria-label="Summary statistics">
+  <div class="stat">
+    <div class="stat-value">40</div>
+    <div class="stat-label">Raw candidates</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">7</div>
+    <div class="stat-label">Survivors</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">13</div>
+    <div class="stat-label">Cut</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">4</div>
+    <div class="stat-label">Axes covered</div>
+  </div>
+</div>
+
+<!-- ── Grounding Context ── -->
+<section aria-labelledby="grounding-heading">
+  <h2 id="grounding-heading">Codebase Context</h2>
+  <div class="grounding-grid">
+    <div class="grounding-card">
+      <h3>What deploy does today</h3>
+      <ul>
+        <li>Pack solution (PAC CLI)</li>
+        <li>Import solution (<code>pac solution import --async</code>)</li>
+        <li>Orphan cleanup (<code>RunPostImportAsync</code> at line 67)</li>
+        <li>No flow activation, no step state, no env config</li>
+      </ul>
+    </div>
+    <div class="grounding-card">
+      <h3>Extension points available</h3>
+      <ul>
+        <li><code>DeployCommand.cs:67</code> — post-import hook slot</li>
+        <li><code>DataverseConnector</code> — <code>IOrganizationServiceAsync2</code></li>
+        <li><code>OrphanCleanupService</code> — proven model for SDK-level patching</li>
+        <li><code>RunMode</code> enum — Normal / NoDelete / DryRun</li>
+      </ul>
+    </div>
+    <div class="grounding-card">
+      <h3>What PAC already handles</h3>
+      <ul>
+        <li><code>pac solution create-settings</code> → env vars + connection refs at import time</li>
+        <li><code>--activate-plugins</code> → all-or-nothing, no selectivity</li>
+        <li>Nothing for flow activation, step enable/disable, or secure config</li>
+      </ul>
+    </div>
+    <div class="grounding-card">
+      <h3>Community pain (evidenced)</h3>
+      <ul>
+        <li>Flows deactivated by default after every import — no CLI fix exists</li>
+        <li>Plugin step enable/disable has no PAC CLI command</li>
+        <li>Secure config excluded from solution export — manual per-deployment API calls required</li>
+      </ul>
+    </div>
+    <div class="grounding-card full">
+      <h3>Key SDK primitives</h3>
+      <p>
+        <code>workflow.statecode</code> PATCH (1 = Activated, 0 = Draft) ·
+        <code>SetStateRequest</code> on <code>sdkmessageprocessingstep</code> (State 0 = Active, State 1 = Inactive) ·
+        <code>sdkmessageprocessingstepsecureconfig</code> — separate table, NOT exported in solutions, admin-only read, must be set per-deployment via API ·
+        ALM Accelerator (deprecated 2023) is the most complete prior art: per-step secure config by ID, ordered flow activation with ownership assignment
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ── Topic Axes ── -->
+<section aria-labelledby="axes-heading">
+  <h2 id="axes-heading">Topic Axes</h2>
+  <div class="axes-list">
+    <span class="axis-tag"><span class="axis-dot" style="background:#6c83ff"></span> Flow &amp; workflow lifecycle</span>
+    <span class="axis-tag"><span class="axis-dot" style="background:#3ecf8e"></span> Plugin step state &amp; config</span>
+    <span class="axis-tag"><span class="axis-dot" style="background:#f59e42"></span> Settings &amp; env vars</span>
+    <span class="axis-tag"><span class="axis-dot" style="background:#b07bff"></span> Integration model</span>
+  </div>
+</section>
+
+<!-- ── Ranked Ideas ── -->
+<section aria-labelledby="ideas-heading">
+  <h2 id="ideas-heading">Ranked Ideas</h2>
+
+  <!-- Jump list -->
+  <nav class="jump-list" aria-label="Idea navigation">
+    <p>Jump to idea</p>
+    <ol>
+      <li><span class="rank">1.</span><a href="#idea-1">Classic workflow state restoration</a><span class="jmeta"><span class="chip chip-accent" style="font-size:11px">Flow &amp; workflow</span> · Conf 90% · Cx Low</span></li>
+      <li><span class="rank">2.</span><a href="#idea-2">Step state declaration drives deploy</a><span class="jmeta"><span class="chip chip-green" style="font-size:11px">Step state</span> · Conf 88% · Cx Low</span></li>
+      <li><span class="rank">3.</span><a href="#idea-3">Pre-flight config validation</a><span class="jmeta"><span class="chip chip-amber" style="font-size:11px">Settings</span> · Conf 85% · Cx Low</span></li>
+      <li><span class="rank">4.</span><a href="#idea-4">Secure config deploy-time injection</a><span class="jmeta"><span class="chip chip-green" style="font-size:11px">Step state</span> · Conf 80% · Cx Med</span></li>
+      <li><span class="rank">5.</span><a href="#idea-5">Ordered flow activation</a><span class="jmeta"><span class="chip chip-accent" style="font-size:11px">Flow &amp; workflow</span> · Conf 75% · Cx Med</span></li>
+      <li><span class="rank">6.</span><a href="#idea-6">IPostDeployService protocol</a><span class="jmeta"><span class="chip chip-purple" style="font-size:11px">Integration</span> · Conf 85% · Cx Med</span></li>
+      <li><span class="rank">7.</span><a href="#idea-7">Commission as separate command</a><span class="jmeta"><span class="chip chip-purple" style="font-size:11px">Integration</span> · Conf 80% · Cx Med</span></li>
+    </ol>
+  </nav>
+
+  <!-- ── Idea 1 ── -->
+  <article class="idea-card" id="idea-1">
+    <div class="card-header">
+      <div class="rank-badge" aria-label="Rank 1">1</div>
+      <div class="card-titles">
+        <h3>Classic Workflow State Restoration</h3>
+        <div class="card-chips">
+          <span class="chip chip-accent">Flow &amp; workflow lifecycle</span>
+          <span class="chip chip-green">Conf 90%</span>
+          <span class="chip chip-muted">Complexity: Low</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="field-block">
+        <p class="field-label">Description</p>
+        <p class="field-value">Solution import silently resets classic workflows and BPFs to Draft state — every deployment to any non-dev environment currently breaks them without error. Flowline takes a pre-import snapshot of <code>workflow.statecode</code> for all components in the solution, then post-import restores them via <code>SetStateRequest</code>. The developer never manually re-activates workflows again. A <code>--no-restore</code> flag provides an opt-out.</p>
+      </div>
+
+      <!-- Diagram: pre/post import flow -->
+      <div class="diagram-wrap" aria-label="Workflow state restoration sequence diagram">
+        <svg width="720" height="160" viewBox="0 0 720 160" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Shows snapshot before import, import step, then restore after import">
+          <defs>
+            <marker id="arr1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#4e5370"/>
+            </marker>
+          </defs>
+          <!-- Step boxes -->
+          <rect x="10" y="50" width="140" height="60" rx="6" fill="#21253a" stroke="#2e3347"/>
+          <text x="80" y="77" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" fill="#e2e4ef" font-weight="600">Pre-import</text>
+          <text x="80" y="95" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#7b82a0">Snapshot statecodes</text>
+
+          <rect x="200" y="50" width="140" height="60" rx="6" fill="#21253a" stroke="#2e3347"/>
+          <text x="270" y="77" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" fill="#e2e4ef" font-weight="600">PAC Import</text>
+          <text x="270" y="95" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#f46a6a">Resets all to Draft</text>
+
+          <rect x="390" y="50" width="150" height="60" rx="6" fill="#21253a" stroke="#2e3347"/>
+          <text x="465" y="77" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" fill="#e2e4ef" font-weight="600">Post-import</text>
+          <text x="465" y="95" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#3ecf8e">Restore from snapshot</text>
+
+          <rect x="590" y="50" width="120" height="60" rx="6" fill="rgba(62,207,142,.08)" stroke="rgba(62,207,142,.25)"/>
+          <text x="650" y="77" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" fill="#5adba6" font-weight="600">Workflows</text>
+          <text x="650" y="95" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#5adba6">Active ✓</text>
+
+          <!-- Arrows -->
+          <line x1="150" y1="80" x2="195" y2="80" stroke="#4e5370" stroke-width="1.5" marker-end="url(#arr1)"/>
+          <line x1="340" y1="80" x2="385" y2="80" stroke="#4e5370" stroke-width="1.5" marker-end="url(#arr1)"/>
+          <line x1="540" y1="80" x2="585" y2="80" stroke="#4e5370" stroke-width="1.5" marker-end="url(#arr1)"/>
+
+          <!-- Snapshot curved arrow back -->
+          <path d="M80,110 Q80,145 270,145 Q340,145 380,130" stroke="#6c83ff" stroke-width="1.5" stroke-dasharray="4,3" fill="none" marker-end="url(#arr1)"/>
+          <text x="200" y="141" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#6c83ff" paint-order="stroke fill" stroke="#0f1117" stroke-width="3">snapshot carried forward</text>
+        </svg>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">Basis</p>
+        <p class="field-value">
+          <span class="basis-tag basis-direct">direct:</span>
+          Brainstorm <code>2026-06-12-deploy-state-restoration-requirements.md</code> covers exactly this scenario (status: idea). <code>OrphanCleanupService.cs</code> already calls <code>UpdateAsync</code> with <code>statecode</code>/<code>statuscode</code> for workflow deactivation before deletion — the SDK pattern is proven in the codebase. Post-import hook at <code>DeployCommand.cs:67</code> is the insertion point.
+        </p>
+      </div>
+      <div class="field-block">
+        <p class="field-label">Rationale</p>
+        <p class="field-value">The pattern (pre-import snapshot → post-import restore) is structurally identical to how <code>OrphanCleanupService</code> works. This is the second service following the same shape — no new architecture. The existing brainstorm already scoped it; this validates it as the right next implementation candidate.</p>
+      </div>
+      <div class="field-block">
+        <p class="field-label">Downsides</p>
+        <p class="field-value">Restoring a workflow that was deactivated intentionally in the target environment — by a support engineer or admin outside of Flowline — would silently undo that. The <code>--no-restore</code> flag handles opt-out, but drift detection (Idea 6) is the fuller answer.</p>
+      </div>
+      <div class="meta-dl">
+        <div class="meta-pair"><dt>Confidence</dt><dd>
+          <div class="confidence-bar-wrap">
+            <span>90%</span>
+            <div class="confidence-bar"><div class="confidence-bar-fill" style="width:90%;background:var(--green)"></div></div>
+          </div>
+        </dd></div>
+        <div class="meta-pair"><dt>Complexity</dt><dd><span class="chip chip-green">Low</span></dd></div>
+        <div class="meta-pair"><dt>Meeting test</dt><dd><span style="font-size:13px">Does deploy today silently break active workflows?</span></dd></div>
+      </div>
+    </div>
+  </article>
+
+  <!-- ── Idea 2 ── -->
+  <article class="idea-card" id="idea-2">
+    <div class="card-header">
+      <div class="rank-badge" aria-label="Rank 2">2</div>
+      <div class="card-titles">
+        <h3>Step State Declaration Drives Deploy</h3>
+        <div class="card-chips">
+          <span class="chip chip-green">Plugin step state &amp; config</span>
+          <span class="chip chip-green">Conf 88%</span>
+          <span class="chip chip-muted">Complexity: Low</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="field-block">
+        <p class="field-label">Description</p>
+        <p class="field-value">Add <code>IsDisabled</code> to <code>StepAttribute</code>, then honor it on <code>flowline deploy</code> — not just on <code>push</code>. After import, Flowline calls <code>SetStateRequest</code> on <code>sdkmessageprocessingstep</code> to match declared state. The attribute becomes authoritative across all Flowline operations: push registers the step with correct state, deploy reconciles it back after import. No separate command, no post-deploy checklist item.</p>
+      </div>
+      <div class="field-block">
+        <p class="field-label">Basis</p>
+        <p class="field-value">
+          <span class="basis-tag basis-direct">direct:</span>
+          <code>StepAttribute.cs</code> currently has <code>Order</code>, <code>RunAs</code>, <code>Config</code>, <code>Description</code>, <code>SecondaryTable</code>, <code>DeleteJobOnSuccess</code> — no <code>IsDisabled</code>. The codebase scan confirmed this property is missing; adding it is a small addition. <code>SetStateRequest</code> on <code>sdkmessageprocessingstep</code> (State 0 = Active, State 1 = Inactive) is a standard SDK call. PAC <code>--activate-plugins</code> is all-or-nothing with no per-step selectivity — there's a confirmed gap.
+        </p>
+      </div>
+      <div class="field-block">
+        <p class="field-label">Rationale</p>
+        <p class="field-value">Closing the push/deploy gap makes <code>[Step]</code> the single source of truth for step behavior. Every other Flowline feature reasons from declared attribute state — step enablement should be no different. Once <code>IsDisabled</code> exists in the attribute, per-env override support (step X disabled in UAT, active in prod) becomes a natural extension.</p>
+      </div>
+      <div class="field-block">
+        <p class="field-label">Downsides</p>
+        <p class="field-value">Requires adding <code>IsDisabled</code> to <code>StepAttribute</code> first (not present today). If a developer marks a step disabled and forgets it when debugging in prod, the next deploy quietly re-disables it. Strong convention: the attribute is authoritative.</p>
+      </div>
+      <div class="callout callout-precondition">
+        <span class="callout-label">Precondition</span>
+        Add <code>IsDisabled</code> to <code>StepAttribute</code> — a trivial one-property change — before honoring it in the deploy pipeline.
+      </div>
+      <div class="meta-dl">
+        <div class="meta-pair"><dt>Confidence</dt><dd>
+          <div class="confidence-bar-wrap">
+            <span>88%</span>
+            <div class="confidence-bar"><div class="confidence-bar-fill" style="width:88%;background:var(--green)"></div></div>
+          </div>
+        </dd></div>
+        <div class="meta-pair"><dt>Complexity</dt><dd><span class="chip chip-green">Low</span></dd></div>
+        <div class="meta-pair"><dt>Meeting test</dt><dd><span style="font-size:13px">Is it a bug that <code>deploy</code> ignores <code>IsDisabled</code>?</span></dd></div>
+      </div>
+    </div>
+  </article>
+
+  <!-- ── Idea 3 ── -->
+  <article class="idea-card" id="idea-3">
+    <div class="card-header">
+      <div class="rank-badge" aria-label="Rank 3">3</div>
+      <div class="card-titles">
+        <h3>Pre-Flight Config Validation</h3>
+        <div class="card-chips">
+          <span class="chip chip-amber">Settings &amp; env vars</span>
+          <span class="chip chip-green">Conf 85%</span>
+          <span class="chip chip-muted">Complexity: Low</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="field-block">
+        <p class="field-label">Description</p>
+        <p class="field-value">Before issuing <code>pac solution import</code>, Flowline validates that all environment variables and connection references required by the solution exist and are configured in the target environment. If anything is missing, deploy aborts with a clear actionable list: <em>"Deploy blocked: 2 env vars missing values, 1 connection reference unconfigured."</em> No partial import, no silent runtime failure on the first user action in prod.</p>
+      </div>
+
+      <!-- Diagram: pipeline with preflight gate -->
+      <div class="diagram-wrap" aria-label="Deploy pipeline with pre-flight validation gate">
+        <svg width="680" height="100" viewBox="0 0 680 100" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="arr3" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#4e5370"/>
+            </marker>
+            <marker id="arrRed" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#f46a6a"/>
+            </marker>
+          </defs>
+          <!-- boxes -->
+          <rect x="10" y="30" width="110" height="40" rx="6" fill="#21253a" stroke="#2e3347"/>
+          <text x="65" y="52" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="#e2e4ef" font-weight="600">DTAP Gate</text>
+
+          <!-- diamond pre-flight -->
+          <polygon points="195,50 230,30 265,50 230,70" fill="rgba(245,158,66,.12)" stroke="rgba(245,158,66,.4)" stroke-width="1.5"/>
+          <text x="230" y="47" text-anchor="middle" font-family="Inter,sans-serif" font-size="9.5" fill="#f59e42" font-weight="700">CONFIG</text>
+          <text x="230" y="60" text-anchor="middle" font-family="Inter,sans-serif" font-size="9.5" fill="#f59e42" font-weight="700">VALID?</text>
+
+          <rect x="310" y="30" width="100" height="40" rx="6" fill="#21253a" stroke="#2e3347"/>
+          <text x="360" y="52" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="#e2e4ef" font-weight="600">Pack</text>
+
+          <rect x="455" y="30" width="100" height="40" rx="6" fill="#21253a" stroke="#2e3347"/>
+          <text x="505" y="52" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="#e2e4ef" font-weight="600">Import</text>
+
+          <rect x="600" y="30" width="70" height="40" rx="6" fill="rgba(62,207,142,.08)" stroke="rgba(62,207,142,.25)"/>
+          <text x="635" y="52" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="#5adba6" font-weight="600">Done ✓</text>
+
+          <!-- arrows happy path -->
+          <line x1="120" y1="50" x2="190" y2="50" stroke="#4e5370" stroke-width="1.5" marker-end="url(#arr3)"/>
+          <line x1="265" y1="50" x2="305" y2="50" stroke="#4e5370" stroke-width="1.5" marker-end="url(#arr3)"/>
+          <line x1="410" y1="50" x2="450" y2="50" stroke="#4e5370" stroke-width="1.5" marker-end="url(#arr3)"/>
+          <line x1="555" y1="50" x2="595" y2="50" stroke="#4e5370" stroke-width="1.5" marker-end="url(#arr3)"/>
+
+          <!-- abort path -->
+          <line x1="230" y1="70" x2="230" y2="88" stroke="#f46a6a" stroke-width="1.5" marker-end="url(#arrRed)"/>
+          <rect x="175" y="88" width="110" height="10" rx="3" fill="transparent"/>
+          <text x="230" y="97" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#f46a6a">abort · list missing config</text>
+          <text x="287" y="43" font-family="Inter,sans-serif" font-size="9" fill="#4e5370">yes</text>
+          <text x="235" y="75" font-family="Inter,sans-serif" font-size="9" fill="#f46a6a">no</text>
+        </svg>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">Basis</p>
+        <p class="field-value">
+          <span class="basis-tag basis-direct">direct:</span>
+          <code>DeployCommand.cs</code> already runs <code>ValidateTargetAsync</code> and <code>ValidateDtapGateAsync</code> before import — a validation checkpoint exists. <code>SolutionChangeSummary.cs:334-338</code> already parses env var definition files from solution XML, establishing the file-reading capability. Solution XML in <code>Package/src/</code> contains connection reference and env var definitions — readable before import.
+        </p>
+      </div>
+      <div class="field-block">
+        <p class="field-label">Rationale</p>
+        <p class="field-value">A failed import wastes 2–10 minutes and can leave the environment in a partially-updated state. Pre-flight makes deploy deterministic: it either succeeds completely or fails cleanly before touching the environment. This is the safety net that makes every other config feature trustworthy.</p>
+      </div>
+      <div class="field-block">
+        <p class="field-label">Downsides</p>
+        <p class="field-value">Requires querying the target environment before import — adds a round-trip. <code>--force</code> flag should bypass as an escape hatch when the environment is intentionally partially configured.</p>
+      </div>
+      <div class="meta-dl">
+        <div class="meta-pair"><dt>Confidence</dt><dd>
+          <div class="confidence-bar-wrap">
+            <span>85%</span>
+            <div class="confidence-bar"><div class="confidence-bar-fill" style="width:85%;background:var(--green)"></div></div>
+          </div>
+        </dd></div>
+        <div class="meta-pair"><dt>Complexity</dt><dd><span class="chip chip-green">Low</span></dd></div>
+        <div class="meta-pair"><dt>Meeting test</dt><dd><span style="font-size:13px">Has a deploy ever failed because connection references weren't configured?</span></dd></div>
+      </div>
+    </div>
+  </article>
+
+  <!-- ── Idea 4 ── -->
+  <article class="idea-card" id="idea-4">
+    <div class="card-header">
+      <div class="rank-badge" aria-label="Rank 4">4</div>
+      <div class="card-titles">
+        <h3>Secure Config Deploy-Time Injection</h3>
+        <div class="card-chips">
+          <span class="chip chip-green">Plugin step state &amp; config</span>
+          <span class="chip chip-green">Conf 80%</span>
+          <span class="chip chip-muted">Complexity: Medium</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="field-block">
+        <p class="field-label">Description</p>
+        <p class="field-value">Flowline reads a per-environment gitignored file — e.g. <code>.flowline/secure-config.prod.json</code> — and upserts <code>sdkmessageprocessingstepsecureconfig</code> records via SDK post-import. Webhook secrets, API keys, and signing certs get applied automatically as part of <code>flowline deploy prod</code>. No admin console, no manual post-deploy ritual, no bespoke per-project C# script.</p>
+        <p class="field-value">The gitignored file pattern keeps secrets out of source control (honoring Flowline's design stance) while making the deployment reproducible. The format mirrors the step name already known to Flowline from registration: <code>{ "MyNamespace.StepName: Create of account": "secret-value" }</code>.</p>
+      </div>
+
+      <!-- Diagram: artifact vs gitignored -->
+      <div class="diagram-wrap" aria-label="Secure config stays in gitignored file, injected at deploy time">
+        <svg width="640" height="130" viewBox="0 0 640 130" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="arr4" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#4e5370"/>
+            </marker>
+          </defs>
+          <!-- Solution artifact box -->
+          <rect x="10" y="20" width="150" height="90" rx="6" fill="#21253a" stroke="#2e3347"/>
+          <text x="85" y="42" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#7b82a0" font-weight="600">Solution artifact</text>
+          <text x="85" y="60" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="#7b82a0">Plugin step (name)</text>
+          <text x="85" y="76" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="#7b82a0">UnsecureConfig</text>
+          <text x="85" y="92" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#f46a6a">✗ SecureConfig excluded</text>
+
+          <!-- Gitignored file -->
+          <rect x="230" y="60" width="155" height="55" rx="6" fill="rgba(245,158,66,.08)" stroke="rgba(245,158,66,.3)"/>
+          <text x="307" y="80" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#f59e42" font-weight="600">secure-config.prod.json</text>
+          <text x="307" y="97" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#f59e42">gitignored · per-env</text>
+          <text x="307" y="110" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#f59e42">never in source control</text>
+
+          <!-- Dataverse -->
+          <rect x="460" y="20" width="165" height="90" rx="6" fill="rgba(62,207,142,.08)" stroke="rgba(62,207,142,.25)"/>
+          <text x="542" y="42" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#5adba6" font-weight="600">Dataverse (after deploy)</text>
+          <text x="542" y="60" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="#5adba6">Step registered ✓</text>
+          <text x="542" y="76" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="#5adba6">SecureConfig set ✓</text>
+          <text x="542" y="92" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="#5adba6">No secrets in repo ✓</text>
+
+          <!-- Arrows -->
+          <line x1="160" y1="65" x2="225" y2="80" stroke="#4e5370" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr4)"/>
+          <text x="185" y="67" font-family="Inter,sans-serif" font-size="9" fill="#4e5370">import</text>
+          <line x1="385" y1="87" x2="455" y2="75" stroke="#f59e42" stroke-width="1.5" marker-end="url(#arr4)"/>
+          <text x="405" y="75" font-family="Inter,sans-serif" font-size="9" fill="#f59e42">upsert via SDK</text>
+          <line x1="160" y1="50" x2="455" y2="50" stroke="#4e5370" stroke-width="1.5" marker-end="url(#arr4)"/>
+        </svg>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">Basis</p>
+        <p class="field-value">
+          <span class="basis-tag basis-direct">direct:</span>
+          <code>sdkmessageprocessingstepsecureconfig</code> is a separate Dataverse table, not exported in solutions, admin-only read, must be set via API per deployment — confirmed by community research and Microsoft Learn. Current community workaround is bespoke C# scripts per project.
+          <span class="basis-tag basis-external">external:</span>
+          ALM Accelerator (deprecated 2023) addressed this with <code>sdkstep.sec.&lt;stepid&gt;</code> in its deployment settings JSON — the most complete prior art.
+        </p>
+      </div>
+      <div class="field-block">
+        <p class="field-label">Rationale</p>
+        <p class="field-value">Secure config is the most cited reason Power Platform solutions "deploy fine, break in prod." Every plugin step that uses secure config is a silent manual dependency on every environment setup. The gitignored file pattern is CI/CD-native — secrets live in CI environment variables or a vault, the per-env file is generated at deploy time, never committed.</p>
+      </div>
+      <div class="field-block">
+        <p class="field-label">Downsides</p>
+        <p class="field-value">Flowline handles secrets during the deploy step — requires careful handling and clear documentation that the file must be gitignored. Existing Flowline design stance explicitly says secure config "is intentionally not supported" (in reference to storing it in the unsecure attribute). This idea works differently (API call, not in source), but the stance may need to be updated.</p>
+      </div>
+      <div class="callout callout-amber">
+        <span class="callout-label">Design stance note</span>
+        The prohibition in <code>StepAttribute.Config</code> is about unsecure config carrying secrets visible in solution XML — not about calling the secure config API post-deploy. This idea doesn't violate that stance, but the docs should be updated to clarify the distinction.
+      </div>
+      <div class="meta-dl">
+        <div class="meta-pair"><dt>Confidence</dt><dd>
+          <div class="confidence-bar-wrap">
+            <span>80%</span>
+            <div class="confidence-bar"><div class="confidence-bar-fill" style="width:80%;background:var(--amber)"></div></div>
+          </div>
+        </dd></div>
+        <div class="meta-pair"><dt>Complexity</dt><dd><span class="chip chip-amber">Medium</span></dd></div>
+        <div class="meta-pair"><dt>Meeting test</dt><dd><span style="font-size:13px">Who owns updating secure config when we onboard a new environment?</span></dd></div>
+      </div>
+    </div>
+  </article>
+
+  <!-- ── Idea 5 ── -->
+  <article class="idea-card" id="idea-5">
+    <div class="card-header">
+      <div class="rank-badge" aria-label="Rank 5">5</div>
+      <div class="card-titles">
+        <h3>Ordered Flow Activation</h3>
+        <div class="card-chips">
+          <span class="chip chip-accent">Flow &amp; workflow lifecycle</span>
+          <span class="chip chip-amber">Conf 75%</span>
+          <span class="chip chip-muted">Complexity: Medium</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="field-block">
+        <p class="field-label">Description</p>
+        <p class="field-value">All cloud flows deactivate on import. Activating them in arbitrary order causes silent failures when a parent flow calls a child that's still in Draft state. Flowline activates flows in dependency order — either inferred from flow dependency graphs in the solution XML (<code>clientdata</code> field, implementation risk flagged) or declared explicitly in a config block. Either approach calls <code>workflow.statecode</code> PATCH post-import, activating leaf flows first.</p>
+        <p class="field-value">The declared config approach avoids the XML-parsing risk and aligns better with Flowline's convention-over-config philosophy — a short <code>flowline.flows</code> section in <code>.flowline</code> lists activation order and ownership per environment.</p>
+      </div>
+      <div class="field-block">
+        <p class="field-label">Basis</p>
+        <p class="field-value">
+          <span class="basis-tag basis-external">external:</span>
+          ALM Accelerator (deprecated 2023) documented <code>activateflow.activate</code> + <code>activateflow.order</code> + <code>activateflow.activateas</code> for exactly this. Community pain is well-evidenced: "connection reference was configured, flow still off after import" is a repeated forum pattern. The problem is confirmed by the flow-dependency ordering failure mode.
+          <span class="basis-tag basis-direct">direct:</span>
+          <code>DataverseContextGenerator.cs:565-596</code> already reads connection references from solution XML — the XML-reading infrastructure exists.
+        </p>
+      </div>
+      <div class="field-block">
+        <p class="field-label">Rationale</p>
+        <p class="field-value">The first deploy to UAT or prod after adding a new flow often fails on the first customer trigger — not during deploy. Debug time is 20–40 minutes just diagnosing "child flow is Draft." Ordered activation eliminates this class of silent failures. Flow ownership reset (flows running as the wrong user post-import) is a natural companion feature.</p>
+      </div>
+      <div class="field-block">
+        <p class="field-label">Downsides</p>
+        <p class="field-value">The <code>clientdata</code> JSON flow-dependency parsing approach is unverified — it's a promising implementation path but requires a real solution XML sample to confirm reliability. The declared config approach is safer but requires user-maintained ordering config. Start with declared, add inferred as a follow-on.</p>
+      </div>
+      <div class="callout callout-amber">
+        <span class="callout-label">Implementation risk</span>
+        The <code>clientdata</code>-based inferred dependency graph is unverified against real solution XML. Recommend starting with declared ordering in config and treating inferred as a Phase 2 capability once parsing is confirmed.
+      </div>
+      <div class="meta-dl">
+        <div class="meta-pair"><dt>Confidence</dt><dd>
+          <div class="confidence-bar-wrap">
+            <span>75%</span>
+            <div class="confidence-bar"><div class="confidence-bar-fill" style="width:75%;background:var(--amber)"></div></div>
+          </div>
+        </dd></div>
+        <div class="meta-pair"><dt>Complexity</dt><dd><span class="chip chip-amber">Medium</span></dd></div>
+        <div class="meta-pair"><dt>Meeting test</dt><dd><span style="font-size:13px">Does activation order ever matter for solutions deployed to UAT/prod?</span></dd></div>
+      </div>
+    </div>
+  </article>
+
+  <!-- ── Idea 6 ── -->
+  <article class="idea-card" id="idea-6">
+    <div class="card-header">
+      <div class="rank-badge" aria-label="Rank 6">6</div>
+      <div class="card-titles">
+        <h3>IPostDeployService Protocol</h3>
+        <div class="card-chips">
+          <span class="chip chip-purple">Integration model</span>
+          <span class="chip chip-green">Conf 85%</span>
+          <span class="chip chip-muted">Complexity: Medium</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="field-block">
+        <p class="field-label">Description</p>
+        <p class="field-value">Formalize <code>OrphanCleanupService</code>'s ad-hoc pre/post import hooks into a typed <code>IPostDeployService</code> interface registered via DI. Each new capability (workflow restoration, step state, flow activation, secure config) becomes a service implementing that interface — the deploy command never changes. Each service is independently testable and shippable.</p>
+      </div>
+
+      <!-- Diagram: plugin architecture -->
+      <div class="diagram-wrap" aria-label="IPostDeployService plugin architecture">
+        <svg width="640" height="150" viewBox="0 0 640 150" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="arr6" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#4e5370"/>
+            </marker>
+          </defs>
+          <!-- DeployCommand -->
+          <rect x="10" y="55" width="150" height="40" rx="6" fill="#21253a" stroke="#2e3347"/>
+          <text x="85" y="78" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" fill="#e2e4ef" font-weight="600">DeployCommand</text>
+
+          <!-- Interface -->
+          <rect x="225" y="40" width="175" height="70" rx="6" fill="rgba(108,131,255,.08)" stroke="rgba(108,131,255,.3)"/>
+          <text x="312" y="62" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#8fa3ff" font-weight="700">IPostDeployService</text>
+          <text x="312" y="79" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#7b82a0">RunPreImportAsync()</text>
+          <text x="312" y="94" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#7b82a0">RunPostImportAsync()</text>
+
+          <!-- Implementations -->
+          <rect x="460" y="15" width="165" height="30" rx="5" fill="#21253a" stroke="#2e3347"/>
+          <text x="542" y="34" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="#7b82a0">OrphanCleanupService</text>
+
+          <rect x="460" y="55" width="165" height="30" rx="5" fill="#21253a" stroke="#2e3347"/>
+          <text x="542" y="74" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="#7b82a0">WorkflowRestoreService</text>
+
+          <rect x="460" y="95" width="165" height="30" rx="5" fill="#21253a" stroke="#2e3347"/>
+          <text x="542" y="114" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="#7b82a0">FlowActivationService</text>
+
+          <rect x="460" y="132" width="165" height="14" rx="3" fill="rgba(108,131,255,.06)" stroke="rgba(108,131,255,.15)"/>
+          <text x="542" y="143" text-anchor="middle" font-family="Inter,sans-serif" font-size="9.5" fill="#6c83ff">+ future services…</text>
+
+          <!-- Arrows -->
+          <line x1="160" y1="75" x2="220" y2="75" stroke="#4e5370" stroke-width="1.5" marker-end="url(#arr6)"/>
+          <line x1="400" y1="60" x2="455" y2="30" stroke="#4e5370" stroke-width="1.5" marker-end="url(#arr6)"/>
+          <line x1="400" y1="75" x2="455" y2="70" stroke="#4e5370" stroke-width="1.5" marker-end="url(#arr6)"/>
+          <line x1="400" y1="90" x2="455" y2="110" stroke="#4e5370" stroke-width="1.5" marker-end="url(#arr6)"/>
+        </svg>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">Basis</p>
+        <p class="field-value">
+          <span class="basis-tag basis-direct">direct:</span>
+          <code>DeployCommand.cs</code> already calls <code>orphanCleanupService.RunPreImportAsync()</code> and <code>RunPostImportAsync()</code> — the pattern exists as ad-hoc calls. Formalizing it as a typed interface is the meta-investment that prevents each new capability from branching deploy command logic. The grounding notes "adding env config adds another chain link" — this makes the chain itself a protocol.
+        </p>
+      </div>
+      <div class="field-block">
+        <p class="field-label">Rationale</p>
+        <p class="field-value">Without this, every feature (workflow restore, step state, flow activation, secure config) modifies <code>DeployCommand</code> and creates N merge points. With it, <code>DeployCommand</code> stays stable, each capability is independently tested and shippable, and the order of execution is explicit. This is the leverage investment that makes ideas 1, 2, 4, and 5 all cheaper to build.</p>
+      </div>
+      <div class="field-block">
+        <p class="field-label">Downsides</p>
+        <p class="field-value">Small refactor required to pull <code>OrphanCleanupService</code>'s existing calls behind the interface. Adds indirection — must be worth it when more than 2 services exist. Build this alongside the second service implementation, not in isolation.</p>
+      </div>
+      <div class="meta-dl">
+        <div class="meta-pair"><dt>Confidence</dt><dd>
+          <div class="confidence-bar-wrap">
+            <span>85%</span>
+            <div class="confidence-bar"><div class="confidence-bar-fill" style="width:85%;background:var(--green)"></div></div>
+          </div>
+        </dd></div>
+        <div class="meta-pair"><dt>Complexity</dt><dd><span class="chip chip-amber">Medium</span></dd></div>
+        <div class="meta-pair"><dt>Meeting test</dt><dd><span style="font-size:13px">Should the deploy pipeline have a formal extension point, or stay ad-hoc?</span></dd></div>
+      </div>
+    </div>
+  </article>
+
+  <!-- ── Idea 7 ── -->
+  <article class="idea-card" id="idea-7">
+    <div class="card-header">
+      <div class="rank-badge" aria-label="Rank 7">7</div>
+      <div class="card-titles">
+        <h3>Commission as Separate Command</h3>
+        <div class="card-chips">
+          <span class="chip chip-purple">Integration model</span>
+          <span class="chip chip-green">Conf 80%</span>
+          <span class="chip chip-muted">Complexity: Medium</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="field-block">
+        <p class="field-label">Description</p>
+        <p class="field-value"><code>flowline deploy</code> handles installation — pack, import, orphan cleanup. A separate <code>flowline commission</code> command handles post-import state reconciliation: activating flows, enabling/disabling steps, injecting secure config, restoring workflow state. The two phases have distinct concerns: deploy must be safe to run in CI without interactive secrets; commission may need credentials for vault access and operator confirmation before touching prod flows.</p>
+        <p class="field-value">Commission is also independently re-runnable — when a support engineer manually disables a step and you want to restore declared state, you run <code>flowline commission prod</code>, not re-deploy.</p>
+      </div>
+      <div class="field-block">
+        <p class="field-label">Basis</p>
+        <p class="field-value">
+          <span class="basis-tag basis-reasoned">reasoned:</span>
+          Building commissioning, operations, and construction are structurally analogous — installation (deploy) and functional activation (commission) are distinct phases with different participants and different reversibility. The Dataverse analogy: deploying a solution that imports correctly is not the same as a solution whose components are running correctly. Separating the phases makes each one safer to run independently.
+          <span class="basis-tag basis-direct">direct:</span>
+          The existing brainstorm proposes a <code>flowline config</code> command for post-deploy work — this is a refinement of that direction with a cleaner name and clearer scope.
+        </p>
+      </div>
+      <div class="field-block">
+        <p class="field-label">Rationale</p>
+        <p class="field-value">As post-deploy capabilities grow, hooking all of them into <code>deploy</code> makes it non-deterministic and harder to reason about. Separation means: deploy is always safe and fast; commission is the "make it live" deliberate step. In regulated environments, the two steps may have different approvers.</p>
+      </div>
+      <div class="field-block">
+        <p class="field-label">Downsides</p>
+        <p class="field-value">Two-step workflow may be annoying for simple scenarios. Should default to auto-commission-after-deploy with <code>--no-commission</code> to split. The name "commission" may not be immediately obvious — <code>flowline activate</code> or <code>flowline configure</code> may resonate better.</p>
+      </div>
+      <div class="meta-dl">
+        <div class="meta-pair"><dt>Confidence</dt><dd>
+          <div class="confidence-bar-wrap">
+            <span>80%</span>
+            <div class="confidence-bar"><div class="confidence-bar-fill" style="width:80%;background:var(--amber)"></div></div>
+          </div>
+        </dd></div>
+        <div class="meta-pair"><dt>Complexity</dt><dd><span class="chip chip-amber">Medium</span></dd></div>
+        <div class="meta-pair"><dt>Meeting test</dt><dd><span style="font-size:13px">Should post-deploy state reconciliation be opt-in (<code>commission</code>) or automatic (built into <code>deploy</code>)?</span></dd></div>
+      </div>
+    </div>
+  </article>
+
+</section>
+
+<!-- ── Rejection Summary ── -->
+<section aria-labelledby="rejection-heading">
+  <h2 id="rejection-heading">Rejection Summary</h2>
+  <table class="rejection-table">
+    <thead>
+      <tr>
+        <th>Idea</th>
+        <th>Axis</th>
+        <th>Reason Rejected</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Dark-launch deploy</td>
+        <td>Plugin step</td>
+        <td>Captured by Idea 7 (commission); deploying disabled-by-default is too disruptive as a default behavior</td>
+      </tr>
+      <tr>
+        <td>Secure config via env-var expansion</td>
+        <td>Plugin step</td>
+        <td>Refuted: <code>StepAttribute</code> has no <code>SecureConfig</code> property; adding secret templates to C# attributes is what the design explicitly rejects</td>
+      </tr>
+      <tr>
+        <td>Runtime secret injection shim</td>
+        <td>Plugin step</td>
+        <td>Out of scope: Flowline is a deploy CLI, not a plugin authoring framework; Key Vault at execution time is the plugin developer's responsibility</td>
+      </tr>
+      <tr>
+        <td>Refuse secure config entirely</td>
+        <td>Plugin step</td>
+        <td>Refuted: already the current design stance; not actionable</td>
+      </tr>
+      <tr>
+        <td>Declared flow activation manifest</td>
+        <td>Flow &amp; workflow</td>
+        <td>Merged into Idea 5 (Ordered Flow Activation) as the safer implementation path; standalone file format conflicts with convention-over-config principle</td>
+      </tr>
+      <tr>
+        <td>Flow ownership assignment</td>
+        <td>Flow &amp; workflow</td>
+        <td>Real pain point but lower priority than activation; worth building as a companion to Idea 5 once flow activation is in place</td>
+      </tr>
+      <tr>
+        <td>Connection reference auto-discovery</td>
+        <td>Settings</td>
+        <td>Weak: PAC already generates the settings template; auto-fill adds ambiguity when multiple connections of the same connector type exist</td>
+      </tr>
+      <tr>
+        <td>Layered per-env config</td>
+        <td>Settings</td>
+        <td>Premature: convention-over-config conflict; flat config is sufficient until more keys are added and the need is proven</td>
+      </tr>
+      <tr>
+        <td>Drift detection / flowline status</td>
+        <td>Integration</td>
+        <td>Valuable but secondary: requires deploy state manifest as prerequisite; build after commission and manifest are in place</td>
+      </tr>
+      <tr>
+        <td>Deploy state manifest</td>
+        <td>Integration</td>
+        <td>Good follow-on investment: enables idempotency and audit trail, but depends on commission capabilities existing first</td>
+      </tr>
+      <tr>
+        <td>Dry-run state diff</td>
+        <td>Integration</td>
+        <td>Natural once config infrastructure exists; <code>RunMode.DryRun</code> already established the pattern — track as follow-on to commission</td>
+      </tr>
+      <tr>
+        <td>Migration mode flag</td>
+        <td>Integration</td>
+        <td>Niche; composable from step enable/disable (Idea 2) and commission (Idea 7); the "user signal" step makes it awkward in automated pipelines</td>
+      </tr>
+      <tr>
+        <td>Deploy as diff (Terraform model)</td>
+        <td>Integration</td>
+        <td>Correct north-star direction; too large as a first deliverable; Ideas 1, 2, 3, and 6 are the stepping stones toward it</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ── Footer ── -->
+<footer class="composition-signal">
+  Composed 2026-07-01 by <code>ce-ideate</code> from focus hint: post-deployment environment configuration for Dataverse solutions · 40 raw candidates across 5 ideation frames · 7 survivors after adversarial critique
+</footer>
+
+</div>
+</body>
+</html>
