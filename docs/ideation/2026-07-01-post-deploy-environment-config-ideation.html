@@ -437,6 +437,207 @@
     text-align: center;
   }
   footer code { font-family: var(--mono); font-size: 11.5px; }
+
+  /* ── Command spec ── */
+  .cmd-spec {
+    background: var(--surface-raised);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius);
+    padding: .85rem 1.1rem;
+    margin: 1rem 0;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.9;
+    overflow-x: auto;
+  }
+  .cmd-spec .cmd-comment { color: var(--text-faint); }
+  .cmd-spec .cmd-cmd { color: var(--accent-text); font-weight: 600; }
+  .cmd-spec .cmd-flag { color: var(--amber); }
+  .cmd-spec .cmd-env { color: var(--green-text); }
+
+  .ownership-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .6rem;
+    margin: 1rem 0;
+  }
+  @media (max-width: 560px) { .ownership-grid { grid-template-columns: 1fr; } }
+  .ownership-card {
+    background: var(--surface-raised);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius);
+    padding: .8rem 1rem;
+  }
+  .ownership-card h4 {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    margin-bottom: .5rem;
+  }
+  .ownership-card.deploy h4 { color: var(--text-muted); }
+  .ownership-card.commission h4 { color: var(--purple); }
+  .ownership-card ul { list-style: none; padding: 0; }
+  .ownership-card li {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    padding: .2rem 0;
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .ownership-card li:last-child { border-bottom: none; }
+  .ownership-card .dot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--text-faint);
+  }
+  .ownership-card.commission .dot { background: var(--purple); }
+
+  /* ── Discussion: secure config vs env vars ── */
+  .discussion-prose {
+    font-size: 14px;
+    color: var(--text-muted);
+    line-height: 1.7;
+    margin-bottom: .85rem;
+  }
+  .discussion-prose code {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: rgba(255,255,255,.06);
+    padding: .05em .3em;
+    border-radius: 3px;
+    color: var(--accent-text);
+  }
+  .comparison-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .75rem;
+    margin: 1rem 0;
+  }
+  @media (max-width: 580px) { .comparison-grid { grid-template-columns: 1fr; } }
+  .comparison-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: .9rem 1.1rem;
+  }
+  .comparison-card h4 {
+    font-size: 11.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    margin-bottom: .6rem;
+  }
+  .comparison-card.envvar h4 { color: var(--green-text); }
+  .comparison-card.secconfig h4 { color: var(--purple); }
+  .comparison-card ul { list-style: none; padding: 0; }
+  .comparison-card li {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    padding: .25rem 0;
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    gap: .45rem;
+    align-items: baseline;
+  }
+  .comparison-card li:last-child { border-bottom: none; }
+  .mark-pro { color: var(--green-text); font-weight: 700; flex-shrink: 0; }
+  .mark-con { color: var(--red); font-weight: 700; flex-shrink: 0; }
+  .mark-neu { color: var(--text-faint); font-weight: 700; flex-shrink: 0; }
+  .verdict-box {
+    background: rgba(108,131,255,.07);
+    border: 1px solid rgba(108,131,255,.22);
+    border-radius: var(--radius);
+    padding: .9rem 1.1rem;
+    margin-top: 1.1rem;
+    font-size: 13.5px;
+    color: var(--text);
+    line-height: 1.65;
+  }
+  .verdict-box code {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: rgba(255,255,255,.06);
+    padding: .05em .3em;
+    border-radius: 3px;
+    color: var(--accent-text);
+  }
+  .verdict-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    color: var(--accent-text);
+    display: block;
+    margin-bottom: .35rem;
+  }
+
+  /* ── Waves ── */
+  .waves-container { display: flex; flex-direction: column; gap: 1rem; }
+  .wave-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .wave-header {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .8rem 1.2rem;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .wave-num {
+    font-size: 10.5px;
+    font-weight: 700;
+    font-family: var(--mono);
+    padding: .2em .6em;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .wave-header h3 { font-size: 14px; font-weight: 600; color: var(--text); flex: 1; }
+  .wave-cx { font-size: 11.5px; color: var(--text-faint); }
+  .wave-body { padding: .85rem 1.2rem; }
+  .wave-item {
+    display: flex;
+    align-items: baseline;
+    gap: .6rem;
+    padding: .35rem 0;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 13.5px;
+  }
+  .wave-item:last-child { border-bottom: none; }
+  .wave-idea-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-faint);
+    min-width: 1.4rem;
+  }
+  .wave-idea-title { color: var(--text); font-weight: 500; flex: 1; }
+  .wave-idea-note { font-size: 12px; color: var(--text-faint); text-align: right; }
+  .wave-reason {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    padding: .6rem 0 .1rem;
+    line-height: 1.6;
+  }
+  .wave-gate {
+    font-size: 12px;
+    background: var(--amber-soft);
+    border: 1px solid rgba(245,158,66,.2);
+    border-radius: var(--radius-sm);
+    padding: .4rem .75rem;
+    color: var(--amber);
+    margin-top: .5rem;
+    display: flex;
+    gap: .4rem;
+    align-items: baseline;
+  }
+  .wave-gate strong { font-weight: 700; }
 </style>
 </head>
 <body>
@@ -1022,26 +1223,123 @@
     <div class="card-body">
       <div class="field-block">
         <p class="field-label">Description</p>
-        <p class="field-value"><code>flowline deploy</code> handles installation — pack, import, orphan cleanup. A separate <code>flowline commission</code> command handles post-import state reconciliation: activating flows, enabling/disabling steps, injecting secure config, restoring workflow state. The two phases have distinct concerns: deploy must be safe to run in CI without interactive secrets; commission may need credentials for vault access and operator confirmation before touching prod flows.</p>
-        <p class="field-value">Commission is also independently re-runnable — when a support engineer manually disables a step and you want to restore declared state, you run <code>flowline commission prod</code>, not re-deploy.</p>
+        <p class="field-value"><code>flowline deploy</code> handles installation: pre-flight validation, pack, import, orphan cleanup, step state reconciliation. A separate <code>flowline commission</code> command handles environment activation: restoring workflow state, activating cloud flows in dependency order, injecting secure config. The distinction is structural — deploy makes the solution present; commission makes it live.</p>
+        <p class="field-value">Commission is idempotent and independently re-runnable. When a support engineer manually disables a flow in prod and you want to restore declared state, you run <code>flowline commission prod</code>, not re-deploy. No downtime, no re-import, no risk of overwriting customizations.</p>
       </div>
+
+      <!-- Diagram: deploy vs commission phases -->
+      <div class="diagram-wrap" aria-label="Deploy installs the solution; Commission makes it live">
+        <svg width="660" height="130" viewBox="0 0 660 130" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="arr7" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#4e5370"/>
+            </marker>
+          </defs>
+          <!-- Deploy lane -->
+          <rect x="0" y="5" width="295" height="55" rx="6" fill="rgba(46,51,71,.5)" stroke="#2e3347"/>
+          <text x="10" y="22" font-family="Inter,sans-serif" font-size="10" fill="#4e5370" font-weight="700" text-transform="uppercase" letter-spacing="2">flowline deploy</text>
+          <rect x="10" y="28" width="65" height="24" rx="4" fill="#21253a" stroke="#2e3347"/>
+          <text x="42" y="44" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#7b82a0">Pre-flight</text>
+          <rect x="82" y="28" width="55" height="24" rx="4" fill="#21253a" stroke="#2e3347"/>
+          <text x="109" y="44" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#7b82a0">Pack</text>
+          <rect x="144" y="28" width="55" height="24" rx="4" fill="#21253a" stroke="#2e3347"/>
+          <text x="171" y="44" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#7b82a0">Import</text>
+          <rect x="206" y="28" width="78" height="24" rx="4" fill="#21253a" stroke="#2e3347"/>
+          <text x="245" y="44" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#7b82a0">Orphan+Steps</text>
+          <line x1="75" y1="40" x2="80" y2="40" stroke="#4e5370" stroke-width="1" marker-end="url(#arr7)"/>
+          <line x1="137" y1="40" x2="142" y2="40" stroke="#4e5370" stroke-width="1" marker-end="url(#arr7)"/>
+          <line x1="199" y1="40" x2="204" y2="40" stroke="#4e5370" stroke-width="1" marker-end="url(#arr7)"/>
+
+          <!-- Arrow between phases -->
+          <line x1="297" y1="40" x2="353" y2="40" stroke="#4e5370" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr7)"/>
+          <text x="325" y="33" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" fill="#4e5370">auto</text>
+          <text x="325" y="52" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" fill="#4e5370">or manual</text>
+
+          <!-- Commission lane -->
+          <rect x="357" y="5" width="295" height="55" rx="6" fill="rgba(176,123,255,.06)" stroke="rgba(176,123,255,.3)"/>
+          <text x="367" y="22" font-family="Inter,sans-serif" font-size="10" fill="#b07bff" font-weight="700" letter-spacing="2">flowline commission</text>
+          <rect x="367" y="28" width="80" height="24" rx="4" fill="#21253a" stroke="#2e3347"/>
+          <text x="407" y="44" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#7b82a0">Workflow state</text>
+          <rect x="454" y="28" width="72" height="24" rx="4" fill="#21253a" stroke="#2e3347"/>
+          <text x="490" y="44" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#7b82a0">Flow activation</text>
+          <rect x="533" y="28" width="109" height="24" rx="4" fill="#21253a" stroke="#2e3347"/>
+          <text x="587" y="44" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#7b82a0">Secure config injection</text>
+          <line x1="447" y1="40" x2="452" y2="40" stroke="#4e5370" stroke-width="1" marker-end="url(#arr7)"/>
+          <line x1="526" y1="40" x2="531" y2="40" stroke="#4e5370" stroke-width="1" marker-end="url(#arr7)"/>
+
+          <!-- Labels below -->
+          <text x="148" y="78" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#7b82a0">Solution installed — deterministic</text>
+          <text x="148" y="92" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#7b82a0">Safe in CI without secrets</text>
+          <text x="505" y="78" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#b07bff" fill-opacity=".7">Solution live — reconciles state</text>
+          <text x="505" y="92" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#b07bff" fill-opacity=".7">Re-runnable, idempotent</text>
+        </svg>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">Ownership split</p>
+        <div class="ownership-grid">
+          <div class="ownership-card deploy">
+            <h4>Deploy owns</h4>
+            <ul>
+              <li><span class="dot"></span>Pre-flight config validation</li>
+              <li><span class="dot"></span>Pack solution</li>
+              <li><span class="dot"></span>Import solution (PAC CLI)</li>
+              <li><span class="dot"></span>Orphan cleanup</li>
+              <li><span class="dot"></span>Step state (attribute-driven, deterministic)</li>
+            </ul>
+          </div>
+          <div class="ownership-card commission">
+            <h4>Commission owns</h4>
+            <ul>
+              <li><span class="dot"></span>Classic workflow state restoration</li>
+              <li><span class="dot"></span>Cloud flow activation (ordered)</li>
+              <li><span class="dot"></span>Flow ownership assignment</li>
+              <li><span class="dot"></span>Secure config injection</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">Default behaviour &amp; flags</p>
+        <div class="cmd-spec">
+          <span class="cmd-comment"># Default: commission runs automatically after deploy</span><br>
+          <span class="cmd-cmd">flowline deploy</span> <span class="cmd-env">prod</span><br><br>
+          <span class="cmd-comment"># Split: deploy only (CI step 1)</span><br>
+          <span class="cmd-cmd">flowline deploy</span> <span class="cmd-env">prod</span> <span class="cmd-flag">--no-commission</span><br><br>
+          <span class="cmd-comment"># Commission only (CI step 2, or re-run after manual drift)</span><br>
+          <span class="cmd-cmd">flowline commission</span> <span class="cmd-env">prod</span><br><br>
+          <span class="cmd-comment"># Dry-run: show what commission would change</span><br>
+          <span class="cmd-cmd">flowline commission</span> <span class="cmd-env">prod</span> <span class="cmd-flag">--dry-run</span>
+        </div>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">Why split matters — CI/CD pattern</p>
+        <p class="field-value">In a gated pipeline, deploy and commission may run at different stages with different approvals. Deploy runs on every merged PR (import to UAT, automated). Commission runs after human sign-off before going live in prod. The secret for vault-sourced secure config only needs to be present in the commission stage — deploy can remain secret-free.</p>
+        <p class="field-value">In regulated environments this maps directly to change-management roles: the DevOps engineer runs deploy; the solution architect or functional lead runs commission to confirm that activation is intentional.</p>
+      </div>
+
       <div class="field-block">
         <p class="field-label">Basis</p>
         <p class="field-value">
           <span class="basis-tag basis-reasoned">reasoned:</span>
-          Building commissioning, operations, and construction are structurally analogous — installation (deploy) and functional activation (commission) are distinct phases with different participants and different reversibility. The Dataverse analogy: deploying a solution that imports correctly is not the same as a solution whose components are running correctly. Separating the phases makes each one safer to run independently.
+          In civil and industrial engineering, commissioning is explicitly distinct from installation — it is the act of verifying a system is operational in its environment, not just physically present. The analogy holds: deploy makes the solution present in Dataverse; commission makes its components run. The Dataverse platform itself echoes this — a plugin step can be registered but disabled; a flow can be imported but deactivated. These are two different states that map to two different owner actions.
           <span class="basis-tag basis-direct">direct:</span>
-          The existing brainstorm proposes a <code>flowline config</code> command for post-deploy work — this is a refinement of that direction with a cleaner name and clearer scope.
+          The brainstorm <code>2026-06-12-environment-config-command-requirements.md</code> proposes a <code>flowline config</code> command — commission is that direction with a tighter scope and a name that emphasizes activation rather than configuration.
         </p>
       </div>
+
       <div class="field-block">
-        <p class="field-label">Rationale</p>
-        <p class="field-value">As post-deploy capabilities grow, hooking all of them into <code>deploy</code> makes it non-deterministic and harder to reason about. Separation means: deploy is always safe and fast; commission is the "make it live" deliberate step. In regulated environments, the two steps may have different approvers.</p>
+        <p class="field-label">Naming</p>
+        <p class="field-value"><code>commission</code> is precise but engineering-domain terminology — unfamiliar to non-technical admins. Alternatives: <code>flowline activate prod</code> (immediate intent, slightly overloaded in Power Platform), <code>flowline configure prod</code> (too broad — could mean env vars), <code>flowline reconcile prod</code> (accurate but jargon-heavy). <code>commission</code> or <code>activate</code> are the two strongest candidates; user research or a naming spike should settle it before shipping the wiki entry.</p>
       </div>
+
       <div class="field-block">
         <p class="field-label">Downsides</p>
-        <p class="field-value">Two-step workflow may be annoying for simple scenarios. Should default to auto-commission-after-deploy with <code>--no-commission</code> to split. The name "commission" may not be immediately obvious — <code>flowline activate</code> or <code>flowline configure</code> may resonate better.</p>
+        <p class="field-value">Two-step mental model for users who just want <code>flowline deploy prod</code> to "make everything work." The default auto-commission behavior solves this for most users; the split only matters in CI or regulated contexts. Risk: if commission is optional, users may run deploy without realizing commission is what makes flows go live — the default auto-run must be obvious from the output.</p>
       </div>
+
       <div class="meta-dl">
         <div class="meta-pair"><dt>Confidence</dt><dd>
           <div class="confidence-bar-wrap">
@@ -1050,11 +1348,127 @@
           </div>
         </dd></div>
         <div class="meta-pair"><dt>Complexity</dt><dd><span class="chip chip-amber">Medium</span></dd></div>
-        <div class="meta-pair"><dt>Meeting test</dt><dd><span style="font-size:13px">Should post-deploy state reconciliation be opt-in (<code>commission</code>) or automatic (built into <code>deploy</code>)?</span></dd></div>
+        <div class="meta-pair"><dt>Meeting test</dt><dd><span style="font-size:13px">Do deploy and activation ever need different approvers?</span></dd></div>
       </div>
     </div>
   </article>
 
+</section>
+
+<!-- ── Secure Config vs Env Vars ── -->
+<section aria-labelledby="secconfig-vs-envvar-heading">
+  <h2 id="secconfig-vs-envvar-heading">Is Secure Config Still Worth It? Env Vars vs Secure Config</h2>
+
+  <p class="discussion-prose">Dataverse environment variables have matured significantly. PAC handles them at import time via a settings file (<code>pac solution create-settings</code>), they're solution-aware, and they're accessible both in Power Automate flows natively and in plugins via an SDK query against <code>environmentvariablevalue</code>. The obvious question: does Flowline even need to implement secure config injection (Idea #4) now that env vars exist?</p>
+
+  <div class="comparison-grid">
+    <div class="comparison-card envvar">
+      <h4>Environment Variables</h4>
+      <ul>
+        <li><span class="mark-pro">✓</span> Solution-managed — exported and versioned with the solution</li>
+        <li><span class="mark-pro">✓</span> PAC handles value configuration at import time (<code>--settings-file</code>)</li>
+        <li><span class="mark-pro">✓</span> Accessible in flows natively — no SDK query</li>
+        <li><span class="mark-pro">✓</span> Accessible in plugins via <code>environmentvariablevalue</code> query</li>
+        <li><span class="mark-pro">✓</span> One mental model for the whole team</li>
+        <li><span class="mark-con">✗</span> Values visible to anyone with read on <code>environmentvariablevalue</code> — not a secret store</li>
+        <li><span class="mark-con">✗</span> Not encrypted at rest in any special way</li>
+        <li><span class="mark-con">✗</span> No access control per variable — it's a table, not a vault</li>
+      </ul>
+    </div>
+    <div class="comparison-card secconfig">
+      <h4>Secure Config</h4>
+      <ul>
+        <li><span class="mark-pro">✓</span> Encrypted at rest in Dataverse</li>
+        <li><span class="mark-pro">✓</span> Admin-only readable — not visible to solution editors or service accounts</li>
+        <li><span class="mark-pro">✓</span> Per-step granularity — different secret per step, no cross-contamination</li>
+        <li><span class="mark-pro">✓</span> Plugin constructor receives it directly — no SDK query needed at runtime</li>
+        <li><span class="mark-con">✗</span> Not exported in solutions — Flowline (or someone) must set it per deployment</li>
+        <li><span class="mark-con">✗</span> No PAC CLI support — must be set via the SDK or admin console</li>
+        <li><span class="mark-con">✗</span> Admin-only to read means you cannot verify it programmatically without elevated access</li>
+        <li><span class="mark-neu">·</span> No value type enforcement — plain string, however structured</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="discussion-prose">The key differentiator is <strong>access control</strong>. In a Dataverse environment with multiple admins, consultants, service accounts, and maker roles, <code>environmentvariablevalue</code> is readable by a wide audience — the standard Dataverse security model does not restrict it to admins. If you store a Stripe API key, a webhook signing secret, or an OAuth client secret in an env var, any system admin or consultant onboarded to that environment can read it. That may be acceptable in many organizations; it is not acceptable in others.</p>
+
+  <p class="discussion-prose">Secure config addresses this specifically: the <code>sdkmessageprocessingstepsecureconfig</code> table is admin-only by platform design, the value is encrypted, and it never leaves Dataverse. A service account running flows cannot read another plugin step's secure config.</p>
+
+  <div class="verdict-box">
+    <span class="verdict-label">Verdict</span>
+    <strong>Env vars replace secure config for ~80% of use cases</strong> — non-sensitive config values, feature flags, tenant IDs, URLs, template strings. For the remaining 20% — webhook signing secrets, payment gateway keys, OAuth client credentials, anything that gives access to a third-party system — <strong>secure config still has a meaningful access-control advantage</strong> that env vars cannot match without a separate vault integration.<br><br>
+    <strong>Recommendation:</strong> if your plugins don't use secrets (just config), skip Idea #4. If any plugin step calls an external API with a credential that should not be visible to all admins, Idea #4 is worth implementing — it's the only deployment-time mechanism that keeps that credential encrypted and admin-gated inside Dataverse. Env vars are not a drop-in replacement for secrets.
+  </div>
+</section>
+
+<!-- ── Implementation Waves ── -->
+<section aria-labelledby="waves-heading">
+  <h2 id="waves-heading">Recommended Order — Implementation Waves</h2>
+
+  <p class="discussion-prose">All 7 ideas are independent enough to build in any order, but some decisions gate others and some make future work cheaper. Two anchor rules: <strong>#6 (IPostDeployService) should be introduced alongside the first post-deploy service</strong>, not in isolation; and <strong>#7 (Commission architecture) should be decided before building Wave 2</strong> — it determines where flow activation and secure config injection live.</p>
+
+  <div class="waves-container">
+
+    <div class="wave-card">
+      <div class="wave-header">
+        <span class="wave-num" style="background:rgba(62,207,142,.15);color:var(--green-text)">Wave 1</span>
+        <h3>Deploy Hardening</h3>
+        <span class="wave-cx">3 ideas · all Low complexity · no dependencies</span>
+      </div>
+      <div class="wave-body">
+        <div class="wave-item">
+          <span class="wave-idea-num">#3</span>
+          <span class="wave-idea-title">Pre-flight config validation</span>
+          <span class="wave-idea-note">Conf 85% · Low</span>
+        </div>
+        <div class="wave-item">
+          <span class="wave-idea-num">#2</span>
+          <span class="wave-idea-title">Step state declaration drives deploy</span>
+          <span class="wave-idea-note">Conf 88% · Low — add <code>IsDisabled</code> first</span>
+        </div>
+        <div class="wave-item">
+          <span class="wave-idea-num">#1 + #6</span>
+          <span class="wave-idea-title">Classic workflow state restoration <em>and</em> IPostDeployService protocol</span>
+          <span class="wave-idea-note">Conf 90% / 85% · Low+Med</span>
+        </div>
+        <p class="wave-reason">Pair #1 and #6: workflow restoration is the second <code>IPostDeployService</code> implementation (alongside <code>OrphanCleanupService</code>), so the interface emerges naturally from building them together — no over-engineering solo refactor. All three deliver immediate value, are low-risk, and are shippable independently within the wave. Start with #3 (abort early) and #2 (close the push/deploy gap) since they touch the fewest moving parts.</p>
+      </div>
+    </div>
+
+    <div class="wave-card">
+      <div class="wave-header">
+        <span class="wave-num" style="background:rgba(245,158,66,.15);color:var(--amber)">Wave 2</span>
+        <h3>Commission + Advanced Config</h3>
+        <span class="wave-cx">3 ideas · Medium complexity · architecture decision first</span>
+      </div>
+      <div class="wave-body">
+        <div class="wave-item">
+          <span class="wave-idea-num">#7</span>
+          <span class="wave-idea-title">Commission as separate command</span>
+          <span class="wave-idea-note">Conf 80% · Med — decide first</span>
+        </div>
+        <div class="wave-item">
+          <span class="wave-idea-num">#1*</span>
+          <span class="wave-idea-title">Move workflow restoration into commission (if #7 adopted)</span>
+          <span class="wave-idea-note">Small refactor</span>
+        </div>
+        <div class="wave-item">
+          <span class="wave-idea-num">#4</span>
+          <span class="wave-idea-title">Secure config deploy-time injection</span>
+          <span class="wave-idea-note">Conf 80% · Med — only if env vars insufficient</span>
+        </div>
+        <div class="wave-item">
+          <span class="wave-idea-num">#5</span>
+          <span class="wave-idea-title">Ordered flow activation</span>
+          <span class="wave-idea-note">Conf 75% · Med — clientdata spike first</span>
+        </div>
+        <p class="wave-reason">Decide #7 (commission architecture) first — it determines whether the wave 2 services go inside <code>deploy</code>'s post-import hooks or into a dedicated <code>commission</code> command. For #4, apply the env vars vs secure config analysis above before committing. For #5, do a <em>feasibility spike</em> — open a real solution ZIP, inspect the <code>clientdata</code> JSON in <code>workflow</code> records, and confirm the dependency graph is reliably parseable before building the full service.</p>
+        <div class="wave-gate"><strong>Gate on #4:</strong> only implement if at least one plugin step uses secrets that cannot be made visible to all environment admins.</div>
+        <div class="wave-gate" style="margin-top:.35rem"><strong>Gate on #5:</strong> do the clientdata parsing spike first (½ day); result determines whether declared config or inferred dependency order is the right implementation path.</div>
+      </div>
+    </div>
+
+  </div>
 </section>
 
 <!-- ── Rejection Summary ── -->
