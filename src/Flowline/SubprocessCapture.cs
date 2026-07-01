@@ -24,9 +24,9 @@ public sealed class SubprocessCapture
     }
 
     /// <summary>
-    /// Configures stdout/stderr piping for a command. All output is logged via ILogger (Serilog).
-    /// Error/warning lines always print to terminal; non-error lines print only when verbose.
-    /// VerboseOutputBuffer is intentionally not written — ILogger covers the buffered-log concern.
+    /// Configures stdout/stderr piping for a command. Lines that reach the terminal are captured
+    /// by LoggingRenderHook. Lines suppressed from the terminal (non-error, !verbose) are written
+    /// directly to ILogger so the log file is always complete.
     /// </summary>
     public Command Apply(Command cmd, StatusContext? ctx = null, Func<string, string>? lineTransform = null)
     {
@@ -35,12 +35,11 @@ public sealed class SubprocessCapture
         return cmd
             .WithStandardOutputPipe(PipeTarget.ToDelegate(line =>
             {
-                _logger.LogDebug("{Line}", line);
-
                 SetStatusWithExecutionTime(ctx, line);
 
                 if (IsErrorLine(line))
                 {
+                    // Always printed to terminal → LoggingRenderHook captures it.
                     DisplayErrorMessage(line, prefix);
                     return;
                 }
@@ -53,14 +52,18 @@ public sealed class SubprocessCapture
                 if (_options.IsVerbose)
                 {
                     var display = lineTransform != null ? lineTransform(line) : line;
+                    // Printed to terminal → LoggingRenderHook captures it.
                     _console.MarkupLine($"[dim]{Markup.Escape(prefix)}: {Markup.Escape(display)}[/]");
+                }
+                else
+                {
+                    // Suppressed from terminal → LoggingRenderHook never fires; log directly.
+                    _logger.LogDebug("{Line}", line);
                 }
             }))
             .WithStandardErrorPipe(PipeTarget.ToDelegate(line =>
             {
-                _logger.LogDebug("{Line}", line);
-                // Stderr is always immediately visible — do not buffer in VerboseOutputBuffer;
-                // that would cause double-print in FlushBufferedVerboseOutput on error.
+                // Always printed to terminal → LoggingRenderHook captures it.
                 _console.MarkupLine($"[red]{Markup.Escape(prefix)}: {Markup.Escape(line)}[/]");
             }));
     }

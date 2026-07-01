@@ -58,7 +58,7 @@ public class SubprocessCaptureTests
         _console.Output.Should().BeEmpty();
     }
 
-    // Test 3: non-error stdout + IsVerbose=true → terminal output (dim), debug logged
+    // Test 3: non-error stdout + IsVerbose=true → terminal output (dim); LoggingRenderHook handles log capture in production
     [Fact]
     public async Task Apply_NonErrorStdout_Verbose_PrintsToTerminal()
     {
@@ -67,11 +67,11 @@ public class SubprocessCaptureTests
 
         await PumpStdoutAsync(cmd, "normal output");
 
-        _logger.Entries.Should().Contain(e => e.Level == LogLevel.Debug && e.Message.Contains("normal output"));
         _console.Output.Should().Contain("normal output");
+        _logger.Entries.Should().BeEmpty(); // LRH (not direct ILogger) captures terminal lines
     }
 
-    // Test 4: error-matching stdout + IsVerbose=false → terminal output in red, debug logged
+    // Test 4: error-matching stdout → always printed to terminal; LRH captures in production
     [Fact]
     public async Task Apply_ErrorStdout_NotVerbose_PrintsToTerminal()
     {
@@ -80,11 +80,11 @@ public class SubprocessCaptureTests
 
         await PumpStdoutAsync(cmd, "Error: something failed");
 
-        _logger.Entries.Should().Contain(e => e.Level == LogLevel.Debug && e.Message.Contains("Error: something failed"));
         _console.Output.Should().Contain("Error: something failed");
+        _logger.Entries.Should().BeEmpty(); // LRH (not direct ILogger) captures terminal lines
     }
 
-    // Test 5: warning-matching stdout + IsVerbose=false → terminal output in yellow, debug logged
+    // Test 5: warning-matching stdout → always printed to terminal; LRH captures in production
     [Fact]
     public async Task Apply_WarningStdout_NotVerbose_PrintsToTerminal()
     {
@@ -93,35 +93,32 @@ public class SubprocessCaptureTests
 
         await PumpStdoutAsync(cmd, "MyPlugin: warning CS8600: Converting null literal");
 
-        _logger.Entries.Should().Contain(e => e.Level == LogLevel.Debug && e.Message.Contains("warning CS8600"));
         _console.Output.Should().Contain("warning CS8600");
+        _logger.Entries.Should().BeEmpty(); // LRH (not direct ILogger) captures terminal lines
     }
 
-    // Test 6: stderr → debug logged, terminal output in red, VerboseOutputBuffer not written
+    // Test 6: stderr → always printed to terminal in red; LRH captures in production; VerboseOutputBuffer not written
     [Fact]
-    public async Task Apply_Stderr_LogsDebug_PrintsRed_NotBuffered()
+    public async Task Apply_Stderr_PrintsRed_NotBuffered()
     {
         var cmd = CreateCapture().Apply(BaseCmd());
 
         await PumpStderrAsync(cmd, "error on stderr");
 
-        _logger.Entries.Should().Contain(e => e.Level == LogLevel.Debug && e.Message.Contains("error on stderr"));
         _console.Output.Should().Contain("error on stderr");
         _options.VerboseOutput.Lines.Should().NotContain("error on stderr");
+        _logger.Entries.Should().BeEmpty(); // LRH (not direct ILogger) captures terminal lines
     }
 
-    // Test 7: lineTransform — raw line logged, transformed line displayed on terminal
+    // Test 7: lineTransform — transformed line displayed on terminal when verbose; LRH handles log capture
     [Fact]
-    public async Task Apply_LineTransform_LogsRaw_DisplaysTransformed()
+    public async Task Apply_LineTransform_DisplaysTransformed()
     {
         _options.IsVerbose = true;
         var cmd = CreateCapture().Apply(BaseCmd(), lineTransform: s => s.ToUpperInvariant());
 
         await PumpStdoutAsync(cmd, "hello");
 
-        // Raw value in Serilog
-        _logger.Entries.Should().Contain(e => e.Level == LogLevel.Debug && e.Message.Contains("hello"));
-        // Transformed value on terminal
         _console.Output.Should().Contain("HELLO");
     }
 
