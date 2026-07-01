@@ -661,7 +661,7 @@
     <div class="stat-label">Raw candidates</div>
   </div>
   <div class="stat">
-    <div class="stat-value">7</div>
+    <div class="stat-value">8</div>
     <div class="stat-label">Survivors</div>
   </div>
   <div class="stat">
@@ -732,6 +732,7 @@
     <span class="axis-tag"><span class="axis-dot" style="background:#3ecf8e"></span> Plugin step state &amp; config</span>
     <span class="axis-tag"><span class="axis-dot" style="background:#f59e42"></span> Settings &amp; env vars</span>
     <span class="axis-tag"><span class="axis-dot" style="background:#b07bff"></span> Integration model</span>
+    <span class="axis-tag"><span class="axis-dot" style="background:#38bdf8"></span> Operations</span>
   </div>
 </section>
 
@@ -750,6 +751,7 @@
       <li><span class="rank">5.</span><a href="#idea-5">Ordered flow activation</a><span class="jmeta"><span class="chip chip-accent" style="font-size:11px">Flow &amp; workflow</span> · Conf 75% · Cx Med</span></li>
       <li><span class="rank">6.</span><a href="#idea-6">IPostDeployService protocol</a><span class="jmeta"><span class="chip chip-purple" style="font-size:11px">Integration</span> · Conf 85% · Cx Med</span></li>
       <li><span class="rank">7.</span><a href="#idea-7">Commission as separate command</a><span class="jmeta"><span class="chip chip-purple" style="font-size:11px">Integration</span> · Conf 80% · Cx Med</span></li>
+      <li><span class="rank">8.</span><a href="#idea-8">Ad-hoc state toggle</a><span class="jmeta"><span class="chip chip-teal" style="font-size:11px">Operations</span> · Conf 87% · Cx Low</span></li>
     </ol>
   </nav>
 
@@ -1353,6 +1355,137 @@
     </div>
   </article>
 
+  <!-- ── Idea 8 ── -->
+  <article class="idea-card" id="idea-8">
+    <div class="card-header">
+      <div class="rank-badge" aria-label="Rank 8">8</div>
+      <div class="card-titles">
+        <h3>Ad-Hoc State Toggle</h3>
+        <div class="card-chips">
+          <span class="chip chip-teal">Operations</span>
+          <span class="chip chip-green">Conf 87%</span>
+          <span class="chip chip-muted">Complexity: Low</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="field-block">
+        <p class="field-label">Description</p>
+        <p class="field-value">A <code>flowline toggle</code> command enables or disables individual Dataverse components by name — cloud flows, classic workflows, plugin steps — without re-deploying. Works at any time, against any environment, independently of the deploy/commission cycle. This is the Flowline primitive for the feature-flag pattern: ship dark, enable when ready, roll back instantly.</p>
+        <p class="field-value">Env vars are also a target: set or clear a value per-environment to gate features that read from env vars. Secure config injection for a single step can be triggered standalone, without a full commission run.</p>
+      </div>
+
+      <!-- Diagram: feature flag pattern -->
+      <div class="diagram-wrap" aria-label="Feature flag pattern: deploy dark, toggle on when ready, toggle off to roll back">
+        <svg width="680" height="145" viewBox="0 0 680 145" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="arr8" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#4e5370"/>
+            </marker>
+            <marker id="arr8g" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#3ecf8e"/>
+            </marker>
+            <marker id="arr8r" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#f46a6a"/>
+            </marker>
+          </defs>
+          <!-- Timeline -->
+          <line x1="30" y1="55" x2="650" y2="55" stroke="#2e3347" stroke-width="1.5"/>
+
+          <!-- Deploy dark -->
+          <circle cx="80" cy="55" r="5" fill="#6c83ff"/>
+          <rect x="50" y="65" width="90" height="40" rx="5" fill="#21253a" stroke="#2e3347"/>
+          <text x="95" y="82" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="#e2e4ef" font-weight="600">flowline deploy</text>
+          <text x="95" y="96" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#f46a6a">flow = Draft</text>
+          <text x="95" y="115" text-anchor="middle" font-family="Inter,sans-serif" font-size="9.5" fill="#4e5370">ships dark</text>
+
+          <!-- Toggle on -->
+          <circle cx="260" cy="55" r="5" fill="#3ecf8e"/>
+          <rect x="215" y="65" width="120" height="40" rx="5" fill="rgba(62,207,142,.08)" stroke="rgba(62,207,142,.3)"/>
+          <text x="275" y="80" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#5adba6" font-weight="600">flowline toggle flow</text>
+          <text x="275" y="93" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#5adba6">"My Flow" --on</text>
+          <text x="275" y="115" text-anchor="middle" font-family="Inter,sans-serif" font-size="9.5" fill="#4e5370">feature live</text>
+
+          <!-- Problem → toggle off -->
+          <circle cx="450" cy="55" r="5" fill="#f46a6a"/>
+          <rect x="395" y="65" width="125" height="40" rx="5" fill="rgba(244,106,106,.07)" stroke="rgba(244,106,106,.25)"/>
+          <text x="457" y="80" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#f46a6a" font-weight="600">flowline toggle flow</text>
+          <text x="457" y="93" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#f46a6a">"My Flow" --off</text>
+          <text x="457" y="115" text-anchor="middle" font-family="Inter,sans-serif" font-size="9.5" fill="#4e5370">instant rollback</text>
+
+          <!-- Toggle back on -->
+          <circle cx="610" cy="55" r="5" fill="#3ecf8e"/>
+          <rect x="565" y="65" width="80" height="40" rx="5" fill="rgba(62,207,142,.08)" stroke="rgba(62,207,142,.3)"/>
+          <text x="605" y="82" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#5adba6" font-weight="600">…fix…</text>
+          <text x="605" y="96" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#5adba6">toggle --on</text>
+
+          <!-- Time label -->
+          <text x="340" y="140" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#4e5370">time →</text>
+        </svg>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">Command surface</p>
+        <div class="cmd-spec">
+          <span class="cmd-comment"># Enable / disable a cloud flow by display name</span><br>
+          <span class="cmd-cmd">flowline toggle flow</span> <span class="cmd-env">"New Checkout Flow"</span> <span class="cmd-flag">--on</span> <span class="cmd-flag">--env</span> <span class="cmd-env">prod</span><br>
+          <span class="cmd-cmd">flowline toggle flow</span> <span class="cmd-env">"New Checkout Flow"</span> <span class="cmd-flag">--off</span> <span class="cmd-flag">--env</span> <span class="cmd-env">prod</span><br><br>
+          <span class="cmd-comment"># Enable / disable a classic workflow or BPF</span><br>
+          <span class="cmd-cmd">flowline toggle workflow</span> <span class="cmd-env">"Order Approval"</span> <span class="cmd-flag">--on</span> <span class="cmd-flag">--env</span> <span class="cmd-env">uat</span><br><br>
+          <span class="cmd-comment"># Enable / disable a plugin step by its registered name</span><br>
+          <span class="cmd-cmd">flowline toggle step</span> <span class="cmd-env">"MyNs.NewFeaturePlugin: Create of account"</span> <span class="cmd-flag">--off</span> <span class="cmd-flag">--env</span> <span class="cmd-env">prod</span><br><br>
+          <span class="cmd-comment"># Set an env var value (feature gate via env var)</span><br>
+          <span class="cmd-cmd">flowline set envvar</span> <span class="cmd-env">cr123_EnableNewCheckout</span> <span class="cmd-env">true</span> <span class="cmd-flag">--env</span> <span class="cmd-env">prod</span><br><br>
+          <span class="cmd-comment"># Preview what would change (no write)</span><br>
+          <span class="cmd-cmd">flowline toggle flow</span> <span class="cmd-env">"New Checkout Flow"</span> <span class="cmd-flag">--on --dry-run</span> <span class="cmd-flag">--env</span> <span class="cmd-env">prod</span>
+        </div>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">What each toggle calls under the hood</p>
+        <p class="field-value">
+          <strong style="color:var(--text)">Cloud flow / classic workflow:</strong> <code>workflow.statecode</code> PATCH — 1 = Activated, 0 = Draft. Same SDK call as commission's workflow restore, scoped to one record by name lookup.<br><br>
+          <strong style="color:var(--text)">Plugin step:</strong> <code>SetStateRequest</code> on <code>sdkmessageprocessingstep</code> — State 0 = Active, State 1 = Inactive. Flowline already knows the step's registered name from the assembly scan.<br><br>
+          <strong style="color:var(--text)">Env var:</strong> <code>environmentvariablevalue</code> upsert — create or update the per-environment value record. If the value record doesn't exist yet, create it; if it does, update it.<br><br>
+          <strong style="color:var(--text)">Secure config (single step):</strong> <code>sdkmessageprocessingstepsecureconfig</code> upsert — same mechanism as Idea #4, but targeted at one step without a full commission run.
+        </p>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">Interaction with commission</p>
+        <p class="field-value">Commission restores components to their declared/last-known state. Without coordination, running commission after a manual toggle would silently undo the feature flag. Two mechanisms address this:</p>
+        <p class="field-value"><strong style="color:var(--text)">Scope guard:</strong> commission only reconciles components that are part of the solution being deployed — it never touches components outside the current solution. If the toggled flow is in the solution, commission will restore it; if it isn't (e.g. a flow from an earlier deploy or a different solution), commission ignores it.</p>
+        <p class="field-value"><strong style="color:var(--text)"><code>--except</code> flag:</strong> <code>flowline commission prod --except "New Checkout Flow"</code> skips named components during reconciliation. Keeps the toggle value intact through the next deploy.</p>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">Basis</p>
+        <p class="field-value">
+          <span class="basis-tag basis-direct">direct:</span>
+          All SDK primitives are already used or established in the codebase — <code>SetStateRequest</code> in <code>OrphanCleanupService.cs</code>, <code>workflow.statecode</code> PATCH planned for Idea #1. Name resolution requires one query per component type; step names are already known to Flowline from the assembly registration pipeline.
+          <span class="basis-tag basis-reasoned">reasoned:</span>
+          The feature flag pattern is standard in software but has no Dataverse CLI equivalent. The community workaround is either direct Dataverse API scripts or navigating the maker portal per-component. A named toggle command covers the full activation lifecycle without a re-deploy.
+        </p>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">Downsides</p>
+        <p class="field-value">Name resolution can fail or be ambiguous — two flows with similar names, a step name that changed since last push. Should require exact match and fail clearly rather than fuzzy-matching. The toggle command operates outside Flowline's normal "source of truth" model — it changes runtime state not reflected in any source file, which is intentional but means drift detection (if ever built) needs to account for it.</p>
+      </div>
+
+      <div class="meta-dl">
+        <div class="meta-pair"><dt>Confidence</dt><dd>
+          <div class="confidence-bar-wrap">
+            <span>87%</span>
+            <div class="confidence-bar"><div class="confidence-bar-fill" style="width:87%;background:var(--green)"></div></div>
+          </div>
+        </dd></div>
+        <div class="meta-pair"><dt>Complexity</dt><dd><span class="chip chip-green">Low</span></dd></div>
+        <div class="meta-pair"><dt>Meeting test</dt><dd><span style="font-size:13px">Can you deploy a new flow to prod but keep it off until a go-live decision?</span></dd></div>
+      </div>
+    </div>
+  </article>
+
 </section>
 
 <!-- ── Secure Config vs Env Vars ── -->
@@ -1431,7 +1564,12 @@
           <span class="wave-idea-title">Classic workflow state restoration <em>and</em> IPostDeployService protocol</span>
           <span class="wave-idea-note">Conf 90% / 85% · Low+Med</span>
         </div>
-        <p class="wave-reason">Pair #1 and #6: workflow restoration is the second <code>IPostDeployService</code> implementation (alongside <code>OrphanCleanupService</code>), so the interface emerges naturally from building them together — no over-engineering solo refactor. All three deliver immediate value, are low-risk, and are shippable independently within the wave. Start with #3 (abort early) and #2 (close the push/deploy gap) since they touch the fewest moving parts.</p>
+        <div class="wave-item">
+          <span class="wave-idea-num">#8</span>
+          <span class="wave-idea-title">Ad-hoc state toggle</span>
+          <span class="wave-idea-note">Conf 87% · Low — independent command</span>
+        </div>
+        <p class="wave-reason">Pair #1 and #6: workflow restoration is the second <code>IPostDeployService</code> implementation (alongside <code>OrphanCleanupService</code>), so the interface emerges naturally from building them together. Add #8 (toggle) in this wave: it's a thin SDK wrapper, completely independent, and unlocks the feature-flag pattern that makes dark deploys safe. Start with #3 (abort early) and #2 (close the push/deploy gap) since they touch the fewest moving parts.</p>
       </div>
     </div>
 
@@ -1462,7 +1600,7 @@
           <span class="wave-idea-title">Ordered flow activation</span>
           <span class="wave-idea-note">Conf 75% · Med — clientdata spike first</span>
         </div>
-        <p class="wave-reason">Decide #7 (commission architecture) first — it determines whether the wave 2 services go inside <code>deploy</code>'s post-import hooks or into a dedicated <code>commission</code> command. For #4, apply the env vars vs secure config analysis above before committing. For #5, do a <em>feasibility spike</em> — open a real solution ZIP, inspect the <code>clientdata</code> JSON in <code>workflow</code> records, and confirm the dependency graph is reliably parseable before building the full service.</p>
+        <p class="wave-reason">Decide #7 (commission architecture) first — it determines whether the wave 2 services go inside <code>deploy</code>'s post-import hooks or into a dedicated <code>commission</code> command. Once #8 (toggle) exists, commission needs the <code>--except</code> flag to avoid overriding intentional feature-flag state on re-deploy. For #4, apply the env vars vs secure config analysis above before committing. For #5, do a <em>feasibility spike</em> — open a real solution ZIP, inspect the <code>clientdata</code> JSON in <code>workflow</code> records, and confirm the dependency graph is reliably parseable before building the full service.</p>
         <div class="wave-gate"><strong>Gate on #4:</strong> only implement if at least one plugin step uses secrets that cannot be made visible to all environment admins.</div>
         <div class="wave-gate" style="margin-top:.35rem"><strong>Gate on #5:</strong> do the clientdata parsing spike first (½ day); result determines whether declared config or inferred dependency order is the right implementation path.</div>
       </div>
