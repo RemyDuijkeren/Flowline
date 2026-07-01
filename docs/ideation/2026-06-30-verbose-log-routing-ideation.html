@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ideation: Verbose Log Routing — 2026-06-30</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f8f9fc;--surface:#ffffff;--border:#e2e8f0;--border-strong:#cbd5e1;
+  --text:#1e293b;--text-2:#475569;--text-3:#94a3b8;
+  --accent:#4f46e5;--accent-soft:#eef2ff;--accent-text:#3730a3;
+  --green:#15803d;--green-soft:#f0fdf4;--green-border:#bbf7d0;
+  --amber:#92400e;--amber-soft:#fffbeb;--amber-border:#fde68a;
+  --red:#dc2626;--red-soft:#fef2f2;--red-border:#fecaca;
+  --slate-soft:#f1f5f9;
+  --font:'Inter',system-ui,sans-serif;
+  --mono:'JetBrains Mono','Courier New',monospace;
+}
+body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:15px;line-height:1.65}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:var(--mono);font-size:.85em;background:#f1f5f9;padding:.1em .35em;border-radius:3px;color:#334155}
+.page{max-width:940px;margin:0 auto;padding:0 24px 80px}
+
+/* HEADER */
+.doc-header{padding:48px 0 32px;border-bottom:1px solid var(--border);margin-bottom:32px}
+.doc-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.chip{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:500;letter-spacing:.01em}
+.chip-type{background:var(--accent-soft);color:var(--accent-text);border:1px solid #c7d2fe}
+.chip-date{background:var(--slate-soft);color:var(--text-2);border:1px solid var(--border)}
+.chip-mode{background:var(--green-soft);color:var(--green);border:1px solid var(--green-border)}
+.doc-title{font-size:28px;font-weight:700;line-height:1.25;margin-bottom:8px}
+.doc-focus{font-size:14px;color:var(--text-2);max-width:72ch}
+.doc-focus strong{color:var(--text);font-weight:600}
+
+/* STATS STRIP */
+.stats-strip{display:flex;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface);margin-bottom:40px}
+.stat{flex:1;padding:16px 20px;text-align:center;border-right:1px solid var(--border)}
+.stat:last-child{border-right:none}
+.stat-value{font-size:24px;font-weight:700;line-height:1}
+.stat-value.accent{color:var(--accent)}
+.stat-value.green{color:var(--green)}
+.stat-value.gray{color:var(--text-3)}
+.stat-label{font-size:12px;color:var(--text-2);margin-top:4px}
+
+/* SECTIONS */
+section{margin-bottom:48px}
+.section-eyebrow{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);margin-bottom:8px}
+h2.section-title{font-size:20px;font-weight:700;color:var(--text);margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--border)}
+
+/* GROUNDING */
+.grounding-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:600px){.grounding-grid{grid-template-columns:1fr}}
+.grounding-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px}
+.grounding-card h3{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3);margin-bottom:8px}
+.grounding-card ul{list-style:none;padding:0}
+.grounding-card li{font-size:13.5px;color:var(--text-2);padding:2px 0 2px 14px;position:relative;line-height:1.5}
+.grounding-card li::before{content:'·';position:absolute;left:2px;color:var(--text-3)}
+.grounding-card .gap-item{color:var(--red)}
+.grounding-card .gap-item::before{color:var(--red)}
+.grounding-card .good-item{color:var(--green)}
+.grounding-card .good-item::before{color:var(--green)}
+
+/* TOPIC AXES */
+.axes-list{display:flex;flex-direction:column;gap:8px}
+.axis-row{display:flex;align-items:baseline;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px}
+.axis-num{font-size:11px;font-weight:700;color:var(--accent);width:24px;flex-shrink:0}
+.axis-name{font-size:13.5px;font-weight:600;color:var(--text);min-width:200px}
+.axis-desc{font-size:13px;color:var(--text-2)}
+
+/* IDEA CARDS */
+.idea-subnav{margin-bottom:24px;display:flex;flex-wrap:wrap;gap:8px}
+.idea-subnav a{font-size:13px;color:var(--accent);background:var(--accent-soft);padding:4px 10px;border-radius:6px;border:1px solid #c7d2fe;text-decoration:none}
+.idea-subnav a:hover{background:#e0e7ff}
+
+article.idea-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 24px;margin-bottom:20px;scroll-margin-top:20px}
+.idea-header{display:flex;align-items:flex-start;gap:12px;margin-bottom:14px}
+.idea-rank{font-size:22px;font-weight:700;color:var(--accent);min-width:32px;line-height:1.2}
+.idea-title-block{flex:1}
+.idea-title{font-size:17px;font-weight:700;color:var(--text);line-height:1.3;margin-bottom:6px}
+.idea-chips{display:flex;flex-wrap:wrap;gap:6px}
+.axis-chip{background:var(--slate-soft);color:var(--text-2);border:1px solid var(--border);padding:2px 9px;border-radius:20px;font-size:11.5px;font-weight:500}
+.conf-high{background:var(--green-soft);color:var(--green);border:1px solid var(--green-border);padding:2px 9px;border-radius:20px;font-size:11.5px;font-weight:600}
+.conf-med{background:var(--amber-soft);color:var(--amber);border:1px solid var(--amber-border);padding:2px 9px;border-radius:20px;font-size:11.5px;font-weight:600}
+.conf-low{background:var(--red-soft);color:var(--red);border:1px solid var(--red-border);padding:2px 9px;border-radius:20px;font-size:11.5px;font-weight:600}
+.cx-chip{background:var(--slate-soft);color:var(--text-2);border:1px solid var(--border);padding:2px 9px;border-radius:20px;font-size:11.5px}
+
+.idea-desc{font-size:14px;color:var(--text);line-height:1.65;margin-bottom:14px}
+
+.idea-fields{display:grid;gap:10px}
+.field-row{display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:baseline}
+.field-label{font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3)}
+.field-value{font-size:13.5px;color:var(--text-2);line-height:1.55}
+.field-value.basis{font-family:var(--mono);font-size:12.5px;background:var(--slate-soft);padding:6px 10px;border-radius:6px;border:1px solid var(--border);white-space:pre-wrap;word-break:break-word}
+.field-value.downside{color:var(--amber);background:var(--amber-soft);padding:6px 10px;border-radius:6px;border:1px solid var(--amber-border);font-size:13px}
+
+/* DIAGRAM */
+.diagram-wrap{margin:16px 0;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface)}
+.diagram-cap{font-size:12px;color:var(--text-3);text-align:center;padding:6px 12px;border-top:1px solid var(--border)}
+
+/* MEETING TEST */
+.meeting-test{background:var(--accent-soft);border:1px solid #c7d2fe;border-radius:8px;padding:10px 14px;margin-top:14px;font-size:13.5px;color:var(--accent-text);font-style:italic}
+.meeting-test::before{content:'"';font-weight:700;font-style:normal;margin-right:2px}
+.meeting-test::after{content:'"';font-weight:700;font-style:normal;margin-left:2px}
+
+/* REJECTION TABLE */
+.rejection-table{width:100%;border-collapse:collapse;font-size:13.5px}
+.rejection-table th{text-align:left;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3);padding:8px 12px;border-bottom:2px solid var(--border)}
+.rejection-table td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.rejection-table tr:last-child td{border-bottom:none}
+.rejected-name{color:var(--text);font-weight:500}
+.rejected-reason{font-style:italic}
+
+/* FOOTER */
+footer.composition-signal{margin-top:60px;padding-top:20px;border-top:1px solid var(--border);font-size:12px;color:var(--text-3);text-align:center}
+/* GAP LABELS & CHIPS */
+.gap-label{display:inline-flex;align-items:center;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:4px;margin-bottom:6px}
+.gap-label-a{background:#fdf4ff;color:#7e22ce;border-left:3px solid #9333ea}
+.gap-label-b{background:#fff7ed;color:#9a3412;border-left:3px solid #ea580c}
+.gap-a-chip{background:#fdf4ff;color:#7e22ce;border:1px solid #e9d5ff;padding:2px 9px;border-radius:20px;font-size:11.5px;font-weight:500}
+.gap-b-chip{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;padding:2px 9px;border-radius:20px;font-size:11.5px;font-weight:500}
+.grounding-full{grid-column:1/-1}
+/* COVERAGE TABLE */
+.coverage-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+.coverage-table th{text-align:left;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3);padding:7px 10px;border-bottom:2px solid var(--border)}
+.coverage-table td{padding:7px 10px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:middle}
+.coverage-table tr:last-child td{border-bottom:none}
+.cov-yes{color:var(--green);font-weight:700}
+.cov-partial{color:var(--amber);font-weight:500;font-style:italic}
+.cov-no{color:var(--text-3)}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="doc-header">
+  <div class="doc-meta">
+    <span class="chip chip-type">Ideation</span>
+    <time class="chip chip-date" datetime="2026-06-30">2026-06-30</time>
+    <span class="chip chip-mode">repo-grounded</span>
+  </div>
+  <h1 class="doc-title">Ideation: Verbose Log Routing</h1>
+  <p class="doc-focus">
+    <strong>Focus:</strong> Always send verbose-level output to the log file, even when <code>--verbose</code> is not set.
+    Options for decoupling verbose capture from verbose display — including reversing the model: always generate verbose internally, filter before the terminal.
+  </p>
+</header>
+
+<div class="stats-strip">
+  <div class="stat"><div class="stat-value accent">7</div><div class="stat-label">Survivors</div></div>
+  <div class="stat"><div class="stat-value gray">38+</div><div class="stat-label">Raw candidates</div></div>
+  <div class="stat"><div class="stat-value gray">31+</div><div class="stat-label">Cut</div></div>
+  <div class="stat"><div class="stat-value accent">5</div><div class="stat-label">Axes covered</div></div>
+  <div class="stat"><div class="stat-value green">5+</div><div class="stat-label">Frames run</div></div>
+</div>
+
+<section id="grounding">
+  <p class="section-eyebrow">Phase 1</p>
+  <h2 class="section-title">Grounding Context</h2>
+  <div class="grounding-grid">
+    <div class="grounding-card">
+      <h3>What Exists Now</h3>
+      <ul>
+        <li class="good-item">Serilog at <code>MinimumLevel.Debug</code>, file-only sink — would capture everything if content reached <code>ILogger</code></li>
+        <li class="good-item"><code>LoggingRenderHook</code> intercepts every Spectre <code>Markup/Tree/Panel/Table</code> → <code>ILogger</code> → file</li>
+        <li class="good-item"><code>VerboseOutputBuffer</code> accumulates context on error path</li>
+        <li><code>Console.Verbose(msg, options)</code>: <code>IsVerbose=true</code> → <code>MarkupLine</code> → hook → file</li>
+        <li><code>WithToolExecutionLog(options)</code>: <code>IsVerbose=true</code> → stdout → <code>MarkupLine</code> → hook → file</li>
+      </ul>
+    </div>
+    <div class="grounding-card">
+      <h3>Current Gaps</h3>
+      <div class="gap-label gap-label-a">Gap A · Flowline's own verbose messages</div>
+      <ul>
+        <li class="gap-item"><code>Console.Verbose(msg, options)</code> when <code>!IsVerbose</code>: buffer only — zero <code>ILogger</code> write</li>
+        <li class="gap-item"><code>Console.Verbose(msg, bool)</code> when false: nothing at all — no buffer, no file</li>
+      </ul>
+      <div class="gap-label gap-label-b" style="margin-top:10px">Gap B · External subprocess stdout</div>
+      <ul>
+        <li class="gap-item"><code>WithToolExecutionLog(options)</code> when <code>!IsVerbose</code>: non-error stdout silently dropped</li>
+        <li class="gap-item"><code>WithToolExecutionLog(bool)</code> overload: no buffer at all — stdout dropped, zero ILogger, zero buffer regardless of flag</li>
+        <li class="gap-item">PacUtils buffered calls (<code>ExecuteBufferedAsync</code>): stdout goes to <code>result.StandardOutput</code> for JSON parsing — pipe delegate never sees it at all</li>
+      </ul>
+      <p style="margin-top:8px;font-size:12.5px;color:var(--text-3)">Shared consequence: <code>VerboseOutputBuffer</code> flushed to <code>ILogger</code> only on error — verbose context lost on success for both gaps.</p>
+    </div>
+    <div class="grounding-card">
+      <h3>External Prior Art</h3>
+      <ul>
+        <li>Azure CLI: always writes full debug to timestamped files regardless of <code>--debug</code>/<code>--verbose</code>; terminal gated by flag — production-validated</li>
+        <li>MSBuild: <code>/bl</code> binary log always at diagnostic verbosity; console verbosity set independently</li>
+        <li>Serilog <code>LoggingLevelSwitch</code>: runtime-adjustable level per sink, post-initialization</li>
+      </ul>
+    </div>
+    <div class="grounding-card">
+      <h3>Key Structural Constraint</h3>
+      <ul>
+        <li>No Serilog console sink exists — terminal output is Spectre-native. Ideas requiring a Serilog console sink to filter on were rejected.</li>
+        <li><code>ILogger</code> is not reachable from <code>FlowlineConsoleExtensions</code> (static extension with no DI). The <code>FlowlineRuntimeOptions</code> parameter pattern is the established workaround.</li>
+        <li><code>LoggingRenderHook</code> only sees content that flows through Spectre's <code>MarkupLine</code> — anything bypassing it is invisible to the file.</li>
+      </ul>
+    </div>
+    <div class="grounding-card grounding-full">
+      <h3>Gap Coverage by Idea</h3>
+      <table class="coverage-table">
+        <thead>
+          <tr>
+            <th>Idea</th>
+            <th><span class="gap-label gap-label-a" style="margin:0">Gap A</span> Flowline messages</th>
+            <th><span class="gap-label gap-label-b" style="margin:0">Gap B</span> Subprocess stdout</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>2</strong> · ILogger in Verbose()</td><td class="cov-yes">✓ closes</td><td class="cov-no">✗</td><td>Surgical; needs ideas 3 or 7 for Gap B</td></tr>
+          <tr><td><strong>3</strong> · ILogger in subprocess delegate</td><td class="cov-no">✗</td><td class="cov-yes">✓ closes</td><td>Surgical; needs idea 2 or 5 for Gap A</td></tr>
+          <tr><td><strong>4</strong> · Flush buffer on all exits</td><td class="cov-partial">partial (buffered path only)</td><td class="cov-partial">partial (error lines only)</td><td>Quick win; neither gap fully closed</td></tr>
+          <tr><td><strong>5</strong> · Separate VerboseFilterHook</td><td class="cov-yes">✓ closes</td><td class="cov-no">✗</td><td>Architectural; hooks never see subprocess stdout</td></tr>
+          <tr><td><strong>7</strong> · SubprocessCapture</td><td class="cov-no">✗</td><td class="cov-yes">✓ closes</td><td>Architectural; only for CliWrap invocations</td></tr>
+          <tr><td><strong>2 + 3</strong></td><td class="cov-yes">✓</td><td class="cov-yes">✓</td><td>Minimum viable complete fix — surgical parameter plumbing</td></tr>
+          <tr><td><strong>5 + 7</strong></td><td class="cov-yes">✓</td><td class="cov-yes">✓</td><td>Designed model — type-tagged renderables + injectable capture class</td></tr>
+          <tr><td><strong>5 + 3</strong></td><td class="cov-yes">✓</td><td class="cov-yes">✓</td><td>Middle ground — hook model for Gap A, surgical patch for Gap B</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="axes">
+  <p class="section-eyebrow">Phase 1.5</p>
+  <h2 class="section-title">Topic Axes</h2>
+  <div class="axes-list">
+    <div class="axis-row">
+      <span class="axis-num">1</span>
+      <span class="axis-name">Decoupling point</span>
+      <span class="axis-desc">Where in code the verbose-flag decision moves — from generation site to somewhere later in the pipeline</span>
+    </div>
+    <div class="axis-row">
+      <span class="axis-num">2</span>
+      <span class="axis-name">Terminal suppression</span>
+      <span class="axis-desc">How verbose content is hidden from the terminal when <code>--verbose</code> is off, without suppressing it from the file</span>
+    </div>
+    <div class="axis-row">
+      <span class="axis-num">3</span>
+      <span class="axis-name">File routing</span>
+      <span class="axis-desc">What mechanism carries verbose content to the Serilog file sink — direct <code>ILogger</code>, hook, buffer flush</span>
+    </div>
+    <div class="axis-row">
+      <span class="axis-num">4</span>
+      <span class="axis-name">Buffer future</span>
+      <span class="axis-desc">What role <code>VerboseOutputBuffer</code> plays once the file routing gap is closed</span>
+    </div>
+    <div class="axis-row">
+      <span class="axis-num">5</span>
+      <span class="axis-name">Subprocess architecture</span>
+      <span class="axis-desc">Whether <code>CommandExtensions</code> static extensions should be replaced with a DI-injectable type that can hold <code>ILogger</code> and always capture</span>
+    </div>
+  </div>
+</section>
+
+<section id="ideas">
+  <p class="section-eyebrow">Ranked</p>
+  <h2 class="section-title">Ranked Ideas</h2>
+
+  <nav class="idea-subnav" aria-label="Ideas">
+    <a href="#idea-1">1. Generate Always, Gate at Terminal</a>
+    <a href="#idea-2">2. Direct ILogger Injection in Verbose()</a>
+    <a href="#idea-3">3. Always-Capture Subprocess Stdout</a>
+    <a href="#idea-4">4. Flush Buffer on All Exits</a>
+    <a href="#idea-5">5. Separate VerboseFilterHook</a>
+    <a href="#idea-6">6. Reverse Default: --quiet</a>
+    <a href="#idea-7">7. Replace CommandExtensions with SubprocessCapture</a>
+  </nav>
+
+  <!-- IDEA 1 -->
+  <article class="idea-card" id="idea-1">
+    <div class="idea-header">
+      <div class="idea-rank">1.</div>
+      <div class="idea-title-block">
+        <div class="idea-title">Generate Always, Gate at Terminal</div>
+        <div class="idea-chips">
+          <span class="axis-chip">Axis 1 · Decoupling point</span>
+          <span class="conf-high">Conf · High</span>
+          <span class="cx-chip">Cx · XS</span>
+          <span class="gap-a-chip">Gap A principle</span>
+          <span class="gap-b-chip">Gap B principle</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="idea-desc">
+      The architectural principle: the <code>--verbose</code> flag must never gate whether content is generated — only whether the terminal displays it. Every verbose message exists at the <code>ILogger</code> layer unconditionally; the terminal is a display preference, not a capture filter. This is the decision that ideas 2 and 3 implement. Its value is in being named and enforced rather than improvised per call site.
+    </p>
+
+    <!-- before/after diagram -->
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 760 200" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block;font-family:inherit">
+        <!-- BEFORE -->
+        <text x="80" y="22" text-anchor="middle" font-size="11" font-weight="600" fill="#94a3b8" letter-spacing=".06em">BEFORE</text>
+        <rect x="10" y="34" width="140" height="34" rx="6" fill="#fef2f2" stroke="#fecaca"/>
+        <text x="80" y="54" text-anchor="middle" font-size="12" font-weight="600" fill="#dc2626">Console.Verbose()</text>
+        <text x="80" y="68" text-anchor="middle" font-size="10" fill="#dc2626">gate here: isVerbose?</text>
+
+        <line x1="150" y1="51" x2="190" y2="51" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#arr-gray)"/>
+        <text x="170" y="44" text-anchor="middle" font-size="10" fill="#94a3b8">yes</text>
+
+        <rect x="190" y="34" width="100" height="34" rx="6" fill="#f1f5f9" stroke="#e2e8f0"/>
+        <text x="240" y="55" text-anchor="middle" font-size="12" fill="#475569">MarkupLine</text>
+
+        <line x1="290" y1="51" x2="330" y2="51" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#arr-gray)"/>
+
+        <rect x="330" y="34" width="80" height="34" rx="6" fill="#f1f5f9" stroke="#e2e8f0"/>
+        <text x="370" y="55" text-anchor="middle" font-size="12" fill="#475569">Hook</text>
+
+        <line x1="410" y1="51" x2="450" y2="51" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#arr-gray)"/>
+
+        <rect x="450" y="34" width="80" height="34" rx="6" fill="#f0fdf4" stroke="#bbf7d0"/>
+        <text x="490" y="55" text-anchor="middle" font-size="12" fill="#15803d">File</text>
+
+        <!-- no path -->
+        <line x1="150" y1="55" x2="152" y2="88" stroke="#fecaca" stroke-width="1.5"/>
+        <rect x="152" y="88" width="80" height="28" rx="6" fill="#fef2f2" stroke="#fecaca"/>
+        <text x="192" y="106" text-anchor="middle" font-size="11" fill="#dc2626">buffer / nothing</text>
+        <text x="170" y="80" text-anchor="middle" font-size="10" fill="#dc2626">no</text>
+
+        <!-- AFTER -->
+        <text x="440" y="148" text-anchor="middle" font-size="11" font-weight="600" fill="#94a3b8" letter-spacing=".06em">AFTER</text>
+        <rect x="10" y="158" width="140" height="34" rx="6" fill="#f0fdf4" stroke="#bbf7d0"/>
+        <text x="80" y="178" text-anchor="middle" font-size="12" font-weight="600" fill="#15803d">Console.Verbose()</text>
+        <text x="80" y="192" text-anchor="middle" font-size="10" fill="#15803d">always calls ILogger</text>
+
+        <line x1="150" y1="175" x2="190" y2="175" stroke="#4f46e5" stroke-width="1.5" marker-end="url(#arr-accent)"/>
+
+        <rect x="190" y="158" width="80" height="34" rx="6" fill="#eef2ff" stroke="#c7d2fe"/>
+        <text x="230" y="179" text-anchor="middle" font-size="12" fill="#3730a3">ILogger</text>
+
+        <line x1="270" y1="175" x2="310" y2="175" stroke="#4f46e5" stroke-width="1.5" marker-end="url(#arr-accent)"/>
+
+        <rect x="310" y="158" width="80" height="34" rx="6" fill="#f0fdf4" stroke="#bbf7d0"/>
+        <text x="350" y="179" text-anchor="middle" font-size="12" fill="#15803d">File ✓</text>
+
+        <!-- gate moved -->
+        <line x1="230" y1="158" x2="230" y2="140" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4,3"/>
+        <rect x="410" y="158" width="130" height="34" rx="6" fill="#f8f9fc" stroke="#e2e8f0"/>
+        <text x="475" y="172" text-anchor="middle" font-size="11" fill="#475569">Terminal display</text>
+        <text x="475" y="184" text-anchor="middle" font-size="10" fill="#94a3b8">gated by --verbose</text>
+        <line x1="310" y1="175" x2="410" y2="175" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="4,3"/>
+
+        <defs>
+          <marker id="arr-gray" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#cbd5e1"/>
+          </marker>
+          <marker id="arr-accent" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#4f46e5"/>
+          </marker>
+        </defs>
+      </svg>
+      <p class="diagram-cap">Before: <code>--verbose</code> gates content generation (capture filter). After: ILogger always receives the event; terminal is gated separately (display filter).</p>
+    </div>
+
+    <div class="idea-fields">
+      <div class="field-row">
+        <span class="field-label">Basis</span>
+        <span class="field-value basis">direct: Console.Verbose(msg, bool) line 21-25 — if (isVerbose) MarkupLine else nothing
+direct: Console.Verbose(msg, options) line 27-33 — if (IsVerbose) MarkupLine else VerboseOutput.Append (no ILogger)
+external: Azure CLI always writes full debug to file regardless of flag; terminal is a display-layer decision</span>
+      </div>
+      <div class="field-row">
+        <span class="field-label">Rationale</span>
+        <span class="field-value">The file sink is at <code>MinimumLevel.Debug</code> — it would capture verbose content unconditionally if that content reached <code>ILogger</code>. The only obstacle is the flag gates in the call sites. Moving the gate downstream makes the log file unconditionally complete. Ideas 2 and 3 are the implementation; this is the principle that names the decision and prevents future regressions.</span>
+      </div>
+      <div class="field-row">
+        <span class="field-label">Downsides</span>
+        <span class="field-value downside">Not a code change on its own — needs idea 2 and/or 3 to implement. Value is in naming and enforcing the rule (e.g., as an architectural comment in LoggingRenderHook or Program.cs).</span>
+      </div>
+    </div>
+    <p class="meeting-test">The <code>--verbose</code> flag is currently a capture filter. It decides whether the event is generated, not whether the terminal displays it. The fix is to move it to a display filter. Should we audit every verbose call site for this?</p>
+  </article>
+
+  <!-- IDEA 2 -->
+  <article class="idea-card" id="idea-2">
+    <div class="idea-header">
+      <div class="idea-rank">2.</div>
+      <div class="idea-title-block">
+        <div class="idea-title">Direct ILogger Injection in <code>Console.Verbose()</code></div>
+        <div class="idea-chips">
+          <span class="axis-chip">Axis 3 · File routing</span>
+          <span class="conf-high">Conf · High</span>
+          <span class="cx-chip">Cx · S</span>
+          <span class="gap-a-chip">Gap A ✓</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="idea-desc">
+      Add an <code>ILogger</code> parameter to both <code>Console.Verbose()</code> overloads and call <code>logger.Debug(message)</code> unconditionally — before the terminal-display branch. The call always reaches the Serilog file sink regardless of <code>--verbose</code>. The terminal branch (<code>MarkupLine</code> or buffer) remains as-is; this is purely additive. The parameter injection pattern mirrors how <code>FlowlineRuntimeOptions</code> is already threaded through.
+    </p>
+
+    <div class="idea-fields">
+      <div class="field-row">
+        <span class="field-label">Basis</span>
+        <span class="field-value basis">direct: FlowlineConsoleExtensions.cs:27 — options parameter already threaded; ILogger can follow same pattern
+direct: MinimumLevel.Debug() set in Program.cs:72 — ILogger.Debug() WILL reach the file
+direct: LoggingRenderHook only fires on MarkupLine — content suppressed from Spectre is invisible to the file without a direct ILogger path</span>
+      </div>
+      <div class="field-row">
+        <span class="field-label">Rationale</span>
+        <span class="field-value">The Serilog file is ready; the only missing piece is the ILogger call itself. Every call site already passes <code>FlowlineRuntimeOptions</code> — adding <code>ILogger</code> alongside it is the minimal change. The hook's complexity stays scoped to user-facing output where it belongs; verbose content gets a direct, simple route to the file.</span>
+      </div>
+      <div class="field-row">
+        <span class="field-label">Downsides</span>
+        <span class="field-value downside">Requires adding ILogger parameter to both verbose overloads + updating all call sites. Static extension methods have no DI — callers must pass ILogger explicitly. The bool overload (line 21) should probably be removed rather than extended, since it has no buffer path either.</span>
+      </div>
+    </div>
+    <p class="meeting-test">Both verbose overloads are structurally blocked from reaching ILogger. The fix is one parameter and one unconditional logger.Debug() call. Should we remove the bool overload and consolidate on the options overload?</p>
+  </article>
+
+  <!-- IDEA 3 -->
+  <article class="idea-card" id="idea-3">
+    <div class="idea-header">
+      <div class="idea-rank">3.</div>
+      <div class="idea-title-block">
+        <div class="idea-title">Always-Capture Subprocess Stdout via ILogger</div>
+        <div class="idea-chips">
+          <span class="axis-chip">Axis 3 · File routing</span>
+          <span class="conf-high">Conf · High</span>
+          <span class="cx-chip">Cx · S</span>
+          <span class="gap-b-chip">Gap B ✓</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="idea-desc">
+      Change <code>WithToolExecutionLog</code>'s non-verbose stdout delegate to always pipe each line to <code>ILogger.Debug(s)</code> before discarding it from the terminal. Currently when <code>IsVerbose=false</code>, the delegate does nothing with non-error stdout — it is silently dropped. Adding one <code>logger.Debug(s)</code> call inside that delegate closes the subprocess capture gap: PAC, dotnet, and git output always appear in the log file, regardless of the flag.
+    </p>
+
+    <div class="idea-fields">
+      <div class="field-row">
+        <span class="field-label">Basis</span>
+        <span class="field-value basis">direct: CommandExtensions.cs:96-102 — non-verbose stdout delegate:
+  .WithStandardOutputPipe(PipeTarget.ToDelegate(s => {
+      SetStatusWithExecutionTime(ctx, s);
+      if (IsErrorLine(s)) options.VerboseOutput.Append(s);
+      // ← non-error stdout is DROPPED here
+  }))
+external: Azure CLI pipes all tool output to debug file unconditionally; terminal display is the only thing gated</span>
+      </div>
+      <div class="field-row">
+        <span class="field-label">Rationale</span>
+        <span class="field-value">Subprocess output (PAC import counts, entity names, dotnet build lines, git status) is the most valuable diagnostic signal during a failed deployment. It vanishes entirely unless the operator ran with <code>--verbose</code>. One <code>logger.Debug(s)</code> call in the non-verbose delegate permanently closes this gap — all current and future subprocess calls gain unconditional file capture.</span>
+      </div>
+      <div class="field-row">
+        <span class="field-label">Downsides</span>
+        <span class="field-value downside">Requires ILogger to be available inside the delegate. CommandExtensions is currently static with no ILogger parameter. Same solution as idea 2: thread ILogger through the options object or add it as a parameter. Stdout from long-running PAC operations can be voluminous — log file size may increase meaningfully on verbose operations.</span>
+      </div>
+    </div>
+    <p class="meeting-test">A PAC solution publish succeeds but registers the wrong version. The log file has no stdout from PAC because we weren't running --verbose. Should subprocess stdout always be in the log file?</p>
+  </article>
+
+  <!-- IDEA 4 -->
+  <article class="idea-card" id="idea-4">
+    <div class="idea-header">
+      <div class="idea-rank">4.</div>
+      <div class="idea-title-block">
+        <div class="idea-title">Flush Buffer to ILogger on All Exits</div>
+        <div class="idea-chips">
+          <span class="axis-chip">Axis 4 · Buffer future</span>
+          <span class="conf-high">Conf · High</span>
+          <span class="cx-chip">Cx · XS</span>
+          <span class="gap-a-chip">Gap A partial</span>
+          <span class="gap-b-chip">Gap B partial</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="idea-desc">
+      The simplest standalone fix: call <code>FlushBufferedVerboseOutput</code> (or equivalent) after <code>app.RunAsync()</code> on the success path too, not only from the exception handler. Currently the success path is just <code>RunAsync → CloseAndFlush → Dispose → return</code> with no buffer flush. Adding one flush call means whatever is buffered (the last ≤50 verbose messages via the options overload) always reaches the Serilog file at the end of every run. This doesn't depend on ideas 2 or 3 and can ship independently.
+    </p>
+
+    <div class="idea-fields">
+      <div class="field-row">
+        <span class="field-label">Basis</span>
+        <span class="field-value basis">direct: Program.cs:184-186 — success path:
+  var exitCode = await app.RunAsync(...);
+  Log.CloseAndFlush();
+  return exitCode;
+  // ← no buffer flush before CloseAndFlush
+direct: FlushBufferedVerboseOutput(Exception) called only from exception handler (lines 104, 113)</span>
+      </div>
+      <div class="field-row">
+        <span class="field-label">Rationale</span>
+        <span class="field-value">The buffer exists to collect verbose context. The file sink is the right place for that context. On success, the buffer is currently garbage-collected with its contents. One call before <code>CloseAndFlush</code> fixes this. The change is three lines. It doesn't require any other structural change and closes the success-path gap for all content already being buffered.</span>
+      </div>
+      <div class="field-row">
+        <span class="field-label">Downsides</span>
+        <span class="field-value downside">Partial fix only: covers only what's already in the buffer. The bool overload verbose path (idea 2) and subprocess stdout drops (idea 3) are still not captured. Still limited to 50 lines. Buffer on success should NOT re-print to terminal (the FlushBufferedVerboseOutput function does terminal output too — need a file-only variant).</span>
+      </div>
+    </div>
+    <p class="meeting-test">The buffer collects verbose context but only writes it to the file when something throws. Should we always flush it to the log file at run end, regardless of success or failure?</p>
+  </article>
+
+  <!-- IDEA 5 -->
+  <article class="idea-card" id="idea-5">
+    <div class="idea-header">
+      <div class="idea-rank">5.</div>
+      <div class="idea-title-block">
+        <div class="idea-title">Separate <code>VerboseFilterHook</code> (the Reverse Model, Refined)</div>
+        <div class="idea-chips">
+          <span class="axis-chip">Axis 2 · Terminal suppression</span>
+          <span class="conf-med">Conf · Med</span>
+          <span class="cx-chip">Cx · M</span>
+          <span class="gap-a-chip">Gap A ✓</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="idea-desc">
+      The reverse model refined: instead of giving <code>LoggingRenderHook</code> two jobs (log + suppress), split into two hooks registered in sequence. <code>LoggingRenderHook</code> stays unchanged — it already logs every <code>Markup</code> renderable to <code>ILogger</code> unconditionally. A new <code>VerboseFilterHook</code>, registered second in the Spectre pipeline, intercepts <code>VerboseMarkup</code> renderables and suppresses their <code>yield</code> when <code>!IsVerbose</code>. Call sites use <code>VerboseMarkup</code> (a wrapper type extending <code>Markup</code>) instead of raw <code>Markup("[dim]...")</code>. <code>LoggingRenderHook</code> sees it first (logs it), then <code>VerboseFilterHook</code> decides whether the terminal gets it. The <code>[dim]</code>/<code>Skip()</code> ambiguity is resolved by type — <code>Skip()</code> still uses plain <code>Markup</code>, so the filter never touches it.
+    </p>
+
+    <!-- two-hook pipeline diagram -->
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 760 160" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block;font-family:inherit">
+        <!-- call site -->
+        <rect x="10" y="55" width="110" height="40" rx="5" fill="#f1f5f9" stroke="#e2e8f0"/>
+        <text x="65" y="72" text-anchor="middle" font-size="11.5" fill="#475569">call site</text>
+        <text x="65" y="86" text-anchor="middle" font-size="10" fill="#94a3b8">new VerboseMarkup()</text>
+
+        <line x1="120" y1="75" x2="168" y2="75" stroke="#4f46e5" stroke-width="1.5" marker-end="url(#arrhook-a)"/>
+
+        <!-- LoggingRenderHook -->
+        <rect x="170" y="40" width="140" height="70" rx="5" fill="#eef2ff" stroke="#c7d2fe"/>
+        <text x="240" y="62" text-anchor="middle" font-size="11.5" font-weight="700" fill="#3730a3">LoggingRenderHook</text>
+        <text x="240" y="77" text-anchor="middle" font-size="10" fill="#3730a3">ILogger.Debug() always</text>
+        <text x="240" y="89" text-anchor="middle" font-size="10" fill="#3730a3">yield all (unchanged)</text>
+        <text x="240" y="101" text-anchor="middle" font-size="9" fill="#6366f1">→ file always ✓</text>
+
+        <line x1="310" y1="75" x2="368" y2="75" stroke="#4f46e5" stroke-width="1.5" marker-end="url(#arrhook-a)"/>
+
+        <!-- VerboseFilterHook -->
+        <rect x="370" y="40" width="155" height="70" rx="5" fill="#fffbeb" stroke="#fde68a"/>
+        <text x="447" y="62" text-anchor="middle" font-size="11.5" font-weight="700" fill="#92400e">VerboseFilterHook</text>
+        <text x="447" y="77" text-anchor="middle" font-size="10" fill="#92400e">is VerboseMarkup?</text>
+        <text x="447" y="89" text-anchor="middle" font-size="10" fill="#92400e">!IsVerbose → skip yield</text>
+        <text x="447" y="101" text-anchor="middle" font-size="9" fill="#92400e">else → yield</text>
+
+        <!-- to terminal: conditional -->
+        <line x1="525" y1="65" x2="600" y2="50" stroke="#15803d" stroke-width="1.5" marker-end="url(#arrhook-g)"/>
+        <text x="575" y="44" text-anchor="middle" font-size="10" fill="#15803d">IsVerbose</text>
+        <rect x="600" y="34" width="90" height="28" rx="5" fill="#f0fdf4" stroke="#bbf7d0"/>
+        <text x="645" y="53" text-anchor="middle" font-size="11" fill="#15803d">Terminal ✓</text>
+
+        <line x1="525" y1="88" x2="600" y2="105" stroke="#fde68a" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrhook-y)"/>
+        <text x="575" y="118" text-anchor="middle" font-size="10" fill="#92400e">!IsVerbose → suppressed</text>
+
+        <defs>
+          <marker id="arrhook-a" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#4f46e5"/></marker>
+          <marker id="arrhook-g" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#15803d"/></marker>
+          <marker id="arrhook-y" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#fde68a"/></marker>
+        </defs>
+      </svg>
+      <p class="diagram-cap">Hook order: <code>LoggingRenderHook</code> (registered first) always logs to file. <code>VerboseFilterHook</code> (registered second) suppresses terminal display of <code>VerboseMarkup</code> when <code>!IsVerbose</code>. <code>Skip()</code> uses plain <code>Markup</code> — filter never sees it.</p>
+    </div>
+
+    <div class="idea-fields">
+      <div class="field-row">
+        <span class="field-label">Basis</span>
+        <span class="field-value basis">direct: LoggingRenderHook.Process line 17 — "if (renderable is Markup...)" catches VerboseMarkup too (subtype); already logs to ILogger unconditionally when IsVerbose=true
+direct: LoggingRenderHook line 13 — "yield return renderable" always passes to next hook in the pipeline; a second hook can then suppress
+direct: FlowlineConsoleExtensions.cs:19 — Skip() uses plain Markup("[dim]..."), not a subtype; type-based filter would never match it
+direct: Program.cs line 180 — "AnsiConsole.Console.Pipeline.Attach(...)" — hooks are in a list; registration order determines pipeline order</span>
+      </div>
+      <div class="field-row">
+        <span class="field-label">Rationale</span>
+        <span class="field-value">Single responsibility: <code>LoggingRenderHook</code> does logging (it already does), <code>VerboseFilterHook</code> does terminal suppression. Neither hook needs to know about the other's job. <code>LoggingRenderHook</code> requires zero changes. <code>VerboseFilterHook</code> is clean: one check, one decision. The <code>[dim]</code> ambiguity with <code>Skip()</code> is solved structurally by type — no string prefix scanning or convention required. Adding new verbose output never requires an <code>IsVerbose</code> check at the call site.</span>
+      </div>
+      <div class="field-row">
+        <span class="field-label">Downsides</span>
+        <span class="field-value downside">
+          Call sites must change from <code>Markup("[dim]...")</code> to <code>new VerboseMarkup("...")</code> — a broad but mechanical refactor of all <code>Console.Verbose()</code> call sites.<br>
+          <code>VerboseFilterHook</code> needs <code>FlowlineRuntimeOptions.IsVerbose</code> at runtime — new runtime dependency on a DI object that hooks don't currently hold.<br>
+          Subprocess stdout via <code>WithToolExecutionLog</code> never reaches Spectre when <code>!IsVerbose</code> — hook pipeline never fires for it. Still needs idea 3 (or idea 7) to capture subprocess output.
+        </span>
+      </div>
+    </div>
+    <p class="meeting-test">LoggingRenderHook stays unchanged. VerboseFilterHook is new and small. Call sites switch to VerboseMarkup — one mechanical pass. Subprocess capture is the remaining gap. Is that the direction?</p>
+  </article>
+
+  <!-- IDEA 6 -->
+  <article class="idea-card" id="idea-6">
+    <div class="idea-header">
+      <div class="idea-rank">6.</div>
+      <div class="idea-title-block">
+        <div class="idea-title">Reverse the Default: <code>--quiet</code> Instead of <code>--verbose</code></div>
+        <div class="idea-chips">
+          <span class="axis-chip">Axis 2 · Terminal suppression</span>
+          <span class="conf-low">Conf · Low</span>
+          <span class="cx-chip">Cx · L</span>
+          <span class="gap-a-chip">Gap A+B terminal only</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="idea-desc">
+      Flip the assumption: verbose output is the default; <code>--quiet</code> suppresses it. Operators who want clean CI output pass <code>--quiet</code>. Local developers who forget a flag get full diagnostic context immediately, not a terse error that requires a re-run. The penalty for forgetting a flag drops from "permanently lost context" to "extra terminal lines." This is a separate UX direction from fixing the file log — it addresses what the terminal shows by default.
+    </p>
+
+    <div class="idea-fields">
+      <div class="field-row">
+        <span class="field-label">Basis</span>
+        <span class="field-value basis">external: Azure CLI — default output is full; --only-show-errors suppresses; --debug adds more
+reasoned: --verbose has asymmetric cost: forgetting it on failure means re-running an entire PAC operation (minutes). Forgetting --quiet costs only terminal noise. Penalize the cheaper mistake.</span>
+      </div>
+      <div class="field-row">
+        <span class="field-label">Rationale</span>
+        <span class="field-value">A developer's first failing <code>flowline deploy</code> should show full context — not require discovering and re-running with <code>--verbose</code>. The user who wants clean output is more sophisticated and will find <code>--quiet</code>; the user who needs context is often new and will forget <code>--verbose</code>.</span>
+      </div>
+      <div class="field-row">
+        <span class="field-label">Downsides</span>
+        <span class="field-value downside">Breaking change to CLI interface — all scripts, docs, and habits that use --verbose would need updating. The file-log gap argument weakens once ideas 2+3 ship (file is then always complete). Remains primarily a terminal UX decision with a distinct value proposition from file completeness. Separate brainstorm territory.</span>
+      </div>
+    </div>
+    <p class="meeting-test">Should verbose output be on by default and --quiet be the opt-out? The penalty for forgetting --verbose is worse than forgetting --quiet.</p>
+  </article>
+
+  <!-- IDEA 7 -->
+  <article class="idea-card" id="idea-7">
+    <div class="idea-header">
+      <div class="idea-rank">7.</div>
+      <div class="idea-title-block">
+        <div class="idea-title">Replace <code>CommandExtensions</code> with <code>SubprocessCapture</code></div>
+        <div class="idea-chips">
+          <span class="axis-chip">Axis 5 · Subprocess architecture</span>
+          <span class="conf-med">Conf · Med</span>
+          <span class="cx-chip">Cx · M–L</span>
+          <span class="gap-b-chip">Gap B ✓</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="idea-desc">
+      The static extension design of <code>CommandExtensions</code> is what makes <code>ILogger</code> unreachable — static methods have no DI. Replace both <code>WithToolExecutionLog</code> overloads with a <code>SubprocessCapture</code> class that takes <code>ILogger</code> and <code>FlowlineRuntimeOptions</code> in its constructor. Every stdout line is piped to <code>ILogger.Debug()</code> unconditionally; terminal display is a separate decision. Error detection, PAC async progress filtering, line transforms, and status context updates — currently duplicated inside the two overloads — are consolidated in one class. <code>PacUtils</code> and other callers get <code>SubprocessCapture</code> via DI, ending the <code>bool verbose</code> parameter threading across half the codebase.
+    </p>
+
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 760 180" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block;font-family:inherit">
+        <!-- BEFORE label -->
+        <text x="190" y="18" text-anchor="middle" font-size="11" font-weight="600" fill="#94a3b8" letter-spacing=".06em">BEFORE (static extension)</text>
+
+        <rect x="10" y="28" width="140" height="36" rx="5" fill="#fef2f2" stroke="#fecaca"/>
+        <text x="80" y="48" text-anchor="middle" font-size="11.5" fill="#dc2626">WithToolExecutionLog</text>
+        <text x="80" y="61" text-anchor="middle" font-size="10" fill="#dc2626">bool/options — no ILogger</text>
+
+        <line x1="150" y1="46" x2="210" y2="46" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#arr-sc-g)"/>
+        <text x="182" y="38" text-anchor="middle" font-size="10" fill="#15803d">verbose</text>
+
+        <rect x="212" y="28" width="80" height="36" rx="5" fill="#f0fdf4" stroke="#bbf7d0"/>
+        <text x="252" y="52" text-anchor="middle" font-size="11.5" fill="#15803d">Terminal</text>
+
+        <!-- no path -->
+        <line x1="150" y1="52" x2="150" y2="80" stroke="#fecaca" stroke-width="1" stroke-dasharray="4,3"/>
+        <rect x="160" y="76" width="120" height="28" rx="5" fill="#fef2f2" stroke="#fecaca"/>
+        <text x="220" y="94" text-anchor="middle" font-size="11" fill="#dc2626">stdout dropped / buffered</text>
+        <text x="168" y="72" text-anchor="middle" font-size="10" fill="#dc2626">!verbose</text>
+
+        <!-- AFTER label -->
+        <text x="430" y="18" text-anchor="middle" font-size="11" font-weight="600" fill="#94a3b8" letter-spacing=".06em">AFTER (SubprocessCapture)</text>
+
+        <rect x="320" y="28" width="160" height="36" rx="5" fill="#eef2ff" stroke="#c7d2fe"/>
+        <text x="400" y="46" text-anchor="middle" font-size="11.5" font-weight="700" fill="#3730a3">SubprocessCapture</text>
+        <text x="400" y="60" text-anchor="middle" font-size="10" fill="#3730a3">ILogger + FlowlineRuntimeOptions</text>
+
+        <!-- always to file -->
+        <line x1="480" y1="40" x2="560" y2="40" stroke="#15803d" stroke-width="1.5" marker-end="url(#arr-sc-g)"/>
+        <text x="522" y="34" text-anchor="middle" font-size="10" fill="#15803d">always</text>
+        <rect x="562" y="26" width="80" height="28" rx="5" fill="#f0fdf4" stroke="#bbf7d0"/>
+        <text x="602" y="45" text-anchor="middle" font-size="11.5" fill="#15803d">File ✓</text>
+
+        <!-- conditional terminal -->
+        <line x1="480" y1="52" x2="562" y2="70" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arr-sc-gr)"/>
+        <text x="534" y="70" text-anchor="middle" font-size="10" fill="#94a3b8">if IsVerbose</text>
+        <rect x="562" y="72" width="100" height="28" rx="5" fill="#f8f9fc" stroke="#e2e8f0"/>
+        <text x="612" y="91" text-anchor="middle" font-size="11" fill="#475569">Terminal</text>
+
+        <!-- Streaming vs Buffered note -->
+        <rect x="320" y="120" width="360" height="52" rx="5" fill="#fffbeb" stroke="#fde68a"/>
+        <text x="500" y="138" text-anchor="middle" font-size="11" font-weight="600" fill="#92400e">Two subprocess patterns in PacUtils</text>
+        <text x="500" y="153" text-anchor="middle" font-size="10" fill="#92400e">Streaming (ExecuteAsync): SubprocessCapture pipes each stdout line to ILogger + terminal</text>
+        <text x="500" y="167" text-anchor="middle" font-size="10" fill="#92400e">Buffered (ExecuteBufferedAsync): log full stdout block after call — needs a separate API surface</text>
+
+        <defs>
+          <marker id="arr-sc-g" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#15803d"/></marker>
+          <marker id="arr-sc-gr" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#cbd5e1"/></marker>
+        </defs>
+      </svg>
+      <p class="diagram-cap">Before: static extensions gate on <code>bool verbose</code>; no ILogger access. After: <code>SubprocessCapture</code> holds ILogger, always writes to file, terminal display is conditional. Two subprocess patterns (streaming/buffered) need distinct handling.</p>
+    </div>
+
+    <div class="idea-fields">
+      <div class="field-row">
+        <span class="field-label">Basis</span>
+        <span class="field-value basis">direct: CommandExtensions.cs:8 — "public static class CommandExtensions" — static, no DI, no ILogger
+direct: CommandExtensions.cs:96-103 — non-verbose path: stdout dropped except error lines buffered; stderr buffered only; zero ILogger calls
+direct: PacUtils.cs — GetEnvironmentsAsync/GetSolutionsAsync/GetSolutionVersionAsync use .WithToolExecutionLog(verbose) with ExecuteBufferedAsync — these are buffered calls; stdout goes to result.StandardOutput for JSON parsing, not to a pipe delegate; the pipe only serves display
+direct: PacUtils.cs:184-197 — PackSolutionAsync uses WithToolExecutionLog(verbose, ctx) with streaming ExecuteAsync — genuine streaming, all stdout flows through delegates
+direct: CommandExtensions.cs:19-57 vs 60-103 — two overloads (bool, options) with largely duplicated logic; SetStatusWithExecutionTime, IsErrorLine, DisplayErrorMessage, lineTransform gating all appear twice</span>
+      </div>
+      <div class="field-row">
+        <span class="field-label">Rationale</span>
+        <span class="field-value">Static extensions can't hold state. The <code>ILogger</code> gap is an architectural consequence of the design, not a fixable oversight. A DI-injectable class ends the problem class-wide: every subprocess invocation — present and future — automatically logs to file without an explicit <code>ILogger</code> parameter thread. The deduplication of the two overloads is a side benefit. Replacing a utility class is narrower in scope than it looks: <code>CommandExtensions</code> is used primarily from <code>PacUtils</code> and a handful of commands.</span>
+      </div>
+      <div class="field-row">
+        <span class="field-label">Downsides</span>
+        <span class="field-value downside">
+          Two subprocess patterns (streaming vs buffered) need different APIs. The buffered calls in PacUtils don't use pipe delegates for display at all — stdout goes to <code>result.StandardOutput</code> for JSON parsing. A SubprocessCapture can't intercept that without wrapping the buffered call itself, which changes the return type.<br>
+          PacUtils is currently static (<code>public static class PacUtils</code>) — injecting SubprocessCapture requires either making PacUtils non-static, adding SubprocessCapture as a parameter to static methods, or splitting PacUtils into static helpers (pure functions) and an injectable facade.<br>
+          Larger refactor scope than ideas 2+3: touches PacUtils.cs (~460 lines), CommandExtensions.cs, and all command callers. Risk of breaking the streaming/buffered contract during migration.
+        </span>
+      </div>
+    </div>
+    <p class="meeting-test">CommandExtensions can't hold ILogger because it's static. A SubprocessCapture class with ILogger in the constructor permanently solves the gap for all current and future subprocess calls. But PacUtils is also static — how far does the refactor reach?</p>
+  </article>
+
+</section>
+
+<section id="rejection">
+  <p class="section-eyebrow">Cut</p>
+  <h2 class="section-title">Rejection Summary</h2>
+  <table class="rejection-table">
+    <thead>
+      <tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>A2</td><td class="rejected-name">Tag <code>IsVerboseOutput</code> property (Serilog enricher)</td><td class="rejected-reason">No Serilog console sink exists — property-based filtering requires a sink to filter on; architecture is Spectre-native terminal, not Serilog-controlled</td></tr>
+      <tr><td>A3</td><td class="rejected-name">LoggingLevelSwitch per sink</td><td class="rejected-reason">Same root cause as A2 — no console Serilog sink; a LevelSwitch on the file sink already at Debug changes nothing useful</td></tr>
+      <tr><td>B2</td><td class="rejected-name">ILogger-first, Spectre as downstream sink</td><td class="rejected-reason">Requires a custom Serilog → Spectre bridge handling markup, colors, and status contexts; no concrete implementation path; higher cost than A1+C1+C2 for the same outcome</td></tr>
+      <tr><td>B4</td><td class="rejected-name">Per-subsystem verbosity: <code>--verbose=pac,git</code></td><td class="rejected-reason">Changes <code>IsVerbose: bool</code> to a set — broad API change across all callers of FlowlineRuntimeOptions; marginal value over core fix (file always captures everything regardless)</td></tr>
+      <tr><td>C3</td><td class="rejected-name">Structured subprocess events <code>{ Tool, Line, Stream }</code></td><td class="rejected-reason">Over-engineering on top of C2; C2 solves the capture gap; structured event typing is a separate upgrade not motivated by the verbose-routing problem</td></tr>
+      <tr><td>C4</td><td class="rejected-name">Log completeness as correctness invariant</td><td class="rejected-reason">Pure policy/documentation — better as a one-line comment in LoggingRenderHook than a meeting agenda item alongside concrete code changes</td></tr>
+      <tr><td>D1</td><td class="rejected-name">Delete the buffer entirely</td><td class="rejected-reason">Buffer serves inline terminal error-context replay (Program.cs:200-202 prints buffer to terminal on failure) — deleting it is a UX regression; users must open the log file instead of seeing context inline</td></tr>
+      <tr><td>D3</td><td class="rejected-name">Replace buffer with Serilog InMemory Sink</td><td class="rejected-reason">InMemory sink only captures what flows through ILogger — only useful after C1+C2 are implemented; at that point D2 (flush on all exits) is simpler and adds no NuGet dependency</td></tr>
+      <tr><td>D4</td><td class="rejected-name">Disk-backed rolling capture (unbounded)</td><td class="rejected-reason">Addresses 50-line cap symptom not root cause; duplicates existing Serilog file sink; log path already printed on failure (Program.cs:105); cap issue dissolves once C1+C2 route to the file directly</td></tr>
+      <tr><td>XC1</td><td class="rejected-name">A1 + C1 labelled "core fix bundle"</td><td class="rejected-reason">Mislabeled — described as including subprocess capture but that is C2, not C1; as stated, leaves the WithToolExecutionLog gap open; minimum viable bundle is A1 + C1 + C2</td></tr>
+      <tr><td>XC2</td><td class="rejected-name">A1 + D1 = Always-Generate + Kill Buffer</td><td class="rejected-reason">Inherits D1's UX regression (inline error context lost); A1 alone without C2 doesn't make the file complete — subprocess gap remains</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<footer class="composition-signal">
+  Composed 2026-06-30 by <code>ce-ideate</code> · Flowline repo · 36 raw candidates, 5 ideation frames, 1 basis verifier · Iterated 2026-06-30: idea 5 refined to separate VerboseFilterHook + VerboseMarkup; idea 7 added (SubprocessCapture replaces CommandExtensions)
+</footer>
+
+</div>
+</body>
+</html>
