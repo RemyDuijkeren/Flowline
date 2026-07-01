@@ -33,6 +33,11 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         [Description("Version component to increment: patch, minor, or major (default: patch)")]
         [DefaultValue(BumpComponent.Patch)]
         public BumpComponent Bump { get; set; } = BumpComponent.Patch;
+
+        [CommandOption("--no-build")]
+        [Description("Skip the 'dotnet build' validation step")]
+        [DefaultValue(false)]
+        public bool NoBuild { get; set; } = false;
     }
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
@@ -123,10 +128,10 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
         Logger.LogInformation("Validating build: {SlnFolder}", slnFolder);
-        if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, _capture, cancellationToken) != 0)
-        {
+        if (settings.NoBuild)
+            Console.Skip("Build validation — skipping (--no-build active)");
+        else if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, _capture, cancellationToken) != 0)
             return (int)ExitCode.BuildFailed;
-        }
 
         // Check for drift between local solution (Plugins/WebResources) and Dataverse (/src)
         var driftWarnings = PluginWebResourceDriftChecker.Check(slnFolder, PackageFolder(slnFolder), slnInfo.PublisherPrefix, cancellationToken);
