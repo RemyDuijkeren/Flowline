@@ -35,12 +35,14 @@ internal static class InvocationLogger
         var envHashStr = string.Join(",", envHashes);
 
         logger.LogInformation(
-            "Invocation: {FlowlineVersion} dotnet={DotNetVersion} pac={PacVersion}({PacInstallType}) git={GitVersion}@{GitBranch} os={Os} arch={OsArch} ci={Ci} ci.platform={CiPlatform} verbose={Verbose} force={Force} root={ProjectRoot} solutions={ProjectSolutions} env.configured={EnvConfigured} env.hashes={EnvHashes}",
-            tv.FlowlineVersion, tv.DotNetVersion, tv.PacVersion, tv.PacInstallType,
-            tv.GitVersion, tv.GitBranch,
-            RuntimeInformation.OSDescription, RuntimeInformation.OSArchitecture,
-            ci, ciPlatform,
-            runtimeOptions.IsVerbose, runtimeOptions.Force,
+            "Invocation: {FlowlineVersion} dotnet={DotNetVersion} pac={PacVersion}({PacInstallType}) git={GitVersion}@{GitBranch}",
+            tv.FlowlineVersion, tv.DotNetVersion, tv.PacVersion, tv.PacInstallType, tv.GitVersion, tv.GitBranch);
+        logger.LogInformation(
+            "Invocation: os={Os} arch={OsArch} ci={Ci} ci.platform={CiPlatform} verbose={Verbose} force={Force}",
+            RuntimeInformation.OSDescription, RuntimeInformation.OSArchitecture, ci, ciPlatform,
+            runtimeOptions.IsVerbose, runtimeOptions.Force);
+        logger.LogInformation(
+            "Invocation: root={ProjectRoot} solutions={ProjectSolutions} env.configured={EnvConfigured} env.hashes={EnvHashes}",
             rootFolder, solutionNames, envConfigured, envHashStr);
 
         if (activity is null) return;
