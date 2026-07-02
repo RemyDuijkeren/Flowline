@@ -1602,21 +1602,36 @@
         <div class="cmd-spec">
           <span class="cmd-comment"># Generate template (run once per solution) — outputs deploymentSettings.json</span><br>
           <span class="cmd-cmd">pac solution create-settings</span> <span class="cmd-flag">--solution-zip</span> <span class="cmd-env">MySolution_managed.zip</span> <span class="cmd-flag">--settings-file</span> <span class="cmd-env">deploymentSettings.json</span><br><br>
-          <span class="cmd-comment">// deploymentSettings.prod.json (rename + fill in values per environment)</span><br>
+          <span class="cmd-comment">// deploymentSettings.prod.json — actual format from pac solution create-settings</span><br>
           {<br>
           &nbsp;&nbsp;<span class="cmd-env">"EnvironmentVariables"</span>: [<br>
-          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"SchemaName"</span>: <span class="cmd-env">"cr123_ApiBaseUrl"</span>, <span class="cmd-env">"Value"</span>: <span class="cmd-env">"https://api.prod.contoso.com"</span> }<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;{<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="cmd-env">"SchemaName"</span>: <span class="cmd-env">"cr123_ApiBaseUrl"</span>,<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="cmd-env">"Value"</span>: <span class="cmd-env">""</span>,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="cmd-comment">← fill in per env</span><br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="cmd-env">"DefaultValue"</span>: <span class="cmd-env">"https://api.dev.contoso.com"</span>,&nbsp;<span class="cmd-comment">← current solution default</span><br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="cmd-env">"Name"</span>: { <span class="cmd-env">"Default"</span>: <span class="cmd-env">"API Base URL"</span> },<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="cmd-env">"Description"</span>: { <span class="cmd-env">"Default"</span>: <span class="cmd-env">"Base URL for the integration API"</span> },<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="cmd-env">"TypeId"</span>: <span class="cmd-flag">100000000</span>,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="cmd-comment">← string</span><br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="cmd-env">"IsRequired"</span>: <span class="cmd-flag">true</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="cmd-comment">← Idea #3 can check this</span><br>
+          &nbsp;&nbsp;&nbsp;&nbsp;}<br>
           &nbsp;&nbsp;],<br>
           &nbsp;&nbsp;<span class="cmd-env">"ConnectionReferences"</span>: [<br>
-          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"LogicalName"</span>: <span class="cmd-env">"cr123_SharedO365"</span>, <span class="cmd-env">"ConnectionId"</span>: <span class="cmd-env">"abc123"</span>, <span class="cmd-env">"ConnectorId"</span>: <span class="cmd-env">"/providers/Microsoft.PowerApps/apis/shared_office365"</span> }<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"LogicalName"</span>: <span class="cmd-env">"cr123_SharedO365"</span>, <span class="cmd-env">"ConnectionId"</span>: <span class="cmd-env">""</span>, <span class="cmd-env">"ConnectorId"</span>: <span class="cmd-env">"/providers/Microsoft.PowerApps/apis/shared_office365"</span> }<br>
           &nbsp;&nbsp;],<br>
-          &nbsp;&nbsp;<span class="cmd-env">"CopilotAgents"</span>: [<span class="cmd-comment">&nbsp;← confirmed 3rd section in PAC CLI output</span><br>
-          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"AadGroupId"</span>: <span class="cmd-env">"00000000-0000-0000-0000-000000000000"</span>, <span class="cmd-env">"Name"</span>: <span class="cmd-env">"msdyn_salesCopilot"</span> }<br>
-          &nbsp;&nbsp;]<br>
+          &nbsp;&nbsp;<span class="cmd-env">"CopilotAgents"</span>: []&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="cmd-comment">← 3rd section, empty when none</span><br>
           }<br><br>
           <span class="cmd-comment"># Flowline passes the matching per-env file automatically:</span><br>
           <span class="cmd-cmd">pac solution import</span> <span class="cmd-flag">--path</span> <span class="cmd-env">MySolution.zip</span> <span class="cmd-flag">--settings-file</span> <span class="cmd-env">deploymentSettings.prod.json</span>
         </div>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">Schema notes (from real PAC CLI output)</p>
+        <p class="field-value">
+          <strong style="color:var(--text)">EnvironmentVariables entries are richer than the docs suggest.</strong> PAC embeds <code>DefaultValue</code> (current solution default), <code>Name</code> and <code>Description</code> (localized display strings), <code>TypeId</code> (data type), and <code>IsRequired</code>. Only <code>SchemaName</code> and <code>Value</code> are consumed at import — the rest is metadata for the human filling in the file.<br><br>
+          <strong style="color:var(--text)"><code>IsRequired</code> + Idea #3:</strong> if <code>IsRequired: true</code> and <code>Value: ""</code>, Flowline can detect that as a missing required variable before deploying — no need to infer requiredness from elsewhere. The settings file is the source of truth for this.<br><br>
+          <strong style="color:var(--text)"><code>CopilotAgents</code></strong> is always present (empty array when none in the solution). Not documented in older Microsoft Learn articles — confirmed from actual PAC CLI output.
+        </p>
       </div>
 
       <div class="field-block">
