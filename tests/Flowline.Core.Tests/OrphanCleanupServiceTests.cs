@@ -36,6 +36,13 @@ public class OrphanCleanupServiceTests : IDisposable
             Directory.Delete(_webresourceRoot, true);
     }
 
+    PostDeployContext Ctx(
+        string solutionName,
+        IReadOnlyList<(Guid ObjectId, int ComponentType)> localComponents,
+        RunMode mode = RunMode.Normal,
+        string? webresourceRoot = null) =>
+        new(_serviceMock, solutionName, localComponents, mode, webresourceRoot);
+
     void SetupSolutionComponents(string solutionName, params (Guid Id, int ComponentType)[] components)
     {
         var entities = components.Select(c => new Entity("solutioncomponent")
@@ -74,7 +81,7 @@ public class OrphanCleanupServiceTests : IDisposable
         File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
             "// flowline:depends av_ext/shared.js\nconsole.log('hi');");
 
-        await _service.RunPreImportAsync(_serviceMock, "MySolution", [(Guid.NewGuid(), 0)], RunMode.Normal, _webresourceRoot, default);
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], webresourceRoot: _webresourceRoot), default);
 
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
@@ -88,7 +95,7 @@ public class OrphanCleanupServiceTests : IDisposable
         File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
             "// flowline:depends av_ext/shared.js\ncode();");
 
-        await _service.RunPreImportAsync(_serviceMock, "MySolution", [(Guid.NewGuid(), 0)], RunMode.Normal, _webresourceRoot, default);
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], webresourceRoot: _webresourceRoot), default);
 
         Assert.Contains("av_ext/shared.js", _console.Output);
         Assert.Contains("preserved", _console.Output);
@@ -103,7 +110,7 @@ public class OrphanCleanupServiceTests : IDisposable
         // No annotations referencing unref.js
         File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"), "// no deps\ncode();");
 
-        await _service.RunPreImportAsync(_serviceMock, "MySolution", [(Guid.NewGuid(), 0)], RunMode.Normal, _webresourceRoot, default);
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], webresourceRoot: _webresourceRoot), default);
 
         await _serviceMock.Received(1).DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
@@ -116,7 +123,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupWebResourceNames((orphanId, "av_ext/lib.js"));
         File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"), "code(); // no annotations");
 
-        await _service.RunPreImportAsync(_serviceMock, "MySolution", [(Guid.NewGuid(), 0)], RunMode.Normal, _webresourceRoot, default);
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], webresourceRoot: _webresourceRoot), default);
 
         await _serviceMock.Received(1).DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
@@ -132,7 +139,7 @@ public class OrphanCleanupServiceTests : IDisposable
         File.WriteAllText(Path.Combine(_webresourceRoot, "b.js"),
             "// flowline:depends av_ext/shared.js\ncode();");
 
-        await _service.RunPreImportAsync(_serviceMock, "MySolution", [(Guid.NewGuid(), 0)], RunMode.Normal, _webresourceRoot, default);
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], webresourceRoot: _webresourceRoot), default);
 
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
@@ -160,7 +167,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("Cr07982", (orphanId, 91)); // 91 = PluginAssembly
         SetupCrossSolutionMembership(orphanId, "Default");
 
-        await _service.RunPreImportAsync(_serviceMock, "Cr07982", [(Guid.NewGuid(), 0)], RunMode.Normal, webresourceRoot: null, ct: default);
+        await _service.RunPreImportAsync(Ctx("Cr07982", [(Guid.NewGuid(), 0)]), default);
 
         await _serviceMock.Received(1).DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
@@ -173,7 +180,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("Cr07982", (orphanId, 91));
         SetupCrossSolutionMembership(orphanId, "Default", "SharedSolution");
 
-        await _service.RunPreImportAsync(_serviceMock, "Cr07982", [(Guid.NewGuid(), 0)], RunMode.Normal, webresourceRoot: null, ct: default);
+        await _service.RunPreImportAsync(Ctx("Cr07982", [(Guid.NewGuid(), 0)]), default);
 
         await _serviceMock.Received(1).ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
@@ -188,9 +195,41 @@ public class OrphanCleanupServiceTests : IDisposable
         // and the mock would return an empty collection, potentially still deleting.
         // The point is: no webresourceRoot → no name query, normal orphan flow.
 
-        await _service.RunPreImportAsync(_serviceMock, "MySolution", [(Guid.NewGuid(), 0)], RunMode.Normal, webresourceRoot: null, ct: default);
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
 
         // With no name query setup, it falls through to delete the orphan
         await _serviceMock.Received(1).DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
+    }
+
+    // -- Pre-import → post-import deferred-entry round trip (instance-field state threading) --
+
+    [Fact]
+    public async Task RunPostImportAsync_DeferredEntryFromPreImport_RetriedAndResolved()
+    {
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 91)); // 91 = PluginAssembly
+        // First delete attempt (pre-import) hits a dependency fault and is deferred.
+        _serviceMock.DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>())
+            .Returns(
+                _ => throw new System.ServiceModel.FaultException<OrganizationServiceFault>(
+                    new OrganizationServiceFault { ErrorCode = unchecked((int)0x80047002) }),
+                _ => Task.CompletedTask); // second call (post-import retry) succeeds
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+        Assert.Contains("Deferred", _console.Output);
+
+        var failures = await _service.RunPostImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Equal(0, failures);
+        await _serviceMock.Received(2).DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RunPostImportAsync_NoPriorPreImportCall_ReturnsZeroNoOp()
+    {
+        var failures = await _service.RunPostImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Equal(0, failures);
+        await _serviceMock.DidNotReceiveWithAnyArgs().DeleteAsync(default!, default, default);
     }
 }

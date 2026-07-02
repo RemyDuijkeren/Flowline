@@ -10,11 +10,14 @@ public enum OrphanAction { Delete, RemoveFromSolution, Manual }
 
 public sealed record OrphanEntry(Guid ObjectId, int ComponentType, string DisplayName, OrphanAction Action, string? EntityName = null);
 
-public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions opt)
+public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions opt) : IPostDeployService
 {
     // R8: step images → steps → types → assemblies; web resources; workflows
     // CustomApi family has env-specific componenttype — handled separately via entity-side detection.
     static readonly int[] ExecutionOrder = [93, 92, 90, 91, 61, 29];
+
+    // Threads dependency-deferred entries from RunPreImportAsync to RunPostImportAsync on the same instance.
+    List<OrphanEntry> _deferred = [];
 
     // CustomApi child entities deleted before parent to avoid dependency errors.
     static readonly string[] CustomApiEntityOrder = ["customapirequestparameter", "customapiresponseproperty", "customapi"];
@@ -29,13 +32,16 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         [29] = "workflow",
     };
 
-    public async Task<IReadOnlyList<OrphanEntry>> RunPreImportAsync(IOrganizationServiceAsync2 service,
-        string solutionName,
-        IReadOnlyList<(Guid ObjectId, int ComponentType)> sNew,
-        RunMode mode,
-        string? webresourceRoot,
-        CancellationToken ct)
+    public async Task RunPreImportAsync(PostDeployContext context, CancellationToken ct)
     {
+        var service         = context.Service;
+        var solutionName    = context.SolutionName;
+        var sNew            = context.LocalComponents;
+        var mode            = context.Mode;
+        var webresourceRoot = context.WebResourceRoot;
+
+        _deferred = [];
+
         var sOld = await console.Status()
             .StartAsync($"Querying orphan components in [bold]{solutionName}[/]...",
                 _ => QuerySolutionComponentsAsync(service, solutionName, ct))
@@ -44,7 +50,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         if (sOld.Count == 0)
         {
             console.Skip("No solution components in Dataverse — skipping orphan check.");
-            return [];
+            return;
         }
 
         var sNewIds = sNew.Select(c => c.ObjectId).ToHashSet();
@@ -52,7 +58,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         if (sNew.Count == 0)
         {
             console.Warning("No components in Solution.xml — orphan check skipped to prevent mass deletion.");
-            return [];
+            return;
         }
 
         var orphans = sOld.Where(c => !sNewIds.Contains(c.ObjectId)).ToList();
@@ -60,7 +66,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         if (orphans.Count == 0)
         {
             console.Ok("No orphan components.");
-            return [];
+            return;
         }
 
         var autoOrphans    = orphans.Where(c => ComponentClassifier.Classify(c.ComponentType) == ComponentAction.AutoDelete).ToList();
@@ -116,19 +122,19 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         PrintReport(entries, mode);
 
         if (mode == RunMode.NoDelete)
-            return [];
+            return;
 
-        return await ExecuteInOrderAsync(service, solutionName, entries, isPostImport: false, ct).ConfigureAwait(false);
+        _deferred = (await ExecuteInOrderAsync(service, solutionName, entries, isPostImport: false, ct).ConfigureAwait(false)).ToList();
     }
 
-    public async Task<int> RunPostImportAsync(
-        IOrganizationServiceAsync2 service,
-        string solutionName,
-        IReadOnlyList<(Guid ObjectId, int ComponentType)> sNew,
-        IReadOnlyList<OrphanEntry> deferred,
-        RunMode mode,
-        CancellationToken ct)
+    public async Task<int> RunPostImportAsync(PostDeployContext context, CancellationToken ct)
     {
+        var service      = context.Service;
+        var solutionName = context.SolutionName;
+        var sNew         = context.LocalComponents;
+        var mode         = context.Mode;
+        var deferred     = _deferred;
+
         if (deferred.Count == 0 || mode == RunMode.NoDelete)
             return 0;
 
