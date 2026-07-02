@@ -1427,7 +1427,7 @@
         <p class="field-label">Description</p>
         <p class="field-value"><code>flowline configure</code> (Idea #7) handles environment setup from a config file. The same command should also work inline — no file needed — for one-off changes, feature-flag gates, and instant rollbacks. Two syntaxes, same command, same SDK calls:</p>
         <ul style="font-size:13.5px;color:var(--text-muted);line-height:1.7;padding-left:1.25rem;margin:.4rem 0 .8rem">
-          <li><strong style="color:var(--text)">File mode:</strong> <code>flowline configure prod</code> or <code>flowline configure prod --settings-file settings.prod.json</code> — reads a config file and reconciles the full environment.</li>
+          <li><strong style="color:var(--text)">File mode:</strong> <code>flowline configure prod</code> or <code>flowline configure prod --settings-file deploymentSettings.prod.json</code> — reads a config file and reconciles the full environment.</li>
           <li><strong style="color:var(--text)">Inline mode:</strong> <code>flowline configure prod flow "My Flow" --on</code> — targets one component directly on the command line. No file needed.</li>
           <li><strong style="color:var(--text)">Interactive mode:</strong> <code>flowline configure prod --pick</code> — queries the live environment and presents a selection list; user picks without knowing the name.</li>
         </ul>
@@ -1488,7 +1488,7 @@
         <div class="cmd-spec">
           <span class="cmd-comment"># File mode — apply full settings file (Idea #7 behavior)</span><br>
           <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">prod</span><br>
-          <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">prod</span> <span class="cmd-flag">--settings-file</span> <span class="cmd-env">settings.prod.json</span><br><br>
+          <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">prod</span> <span class="cmd-flag">--settings-file</span> <span class="cmd-env">deploymentSettings.prod.json</span><br><br>
           <span class="cmd-comment"># Inline mode — target one component directly, no file needed</span><br>
           <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">prod</span> <span class="cmd-cmd">flow</span> <span class="cmd-env">"New Checkout Flow"</span> <span class="cmd-flag">--on</span><br>
           <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">prod</span> <span class="cmd-cmd">flow</span> <span class="cmd-env">"New Checkout Flow"</span> <span class="cmd-flag">--off</span><br>
@@ -1600,27 +1600,29 @@
       <div class="field-block">
         <p class="field-label">Settings file format (PAC-native)</p>
         <div class="cmd-spec">
-          <span class="cmd-comment"># Generate template (run once per solution)</span><br>
-          <span class="cmd-cmd">pac solution create-settings</span> <span class="cmd-flag">--solution-zip</span> <span class="cmd-env">MySolution_managed.zip</span> <span class="cmd-flag">--settings-file</span> <span class="cmd-env">prod.settings.json</span><br><br>
-          <span class="cmd-comment">// prod.settings.json (fill in values before committing)</span><br>
+          <span class="cmd-comment"># Generate template (run once per solution) — outputs deploymentSettings.json</span><br>
+          <span class="cmd-cmd">pac solution create-settings</span> <span class="cmd-flag">--solution-zip</span> <span class="cmd-env">MySolution_managed.zip</span> <span class="cmd-flag">--settings-file</span> <span class="cmd-env">deploymentSettings.json</span><br><br>
+          <span class="cmd-comment">// deploymentSettings.prod.json (rename + fill in values per environment)</span><br>
           {<br>
           &nbsp;&nbsp;<span class="cmd-env">"EnvironmentVariables"</span>: [<br>
-          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"SchemaName"</span>: <span class="cmd-env">"cr123_ApiBaseUrl"</span>, <span class="cmd-env">"Value"</span>: <span class="cmd-env">"https://api.prod.contoso.com"</span> },<br>
-          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"SchemaName"</span>: <span class="cmd-env">"cr123_FeatureFlag"</span>, <span class="cmd-env">"Value"</span>: <span class="cmd-env">"true"</span> }<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"SchemaName"</span>: <span class="cmd-env">"cr123_ApiBaseUrl"</span>, <span class="cmd-env">"Value"</span>: <span class="cmd-env">"https://api.prod.contoso.com"</span> }<br>
           &nbsp;&nbsp;],<br>
           &nbsp;&nbsp;<span class="cmd-env">"ConnectionReferences"</span>: [<br>
           &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"LogicalName"</span>: <span class="cmd-env">"cr123_SharedO365"</span>, <span class="cmd-env">"ConnectionId"</span>: <span class="cmd-env">"abc123"</span>, <span class="cmd-env">"ConnectorId"</span>: <span class="cmd-env">"/providers/Microsoft.PowerApps/apis/shared_office365"</span> }<br>
+          &nbsp;&nbsp;],<br>
+          &nbsp;&nbsp;<span class="cmd-env">"CopilotAgents"</span>: [<span class="cmd-comment">&nbsp;← confirmed 3rd section in PAC CLI output</span><br>
+          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"AadGroupId"</span>: <span class="cmd-env">"00000000-0000-0000-0000-000000000000"</span>, <span class="cmd-env">"Name"</span>: <span class="cmd-env">"msdyn_salesCopilot"</span> }<br>
           &nbsp;&nbsp;]<br>
           }<br><br>
-          <span class="cmd-comment"># Flowline would pass this automatically:</span><br>
-          <span class="cmd-cmd">pac solution import</span> <span class="cmd-flag">--path</span> <span class="cmd-env">MySolution.zip</span> <span class="cmd-flag">--settings-file</span> <span class="cmd-env">prod.settings.json</span>
+          <span class="cmd-comment"># Flowline passes the matching per-env file automatically:</span><br>
+          <span class="cmd-cmd">pac solution import</span> <span class="cmd-flag">--path</span> <span class="cmd-env">MySolution.zip</span> <span class="cmd-flag">--settings-file</span> <span class="cmd-env">deploymentSettings.prod.json</span>
         </div>
       </div>
 
       <div class="field-block">
         <p class="field-label">How Flowline discovers the settings file</p>
-        <p class="field-value">Convention: Flowline looks for <code>&lt;env&gt;.settings.json</code> or <code>settings.&lt;env&gt;.json</code> in the solution root or a <code>settings/</code> subfolder. If found, it passes it to PAC. If not found, deploy proceeds without it (same behavior as today). No config required — convention over config.</p>
-        <p class="field-value">The configure file from Idea #7 (<code>&lt;env&gt;.configure.json</code>) shares the same discovery convention and extends the PAC format. Users can maintain one file that covers both PAC-native fields and Flowline-specific ones — Flowline splits it at import time: PAC sections → <code>--settings-file</code>; Flowline sections → post-import reconciliation.</p>
+        <p class="field-value">Convention: Flowline looks for <code>deploymentSettings.&lt;env&gt;.json</code> in the solution's <code>Package/</code> folder (where PAC already places <code>deploymentSettings.json</code>). If found, it passes it to PAC. If not found, deploy proceeds without it. No config required — convention over config. Workflow: generate with PAC → rename to <code>deploymentSettings.dev.json</code> / <code>deploymentSettings.prod.json</code> → fill in per-env values → commit.</p>
+        <p class="field-value">The configure file from Idea #7 extends this: Flowline reads <code>deploymentSettings.&lt;env&gt;.json</code>, splits PAC-native sections (<code>EnvironmentVariables</code>, <code>ConnectionReferences</code>, <code>CopilotAgents</code>) → <code>pac solution import --settings-file</code>; Flowline-specific sections (<code>Flows</code>, <code>PluginSteps</code>, <code>SecureConfig</code>) → post-import reconciliation. One file, two consumers.</p>
       </div>
 
       <div class="field-block">
@@ -1635,7 +1637,7 @@
           <span class="mark-pro">✓</span> Zero net code for env var and connection ref application — PAC already handles it<br>
           <span class="mark-pro">✓</span> PAC applies env vars <em>during</em> import, before flows are activated — correct ordering for free<br>
           <span class="mark-pro">✓</span> Settings file is solution-aware — PAC validates schema names against the solution being imported<br>
-          <span class="mark-pro">✓</span> Convention file name (<code>prod.settings.json</code>) is already familiar to teams using PAC directly<br>
+          <span class="mark-pro">✓</span> Convention file name (<code>deploymentSettings.prod.json</code>) matches PAC CLI output — familiar to teams already using PAC directly<br>
           <span class="mark-pro">✓</span> Plugs the current Flowline gap: deploy completes but env vars are unset until manual intervention
         </p>
       </div>
