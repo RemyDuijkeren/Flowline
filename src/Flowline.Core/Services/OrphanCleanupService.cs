@@ -17,7 +17,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     static readonly int[] ExecutionOrder = [93, 92, 90, 91, 61, 29];
 
     // Threads dependency-deferred entries from RunPreImportAsync to RunPostImportAsync on the same instance.
-    List<OrphanEntry> _deferred = [];
+    IReadOnlyList<OrphanEntry> _deferred = [];
 
     // CustomApi child entities deleted before parent to avoid dependency errors.
     static readonly string[] CustomApiEntityOrder = ["customapirequestparameter", "customapiresponseproperty", "customapi"];
@@ -124,7 +124,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         if (mode == RunMode.NoDelete)
             return;
 
-        _deferred = (await ExecuteInOrderAsync(service, solutionName, entries, isPostImport: false, ct).ConfigureAwait(false)).ToList();
+        _deferred = await ExecuteInOrderAsync(service, solutionName, entries, isPostImport: false, ct).ConfigureAwait(false);
     }
 
     public async Task<int> RunPostImportAsync(PostDeployContext context, CancellationToken ct)

@@ -5,24 +5,10 @@ namespace Flowline.Tests;
 
 public class DeployCommandPostDeployTests
 {
-    [Fact]
-    public void ShouldReportPartialSuccess_ZeroFailures_ReturnsFalse()
-    {
-        DeployCommand.ShouldReportPartialSuccess(0).Should().BeFalse();
-    }
-
-    [Fact]
-    public void ShouldReportPartialSuccess_SingleServiceFailure_ReturnsTrue()
-    {
-        DeployCommand.ShouldReportPartialSuccess(1).Should().BeTrue();
-    }
-
-    [Fact]
-    public void ShouldReportPartialSuccess_MultipleServicesSummedFailures_ReturnsTrue()
-    {
-        // Simulates two IPostDeployService implementers each reporting failures, summed by the caller.
-        var aggregated = 2 + 3;
-
-        DeployCommand.ShouldReportPartialSuccess(aggregated).Should().BeTrue();
-    }
+    [Theory]
+    [InlineData(0, false)]     // no failures
+    [InlineData(1, true)]      // single service reports a failure
+    [InlineData(5, true)]      // multiple services' failures summed by the caller
+    public void ShouldReportPartialSuccess_ReturnsExpected(int cleanupFailures, bool expected) =>
+        DeployCommand.ShouldReportPartialSuccess(cleanupFailures).Should().Be(expected);
 }
