@@ -13,7 +13,7 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseConnector, OrphanCleanupService orphanCleanupService, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture) : FlowlineCommand<DeployCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture)
+public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseConnector, IEnumerable<IPostDeployService> postDeployServices, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture) : FlowlineCommand<DeployCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture)
 {
     public sealed class Settings : FlowlineSettings
     {
@@ -58,16 +58,22 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var sNew = ParseSolutionXml(slnFolder);
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, targetUrl, cancellationToken);
         var webresourceRoot = Path.Combine(slnFolder, "WebResources");
-        var deferred = await orphanCleanupService.RunPreImportAsync(service, sln.Name, sNew, runMode, webresourceRoot, cancellationToken);
+        var postDeployContext = new PostDeployContext(service, sln.Name, sNew, runMode, webresourceRoot);
+
+        foreach (var postDeployService in postDeployServices)
+            await postDeployService.RunPreImportAsync(postDeployContext, cancellationToken);
 
         Logger.LogInformation("Packing: {SolutionName}", sln.Name);
         var packagePath = await PackSolutionAsync(sln, slnFolder, settings, cancellationToken);
         Logger.LogInformation("Importing to: {TargetUrl}", targetUrl);
         await ImportSolutionAsync(packagePath, targetEnv, sln.Name, cancellationToken);
-        var cleanupFailures = await orphanCleanupService.RunPostImportAsync(service, sln.Name, sNew, deferred, runMode, cancellationToken);
-        Logger.LogInformation("Orphan cleanup: {Failures} failures", cleanupFailures);
 
-        if (cleanupFailures > 0)
+        var cleanupFailures = 0;
+        foreach (var postDeployService in postDeployServices)
+            cleanupFailures += await postDeployService.RunPostImportAsync(postDeployContext, cancellationToken);
+        Logger.LogInformation("Post-deploy cleanup: {Failures} failures", cleanupFailures);
+
+        if (ShouldReportPartialSuccess(cleanupFailures))
         {
             Console.Warning($"{cleanupFailures} orphan {(cleanupFailures == 1 ? "component" : "components")} couldn't be cleaned up — see above, remove manually via maker portal.");
             return (int)ExitCode.PartialSuccess;
@@ -257,6 +263,10 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         if (result.ExitCode != 0)
             throw new FlowlineException(ExitCode.BuildFailed, "Deploy failed — check the environment and your PAC login.");
     }
+
+    // ── Post-deploy result (static helper, tested directly) ─────────────────
+
+    internal static bool ShouldReportPartialSuccess(int cleanupFailures) => cleanupFailures > 0;
 
     // ── DTAP gate (static helpers, tested directly) ──────────────────────────
 
