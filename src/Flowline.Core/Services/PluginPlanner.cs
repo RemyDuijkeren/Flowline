@@ -51,7 +51,7 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
                 if (asmPluginType.IsWorkflow)
                     dvPluginType["workflowactivitygroupname"] = $"{metadata.Name} ({metadata.Version})";
 
-                plan.PluginTypes.Upserts.Add(new UpsertAction(asmPluginType.Name, dvPluginType, IsCreate: true));
+                plan.PluginTypes.Upserts.Add(new UpsertAction(asmPluginType.Name, dvPluginType, IsCreate: true, SolutionName: solutionName));
             }
 
             if (asmPluginType.IsWorkflow) continue;

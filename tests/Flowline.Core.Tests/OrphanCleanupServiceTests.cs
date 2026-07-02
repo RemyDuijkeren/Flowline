@@ -137,6 +137,48 @@ public class OrphanCleanupServiceTests : IDisposable
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
 
+    // -- Default-solution membership must not block a real delete --
+
+    void SetupCrossSolutionMembership(Guid orphanId, params string[] solutions)
+    {
+        var entities = solutions.Select(s => new Entity("solutioncomponent")
+        {
+            ["objectid"] = orphanId,
+            ["sol.uniquename"] = new AliasedValue("solution", "uniquename", s)
+        }).ToList();
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" && q.Criteria.Conditions.Any(c => c.AttributeName == "objectid")),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(entities)));
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_OrphanOnlyInDefaultSolution_DeletesInsteadOfRemoving()
+    {
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("Cr07982", (orphanId, 91)); // 91 = PluginAssembly
+        SetupCrossSolutionMembership(orphanId, "Default");
+
+        await _service.RunPreImportAsync(_serviceMock, "Cr07982", [(Guid.NewGuid(), 0)], RunMode.Normal, webresourceRoot: null, ct: default);
+
+        await _serviceMock.Received(1).DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_OrphanInAnotherRealSolution_RemovesFromSolutionOnly()
+    {
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("Cr07982", (orphanId, 91));
+        SetupCrossSolutionMembership(orphanId, "Default", "SharedSolution");
+
+        await _service.RunPreImportAsync(_serviceMock, "Cr07982", [(Guid.NewGuid(), 0)], RunMode.Normal, webresourceRoot: null, ct: default);
+
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task RunPreImportAsync_NoWebresourceRoot_NoExemptionCheck()
     {

@@ -77,6 +77,7 @@ public class PluginPlannerTests
         Assert.Equal("MyPlugin", action.Name);
         Assert.True(action.IsCreate);
         Assert.Equal("MyNamespace.MyPlugin", action.Entity.GetAttributeValue<string>("typename"));
+        Assert.Equal("MySolution", action.SolutionName);
     }
 
     [Fact]

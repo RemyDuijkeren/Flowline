@@ -128,6 +128,7 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
         logger.LogInformation("Assembly synced: {Name}", metadata.Name);
 
         await WarnOrphanAssembliesAsync(service, metadata.Name, solutionName, force, runMode, cancellationToken).ConfigureAwait(false);
+        await WarnOrphanStepsAsync(service, metadata.Name, solutionName, force, runMode, cancellationToken).ConfigureAwait(false);
 
         // Phase 2: Load snapshot (all Dataverse state in parallel)
         var snapshot = await console.Status()
@@ -318,6 +319,79 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
                     await service.DeleteAsync(pluginType.LogicalName, pluginType.Id, cancellationToken).ConfigureAwait(false);
                 await service.DeleteAsync("pluginassembly", entity.Id, cancellationToken).ConfigureAwait(false);
             }
+        }
+    }
+
+    // Catches steps left behind after a plugin project rename: the old assembly (and its plugin
+    // type) can end up removed from the solution entirely while its steps stay explicit solution
+    // members, which fails a fresh-environment import with a missing PluginType dependency —
+    // WarnOrphanAssembliesAsync above only catches this when the foreign assembly is itself still
+    // a solution member.
+    async Task WarnOrphanStepsAsync(
+        IOrganizationServiceAsync2 service,
+        string managedAssemblyName,
+        string solutionName,
+        bool force,
+        RunMode runMode,
+        CancellationToken cancellationToken)
+    {
+        var query = new QueryExpression("solutioncomponent")
+        {
+            ColumnSet = new ColumnSet("objectid"),
+            Criteria = { Conditions = { new ConditionExpression("componenttype", ConditionOperator.Equal, 92) } } // 92 = SdkMessageProcessingStep
+        };
+        var solutionLink = query.AddLink("solution", "solutionid", "solutionid", JoinOperator.Inner);
+        solutionLink.LinkCriteria.AddCondition("uniquename", ConditionOperator.Equal, solutionName);
+        var stepLink = query.AddLink("sdkmessageprocessingstep", "objectid", "sdkmessageprocessingstepid", JoinOperator.Inner);
+        stepLink.Columns = new ColumnSet("name");
+        stepLink.EntityAlias = "step";
+        var typeLink = stepLink.AddLink("plugintype", "plugintypeid", "plugintypeid", JoinOperator.Inner);
+        var asmLink = typeLink.AddLink("pluginassembly", "pluginassemblyid", "pluginassemblyid", JoinOperator.Inner);
+        asmLink.Columns = new ColumnSet("name");
+        asmLink.EntityAlias = "asm";
+        asmLink.LinkCriteria.AddCondition("name", ConditionOperator.NotEqual, managedAssemblyName);
+
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
+        if (result.Entities.Count == 0) return;
+
+        var willDelete = force && runMode == RunMode.Normal;
+
+        var imagesByStep = new Dictionary<Guid, List<Entity>>();
+        if (willDelete)
+        {
+            var stepIds = result.Entities.Select(e => (object)e.GetAttributeValue<Guid>("objectid")).ToArray();
+            var imageQuery = new QueryExpression("sdkmessageprocessingstepimage")
+            {
+                ColumnSet = new ColumnSet("sdkmessageprocessingstepid"),
+                Criteria = { Conditions = { new ConditionExpression("sdkmessageprocessingstepid", ConditionOperator.In, stepIds) } }
+            };
+            var images = await service.RetrieveMultipleAsync(imageQuery, cancellationToken).ConfigureAwait(false);
+            foreach (var image in images.Entities)
+            {
+                var stepId = image.GetAttributeValue<EntityReference>("sdkmessageprocessingstepid")!.Id;
+                if (!imagesByStep.TryGetValue(stepId, out var list))
+                    imagesByStep[stepId] = list = [];
+                list.Add(image);
+            }
+        }
+
+        foreach (var component in result.Entities)
+        {
+            var stepId = component.GetAttributeValue<Guid>("objectid");
+            var stepName = component.GetAttributeValue<AliasedValue>("step.name")?.Value as string ?? stepId.ToString();
+            var asmName = component.GetAttributeValue<AliasedValue>("asm.name")?.Value as string ?? "unknown";
+
+            console.Warning(willDelete
+                ? $"Step '{Safe(stepName)}' registered under '{Safe(asmName)}.dll' (not the pushed assembly) — orphaned. Deleting."
+                : $"Step '{Safe(stepName)}' registered under '{Safe(asmName)}.dll' (not the pushed assembly) — orphaned. Use --force to delete.");
+
+            if (!willDelete) continue;
+
+            if (imagesByStep.TryGetValue(stepId, out var stepImages))
+                foreach (var image in stepImages)
+                    await service.DeleteAsync(image.LogicalName, image.Id, cancellationToken).ConfigureAwait(false);
+
+            await service.DeleteAsync("sdkmessageprocessingstep", stepId, cancellationToken).ConfigureAwait(false);
         }
     }
 

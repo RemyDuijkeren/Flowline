@@ -95,9 +95,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
         foreach (var orphan in autoOrphans)
         {
-            var otherSolutions = crossSolution.TryGetValue(orphan.ObjectId, out var sols)
-                ? sols.Where(s => !string.Equals(s, solutionName, StringComparison.OrdinalIgnoreCase)).ToList()
-                : [];
+            var otherSolutions = OtherRelevantSolutions(crossSolution, orphan.ObjectId, solutionName);
 
             var action = otherSolutions.Count > 0 ? OrphanAction.RemoveFromSolution : OrphanAction.Delete;
             entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId), action));
@@ -106,9 +104,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         foreach (var orphan in customApiOrphans)
         {
             var entityName = customApiEntities[orphan.ObjectId];
-            var otherSolutions = crossSolution.TryGetValue(orphan.ObjectId, out var sols)
-                ? sols.Where(s => !string.Equals(s, solutionName, StringComparison.OrdinalIgnoreCase)).ToList()
-                : [];
+            var otherSolutions = OtherRelevantSolutions(crossSolution, orphan.ObjectId, solutionName);
 
             var action = otherSolutions.Count > 0 ? OrphanAction.RemoveFromSolution : OrphanAction.Delete;
             entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId, entityName), action, EntityName: entityName));
@@ -151,9 +147,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
             if (!stillPresent.Contains(entry.ObjectId)) continue;
             if (sNewIds.Contains(entry.ObjectId)) continue;
 
-            var otherSolutions = crossSolution.TryGetValue(entry.ObjectId, out var sols)
-                ? sols.Where(s => !string.Equals(s, solutionName, StringComparison.OrdinalIgnoreCase)).ToList()
-                : [];
+            var otherSolutions = OtherRelevantSolutions(crossSolution, entry.ObjectId, solutionName);
 
             var action = otherSolutions.Count > 0 ? OrphanAction.RemoveFromSolution : OrphanAction.Delete;
             reEntries.Add(entry with { Action = action });
@@ -277,6 +271,15 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         foreach (var e in propTask.Result)  result[e.Id] = "customapiresponseproperty";
         return result;
     }
+
+    // Dataverse dual-writes every component added to a custom unmanaged solution into "Default" as
+    // well, so "Default" membership is not a reason to keep an otherwise-orphaned component around.
+    // Excluding it here mirrors PluginPlanner.AddCrossSolutionWarnings.
+    static List<string> OtherRelevantSolutions(Dictionary<Guid, List<string>> crossSolution, Guid objectId, string solutionName) =>
+        crossSolution.TryGetValue(objectId, out var sols)
+            ? sols.Where(s => !string.Equals(s, solutionName, StringComparison.OrdinalIgnoreCase)
+                            && !string.Equals(s, "Default", StringComparison.OrdinalIgnoreCase)).ToList()
+            : [];
 
     async Task<Dictionary<Guid, List<string>>> GetCrossSolutionMembershipAsync(
         IOrganizationServiceAsync2 service,

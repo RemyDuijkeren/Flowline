@@ -278,10 +278,11 @@ public class PluginServiceTests
 
         await _service.SyncSolutionAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [], false)), "MySolution");
 
-        await _serviceMock.Received(1).CreateAsync(Arg.Is<Entity>(e =>
-            e.LogicalName == "plugintype" &&
-            e.GetAttributeValue<string>("typename") == "MyNamespace.MyPlugin" &&
-            !e.Contains("workflowactivitygroupname")
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r =>
+            r.Target.LogicalName == "plugintype" &&
+            r.Target.GetAttributeValue<string>("typename") == "MyNamespace.MyPlugin" &&
+            !r.Target.Contains("workflowactivitygroupname") &&
+            r["SolutionUniqueName"].ToString() == "MySolution"
         ), Arg.Any<CancellationToken>());
     }
 
@@ -296,10 +297,11 @@ public class PluginServiceTests
 
         await _service.SyncSolutionAsync(_serviceMock, Metadata(plugins: new PluginTypeMetadata("MyActivity", "MyNamespace.MyActivity", [], [], true)), "MySolution");
 
-        await _serviceMock.Received(1).CreateAsync(Arg.Is<Entity>(e =>
-            e.LogicalName == "plugintype" &&
-            e.GetAttributeValue<string>("typename") == "MyNamespace.MyActivity" &&
-            e.GetAttributeValue<string>("workflowactivitygroupname") == "MyPlugin (1.0.0.0)"
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r =>
+            r.Target.LogicalName == "plugintype" &&
+            r.Target.GetAttributeValue<string>("typename") == "MyNamespace.MyActivity" &&
+            r.Target.GetAttributeValue<string>("workflowactivitygroupname") == "MyPlugin (1.0.0.0)" &&
+            r["SolutionUniqueName"].ToString() == "MySolution"
         ), Arg.Any<CancellationToken>());
     }
 
@@ -471,6 +473,59 @@ public class PluginServiceTests
         Assert.Contains("RunAs", ex.Message);
         Assert.Contains(userId.ToString(), ex.Message);
         Assert.Contains("system user", ex.Message);
+    }
+
+    // -- Orphan steps from renamed/foreign plugin assemblies --
+
+    private void SetupOrphanStepFromForeignAssembly(Guid stepId, string stepName, string foreignAssemblyName)
+    {
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" && q.Criteria.Conditions.Any(c => c.AttributeName == "componenttype")),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(new List<Entity>
+            {
+                new Entity("solutioncomponent")
+                {
+                    ["objectid"] = stepId,
+                    ["step.name"] = new AliasedValue("sdkmessageprocessingstep", "name", stepName),
+                    ["asm.name"] = new AliasedValue("pluginassembly", "name", foreignAssemblyName)
+                }
+            })));
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_OrphanStepFromForeignAssembly_WarnsWithoutForce()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId));
+        SetupPluginTypes();
+        SetupSteps();
+
+        var orphanStepId = Guid.NewGuid();
+        SetupOrphanStepFromForeignAssembly(orphanStepId, "Extensions.MyFirst2PostUpdatePlugin: Update of account", "Extensions");
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(), "MySolution");
+
+        Assert.Contains("Extensions.MyFirst2PostUpdatePlugin: Update of account", _console.Output);
+        Assert.Contains("Extensions.dll", _console.Output);
+        Assert.Contains("--force", _console.Output);
+        await _serviceMock.DidNotReceive().DeleteAsync("sdkmessageprocessingstep", orphanStepId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_OrphanStepFromForeignAssembly_WithForce_Deletes()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId));
+        SetupPluginTypes();
+        SetupSteps();
+
+        var orphanStepId = Guid.NewGuid();
+        SetupOrphanStepFromForeignAssembly(orphanStepId, "Extensions.MyFirst2PostUpdatePlugin: Update of account", "Extensions");
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(), "MySolution", RunMode.Normal, force: true);
+
+        await _serviceMock.Received(1).DeleteAsync("sdkmessageprocessingstep", orphanStepId, Arg.Any<CancellationToken>());
     }
 
     // -- Deletion of obsolete types --
