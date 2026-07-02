@@ -751,7 +751,7 @@
       <li><span class="rank">5.</span><a href="#idea-5">Ordered flow activation</a><span class="jmeta"><span class="chip chip-accent" style="font-size:11px">Flow &amp; workflow</span> · Conf 75% · Cx Med</span></li>
       <li><span class="rank">6.</span><a href="#idea-6">IPostDeployService protocol</a><span class="jmeta"><span class="chip chip-purple" style="font-size:11px">Integration</span> · Conf 85% · Cx Med</span></li>
       <li><span class="rank">7.</span><a href="#idea-7">flowline configure — post-deploy reconciliation</a><span class="jmeta"><span class="chip chip-purple" style="font-size:11px">Integration</span> · Conf 82% · Cx Med</span></li>
-      <li><span class="rank">8.</span><a href="#idea-8">Ad-hoc state toggle</a><span class="jmeta"><span class="chip chip-teal" style="font-size:11px">Operations</span> · Conf 87% · Cx Low</span></li>
+      <li><span class="rank">8.</span><a href="#idea-8">flowline configure — inline &amp; interactive mode</a><span class="jmeta"><span class="chip chip-teal" style="font-size:11px">Operations</span> · Conf 87% · Cx Low</span></li>
       <li><span class="rank">9.</span><a href="#idea-9">PAC solution settings file at import</a><span class="jmeta"><span class="chip chip-amber" style="font-size:11px">Settings</span> · Conf 80% · Cx Low</span></li>
     </ol>
   </nav>
@@ -878,8 +878,8 @@
       </div>
 
       <div class="field-block">
-        <p class="field-label">How it differs from ad-hoc toggle (Idea #8)</p>
-        <p class="field-value">Idea #8 (<code>flowline toggle</code>) is for one-off, runtime changes — instant rollback, scripted release gates. This idea is for <em>repeatable</em> environment setup: checked into source control, applied by <code>flowline configure</code> on every deploy to that environment. If someone manually enables the feature in UAT, the next <code>flowline configure uat</code> run resets it to the declared state. That's the point — the file is authoritative for environment setup.</p>
+        <p class="field-label">Relation to inline mode (Idea #8)</p>
+        <p class="field-value">Idea #8 extends <code>flowline configure</code> with inline mode (<code>flowline configure prod flow "Name" --on</code>) and interactive picking (<code>--pick</code>). This idea (file mode) is for <em>repeatable</em> environment setup: declared in the config file, committed to source control, applied on every deploy. If someone does an inline configure in UAT, the next file-mode run resets it to the declared state — the file is authoritative for environment setup. Inline mode is for urgent one-offs and release gates; file mode is for permanent declared state.</p>
       </div>
 
       <div class="field-block">
@@ -1413,9 +1413,10 @@
     <div class="card-header">
       <div class="rank-badge" aria-label="Rank 8">8</div>
       <div class="card-titles">
-        <h3>Ad-Hoc State Toggle</h3>
+        <h3>flowline configure — inline &amp; interactive mode</h3>
         <div class="card-chips">
           <span class="chip chip-teal">Operations</span>
+          <span class="chip chip-purple">Integration</span>
           <span class="chip chip-green">Conf 87%</span>
           <span class="chip chip-muted">Complexity: Low</span>
         </div>
@@ -1424,8 +1425,13 @@
     <div class="card-body">
       <div class="field-block">
         <p class="field-label">Description</p>
-        <p class="field-value">A <code>flowline toggle</code> command enables or disables individual Dataverse components by name — cloud flows, classic workflows, plugin steps — without re-deploying. Works at any time, against any environment, independently of the deploy/configure cycle. This is the Flowline primitive for the feature-flag pattern: ship dark, enable when ready, roll back instantly.</p>
-        <p class="field-value">Env vars are also a target: set or clear a value per-environment to gate features that read from env vars. Secure config injection for a single step can be triggered standalone, without a full <code>flowline configure</code> run.</p>
+        <p class="field-value"><code>flowline configure</code> (Idea #7) handles environment setup from a config file. The same command should also work inline — no file needed — for one-off changes, feature-flag gates, and instant rollbacks. Two syntaxes, same command, same SDK calls:</p>
+        <ul style="font-size:13.5px;color:var(--text-muted);line-height:1.7;padding-left:1.25rem;margin:.4rem 0 .8rem">
+          <li><strong style="color:var(--text)">File mode:</strong> <code>flowline configure prod</code> or <code>flowline configure prod --settings-file settings.prod.json</code> — reads a config file and reconciles the full environment.</li>
+          <li><strong style="color:var(--text)">Inline mode:</strong> <code>flowline configure prod flow "My Flow" --on</code> — targets one component directly on the command line. No file needed.</li>
+          <li><strong style="color:var(--text)">Interactive mode:</strong> <code>flowline configure prod --pick</code> — queries the live environment and presents a selection list; user picks without knowing the name.</li>
+        </ul>
+        <p class="field-value">This is the feature-flag primitive: ship a flow as Draft, enable it when the go-live decision is made, roll back instantly if something breaks — all without re-deploying the solution.</p>
       </div>
 
       <!-- Diagram: feature flag pattern -->
@@ -1452,25 +1458,25 @@
           <text x="95" y="96" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#c0392b">flow = Draft</text>
           <text x="95" y="115" text-anchor="middle" font-family="Inter,sans-serif" font-size="9.5" fill="#8890b0">ships dark</text>
 
-          <!-- Toggle on -->
+          <!-- Enable inline -->
           <circle cx="260" cy="55" r="5" fill="#1a9e6e"/>
-          <rect x="215" y="65" width="120" height="40" rx="5" fill="rgba(62,207,142,.08)" stroke="rgba(62,207,142,.3)"/>
-          <text x="275" y="80" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#15825a" font-weight="600">flowline toggle flow</text>
-          <text x="275" y="93" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#15825a">"My Flow" --on</text>
+          <rect x="205" y="65" width="140" height="40" rx="5" fill="rgba(62,207,142,.08)" stroke="rgba(62,207,142,.3)"/>
+          <text x="275" y="80" text-anchor="middle" font-family="Inter,sans-serif" font-size="9.5" fill="#15825a" font-weight="600">flowline configure prod</text>
+          <text x="275" y="93" text-anchor="middle" font-family="Inter,sans-serif" font-size="9.5" fill="#15825a">flow "My Flow" --on</text>
           <text x="275" y="115" text-anchor="middle" font-family="Inter,sans-serif" font-size="9.5" fill="#8890b0">feature live</text>
 
-          <!-- Problem → toggle off -->
+          <!-- Problem → disable inline -->
           <circle cx="450" cy="55" r="5" fill="#c0392b"/>
-          <rect x="395" y="65" width="125" height="40" rx="5" fill="rgba(244,106,106,.07)" stroke="rgba(244,106,106,.25)"/>
-          <text x="457" y="80" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#c0392b" font-weight="600">flowline toggle flow</text>
-          <text x="457" y="93" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#c0392b">"My Flow" --off</text>
-          <text x="457" y="115" text-anchor="middle" font-family="Inter,sans-serif" font-size="9.5" fill="#8890b0">instant rollback</text>
+          <rect x="390" y="65" width="140" height="40" rx="5" fill="rgba(244,106,106,.07)" stroke="rgba(244,106,106,.25)"/>
+          <text x="460" y="80" text-anchor="middle" font-family="Inter,sans-serif" font-size="9.5" fill="#c0392b" font-weight="600">flowline configure prod</text>
+          <text x="460" y="93" text-anchor="middle" font-family="Inter,sans-serif" font-size="9.5" fill="#c0392b">flow "My Flow" --off</text>
+          <text x="460" y="115" text-anchor="middle" font-family="Inter,sans-serif" font-size="9.5" fill="#8890b0">instant rollback</text>
 
-          <!-- Toggle back on -->
+          <!-- Re-enable inline -->
           <circle cx="610" cy="55" r="5" fill="#1a9e6e"/>
-          <rect x="565" y="65" width="80" height="40" rx="5" fill="rgba(62,207,142,.08)" stroke="rgba(62,207,142,.3)"/>
-          <text x="605" y="82" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#15825a" font-weight="600">…fix…</text>
-          <text x="605" y="96" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#15825a">toggle --on</text>
+          <rect x="560" y="65" width="90" height="40" rx="5" fill="rgba(62,207,142,.08)" stroke="rgba(62,207,142,.3)"/>
+          <text x="605" y="80" text-anchor="middle" font-family="Inter,sans-serif" font-size="9.5" fill="#15825a" font-weight="600">…fix…</text>
+          <text x="605" y="93" text-anchor="middle" font-family="Inter,sans-serif" font-size="9.5" fill="#15825a">configure --on</text>
 
           <!-- Time label -->
           <text x="340" y="140" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#8890b0">time →</text>
@@ -1480,58 +1486,47 @@
       <div class="field-block">
         <p class="field-label">Command surface</p>
         <div class="cmd-spec">
-          <span class="cmd-comment"># Enable / disable a cloud flow by display name</span><br>
-          <span class="cmd-cmd">flowline toggle flow</span> <span class="cmd-env">"New Checkout Flow"</span> <span class="cmd-flag">--on</span> <span class="cmd-flag">--env</span> <span class="cmd-env">prod</span><br>
-          <span class="cmd-cmd">flowline toggle flow</span> <span class="cmd-env">"New Checkout Flow"</span> <span class="cmd-flag">--off</span> <span class="cmd-flag">--env</span> <span class="cmd-env">prod</span><br><br>
-          <span class="cmd-comment"># Enable / disable a classic workflow or BPF</span><br>
-          <span class="cmd-cmd">flowline toggle workflow</span> <span class="cmd-env">"Order Approval"</span> <span class="cmd-flag">--on</span> <span class="cmd-flag">--env</span> <span class="cmd-env">uat</span><br><br>
-          <span class="cmd-comment"># Enable / disable a plugin step by its registered name</span><br>
-          <span class="cmd-cmd">flowline toggle step</span> <span class="cmd-env">"MyNs.NewFeaturePlugin: Create of account"</span> <span class="cmd-flag">--off</span> <span class="cmd-flag">--env</span> <span class="cmd-env">prod</span><br><br>
-          <span class="cmd-comment"># Set an env var value (feature gate via env var)</span><br>
-          <span class="cmd-cmd">flowline set envvar</span> <span class="cmd-env">cr123_EnableNewCheckout</span> <span class="cmd-env">true</span> <span class="cmd-flag">--env</span> <span class="cmd-env">prod</span><br><br>
-          <span class="cmd-comment"># Preview what would change (no write)</span><br>
-          <span class="cmd-cmd">flowline toggle flow</span> <span class="cmd-env">"New Checkout Flow"</span> <span class="cmd-flag">--on --dry-run</span> <span class="cmd-flag">--env</span> <span class="cmd-env">prod</span><br><br>
-          <span class="cmd-comment"># Interactive: browse + pick from live environment (no name needed)</span><br>
-          <span class="cmd-cmd">flowline toggle</span> <span class="cmd-flag">--pick</span> <span class="cmd-flag">--env</span> <span class="cmd-env">prod</span><br>
-          <span class="cmd-cmd">flowline toggle flow</span> <span class="cmd-flag">--pick</span> <span class="cmd-flag">--env</span> <span class="cmd-env">uat</span>
+          <span class="cmd-comment"># File mode — apply full settings file (Idea #7 behavior)</span><br>
+          <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">prod</span><br>
+          <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">prod</span> <span class="cmd-flag">--settings-file</span> <span class="cmd-env">settings.prod.json</span><br><br>
+          <span class="cmd-comment"># Inline mode — target one component directly, no file needed</span><br>
+          <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">prod</span> <span class="cmd-cmd">flow</span> <span class="cmd-env">"New Checkout Flow"</span> <span class="cmd-flag">--on</span><br>
+          <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">prod</span> <span class="cmd-cmd">flow</span> <span class="cmd-env">"New Checkout Flow"</span> <span class="cmd-flag">--off</span><br>
+          <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">uat</span> <span class="cmd-cmd">workflow</span> <span class="cmd-env">"Order Approval"</span> <span class="cmd-flag">--on</span><br>
+          <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">prod</span> <span class="cmd-cmd">step</span> <span class="cmd-env">"MyNs.NewFeaturePlugin: Create of account"</span> <span class="cmd-flag">--off</span><br>
+          <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">prod</span> <span class="cmd-cmd">envvar</span> <span class="cmd-env">cr123_EnableNewCheckout</span> <span class="cmd-env">true</span><br><br>
+          <span class="cmd-comment"># Dry-run works on both modes</span><br>
+          <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">prod</span> <span class="cmd-cmd">flow</span> <span class="cmd-env">"New Checkout Flow"</span> <span class="cmd-flag">--on --dry-run</span><br><br>
+          <span class="cmd-comment"># Interactive mode — browse + pick from live environment (no name needed)</span><br>
+          <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">prod</span> <span class="cmd-flag">--pick</span><br>
+          <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">prod</span> <span class="cmd-cmd">flow</span> <span class="cmd-flag">--pick</span>
         </div>
       </div>
 
       <div class="field-block">
-        <p class="field-label">What each toggle calls under the hood</p>
+        <p class="field-label">What each operation calls under the hood</p>
         <p class="field-value">
-          <strong style="color:var(--text)">Cloud flow / classic workflow:</strong> <code>workflow.statecode</code> PATCH — 1 = Activated, 0 = Draft. Same SDK call as <code>flowline configure</code>'s workflow restore, scoped to one record by name lookup.<br><br>
-          <strong style="color:var(--text)">Plugin step:</strong> <code>SetStateRequest</code> on <code>sdkmessageprocessingstep</code> — State 0 = Active, State 1 = Inactive. Flowline already knows the step's registered name from the assembly scan.<br><br>
-          <strong style="color:var(--text)">Env var:</strong> <code>environmentvariablevalue</code> upsert — create or update the per-environment value record. If the value record doesn't exist yet, create it; if it does, update it.<br><br>
-          <strong style="color:var(--text)">Secure config (single step):</strong> <code>sdkmessageprocessingstepsecureconfig</code> upsert — same mechanism as Idea #4, but targeted at one step without a full <code>flowline configure</code> run.
+          <strong style="color:var(--text)">Cloud flow / classic workflow:</strong> <code>workflow.statecode</code> PATCH — 1 = Activated, 0 = Draft. Inline and file mode both call the same SDK primitive.<br><br>
+          <strong style="color:var(--text)">Plugin step:</strong> <code>SetStateRequest</code> on <code>sdkmessageprocessingstep</code> — State 0 = Active, State 1 = Inactive.<br><br>
+          <strong style="color:var(--text)">Env var:</strong> <code>environmentvariablevalue</code> upsert — create or update the per-environment value record.<br><br>
+          <strong style="color:var(--text)">Secure config:</strong> <code>sdkmessageprocessingstepsecureconfig</code> upsert — same mechanism as Idea #4, available both inline and via the configure file.
         </p>
       </div>
 
       <div class="field-block">
-        <p class="field-label">Interaction with configure</p>
-        <p class="field-value"><code>flowline configure</code> reconciles components to the state declared in the configure file. Without coordination, running configure after a manual toggle would silently undo the feature flag. Two mechanisms address this:</p>
-        <p class="field-value"><strong style="color:var(--text)">Scope guard:</strong> configure only reconciles components listed in the configure file. If the toggled component isn't in the file, configure ignores it — toggle state is preserved by omission.</p>
-        <p class="field-value"><strong style="color:var(--text)"><code>--except</code> flag:</strong> <code>flowline configure prod --except "New Checkout Flow"</code> skips named components during reconciliation. Keeps the toggle value intact even if the component appears in the configure file.</p>
-      </div>
-
-      <div class="field-block">
-        <p class="field-label">flowline configure integration</p>
+        <p class="field-label">File mode vs inline mode</p>
         <p class="field-value">
-          <code>flowline toggle</code> is the <em>imperative</em> surface — do this now. The same intent can be expressed <em>declaratively</em> in the configure file (Idea #7) via an <code>enabled</code> key per component:
+          Both modes call the same SDK primitives. The difference is the source:
         </p>
-        <div class="cmd-spec" style="margin:.6rem 0">
-          <span class="cmd-comment"># configure.prod.json — declare component state alongside other settings</span><br>
+        <p class="field-value"><strong style="color:var(--text)">File mode</strong> (<code>flowline configure prod</code> or <code>--settings-file</code>) — reads a config file, reconciles all declared components. Git-tracked, reproducible, CI-safe. The authoritative state for the environment. Declare component state in the file with an <code>Enabled</code> key:</p>
+        <div class="cmd-spec" style="margin:.4rem 0 .75rem">
           <span class="cmd-cmd">"Flows"</span>: [<br>
           &nbsp;&nbsp;{ <span class="cmd-cmd">"Name"</span>: <span class="cmd-env">"New Checkout Flow"</span>, <span class="cmd-cmd">"Enabled"</span>: <span class="cmd-flag">false</span> },&nbsp;&nbsp;<span class="cmd-comment">// ships dark</span><br>
           &nbsp;&nbsp;{ <span class="cmd-cmd">"Name"</span>: <span class="cmd-env">"Legacy Order Flow"</span>,  <span class="cmd-cmd">"Enabled"</span>: <span class="cmd-flag">true</span> }<br>
-          ],<br>
-          <span class="cmd-cmd">"PluginSteps"</span>: [<br>
-          &nbsp;&nbsp;{ <span class="cmd-cmd">"Name"</span>: <span class="cmd-env">"MyNs.BetaPlugin: Create of account"</span>, <span class="cmd-cmd">"Enabled"</span>: <span class="cmd-flag">false</span> }<br>
           ]
         </div>
-        <p class="field-value">
-          <code>flowline configure prod</code> reads these and applies the SDK state call — the same primitive <code>flowline toggle</code> would call. Two surfaces, one action: the configure file is git-tracked per-env declarative state; <code>flowline toggle</code> is the ad-hoc one-liner for when you don't want to edit a file. They're fully interchangeable — <code>flowline configure</code> is just a batch of toggles sourced from a file. Commit the file when the state should be reproducible; use <code>toggle</code> when it's exploratory or urgent (e.g., production incident rollback).
-        </p>
+        <p class="field-value"><strong style="color:var(--text)">Inline mode</strong> (<code>flowline configure prod flow "Name" --on</code>) — targets one component directly, no file needed. For ad-hoc changes, urgent rollbacks, or scripted release gates that aren't worth a config file edit. After running, Flowline can emit the equivalent config file snippet so the decision can be committed if it should be permanent.</p>
+        <p class="field-value" style="margin-top:.5rem"><strong style="color:var(--text)">Scope guard:</strong> file mode only reconciles components listed in the file. A component toggled inline that isn't in the file is left untouched by the next file-mode run. Use <code>--except "Name"</code> to skip a named component even if it appears in the file.</p>
       </div>
 
       <div class="field-block">
@@ -1540,14 +1535,14 @@
           Knowing the exact component name is a barrier — especially for env vars (schema names) and plugin steps (fully qualified names). An interactive mode queries the live environment and presents a selection list so the user browses and picks without needing to look anything up.
         </p>
         <div class="cmd-spec" style="margin:.6rem 0">
-          <span class="cmd-comment"># Interactive: browse all components in the environment, toggle any</span><br>
-          <span class="cmd-cmd">flowline toggle</span> <span class="cmd-flag">--pick</span> <span class="cmd-flag">--env</span> <span class="cmd-env">prod</span><br><br>
-          <span class="cmd-comment"># Narrow to a component type before picking</span><br>
-          <span class="cmd-cmd">flowline toggle flow</span> <span class="cmd-flag">--pick</span> <span class="cmd-flag">--env</span> <span class="cmd-env">uat</span><br>
-          <span class="cmd-cmd">flowline toggle step</span> <span class="cmd-flag">--pick</span> <span class="cmd-flag">--env</span> <span class="cmd-env">prod</span>
+          <span class="cmd-comment"># Browse all component types in the environment</span><br>
+          <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">prod</span> <span class="cmd-flag">--pick</span><br><br>
+          <span class="cmd-comment"># Narrow to one component type before picking</span><br>
+          <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">uat</span> <span class="cmd-cmd">flow</span> <span class="cmd-flag">--pick</span><br>
+          <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">prod</span> <span class="cmd-cmd">step</span> <span class="cmd-flag">--pick</span>
         </div>
         <p class="field-value">
-          The picker queries Dataverse, groups results by type (Flows, Workflows, Plugin Steps, Env Vars), and shows current state (Active / Draft / value) alongside each name. The user multi-selects, chooses <code>--on</code> or <code>--off</code>, confirms, and Flowline applies the changes. Spectre.Console's <code>MultiSelectionPrompt</code> makes this a ~30-line implementation — Flowline already depends on Spectre.Console for all CLI rendering. After picking, Flowline can optionally emit the equivalent <code>toggle</code> commands so the session is reproducible (copy-paste into a script or into the configure file).
+          The picker queries Dataverse, groups results by type (Flows, Workflows, Plugin Steps, Env Vars), and shows current state (Active / Draft / value) alongside each name. The user multi-selects, chooses enable or disable, confirms, and Flowline applies. Spectre.Console's <code>MultiSelectionPrompt</code> makes this a ~30-line implementation — Flowline already depends on Spectre.Console for all CLI rendering. After applying, Flowline can emit the equivalent inline commands and the config file snippet so the session is reproducible.
         </p>
         <p class="field-value" style="margin-top:.5rem">
           <strong style="color:var(--text)">Limitation:</strong> requires a live connection to the target environment. Cannot run offline or in a headless CI pipeline without <code>--env</code> resolving to a reachable environment. For CI use, the configure file (declarative) is the right surface — interactive picker is a local developer tool.
@@ -1558,9 +1553,9 @@
         <p class="field-label">Basis</p>
         <p class="field-value">
           <span class="basis-tag basis-direct">direct:</span>
-          All SDK primitives are already used or established in the codebase — <code>SetStateRequest</code> in <code>OrphanCleanupService.cs</code>, <code>workflow.statecode</code> PATCH planned for Idea #1. Name resolution requires one query per component type; step names are already known to Flowline from the assembly registration pipeline. Spectre.Console <code>MultiSelectionPrompt</code> is available in the existing Spectre.Console dependency.
+          All SDK primitives already exist in the codebase — <code>SetStateRequest</code> in <code>OrphanCleanupService.cs</code>, <code>workflow.statecode</code> PATCH planned for Idea #1. <code>flowline configure</code> already exists (Idea #7) — inline mode is an additive parser path, not a new command. Spectre.Console <code>MultiSelectionPrompt</code> is available in the existing Spectre.Console dependency.
           <span class="basis-tag basis-reasoned">reasoned:</span>
-          The feature flag pattern is standard in software but has no Dataverse CLI equivalent. The community workaround is either direct Dataverse API scripts or navigating the maker portal per-component. A named toggle command covers the full activation lifecycle without a re-deploy. The interactive picker removes the lookup friction that makes ad-hoc toggles impractical today.
+          The feature flag pattern is standard in software but has no Dataverse CLI equivalent. The community workaround is direct API scripts or navigating the maker portal per-component. Folding inline mode into <code>flowline configure</code> gives users one command to learn instead of two. The interactive picker removes the name-lookup friction that makes ad-hoc changes impractical today.
         </p>
       </div>
 
