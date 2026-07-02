@@ -661,7 +661,7 @@
     <div class="stat-label">Raw candidates</div>
   </div>
   <div class="stat">
-    <div class="stat-value">8</div>
+    <div class="stat-value">9</div>
     <div class="stat-label">Survivors</div>
   </div>
   <div class="stat">
@@ -669,7 +669,7 @@
     <div class="stat-label">Cut</div>
   </div>
   <div class="stat">
-    <div class="stat-value">4</div>
+    <div class="stat-value">5</div>
     <div class="stat-label">Axes covered</div>
   </div>
 </div>
@@ -745,13 +745,14 @@
     <p>Jump to idea</p>
     <ol>
       <li><span class="rank">1.</span><a href="#idea-1">Classic workflow state restoration</a><span class="jmeta"><span class="chip chip-accent" style="font-size:11px">Flow &amp; workflow</span> · Conf 90% · Cx Low</span></li>
-      <li><span class="rank">2.</span><a href="#idea-2">Step state declaration drives deploy</a><span class="jmeta"><span class="chip chip-green" style="font-size:11px">Step state</span> · Conf 88% · Cx Low</span></li>
+      <li><span class="rank">2.</span><a href="#idea-2">Per-env component state in configure file</a><span class="jmeta"><span class="chip chip-green" style="font-size:11px">Step state</span> · Conf 85% · Cx Low</span></li>
       <li><span class="rank">3.</span><a href="#idea-3">Pre-flight config validation</a><span class="jmeta"><span class="chip chip-amber" style="font-size:11px">Settings</span> · Conf 85% · Cx Low</span></li>
       <li><span class="rank">4.</span><a href="#idea-4">Secure config deploy-time injection</a><span class="jmeta"><span class="chip chip-green" style="font-size:11px">Step state</span> · Conf 80% · Cx Med</span></li>
       <li><span class="rank">5.</span><a href="#idea-5">Ordered flow activation</a><span class="jmeta"><span class="chip chip-accent" style="font-size:11px">Flow &amp; workflow</span> · Conf 75% · Cx Med</span></li>
       <li><span class="rank">6.</span><a href="#idea-6">IPostDeployService protocol</a><span class="jmeta"><span class="chip chip-purple" style="font-size:11px">Integration</span> · Conf 85% · Cx Med</span></li>
-      <li><span class="rank">7.</span><a href="#idea-7">Commission as separate command</a><span class="jmeta"><span class="chip chip-purple" style="font-size:11px">Integration</span> · Conf 80% · Cx Med</span></li>
+      <li><span class="rank">7.</span><a href="#idea-7">flowline configure — post-deploy reconciliation</a><span class="jmeta"><span class="chip chip-purple" style="font-size:11px">Integration</span> · Conf 82% · Cx Med</span></li>
       <li><span class="rank">8.</span><a href="#idea-8">Ad-hoc state toggle</a><span class="jmeta"><span class="chip chip-teal" style="font-size:11px">Operations</span> · Conf 87% · Cx Low</span></li>
+      <li><span class="rank">9.</span><a href="#idea-9">PAC solution settings file at import</a><span class="jmeta"><span class="chip chip-amber" style="font-size:11px">Settings</span> · Conf 80% · Cx Low</span></li>
     </ol>
   </nav>
 
@@ -843,10 +844,10 @@
     <div class="card-header">
       <div class="rank-badge" aria-label="Rank 2">2</div>
       <div class="card-titles">
-        <h3>Step State Declaration Drives Deploy</h3>
+        <h3>Per-Environment Component State in Configure File</h3>
         <div class="card-chips">
           <span class="chip chip-green">Plugin step state &amp; config</span>
-          <span class="chip chip-green">Conf 88%</span>
+          <span class="chip chip-green">Conf 85%</span>
           <span class="chip chip-muted">Complexity: Low</span>
         </div>
       </div>
@@ -854,36 +855,55 @@
     <div class="card-body">
       <div class="field-block">
         <p class="field-label">Description</p>
-        <p class="field-value">Add <code>IsDisabled</code> to <code>StepAttribute</code>, then honor it on <code>flowline deploy</code> — not just on <code>push</code>. After import, Flowline calls <code>SetStateRequest</code> on <code>sdkmessageprocessingstep</code> to match declared state. The attribute becomes authoritative across all Flowline operations: push registers the step with correct state, deploy reconciles it back after import. No separate command, no post-deploy checklist item.</p>
+        <p class="field-value">Plugin steps, flows, and workflows are <strong style="color:var(--text)">always enabled by default</strong> after deploy — you wrote the code because you want it running. There is no <code>IsDisabled</code> attribute in <code>StepAttribute</code> and there shouldn't be: disabling a step globally via code makes no sense when the use case is always per-environment. Instead, a per-env configure file declares which components should be inactive in that specific environment. <code>flowline configure uat</code> reads the file and applies the overrides.</p>
+        <p class="field-value">This enables the feature-flag pattern at the declarative level: a new flow ships dark in UAT because the configure file says <code>"Active": false</code>, while the same flow is live in prod the moment the prod configure file is updated. No code change, no re-deploy.</p>
       </div>
+
+      <div class="field-block">
+        <p class="field-label">Configure file — state overrides section</p>
+        <div class="cmd-spec">
+          <span class="cmd-comment">// uat.configure.json — checked into source control (no secrets)</span><br>
+          {<br>
+          &nbsp;&nbsp;<span class="cmd-env">"EnvironmentVariables"</span>: [ <span class="cmd-comment">/* ... */</span> ],<br>
+          &nbsp;&nbsp;<span class="cmd-env">"ConnectionReferences"</span>: [ <span class="cmd-comment">/* ... */</span> ],<br>
+          &nbsp;&nbsp;<span class="cmd-env">"Flows"</span>: [<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"Name"</span>: <span class="cmd-env">"New Checkout Flow"</span>, <span class="cmd-flag">"Active"</span>: <span class="cmd-flag">false</span> },<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"Name"</span>: <span class="cmd-env">"Order Processing"</span>, <span class="cmd-flag">"Active"</span>: <span class="cmd-flag">true</span> }<br>
+          &nbsp;&nbsp;],<br>
+          &nbsp;&nbsp;<span class="cmd-env">"PluginSteps"</span>: [<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"Name"</span>: <span class="cmd-env">"MyNs.BetaPlugin: Create of account"</span>, <span class="cmd-flag">"Active"</span>: <span class="cmd-flag">false</span> }<br>
+          &nbsp;&nbsp;]<br>
+          }
+        </div>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">How it differs from ad-hoc toggle (Idea #8)</p>
+        <p class="field-value">Idea #8 (<code>flowline toggle</code>) is for one-off, runtime changes — instant rollback, scripted release gates. This idea is for <em>repeatable</em> environment setup: checked into source control, applied by <code>flowline configure</code> on every deploy to that environment. If someone manually enables the feature in UAT, the next <code>flowline configure uat</code> run resets it to the declared state. That's the point — the file is authoritative for environment setup.</p>
+      </div>
+
       <div class="field-block">
         <p class="field-label">Basis</p>
         <p class="field-value">
-          <span class="basis-tag basis-direct">direct:</span>
-          <code>StepAttribute.cs</code> currently has <code>Order</code>, <code>RunAs</code>, <code>Config</code>, <code>Description</code>, <code>SecondaryTable</code>, <code>DeleteJobOnSuccess</code> — no <code>IsDisabled</code>. The codebase scan confirmed this property is missing; adding it is a small addition. <code>SetStateRequest</code> on <code>sdkmessageprocessingstep</code> (State 0 = Active, State 1 = Inactive) is a standard SDK call. PAC <code>--activate-plugins</code> is all-or-nothing with no per-step selectivity — there's a confirmed gap.
+          <span class="basis-tag basis-reasoned">reasoned:</span>
+          Disabling a step via a code attribute (<code>[Step(IsDisabled=true)]</code>) would make it globally disabled in every environment — the opposite of what per-env feature flagging needs. The distinction is: code attributes describe the component's intent; environment config describes the environment's expectations. These are orthogonal concerns and must be in separate files. The configure file pattern (Idea #7) is already proposed; this idea defines what its state-override section looks like.
         </p>
       </div>
-      <div class="field-block">
-        <p class="field-label">Rationale</p>
-        <p class="field-value">Closing the push/deploy gap makes <code>[Step]</code> the single source of truth for step behavior. Every other Flowline feature reasons from declared attribute state — step enablement should be no different. Once <code>IsDisabled</code> exists in the attribute, per-env override support (step X disabled in UAT, active in prod) becomes a natural extension.</p>
-      </div>
+
       <div class="field-block">
         <p class="field-label">Downsides</p>
-        <p class="field-value">Requires adding <code>IsDisabled</code> to <code>StepAttribute</code> first (not present today). If a developer marks a step disabled and forgets it when debugging in prod, the next deploy quietly re-disables it. Strong convention: the attribute is authoritative.</p>
+        <p class="field-value">Requires maintaining per-env configure files (one per environment: <code>uat.configure.json</code>, <code>prod.configure.json</code>). Only the components explicitly listed are overridden — everything else deploys active. Components removed from the solution are not covered (configure doesn't clean up deleted components' state). Naming the flow/step correctly in the file requires knowing the exact registered name.</p>
       </div>
-      <div class="callout callout-precondition">
-        <span class="callout-label">Precondition</span>
-        Add <code>IsDisabled</code> to <code>StepAttribute</code> — a trivial one-property change — before honoring it in the deploy pipeline.
-      </div>
+
       <div class="meta-dl">
         <div class="meta-pair"><dt>Confidence</dt><dd>
           <div class="confidence-bar-wrap">
-            <span>88%</span>
-            <div class="confidence-bar"><div class="confidence-bar-fill" style="width:88%;background:var(--green)"></div></div>
+            <span>85%</span>
+            <div class="confidence-bar"><div class="confidence-bar-fill" style="width:85%;background:var(--green)"></div></div>
           </div>
         </dd></div>
         <div class="meta-pair"><dt>Complexity</dt><dd><span class="chip chip-green">Low</span></dd></div>
-        <div class="meta-pair"><dt>Meeting test</dt><dd><span style="font-size:13px">Is it a bug that <code>deploy</code> ignores <code>IsDisabled</code>?</span></dd></div>
+        <div class="meta-pair"><dt>Meeting test</dt><dd><span style="font-size:13px">Can I deploy a new plugin step to prod but keep it off until the feature is ready?</span></dd></div>
       </div>
     </div>
   </article>
@@ -1214,10 +1234,10 @@
     <div class="card-header">
       <div class="rank-badge" aria-label="Rank 7">7</div>
       <div class="card-titles">
-        <h3>Commission as Separate Command</h3>
+        <h3>flowline configure — Post-Deploy Reconciliation</h3>
         <div class="card-chips">
           <span class="chip chip-purple">Integration model</span>
-          <span class="chip chip-green">Conf 80%</span>
+          <span class="chip chip-green">Conf 82%</span>
           <span class="chip chip-muted">Complexity: Medium</span>
         </div>
       </div>
@@ -1225,12 +1245,12 @@
     <div class="card-body">
       <div class="field-block">
         <p class="field-label">Description</p>
-        <p class="field-value"><code>flowline deploy</code> handles installation: pre-flight validation, pack, import, orphan cleanup, step state reconciliation. A separate <code>flowline commission</code> command handles environment activation: restoring workflow state, activating cloud flows in dependency order, injecting secure config. The distinction is structural — deploy makes the solution present; commission makes it live.</p>
-        <p class="field-value">Commission is idempotent and independently re-runnable. When a support engineer manually disables a flow in prod and you want to restore declared state, you run <code>flowline commission prod</code>, not re-deploy. No downtime, no re-import, no risk of overwriting customizations.</p>
+        <p class="field-value"><code>flowline deploy</code> installs: pre-flight validation, pack, import, orphan cleanup. A separate <code>flowline configure</code> command applies the per-environment configure file: restoring workflow state, activating flows in dependency order, applying component state overrides, injecting secure config. The name is intentional — you hand it a settings artifact and it reconciles the environment to match. No magic, no inference.</p>
+        <p class="field-value"><code>flowline configure</code> is idempotent and re-runnable at any time. After a support engineer manually disables a flow, re-running <code>flowline configure prod</code> restores declared state without a re-deploy.</p>
       </div>
 
-      <!-- Diagram: deploy vs commission phases -->
-      <div class="diagram-wrap" aria-label="Deploy installs the solution; Commission makes it live">
+      <!-- Diagram: deploy vs configure phases -->
+      <div class="diagram-wrap" aria-label="Deploy installs the solution; configure applies environment state from a settings file">
         <svg width="660" height="130" viewBox="0 0 660 130" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <marker id="arr7" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
@@ -1257,9 +1277,9 @@
           <text x="325" y="33" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" fill="#4e5370">auto</text>
           <text x="325" y="52" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" fill="#4e5370">or manual</text>
 
-          <!-- Commission lane -->
+          <!-- Configure lane -->
           <rect x="357" y="5" width="295" height="55" rx="6" fill="rgba(176,123,255,.06)" stroke="rgba(176,123,255,.3)"/>
-          <text x="367" y="22" font-family="Inter,sans-serif" font-size="10" fill="#b07bff" font-weight="700" letter-spacing="2">flowline commission</text>
+          <text x="367" y="22" font-family="Inter,sans-serif" font-size="10" fill="#b07bff" font-weight="700" letter-spacing="2">flowline configure</text>
           <rect x="367" y="28" width="80" height="24" rx="4" fill="#21253a" stroke="#2e3347"/>
           <text x="407" y="44" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#7b82a0">Workflow state</text>
           <rect x="454" y="28" width="72" height="24" rx="4" fill="#21253a" stroke="#2e3347"/>
@@ -1272,9 +1292,38 @@
           <!-- Labels below -->
           <text x="148" y="78" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#7b82a0">Solution installed — deterministic</text>
           <text x="148" y="92" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#7b82a0">Safe in CI without secrets</text>
-          <text x="505" y="78" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#b07bff" fill-opacity=".7">Solution live — reconciles state</text>
+          <text x="505" y="78" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#b07bff" fill-opacity=".7">Environment configured from file</text>
           <text x="505" y="92" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#b07bff" fill-opacity=".7">Re-runnable, idempotent</text>
         </svg>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">The configure file — extended settings format</p>
+        <p class="field-value">Reuses and extends the PAC solution settings file format. The base sections (<code>EnvironmentVariables</code>, <code>ConnectionReferences</code>) are identical to what <code>pac solution create-settings</code> generates — no new format to learn. Flowline adds sections for flow/workflow/step state and secure config. One file per environment, checked into source control (secure config entries go in a separate gitignored companion file).</p>
+        <div class="cmd-spec">
+          <span class="cmd-comment">// prod.configure.json — checked into source control</span><br>
+          {<br>
+          &nbsp;&nbsp;<span class="cmd-comment">// PAC-native sections (passed through to pac solution import)</span><br>
+          &nbsp;&nbsp;<span class="cmd-env">"EnvironmentVariables"</span>: [<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"SchemaName"</span>: <span class="cmd-env">"cr123_FeatureFlag"</span>, <span class="cmd-env">"Value"</span>: <span class="cmd-env">"true"</span> }<br>
+          &nbsp;&nbsp;],<br>
+          &nbsp;&nbsp;<span class="cmd-env">"ConnectionReferences"</span>: [<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"LogicalName"</span>: <span class="cmd-env">"cr123_SharedO365"</span>, <span class="cmd-env">"ConnectionId"</span>: <span class="cmd-env">"abc123"</span> }<br>
+          &nbsp;&nbsp;],<br>
+          &nbsp;&nbsp;<span class="cmd-comment">// Flowline-extended sections (applied post-import)</span><br>
+          &nbsp;&nbsp;<span class="cmd-env">"Flows"</span>: [<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"Name"</span>: <span class="cmd-env">"Order Processing"</span>, <span class="cmd-flag">"Active"</span>: <span class="cmd-flag">true</span> },<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"Name"</span>: <span class="cmd-env">"Beta Checkout Flow"</span>, <span class="cmd-flag">"Active"</span>: <span class="cmd-flag">false</span> }<br>
+          &nbsp;&nbsp;],<br>
+          &nbsp;&nbsp;<span class="cmd-env">"Workflows"</span>: [<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"Name"</span>: <span class="cmd-env">"Approval Process"</span>, <span class="cmd-flag">"Active"</span>: <span class="cmd-flag">true</span> }<br>
+          &nbsp;&nbsp;],<br>
+          &nbsp;&nbsp;<span class="cmd-env">"PluginSteps"</span>: [<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"Name"</span>: <span class="cmd-env">"MyNs.BetaPlugin: Create of account"</span>, <span class="cmd-flag">"Active"</span>: <span class="cmd-flag">false</span> }<br>
+          &nbsp;&nbsp;]<br>
+          &nbsp;&nbsp;<span class="cmd-comment">// SecureConfig goes in gitignored prod.configure.secrets.json</span><br>
+          }
+        </div>
       </div>
 
       <div class="field-block">
@@ -1283,19 +1332,18 @@
           <div class="ownership-card deploy">
             <h4>Deploy owns</h4>
             <ul>
-              <li><span class="dot"></span>Pre-flight config validation</li>
+              <li><span class="dot"></span>Pre-flight validation</li>
               <li><span class="dot"></span>Pack solution</li>
               <li><span class="dot"></span>Import solution (PAC CLI)</li>
               <li><span class="dot"></span>Orphan cleanup</li>
-              <li><span class="dot"></span>Step state (attribute-driven, deterministic)</li>
             </ul>
           </div>
           <div class="ownership-card commission">
-            <h4>Commission owns</h4>
+            <h4>Configure owns</h4>
             <ul>
               <li><span class="dot"></span>Classic workflow state restoration</li>
               <li><span class="dot"></span>Cloud flow activation (ordered)</li>
-              <li><span class="dot"></span>Flow ownership assignment</li>
+              <li><span class="dot"></span>Per-env component state overrides</li>
               <li><span class="dot"></span>Secure config injection</li>
             </ul>
           </div>
@@ -1305,52 +1353,48 @@
       <div class="field-block">
         <p class="field-label">Default behaviour &amp; flags</p>
         <div class="cmd-spec">
-          <span class="cmd-comment"># Default: commission runs automatically after deploy</span><br>
+          <span class="cmd-comment"># Default: configure runs automatically after deploy</span><br>
           <span class="cmd-cmd">flowline deploy</span> <span class="cmd-env">prod</span><br><br>
-          <span class="cmd-comment"># Split: deploy only (CI step 1)</span><br>
-          <span class="cmd-cmd">flowline deploy</span> <span class="cmd-env">prod</span> <span class="cmd-flag">--no-commission</span><br><br>
-          <span class="cmd-comment"># Commission only (CI step 2, or re-run after manual drift)</span><br>
-          <span class="cmd-cmd">flowline commission</span> <span class="cmd-env">prod</span><br><br>
-          <span class="cmd-comment"># Dry-run: show what commission would change</span><br>
-          <span class="cmd-cmd">flowline commission</span> <span class="cmd-env">prod</span> <span class="cmd-flag">--dry-run</span>
+          <span class="cmd-comment"># Deploy only — skip configure (CI step 1)</span><br>
+          <span class="cmd-cmd">flowline deploy</span> <span class="cmd-env">prod</span> <span class="cmd-flag">--no-configure</span><br><br>
+          <span class="cmd-comment"># Configure only — re-apply without re-deploying</span><br>
+          <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">prod</span><br><br>
+          <span class="cmd-comment"># Dry-run: show what would change without applying</span><br>
+          <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">prod</span> <span class="cmd-flag">--dry-run</span><br><br>
+          <span class="cmd-comment"># Exclude components (preserve intentional toggle state)</span><br>
+          <span class="cmd-cmd">flowline configure</span> <span class="cmd-env">prod</span> <span class="cmd-flag">--except</span> <span class="cmd-env">"Beta Checkout Flow"</span>
         </div>
       </div>
 
       <div class="field-block">
-        <p class="field-label">Why split matters — CI/CD pattern</p>
-        <p class="field-value">In a gated pipeline, deploy and commission may run at different stages with different approvals. Deploy runs on every merged PR (import to UAT, automated). Commission runs after human sign-off before going live in prod. The secret for vault-sourced secure config only needs to be present in the commission stage — deploy can remain secret-free.</p>
-        <p class="field-value">In regulated environments this maps directly to change-management roles: the DevOps engineer runs deploy; the solution architect or functional lead runs commission to confirm that activation is intentional.</p>
+        <p class="field-label">Why split matters</p>
+        <p class="field-value">Deploy runs on every merged PR — fast, automated, no secrets required. Configure runs after, either automatically or gated by a human go/no-go. Secrets for secure config only need to be present in the configure step. In regulated environments these can have different approvers: DevOps runs deploy; solution architect runs configure to confirm activation is intentional.</p>
       </div>
 
       <div class="field-block">
         <p class="field-label">Basis</p>
         <p class="field-value">
-          <span class="basis-tag basis-reasoned">reasoned:</span>
-          In civil and industrial engineering, commissioning is explicitly distinct from installation — it is the act of verifying a system is operational in its environment, not just physically present. The analogy holds: deploy makes the solution present in Dataverse; commission makes its components run. The Dataverse platform itself echoes this — a plugin step can be registered but disabled; a flow can be imported but deactivated. These are two different states that map to two different owner actions.
           <span class="basis-tag basis-direct">direct:</span>
-          The brainstorm <code>2026-06-12-environment-config-command-requirements.md</code> proposes a <code>flowline config</code> command — commission is that direction with a tighter scope and a name that emphasizes activation rather than configuration.
+          The brainstorm <code>2026-06-12-environment-config-command-requirements.md</code> proposes a <code>flowline config</code> command — <code>configure</code> is that direction with a clearer name. Reusing the PAC settings file format keeps the mental model tight.
+          <span class="basis-tag basis-reasoned">reasoned:</span>
+          <em>Configure</em> implies "I hand you a file and you apply it" — this matches what the command does. It's analogous to Terraform apply: a declared state file drives reconciliation.
         </p>
       </div>
 
       <div class="field-block">
-        <p class="field-label">Naming</p>
-        <p class="field-value"><code>commission</code> is precise but engineering-domain terminology — unfamiliar to non-technical admins. Alternatives: <code>flowline activate prod</code> (immediate intent, slightly overloaded in Power Platform), <code>flowline configure prod</code> (too broad — could mean env vars), <code>flowline reconcile prod</code> (accurate but jargon-heavy). <code>commission</code> or <code>activate</code> are the two strongest candidates; user research or a naming spike should settle it before shipping the wiki entry.</p>
-      </div>
-
-      <div class="field-block">
         <p class="field-label">Downsides</p>
-        <p class="field-value">Two-step mental model for users who just want <code>flowline deploy prod</code> to "make everything work." The default auto-commission behavior solves this for most users; the split only matters in CI or regulated contexts. Risk: if commission is optional, users may run deploy without realizing commission is what makes flows go live — the default auto-run must be obvious from the output.</p>
+        <p class="field-value"><code>flowline configure</code> could be confused with configuring Flowline itself. Consider <code>flowline apply</code> as an alternative if UX research shows that friction. Maintaining per-env configure files alongside deploy settings files is two files per environment — mitigated if <code>flowline create-configure prod</code> generates the template.</p>
       </div>
 
       <div class="meta-dl">
         <div class="meta-pair"><dt>Confidence</dt><dd>
           <div class="confidence-bar-wrap">
-            <span>80%</span>
-            <div class="confidence-bar"><div class="confidence-bar-fill" style="width:80%;background:var(--amber)"></div></div>
+            <span>82%</span>
+            <div class="confidence-bar"><div class="confidence-bar-fill" style="width:82%;background:var(--amber)"></div></div>
           </div>
         </dd></div>
         <div class="meta-pair"><dt>Complexity</dt><dd><span class="chip chip-amber">Medium</span></dd></div>
-        <div class="meta-pair"><dt>Meeting test</dt><dd><span style="font-size:13px">Do deploy and activation ever need different approvers?</span></dd></div>
+        <div class="meta-pair"><dt>Meeting test</dt><dd><span style="font-size:13px">Do deploy and environment configuration have different cadences or approvers?</span></dd></div>
       </div>
     </div>
   </article>
@@ -1371,8 +1415,8 @@
     <div class="card-body">
       <div class="field-block">
         <p class="field-label">Description</p>
-        <p class="field-value">A <code>flowline toggle</code> command enables or disables individual Dataverse components by name — cloud flows, classic workflows, plugin steps — without re-deploying. Works at any time, against any environment, independently of the deploy/commission cycle. This is the Flowline primitive for the feature-flag pattern: ship dark, enable when ready, roll back instantly.</p>
-        <p class="field-value">Env vars are also a target: set or clear a value per-environment to gate features that read from env vars. Secure config injection for a single step can be triggered standalone, without a full commission run.</p>
+        <p class="field-value">A <code>flowline toggle</code> command enables or disables individual Dataverse components by name — cloud flows, classic workflows, plugin steps — without re-deploying. Works at any time, against any environment, independently of the deploy/configure cycle. This is the Flowline primitive for the feature-flag pattern: ship dark, enable when ready, roll back instantly.</p>
+        <p class="field-value">Env vars are also a target: set or clear a value per-environment to gate features that read from env vars. Secure config injection for a single step can be triggered standalone, without a full <code>flowline configure</code> run.</p>
       </div>
 
       <!-- Diagram: feature flag pattern -->
@@ -1444,18 +1488,18 @@
       <div class="field-block">
         <p class="field-label">What each toggle calls under the hood</p>
         <p class="field-value">
-          <strong style="color:var(--text)">Cloud flow / classic workflow:</strong> <code>workflow.statecode</code> PATCH — 1 = Activated, 0 = Draft. Same SDK call as commission's workflow restore, scoped to one record by name lookup.<br><br>
+          <strong style="color:var(--text)">Cloud flow / classic workflow:</strong> <code>workflow.statecode</code> PATCH — 1 = Activated, 0 = Draft. Same SDK call as <code>flowline configure</code>'s workflow restore, scoped to one record by name lookup.<br><br>
           <strong style="color:var(--text)">Plugin step:</strong> <code>SetStateRequest</code> on <code>sdkmessageprocessingstep</code> — State 0 = Active, State 1 = Inactive. Flowline already knows the step's registered name from the assembly scan.<br><br>
           <strong style="color:var(--text)">Env var:</strong> <code>environmentvariablevalue</code> upsert — create or update the per-environment value record. If the value record doesn't exist yet, create it; if it does, update it.<br><br>
-          <strong style="color:var(--text)">Secure config (single step):</strong> <code>sdkmessageprocessingstepsecureconfig</code> upsert — same mechanism as Idea #4, but targeted at one step without a full commission run.
+          <strong style="color:var(--text)">Secure config (single step):</strong> <code>sdkmessageprocessingstepsecureconfig</code> upsert — same mechanism as Idea #4, but targeted at one step without a full <code>flowline configure</code> run.
         </p>
       </div>
 
       <div class="field-block">
-        <p class="field-label">Interaction with commission</p>
-        <p class="field-value">Commission restores components to their declared/last-known state. Without coordination, running commission after a manual toggle would silently undo the feature flag. Two mechanisms address this:</p>
-        <p class="field-value"><strong style="color:var(--text)">Scope guard:</strong> commission only reconciles components that are part of the solution being deployed — it never touches components outside the current solution. If the toggled flow is in the solution, commission will restore it; if it isn't (e.g. a flow from an earlier deploy or a different solution), commission ignores it.</p>
-        <p class="field-value"><strong style="color:var(--text)"><code>--except</code> flag:</strong> <code>flowline commission prod --except "New Checkout Flow"</code> skips named components during reconciliation. Keeps the toggle value intact through the next deploy.</p>
+        <p class="field-label">Interaction with configure</p>
+        <p class="field-value"><code>flowline configure</code> reconciles components to the state declared in the configure file. Without coordination, running configure after a manual toggle would silently undo the feature flag. Two mechanisms address this:</p>
+        <p class="field-value"><strong style="color:var(--text)">Scope guard:</strong> configure only reconciles components listed in the configure file. If the toggled component isn't in the file, configure ignores it — toggle state is preserved by omission.</p>
+        <p class="field-value"><strong style="color:var(--text)"><code>--except</code> flag:</strong> <code>flowline configure prod --except "New Checkout Flow"</code> skips named components during reconciliation. Keeps the toggle value intact even if the component appears in the configure file.</p>
       </div>
 
       <div class="field-block">
@@ -1486,6 +1530,102 @@
     </div>
   </article>
 
+  <!-- ── Idea 9 ── -->
+  <article class="idea-card" id="idea-9">
+    <div class="card-header">
+      <div class="rank-badge" aria-label="Rank 9">9</div>
+      <div class="card-titles">
+        <h3>PAC Solution Settings File at Import</h3>
+        <div class="card-chips">
+          <span class="chip chip-blue">Settings &amp; Env Vars</span>
+          <span class="chip chip-muted">Conf 79%</span>
+          <span class="chip chip-green">Complexity: Low</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="field-block">
+        <p class="field-label">Description</p>
+        <p class="field-value">The PAC CLI natively supports a <code>--settings-file</code> flag on <code>pac solution import</code>. The settings file (generated by <code>pac solution create-settings</code>) maps environment variable schema names and connection reference logical names to per-environment values. Flowline currently does NOT pass this flag — after deploy, users must manually configure env vars and connection refs in the maker portal, or use a separate PAC command. This idea wires up the passthrough: Flowline discovers the settings file for the target environment and forwards it to PAC during import.</p>
+        <p class="field-value">The settings file is the PAC-managed base of what Idea #7's configure file extends. Getting native PAC passthrough working first is the natural foundation: it handles env vars and connection refs at import time, which is when PAC processes them correctly.</p>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">Settings file format (PAC-native)</p>
+        <div class="cmd-spec">
+          <span class="cmd-comment"># Generate template (run once per solution)</span><br>
+          <span class="cmd-cmd">pac solution create-settings</span> <span class="cmd-flag">--solution-zip</span> <span class="cmd-env">MySolution_managed.zip</span> <span class="cmd-flag">--settings-file</span> <span class="cmd-env">prod.settings.json</span><br><br>
+          <span class="cmd-comment">// prod.settings.json (fill in values before committing)</span><br>
+          {<br>
+          &nbsp;&nbsp;<span class="cmd-env">"EnvironmentVariables"</span>: [<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"SchemaName"</span>: <span class="cmd-env">"cr123_ApiBaseUrl"</span>, <span class="cmd-env">"Value"</span>: <span class="cmd-env">"https://api.prod.contoso.com"</span> },<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"SchemaName"</span>: <span class="cmd-env">"cr123_FeatureFlag"</span>, <span class="cmd-env">"Value"</span>: <span class="cmd-env">"true"</span> }<br>
+          &nbsp;&nbsp;],<br>
+          &nbsp;&nbsp;<span class="cmd-env">"ConnectionReferences"</span>: [<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="cmd-env">"LogicalName"</span>: <span class="cmd-env">"cr123_SharedO365"</span>, <span class="cmd-env">"ConnectionId"</span>: <span class="cmd-env">"abc123"</span>, <span class="cmd-env">"ConnectorId"</span>: <span class="cmd-env">"/providers/Microsoft.PowerApps/apis/shared_office365"</span> }<br>
+          &nbsp;&nbsp;]<br>
+          }<br><br>
+          <span class="cmd-comment"># Flowline would pass this automatically:</span><br>
+          <span class="cmd-cmd">pac solution import</span> <span class="cmd-flag">--path</span> <span class="cmd-env">MySolution.zip</span> <span class="cmd-flag">--settings-file</span> <span class="cmd-env">prod.settings.json</span>
+        </div>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">How Flowline discovers the settings file</p>
+        <p class="field-value">Convention: Flowline looks for <code>&lt;env&gt;.settings.json</code> or <code>settings.&lt;env&gt;.json</code> in the solution root or a <code>settings/</code> subfolder. If found, it passes it to PAC. If not found, deploy proceeds without it (same behavior as today). No config required — convention over config.</p>
+        <p class="field-value">The configure file from Idea #7 (<code>&lt;env&gt;.configure.json</code>) shares the same discovery convention and extends the PAC format. Users can maintain one file that covers both PAC-native fields and Flowline-specific ones — Flowline splits it at import time: PAC sections → <code>--settings-file</code>; Flowline sections → post-import reconciliation.</p>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">Is the PAC settings file widely used or a dead feature?</p>
+        <p class="field-value">The PAC settings file exists since 2021 and is the official Microsoft-recommended approach for environment-specific configuration at import time. In practice, adoption varies: teams using ALM Accelerator or automated pipelines typically use it; manual-deploy teams often don't know it exists. The feature is not deprecated — it is actively maintained and appears in PAC CLI release notes. Community sentiment on the Power Platform forums suggests it is underused rather than avoided, primarily because discoverability is poor and the generate-then-edit workflow adds friction.</p>
+        <p class="field-value">The main reason teams skip it: <code>pac solution create-settings</code> generates the template file, but you still need to fill in the values and keep the file in sync as the solution evolves. Without tooling to detect drift (new env var added to solution but missing from settings file), it silently fails to set values — the variable is left at its default. Idea #3 (pre-flight config validation) would address exactly this gap.</p>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">Pros</p>
+        <p class="field-value">
+          <span class="mark-pro">✓</span> Zero net code for env var and connection ref application — PAC already handles it<br>
+          <span class="mark-pro">✓</span> PAC applies env vars <em>during</em> import, before flows are activated — correct ordering for free<br>
+          <span class="mark-pro">✓</span> Settings file is solution-aware — PAC validates schema names against the solution being imported<br>
+          <span class="mark-pro">✓</span> Convention file name (<code>prod.settings.json</code>) is already familiar to teams using PAC directly<br>
+          <span class="mark-pro">✓</span> Plugs the current Flowline gap: deploy completes but env vars are unset until manual intervention
+        </p>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">Cons</p>
+        <p class="field-value">
+          <span class="mark-con">✗</span> Settings file must be manually maintained and committed to source control — values can drift from reality<br>
+          <span class="mark-con">✗</span> Connection IDs are env-specific GUIDs that change when a connection is recreated — file needs updating<br>
+          <span class="mark-con">✗</span> PAC validates schema names at import time; missing entry = silent skip (no value set, no error)<br>
+          <span class="mark-con">✗</span> Duplicate maintenance if teams use both PAC CLI directly and Flowline
+        </p>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">Basis</p>
+        <p class="field-value">
+          <span class="basis-tag basis-direct">direct:</span>
+          <code>pac solution import --settings-file</code> is a first-class PAC CLI feature documented at learn.microsoft.com. The settings file format is stable. Flowline already shells out to PAC for import — this is a one-flag addition to an existing call site.
+          <span class="basis-tag basis-reasoned">reasoned:</span>
+          Not wiring this up means every Flowline deploy leaves environment variables unset until a human follows up. That contradicts Flowline's promise of a complete, repeatable deploy.
+        </p>
+      </div>
+
+      <div class="meta-dl">
+        <div class="meta-pair"><dt>Confidence</dt><dd>
+          <div class="confidence-bar-wrap">
+            <span>79%</span>
+            <div class="confidence-bar"><div class="confidence-bar-fill" style="width:79%;background:var(--amber)"></div></div>
+          </div>
+        </dd></div>
+        <div class="meta-pair"><dt>Complexity</dt><dd><span class="chip chip-green">Low</span></dd></div>
+        <div class="meta-pair"><dt>Meeting test</dt><dd><span style="font-size:13px">After deploy, are your env vars and connection refs automatically set — or do you open the portal?</span></dd></div>
+      </div>
+    </div>
+  </article>
+
 </section>
 
 <!-- ── Secure Config vs Env Vars ── -->
@@ -1501,36 +1641,65 @@
         <li><span class="mark-pro">✓</span> Solution-managed — exported and versioned with the solution</li>
         <li><span class="mark-pro">✓</span> PAC handles value configuration at import time (<code>--settings-file</code>)</li>
         <li><span class="mark-pro">✓</span> Accessible in flows natively — no SDK query</li>
-        <li><span class="mark-pro">✓</span> Accessible in plugins via <code>environmentvariablevalue</code> query</li>
-        <li><span class="mark-pro">✓</span> One mental model for the whole team</li>
-        <li><span class="mark-con">✗</span> Values visible to anyone with read on <code>environmentvariablevalue</code> — not a secret store</li>
-        <li><span class="mark-con">✗</span> Not encrypted at rest in any special way</li>
-        <li><span class="mark-con">✗</span> No access control per variable — it's a table, not a vault</li>
+        <li><span class="mark-pro">✓</span> Secret type env vars can reference Azure Key Vault — platform fetches the value transparently</li>
+        <li><span class="mark-pro">✓</span> One mental model for the whole team (flows + plugins + Power Pages all read the same table)</li>
+        <li><span class="mark-con">✗</span> Values visible to anyone with read on <code>environmentvariablevalue</code> — standard env vars are not a secret store</li>
+        <li><span class="mark-con">✗</span> Plugin retrieval requires a manual SDK query against <code>environmentvariablevalue</code> — no platform helper; you write it yourself (typically in a base class)</li>
+        <li><span class="mark-con">✗</span> Extra synchronous query inside plugin execution — adds latency relative to constructor injection</li>
+        <li><span class="mark-con">✗</span> Key Vault-backed env vars: the Azure managed identity or app registration must be configured in the environment; adds operational overhead</li>
       </ul>
     </div>
     <div class="comparison-card secconfig">
       <h4>Secure Config</h4>
       <ul>
         <li><span class="mark-pro">✓</span> Encrypted at rest in Dataverse</li>
-        <li><span class="mark-pro">✓</span> Admin-only readable — not visible to solution editors or service accounts</li>
+        <li><span class="mark-pro">✓</span> Admin-only readable — not visible to solution editors, service accounts, or makers</li>
         <li><span class="mark-pro">✓</span> Per-step granularity — different secret per step, no cross-contamination</li>
-        <li><span class="mark-pro">✓</span> Plugin constructor receives it directly — no SDK query needed at runtime</li>
-        <li><span class="mark-con">✗</span> Not exported in solutions — Flowline (or someone) must set it per deployment</li>
-        <li><span class="mark-con">✗</span> No PAC CLI support — must be set via the SDK or admin console</li>
-        <li><span class="mark-con">✗</span> Admin-only to read means you cannot verify it programmatically without elevated access</li>
-        <li><span class="mark-neu">·</span> No value type enforcement — plain string, however structured</li>
+        <li><span class="mark-pro">✓</span> Passed to plugin constructor directly — zero extra SDK queries at runtime, fastest possible access pattern</li>
+        <li><span class="mark-pro">✓</span> Still actively used in 2024–2026 — particularly in ISV and regulated-sector projects where admin read access must be tightly controlled</li>
+        <li><span class="mark-con">✗</span> Not exported in solutions — must be set per deployment via SDK or admin console (no PAC CLI support)</li>
+        <li><span class="mark-con">✗</span> Plugin-only — flows, canvas apps, and Power Pages cannot read secure config at all</li>
+        <li><span class="mark-con">✗</span> Admin-only read means you cannot verify or diff the current value programmatically without elevated access</li>
+        <li><span class="mark-neu">·</span> No value type enforcement — plain string, however structured (often JSON)</li>
       </ul>
     </div>
   </div>
 
-  <p class="discussion-prose">The key differentiator is <strong>access control</strong>. In a Dataverse environment with multiple admins, consultants, service accounts, and maker roles, <code>environmentvariablevalue</code> is readable by a wide audience — the standard Dataverse security model does not restrict it to admins. If you store a Stripe API key, a webhook signing secret, or an OAuth client secret in an env var, any system admin or consultant onboarded to that environment can read it. That may be acceptable in many organizations; it is not acceptable in others.</p>
+  <div class="discussion-subsection">
+    <h3 style="font-size:1rem;font-weight:600;color:var(--text);margin:1.5rem 0 .5rem">Can env vars connect to Azure Key Vault?</h3>
+    <p class="discussion-prose">Yes — Dataverse has a <strong>Secret type</strong> for environment variables (GA since 2023). A Secret env var stores a reference to an Azure Key Vault secret rather than a value directly; the platform retrieves the current secret version at runtime, transparently to the consumer. Flows and canvas apps see the resolved value automatically. Plugins must still query <code>environmentvariablevalue</code> and will receive the resolved value if the managed identity is configured correctly.</p>
+    <p class="discussion-prose">Caveat: Key Vault-backed env vars require an Azure managed identity or app registration in the Dataverse environment, plus Key Vault access policy configuration. This is non-trivial to set up and adds operational overhead that many teams avoid. In practice it is used by larger enterprise teams with existing AKV infrastructure. For teams without AKV, secure config is simpler.</p>
+  </div>
 
-  <p class="discussion-prose">Secure config addresses this specifically: the <code>sdkmessageprocessingstepsecureconfig</code> table is admin-only by platform design, the value is encrypted, and it never leaves Dataverse. A service account running flows cannot read another plugin step's secure config.</p>
+  <div class="discussion-subsection">
+    <h3 style="font-size:1rem;font-weight:600;color:var(--text);margin:1.5rem 0 .5rem">Plugin retrieval: query vs constructor injection</h3>
+    <p class="discussion-prose">This is the clearest practical difference for plugin developers. Env var retrieval requires an SDK query every time a plugin needs the value:</p>
+    <div class="cmd-spec" style="margin:.75rem 0">
+      <span class="cmd-comment">// Env var — you write this query (typically in your base class)</span><br>
+      var q = new QueryExpression(<span class="cmd-env">"environmentvariablevalue"</span>);<br>
+      q.Criteria.AddCondition(<span class="cmd-env">"environmentvariabledefinitionid"</span>, ConditionOperator.Equal, defId);<br>
+      var val = svc.RetrieveMultiple(q).Entities.FirstOrDefault()?.GetAttributeValue&lt;string&gt;(<span class="cmd-env">"value"</span>);<br><br>
+      <span class="cmd-comment">// Secure config — platform does it for you</span><br>
+      public MyPlugin(<span class="cmd-env">string unsecureConfig, string secureConfig</span>) {<br>
+      &nbsp;&nbsp;_apiKey = secureConfig; <span class="cmd-comment">// already there, no query</span><br>
+      }
+    </div>
+    <p class="discussion-prose">Secure config is faster inside plugin execution because the value arrives with the execution context — no extra round-trip to Dataverse. For plugins that fire on high-volume tables (account updates, email sends), this is a real performance difference. Env var queries are cached by the platform after the first call within an execution, but the first call adds latency.</p>
+  </div>
+
+  <div class="discussion-subsection">
+    <h3 style="font-size:1rem;font-weight:600;color:var(--text);margin:1.5rem 0 .5rem">Community usage in 2024–2026</h3>
+    <p class="discussion-prose">Secure config is not dead. It remains the standard pattern for plugin steps that call external APIs with credentials (payment gateways, email providers, webhook signing keys). The Power Platform community has not abandoned it — it is still recommended in official Microsoft guidance for plugin secrets. What has changed: for non-secret config (URLs, feature flags, tenant IDs, template strings), env vars are now the default recommendation and secure config is not mentioned. The split is roughly: <em>config = env vars, credentials = secure config</em>.</p>
+    <p class="discussion-prose">ISV packages targeting AppSource frequently use secure config because it prevents customers from reading the ISV's licensing key or API credentials, even as tenant admins. This use case has no env var equivalent without AKV, which many customer environments don't have configured.</p>
+  </div>
+
+  <p class="discussion-prose">The key differentiator is <strong>access control and retrieval model</strong>. In a Dataverse environment with multiple admins, consultants, service accounts, and maker roles, <code>environmentvariablevalue</code> is readable by a wide audience — the standard Dataverse security model does not restrict it to admins. If you store a Stripe API key, a webhook signing secret, or an OAuth client secret in a standard env var, any system admin or consultant onboarded to that environment can read it. AKV-backed Secret env vars solve this at the cost of AKV infrastructure.</p>
 
   <div class="verdict-box">
     <span class="verdict-label">Verdict</span>
-    <strong>Env vars replace secure config for ~80% of use cases</strong> — non-sensitive config values, feature flags, tenant IDs, URLs, template strings. For the remaining 20% — webhook signing secrets, payment gateway keys, OAuth client credentials, anything that gives access to a third-party system — <strong>secure config still has a meaningful access-control advantage</strong> that env vars cannot match without a separate vault integration.<br><br>
-    <strong>Recommendation:</strong> if your plugins don't use secrets (just config), skip Idea #4. If any plugin step calls an external API with a credential that should not be visible to all admins, Idea #4 is worth implementing — it's the only deployment-time mechanism that keeps that credential encrypted and admin-gated inside Dataverse. Env vars are not a drop-in replacement for secrets.
+    <strong>Env vars replace secure config for ~80% of use cases</strong> — non-sensitive config values, feature flags, tenant IDs, URLs, template strings. For the remaining 20% — webhook signing secrets, payment gateway keys, OAuth client credentials — <strong>secure config still has a meaningful advantage</strong>: zero-query constructor injection (faster), admin-only read (tighter access control), no AKV infrastructure required (simpler).<br><br>
+    Key Vault-backed env vars close the secret-storage gap but add operational complexity. They're the right choice when you already have AKV in the enterprise stack; secure config is simpler when you don't.<br><br>
+    <strong>Recommendation for Flowline:</strong> implement Idea #4 (secure config injection). It handles the credential use case that env vars — even AKV-backed ones — don't cover without extra infrastructure. The plugin constructor injection pattern is objectively simpler and faster than the env var query pattern for secrets that only plugins need.
   </div>
 </section>
 
@@ -1538,7 +1707,7 @@
 <section aria-labelledby="waves-heading">
   <h2 id="waves-heading">Recommended Order — Implementation Waves</h2>
 
-  <p class="discussion-prose">All 7 ideas are independent enough to build in any order, but some decisions gate others and some make future work cheaper. Two anchor rules: <strong>#6 (IPostDeployService) should be introduced alongside the first post-deploy service</strong>, not in isolation; and <strong>#7 (Commission architecture) should be decided before building Wave 2</strong> — it determines where flow activation and secure config injection live.</p>
+  <p class="discussion-prose">All 9 ideas are independent enough to build in any order, but some decisions gate others and some make future work cheaper. Two anchor rules: <strong>#6 (IPostDeployService) should be introduced alongside the first post-deploy service</strong>, not in isolation; and <strong>#7 (configure architecture) should be decided before building Wave 2</strong> — it determines where flow activation and secure config injection live.</p>
 
   <div class="waves-container">
 
@@ -1556,8 +1725,8 @@
         </div>
         <div class="wave-item">
           <span class="wave-idea-num">#2</span>
-          <span class="wave-idea-title">Step state declaration drives deploy</span>
-          <span class="wave-idea-note">Conf 88% · Low — add <code>IsDisabled</code> first</span>
+          <span class="wave-idea-title">Per-env component state in configure file</span>
+          <span class="wave-idea-note">Conf 88% · Low — builds on #7 configure file format</span>
         </div>
         <div class="wave-item">
           <span class="wave-idea-num">#1 + #6</span>
@@ -1576,19 +1745,24 @@
     <div class="wave-card">
       <div class="wave-header">
         <span class="wave-num" style="background:rgba(245,158,66,.15);color:var(--amber)">Wave 2</span>
-        <h3>Commission + Advanced Config</h3>
-        <span class="wave-cx">3 ideas · Medium complexity · architecture decision first</span>
+        <h3>Configure Command + Advanced Config</h3>
+        <span class="wave-cx">4 ideas · Low–Medium complexity · architecture decision first</span>
       </div>
       <div class="wave-body">
         <div class="wave-item">
           <span class="wave-idea-num">#7</span>
-          <span class="wave-idea-title">Commission as separate command</span>
-          <span class="wave-idea-note">Conf 80% · Med — decide first</span>
+          <span class="wave-idea-title">flowline configure — post-deploy reconciliation command</span>
+          <span class="wave-idea-note">Conf 82% · Med — decide file format and command split first</span>
         </div>
         <div class="wave-item">
           <span class="wave-idea-num">#1*</span>
-          <span class="wave-idea-title">Move workflow restoration into commission (if #7 adopted)</span>
+          <span class="wave-idea-title">Move workflow restoration into configure (if #7 adopted)</span>
           <span class="wave-idea-note">Small refactor</span>
+        </div>
+        <div class="wave-item">
+          <span class="wave-idea-num">#9</span>
+          <span class="wave-idea-title">PAC solution settings file at import</span>
+          <span class="wave-idea-note">Conf 79% · Low — wire up --settings-file in PAC import call</span>
         </div>
         <div class="wave-item">
           <span class="wave-idea-num">#4</span>
@@ -1600,7 +1774,7 @@
           <span class="wave-idea-title">Ordered flow activation</span>
           <span class="wave-idea-note">Conf 75% · Med — clientdata spike first</span>
         </div>
-        <p class="wave-reason">Decide #7 (commission architecture) first — it determines whether the wave 2 services go inside <code>deploy</code>'s post-import hooks or into a dedicated <code>commission</code> command. Once #8 (toggle) exists, commission needs the <code>--except</code> flag to avoid overriding intentional feature-flag state on re-deploy. For #4, apply the env vars vs secure config analysis above before committing. For #5, do a <em>feasibility spike</em> — open a real solution ZIP, inspect the <code>clientdata</code> JSON in <code>workflow</code> records, and confirm the dependency graph is reliably parseable before building the full service.</p>
+        <p class="wave-reason">Decide #7 (configure architecture) first — it determines the configure file format and where flow activation and secure config injection live. #9 (PAC settings file passthrough) is Low complexity and can be done alongside #7 since both deal with the import call. Once #8 (toggle) exists, configure needs the <code>--except</code> flag to avoid overriding intentional toggle state on re-run. For #4, apply the env vars vs secure config analysis above before committing. For #5, do a <em>feasibility spike</em> — open a real solution ZIP, inspect <code>clientdata</code> JSON in <code>workflow</code> records, confirm the dependency graph is reliably parseable before building the full service.</p>
         <div class="wave-gate"><strong>Gate on #4:</strong> only implement if at least one plugin step uses secrets that cannot be made visible to all environment admins.</div>
         <div class="wave-gate" style="margin-top:.35rem"><strong>Gate on #5:</strong> do the clientdata parsing spike first (½ day); result determines whether declared config or inferred dependency order is the right implementation path.</div>
       </div>
@@ -1624,7 +1798,7 @@
       <tr>
         <td>Dark-launch deploy</td>
         <td>Plugin step</td>
-        <td>Captured by Idea 7 (commission); deploying disabled-by-default is too disruptive as a default behavior</td>
+        <td>Captured by Idea 7 (configure); deploying disabled-by-default is too disruptive as a default behavior</td>
       </tr>
       <tr>
         <td>Secure config via env-var expansion</td>
@@ -1664,22 +1838,22 @@
       <tr>
         <td>Drift detection / flowline status</td>
         <td>Integration</td>
-        <td>Valuable but secondary: requires deploy state manifest as prerequisite; build after commission and manifest are in place</td>
+        <td>Valuable but secondary: requires deploy state manifest as prerequisite; build after configure and manifest are in place</td>
       </tr>
       <tr>
         <td>Deploy state manifest</td>
         <td>Integration</td>
-        <td>Good follow-on investment: enables idempotency and audit trail, but depends on commission capabilities existing first</td>
+        <td>Good follow-on investment: enables idempotency and audit trail, but depends on configure capabilities existing first</td>
       </tr>
       <tr>
         <td>Dry-run state diff</td>
         <td>Integration</td>
-        <td>Natural once config infrastructure exists; <code>RunMode.DryRun</code> already established the pattern — track as follow-on to commission</td>
+        <td>Natural once config infrastructure exists; <code>RunMode.DryRun</code> already established the pattern — track as follow-on to configure</td>
       </tr>
       <tr>
         <td>Migration mode flag</td>
         <td>Integration</td>
-        <td>Niche; composable from step enable/disable (Idea 2) and commission (Idea 7); the "user signal" step makes it awkward in automated pipelines</td>
+        <td>Niche; composable from step enable/disable (Idea 2) and configure (Idea 7); the "user signal" step makes it awkward in automated pipelines</td>
       </tr>
       <tr>
         <td>Deploy as diff (Terraform model)</td>
@@ -1692,7 +1866,7 @@
 
 <!-- ── Footer ── -->
 <footer class="composition-signal">
-  Composed 2026-07-01 by <code>ce-ideate</code> from focus hint: post-deployment environment configuration for Dataverse solutions · 40 raw candidates across 5 ideation frames · 7 survivors after adversarial critique
+  Composed 2026-07-01 by <code>ce-ideate</code> from focus hint: post-deployment environment configuration for Dataverse solutions · 40 raw candidates across 5 ideation frames · 9 survivors after adversarial critique
 </footer>
 
 </div>
