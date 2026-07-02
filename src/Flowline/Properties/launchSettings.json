@@ -39,6 +39,11 @@
       "commandName": "Project",
       "commandLineArgs": "generate --verbose --generator pac",
       "workingDirectory": "E:/Code/TryOut/MyFlowTest"
+    },
+    "deploy": {
+      "commandName": "Project",
+      "commandLineArgs": "deploy prod --verbose",
+      "workingDirectory": "E:/Code/TryOut/MyFlowTest"
     }
   }
 }

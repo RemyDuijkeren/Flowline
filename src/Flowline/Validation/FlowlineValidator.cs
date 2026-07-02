@@ -112,12 +112,13 @@ public sealed class FlowlineValidator
         string solutionName,
         bool includeManaged,
         FlowlineSettings settings,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool bypassCache = false)
     {
         var key = SolutionKey(environmentUrl, solutionName, includeManaged);
         var cache = _store.Load();
 
-        if (!settings.NoCache &&
+        if (!bypassCache && !settings.NoCache &&
             cache.Solutions.TryGetValue(key, out var cached) &&
             IsFresh(cached.CheckedAtUtc, SolutionTtl))
         {

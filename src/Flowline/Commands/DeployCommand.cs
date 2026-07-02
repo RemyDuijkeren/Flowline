@@ -114,7 +114,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         var existingSolution = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{sln.Name}[/]...",
-            _ => FlowlineValidator.Default.GetSolutionInfoAsync(targetUrl, sln.Name, includeManaged: true, settings, ct));
+            _ => FlowlineValidator.Default.GetSolutionInfoAsync(targetUrl, sln.Name, includeManaged: true, settings, ct, bypassCache: true));
 
         if (existingSolution != null)
         {
@@ -151,7 +151,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         var predecessorInfo = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{sln.Name}[/] in {dtapDecision.PredecessorLabel}...",
-            _ => FlowlineValidator.Default.GetSolutionInfoAsync(dtapDecision.PredecessorUrl!, sln.Name, includeManaged: true, settings, ct));
+            _ => FlowlineValidator.Default.GetSolutionInfoAsync(dtapDecision.PredecessorUrl!, sln.Name, includeManaged: true, settings, ct, bypassCache: true));
 
         if (predecessorInfo == null)
             throw new FlowlineException(ExitCode.ValidationFailed,
@@ -162,7 +162,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             || !Version.TryParse(localVersion, out var localVer)
             || predVer < localVer)
             throw new FlowlineException(ExitCode.ValidationFailed,
-                $"'{sln.Name}' in {dtapDecision.PredecessorLabel} is v{predecessorInfo.VersionNumber ?? "unknown"} — promote v{localVersion} there first, or use --skip-dtap-check.");
+                $"'{sln.Name}' in {dtapDecision.PredecessorLabel} environment is v{predecessorInfo.VersionNumber ?? "unknown"} — promote v{localVersion} there first, or use --skip-dtap-check.");
     }
 
     private void ValidateLocalState(string slnFolder, Settings settings, CancellationToken ct)

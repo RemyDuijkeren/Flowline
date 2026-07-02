@@ -143,6 +143,29 @@ public class ValidationCacheTests : IDisposable
     }
 
     [Fact]
+    public async Task GetSolutionInfoAsync_BypassCache_IgnoresFreshCacheEntry()
+    {
+        var solutionCalls = 0;
+        var validator = CreateValidator(new ValidationProbes
+        {
+            GetSolutionsAsync = (_, _, _) =>
+            {
+                solutionCalls++;
+                return Task.FromResult(new List<SolutionInfo>
+                {
+                    new() { SolutionUniqueName = "ContosoCore", IsManaged = false, VersionNumber = $"1.0.{solutionCalls}.0" }
+                });
+            }
+        });
+
+        await validator.GetSolutionInfoAsync("https://contoso.crm4.dynamics.com/", "ContosoCore", false, new FlowlineSettings(), CancellationToken.None);
+        var result = await validator.GetSolutionInfoAsync("https://contoso.crm4.dynamics.com/", "ContosoCore", false, new FlowlineSettings(), CancellationToken.None, bypassCache: true);
+
+        solutionCalls.Should().Be(2);
+        result!.VersionNumber.Should().Be("1.0.2.0");
+    }
+
+    [Fact]
     public void ShouldShowWelcomeScreen_ReturnsTrueWhenNoCachedEntry()
     {
         var validator = CreateValidator(new ValidationProbes());
