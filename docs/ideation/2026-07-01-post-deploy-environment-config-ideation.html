@@ -1490,7 +1490,10 @@
           <span class="cmd-comment"># Set an env var value (feature gate via env var)</span><br>
           <span class="cmd-cmd">flowline set envvar</span> <span class="cmd-env">cr123_EnableNewCheckout</span> <span class="cmd-env">true</span> <span class="cmd-flag">--env</span> <span class="cmd-env">prod</span><br><br>
           <span class="cmd-comment"># Preview what would change (no write)</span><br>
-          <span class="cmd-cmd">flowline toggle flow</span> <span class="cmd-env">"New Checkout Flow"</span> <span class="cmd-flag">--on --dry-run</span> <span class="cmd-flag">--env</span> <span class="cmd-env">prod</span>
+          <span class="cmd-cmd">flowline toggle flow</span> <span class="cmd-env">"New Checkout Flow"</span> <span class="cmd-flag">--on --dry-run</span> <span class="cmd-flag">--env</span> <span class="cmd-env">prod</span><br><br>
+          <span class="cmd-comment"># Interactive: browse + pick from live environment (no name needed)</span><br>
+          <span class="cmd-cmd">flowline toggle</span> <span class="cmd-flag">--pick</span> <span class="cmd-flag">--env</span> <span class="cmd-env">prod</span><br>
+          <span class="cmd-cmd">flowline toggle flow</span> <span class="cmd-flag">--pick</span> <span class="cmd-flag">--env</span> <span class="cmd-env">uat</span>
         </div>
       </div>
 
@@ -1512,18 +1515,58 @@
       </div>
 
       <div class="field-block">
+        <p class="field-label">flowline configure integration</p>
+        <p class="field-value">
+          <code>flowline toggle</code> is the <em>imperative</em> surface — do this now. The same intent can be expressed <em>declaratively</em> in the configure file (Idea #7) via an <code>enabled</code> key per component:
+        </p>
+        <div class="cmd-spec" style="margin:.6rem 0">
+          <span class="cmd-comment"># configure.prod.json — declare component state alongside other settings</span><br>
+          <span class="cmd-cmd">"Flows"</span>: [<br>
+          &nbsp;&nbsp;{ <span class="cmd-cmd">"Name"</span>: <span class="cmd-env">"New Checkout Flow"</span>, <span class="cmd-cmd">"Enabled"</span>: <span class="cmd-flag">false</span> },&nbsp;&nbsp;<span class="cmd-comment">// ships dark</span><br>
+          &nbsp;&nbsp;{ <span class="cmd-cmd">"Name"</span>: <span class="cmd-env">"Legacy Order Flow"</span>,  <span class="cmd-cmd">"Enabled"</span>: <span class="cmd-flag">true</span> }<br>
+          ],<br>
+          <span class="cmd-cmd">"PluginSteps"</span>: [<br>
+          &nbsp;&nbsp;{ <span class="cmd-cmd">"Name"</span>: <span class="cmd-env">"MyNs.BetaPlugin: Create of account"</span>, <span class="cmd-cmd">"Enabled"</span>: <span class="cmd-flag">false</span> }<br>
+          ]
+        </div>
+        <p class="field-value">
+          <code>flowline configure prod</code> reads these and applies the SDK state call — the same primitive <code>flowline toggle</code> would call. Two surfaces, one action: the configure file is git-tracked per-env declarative state; <code>flowline toggle</code> is the ad-hoc one-liner for when you don't want to edit a file. They're fully interchangeable — <code>flowline configure</code> is just a batch of toggles sourced from a file. Commit the file when the state should be reproducible; use <code>toggle</code> when it's exploratory or urgent (e.g., production incident rollback).
+        </p>
+      </div>
+
+      <div class="field-block">
+        <p class="field-label">Interactive picker mode</p>
+        <p class="field-value">
+          Knowing the exact component name is a barrier — especially for env vars (schema names) and plugin steps (fully qualified names). An interactive mode queries the live environment and presents a selection list so the user browses and picks without needing to look anything up.
+        </p>
+        <div class="cmd-spec" style="margin:.6rem 0">
+          <span class="cmd-comment"># Interactive: browse all components in the environment, toggle any</span><br>
+          <span class="cmd-cmd">flowline toggle</span> <span class="cmd-flag">--pick</span> <span class="cmd-flag">--env</span> <span class="cmd-env">prod</span><br><br>
+          <span class="cmd-comment"># Narrow to a component type before picking</span><br>
+          <span class="cmd-cmd">flowline toggle flow</span> <span class="cmd-flag">--pick</span> <span class="cmd-flag">--env</span> <span class="cmd-env">uat</span><br>
+          <span class="cmd-cmd">flowline toggle step</span> <span class="cmd-flag">--pick</span> <span class="cmd-flag">--env</span> <span class="cmd-env">prod</span>
+        </div>
+        <p class="field-value">
+          The picker queries Dataverse, groups results by type (Flows, Workflows, Plugin Steps, Env Vars), and shows current state (Active / Draft / value) alongside each name. The user multi-selects, chooses <code>--on</code> or <code>--off</code>, confirms, and Flowline applies the changes. Spectre.Console's <code>MultiSelectionPrompt</code> makes this a ~30-line implementation — Flowline already depends on Spectre.Console for all CLI rendering. After picking, Flowline can optionally emit the equivalent <code>toggle</code> commands so the session is reproducible (copy-paste into a script or into the configure file).
+        </p>
+        <p class="field-value" style="margin-top:.5rem">
+          <strong style="color:var(--text)">Limitation:</strong> requires a live connection to the target environment. Cannot run offline or in a headless CI pipeline without <code>--env</code> resolving to a reachable environment. For CI use, the configure file (declarative) is the right surface — interactive picker is a local developer tool.
+        </p>
+      </div>
+
+      <div class="field-block">
         <p class="field-label">Basis</p>
         <p class="field-value">
           <span class="basis-tag basis-direct">direct:</span>
-          All SDK primitives are already used or established in the codebase — <code>SetStateRequest</code> in <code>OrphanCleanupService.cs</code>, <code>workflow.statecode</code> PATCH planned for Idea #1. Name resolution requires one query per component type; step names are already known to Flowline from the assembly registration pipeline.
+          All SDK primitives are already used or established in the codebase — <code>SetStateRequest</code> in <code>OrphanCleanupService.cs</code>, <code>workflow.statecode</code> PATCH planned for Idea #1. Name resolution requires one query per component type; step names are already known to Flowline from the assembly registration pipeline. Spectre.Console <code>MultiSelectionPrompt</code> is available in the existing Spectre.Console dependency.
           <span class="basis-tag basis-reasoned">reasoned:</span>
-          The feature flag pattern is standard in software but has no Dataverse CLI equivalent. The community workaround is either direct Dataverse API scripts or navigating the maker portal per-component. A named toggle command covers the full activation lifecycle without a re-deploy.
+          The feature flag pattern is standard in software but has no Dataverse CLI equivalent. The community workaround is either direct Dataverse API scripts or navigating the maker portal per-component. A named toggle command covers the full activation lifecycle without a re-deploy. The interactive picker removes the lookup friction that makes ad-hoc toggles impractical today.
         </p>
       </div>
 
       <div class="field-block">
         <p class="field-label">Downsides</p>
-        <p class="field-value">Name resolution can fail or be ambiguous — two flows with similar names, a step name that changed since last push. Should require exact match and fail clearly rather than fuzzy-matching. The toggle command operates outside Flowline's normal "source of truth" model — it changes runtime state not reflected in any source file, which is intentional but means drift detection (if ever built) needs to account for it.</p>
+        <p class="field-value">Name resolution can fail or be ambiguous — two flows with similar names, a step name that changed since last push. Non-interactive mode should require exact match and fail clearly rather than fuzzy-matching. The toggle command operates outside Flowline's normal "source of truth" model — it changes runtime state not reflected in any source file, which is intentional but means drift detection (if ever built) needs to account for it. Interactive picker has latency (Dataverse query per component type) — fine for developer use, not CI.</p>
       </div>
 
       <div class="meta-dl">
