@@ -1641,12 +1641,13 @@
         <li><span class="mark-pro">✓</span> Solution-managed — exported and versioned with the solution</li>
         <li><span class="mark-pro">✓</span> PAC handles value configuration at import time (<code>--settings-file</code>)</li>
         <li><span class="mark-pro">✓</span> Accessible in flows natively — no SDK query</li>
-        <li><span class="mark-pro">✓</span> Secret type env vars can reference Azure Key Vault — platform fetches the value transparently</li>
+        <li><span class="mark-pro">✓</span> Secret type env vars can reference Azure Key Vault — platform fetches value transparently (flows &amp; connectors only — not available in plugins)</li>
         <li><span class="mark-pro">✓</span> One mental model for the whole team (flows + plugins + Power Pages all read the same table)</li>
         <li><span class="mark-con">✗</span> Values visible to anyone with read on <code>environmentvariablevalue</code> — standard env vars are not a secret store</li>
         <li><span class="mark-con">✗</span> Plugin retrieval requires a manual SDK query against <code>environmentvariablevalue</code> — no platform helper; you write it yourself (typically in a base class)</li>
         <li><span class="mark-con">✗</span> Extra synchronous query inside plugin execution — adds latency relative to constructor injection</li>
-        <li><span class="mark-con">✗</span> Key Vault-backed env vars: the Azure managed identity or app registration must be configured in the environment; adds operational overhead</li>
+        <li><span class="mark-con">✗</span> Key Vault-backed secret env vars do NOT work in plugins — Microsoft explicitly limits them to Power Automate flows, Copilot Studio, and custom connectors; a plugin query against <code>environmentvariablevalue</code> returns no value for KV-backed secrets</li>
+        <li><span class="mark-con">✗</span> Key Vault-backed env vars require Azure managed identity configuration — non-trivial operational overhead</li>
       </ul>
     </div>
     <div class="comparison-card secconfig">
@@ -1667,8 +1668,9 @@
 
   <div class="discussion-subsection">
     <h3 style="font-size:1rem;font-weight:600;color:var(--text);margin:1.5rem 0 .5rem">Can env vars connect to Azure Key Vault?</h3>
-    <p class="discussion-prose">Yes — Dataverse has a <strong>Secret type</strong> for environment variables (GA since 2023). A Secret env var stores a reference to an Azure Key Vault secret rather than a value directly; the platform retrieves the current secret version at runtime, transparently to the consumer. Flows and canvas apps see the resolved value automatically. Plugins must still query <code>environmentvariablevalue</code> and will receive the resolved value if the managed identity is configured correctly.</p>
-    <p class="discussion-prose">Caveat: Key Vault-backed env vars require an Azure managed identity or app registration in the Dataverse environment, plus Key Vault access policy configuration. This is non-trivial to set up and adds operational overhead that many teams avoid. In practice it is used by larger enterprise teams with existing AKV infrastructure. For teams without AKV, secure config is simpler.</p>
+    <p class="discussion-prose">Yes — Dataverse has a <strong>Secret type</strong> for environment variables (GA since 2023). A Secret env var stores a reference to an Azure Key Vault secret rather than a value directly; the platform retrieves the current secret version at runtime. <strong>Critical limitation: KV-backed secret env vars are explicitly limited to Power Automate flows, Copilot Studio agents, and custom connectors.</strong> Plugins cannot retrieve the secret value — Microsoft documentation states the secrets "aren't available for use in other customizations or generally via the API." A plugin querying <code>environmentvariablevalue</code> for a KV-backed secret receives no value.</p>
+    <p class="discussion-prose">Practical implication for plugin developers: Azure Key Vault is not an option for plugin secrets, regardless of infrastructure investment. Secure config remains the only mechanism for delivering encrypted, admin-controlled credentials directly to a plugin constructor — without a runtime query and without an SDK workaround. Key Vault-backed env vars solve the same problem in flows and connectors, but not in plugins.</p>
+    <p class="discussion-prose">Operational note: KV-backed env vars require an Azure managed identity or app registration in the Dataverse environment, plus Key Vault access policy configuration. Used by larger enterprise teams with existing AKV infrastructure. For teams without AKV, secure config is simpler for the plugin credential use case.</p>
   </div>
 
   <div class="discussion-subsection">
