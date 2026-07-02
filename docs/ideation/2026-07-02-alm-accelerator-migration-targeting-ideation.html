@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ideation: ALM Accelerator Migration &amp; Targeting — Flowline CLI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#ffffff;--surface:#f8fafc;--border:#e2e8f0;
+  --text:#0f172a;--muted:#64748b;
+  --accent:#2563eb;--accent-soft:#eff6ff;--accent-text:#1d4ed8;
+  --ax1-bg:#f3e8ff;--ax1-text:#7c3aed;
+  --ax2-bg:#dbeafe;--ax2-text:#1d4ed8;
+  --ax3-bg:#ccfbf1;--ax3-text:#0f766e;
+  --ax4-bg:#ffedd5;--ax4-text:#c2410c;
+  --ax5-bg:#dcfce7;--ax5-text:#15803d;
+}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:1.6;color:var(--text);background:var(--bg)}
+.page{max-width:920px;margin-inline:auto;padding:48px 32px 80px}
+
+/* Header */
+.doc-header{margin-bottom:36px;border-bottom:2px solid var(--border);padding-bottom:28px}
+.doc-eyebrow{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.doc-title{font-size:26px;font-weight:700;line-height:1.25;color:var(--text);margin-bottom:14px}
+.doc-meta{display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.doc-meta span strong{color:var(--text);font-weight:500}
+
+/* Stats strip */
+.stats-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:48px}
+.stat{background:var(--bg);padding:18px 16px;text-align:center}
+.stat-number{font-size:30px;font-weight:700;color:var(--accent);line-height:1}
+.stat-label{font-size:11px;font-weight:600;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.05em}
+
+/* Section */
+section{margin-bottom:52px}
+.section-eyebrow{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+h2{font-size:19px;font-weight:700;color:var(--text);margin-bottom:18px}
+
+/* Grounding grid */
+.grounding-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.gc{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:18px}
+.gc h3{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:8px}
+.gc p,.gc ul{font-size:13.5px;color:var(--text);line-height:1.55}
+.gc p+p{margin-top:7px}
+.gc ul{padding-left:16px}
+.gc li{margin-bottom:3px}
+
+/* Axis list */
+.axis-list{display:flex;flex-direction:column;gap:10px}
+.axis-item{display:flex;align-items:baseline;gap:10px}
+.axis-badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:100px;white-space:nowrap;letter-spacing:.03em;flex-shrink:0}
+.ax1{background:var(--ax1-bg);color:var(--ax1-text)}
+.ax2{background:var(--ax2-bg);color:var(--ax2-text)}
+.ax3{background:var(--ax3-bg);color:var(--ax3-text)}
+.ax4{background:var(--ax4-bg);color:var(--ax4-text)}
+.ax5{background:var(--ax5-bg);color:var(--ax5-text)}
+.axis-desc{font-size:13.5px;color:var(--text)}
+.axis-desc strong{font-weight:600}
+
+/* Jump list */
+.jump-list{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 18px;margin-bottom:28px}
+.jump-list h3{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px}
+.jump-list ol{padding-left:18px}
+.jump-list li{margin-bottom:5px;font-size:13.5px;display:flex;align-items:center;gap:8px}
+.jump-list li::marker{color:var(--muted)}
+.jump-list a{color:var(--accent-text);text-decoration:none}
+.jump-list a:hover{text-decoration:underline}
+
+/* Idea card */
+.idea-card{border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:24px}
+.idea-header{padding:18px 22px 14px;border-bottom:1px solid var(--border)}
+.idea-rank{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin-bottom:5px}
+.idea-title{font-size:17px;font-weight:700;color:var(--text);margin-bottom:10px}
+.idea-title code{font-size:.88em}
+.idea-chips{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.chip{font-size:11.5px;font-weight:600;padding:3px 10px;border-radius:100px;border:1px solid transparent}
+.chip-high{background:#f0fdf4;color:#16a34a;border-color:#bbf7d0}
+.chip-med{background:#fffbeb;color:#d97706;border-color:#fde68a}
+.chip-cx-low{background:#f0fdf4;color:#166534;border-color:#bbf7d0}
+.chip-cx-lomed{background:#fffbeb;color:#92400e;border-color:#fde68a}
+.chip-cx-med{background:#fffbeb;color:#92400e;border-color:#fde68a}
+
+.idea-body{padding:22px}
+.idea-field{margin-bottom:16px}
+.idea-field:last-child{margin-bottom:0}
+.idea-field dt{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:4px}
+.idea-field dd{font-size:14px;line-height:1.65;max-width:74ch}
+
+code{font-family:'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace;font-size:.875em;background:#f1f5f9;color:#0f172a;padding:1px 5px;border-radius:4px}
+
+/* Diagram */
+.diagram{margin:16px 0;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:18px;overflow-x:auto;display:flex;justify-content:center}
+.diagram svg{display:block}
+
+/* Rejection table */
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:9px 13px;border-bottom:2px solid var(--border)}
+td{padding:10px 13px;border-bottom:1px solid var(--border);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:nth-child(even) td{background:var(--surface)}
+td:first-child{font-weight:600;color:var(--muted);width:36px}
+
+/* Footer */
+footer.composition-signal{margin-top:60px;padding-top:20px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);text-align:center}
+
+@media(max-width:640px){
+  .grounding-grid{grid-template-columns:1fr}
+  .stats-strip{grid-template-columns:1fr 1fr}
+  .page{padding:28px 16px 56px}
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ── Header ──────────────────────────────────────────────────────────── -->
+<header class="doc-header">
+  <p class="doc-eyebrow">Flowline CLI · Ideation</p>
+  <h1 class="doc-title">ALM Accelerator Migration &amp; Targeting</h1>
+  <div class="doc-meta">
+    <span><strong>Date:</strong> 2026-07-02</span>
+    <span><strong>Topic:</strong> alm-accelerator-migration-targeting</span>
+    <span><strong>Mode:</strong> repo-grounded</span>
+    <span><strong>Focus:</strong> ALM Accelerator deprecated — identify adoptable features; target migrants</span>
+  </div>
+</header>
+
+<!-- ── Stats strip ─────────────────────────────────────────────────────── -->
+<div class="stats-strip">
+  <div class="stat"><div class="stat-number">22</div><div class="stat-label">Candidates</div></div>
+  <div class="stat"><div class="stat-number">5</div><div class="stat-label">Frames</div></div>
+  <div class="stat"><div class="stat-number">7</div><div class="stat-label">Survivors</div></div>
+  <div class="stat"><div class="stat-number">5</div><div class="stat-label">Axes</div></div>
+</div>
+
+<!-- ── Grounding Context ────────────────────────────────────────────────── -->
+<section id="grounding-context">
+  <p class="section-eyebrow">Grounding</p>
+  <h2>Codebase Context</h2>
+  <div class="grounding-grid">
+
+    <div class="gc">
+      <h3>Flowline CLI (current state)</h3>
+      <p>C# .NET 10 CLI, v0.8.0. Three projects: <code>Flowline</code>, <code>Flowline.Core</code>, <code>Flowline.Attributes</code>. Commands: <code>sync</code>, <code>deploy</code>, <code>configure</code> (planned). DTAP gates at <code>DeployCommand.cs:82–97</code> with non-bypassable DevBlock. Two-phase orphan cleanup via <code>OrphanCleanupService</code> at <code>DeployCommand.cs:61,67</code>. <code>GitUtils.CreateTagAsync</code> exists. <code>SolutionChangeSummary.cs:334–338</code> parses env var defs from XML; <code>DataverseContextGenerator.cs:565–596</code> reads connection reference defs. STRATEGY.md explicitly excludes the ISV/source-as-truth model.</p>
+    </div>
+
+    <div class="gc">
+      <h3>ALM Accelerator (deprecated 2025)</h3>
+      <p>Canvas admin app + Azure Pipelines YAML. Key features:</p>
+      <ul>
+        <li>Per-env <strong>deployment settings JSON</strong> (conn refs, env vars, ownership, Teams webhooks)</li>
+        <li>Solution export → ADO branch commit workflow</li>
+        <li><strong>Solution Checker</strong> as PR build gate</li>
+        <li>Multi-env promotion with ADO approval gates</li>
+        <li>Maker canvas app persona + admin persona</li>
+      </ul>
+      <p>Required Power Apps per-user license + Azure DevOps Basic.</p>
+    </div>
+
+    <div class="gc">
+      <h3>Official Replacements &amp; Gaps</h3>
+      <p><strong>Pipelines for Power Platform</strong> — Microsoft's stated successor. Low-code GUI pipeline. Cannot pack or deploy plugins or web resources. No code-first ALM support.</p>
+      <p><strong>Dataverse Git Integration</strong> — direct Dataverse→Git sync. Competing model (source-as-truth), not PROD-as-truth.</p>
+      <p><strong>Gap:</strong> No official tool does code-first ALM (plugins + web resources + low-code components, PROD-as-truth). Flowline's core differentiator is unchallenged by the official replacements.</p>
+    </div>
+
+    <div class="gc">
+      <h3>Leverage Points in the Codebase</h3>
+      <ul>
+        <li><code>ValidateDtapGateAsync</code> at <code>DeployCommand.cs:132</code> — hook for tag-based approval gate</li>
+        <li><code>PackSolutionAsync</code> at line 210 — zip artifact <code>pac solution check</code> consumes</li>
+        <li><code>OrphanCleanupService.UpdateAsync</code> — proven pattern for post-deploy Dataverse record updates</li>
+        <li><code>ExitCodes.ValidationFailed=15</code> — stable CI signal for solution checker</li>
+        <li><code>docs/others/spkl-comparison.md</code> — 471-line migration guide template exists</li>
+        <li><code>BeforeReleaseV1.md:20</code> — "env comparison drives word of mouth"</li>
+        <li><code>BeforeReleaseV1.md:25–27</code> — "CI/CD templates: critical"</li>
+      </ul>
+    </div>
+
+  </div>
+</section>
+
+<!-- ── Topic Axes ───────────────────────────────────────────────────────── -->
+<section id="topic-axes">
+  <p class="section-eyebrow">Decomposition</p>
+  <h2>Topic Axes</h2>
+  <div class="axis-list">
+    <div class="axis-item">
+      <span class="axis-badge ax1">Axis 1</span>
+      <span class="axis-desc"><strong>DTAP Gate Enforcement &amp; Approval Workflows</strong> — how Flowline controls and validates promotion between environments</span>
+    </div>
+    <div class="axis-item">
+      <span class="axis-badge ax2">Axis 2</span>
+      <span class="axis-desc"><strong>Per-Environment Configuration &amp; Deployment Settings</strong> — managing connection references, env vars, and ownership per target environment</span>
+    </div>
+    <div class="axis-item">
+      <span class="axis-badge ax3">Axis 3</span>
+      <span class="axis-desc"><strong>Post-Deploy Component Lifecycle Management</strong> — actions on components after deployment: activation, ownership, cleanup</span>
+    </div>
+    <div class="axis-item">
+      <span class="axis-badge ax4">Axis 4</span>
+      <span class="axis-desc"><strong>CI/CD Integration &amp; Quality Gates</strong> — how Flowline participates in automated pipelines and validates solution quality</span>
+    </div>
+    <div class="axis-item">
+      <span class="axis-badge ax5">Axis 5</span>
+      <span class="axis-desc"><strong>ALM Accelerator Migration &amp; Targeting</strong> — positioning Flowline as the natural destination for ALM Accelerator migrants</span>
+    </div>
+  </div>
+</section>
+
+<!-- ── Ranked Ideas ─────────────────────────────────────────────────────── -->
+<section id="ranked-ideas">
+  <p class="section-eyebrow">Survivors</p>
+  <h2>Ranked Ideas</h2>
+
+  <nav class="jump-list" aria-label="Ideas in this document">
+    <h3>Ideas in this document</h3>
+    <ol>
+      <li><a href="#idea-1">Per-env Deployment Settings File</a> <span class="axis-badge ax2">Axis 2</span></li>
+      <li><a href="#idea-2">ALM Accelerator Migration Guide + Comparison Doc</a> <span class="axis-badge ax5">Axis 5</span></li>
+      <li><a href="#idea-3"><code>flowline status --compare &lt;env1&gt; &lt;env2&gt;</code></a> <span class="axis-badge ax4">Axis 4</span></li>
+      <li><a href="#idea-4"><code>flowline ci init --github</code> / <code>--ado</code></a> <span class="axis-badge ax5">Axis 5</span></li>
+      <li><a href="#idea-5">Solution Checker Gate (<code>flowline check</code>)</a> <span class="axis-badge ax4">Axis 4</span></li>
+      <li><a href="#idea-6">Git Tag as Approval Gate for Prod Deploy</a> <span class="axis-badge ax1">Axis 1</span></li>
+      <li><a href="#idea-7">Post-deploy Flow Ownership Assignment</a> <span class="axis-badge ax3">Axis 3</span></li>
+    </ol>
+  </nav>
+
+  <!-- ── Idea 1 ── -->
+  <article class="idea-card" id="idea-1">
+    <div class="idea-header">
+      <p class="idea-rank">1 of 7</p>
+      <h3 class="idea-title">Per-env Deployment Settings File</h3>
+      <div class="idea-chips">
+        <span class="axis-badge ax2">Axis 2 — Per-Env Configuration</span>
+        <span class="chip chip-high">Conf 95%</span>
+        <span class="chip chip-cx-low">Complexity Low</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field">
+          <dt>Description</dt>
+          <dd>Commit <code>flowline.env.{env}.json</code> alongside the solution (e.g. <code>flowline.env.prod.json</code>, <code>flowline.env.test.json</code>). When <code>flowline deploy {env}</code> or <code>flowline configure</code> runs, the matching file is auto-loaded and drives: connection reference resolution (name → connection ID in that env), environment variable values, and owner assignments per environment. No more manual post-deploy configuration in the target environment; unattended CI deploys become possible.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Axis</dt>
+          <dd><span class="axis-badge ax2">Axis 2 — Per-Env Configuration</span></dd>
+        </div>
+        <div class="idea-field">
+          <dt>Basis</dt>
+          <dd><strong>direct:</strong> ALM Accelerator's most-cited feature was its per-env deployment settings JSON — committed to source, loaded by the pipeline, resolving conn refs and env vars per target. <code>SolutionChangeSummary.cs:334–338</code> already parses env var definitions from solution XML; <code>DataverseContextGenerator.cs:565–596</code> reads connection reference definitions — parsing infrastructure is present. The <code>2026-07-01-post-deploy-environment-config-ideation.html</code> confirms this surface is under active design.</dd>
+        </div>
+
+        <!-- SVG: file tree → deploy commands -->
+        <div class="diagram">
+          <svg viewBox="0 0 520 170" width="520" height="170" xmlns="http://www.w3.org/2000/svg" aria-label="Three per-env settings files committed alongside the solution, each auto-loaded by the matching deploy command">
+            <defs>
+              <marker id="a1" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+                <path d="M0,0 L7,2.5 L0,5 Z" fill="#94a3b8"/>
+              </marker>
+            </defs>
+            <!-- file boxes (left) -->
+            <rect x="10" y="20" width="195" height="32" rx="5" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+            <text x="20" y="40" font-family="JetBrains Mono,Consolas,monospace" font-size="12" fill="#0f172a">flowline.env.dev.json</text>
+
+            <rect x="10" y="68" width="195" height="32" rx="5" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+            <text x="20" y="88" font-family="JetBrains Mono,Consolas,monospace" font-size="12" fill="#0f172a">flowline.env.test.json</text>
+
+            <rect x="10" y="116" width="195" height="32" rx="5" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+            <text x="20" y="136" font-family="JetBrains Mono,Consolas,monospace" font-size="12" fill="#0f172a">flowline.env.prod.json</text>
+
+            <!-- arrows (horizontal, no text crossed) -->
+            <line x1="205" y1="36" x2="265" y2="36" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a1)"/>
+            <line x1="205" y1="84" x2="265" y2="84" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a1)"/>
+            <line x1="205" y1="132" x2="265" y2="132" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a1)"/>
+
+            <!-- command boxes (right) -->
+            <rect x="268" y="20" width="175" height="32" rx="5" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+            <text x="355" y="40" text-anchor="middle" font-family="JetBrains Mono,Consolas,monospace" font-size="12" fill="#1d4ed8">flowline deploy dev</text>
+
+            <rect x="268" y="68" width="175" height="32" rx="5" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+            <text x="355" y="88" text-anchor="middle" font-family="JetBrains Mono,Consolas,monospace" font-size="12" fill="#15803d">flowline deploy test</text>
+
+            <rect x="268" y="116" width="175" height="32" rx="5" fill="#fef3c7" stroke="#fcd34d" stroke-width="1.5"/>
+            <text x="355" y="136" text-anchor="middle" font-family="JetBrains Mono,Consolas,monospace" font-size="12" fill="#92400e">flowline deploy prod</text>
+
+            <!-- caption -->
+            <text x="260" y="162" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#94a3b8">each command auto-loads the matching file — conn refs · env vars · owners resolved per target</text>
+          </svg>
+        </div>
+
+        <div class="idea-field">
+          <dt>Rationale</dt>
+          <dd>ALM Accelerator migrants will immediately ask "where does my deployment settings file go?" — this was the feature that made ALM Accelerator worthwhile for multi-environment teams. Without it, every Flowline deploy to Test/UAT/Prod requires a developer to manually configure connection references and env vars in the target, breaking unattended CI. The parsing infrastructure already exists; this is the highest value-per-effort item for migration targeting.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Downsides</dt>
+          <dd>Secure values (passwords, API keys) must not be committed — the file stores references to Key Vault secrets or env variable placeholder names, not secrets themselves. File schema must be versioned carefully; a breaking change silently breaks all deploys. Needs clear documentation on what is and is not safe to commit.</dd>
+        </div>
+      </dl>
+    </div>
+  </article>
+
+  <!-- ── Idea 2 ── -->
+  <article class="idea-card" id="idea-2">
+    <div class="idea-header">
+      <p class="idea-rank">2 of 7</p>
+      <h3 class="idea-title">ALM Accelerator Migration Guide + Comparison Doc</h3>
+      <div class="idea-chips">
+        <span class="axis-badge ax5">Axis 5 — Migration Targeting</span>
+        <span class="chip chip-high">Conf 95%</span>
+        <span class="chip chip-cx-low">Complexity Low</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field">
+          <dt>Description</dt>
+          <dd>A <code>docs/others/alm-accelerator-comparison.md</code> following the 471-line <code>spkl-comparison.md</code> template, plus a <code>wiki/15-Migration-from-ALM-Accelerator.md</code> page. Covers: what ALM Accelerator did, which parts Flowline replaces, which parts the official replacements (Pipelines for Power Platform, Dataverse Git Integration) handle, and which parts fall away as unnecessary in Flowline's PROD-as-truth model. Migration guide gives a concrete two-phase path: phase 1 (adopt Flowline for code-first components alongside existing ALM Acc pipeline) → phase 2 (drop ALM Acc, adopt per-env settings file and <code>flowline ci init</code> templates).</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Axis</dt>
+          <dd><span class="axis-badge ax5">Axis 5 — Migration Targeting</span></dd>
+        </div>
+        <div class="idea-field">
+          <dt>Basis</dt>
+          <dd><strong>direct:</strong> <code>docs/others/spkl-comparison.md</code> (471 lines) establishes the template. <code>wiki/11-Migration-from-spkl.md</code>, <code>wiki/12-Migration-from-Daxif.md</code>, <code>wiki/13-Migration-from-PACX.md</code> confirm the two-phase migration pattern as an established wiki convention. ALM Accelerator deprecated 2025 creates an active cohort searching for alternatives right now.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Rationale</dt>
+          <dd>Highest value-per-hour item in this set — it's documentation, not code, and the template already exists. ALM Accelerator's deprecation is a timed event producing search traffic and forum questions ("what do I use instead?") that a clear comparison doc captures. The two-phase migration respects teams that can't migrate all at once, lowering the adoption barrier. Builds on three prior migration guides already in the wiki.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Downsides</dt>
+          <dd>Requires ongoing maintenance as ALM Accelerator officially sunsets and the official replacements mature. Risk of overpromising: features not yet shipped in Flowline (e.g. per-env settings file) must be clearly flagged as planned, not present — recommending migration before the features exist undermines trust.</dd>
+        </div>
+      </dl>
+    </div>
+  </article>
+
+  <!-- ── Idea 3 ── -->
+  <article class="idea-card" id="idea-3">
+    <div class="idea-header">
+      <p class="idea-rank">3 of 7</p>
+      <h3 class="idea-title"><code>flowline status --compare &lt;env1&gt; &lt;env2&gt;</code></h3>
+      <div class="idea-chips">
+        <span class="axis-badge ax4">Axis 4 — CI/CD Quality Gates</span>
+        <span class="chip chip-high">Conf 85%</span>
+        <span class="chip chip-cx-med">Complexity Medium</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field">
+          <dt>Description</dt>
+          <dd>Export the solution from both <code>&lt;env1&gt;</code> and <code>&lt;env2&gt;</code>, unpack both, run <code>SolutionChangeSummary</code> across the pair, and output a component-level diff table — which components exist in one env but not the other, which are at different versions, which have drifted. Usable standalone ("show me what Test is missing vs Prod") or as a CI quality gate ("Test is not more than N components behind Prod"). Output is structured text; <code>--format json</code> for CI parsing.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Axis</dt>
+          <dd><span class="axis-badge ax4">Axis 4 — CI/CD Quality Gates</span></dd>
+        </div>
+        <div class="idea-field">
+          <dt>Basis</dt>
+          <dd><strong>direct:</strong> <code>docs/others/BeforeReleaseV1.md:20</code>: <em>"env-to-env comparison: This is what will drive word of mouth — developers will demo this to each other because nothing else does it."</em> <code>SolutionChangeSummary.cs</code> already parses component-level diffs from unpacked solution XML — the mechanism is a direct extension of existing code. No other tool (ALM Accelerator, Pipelines for Power Platform, PAC CLI) provides a component-level env diff.</dd>
+        </div>
+
+        <!-- SVG: two-env diff flow -->
+        <div class="diagram">
+          <svg viewBox="0 0 540 160" width="540" height="160" xmlns="http://www.w3.org/2000/svg" aria-label="status --compare exports both environments, unpacks XML, and produces a component diff table">
+            <defs>
+              <marker id="a3" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+                <path d="M0,0 L7,2.5 L0,5 Z" fill="#94a3b8"/>
+              </marker>
+            </defs>
+
+            <!-- label -->
+            <text x="270" y="16" text-anchor="middle" font-family="JetBrains Mono,Consolas,monospace" font-size="11" fill="#64748b">flowline status --compare uat prod</text>
+
+            <!-- Env A -->
+            <rect x="10" y="28" width="100" height="44" rx="6" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.5"/>
+            <text x="60" y="47" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" font-weight="600" fill="#1d4ed8">Env A</text>
+            <text x="60" y="63" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#3b82f6">UAT</text>
+
+            <!-- Env B -->
+            <rect x="10" y="90" width="100" height="44" rx="6" fill="#dcfce7" stroke="#86efac" stroke-width="1.5"/>
+            <text x="60" y="109" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" font-weight="600" fill="#15803d">Env B</text>
+            <text x="60" y="125" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#16a34a">Prod</text>
+
+            <!-- arrows into unpack box -->
+            <line x1="110" y1="50" x2="178" y2="72" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a3)"/>
+            <line x1="110" y1="112" x2="178" y2="90" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a3)"/>
+
+            <!-- Unpack / diff engine box -->
+            <rect x="182" y="62" width="128" height="48" rx="6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+            <text x="246" y="82" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" font-weight="600" fill="#0f172a">Export + Unpack</text>
+            <text x="246" y="98" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#64748b">SolutionChangeSummary</text>
+
+            <!-- arrow to diff table -->
+            <line x1="310" y1="86" x2="368" y2="86" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a3)"/>
+
+            <!-- diff table output -->
+            <rect x="372" y="44" width="158" height="84" rx="6" fill="#fffbeb" stroke="#fcd34d" stroke-width="1.5"/>
+            <text x="451" y="64" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" font-weight="600" fill="#92400e">Component Diff</text>
+            <line x1="386" y1="72" x2="516" y2="72" stroke="#fde68a" stroke-width="1"/>
+            <text x="388" y="88" font-family="JetBrains Mono,Consolas,monospace" font-size="10" fill="#78350f">+ PluginA  (UAT only)</text>
+            <text x="388" y="104" font-family="JetBrains Mono,Consolas,monospace" font-size="10" fill="#78350f">~ Form v3 → v4</text>
+            <text x="388" y="120" font-family="JetBrains Mono,Consolas,monospace" font-size="10" fill="#78350f">= Account (in sync)</text>
+          </svg>
+        </div>
+
+        <div class="idea-field">
+          <dt>Rationale</dt>
+          <dd>BeforeReleaseV1.md calls this the word-of-mouth driver — nobody else does it. ALM Accelerator offered no equivalent; nor do Pipelines for Power Platform or PAC CLI. The mechanism extends code that already exists. Demonstrating it in a meeting — "here's what Test is missing compared to Prod" — is immediately compelling to any team managing multi-environment deployments.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Downsides</dt>
+          <dd>Requires export credentials for both environments — developer or CI must authenticate to both. Export of a large solution takes time; the command can be slow. Component-level diff on solution XML requires robust handling of ordering differences that are not semantic changes (XML attribute order, whitespace normalization).</dd>
+        </div>
+      </dl>
+    </div>
+  </article>
+
+  <!-- ── Idea 4 ── -->
+  <article class="idea-card" id="idea-4">
+    <div class="idea-header">
+      <p class="idea-rank">4 of 7</p>
+      <h3 class="idea-title"><code>flowline ci init --github</code> / <code>--ado</code></h3>
+      <div class="idea-chips">
+        <span class="axis-badge ax5">Axis 5 — Migration Targeting</span>
+        <span class="chip chip-high">Conf 90%</span>
+        <span class="chip chip-cx-med">Complexity Medium</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field">
+          <dt>Description</dt>
+          <dd>Generate a working, copy-paste-ready CI/CD YAML from the project's <code>.flowline</code> config. <code>--github</code> writes <code>.github/workflows/flowline-deploy.yml</code>; <code>--ado</code> writes <code>azure-pipelines.yml</code>. The generated YAML calls <code>flowline sync</code>, <code>flowline check</code>, and <code>flowline deploy {env}</code> with solution name and env names pre-filled from <code>.flowline</code>. Includes stubs for the git-tag approval gate (idea #6) and solution checker step (idea #5). ALM Accelerator migrants coming from Azure Pipelines YAML get a replacement pipeline in under a minute.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Axis</dt>
+          <dd><span class="axis-badge ax5">Axis 5 — Migration Targeting</span></dd>
+        </div>
+        <div class="idea-field">
+          <dt>Basis</dt>
+          <dd><strong>direct:</strong> <code>docs/others/BeforeReleaseV1.md:25–27</code>: <em>"GitHub Actions / Azure DevOps example pipelines. Not a feature — just documentation. But critical for the CI/CD story… copy-paste ready."</em> A generator reads the actual <code>.flowline</code> config and pre-fills names, eliminating copy-paste error risk. ALM Accelerator's core value was largely its Azure Pipelines YAML templates; migrants understand YAML-based CI and will reach for this immediately.</dd>
+        </div>
+
+        <!-- SVG: pipeline stages -->
+        <div class="diagram">
+          <svg viewBox="0 0 640 122" width="630" height="122" xmlns="http://www.w3.org/2000/svg" aria-label="Generated CI pipeline: git push triggers flowline sync, check, deploy test, then git tag approval unlocks deploy prod">
+            <defs>
+              <marker id="a4" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+                <path d="M0,0 L7,2.5 L0,5 Z" fill="#94a3b8"/>
+              </marker>
+            </defs>
+
+            <!-- git push -->
+            <rect x="6" y="34" width="78" height="40" rx="5" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+            <text x="45" y="51" text-anchor="middle" font-family="JetBrains Mono,Consolas,monospace" font-size="10" fill="#0f172a">git push</text>
+            <text x="45" y="66" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" fill="#64748b">trigger</text>
+
+            <line x1="84" y1="54" x2="100" y2="54" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a4)"/>
+
+            <!-- flowline sync -->
+            <rect x="102" y="34" width="88" height="40" rx="5" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+            <text x="146" y="51" text-anchor="middle" font-family="JetBrains Mono,Consolas,monospace" font-size="10" fill="#1d4ed8">flowline</text>
+            <text x="146" y="66" text-anchor="middle" font-family="JetBrains Mono,Consolas,monospace" font-size="10" fill="#1d4ed8">sync</text>
+
+            <line x1="190" y1="54" x2="206" y2="54" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a4)"/>
+
+            <!-- flowline check -->
+            <rect x="208" y="34" width="88" height="40" rx="5" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+            <text x="252" y="51" text-anchor="middle" font-family="JetBrains Mono,Consolas,monospace" font-size="10" fill="#c2410c">flowline</text>
+            <text x="252" y="66" text-anchor="middle" font-family="JetBrains Mono,Consolas,monospace" font-size="10" fill="#c2410c">check</text>
+
+            <line x1="296" y1="54" x2="312" y2="54" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a4)"/>
+
+            <!-- deploy test -->
+            <rect x="314" y="34" width="88" height="40" rx="5" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+            <text x="358" y="51" text-anchor="middle" font-family="JetBrains Mono,Consolas,monospace" font-size="10" fill="#15803d">deploy</text>
+            <text x="358" y="66" text-anchor="middle" font-family="JetBrains Mono,Consolas,monospace" font-size="10" fill="#15803d">test</text>
+
+            <line x1="402" y1="54" x2="418" y2="54" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a4)"/>
+
+            <!-- git tag approval -->
+            <rect x="420" y="34" width="96" height="40" rx="5" fill="#fdf4ff" stroke="#d8b4fe" stroke-width="1.5"/>
+            <text x="468" y="50" text-anchor="middle" font-family="JetBrains Mono,Consolas,monospace" font-size="10" fill="#7e22ce">git tag</text>
+            <text x="468" y="64" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" fill="#9333ea">approved/uat/v*</text>
+            <text x="468" y="75" text-anchor="middle" font-family="Inter,sans-serif" font-size="8" fill="#a855f7">(manual gate)</text>
+
+            <line x1="516" y1="54" x2="532" y2="54" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a4)"/>
+
+            <!-- deploy prod -->
+            <rect x="534" y="34" width="88" height="40" rx="5" fill="#fef3c7" stroke="#fcd34d" stroke-width="1.5"/>
+            <text x="578" y="51" text-anchor="middle" font-family="JetBrains Mono,Consolas,monospace" font-size="10" fill="#92400e">deploy</text>
+            <text x="578" y="66" text-anchor="middle" font-family="JetBrains Mono,Consolas,monospace" font-size="10" fill="#92400e">prod</text>
+
+            <!-- caption -->
+            <text x="320" y="108" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="#94a3b8">generated from .flowline — solution name and env names pre-filled; no manual YAML editing required</text>
+          </svg>
+        </div>
+
+        <div class="idea-field">
+          <dt>Rationale</dt>
+          <dd>BeforeReleaseV1.md names CI/CD templates as "critical." A generated version that reads <code>.flowline</code> and pre-fills names is strictly better than static docs. For ALM Accelerator migrants, replacing the Azure Pipelines YAML is the first concrete step after installing Flowline. Composable with ideas #5 and #6 — the generated YAML includes stubs for both, making adoption of those features a one-line uncomment.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Downsides</dt>
+          <dd>Generated YAML must be kept in sync with Flowline's CLI surface — a breaking CLI change silently fails pipelines in repos that haven't regenerated. Must support at least GitHub Actions and Azure DevOps to cover the ALM Accelerator audience; each additional platform adds maintenance scope.</dd>
+        </div>
+      </dl>
+    </div>
+  </article>
+
+  <!-- ── Idea 5 ── -->
+  <article class="idea-card" id="idea-5">
+    <div class="idea-header">
+      <p class="idea-rank">5 of 7</p>
+      <h3 class="idea-title">Solution Checker Gate (<code>flowline check</code>)</h3>
+      <div class="idea-chips">
+        <span class="axis-badge ax4">Axis 4 — CI/CD Quality Gates</span>
+        <span class="chip chip-high">Conf 85%</span>
+        <span class="chip chip-cx-low">Complexity Low</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field">
+          <dt>Description</dt>
+          <dd>A standalone <code>flowline check</code> command that runs <code>pac solution check</code> against the zip artifact already produced by <code>PackSolutionAsync</code> at <code>DeployCommand.cs:210</code>. Returns <code>ExitCode.ValidationFailed=15</code> on errors — a stable, named CI signal. Usable standalone in a CI pipeline step before deploy, or as a pre-deploy gate wired to the existing pack step. ALM Accelerator ran solution checker in PR builds; this surfaces the same quality signal without requiring ALM Acc infrastructure.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Axis</dt>
+          <dd><span class="axis-badge ax4">Axis 4 — CI/CD Quality Gates</span></dd>
+        </div>
+        <div class="idea-field">
+          <dt>Basis</dt>
+          <dd><strong>direct:</strong> <code>PackSolutionAsync</code> at <code>DeployCommand.cs:210</code> already produces the zip artifact — no extra export step needed. <code>ExitCodes.ValidationFailed=15</code> is a stable, named exit code designed for CI parsing. <code>pac solution check</code> is already in the PAC CLI dependency chain. ALM Accelerator's solution checker gate was one of its most-valued CI features, cited repeatedly in migration discussions.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Rationale</dt>
+          <dd>Low implementation burden: the zip artifact exists and PAC CLI is already a dependency. <code>ExitCode=15</code> makes results immediately parseable by any CI system. Running solution checker in CI was an ALM Accelerator best practice that many teams relied on; surfacing it as a first-class Flowline command closes that gap with minimal new code.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Downsides</dt>
+          <dd><code>pac solution check</code> requires internet connectivity and a Power Platform environment; it cannot run fully offline. False positives on third-party managed components are common — Flowline may need a suppression list for known-false-positive rules. PAC CLI result format may change across versions.</dd>
+        </div>
+      </dl>
+    </div>
+  </article>
+
+  <!-- ── Idea 6 ── -->
+  <article class="idea-card" id="idea-6">
+    <div class="idea-header">
+      <p class="idea-rank">6 of 7</p>
+      <h3 class="idea-title">Git Tag as Approval Gate for Prod Deploy</h3>
+      <div class="idea-chips">
+        <span class="axis-badge ax1">Axis 1 — DTAP Gate Enforcement</span>
+        <span class="chip chip-high">Conf 85%</span>
+        <span class="chip chip-cx-low">Complexity Low</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field">
+          <dt>Description</dt>
+          <dd>Require a Git tag matching <code>approved/uat/v{version}</code> before <code>flowline deploy prod</code> proceeds. The approval action is "push the tag" — no external service, no approval portal. On successful prod deploy, Flowline auto-creates a receipt tag <code>receipt/prod/v{version}</code> so the audit trail lives in Git. The gate hooks into <code>ValidateDtapGateAsync</code> at <code>DeployCommand.cs:132</code>; tag creation reuses <code>GitUtils.CreateTagAsync</code>.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Axis</dt>
+          <dd><span class="axis-badge ax1">Axis 1 — DTAP Gate Enforcement</span></dd>
+        </div>
+        <div class="idea-field">
+          <dt>Basis</dt>
+          <dd><strong>direct:</strong> <code>ValidateDtapGateAsync</code> at <code>DeployCommand.cs:132</code> is the exact hook — DTAP gate validation is already a function call that can be extended to check tags. <code>GitUtils.CreateTagAsync</code> exists in <code>src/Flowline/Utils/GitUtils.cs</code>. <strong>reasoned:</strong> Push-the-tag is a proven GitOps approval pattern (used in Helm, ArgoCD, Flux) that puts approval in Git history, making the audit trail durable and free. ALM Accelerator used ADO PR status as a gate — this achieves the same intent with zero external service dependency.</dd>
+        </div>
+
+        <!-- SVG: before / after -->
+        <div class="diagram">
+          <svg viewBox="0 0 560 190" width="550" height="190" xmlns="http://www.w3.org/2000/svg" aria-label="Git tag approval gate: before shows deploy blocked with no tag; after shows tag push unlocking deploy and producing a receipt tag">
+            <defs>
+              <marker id="a6r" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+                <path d="M0,0 L7,2.5 L0,5 Z" fill="#ef4444"/>
+              </marker>
+              <marker id="a6g" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+                <path d="M0,0 L7,2.5 L0,5 Z" fill="#94a3b8"/>
+              </marker>
+            </defs>
+
+            <!-- Column headers -->
+            <text x="118" y="18" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" font-weight="600" fill="#64748b">BEFORE</text>
+            <line x1="10" y1="26" x2="236" y2="26" stroke="#e2e8f0" stroke-width="1"/>
+
+            <text x="400" y="18" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" font-weight="600" fill="#64748b">AFTER</text>
+            <line x1="258" y1="26" x2="548" y2="26" stroke="#e2e8f0" stroke-width="1"/>
+
+            <!-- BEFORE: deploy → blocked -->
+            <rect x="14" y="44" width="150" height="36" rx="5" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+            <text x="89" y="58" text-anchor="middle" font-family="JetBrains Mono,Consolas,monospace" font-size="10.5" fill="#0f172a">flowline deploy prod</text>
+            <text x="89" y="73" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" fill="#64748b">v1.2.0</text>
+
+            <line x1="164" y1="62" x2="182" y2="62" stroke="#ef4444" stroke-width="1.5" marker-end="url(#a6r)"/>
+
+            <rect x="186" y="44" width="44" height="36" rx="5" fill="#fef2f2" stroke="#fca5a5" stroke-width="1.5"/>
+            <text x="208" y="61" text-anchor="middle" font-family="Inter,sans-serif" font-size="18" fill="#ef4444">✗</text>
+            <text x="208" y="74" text-anchor="middle" font-family="Inter,sans-serif" font-size="8" fill="#ef4444">blocked</text>
+
+            <text x="118" y="104" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#94a3b8">no approved tag found for v1.2.0</text>
+
+            <!-- Divider -->
+            <line x1="248" y1="30" x2="248" y2="188" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="4,3"/>
+
+            <!-- AFTER: 3 steps stacked -->
+            <!-- Step 1: push tag -->
+            <text x="262" y="44" font-family="Inter,sans-serif" font-size="9.5" font-weight="700" fill="#7e22ce">① push tag</text>
+            <rect x="262" y="50" width="168" height="28" rx="5" fill="#fdf4ff" stroke="#d8b4fe" stroke-width="1.5"/>
+            <text x="346" y="68" text-anchor="middle" font-family="JetBrains Mono,Consolas,monospace" font-size="10" fill="#7e22ce">approved/uat/v1.2.0</text>
+
+            <line x1="346" y1="78" x2="346" y2="94" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a6g)"/>
+
+            <!-- Step 2: deploy -->
+            <text x="262" y="108" font-family="Inter,sans-serif" font-size="9.5" font-weight="700" fill="#15803d">② deploy proceeds</text>
+            <rect x="262" y="114" width="168" height="28" rx="5" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+            <text x="346" y="132" text-anchor="middle" font-family="JetBrains Mono,Consolas,monospace" font-size="10.5" fill="#15803d">flowline deploy prod</text>
+
+            <line x1="346" y1="142" x2="346" y2="158" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a6g)"/>
+
+            <!-- Step 3: receipt tag -->
+            <text x="262" y="172" font-family="Inter,sans-serif" font-size="9.5" font-weight="700" fill="#1d4ed8">③ receipt tag (auto)</text>
+            <rect x="262" y="178" width="168" height="10" rx="4" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+            <text x="346" y="186" text-anchor="middle" font-family="JetBrains Mono,Consolas,monospace" font-size="8.5" fill="#1d4ed8">receipt/prod/v1.2.0</text>
+
+            <!-- "zero infrastructure" note -->
+            <text x="440" y="44" text-anchor="middle" font-family="Inter,sans-serif" font-size="9.5" fill="#94a3b8">zero infrastructure</text>
+            <text x="440" y="56" text-anchor="middle" font-family="Inter,sans-serif" font-size="9.5" fill="#94a3b8">audit trail in git tags</text>
+          </svg>
+        </div>
+
+        <div class="idea-field">
+          <dt>Rationale</dt>
+          <dd>ALM Accelerator's approval workflow required ADO pull request status — a dependency GitHub-based teams couldn't use. A git tag requires no external service, works with any CI system, and leaves a durable audit record. "Push a tag to approve" is two commands and is readily scriptable. The receipt tag closes the loop: <code>git tag -l "receipt/prod/*"</code> shows every successful prod deploy, no log scraping required.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Downsides</dt>
+          <dd>Anyone with push access can push the approval tag — it's an honor system without additional branch protection rules. Teams used to UI-based approval flows will find this more manual. Version string parsing must be robust — mismatches between tag format and <code>.flowline</code> config version will silently block deploys.</dd>
+        </div>
+      </dl>
+    </div>
+  </article>
+
+  <!-- ── Idea 7 ── -->
+  <article class="idea-card" id="idea-7">
+    <div class="idea-header">
+      <p class="idea-rank">7 of 7</p>
+      <h3 class="idea-title">Post-deploy Flow Ownership Assignment</h3>
+      <div class="idea-chips">
+        <span class="axis-badge ax3">Axis 3 — Post-Deploy Lifecycle</span>
+        <span class="chip chip-med">Conf 80%</span>
+        <span class="chip chip-cx-lomed">Complexity Low–Med</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field">
+          <dt>Description</dt>
+          <dd>An <code>owners</code> section in the per-env settings file (idea #1) that maps flow names to owner user or team IDs for the target environment. <code>flowline configure</code> issues <code>UpdateRequest</code> on the corresponding <code>workflow</code> Dataverse records after deploy, setting ownership to the declared owner. ALM Accelerator's deployment settings included an <code>ownershipTable</code> for flows — this is the Flowline equivalent.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Axis</dt>
+          <dd><span class="axis-badge ax3">Axis 3 — Post-Deploy Lifecycle</span></dd>
+        </div>
+        <div class="idea-field">
+          <dt>Basis</dt>
+          <dd><strong>direct:</strong> <code>OrphanCleanupService.cs</code> already issues <code>UpdateRequest</code> on workflow records — the Dataverse update mechanism is proven and in production. Hook points at <code>DeployCommand.cs:61,67</code> (pre/post import) show the established pattern for post-deploy Dataverse actions. ALM Accelerator's deployment settings explicitly included an <code>ownershipTable</code> section for flows. <strong>Note:</strong> this is NOT covered by the <code>2026-07-01-post-deploy-environment-config-ideation.html</code> (which covers flow activation, connection assignment, env var setting — not ownership assignment).</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Rationale</dt>
+          <dd>Deployed flows in a fresh environment default to the deploying user as owner. On shared Test/Prod environments this creates ownership drift: when the deploying user's credentials expire or the user leaves, flows fail. ALM Accelerator solved this explicitly. The update mechanism already exists in <code>OrphanCleanupService</code>; this extends an existing pattern rather than introducing new infrastructure. Depends on idea #1 (per-env settings file) as the natural config location.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Downsides</dt>
+          <dd>Owner IDs are environment-specific — the settings file must store IDs valid in the target env, not portable display names. If a named owner doesn't exist in the target, the update fails silently unless error handling is explicit. Not independently shippable without idea #1 as the config mechanism.</dd>
+        </div>
+      </dl>
+    </div>
+  </article>
+
+</section>
+
+<!-- ── Rejection Summary ────────────────────────────────────────────────── -->
+<section id="rejection-summary">
+  <p class="section-eyebrow">Cuts</p>
+  <h2>Rejection Summary</h2>
+  <table>
+    <thead>
+      <tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td>Automated Environment Provisioning</td><td>Scope overrun — Flowline has no environment management surface; provisioning belongs in Azure/Power Platform admin tooling</td></tr>
+      <tr><td>2</td><td>Maker Portal / Canvas Admin App</td><td>Subject replacement — building a canvas app abandons the CLI tool identity; contradicts STRATEGY.md boundary</td></tr>
+      <tr><td>3</td><td>ADO Branch-Per-Solution Export Strategy</td><td>Contradicts STRATEGY.md — requires source-as-truth model which Flowline explicitly does not serve</td></tr>
+      <tr><td>4</td><td>Automated PR Creation on Export</td><td>Scope overrun — requires deep ADO/GitHub API integration beyond YAML generation; better left to CI pipeline steps</td></tr>
+      <tr><td>5</td><td>Teams Webhook Notification on Deploy</td><td>Too narrow — notification destination varies per team; belongs as a CI pipeline step post-deploy, not baked into CLI</td></tr>
+      <tr><td>6</td><td>Deployment History Dashboard</td><td>Too expensive — requires external persistent state store and a UI surface; Flowline has no native storage layer for this</td></tr>
+      <tr><td>7</td><td>Multi-Solution Orchestration Pipeline</td><td>Basis too weak — no evidence of multi-solution dependency ordering need in current user base; premature generalization</td></tr>
+      <tr><td>8</td><td>Connection Reference Health Check (standalone)</td><td>Duplicates stronger idea — per-env settings file (#1) is the structural home for conn ref validation; standalone adds marginal value</td></tr>
+      <tr><td>9</td><td>Power Apps Per-User License Validation</td><td>Out of scope — license management is admin infrastructure, not developer CLI territory</td></tr>
+      <tr><td>10</td><td>Automated Component Ownership Matrix Report</td><td>Weaker form — <code>flowline status --compare</code> (#3) surfaces component-level information with more context; a separate static report duplicates with less value</td></tr>
+      <tr><td>11</td><td>Service Principal / App Registration Management</td><td>Out of scope — credential lifecycle belongs in Azure AD / Entra tooling, not a Dataverse deployment CLI</td></tr>
+      <tr><td>12</td><td>Solution Checker Threshold Configuration</td><td>Premature — threshold config is a second-order feature; ship basic <code>flowline check</code> (#5) first, then add configurability on demand</td></tr>
+      <tr><td>13</td><td>Dataverse Git Integration Bridge</td><td>Unjustified basis — Dataverse Git Integration is a competing model (source-as-truth), not a bridge target; no structural overlap to exploit</td></tr>
+      <tr><td>14</td><td>Environment Reset / Rollback Command</td><td>Too expensive — requires snapshot or version history infrastructure Flowline has no access to; PAC CLI has no rollback primitive</td></tr>
+      <tr><td>15</td><td>Automated Deploy Approval via Email Link</td><td>Scope overrun — requires external email service and token store; git tag approval gate (#6) solves the same need with zero infrastructure</td></tr>
+    </tbody>
+  </table>
+</section>
+
+</div><!-- .page -->
+
+<footer class="composition-signal">
+  Composed <time datetime="2026-07-02">2026-07-02</time> by ce-ideate &middot; Focus: ALM Accelerator migration &amp; targeting for Flowline CLI
+</footer>
+
+</body>
+</html>
