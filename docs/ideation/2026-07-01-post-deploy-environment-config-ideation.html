@@ -1062,7 +1062,16 @@
           <span class="basis-tag basis-direct">direct:</span>
           <code>sdkmessageprocessingstepsecureconfig</code> is a separate Dataverse table, not exported in solutions, admin-only read, must be set via API per deployment — confirmed by community research and Microsoft Learn. Current community workaround is bespoke C# scripts per project.
           <span class="basis-tag basis-external">external:</span>
-          ALM Accelerator (deprecated 2023) addressed this with <code>sdkstep.sec.&lt;stepid&gt;</code> in its deployment settings JSON — the most complete prior art.
+          The <a href="https://learn.microsoft.com/en-us/power-platform/guidance/alm-accelerator/deployment-settings-payload" style="color:var(--accent-text)">ALM Accelerator deployment settings payload</a> (deprecated, no new features) is the most complete prior art. It defines two pipeline-variable keys per step:
+        </p>
+        <div class="cmd-spec" style="margin:.6rem 0">
+          <span class="cmd-comment"># ALM Accelerator UserSettings payload keys:</span><br>
+          <span class="cmd-cmd">sdkstep.unsec.</span><span class="cmd-env">&lt;sdkstepid-guid&gt;</span>  <span class="cmd-comment">→ unsecure (plain) config for the step</span><br>
+          <span class="cmd-cmd">sdkstep.sec.</span><span class="cmd-env">&lt;sdkstepid-guid&gt;</span>    <span class="cmd-comment">→ secure (encrypted) config for the step</span>
+        </div>
+        <p class="field-value">
+          <strong style="color:var(--text)">How it works:</strong> the export pipeline generates a <code>customDeploymentSettings.json</code> with token placeholders (<code>#{sdkstep.sec.00000000-…}#</code>). At deploy time, Azure DevOps' Replace Tokens task substitutes each placeholder with a matching pipeline variable (stored as a secret in Azure DevOps). The pipeline then writes the resolved value to the <code>sdkmessageprocessingstepsecureconfig</code> table via the Dataverse API. The step is keyed by its raw GUID — no human-readable name. Full two-file format in the <a href="https://learn.microsoft.com/en-us/power-platform/guidance/alm-accelerator/setup-data-deployment-configuration" style="color:var(--accent-text)">deployment configuration guide</a>.<br><br>
+          <strong style="color:var(--text)">How Flowline differs:</strong> instead of step GUIDs (opaque, change between environments), Flowline uses the human-readable step name already known from assembly registration (e.g. <code>"MyNs.MyPlugin: Create of account"</code>). Instead of Azure DevOps token replacement, Flowline uses a gitignored per-env JSON file — works in any CI system and locally without extra pipeline tooling.
         </p>
       </div>
       <div class="field-block">
