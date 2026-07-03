@@ -210,6 +210,74 @@ public static class PacUtils
         return 0;
     }
 
+    public static async Task<SolutionCheckResult> CheckSolutionAsync(string zipPath, string? environmentUrl, string outputDirectory, SubprocessCapture capture, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(outputDirectory);
+
+        var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
+        var result = await AnsiConsole.Status().FlowlineSpinner().StartAsync<CliWrap.Buffered.BufferedCommandResult>(
+            "Running solution checker...",
+            ctx => capture.Apply(
+                      Cli.Wrap(cmdName)
+                      .WithArguments(args => args
+                          .AddIfNotNull(prefixArgs)
+                          .Add("solution").Add("check")
+                          .Add("--path").Add(zipPath)
+                          .Add("--outputDirectory").Add(outputDirectory)
+                          .AddIf(!string.IsNullOrEmpty(environmentUrl), "--environment", environmentUrl))
+                      .WithValidation(CommandResultValidation.None),
+                      ctx)
+                  .ExecuteBufferedAsync(cancellationToken));
+
+        return BuildCheckResult(result.ExitCode, result.StandardOutput, outputDirectory);
+    }
+
+    // Separated from CheckSolutionAsync so the exit-code-vs-silent-pass decision (KTD7) is
+    // directly unit-testable without a real pac process: a checker-unreachable outcome must
+    // never look identical to "analysis ran and found nothing."
+    internal static SolutionCheckResult BuildCheckResult(int exitCode, string pacOutput, string outputDirectory)
+    {
+        if (exitCode != 0)
+            throw new FlowlineException(ExitCode.ConnectionFailed, "Solution check failed to run — check your PAC login and network connection.");
+
+        if (!TryCountSeverities(pacOutput, out var criticalCount, out var totalCount))
+        {
+            AnsiConsole.MarkupLine("[yellow]Could not parse solution checker results — treating as no findings. Check the report in the output directory.[/]");
+            return new SolutionCheckResult(0, 0, outputDirectory);
+        }
+
+        return new SolutionCheckResult(criticalCount, totalCount, outputDirectory);
+    }
+
+    // pac's own stdout ends with a summary table, e.g.:
+    //   Critical High Medium  Low Informational
+    //
+    //       0    0       0   0             0
+    // Confirmed against Microsoft's own checkSolution.ts wrapper (powerplatform-cli-wrapper),
+    // which parses this same table rather than the per-result SARIF files in --outputDirectory.
+    internal static bool TryCountSeverities(string pacOutput, out int criticalCount, out int totalCount)
+    {
+        criticalCount = 0;
+        totalCount = 0;
+
+        var lines = pacOutput.Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
+        var headerIdx = Array.FindIndex(lines,
+            l => Regex.IsMatch(l.Trim(), @"^Critical\s+High\s+Medium\s+Low\s+Informational$"));
+        if (headerIdx < 0) return false;
+
+        var countsLine = lines.Skip(headerIdx + 1).FirstOrDefault(l => !string.IsNullOrWhiteSpace(l));
+        if (countsLine == null) return false;
+
+        var values = countsLine.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (values.Length < 5 || !values.Take(5).All(v => int.TryParse(v, out _)))
+            return false;
+
+        var parsed = values.Take(5).Select(int.Parse).ToArray();
+        criticalCount = parsed[0];
+        totalCount = parsed.Sum();
+        return true;
+    }
+
     public static async Task<List<EnvironmentInfo>> GetEnvironmentsAsync(SubprocessCapture capture, CancellationToken cancellationToken = default)
     {
         var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
@@ -458,3 +526,5 @@ public class SolutionInfo
 }
 
 public record WhoAmIInfo(string ConnectedAs);
+
+public record SolutionCheckResult(int CriticalCount, int TotalCount, string OutputDirectory);
