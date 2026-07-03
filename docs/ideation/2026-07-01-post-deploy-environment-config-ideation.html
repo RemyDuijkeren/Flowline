@@ -749,7 +749,7 @@
       <li><span class="rank">3.</span><a href="#idea-3">Pre-flight config validation</a><span class="jmeta"><span class="chip chip-amber" style="font-size:11px">Settings</span> · Conf 85% · Cx Low</span></li>
       <li><span class="rank">4.</span><a href="#idea-4">Secure config deploy-time injection</a><span class="jmeta"><span class="chip chip-green" style="font-size:11px">Step state</span> · Conf 80% · Cx Med</span></li>
       <li><span class="rank">5.</span><a href="#idea-5">Ordered flow activation</a><span class="jmeta"><span class="chip chip-accent" style="font-size:11px">Flow &amp; workflow</span> · Conf 75% · Cx Med</span></li>
-      <li><span class="rank">6.</span><a href="#idea-6">IPostDeployService protocol</a><span class="jmeta"><span class="chip chip-purple" style="font-size:11px">Integration</span> · Conf 85% · Cx Med</span></li>
+      <li><span class="rank">6.</span><a href="#idea-6">IPostDeployService protocol</a><span class="jmeta"><span class="chip chip-green" style="font-size:11px">Shipped</span> <span class="chip chip-purple" style="font-size:11px">Integration</span> · Conf 85% · Cx Med</span></li>
       <li><span class="rank">7.</span><a href="#idea-7">flowline configure — post-deploy reconciliation</a><span class="jmeta"><span class="chip chip-purple" style="font-size:11px">Integration</span> · Conf 82% · Cx Med</span></li>
       <li><span class="rank">8.</span><a href="#idea-8">flowline configure — inline &amp; interactive mode</a><span class="jmeta"><span class="chip chip-teal" style="font-size:11px">Operations</span> · Conf 87% · Cx Low</span></li>
       <li><span class="rank">9.</span><a href="#idea-9">PAC solution settings file at import</a><span class="jmeta"><span class="chip chip-amber" style="font-size:11px">Settings</span> · Conf 80% · Cx Low</span></li>
@@ -1159,6 +1159,7 @@
       <div class="card-titles">
         <h3>IPostDeployService Protocol</h3>
         <div class="card-chips">
+          <span class="chip chip-green">Shipped 2026-07-03</span>
           <span class="chip chip-purple">Integration model</span>
           <span class="chip chip-green">Conf 85%</span>
           <span class="chip chip-muted">Complexity: Medium</span>
@@ -1166,6 +1167,10 @@
       </div>
     </div>
     <div class="card-body">
+      <div class="field-block">
+        <p class="field-label">Implementation status</p>
+        <p class="field-value">Implemented via <code>docs/plans/2026-07-02-001-refactor-post-deploy-service-protocol-plan.md</code>, merged to <code>master</code> at <code>8b2869c</code>. <code>IPostDeployService</code> and <code>PostDeployContext</code> live in <code>src/Flowline.Core/Services/IPostDeployService.cs</code>; <code>OrphanCleanupService</code> is the first (and currently only) implementer; <code>DeployCommand</code> consumes it as an <code>IEnumerable&lt;IPostDeployService&gt;</code> DI collection (fan-out, not select-one) instead of the concrete type. No behavior change — same console output and exit-code contract as before. <code>WorkflowRestoreService</code> and <code>FlowActivationService</code> below remain planned, not yet built.</p>
+      </div>
       <div class="field-block">
         <p class="field-label">Description</p>
         <p class="field-value">Formalize <code>OrphanCleanupService</code>'s ad-hoc pre/post import hooks into a typed <code>IPostDeployService</code> interface registered via DI. Each new capability (workflow restoration, step state, flow activation, secure config) becomes a service implementing that interface — the deploy command never changes. Each service is independently testable and shippable.</p>

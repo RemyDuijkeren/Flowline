@@ -46,6 +46,11 @@ A fallback lookup strategy used during step reconciliation when a Dataverse step
 ### Step identity
 The tuple of Dataverse field values that uniquely identifies a plugin step variant independent of its name: `sdkmessageid`, `sdkmessagefilterid`, `stage`, and `mode`. Stage alone is insufficient because `PostOperation` (value 40) is shared by both synchronous (mode=0) and asynchronous (mode=1) steps. All step-matching predicates — primary and secondary — must include all four fields to avoid ambiguous matches between sync and async PostOperation registrations.
 
+## Deploy Pipeline
+
+### Post-deploy service
+A pluggable behavior that runs during a deploy's pre-import and post-import phases — for example, orphan-component cleanup. Every registered post-deploy service executes on every deploy (fan-out), unlike a [[Generator]], where exactly one is selected for a run. A post-deploy service may hold its own state between its pre-import and post-import calls; state does not cross the shared interface between services.
+
 ## Web Resources
 
 ### Logical name

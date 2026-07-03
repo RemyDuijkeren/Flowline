@@ -1,6 +1,7 @@
 ---
 title: Orphan component cleanup — two-phase deploy pipeline
 date: 2026-06-10
+last_updated: 2026-07-03
 category: docs/solutions/architecture-patterns
 module: DeployCommand
 problem_type: architecture_pattern
@@ -16,6 +17,8 @@ applies_when:
 related_components:
   - ComponentClassifier
   - OrphanCleanupService
+  - IPostDeployService
+  - PostDeployContext
   - ExitCode
 tags:
   - dataverse
@@ -107,6 +110,8 @@ var entities = await service.RetrieveAllAsync(query, ct);
 ```
 
 See `src/Flowline.Core/Services/OrganizationServiceExtensions.cs` for the paging extension. Applied in all four query methods in `OrphanCleanupService`.
+
+**Update (2026-07-03):** `OrphanCleanupService` now implements `IPostDeployService` and threads its deferred-entry state across the two phases via a private mutable instance field (`_deferred`) rather than an explicit parameter/return value passed by the caller. This is safe only because the service is registered `AddSingleton` and Flowline runs one command per process — see [post-deploy-service-di-fanout-protocol.md](post-deploy-service-di-fanout-protocol.md) for the interface shape and the tradeoffs of that design.
 
 ### CustomApi detection via entity queries
 
@@ -223,6 +228,8 @@ ConnectDataverse → RunPreImport → Pack → Import → RunPostImport
 
 Pre-import runs before Pack: if Dataverse connection or the orphan query fails, the user gets a fast error before the slow pack step.
 
+**Update (2026-07-03):** `RunPreImport`/`RunPostImport` are no longer direct calls to `OrphanCleanupService`. `DeployCommand` builds one `PostDeployContext` per deploy and fans out over every registered `IEnumerable<IPostDeployService>` implementer at each point (`foreach (var postDeployService in postDeployServices) await postDeployService.RunPreImportAsync(...)`, and symmetrically for post-import) — `OrphanCleanupService` is currently the only registered implementer, but the pipeline now runs all of them, not just it. See [post-deploy-service-di-fanout-protocol.md](post-deploy-service-di-fanout-protocol.md) for why this changed and what it enables.
+
 ## Why This Matters
 
 **Without this pattern:**
@@ -300,6 +307,7 @@ Deploy succeeded; manual cleanup required. CI can alert without treating this as
 
 ## Related
 
+- [post-deploy-service-di-fanout-protocol.md](post-deploy-service-di-fanout-protocol.md) — `OrphanCleanupService` is now the first implementer of `IPostDeployService`; the interface/DI shape wrapping this algorithm, and the deferred-state instance-field mechanism it relies on
 - [retrieve-multiple-async-silent-truncation-2026-05-29.md](../logic-errors/retrieve-multiple-async-silent-truncation-2026-05-29.md) — why `RetrieveAllAsync` is mandatory for solutioncomponent queries
 - [dtap-gate-enforcement-in-deploy-command-2026-06-07.md](dtap-gate-enforcement-in-deploy-command-2026-06-07.md) — other deploy pipeline guards; execution order now includes pre/post-import orphan cleanup phases
 - [managed-unmanaged-type-guard-in-deploy-command-2026-06-07.md](managed-unmanaged-type-guard-in-deploy-command-2026-06-07.md) — managed/unmanaged type guard in the same pipeline
