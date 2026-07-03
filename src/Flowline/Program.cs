@@ -61,6 +61,7 @@ services.AddSingleton<IGenerator, XrmContextGenerator>();
 services.AddSingleton<PluginService>();
 services.AddSingleton<WebResourceService>();
 services.AddSingleton<IPostDeployService, SolutionCheckService>();
+services.AddSingleton<IPostDeployService, BackupService>();
 services.AddSingleton<IPostDeployService, OrphanCleanupService>();
 services.AddSingleton<SubprocessCapture>();
 

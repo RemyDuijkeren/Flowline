@@ -39,6 +39,11 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         [DefaultValue(false)]
         public bool SkipSolutionCheck { get; set; } = false;
 
+        [CommandOption("--no-backup")]
+        [Description("Skip the pre-deploy environment backup")]
+        [DefaultValue(false)]
+        public bool NoBackup { get; set; } = false;
+
         [CommandOption("--no-delete")]
         [Description("Report orphan components without deleting them")]
         [DefaultValue(false)]
@@ -69,9 +74,9 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var webresourceRoot = Path.Combine(slnFolder, "WebResources");
         var postDeployContext = new PostDeployContext(service, sln.Name, sNew, runMode, webresourceRoot, packagePath, targetEnv.EnvironmentUrl!);
 
-        var preImportServices = settings.SkipSolutionCheck
-            ? postDeployServices.Where(s => s is not SolutionCheckService)
-            : postDeployServices;
+        var preImportServices = postDeployServices.Where(s =>
+            !(settings.SkipSolutionCheck && s is SolutionCheckService) &&
+            !(settings.NoBackup && s is BackupService));
 
         foreach (var postDeployService in preImportServices)
             await postDeployService.RunPreImportAsync(postDeployContext, cancellationToken);
