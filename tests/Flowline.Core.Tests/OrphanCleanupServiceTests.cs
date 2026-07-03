@@ -41,7 +41,7 @@ public class OrphanCleanupServiceTests : IDisposable
         IReadOnlyList<(Guid ObjectId, int ComponentType)> localComponents,
         RunMode mode = RunMode.Normal,
         string? webresourceRoot = null) =>
-        new(_serviceMock, solutionName, localComponents, mode, webresourceRoot);
+        new(_serviceMock, solutionName, localComponents, mode, webresourceRoot, "solution.zip", "https://example.crm.dynamics.com");
 
     void SetupSolutionComponents(string solutionName, params (Guid Id, int ComponentType)[] components)
     {

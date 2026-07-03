@@ -7,7 +7,9 @@ public sealed record PostDeployContext(
     string SolutionName,
     IReadOnlyList<(Guid ObjectId, int ComponentType)> LocalComponents,
     RunMode Mode,
-    string? WebResourceRoot);
+    string? WebResourceRoot,
+    string PackagePath,
+    string EnvironmentUrl);
 
 public interface IPostDeployService
 {
