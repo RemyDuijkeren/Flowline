@@ -74,9 +74,11 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var webresourceRoot = Path.Combine(slnFolder, "WebResources");
         var postDeployContext = new PostDeployContext(service, sln.Name, sNew, runMode, webresourceRoot, packagePath, targetEnv.EnvironmentUrl!);
 
-        var preImportServices = postDeployServices.Where(s =>
-            !(settings.SkipSolutionCheck && s is SolutionCheckService) &&
-            !(settings.NoBackup && s is BackupService));
+        bool IsSkipped(IPostDeployService s) =>
+            settings.SkipSolutionCheck && s is SolutionCheckService ||
+            settings.NoBackup && s is BackupService;
+
+        var preImportServices = postDeployServices.Where(s => !IsSkipped(s));
 
         foreach (var postDeployService in preImportServices)
             await postDeployService.RunPreImportAsync(postDeployContext, cancellationToken);
