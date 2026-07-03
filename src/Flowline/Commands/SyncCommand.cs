@@ -10,7 +10,7 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public enum BumpComponent { Patch, Minor, Major }
+public enum BumpComponent { Patch, Minor, Major, None }
 
 public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture) :
     FlowlineCommand<SyncCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture)
@@ -30,7 +30,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         public FlagValue<bool> IncludeManaged { get; set; } = null!;
 
         [CommandOption("--bump")]
-        [Description("Version component to increment: patch, minor, or major (default: patch)")]
+        [Description("Version component to increment: patch, minor, major, or none to skip bumping (default: patch)")]
         [DefaultValue(BumpComponent.Patch)]
         public BumpComponent Bump { get; set; } = BumpComponent.Patch;
 
@@ -78,19 +78,26 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         }
 
         // Bump version in Dataverse before sync so the downloaded XML reflects the new version
+        var skipBump = settings.Bump == BumpComponent.None;
         var tagVersion = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Bump {settings.Bump} version [bold]{projectSln.Name}[/]...",
+            skipBump ? $"Reading version [bold]{projectSln.Name}[/]..." : $"Bump {settings.Bump} version [bold]{projectSln.Name}[/]...",
             async ctx =>
             {
                 var currentVersion = await PacUtils.GetSolutionVersionAsync(slnInfo.SolutionUniqueName!, devEnv.EnvironmentUrl!, _capture, cancellationToken);
                 Console.Verbose($"Current version: {currentVersion}");
+                if (skipBump)
+                    return ToTagVersion(currentVersion);
+
                 var newVersion = BumpVersion(currentVersion, settings.Bump);
                 await PacUtils.SetSolutionVersionAsync(slnInfo.SolutionUniqueName!, newVersion, devEnv.EnvironmentUrl!, _capture, cancellationToken);
                 Console.Verbose($"New version: {newVersion}");
-                var tagVersion = ToTagVersion(newVersion);
-                return tagVersion;
+                return ToTagVersion(newVersion);
             });
-        Console.Ok($"Version bumped: {tagVersion}");
+
+        if (skipBump)
+            Console.Skip($"Version bump — skipping (--bump none active), current version {tagVersion}");
+        else
+            Console.Ok($"Version bumped: {tagVersion}");
 
         // Sync solution from Dataverse
         Logger.LogInformation("Syncing from Dataverse: {SolutionName}", projectSln.Name);
@@ -186,10 +193,12 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
                 nums[1]++;
                 for (var i = 2; i < nums.Length; i++) nums[i] = 0;
                 break;
-            default: // Patch
+            case BumpComponent.Patch:
                 nums[2]++;
                 for (var i = 3; i < nums.Length; i++) nums[i] = 0;
                 break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(component), component, "BumpVersion does not accept BumpComponent.None — callers must skip the bump entirely instead.");
         }
 
         return string.Join(".", nums);

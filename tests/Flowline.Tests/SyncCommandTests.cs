@@ -30,6 +30,14 @@ public class BumpVersionTests
         SyncCommand.BumpVersion(version, component).Should().Be(expected);
     }
 
+    [Fact]
+    public void BumpVersion_None_ShouldThrow()
+    {
+        var act = () => SyncCommand.BumpVersion("1.0.0.1", BumpComponent.None);
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
     [Theory]
     [InlineData("1.0.1.0", "1.0.1")]
     [InlineData("1.0.1", "1.0.1")]
