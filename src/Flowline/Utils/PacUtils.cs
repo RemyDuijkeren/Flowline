@@ -278,6 +278,39 @@ public static class PacUtils
         return true;
     }
 
+    public static async Task BackupEnvironmentAsync(string environmentUrl, string label, SubprocessCapture capture, CancellationToken cancellationToken)
+    {
+        var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
+        var result = await AnsiConsole.Status().FlowlineSpinner().StartAsync<BufferedCommandResult>(
+            "Backing up environment...",
+            ctx => capture.Apply(
+                      Cli.Wrap(cmdName)
+                      .WithArguments(args => args
+                          .AddIfNotNull(prefixArgs)
+                          .Add("admin").Add("backup")
+                          .Add("--environment").Add(environmentUrl)
+                          .Add("--label").Add(label))
+                      .WithValidation(CommandResultValidation.None),
+                      ctx)
+                  .ExecuteBufferedAsync(cancellationToken));
+
+        EnsureBackupSucceeded(result.ExitCode, result.StandardOutput, result.StandardError);
+    }
+
+    // Separated from BackupEnvironmentAsync so the exit-code-to-exception decision is directly
+    // unit-testable without a real pac process, mirroring PacUtils.BuildCheckResult.
+    internal static void EnsureBackupSucceeded(int exitCode, string standardOutput, string standardError)
+    {
+        if (exitCode == 0) return;
+
+        var output = string.IsNullOrWhiteSpace(standardError) ? standardOutput : standardError;
+        throw new FlowlineException(ExitCode.ConnectionFailed,
+            $"pac admin backup failed (likely a missing System Administrator / environment-admin role): {output.Trim()}. Use --no-backup to bypass.");
+    }
+
+    internal static string BuildBackupLabel(string solutionName, DateTime utcNow) =>
+        $"flowline-deploy-{solutionName}-{utcNow:yyyyMMddTHHmmssZ}";
+
     public static async Task<List<EnvironmentInfo>> GetEnvironmentsAsync(SubprocessCapture capture, CancellationToken cancellationToken = default)
     {
         var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
