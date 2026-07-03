@@ -234,17 +234,17 @@ public static class PacUtils
 
     // Separated from CheckSolutionAsync so the exit-code-vs-silent-pass decision is directly
     // unit-testable without a real pac process: a checker-unreachable outcome must never look
-    // identical to "analysis ran and found nothing."
+    // identical to "analysis ran and found nothing." Same applies to an unparseable summary
+    // table — fails closed (throws), matching GetSolutionVersionAsync's convention for
+    // unparseable-but-successful pac output, rather than silently reporting a clean pass.
     internal static SolutionCheckResult BuildCheckResult(int exitCode, string pacOutput, string outputDirectory)
     {
         if (exitCode != 0)
             throw new FlowlineException(ExitCode.ConnectionFailed, "Solution check failed to run — check your PAC login and network connection.");
 
         if (!TryCountSeverities(pacOutput, out var criticalCount, out var totalCount))
-        {
-            AnsiConsole.MarkupLine("[yellow]Could not parse solution checker results — treating as no findings. Check the report in the output directory.[/]");
-            return new SolutionCheckResult(0, 0, outputDirectory);
-        }
+            throw new FlowlineException(ExitCode.GeneralError,
+                $"Could not parse solution checker results — check the report in {outputDirectory}.");
 
         return new SolutionCheckResult(criticalCount, totalCount, outputDirectory);
     }

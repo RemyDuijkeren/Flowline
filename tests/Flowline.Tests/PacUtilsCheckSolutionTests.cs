@@ -48,6 +48,9 @@ public class TryCountSeveritiesTests
     [InlineData("")]
     [InlineData("Checker results:\r\n    Status: Finished\r\n")]
     [InlineData("garbage output with no summary table at all")]
+    [InlineData("Critical High Medium  Low Informational\r\n")]
+    [InlineData("Critical High Medium  Low Informational\r\n\r\n    x    0       2   0             0\r\n")]
+    [InlineData("Critical High Medium  Low Informational\r\n\r\n    0    0\r\n")]
     public void TryCountSeverities_ReturnsFalse_WhenTableIsMissingOrMalformed(string output)
     {
         var result = PacUtils.TryCountSeverities(output, out var critical, out var total);
@@ -84,11 +87,11 @@ public class BuildCheckResultTests
     }
 
     [Fact]
-    public void BuildCheckResult_ReturnsZeroCounts_WhenPacSucceedsButTableIsUnparsable()
+    public void BuildCheckResult_Throws_WhenPacSucceedsButTableIsUnparsable()
     {
-        var result = PacUtils.BuildCheckResult(0, "no summary table here", OutputDirectory);
+        Action act = () => PacUtils.BuildCheckResult(0, "no summary table here", OutputDirectory);
 
-        result.CriticalCount.Should().Be(0);
-        result.TotalCount.Should().Be(0);
+        act.Should().Throw<FlowlineException>()
+            .Where(ex => ex.ExitCode == ExitCode.GeneralError);
     }
 }
