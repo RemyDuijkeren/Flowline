@@ -16,13 +16,14 @@ public class SolutionCheckService(IAnsiConsole console, SubprocessCapture captur
 
         if (ShouldAbort(result.CriticalCount))
             throw new FlowlineException(ExitCode.ValidationFailed,
-                $"Solution checker found {result.CriticalCount} Critical finding{(result.CriticalCount == 1 ? "" : "s")} — see {result.OutputDirectory} for the full report.");
+                $"Solution checker found {result.CriticalCount} Critical finding{Plural(result.CriticalCount)} — see {result.OutputDirectory} for the full report.");
 
-        console.Ok($"Solution checker: {result.TotalCount} finding{(result.TotalCount == 1 ? "" : "s")}, 0 Critical.");
+        console.Ok($"Solution checker: {result.TotalCount} finding{Plural(result.TotalCount)}, 0 Critical.");
     }
 
     public Task<int> RunPostImportAsync(PostDeployContext context, CancellationToken ct) => Task.FromResult(0);
 
-    // Static, tested directly — the throw itself happens inline in RunPreImportAsync (KTD1).
     internal static bool ShouldAbort(int criticalCount) => criticalCount > 0;
+
+    static string Plural(int count) => count == 1 ? "" : "s";
 }

@@ -215,7 +215,7 @@ public static class PacUtils
         Directory.CreateDirectory(outputDirectory);
 
         var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
-        var result = await AnsiConsole.Status().FlowlineSpinner().StartAsync<CliWrap.Buffered.BufferedCommandResult>(
+        var result = await AnsiConsole.Status().FlowlineSpinner().StartAsync<BufferedCommandResult>(
             "Running solution checker...",
             ctx => capture.Apply(
                       Cli.Wrap(cmdName)
@@ -232,9 +232,9 @@ public static class PacUtils
         return BuildCheckResult(result.ExitCode, result.StandardOutput, outputDirectory);
     }
 
-    // Separated from CheckSolutionAsync so the exit-code-vs-silent-pass decision (KTD7) is
-    // directly unit-testable without a real pac process: a checker-unreachable outcome must
-    // never look identical to "analysis ran and found nothing."
+    // Separated from CheckSolutionAsync so the exit-code-vs-silent-pass decision is directly
+    // unit-testable without a real pac process: a checker-unreachable outcome must never look
+    // identical to "analysis ran and found nothing."
     internal static SolutionCheckResult BuildCheckResult(int exitCode, string pacOutput, string outputDirectory)
     {
         if (exitCode != 0)
