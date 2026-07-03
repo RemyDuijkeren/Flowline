@@ -34,6 +34,11 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         [DefaultValue(false)]
         public bool SkipDtapCheck { get; set; } = false;
 
+        [CommandOption("--skip-solution-check")]
+        [Description("Skip the solution checker gate")]
+        [DefaultValue(false)]
+        public bool SkipSolutionCheck { get; set; } = false;
+
         [CommandOption("--no-delete")]
         [Description("Report orphan components without deleting them")]
         [DefaultValue(false)]
@@ -57,14 +62,20 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         var sNew = ParseSolutionXml(slnFolder);
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, targetUrl, cancellationToken);
-        var webresourceRoot = Path.Combine(slnFolder, "WebResources");
-        var postDeployContext = new PostDeployContext(service, sln.Name, sNew, runMode, webresourceRoot);
-
-        foreach (var postDeployService in postDeployServices)
-            await postDeployService.RunPreImportAsync(postDeployContext, cancellationToken);
 
         Logger.LogInformation("Packing: {SolutionName}", sln.Name);
         var packagePath = await PackSolutionAsync(sln, slnFolder, settings, cancellationToken);
+
+        var webresourceRoot = Path.Combine(slnFolder, "WebResources");
+        var postDeployContext = new PostDeployContext(service, sln.Name, sNew, runMode, webresourceRoot, packagePath, targetEnv.EnvironmentUrl!);
+
+        var preImportServices = settings.SkipSolutionCheck
+            ? postDeployServices.Where(s => s is not SolutionCheckService)
+            : postDeployServices;
+
+        foreach (var postDeployService in preImportServices)
+            await postDeployService.RunPreImportAsync(postDeployContext, cancellationToken);
+
         Logger.LogInformation("Importing to: {TargetUrl}", targetUrl);
         await ImportSolutionAsync(packagePath, targetEnv, sln.Name, cancellationToken);
 
