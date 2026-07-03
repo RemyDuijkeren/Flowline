@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ideation: Flowline Dashboard Command</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f8f9fa;
+      --surface: #ffffff;
+      --surface-muted: #f1f5f9;
+      --border: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --text: #1a202c;
+      --text-muted: #64748b;
+      --text-subtle: #94a3b8;
+      --accent: #2563eb;
+      --accent-soft: #eff6ff;
+      --accent-border: #bfdbfe;
+      --accent-text: #1d4ed8;
+      --success: #059669;
+      --success-soft: #ecfdf5;
+      --success-border: #a7f3d0;
+      --warn: #d97706;
+      --warn-soft: #fffbeb;
+      --warn-border: #fde68a;
+      --danger: #dc2626;
+      --danger-soft: #fef2f2;
+      --danger-border: #fecaca;
+      --purple: #7c3aed;
+      --purple-soft: #faf5ff;
+      --purple-border: #d8b4fe;
+      --mono: 'JetBrains Mono', 'Consolas', monospace;
+      --sans: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    .page {
+      max-width: 960px;
+      margin-inline: auto;
+      padding: 2.5rem 1.5rem 5rem;
+    }
+
+    /* ── Header ── */
+    .doc-header {
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .doc-eyebrow {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+    }
+    .doc-title {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 0.75rem;
+      line-height: 1.2;
+    }
+    .doc-meta {
+      display: flex;
+      gap: 1.75rem;
+      flex-wrap: wrap;
+      font-size: 13.5px;
+      color: var(--text-muted);
+    }
+    .doc-meta strong { color: var(--text); font-weight: 600; }
+
+    /* ── Stats strip ── */
+    .stats-strip {
+      display: flex;
+      gap: 0.875rem;
+      margin-bottom: 2.5rem;
+      flex-wrap: wrap;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.875rem 1.25rem;
+      min-width: 110px;
+    }
+    .stat-label {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 0.2rem;
+    }
+    .stat-value {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1;
+    }
+    .stat-sub {
+      font-size: 11.5px;
+      color: var(--text-subtle);
+      margin-top: 0.1rem;
+    }
+
+    /* ── Section shell ── */
+    section {
+      margin-bottom: 3rem;
+    }
+    section > h2 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.5rem;
+      margin-bottom: 1.25rem;
+    }
+
+    /* ── Grounding grid ── */
+    .grounding-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.625rem;
+    }
+    @media (max-width: 640px) { .grounding-grid { grid-template-columns: 1fr; } }
+    .grounding-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.75rem 0.875rem;
+      font-size: 13px;
+    }
+    .grounding-card dt {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 0.2rem;
+    }
+    .grounding-card dd { color: var(--text); }
+    code {
+      font-family: var(--mono);
+      font-size: 0.825em;
+      background: var(--surface-muted);
+      padding: 0.1em 0.3em;
+      border-radius: 3px;
+      color: #0f172a;
+    }
+
+    /* ── Axes ── */
+    .axes-list { display: flex; flex-direction: column; gap: 0.5rem; }
+    .axis-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.625rem 0.875rem;
+      font-size: 13.5px;
+    }
+    .axis-tag {
+      background: var(--accent-soft);
+      color: var(--accent-text);
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      padding: 0.2em 0.55em;
+      border-radius: 4px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .axis-desc { color: var(--text-muted); }
+
+    /* ── Jump list ── */
+    .jump-list {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.875rem 1.125rem;
+      margin-bottom: 1.75rem;
+    }
+    .jump-list-label {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+    .jump-list ol {
+      padding-left: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+    .jump-list a {
+      font-size: 13.5px;
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .jump-list a:hover { text-decoration: underline; }
+
+    /* ── Idea cards ── */
+    .idea-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 1.625rem;
+    }
+    .idea-card-top {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.875rem;
+      margin-bottom: 1.1rem;
+    }
+    .idea-rank-badge {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: var(--text);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .idea-rank-badge.top { background: var(--accent); }
+    .idea-head { flex: 1; }
+    .idea-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 0.375rem;
+    }
+    .chips {
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+    .chip {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      padding: 0.2em 0.55em;
+      border-radius: 4px;
+    }
+    .chip-axis { background: var(--accent-soft); color: var(--accent-text); }
+    .chip-conf-hi { background: var(--success-soft); color: var(--success); }
+    .chip-conf-med { background: var(--warn-soft); color: var(--warn); }
+    .chip-cx-lo { background: #f0fdf4; color: #16a34a; }
+    .chip-cx-med { background: #fefce8; color: #a16207; }
+
+    .idea-field { margin-bottom: 0.9rem; }
+    .idea-field:last-child { margin-bottom: 0; }
+    .field-label {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 0.3rem;
+    }
+    .field-body {
+      font-size: 14px;
+      color: var(--text);
+      max-width: 72ch;
+    }
+    .field-body p + p { margin-top: 0.4rem; }
+    .basis-tag {
+      display: inline-block;
+      font-size: 9.5px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 0.15em 0.45em;
+      border-radius: 3px;
+      margin-right: 0.3rem;
+      vertical-align: middle;
+    }
+    .bt-direct { background: #dcfce7; color: #15803d; }
+    .bt-reasoned { background: #fef9c3; color: #854d0e; }
+    .bt-external { background: var(--accent-soft); color: var(--accent-text); }
+
+    .two-col-fields {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-bottom: 0.9rem;
+    }
+    @media (max-width: 560px) { .two-col-fields { grid-template-columns: 1fr; } }
+
+    /* ── Diagram wrapper ── */
+    .diagram-wrap {
+      margin: 1.125rem 0;
+      background: var(--surface-muted);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.125rem;
+      overflow-x: auto;
+    }
+    .diagram-wrap svg { display: block; }
+
+    /* ── Rejection table ── */
+    .gap-note {
+      background: var(--purple-soft);
+      border: 1px solid var(--purple-border);
+      border-radius: 8px;
+      padding: 0.875rem 1.125rem;
+      margin-bottom: 1rem;
+      font-size: 13.5px;
+    }
+    .gap-note-label {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--purple);
+      margin-bottom: 0.3rem;
+    }
+    .gap-note p { color: var(--text); max-width: 72ch; }
+
+    .reject-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+    }
+    .reject-table th {
+      background: var(--surface-muted);
+      text-align: left;
+      padding: 0.6rem 0.875rem;
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      border-bottom: 2px solid var(--border);
+    }
+    .reject-table td {
+      padding: 0.6rem 0.875rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .reject-table tr:last-child td { border-bottom: none; }
+    .reject-table tr.axis-gap td {
+      background: var(--purple-soft);
+      color: var(--purple);
+      font-style: italic;
+    }
+    .id-chip {
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--surface-muted);
+      color: var(--text-muted);
+      padding: 0.15em 0.45em;
+      border-radius: 3px;
+      white-space: nowrap;
+    }
+    .id-chip.axis { background: var(--purple-soft); color: var(--purple); }
+
+    /* ── Footer ── */
+    footer.composition-signal {
+      font-size: 12px;
+      color: var(--text-subtle);
+      border-top: 1px solid var(--border);
+      padding-top: 1rem;
+      margin-top: 3rem;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ═══════════════════════════════════════════════
+       HEADER
+  ══════════════════════════════════════════════════ -->
+  <header class="doc-header">
+    <div class="doc-eyebrow">Ideation · Repo-Grounded · 2026-07-03</div>
+    <h1 class="doc-title">Flowline Dashboard Command</h1>
+    <div class="doc-meta">
+      <span>Topic: <strong>flowline-dashboard</strong></span>
+      <span>Focus: <strong>flowline dashboard — deployment status board</strong></span>
+      <span>Mode: <strong>repo-grounded</strong></span>
+    </div>
+  </header>
+
+  <!-- ═══════════════════════════════════════════════
+       STATS STRIP
+  ══════════════════════════════════════════════════ -->
+  <div class="stats-strip">
+    <div class="stat-card">
+      <div class="stat-label">Survivors</div>
+      <div class="stat-value">7</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Considered</div>
+      <div class="stat-value">19</div>
+      <div class="stat-sub">from 36 raw</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Cut</div>
+      <div class="stat-value">12</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Axes</div>
+      <div class="stat-value">5</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Axis Gap</div>
+      <div class="stat-value" style="font-size:1rem;padding-top:4px;">pipeline-flow</div>
+      <div class="stat-sub">deliberate</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
+       GROUNDING CONTEXT
+  ══════════════════════════════════════════════════ -->
+  <section id="grounding-context">
+    <h2>Grounding Context</h2>
+    <dl class="grounding-grid">
+      <div class="grounding-card">
+        <dt>StatusCommand — Data Already Computed</dt>
+        <dd><code>StatusCommand.cs:65</code> computes <code>Dictionary&lt;string, string?&gt; Versions</code> per env via <code>Task.WhenAll</code>. The 4-env matrix is fully assembled before rendering. Current render at <code>:105–127</code> is nested (env header → solutions beneath); no <code>Spectre.Console Table</code> exists anywhere.</dd>
+      </div>
+      <div class="grounding-card">
+        <dt>ResolveDtapGate — Per-Env, Not Per-Solution</dt>
+        <dd><code>DeployCommand.cs:292–338</code> — static pure, no deploy side-effect. Signature: <code>(ProjectConfig, string targetUrl)</code>. Given the same <code>targetUrl</code>, every solution yields identical <code>DtapGateOutcome</code>. Per-solution promotion signals require a separate version-comparison step beyond the gate.</dd>
+      </div>
+      <div class="grounding-card">
+        <dt>ReadLocalSolutionVersion Already Exists</dt>
+        <dd><code>DeployCommand.cs:342</code> — <code>ReadLocalSolutionVersion()</code> parses <code>Package/src/Other/Solution.xml</code> offline. Offline version parse is production code today, not theoretical.</dd>
+      </div>
+      <div class="grounding-card">
+        <dt>Status Path Uses PAC CLI, Not Dataverse SDK</dt>
+        <dd><code>PacUtils.cs:399–421</code> — <code>GetSolutionVersionAsync()</code> calls <code>pac solution online-version</code>. <code>SolutionReader.cs</code> (IOrganizationServiceAsync2) is not in the status data path. New SDK query = a new path, not a ColumnSet tweak to an existing one.</dd>
+      </div>
+      <div class="grounding-card">
+        <dt>msdyn_solutionhistories — Untapped</dt>
+        <dd>Zero matches for <code>msdyn_solutionhistor</code> in codebase. Dataverse virtual table with <code>msdyn_result</code> (bool), <code>msdyn_operation</code> (0=Import), <code>msdyn_starttime</code> — confirmed fields, no existing query.</dd>
+      </div>
+      <div class="grounding-card">
+        <dt>CancellationToken + Cache Infrastructure</dt>
+        <dd><code>Program.cs:35–43</code> — <code>Console.CancelKeyPress</code> wired to <code>CancellationTokenSource</code>. <code>FlowlineValidator.cs:12</code> — <code>SolutionTtl = 4h</code>. <code>ValidationCacheStore.cs</code> — <code>CheckedAtUtc</code> stored; <code>DeployCommand.cs:141</code> — <code>bypassCache</code> param exists.</dd>
+      </div>
+      <div class="grounding-card">
+        <dt>4 Named Environments</dt>
+        <dd><code>ProjectConfig.cs:13–16</code> — <code>ProdUrl</code>, <code>UatUrl</code>, <code>TestUrl</code>, <code>DevUrl</code>. <code>StatusCommand.cs:54–60</code> renders in order: Production, UAT, Test, Development.</dd>
+      </div>
+      <div class="grounding-card">
+        <dt>No --json Flag Anywhere</dt>
+        <dd>Zero <code>--json</code> or output-format flag on any Flowline command. <code>ValidationCacheStore.cs:6–8</code> — <code>JsonSerializer</code> infrastructure present. <code>StatusCommand.cs:24</code> — <code>ConsoleHelper.IsInteractive()</code> guard pattern exists.</dd>
+      </div>
+    </dl>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════
+       TOPIC AXES
+  ══════════════════════════════════════════════════ -->
+  <section id="topic-axes">
+    <h2>Topic Axes</h2>
+    <div class="axes-list">
+      <div class="axis-row">
+        <span class="axis-tag">environment-solution-matrix</span>
+        <span class="axis-desc">How the dashboard represents the N×M relationship between solutions and environments — layout, columns, ordering, anomaly marking.</span>
+      </div>
+      <div class="axis-row">
+        <span class="axis-tag">data-model-and-freshness</span>
+        <span class="axis-desc">What data sources feed the dashboard (PAC CLI, Dataverse SDK, event log, cache) and how staleness is communicated.</span>
+      </div>
+      <div class="axis-row">
+        <span class="axis-tag">deployment-pipeline-flow</span>
+        <span class="axis-desc">How the dashboard represents DTAP promotion ordering, readiness, and pipeline violations — beyond raw version strings.</span>
+      </div>
+      <div class="axis-row">
+        <span class="axis-tag">interaction-and-actions</span>
+        <span class="axis-desc">What the user can do from within the dashboard — keyboard actions, default view state, entry points.</span>
+      </div>
+      <div class="axis-row">
+        <span class="axis-tag">integration-and-extensibility</span>
+        <span class="axis-desc">How the dashboard's output can be consumed beyond an interactive terminal — CI gates, stakeholder reporting, structured data contracts.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════
+       RANKED IDEAS
+  ══════════════════════════════════════════════════ -->
+  <section id="ranked-ideas">
+    <h2>Ranked Ideas</h2>
+
+    <div class="jump-list">
+      <div class="jump-list-label">Jump to idea</div>
+      <ol>
+        <li><a href="#idea-a1">1. Solutions × Environments Grid</a></li>
+        <li><a href="#idea-a3">2. Local-as-First-Column</a></li>
+        <li><a href="#idea-b2">3. Import Health Badge</a></li>
+        <li><a href="#idea-e1">4. --json as Versioned Schema</a></li>
+        <li><a href="#idea-d2">5. Exception-First Collapse</a></li>
+        <li><a href="#idea-a4">6. Version Skew Anomaly Detection</a></li>
+        <li><a href="#idea-d1">7. Interactive Promote Action</a></li>
+      </ol>
+    </div>
+
+    <!-- ─── Idea 1: A1 ─── -->
+    <article class="idea-card" id="idea-a1">
+      <div class="idea-card-top">
+        <div class="idea-rank-badge top">1</div>
+        <div class="idea-head">
+          <div class="idea-title">Solutions × Environments Grid</div>
+          <div class="chips">
+            <span class="chip chip-axis">environment-solution-matrix</span>
+            <span class="chip chip-conf-hi">Conf 90%</span>
+            <span class="chip chip-cx-lo">Cx Low</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Description</div>
+        <div class="field-body">
+          <p>Pivot <code>StatusCommand</code>'s rendering from nested (environment header → solutions indented beneath) to a <code>Spectre.Console Table</code>: solutions as rows, environments (Dev / Test / UAT / Prod) as columns, version strings as cells. This is a pure rendering change — the underlying data structure (<code>Dictionary&lt;string, string?&gt; Versions</code> per env) is already computed and discarded after the nested render. The grid makes cross-environment version comparison instant instead of requiring the reader to mentally track indented values across four separate env blocks.</p>
+          <p>This is the foundational idea — everything else in this list (health badges, anomaly detection, promote action) composes on top of the grid as additional cell annotations or row states. Building the grid first is the natural prerequisite.</p>
+        </div>
+      </div>
+
+      <div class="diagram-wrap">
+        <!-- Before/After: nested vs grid -->
+        <svg viewBox="0 0 620 218" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:620px" aria-label="Rendering pivot: before shows nested environment blocks, after shows solution-row grid">
+          <defs>
+            <marker id="arrowA1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0,1 L0,9 L9,5 z" fill="#94a3b8"/>
+            </marker>
+          </defs>
+          <!-- BEFORE label -->
+          <text x="117" y="14" text-anchor="middle" font-size="10" font-weight="700" fill="#64748b" letter-spacing="0.09em" font-family="system-ui,sans-serif">BEFORE — NESTED</text>
+          <!-- BEFORE panel -->
+          <rect x="4" y="20" width="226" height="192" rx="7" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
+          <!-- env headers + solutions (monospace text) -->
+          <text x="14" y="46" font-size="12" font-weight="600" fill="#1e293b" font-family="monospace">Production</text>
+          <text x="26" y="63" font-size="11.5" fill="#475569" font-family="monospace">MySolution    1.4.0</text>
+          <text x="26" y="78" font-size="11.5" fill="#475569" font-family="monospace">CoreSolution  1.1.0</text>
+          <text x="14" y="102" font-size="12" font-weight="600" fill="#1e293b" font-family="monospace">UAT</text>
+          <text x="26" y="119" font-size="11.5" fill="#475569" font-family="monospace">MySolution    1.3.0</text>
+          <text x="26" y="134" font-size="11.5" fill="#475569" font-family="monospace">CoreSolution  1.1.0</text>
+          <text x="14" y="158" font-size="12" font-weight="600" fill="#1e293b" font-family="monospace">Test</text>
+          <text x="26" y="175" font-size="11.5" fill="#94a3b8" font-family="monospace">…</text>
+          <text x="14" y="199" font-size="12" font-weight="600" fill="#1e293b" font-family="monospace">Dev</text>
+
+          <!-- Arrow -->
+          <line x1="234" y1="116" x2="290" y2="116" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowA1)"/>
+
+          <!-- AFTER label -->
+          <text x="454" y="14" text-anchor="middle" font-size="10" font-weight="700" fill="#1d4ed8" letter-spacing="0.09em" font-family="system-ui,sans-serif">AFTER — GRID</text>
+          <!-- AFTER panel -->
+          <rect x="294" y="20" width="322" height="192" rx="7" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
+          <!-- Header row fill -->
+          <rect x="294" y="20" width="322" height="34" rx="7" fill="#dbeafe"/>
+          <rect x="294" y="40" width="322" height="14" fill="#dbeafe"/>
+          <!-- Column dividers -->
+          <line x1="408" y1="54" x2="408" y2="212" stroke="#bfdbfe" stroke-width="1"/>
+          <line x1="453" y1="54" x2="453" y2="212" stroke="#bfdbfe" stroke-width="1"/>
+          <line x1="498" y1="54" x2="498" y2="212" stroke="#bfdbfe" stroke-width="1"/>
+          <line x1="543" y1="54" x2="543" y2="212" stroke="#bfdbfe" stroke-width="1"/>
+          <!-- Row dividers -->
+          <line x1="294" y1="54" x2="616" y2="54" stroke="#bfdbfe" stroke-width="1"/>
+          <line x1="294" y1="90" x2="616" y2="90" stroke="#bfdbfe" stroke-width="1"/>
+          <line x1="294" y1="126" x2="616" y2="126" stroke="#bfdbfe" stroke-width="1"/>
+          <line x1="294" y1="162" x2="616" y2="162" stroke="#bfdbfe" stroke-width="1"/>
+          <line x1="294" y1="198" x2="616" y2="198" stroke="#bfdbfe" stroke-width="1"/>
+          <!-- Header text -->
+          <text x="302" y="42" font-size="10.5" font-weight="700" fill="#1d4ed8" font-family="system-ui,sans-serif">Solution</text>
+          <text x="430" y="42" text-anchor="middle" font-size="10.5" font-weight="700" fill="#1d4ed8" font-family="system-ui,sans-serif">Dev</text>
+          <text x="475" y="42" text-anchor="middle" font-size="10.5" font-weight="700" fill="#1d4ed8" font-family="system-ui,sans-serif">Test</text>
+          <text x="520" y="42" text-anchor="middle" font-size="10.5" font-weight="700" fill="#1d4ed8" font-family="system-ui,sans-serif">UAT</text>
+          <text x="579" y="42" text-anchor="middle" font-size="10.5" font-weight="700" fill="#1d4ed8" font-family="system-ui,sans-serif">Prod</text>
+          <!-- Row 1: MySolution -->
+          <text x="302" y="76" font-size="11.5" fill="#1e293b" font-family="system-ui,sans-serif">MySolution</text>
+          <text x="430" y="76" text-anchor="middle" font-size="11" fill="#1e293b" font-family="monospace">1.4.0</text>
+          <text x="475" y="76" text-anchor="middle" font-size="11" fill="#1e293b" font-family="monospace">1.3.0</text>
+          <text x="520" y="76" text-anchor="middle" font-size="11" fill="#1e293b" font-family="monospace">1.3.0</text>
+          <text x="579" y="76" text-anchor="middle" font-size="11" fill="#1e293b" font-family="monospace">1.2.0</text>
+          <!-- Row 2: CoreSolution -->
+          <text x="302" y="112" font-size="11.5" fill="#1e293b" font-family="system-ui,sans-serif">CoreSolution</text>
+          <text x="430" y="112" text-anchor="middle" font-size="11" fill="#1e293b" font-family="monospace">1.1.0</text>
+          <text x="475" y="112" text-anchor="middle" font-size="11" fill="#1e293b" font-family="monospace">1.1.0</text>
+          <text x="520" y="112" text-anchor="middle" font-size="11" fill="#1e293b" font-family="monospace">1.1.0</text>
+          <text x="579" y="112" text-anchor="middle" font-size="11" fill="#1e293b" font-family="monospace">1.1.0</text>
+          <!-- Row 3: ThirdSolution -->
+          <text x="302" y="148" font-size="11.5" fill="#1e293b" font-family="system-ui,sans-serif">ThirdSolution</text>
+          <text x="430" y="148" text-anchor="middle" font-size="11" fill="#1e293b" font-family="monospace">2.0.0</text>
+          <text x="475" y="148" text-anchor="middle" font-size="11" fill="#1e293b" font-family="monospace">1.9.0</text>
+          <text x="520" y="148" text-anchor="middle" font-size="11" fill="#1e293b" font-family="monospace">1.8.0</text>
+          <text x="579" y="148" text-anchor="middle" font-size="11" fill="#94a3b8" font-family="monospace">—</text>
+          <!-- Row 4 (dim) -->
+          <text x="302" y="184" font-size="11" fill="#94a3b8" font-family="system-ui,sans-serif">… more solutions</text>
+        </svg>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Basis</div>
+        <div class="field-body">
+          <p><span class="basis-tag bt-direct">direct</span> <code>StatusCommand.cs:65</code> — data computed as <code>Dictionary&lt;string, string?&gt; Versions</code> per env, available before rendering begins. <code>StatusCommand.cs:105–127</code> — current nested render confirmed; no <code>Table</code> anywhere in codebase.</p>
+        </div>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Rationale</div>
+        <div class="field-body">
+          <p>The matrix is already computed — the work is in the renderer. Switching to a <code>Spectre.Console Table</code> gives the reader 4-environment comparison at a glance instead of mentally correlating 4 nested env blocks. This is the same pivot Azure DevOps and Power Platform Pipeline UI make when they show "environments as columns." The data model needs no change; the rendering pattern (<code>AddColumn</code>, <code>AddRow</code> per solution) is directly supported by Spectre.Console.</p>
+        </div>
+      </div>
+
+      <div class="two-col-fields">
+        <div class="idea-field">
+          <div class="field-label">Downsides</div>
+          <div class="field-body">Wide solution names truncate in narrow terminals. Spectre.Console <code>Table</code> requires all data before it can render (no streaming rows); acceptable since all 4 env queries run in parallel anyway.</div>
+        </div>
+        <div class="two-col-fields" style="margin-bottom:0">
+          <div class="idea-field">
+            <div class="field-label">Confidence</div>
+            <div class="field-body">90%</div>
+          </div>
+          <div class="idea-field">
+            <div class="field-label">Complexity</div>
+            <div class="field-body">Low</div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ─── Idea 2: A3 ─── -->
+    <article class="idea-card" id="idea-a3">
+      <div class="idea-card-top">
+        <div class="idea-rank-badge">2</div>
+        <div class="idea-head">
+          <div class="idea-title">Local-as-First-Column</div>
+          <div class="chips">
+            <span class="chip chip-axis">environment-solution-matrix</span>
+            <span class="chip chip-conf-hi">Conf 90%</span>
+            <span class="chip chip-cx-lo">Cx Low</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Description</div>
+        <div class="field-body">
+          <p>Add a <strong>Local</strong> column as the leftmost column of the matrix, showing the version declared in the local <code>Package/src/Other/Solution.xml</code>. This read is purely offline — no network, no PAC CLI — and is available instantly even when environment queries are still in flight. The full matrix becomes: Local → Dev → Test → UAT → Prod.</p>
+          <p>When Local is ahead of Dev, the dashboard immediately shows an uncommitted version bump waiting to be deployed. This catches the common scenario where a developer has incremented the solution version locally but hasn't deployed yet — something the existing status output cannot show.</p>
+        </div>
+      </div>
+
+      <div class="diagram-wrap">
+        <!-- Matrix with Local as first column, highlighting local > dev -->
+        <svg viewBox="0 0 580 160" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:580px" aria-label="Matrix with Local column as first column, showing uncommitted version bump">
+          <defs>
+            <marker id="arrowA3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0,1 L0,9 L9,5 z" fill="#64748b"/>
+            </marker>
+          </defs>
+          <!-- Panel -->
+          <rect x="2" y="2" width="576" height="155" rx="7" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+          <!-- Header fill -->
+          <rect x="2" y="2" width="576" height="34" rx="7" fill="#f1f5f9"/>
+          <rect x="2" y="22" width="576" height="14" fill="#f1f5f9"/>
+          <!-- LOCAL column highlight -->
+          <rect x="2" y="2" width="97" height="155" rx="7" fill="#fefce8" opacity="0.7"/>
+          <rect x="86" y="2" width="13" height="155" fill="#fefce8" opacity="0.7"/>
+          <!-- Column dividers -->
+          <line x1="99" y1="36" x2="99" y2="157" stroke="#e2e8f0" stroke-width="1"/>
+          <line x1="185" y1="2" x2="185" y2="157" stroke="#e2e8f0" stroke-width="1"/>
+          <line x1="271" y1="2" x2="271" y2="157" stroke="#e2e8f0" stroke-width="1"/>
+          <line x1="357" y1="2" x2="357" y2="157" stroke="#e2e8f0" stroke-width="1"/>
+          <line x1="443" y1="2" x2="443" y2="157" stroke="#e2e8f0" stroke-width="1"/>
+          <!-- Row dividers -->
+          <line x1="2" y1="36" x2="578" y2="36" stroke="#e2e8f0" stroke-width="1"/>
+          <line x1="2" y1="80" x2="578" y2="80" stroke="#e2e8f0" stroke-width="1"/>
+          <line x1="2" y1="124" x2="578" y2="124" stroke="#e2e8f0" stroke-width="1"/>
+          <!-- Header text -->
+          <text x="12" y="24" font-size="10.5" font-weight="700" fill="#a16207" font-family="system-ui,sans-serif">Local</text>
+          <text x="108" y="24" font-size="10.5" font-weight="700" fill="#475569" font-family="system-ui,sans-serif">Solution</text>
+          <text x="228" y="24" text-anchor="middle" font-size="10.5" font-weight="700" fill="#475569" font-family="system-ui,sans-serif">Dev</text>
+          <text x="314" y="24" text-anchor="middle" font-size="10.5" font-weight="700" fill="#475569" font-family="system-ui,sans-serif">Test</text>
+          <text x="400" y="24" text-anchor="middle" font-size="10.5" font-weight="700" fill="#475569" font-family="system-ui,sans-serif">UAT</text>
+          <text x="510" y="24" text-anchor="middle" font-size="10.5" font-weight="700" fill="#475569" font-family="system-ui,sans-serif">Prod</text>
+          <!-- Row 1: MySolution — local > dev -->
+          <text x="12" y="64" font-size="12" font-weight="600" fill="#a16207" font-family="monospace">1.5.0</text>
+          <text x="108" y="64" font-size="12" fill="#1e293b" font-family="system-ui,sans-serif">MySolution</text>
+          <text x="228" y="64" text-anchor="middle" font-size="12" fill="#1e293b" font-family="monospace">1.4.0</text>
+          <text x="314" y="64" text-anchor="middle" font-size="12" fill="#1e293b" font-family="monospace">1.3.0</text>
+          <text x="400" y="64" text-anchor="middle" font-size="12" fill="#1e293b" font-family="monospace">1.3.0</text>
+          <text x="510" y="64" text-anchor="middle" font-size="12" fill="#1e293b" font-family="monospace">1.2.0</text>
+          <!-- Row 2: CoreSolution — local = dev -->
+          <text x="12" y="108" font-size="12" fill="#94a3b8" font-family="monospace">1.1.0</text>
+          <text x="108" y="108" font-size="12" fill="#1e293b" font-family="system-ui,sans-serif">CoreSolution</text>
+          <text x="228" y="108" text-anchor="middle" font-size="12" fill="#1e293b" font-family="monospace">1.1.0</text>
+          <text x="314" y="108" text-anchor="middle" font-size="12" fill="#1e293b" font-family="monospace">1.1.0</text>
+          <text x="400" y="108" text-anchor="middle" font-size="12" fill="#1e293b" font-family="monospace">1.1.0</text>
+          <text x="510" y="108" text-anchor="middle" font-size="12" fill="#1e293b" font-family="monospace">1.1.0</text>
+          <!-- Row 3: dim -->
+          <text x="12" y="146" font-size="11" fill="#94a3b8" font-family="monospace">…</text>
+          <text x="108" y="146" font-size="11" fill="#94a3b8" font-family="system-ui,sans-serif">… more solutions</text>
+          <!-- Annotation: "uncommitted bump" label -->
+          <line x1="52" y1="64" x2="52" y2="26" stroke="#d97706" stroke-width="1.5" stroke-dasharray="3,2" marker-end="url(#arrowA3)"/>
+          <text x="56" y="54" font-size="9" fill="#d97706" font-family="system-ui,sans-serif">uncommitted</text>
+          <text x="56" y="65" font-size="9" fill="#d97706" font-family="system-ui,sans-serif">bump</text>
+        </svg>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Basis</div>
+        <div class="field-body">
+          <p><span class="basis-tag bt-direct">direct</span> <code>DeployCommand.cs:342</code> — <code>ReadLocalSolutionVersion()</code> already parses <code>Package/src/Other/Solution.xml</code> in production code. The offline parse capability exists; this idea surfaces it in the matrix.</p>
+          <p><span class="basis-tag bt-direct">direct</span> CLAUDE.md folder-structure spec confirms <code>Package/src/</code> holds the unpacked solution XML in all Flowline projects.</p>
+        </div>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Rationale</div>
+        <div class="field-body">
+          <p>The Local column extends the dashboard into "what's about to be deployed" territory — making the developer's working copy part of the pipeline view. It fills in the gap between a finished version bump and its first deployment, which currently requires the developer to check Solution.xml manually. Because <code>ReadLocalSolutionVersion()</code> is already written and tested, the implementation cost is minimal.</p>
+        </div>
+      </div>
+
+      <div class="two-col-fields">
+        <div class="idea-field">
+          <div class="field-label">Downsides</div>
+          <div class="field-body">Only meaningful when run from inside a Flowline project with a <code>Package/src/</code> tree. Column shows nothing useful (dash) in global context or from CI. Needs a graceful absent-column path.</div>
+        </div>
+        <div class="two-col-fields" style="margin-bottom:0">
+          <div class="idea-field">
+            <div class="field-label">Confidence</div>
+            <div class="field-body">90%</div>
+          </div>
+          <div class="idea-field">
+            <div class="field-label">Complexity</div>
+            <div class="field-body">Low</div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ─── Idea 3: B2 ─── -->
+    <article class="idea-card" id="idea-b2">
+      <div class="idea-card-top">
+        <div class="idea-rank-badge">3</div>
+        <div class="idea-head">
+          <div class="idea-title">Import Health Badge</div>
+          <div class="chips">
+            <span class="chip chip-axis">data-model-and-freshness</span>
+            <span class="chip chip-conf-med">Conf 75%</span>
+            <span class="chip chip-cx-med">Cx Medium</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Description</div>
+        <div class="field-body">
+          <p>Annotate each cell in the matrix with the outcome of the most recent import for that solution in that environment, queried from the Dataverse virtual table <code>msdyn_solutionhistories</code>. Each cell would show the version plus a compact badge: <em>✓ 2h ago</em> (green), <em>✗ failed 45m ago</em> (red), or <em>— no history</em> (gray). A failed badge surfaces the common silent-failure case: a version string that looks correct but whose import had errors visible only in a browser session.</p>
+          <p>The query requires a new SDK path (via <code>IOrganizationServiceAsync2</code>, following the <code>SolutionReader.cs</code> pattern) since <code>StatusCommand</code> currently uses PAC CLI only. The query filters <code>msdyn_operation = 0</code> (Import), orders by <code>msdyn_starttime</code> descending, takes 1 row per solution per environment.</p>
+        </div>
+      </div>
+
+      <div class="diagram-wrap">
+        <!-- Three cell states side by side -->
+        <svg viewBox="0 0 500 148" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:500px" aria-label="Three cell states: success with timestamp, failure with timestamp, no history">
+          <!-- Cell 1: success -->
+          <rect x="8" y="8" width="146" height="132" rx="8" fill="#ecfdf5" stroke="#a7f3d0" stroke-width="1.5"/>
+          <text x="81" y="34" text-anchor="middle" font-size="10" font-weight="700" fill="#065f46" letter-spacing="0.07em" font-family="system-ui,sans-serif">TEST ENV</text>
+          <text x="81" y="66" text-anchor="middle" font-size="18" font-weight="700" fill="#1e293b" font-family="monospace">1.3.0</text>
+          <text x="81" y="96" text-anchor="middle" font-size="13" fill="#059669" font-family="system-ui,sans-serif">✓ imported</text>
+          <text x="81" y="114" text-anchor="middle" font-size="11" fill="#64748b" font-family="system-ui,sans-serif">2 hours ago</text>
+
+          <!-- Cell 2: failure -->
+          <rect x="178" y="8" width="146" height="132" rx="8" fill="#fef2f2" stroke="#fecaca" stroke-width="1.5"/>
+          <text x="251" y="34" text-anchor="middle" font-size="10" font-weight="700" fill="#991b1b" letter-spacing="0.07em" font-family="system-ui,sans-serif">UAT ENV</text>
+          <text x="251" y="66" text-anchor="middle" font-size="18" font-weight="700" fill="#1e293b" font-family="monospace">1.2.0</text>
+          <text x="251" y="96" text-anchor="middle" font-size="13" fill="#dc2626" font-family="system-ui,sans-serif">✗ failed</text>
+          <text x="251" y="114" text-anchor="middle" font-size="11" fill="#64748b" font-family="system-ui,sans-serif">45 minutes ago</text>
+
+          <!-- Cell 3: no history -->
+          <rect x="348" y="8" width="144" height="132" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
+          <text x="420" y="34" text-anchor="middle" font-size="10" font-weight="700" fill="#94a3b8" letter-spacing="0.07em" font-family="system-ui,sans-serif">PROD ENV</text>
+          <text x="420" y="66" text-anchor="middle" font-size="18" font-weight="700" fill="#94a3b8" font-family="monospace">—</text>
+          <text x="420" y="96" text-anchor="middle" font-size="13" fill="#94a3b8" font-family="system-ui,sans-serif">not deployed</text>
+          <text x="420" y="114" text-anchor="middle" font-size="11" fill="#94a3b8" font-family="system-ui,sans-serif">no history</text>
+        </svg>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Basis</div>
+        <div class="field-body">
+          <p><span class="basis-tag bt-direct">direct</span> <code>SolutionReader.cs:10–39</code> — established <code>IOrganizationServiceAsync2 QueryExpression</code> pattern to follow for the new query.</p>
+          <p><span class="basis-tag bt-direct">direct</span> Zero matches for <code>msdyn_solutionhistor</code> in the codebase — entirely untapped data source.</p>
+          <p><span class="basis-tag bt-direct">direct</span> Dataverse fields confirmed: <code>msdyn_result</code> (bool), <code>msdyn_operation</code> (0=Import), <code>msdyn_starttime</code> (datetime), <code>msdyn_solutionname</code> (for join).</p>
+        </div>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Rationale</div>
+        <div class="field-body">
+          <p>Version strings alone are a lagging indicator. An import can partially fail — leaving the version registered as updated but the solution in a broken state — and the only current way to know is opening the Power Platform admin center. The health badge makes the most recent import outcome a first-class cell annotation, surfacing failures that currently require a browser tab. This is the highest-novelty idea in the set: it unlocks a data source that Flowline does not touch today and that no other Flowline command would need without the dashboard.</p>
+        </div>
+      </div>
+
+      <div class="two-col-fields">
+        <div class="idea-field">
+          <div class="field-label">Downsides</div>
+          <div class="field-body">Requires a new Dataverse SDK authentication path per environment (can't use PAC CLI for virtual table queries). Adds latency. <code>msdyn_solutionhistories</code> is a virtual table — availability depends on environment licensing; needs graceful absent-table fallback.</div>
+        </div>
+        <div class="two-col-fields" style="margin-bottom:0">
+          <div class="idea-field">
+            <div class="field-label">Confidence</div>
+            <div class="field-body">75%</div>
+          </div>
+          <div class="idea-field">
+            <div class="field-label">Complexity</div>
+            <div class="field-body">Medium</div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ─── Idea 4: E1 ─── -->
+    <article class="idea-card" id="idea-e1">
+      <div class="idea-card-top">
+        <div class="idea-rank-badge">4</div>
+        <div class="idea-head">
+          <div class="idea-title">--json as Versioned Schema</div>
+          <div class="chips">
+            <span class="chip chip-axis">integration-and-extensibility</span>
+            <span class="chip chip-conf-hi">Conf 90%</span>
+            <span class="chip chip-cx-lo">Cx Low</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Description</div>
+        <div class="field-body">
+          <p>Add a <code>--json</code> flag to <code>flowline dashboard</code> that emits a stable, machine-readable document instead of an interactive table. The document carries a top-level <code>schemaVersion: 1</code> field alongside the solution matrix (version per env), promotion-readiness per transition (once grounded in actual version comparison), and last-import status (if B2 is built). This is Flowline's first structured output — establishing the CI integration contract explicitly from day one.</p>
+          <p>In CI pipelines, <code>flowline dashboard --json | jq '.solutions[] | select(.versionSkew)'</code> becomes a lightweight deployment gate. The <code>schemaVersion</code> field lets consumers pin to a version, enabling Flowline to evolve the shape without silently breaking downstream scripts.</p>
+        </div>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Basis</div>
+        <div class="field-body">
+          <p><span class="basis-tag bt-direct">direct</span> No <code>--json</code> or output-format flag exists on any Flowline command (confirmed).</p>
+          <p><span class="basis-tag bt-direct">direct</span> <code>ValidationCacheStore.cs:6–8</code> — <code>System.Text.Json.JsonSerializer</code> already imported and used; no new dependency.</p>
+          <p><span class="basis-tag bt-direct">direct</span> <code>StatusCommand.cs:24</code> — <code>ConsoleHelper.IsInteractive()</code> guard pattern established; <code>--json</code> routes the non-interactive path.</p>
+          <p><span class="basis-tag bt-reasoned">reasoned</span> Explicit <code>schemaVersion</code> is the minimum contract discipline for a CI-consumed output — without it, any field rename breaks consumers silently.</p>
+        </div>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Rationale</div>
+        <div class="field-body">
+          <p>The matrix data the dashboard computes is exactly what a CI pipeline needs to gate a promote step or generate a deployment report. Exposing it as JSON with an explicit version contract makes the dashboard composable with existing tooling without requiring a full Flowline SDK. It is the lowest-effort integration path: same data, rendered differently, with one field (<code>schemaVersion</code>) committing to stability.</p>
+        </div>
+      </div>
+
+      <div class="two-col-fields">
+        <div class="idea-field">
+          <div class="field-label">Downsides</div>
+          <div class="field-body">Schema must remain stable once published — any field rename is a breaking change. The team needs to agree on the schema shape before shipping <code>schemaVersion: 1</code>, since evolving it post-ship requires bumping to <code>schemaVersion: 2</code> and maintaining backward compatibility.</div>
+        </div>
+        <div class="two-col-fields" style="margin-bottom:0">
+          <div class="idea-field">
+            <div class="field-label">Confidence</div>
+            <div class="field-body">90%</div>
+          </div>
+          <div class="idea-field">
+            <div class="field-label">Complexity</div>
+            <div class="field-body">Low</div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ─── Idea 5: D2 ─── -->
+    <article class="idea-card" id="idea-d2">
+      <div class="idea-card-top">
+        <div class="idea-rank-badge">5</div>
+        <div class="idea-head">
+          <div class="idea-title">Exception-First Collapse</div>
+          <div class="chips">
+            <span class="chip chip-axis">interaction-and-actions</span>
+            <span class="chip chip-conf-hi">Conf 85%</span>
+            <span class="chip chip-cx-lo">Cx Low</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Description</div>
+        <div class="field-body">
+          <p>Invert the default view assumption: rather than always showing all solutions, show only solutions with anomalies by default — version skew, failed last import, DTAP violation, not-yet-deployed in a target env. Solutions where everything is nominal collapse to a single dim footer line: <em>"7 solutions nominal."</em></p>
+          <p>Keyboard shortcuts toggle the view: <code>a</code> expands all solutions, <code>f</code> shows only failures (a subset of anomalies). When running in <code>--watch</code> mode, newly anomalous solutions surface automatically. In CI or <code>--json</code> mode, the filter is irrelevant — output is always complete.</p>
+        </div>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Basis</div>
+        <div class="field-body">
+          <p><span class="basis-tag bt-direct">direct</span> <code>StatusCommand.cs</code> renders all solutions with equal visual weight — no anomaly prioritization exists.</p>
+          <p><span class="basis-tag bt-direct">direct</span> <code>DtapGateOutcome</code> enum at <code>DeployCommand.cs:289</code> provides gate violation signals.</p>
+          <p><span class="basis-tag bt-reasoned">reasoned</span> <code>AnsiConsole.Live()</code> + <code>Console.ReadKey()</code> toggle between two pre-computed renderables (expanded vs collapsed) — <code>ReadKey</code> is not in Spectre's prohibited-with-Live list (confirmed by verifier).</p>
+        </div>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Rationale</div>
+        <div class="field-body">
+          <p>As a project grows in solutions, the "show everything" default becomes noise. An ops board's primary job is to surface exceptions — the same principle behind logistics exception dashboards and production monitoring tools that only page on deviation. Exception-first makes the dashboard actionable: if the screen shows nothing, all is well. If rows are visible, something needs attention. The keyboard-expandable "show all" path preserves full visibility without making it the default cognitive load.</p>
+        </div>
+      </div>
+
+      <div class="two-col-fields">
+        <div class="idea-field">
+          <div class="field-label">Downsides</div>
+          <div class="field-body">Requires anomaly detection logic as a prerequisite (at minimum A4 version skew, or B2 import health). Empty screen on first use (all nominal) may confuse users who expect a table. Needs a clear explanation of what "nominal" means in the footer line.</div>
+        </div>
+        <div class="two-col-fields" style="margin-bottom:0">
+          <div class="idea-field">
+            <div class="field-label">Confidence</div>
+            <div class="field-body">85%</div>
+          </div>
+          <div class="idea-field">
+            <div class="field-label">Complexity</div>
+            <div class="field-body">Low</div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ─── Idea 6: A4 ─── -->
+    <article class="idea-card" id="idea-a4">
+      <div class="idea-card-top">
+        <div class="idea-rank-badge">6</div>
+        <div class="idea-head">
+          <div class="idea-title">Version Skew Anomaly Detection</div>
+          <div class="chips">
+            <span class="chip chip-axis">deployment-pipeline-flow</span>
+            <span class="chip chip-conf-hi">Conf 85%</span>
+            <span class="chip chip-cx-lo">Cx Low</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Description</div>
+        <div class="field-body">
+          <p>After the version matrix is populated, compare version tuples across the DTAP chain per solution and flag inversions: a case where a higher environment (e.g., Prod) has a newer version than a lower one (e.g., Test). This indicates an out-of-band deployment that bypassed the normal DTAP promotion flow. The cell in the anomalous environment renders with a warning glyph and a distinct color to make the inversion immediately visible.</p>
+          <p>This is pure logic over already-fetched data: parse version strings with <code>Version.Parse()</code>, compare across the ordered Dev → Test → UAT → Prod sequence, flag any row where the ordering is violated. No new queries, no new SDK paths.</p>
+        </div>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Basis</div>
+        <div class="field-body">
+          <p><span class="basis-tag bt-direct">direct</span> <code>DeployCommand.cs:287–338</code> — <code>ResolveDtapGate()</code> only prevents forward promotion attempts; it does not detect existing inversions already in the environments. Confirmed by verifier: inversions bypass the gate entirely.</p>
+          <p><span class="basis-tag bt-reasoned">reasoned</span> <code>Version.Parse()</code> handles Dataverse 4-tuple version strings (major.minor.build.revision). Comparison across the ordered env list (<code>StatusCommand.cs:54–60</code>) produces the inversion signal without additional infrastructure.</p>
+        </div>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Rationale</div>
+        <div class="field-body">
+          <p>An out-of-band deploy to Prod (e.g., an emergency hotfix pushed directly via the Power Platform admin UI) creates a version inversion that no existing Flowline command detects. Without detection, the dashboard would silently show a higher Prod version without flagging it as anomalous. Version skew detection makes the implicit "DTAP ordering violated" case explicit — the most important pipeline health signal that costs nothing to compute once the matrix is built.</p>
+        </div>
+      </div>
+
+      <div class="two-col-fields">
+        <div class="idea-field">
+          <div class="field-label">Downsides</div>
+          <div class="field-body">False positives possible: some teams intentionally deploy to selected environments out-of-order. The flag is informational, not a blocker, but teams should be able to suppress it per solution. Dataverse 4-tuple version comparison may behave unexpectedly with build-number-only increments (1.0.0.1 vs 1.0.0.0) vs minor increments.</div>
+        </div>
+        <div class="two-col-fields" style="margin-bottom:0">
+          <div class="idea-field">
+            <div class="field-label">Confidence</div>
+            <div class="field-body">85%</div>
+          </div>
+          <div class="idea-field">
+            <div class="field-label">Complexity</div>
+            <div class="field-body">Low</div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ─── Idea 7: D1 ─── -->
+    <article class="idea-card" id="idea-d1">
+      <div class="idea-card-top">
+        <div class="idea-rank-badge">7</div>
+        <div class="idea-head">
+          <div class="idea-title">Interactive Promote Action</div>
+          <div class="chips">
+            <span class="chip chip-axis">interaction-and-actions</span>
+            <span class="chip chip-conf-med">Conf 70%</span>
+            <span class="chip chip-cx-med">Cx Medium</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Description</div>
+        <div class="field-body">
+          <p>After the matrix renders, pressing a key (e.g., <code>p</code>) surfaces a <code>SelectionPrompt</code> listing the viable promotion targets: solution + destination env combinations where version comparison and DTAP position indicate a promotion would succeed. Selecting an option confirms and runs the deploy inline, without leaving the dashboard context.</p>
+          <p>The key Spectre.Console constraint: <code>AnsiConsole.Live()</code> cannot run simultaneously with <code>SelectionPrompt</code>. The Live session must be explicitly stopped before the prompt is rendered, then the matrix re-renders after the promotion completes. The <code>ConsoleHelper.IsInteractive()</code> guard at <code>StatusCommand.cs:24</code> skips the promotion UI in CI or piped contexts.</p>
+        </div>
+      </div>
+
+      <div class="diagram-wrap">
+        <!-- Flow: View → Key press → SelectionPrompt → Confirm → Deploy -->
+        <svg viewBox="0 0 560 120" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:560px" aria-label="Flow: view matrix, press p, SelectionPrompt lists viable promotions, confirm, deploy runs">
+          <defs>
+            <marker id="arrD1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0,1 L0,9 L9,5 z" fill="#94a3b8"/>
+            </marker>
+          </defs>
+          <!-- Box 1: View Matrix -->
+          <rect x="6" y="30" width="110" height="56" rx="7" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
+          <text x="61" y="56" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1d4ed8" font-family="system-ui,sans-serif">View</text>
+          <text x="61" y="72" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1d4ed8" font-family="system-ui,sans-serif">matrix</text>
+          <!-- Arrow + key label -->
+          <line x1="120" y1="58" x2="150" y2="58" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrD1)"/>
+          <text x="135" y="50" text-anchor="middle" font-size="9.5" fill="#64748b" font-family="monospace">press p</text>
+          <!-- Box 2: SelectionPrompt (Live stops) -->
+          <rect x="154" y="20" width="130" height="76" rx="7" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
+          <text x="219" y="46" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1e293b" font-family="system-ui,sans-serif">Select</text>
+          <text x="219" y="62" text-anchor="middle" font-size="11" fill="#475569" font-family="system-ui,sans-serif">viable promote</text>
+          <text x="219" y="78" text-anchor="middle" font-size="10" fill="#94a3b8" font-family="system-ui,sans-serif">(Live paused)</text>
+          <!-- Arrow -->
+          <line x1="288" y1="58" x2="316" y2="58" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrD1)"/>
+          <!-- Box 3: Confirm -->
+          <rect x="320" y="30" width="98" height="56" rx="7" fill="#fffbeb" stroke="#fde68a" stroke-width="1.5"/>
+          <text x="369" y="56" text-anchor="middle" font-size="11.5" font-weight="600" fill="#d97706" font-family="system-ui,sans-serif">Confirm</text>
+          <text x="369" y="72" text-anchor="middle" font-size="11" fill="#d97706" font-family="system-ui,sans-serif">deploy</text>
+          <!-- Arrow -->
+          <line x1="422" y1="58" x2="452" y2="58" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrD1)"/>
+          <!-- Box 4: Deploy -->
+          <rect x="456" y="30" width="98" height="56" rx="7" fill="#ecfdf5" stroke="#a7f3d0" stroke-width="1.5"/>
+          <text x="505" y="56" text-anchor="middle" font-size="11.5" font-weight="600" fill="#065f46" font-family="system-ui,sans-serif">Deploy</text>
+          <text x="505" y="72" text-anchor="middle" font-size="10.5" fill="#065f46" font-family="system-ui,sans-serif">+ refresh</text>
+          <!-- Note at bottom: Spectre constraint -->
+          <text x="280" y="110" text-anchor="middle" font-size="9.5" fill="#94a3b8" font-family="system-ui,sans-serif">Spectre.Console constraint: Live() must stop before SelectionPrompt renders</text>
+        </svg>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Basis</div>
+        <div class="field-body">
+          <p><span class="basis-tag bt-direct">direct</span> <code>ProfileResolutionService.cs:37–54</code> — <code>SelectionPrompt&lt;T&gt;</code> usage pattern established in the codebase.</p>
+          <p><span class="basis-tag bt-direct">direct</span> <code>StatusCommand.cs:24</code> — <code>ConsoleHelper.IsInteractive()</code> guard; CI path is already distinguished.</p>
+          <p><span class="basis-tag bt-reasoned">reasoned</span> Spectre.Console issue #1452: <code>AnsiConsole.Live()</code> and <code>SelectionPrompt</code> cannot run simultaneously. The Live session must be stopped, the prompt rendered, and a new Live session started after the deploy returns. This is a known constraint, not a speculative one.</p>
+        </div>
+      </div>
+
+      <div class="idea-field">
+        <div class="field-label">Rationale</div>
+        <div class="field-body">
+          <p>The dashboard answers "what's deployed where" — the natural next question is "can I promote X?" and the next action is "promote it." Collapsing the view→decide→act cycle into a single session removes the context switch to <code>flowline deploy</code>, which requires re-specifying solution names and target environments the dashboard already has in scope. This is the "click the Promote button in ADO Pipelines" analog for the CLI.</p>
+        </div>
+      </div>
+
+      <div class="two-col-fields">
+        <div class="idea-field">
+          <div class="field-label">Downsides</div>
+          <div class="field-body">The Live-stop/restart pattern adds UX jank (flash between states). Viable promotions require meaningful version comparison logic; if that logic is wrong, the SelectionPrompt offers false positives. Spectre #1452 is a real constraint — any regression in Spectre's threading behavior could break the handoff.</div>
+        </div>
+        <div class="two-col-fields" style="margin-bottom:0">
+          <div class="idea-field">
+            <div class="field-label">Confidence</div>
+            <div class="field-body">70%</div>
+          </div>
+          <div class="idea-field">
+            <div class="field-label">Complexity</div>
+            <div class="field-body">Medium</div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+  </section>
+
+  <!-- ═══════════════════════════════════════════════
+       REJECTION SUMMARY
+  ══════════════════════════════════════════════════ -->
+  <section id="rejection-summary">
+    <h2>Rejection Summary</h2>
+
+    <div class="gap-note">
+      <div class="gap-note-label">Deliberate Axis Gap — deployment-pipeline-flow</div>
+      <p>True per-solution pipeline-flow visualization (DTAP lane arrows, per-solution READY/BLOCKED) was attempted by C1, C2, and C4, but all rely on <code>ResolveDtapGate()</code> as their basis. The verifier confirmed a critical false premise: the gate is keyed on <code>targetUrl</code> alone — same env, same outcome for every solution. Per-solution lane coloring requires a direct version-comparison step (e.g., <code>devVersion &lt; testVersion?</code>) not cited in any candidate's basis. A4 (version skew detection) partially covers this axis via anomaly detection on the matrix. A future idea for this axis would ground per-solution promotion readiness in version comparison, not the gate.</p>
+    </div>
+
+    <table class="reject-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Idea</th>
+          <th>Reason Rejected</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="id-chip">A2</span></td>
+          <td>SolutionVersionMatrix DTO</td>
+          <td>Gate signature is <code>(ProjectConfig, string targetUrl)</code> — the "shared DTO enables DTAP gate" claim is unsupported. Gate doesn't take a matrix input and won't benefit from the DTO without a signature change.</td>
+        </tr>
+        <tr>
+          <td><span class="id-chip">A5</span></td>
+          <td>N-Environment Discovery from PAC CLI</td>
+          <td>Pre-cut. Breaks the 4-slot config model; separate roadmap concern, not a dashboard feature.</td>
+        </tr>
+        <tr>
+          <td><span class="id-chip">A6</span></td>
+          <td>Dwell-Time Heat Grid</td>
+          <td>Basis wrong: StatusCommand uses PAC CLI not <code>SolutionReader</code>; the <code>installedon</code> field isn't in the status path at all. Requires a new SDK query path, not a ColumnSet tweak — underdocumented implementation cost.</td>
+        </tr>
+        <tr>
+          <td><span class="id-chip">B1</span></td>
+          <td>Watch Mode (--watch)</td>
+          <td>Introduces the codebase's first ever long-running polling pattern; implementation complexity (Spectre Live threading, refresh interval, Ctrl+C race) is higher than the other Low-Cx candidates. D1's promote-from-dashboard partially covers the "watch a deploy land" use case.</td>
+        </tr>
+        <tr>
+          <td><span class="id-chip">B3</span></td>
+          <td>SolutionHistoryReader Service</td>
+          <td>Sound infrastructure idea but below the meeting-test floor — implementation detail that follows naturally from B2, not a distinct strategic discussion.</td>
+        </tr>
+        <tr>
+          <td><span class="id-chip">B4</span></td>
+          <td>Deployment Reliability Strip</td>
+          <td>Pre-cut. 5× query overhead (last N imports per cell); signal value too niche relative to cost.</td>
+        </tr>
+        <tr>
+          <td><span class="id-chip">B5</span></td>
+          <td>Dead-Reckoning Cache Staleness Badge</td>
+          <td>UX polish; less impactful than B2's actual import health from Dataverse. Cache age (up to 4h) is less actionable than knowing the last import failed.</td>
+        </tr>
+        <tr>
+          <td><span class="id-chip">B7</span></td>
+          <td>Push-Model Event Log</td>
+          <td>Local JSONL log captures only this-machine Flowline-initiated deploys. PAC-direct deploys, admin-portal deploys, and other-machine deploys are invisible. "Replace Dataverse" framing architecturally unsound for a multi-source deployment reality.</td>
+        </tr>
+        <tr>
+          <td><span class="id-chip">C1</span></td>
+          <td>DTAP Flow Lane Visualization</td>
+          <td>Gate is per-env, not per-solution — all solutions in the same target column get identical arrows. Per-solution lane coloring requires direct version comparison not cited in basis.</td>
+        </tr>
+        <tr>
+          <td><span class="id-chip">C2</span></td>
+          <td>Promotion Readiness States</td>
+          <td>Same gate keying issue as C1: READY/BLOCKED labels would be uniform per column (same outcome for all solutions in that env). Per-solution readiness states require version comparison logic beyond what the gate provides.</td>
+        </tr>
+        <tr>
+          <td><span class="id-chip">C3</span></td>
+          <td>Version Drift Score</td>
+          <td>Dataverse uses 4-tuple versions (major.minor.build.revision), not SemVer. "Minor-component delta" is underspecified as a scalar metric for that format and would give misleading results across solutions with different versioning conventions.</td>
+        </tr>
+        <tr>
+          <td><span class="id-chip">C4</span></td>
+          <td>DeploymentAdvisor Composite</td>
+          <td>Sound and verifier-confirmed, but presupposes C2 (rejected). Without C2's promotion-readiness layer, the advisor loses its primary differentiated signal, reducing to "check B2." Below the meeting-test floor as a standalone discussion.</td>
+        </tr>
+        <tr>
+          <td><span class="id-chip">D3</span></td>
+          <td>Shell Mode / No-Subcommand Default</td>
+          <td>"Other commands as transient overlays" is ungrounded — the command registration pattern (<code>Program.cs:164</code>) supports adding a command but not changing the no-args default to a full persistent TUI. Implementation complexity underdocumented.</td>
+        </tr>
+        <tr>
+          <td><span class="id-chip">D4</span></td>
+          <td>LiveLoop Helper</td>
+          <td>Pre-cut. Pure infrastructure, not user-facing. Follows naturally from B1 implementation if B1 is built.</td>
+        </tr>
+        <tr>
+          <td><span class="id-chip">E2</span></td>
+          <td>Stage Depth Counter / Kanban WIP</td>
+          <td>Pre-cut. Kanban analogy is a stretch for Flowline's 4-env DTAP model; CI gate aspect covered by E1's --json output.</td>
+        </tr>
+        <tr>
+          <td><span class="id-chip">E3</span></td>
+          <td>Stakeholder Export --format markdown</td>
+          <td>Trivially feasible from existing matrix data but below the meeting-test floor — no team decision required, just implementation. Add after --json (E1) is shipped, not as a standalone discussion.</td>
+        </tr>
+        <tr class="axis-gap">
+          <td><span class="id-chip axis">axis</span></td>
+          <td>deployment-pipeline-flow</td>
+          <td>No true pipeline-flow visualization survived — all ideas on this axis overclaimed what <code>ResolveDtapGate()</code> can supply per-solution. A4 (version skew detection) is a partial proxy. Future ideas should ground per-solution readiness in direct version comparison, not the gate.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer class="composition-signal">
+    Composed 2026-07-03 by ce-ideate · Flowline dashboard command · 36 raw candidates → 19 considered → 7 survivors · 5 ideation frames + adversarial basis verifier
+  </footer>
+
+</div>
+</body>
+</html>
