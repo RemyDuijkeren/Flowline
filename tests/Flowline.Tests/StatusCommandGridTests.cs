@@ -2,6 +2,7 @@ using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Config;
 using Flowline.Utils;
+using Spectre.Console.Testing;
 
 namespace Flowline.Tests;
 
@@ -116,5 +117,48 @@ public class StatusCommandGridTests
 
         headers.Should().Equal("Dev");
         rows.Should().BeEmpty();
+    }
+
+    // ── RenderGrid ───────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void RenderGrid_HeadersInLocalSolutionEnvOrder_WithMixedCells()
+    {
+        var console = new TestConsole();
+        var rows = new List<StatusCommand.GridRow>
+        {
+            new("MySolution", StatusCommand.GridCell.OfVersion("1.5.0"),
+                [StatusCommand.GridCell.OfVersion("1.4.0"), StatusCommand.GridCell.Dash, StatusCommand.GridCell.AuthFailed]),
+        };
+
+        StatusCommand.RenderGrid(console, ["Dev", "Test", "UAT"], rows);
+
+        var output = console.Output;
+        output.Should().Contain("Local");
+        output.Should().Contain("Solution");
+        output.IndexOf("Local", StringComparison.Ordinal).Should().BeLessThan(output.IndexOf("Solution", StringComparison.Ordinal));
+        output.IndexOf("Solution", StringComparison.Ordinal).Should().BeLessThan(output.IndexOf("Dev", StringComparison.Ordinal));
+        output.IndexOf("Dev", StringComparison.Ordinal).Should().BeLessThan(output.IndexOf("Test", StringComparison.Ordinal));
+        output.IndexOf("Test", StringComparison.Ordinal).Should().BeLessThan(output.IndexOf("UAT", StringComparison.Ordinal));
+        output.Should().Contain("MySolution");
+        output.Should().Contain("1.5.0");
+        output.Should().Contain("1.4.0");
+        output.Should().Contain("—");
+        output.Should().Contain("✗");
+    }
+
+    [Fact]
+    public void RenderGrid_ExcludedColumnDoesNotAppear()
+    {
+        var console = new TestConsole();
+        var rows = new List<StatusCommand.GridRow>
+        {
+            new("MySolution", StatusCommand.GridCell.Dash, [StatusCommand.GridCell.OfVersion("1.4.0")]),
+        };
+
+        StatusCommand.RenderGrid(console, ["Dev"], rows);
+
+        console.Output.Should().NotContain("Prod");
+        console.Output.Should().NotContain("UAT");
     }
 }

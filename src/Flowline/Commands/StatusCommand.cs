@@ -67,6 +67,32 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILog
         return (headers, rows);
     }
 
+    internal static void RenderGrid(IAnsiConsole console, IReadOnlyList<string> envHeaders, IReadOnlyList<GridRow> rows)
+    {
+        var table = new Table();
+        table.AddColumn("Local");
+        table.AddColumn("Solution");
+        foreach (var header in envHeaders)
+            table.AddColumn(header);
+
+        foreach (var row in rows)
+        {
+            var cells = new List<string> { RenderCell(row.Local), Markup.Escape(row.SolutionName) };
+            cells.AddRange(row.EnvCells.Select(RenderCell));
+            table.AddRow(cells.ToArray());
+        }
+
+        console.Write(table);
+    }
+
+    private static string RenderCell(GridCell cell) => cell.Kind switch
+    {
+        GridCellKind.Version => $"[green]{Markup.Escape(cell.Value!)}[/]",
+        GridCellKind.Dash => "[dim]—[/]",
+        GridCellKind.AuthFailed => "[yellow]✗[/]",
+        _ => throw new ArgumentOutOfRangeException(nameof(cell)),
+    };
+
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         if (ConsoleHelper.IsInteractive(settings))
