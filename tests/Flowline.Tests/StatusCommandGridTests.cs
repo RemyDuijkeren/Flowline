@@ -1,0 +1,120 @@
+using FluentAssertions;
+using Flowline.Commands;
+using Flowline.Config;
+using Flowline.Utils;
+
+namespace Flowline.Tests;
+
+public class StatusCommandGridTests
+{
+    private static ProjectSolution Solution(string name) => new() { Name = name };
+
+    private static (string Label, string? Url, WhoAmIInfo? Who, Dictionary<string, string?> Versions) EnvResult(
+        string label, string? url, WhoAmIInfo? who, Dictionary<string, string?>? versions = null) =>
+        (label, url, who, versions ?? new Dictionary<string, string?>());
+
+    // ── BuildGridRows: happy path ─────────────────────────────────────────────
+
+    [Fact]
+    public void BuildGridRows_VersionInEveryColumn_WhenDeployedAndCloned()
+    {
+        var solutions = new List<ProjectSolution> { Solution("MySolution") };
+        var envResults = new List<(string, string?, WhoAmIInfo?, Dictionary<string, string?>)>
+        {
+            EnvResult("Dev", "https://dev.crm.dynamics.com/", new WhoAmIInfo("user@contoso.com"),
+                new Dictionary<string, string?> { ["MySolution"] = "1.4.0" }),
+        };
+
+        var (headers, rows) = StatusCommand.BuildGridRows(solutions, envResults, _ => "1.5.0");
+
+        headers.Should().Equal("Dev");
+        rows.Should().ContainSingle();
+        rows[0].SolutionName.Should().Be("MySolution");
+        rows[0].Local.Kind.Should().Be(StatusCommand.GridCellKind.Version);
+        rows[0].Local.Value.Should().Be("1.5.0");
+        rows[0].EnvCells.Should().ContainSingle();
+        rows[0].EnvCells[0].Kind.Should().Be(StatusCommand.GridCellKind.Version);
+        rows[0].EnvCells[0].Value.Should().Be("1.4.0");
+    }
+
+    // ── Local column ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public void BuildGridRows_LocalIsDash_WhenLocalVersionReaderThrowsFlowlineException()
+    {
+        var solutions = new List<ProjectSolution> { Solution("MySolution") };
+        var envResults = new List<(string, string?, WhoAmIInfo?, Dictionary<string, string?>)>();
+
+        var (_, rows) = StatusCommand.BuildGridRows(solutions, envResults,
+            _ => throw new FlowlineException(ExitCode.NotFound, "not cloned"));
+
+        rows[0].Local.Kind.Should().Be(StatusCommand.GridCellKind.Dash);
+    }
+
+    // ── Env columns: not deployed ───────────────────────────────────────────────
+
+    [Fact]
+    public void BuildGridRows_EnvCellIsDash_WhenAuthenticatedButSolutionNotInVersions()
+    {
+        var solutions = new List<ProjectSolution> { Solution("MySolution") };
+        var envResults = new List<(string, string?, WhoAmIInfo?, Dictionary<string, string?>)>
+        {
+            EnvResult("Dev", "https://dev.crm.dynamics.com/", new WhoAmIInfo("user@contoso.com")),
+        };
+
+        var (_, rows) = StatusCommand.BuildGridRows(solutions, envResults, _ => null);
+
+        rows[0].EnvCells[0].Kind.Should().Be(StatusCommand.GridCellKind.Dash);
+    }
+
+    // ── Env columns: auth failure ───────────────────────────────────────────────
+
+    [Fact]
+    public void BuildGridRows_EveryRowGetsAuthFailedMarker_WhenEnvConfiguredButUnauthenticated()
+    {
+        var solutions = new List<ProjectSolution> { Solution("MySolution"), Solution("OtherSolution") };
+        var envResults = new List<(string, string?, WhoAmIInfo?, Dictionary<string, string?>)>
+        {
+            EnvResult("UAT", "https://uat.crm.dynamics.com/", null,
+                new Dictionary<string, string?> { ["MySolution"] = "1.3.0" }),
+        };
+
+        var (_, rows) = StatusCommand.BuildGridRows(solutions, envResults, _ => null);
+
+        rows.Should().AllSatisfy(r => r.EnvCells[0].Kind.Should().Be(StatusCommand.GridCellKind.AuthFailed));
+    }
+
+    // ── Env columns: unconfigured omitted ───────────────────────────────────────
+
+    [Fact]
+    public void BuildGridRows_UnconfiguredEnvIsAbsentFromHeaders()
+    {
+        var solutions = new List<ProjectSolution> { Solution("MySolution") };
+        var envResults = new List<(string, string?, WhoAmIInfo?, Dictionary<string, string?>)>
+        {
+            EnvResult("Dev", "https://dev.crm.dynamics.com/", new WhoAmIInfo("user@contoso.com")),
+            EnvResult("Test", null, null),
+        };
+
+        var (headers, rows) = StatusCommand.BuildGridRows(solutions, envResults, _ => null);
+
+        headers.Should().Equal("Dev");
+        rows[0].EnvCells.Should().ContainSingle();
+    }
+
+    // ── Zero solutions ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public void BuildGridRows_ReturnsEmptyRows_WhenNoSolutionsConfigured()
+    {
+        var envResults = new List<(string, string?, WhoAmIInfo?, Dictionary<string, string?>)>
+        {
+            EnvResult("Dev", "https://dev.crm.dynamics.com/", new WhoAmIInfo("user@contoso.com")),
+        };
+
+        var (headers, rows) = StatusCommand.BuildGridRows([], envResults, _ => null);
+
+        headers.Should().Equal("Dev");
+        rows.Should().BeEmpty();
+    }
+}

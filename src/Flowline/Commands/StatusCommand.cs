@@ -19,6 +19,54 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILog
     {
     }
 
+    internal enum GridCellKind { Version, Dash, AuthFailed }
+
+    internal readonly record struct GridCell(GridCellKind Kind, string? Value = null)
+    {
+        public static readonly GridCell Dash = new(GridCellKind.Dash);
+        public static readonly GridCell AuthFailed = new(GridCellKind.AuthFailed);
+        public static GridCell OfVersion(string value) => new(GridCellKind.Version, value);
+    }
+
+    internal sealed record GridRow(string SolutionName, GridCell Local, IReadOnlyList<GridCell> EnvCells);
+
+    internal static (IReadOnlyList<string> EnvHeaders, IReadOnlyList<GridRow> Rows) BuildGridRows(
+        IReadOnlyList<ProjectSolution> solutions,
+        IReadOnlyList<(string Label, string? Url, WhoAmIInfo? Who, Dictionary<string, string?> Versions)> envResults,
+        Func<string, string?> readLocalVersion)
+    {
+        var configuredEnvs = envResults.Where(e => !string.IsNullOrEmpty(e.Url)).ToList();
+        var headers = configuredEnvs.Select(e => e.Label).ToList();
+
+        var rows = solutions.Select(sol =>
+        {
+            GridCell local;
+            try
+            {
+                var version = readLocalVersion(sol.Name);
+                local = version is not null ? GridCell.OfVersion(version) : GridCell.Dash;
+            }
+            catch (FlowlineException)
+            {
+                local = GridCell.Dash;
+            }
+
+            var envCells = configuredEnvs.Select(e =>
+            {
+                if (e.Who is null)
+                    return GridCell.AuthFailed;
+
+                return e.Versions.TryGetValue(sol.Name, out var version) && version is not null
+                    ? GridCell.OfVersion(version)
+                    : GridCell.Dash;
+            }).ToList();
+
+            return new GridRow(sol.Name, local, envCells);
+        }).ToList();
+
+        return (headers, rows);
+    }
+
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         if (ConsoleHelper.IsInteractive(settings))
