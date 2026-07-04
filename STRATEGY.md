@@ -1,6 +1,6 @@
 ---
 name: Flowline
-last_updated: 2026-06-23
+last_updated: 2026-07-04
 ---
 
 # Flowline Strategy
@@ -95,14 +95,19 @@ over unmanaged.
 - **2026-06-23** — `generate` safe deletion: user-owned files preserved via `IsGeneratorOwned` check during temp-swap ✓
 - **2026-06-23** — `provision` region guard: error on config-stored target URL in different region than prod ✓
 - **2026-06-24** — `componenttype` constants confirmed via Dataverse `PicklistAttributeMetadata`; low-numbered types are stable platform constants ✓
-- **2026-06-26** — `deploy` full integration test: pack, import, DTAP gate, type guard, drift check, orphan cleanup (AE1–AE8) — never run end-to-end before
-- **2026-06-28** — `deploy` pre-backup + `--no-backup` opt-out (could-have)
-- **2026-07-01** — v1.0 release
+- **2026-07-04** — CLI observability Wave 1 (invocation logging, stderr capture, ILogger file sink) + Wave 2 (invocation context, W3C `Activity.TraceId` correlation) ✓
+- **2026-07-03** — `deploy` pre-backup: `BackupService` wired as pre-import safety net ✓
+- **2026-07-04** — `deploy` core flow (pack, import, DTAP gate, type guard, drift check) tested against real org — basic path works ✓
+- **2026-07-04** — Orphan cleanup (AE1–AE8) real-org testing — open, unit tests only so far
+- **2026-07-04** — WebResource-dependencies integration testing — open
+- **2026-07-20** — v1.0 release (moved from 2026-07-01)
 
 ## Deferred
 
 - `flowline init` for greenfield projects (create publisher + solution in DEV, scaffold local structure) — post-v1
 - Restore state of workflows on deploy (`--no-restore` flag; requirements: `docs/brainstorms/2026-06-12-deploy-state-restoration-requirements.md`) — post-v1
+- CLI observability Wave 3 (crash bundle zip on unhandled exception) — should-have, not a v1.0 blocker
+- CLI observability Wave 4 (opt-in telemetry) — should-have, separate product decision
 
 ## Marketing
 

@@ -1,15 +1,15 @@
 # Flowline v1.0 Release Strategy
 
-**Target date:** July 1, 2026
+**Target date:** July 20, 2026 (moved from July 1 — orphan cleanup and WebResource-dependencies integration testing still open)
 **Current version:** v0.7.0 (released 2026-06-21)
-**Working window:** 7 days (2026-06-23 → 2026-06-30)
+**Working window:** 27 days (2026-06-23 → 2026-07-20)
 
 ---
 
 ## Must-haves (v1.0 blockers)
 
 ### 1. `deploy` — full integration test
-Never been run end-to-end against a real org. Test the full flow, not just orphan cleanup.
+**Status (2026-07-04):** Core flow (pack, import, DTAP gate, type guard, drift check) tested against a real org — basic path works. Orphan cleanup (OrphanService) only has mocked unit tests (`OrphanCleanupServiceTests.cs`) — AE1–AE8 still need real-org verification.
 
 **Core flow:**
 - Pack solution from local source (`pac solution pack`)
@@ -18,7 +18,7 @@ Never been run end-to-end against a real org. Test the full flow, not just orpha
 - Managed/unmanaged type guard
 - Drift check
 
-**Orphan cleanup (AE1–AE8):**
+**Orphan cleanup (AE1–AE8) — remaining work:**
 - AE1: Solo orphan component → deleted
 - AE2: Shared orphan (in another solution) → removed from solution only
 - AE3: Data-bearing component (table, column) → MANUAL report, not deleted
@@ -32,36 +32,46 @@ Never been run end-to-end against a real org. Test the full flow, not just orpha
 
 ---
 
+### 1b. WebResource-dependencies — integration test
+`// flowline:depends` and RESX auto-link (shipped in v0.7.0) have no integration test yet against a real WebResources project/push. Needs verification before v1.0.
+
+---
+
 ### 2. Observability + bug reproduction
 
-Every invocation leaves enough context for a bug report without re-running. Implemented in three waves.
+Every invocation leaves enough context for a bug report without re-running.
 
-**Wave 1 — Foundation (I1 + I2 + I3):**
-- I1: Always-on JSONL run log (`%LOCALAPPDATA%/Flowline/runs/<date>.jsonl`). Timestamp, command, redacted args, exit code, duration, tool versions. 30-day rotation. On failure, print path.
-- I2: Subprocess stderr capture — 50-line rolling buffer from PAC CLI / dotnet / git, regardless of `--verbose`. Attached to `FlowlineException.WithDetail` on failure.
-- I3: `ILogger<T>` debug file sink (`%LOCALAPPDATA%/Flowline/debug/<date>.log`). Warning by default; Debug when `--verbose` active. Wired into PluginService, WebResourceService, SolutionDiffService.
+**Status (2026-07-04):** Wave 1 and Wave 2 done. Shipped design diverged from the original I1–I6 sketch below but covers the same ground — see `docs/brainstorms/2026-06-29-wave-2-invocation-context-requirements.md` and `docs/plans/2026-06-29-001-feat-wave2-invocation-context-plan.md` for the as-built spec. Notably: I1's JSONL run log was implemented then replaced by structured `ILogger` invocation logging + `FlowlineActivitySource` (commit `8e7ba06`); I6's correlation ID is W3C `Activity.TraceId` (via `ActivityTraceEnricher`) rather than a custom `FLOWLINE_TRACE_ID` env var.
 
-**Wave 2 — Rich context (I4 + I6):**
-- I4: DiagnosticContext stage chain — `List<string>` scoped to command. Commands populate at each named stage. On failure: "Completed: A, B, C. Failed at: D." Single registration in `FlowlineCommand.ExecuteAsync`.
-- I6: Per-invocation correlation ID — reads `FLOWLINE_TRACE_ID` env var (CI); auto-generates 8-char hex if absent. Stamps every JSONL record and verbose line.
+Wave 3 (crash bundle) and Wave 4 (telemetry) are **not v1.0 blockers** — moved to should-haves below.
 
-**Wave 3 — Crash bundle (I5):**
-- I5: On unhandled exception, writes zip to `%LOCALAPPDATA%/Flowline/bug-reports/<timestamp>.zip` (last N JSONL records, redacted `.flowline` config, tool versions, exception). Prints: "Bug report saved: <path> — attach to issue at github.com/..."
+**Wave 1 — Foundation (I1 + I2 + I3):** ✓ done
+- I1: run log — superseded by structured `ILogger` invocation logging (see above)
+- I2: Subprocess stderr capture — shipped as `SubprocessCapture` (DI-injected), wired into GitUtils/PacUtils/DotNetUtils/commands/generators
+- I3: `ILogger<T>` debug file sink — shipped
 
-**Wave 4 — Telemetry (I7):** Separate product decision. Not a v1.0 blocker.
+**Wave 2 — Rich context (I4 + I6):** ✓ done
+- I4: stage/invocation context — shipped as structured invocation logging + `Activity` tags per command (`FlowlineCommand.cs`)
+- I6: correlation ID — shipped as W3C `Activity.TraceId`, enriched onto every log line via `ActivityTraceEnricher`
 
 **References:** `docs/ideation/2026-06-25-cli-observability-ideation.html`
 
 ---
 
-## Could-haves (nice before v1.0, not blockers)
+## Shipped since original plan
 
-### 3. `deploy` pre-backup + `--skip-backup`
-Auto-backup the target environment before any deploy. Opt-out via `--skip-backup`.
+### 3. `deploy` pre-backup ✓ (2026-07-03)
+`BackupService` wired as a pre-import safety net before orphan cleanup (`PacUtils.BackupEnvironmentAsync`, commit `1f57dbd`). Has unit tests (`PacUtilsBackupTests.cs`). Plan: `docs/plans/2026-07-03-002-feat-pre-deploy-backup-plan.md`.
 
-**Why could-have:** PAC backup is async and takes minutes on large orgs (must poll for completion). `--dry-run` is the existing safety net. Dataverse admin center has scheduled backups. Adds real scope — PAC CLI has `pac env backup` but no native restore-and-wait primitive; need polling loop + timeout handling.
+---
 
-**If time allows:** Implement as opt-out (`--skip-backup` to bypass), spinner while backup runs, fail-fast on backup error before proceeding to orphan cleanup + pack + import.
+## Should-haves (good to add, not v1.0 blockers)
+
+### 4. Observability Wave 3 — crash bundle (I5)
+On unhandled exception, writes zip to `%LOCALAPPDATA%/Flowline/bug-reports/<timestamp>.zip` (last N log records, redacted `.flowline` config, tool versions, exception). Prints: "Bug report saved: <path> — attach to issue at github.com/...". Not implemented — the shipped "wave 3" work (`docs/plans/2026-06-30-001-feat-verbose-log-routing-wave3-plan.md`) is a differently-scoped verbose-log-routing effort (VerboseMarkup, SubprocessCapture, LoggingRenderHook), not the crash bundle.
+
+### 5. Observability Wave 4 — telemetry (I7)
+Separate product decision (opt-in usage telemetry). Not scoped for v1.0.
 
 ---
 
@@ -79,10 +89,12 @@ Auto-backup the target environment before any deploy. Opt-out via `--skip-backup
 - [x] `generate` safe deletion implemented (`IsGeneratorOwned` + copy-before-swap)
 - [x] `generate` safe deletion tested (partial class, `.csproj`, stale entity all verified)
 - [x] `provision` region guard implemented
-- [ ] `deploy` full flow tested against real org (pack, import, DTAP gate, type guard, drift check, orphan cleanup AE1–AE8)
-- [x] Observability Wave 1 implemented (I1 JSONL run log, I2 stderr capture, I3 ILogger file sink)
-- [ ] Observability Wave 2 implemented (I4 stage chain, I6 correlation ID)
-- [ ] Observability Wave 3 implemented (I5 crash bundle)
+- [x] `deploy` core flow tested against real org (pack, import, DTAP gate, type guard, drift check) — basic path works
+- [ ] Orphan cleanup (AE1–AE8) tested against real org — currently mocked unit tests only
+- [ ] WebResource-dependencies (`// flowline:depends`, RESX auto-link) integration tested against real push
+- [x] Observability Wave 1 implemented (structured invocation logging, stderr capture, ILogger file sink)
+- [x] Observability Wave 2 implemented (invocation context, W3C `Activity.TraceId` correlation)
+- [x] `deploy` pre-backup implemented (`BackupService` wired as pre-import safety net)
 - [x] `componenttype` constants confirmed via `PicklistAttributeMetadata` — low-numbered types are stable platform constants, one org sufficient
 - [x] Greenfield getting-started path documented in wiki (`01-Getting-Started`, `14-Planned-Features`)
 - [ ] All tests pass (`dotnet test`)
