@@ -31,9 +31,11 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILog
 
     internal sealed record GridRow(string SolutionName, GridCell Local, IReadOnlyList<GridCell> EnvCells);
 
+    internal readonly record struct EnvStatus(string Label, string? Url, WhoAmIInfo? Who, Dictionary<string, string?> Versions);
+
     internal static (IReadOnlyList<string> EnvHeaders, IReadOnlyList<GridRow> Rows) BuildGridRows(
         IReadOnlyList<ProjectSolution> solutions,
-        IReadOnlyList<(string Label, string? Url, WhoAmIInfo? Who, Dictionary<string, string?> Versions)> envResults,
+        IReadOnlyList<EnvStatus> envResults,
         Func<string, string?> readLocalVersion)
     {
         var configuredEnvs = envResults.Where(e => !string.IsNullOrEmpty(e.Url)).ToList();
@@ -141,7 +143,7 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILog
         var hasUrls = envs.Any(e => !string.IsNullOrEmpty(e.Url));
         var solutions = config.Solutions.ToList();
 
-        (string Label, string? Url, WhoAmIInfo? Who, Dictionary<string, string?> Versions)[] results;
+        EnvStatus[] results;
 
         if (hasUrls)
         {
@@ -173,12 +175,12 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILog
                             versions[name] = ver;
                     }
 
-                    return (e.Label, e.Url, who, versions);
+                    return new EnvStatus(e.Label, e.Url, who, versions);
                 })));
         }
         else
         {
-            results = envs.Select(e => (e.Label, e.Url, (WhoAmIInfo?)null, new Dictionary<string, string?>())).ToArray();
+            results = envs.Select(e => new EnvStatus(e.Label, e.Url, null, new Dictionary<string, string?>())).ToArray();
         }
 
         foreach (var (label, url, who, _) in results)

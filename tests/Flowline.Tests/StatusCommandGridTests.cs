@@ -11,9 +11,9 @@ public class StatusCommandGridTests
 {
     private static ProjectSolution Solution(string name) => new() { Name = name };
 
-    private static (string Label, string? Url, WhoAmIInfo? Who, Dictionary<string, string?> Versions) EnvResult(
+    private static StatusCommand.EnvStatus EnvResult(
         string label, string? url, WhoAmIInfo? who, Dictionary<string, string?>? versions = null) =>
-        (label, url, who, versions ?? new Dictionary<string, string?>());
+        new(label, url, who, versions ?? new Dictionary<string, string?>());
 
     // ── BuildGridRows: happy path ─────────────────────────────────────────────
 
@@ -21,7 +21,7 @@ public class StatusCommandGridTests
     public void BuildGridRows_VersionInEveryColumn_WhenDeployedAndCloned()
     {
         var solutions = new List<ProjectSolution> { Solution("MySolution") };
-        var envResults = new List<(string, string?, WhoAmIInfo?, Dictionary<string, string?>)>
+        var envResults = new List<StatusCommand.EnvStatus>
         {
             EnvResult("Dev", "https://dev.crm.dynamics.com/", new WhoAmIInfo("user@contoso.com"),
                 new Dictionary<string, string?> { ["MySolution"] = "1.4.0" }),
@@ -45,7 +45,7 @@ public class StatusCommandGridTests
     public void BuildGridRows_LocalIsDash_WhenLocalVersionReaderThrowsFlowlineException()
     {
         var solutions = new List<ProjectSolution> { Solution("MySolution") };
-        var envResults = new List<(string, string?, WhoAmIInfo?, Dictionary<string, string?>)>();
+        var envResults = new List<StatusCommand.EnvStatus>();
 
         var (_, rows) = StatusCommand.BuildGridRows(solutions, envResults,
             _ => throw new FlowlineException(ExitCode.NotFound, "not cloned"));
@@ -57,7 +57,7 @@ public class StatusCommandGridTests
     public void BuildGridRows_LocalIsDash_WhenLocalVersionReaderThrowsMalformedXml()
     {
         var solutions = new List<ProjectSolution> { Solution("MySolution") };
-        var envResults = new List<(string, string?, WhoAmIInfo?, Dictionary<string, string?>)>();
+        var envResults = new List<StatusCommand.EnvStatus>();
 
         var (_, rows) = StatusCommand.BuildGridRows(solutions, envResults,
             _ => throw new XmlException("malformed Solution.xml"));
@@ -71,13 +71,14 @@ public class StatusCommandGridTests
     public void BuildGridRows_EnvCellIsDash_WhenAuthenticatedButSolutionNotInVersions()
     {
         var solutions = new List<ProjectSolution> { Solution("MySolution") };
-        var envResults = new List<(string, string?, WhoAmIInfo?, Dictionary<string, string?>)>
+        var envResults = new List<StatusCommand.EnvStatus>
         {
             EnvResult("Dev", "https://dev.crm.dynamics.com/", new WhoAmIInfo("user@contoso.com")),
         };
 
         var (_, rows) = StatusCommand.BuildGridRows(solutions, envResults, _ => null);
 
+        rows[0].Local.Kind.Should().Be(StatusCommand.GridCellKind.Dash);
         rows[0].EnvCells[0].Kind.Should().Be(StatusCommand.GridCellKind.Dash);
     }
 
@@ -87,7 +88,7 @@ public class StatusCommandGridTests
     public void BuildGridRows_EveryRowGetsAuthFailedMarker_WhenEnvConfiguredButUnauthenticated()
     {
         var solutions = new List<ProjectSolution> { Solution("MySolution"), Solution("OtherSolution") };
-        var envResults = new List<(string, string?, WhoAmIInfo?, Dictionary<string, string?>)>
+        var envResults = new List<StatusCommand.EnvStatus>
         {
             EnvResult("UAT", "https://uat.crm.dynamics.com/", null,
                 new Dictionary<string, string?> { ["MySolution"] = "1.3.0" }),
@@ -104,7 +105,7 @@ public class StatusCommandGridTests
     public void BuildGridRows_UnconfiguredEnvIsAbsentFromHeaders()
     {
         var solutions = new List<ProjectSolution> { Solution("MySolution") };
-        var envResults = new List<(string, string?, WhoAmIInfo?, Dictionary<string, string?>)>
+        var envResults = new List<StatusCommand.EnvStatus>
         {
             EnvResult("Dev", "https://dev.crm.dynamics.com/", new WhoAmIInfo("user@contoso.com")),
             EnvResult("Test", null, null),
@@ -121,7 +122,7 @@ public class StatusCommandGridTests
     [Fact]
     public void BuildGridRows_ReturnsEmptyRows_WhenNoSolutionsConfigured()
     {
-        var envResults = new List<(string, string?, WhoAmIInfo?, Dictionary<string, string?>)>
+        var envResults = new List<StatusCommand.EnvStatus>
         {
             EnvResult("Dev", "https://dev.crm.dynamics.com/", new WhoAmIInfo("user@contoso.com")),
         };
