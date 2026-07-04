@@ -19,7 +19,7 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILog
     {
     }
 
-    internal enum GridCellKind { Version, Dash, AuthFailed }
+    internal enum GridCellKind { Dash, Version, AuthFailed }
 
     internal readonly record struct GridCell(GridCellKind Kind, string? Value = null)
     {
