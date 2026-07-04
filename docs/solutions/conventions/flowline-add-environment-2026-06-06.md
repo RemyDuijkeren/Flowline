@@ -186,17 +186,17 @@ foreach (var role in new[] { EnvironmentRole.Prod, EnvironmentRole.Uat, Environm
 
 Update the `FlowlineException` error message at the end of `FindUnmanagedSourceAsync` to include `--uat`.
 
-#### 6. `src/Flowline/Commands/StatusCommand.cs` — Display row
+#### 6. `src/Flowline/Commands/StatusCommand.cs` — Grid column
 
-Insert the new entry in promotion order:
+Insert the new entry in DTAP flow order (left to right: Dev → ... → Prod — this is the order the status grid renders its columns in, not the `ProjectConfig` property declaration order from Step 1):
 
 ```csharp
 var envs = new (string Label, string? Url)[]
 {
-    ("Production",  config.ProdUrl),
-    ("UAT",         config.UatUrl),   // new
-    ("Test",        config.TestUrl),
-    ("Development", config.DevUrl),
+    ("Dev",  config.DevUrl),
+    ("Test", config.TestUrl),
+    ("UAT",  config.UatUrl),   // new
+    ("Prod", config.ProdUrl),
 };
 ```
 
