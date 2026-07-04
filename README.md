@@ -55,15 +55,9 @@ What sets Flowline apart:
 dotnet tool install --global Flowline
 ```
 
-Prerequisites: [.NET SDK](https://dot.net) (8 or later), [Git](https://git-scm.com), and PAC CLI:
+Prerequisites: [.NET SDK](https://dot.net) 10 or later, [Git](https://git-scm.com), and [PAC CLI](https://learn.microsoft.com/en-us/power-platform/developer/cli/introduction):
 
-```bash
-dotnet tool install --global Microsoft.PowerApps.CLI.Tool
-```
-
-If .NET 10 is installed, Flowline uses dnx — no separate PAC CLI install needed.
-
-Authenticate before using Flowline:
+Authenticate using PAC CLI before using Flowline:
 
 ```bash
 pac auth create --environment https://your-org.crm4.dynamics.com

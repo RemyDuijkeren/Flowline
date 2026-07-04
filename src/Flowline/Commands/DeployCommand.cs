@@ -101,8 +101,6 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         return 0;
     }
 
-    // ── Target resolution ────────────────────────────────────────────────────
-
     private string ResolveTargetUrl(Settings settings)
     {
         var url = settings.Target.ToLowerInvariant() switch
@@ -120,8 +118,6 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         return url;
     }
-
-    // ── Validation ───────────────────────────────────────────────────────────
 
     private async Task<EnvironmentInfo> ValidateTargetAsync(
         string targetUrl, ProjectSolution sln, Settings settings, CancellationToken ct)
@@ -229,8 +225,6 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         }
     }
 
-    // ── Pack and import ──────────────────────────────────────────────────────
-
     private async Task<string> PackSolutionAsync(ProjectSolution sln, string slnFolder, Settings settings, CancellationToken ct)
     {
         var artifactsFolder = Path.Combine(slnFolder, "artifacts");
@@ -282,11 +276,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             throw new FlowlineException(ExitCode.BuildFailed, "Deploy failed — check the environment and your PAC login.");
     }
 
-    // ── Post-deploy result (static helper, tested directly) ─────────────────
-
     internal static bool ShouldReportPartialSuccess(int cleanupFailures) => cleanupFailures > 0;
-
-    // ── DTAP gate (static helpers, tested directly) ──────────────────────────
 
     internal enum DtapGateOutcome { DevBlock, Skip, Check }
     internal sealed record DtapGateDecision(DtapGateOutcome Outcome, string? PredecessorUrl = null, string? PredecessorLabel = null);
