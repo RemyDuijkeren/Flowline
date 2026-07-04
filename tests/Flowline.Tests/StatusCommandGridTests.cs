@@ -1,3 +1,4 @@
+using System.Xml;
 using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Config;
@@ -48,6 +49,18 @@ public class StatusCommandGridTests
 
         var (_, rows) = StatusCommand.BuildGridRows(solutions, envResults,
             _ => throw new FlowlineException(ExitCode.NotFound, "not cloned"));
+
+        rows[0].Local.Kind.Should().Be(StatusCommand.GridCellKind.Dash);
+    }
+
+    [Fact]
+    public void BuildGridRows_LocalIsDash_WhenLocalVersionReaderThrowsMalformedXml()
+    {
+        var solutions = new List<ProjectSolution> { Solution("MySolution") };
+        var envResults = new List<(string, string?, WhoAmIInfo?, Dictionary<string, string?>)>();
+
+        var (_, rows) = StatusCommand.BuildGridRows(solutions, envResults,
+            _ => throw new XmlException("malformed Solution.xml"));
 
         rows[0].Local.Kind.Should().Be(StatusCommand.GridCellKind.Dash);
     }

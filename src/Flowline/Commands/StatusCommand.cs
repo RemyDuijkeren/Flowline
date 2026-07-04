@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Xml;
 using Flowline.Config;
 using Flowline.Utils;
 using Flowline.Validation;
@@ -47,6 +48,10 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILog
                 local = version is not null ? GridCell.OfVersion(version) : GridCell.Dash;
             }
             catch (FlowlineException)
+            {
+                local = GridCell.Dash;
+            }
+            catch (Exception ex) when (ex is XmlException or IOException or UnauthorizedAccessException)
             {
                 local = GridCell.Dash;
             }
