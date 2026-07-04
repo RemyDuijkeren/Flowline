@@ -115,7 +115,7 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILog
         }
 
         // Show the current configuration
-        var rootFolder = FlowlineCommand<Settings>.FindProjectRoot(Directory.GetCurrentDirectory());
+        var rootFolder = FlowlineCommand<Settings>.FindProjectRoot(Directory.GetCurrentDirectory()) ?? Directory.GetCurrentDirectory();
         var config = ProjectConfig.Load(rootFolder);
         Console.MarkupLine("\n[bold]Configuration[/]");
 
@@ -127,10 +127,10 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILog
 
         var envs = new (string Label, string? Url)[]
         {
-            ("Production",  config.ProdUrl),
-            ("UAT",         config.UatUrl),
-            ("Test",        config.TestUrl),
-            ("Development", config.DevUrl),
+            ("Dev",  config.DevUrl),
+            ("Test", config.TestUrl),
+            ("UAT",  config.UatUrl),
+            ("Prod", config.ProdUrl),
         };
 
         var hasUrls = envs.Any(e => !string.IsNullOrEmpty(e.Url));
@@ -176,7 +176,7 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILog
             results = envs.Select(e => (e.Label, e.Url, (WhoAmIInfo?)null, new Dictionary<string, string?>())).ToArray();
         }
 
-        foreach (var (label, url, who, versions) in results)
+        foreach (var (label, url, who, _) in results)
         {
             if (string.IsNullOrEmpty(url))
             {
@@ -190,15 +190,21 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILog
                 Console.MarkupLine($"    [green]✓[/] {Markup.Escape(who.ConnectedAs)}");
             else
                 Console.MarkupLine($"    [yellow]✗ Not authenticated[/]");
-
-            foreach (var (solutionName, version) in versions)
-            {
-                if (version is not null)
-                    Console.MarkupLine($"    {Markup.Escape(solutionName)}  [green]{Markup.Escape(version)}[/]");
-                else
-                    Console.MarkupLine($"    [yellow]{Markup.Escape(solutionName)}  not deployed[/]");
-            }
         }
+
+        Console.MarkupLine("");
+
+        if (solutions.Count == 0)
+        {
+            Console.MarkupLine("[dim]No solutions configured.[/]");
+            return 0;
+        }
+
+        var (envHeaders, rows) = BuildGridRows(solutions, results,
+            solutionName => DeployCommand.ReadLocalSolutionVersion(
+                FlowlineCommand<Settings>.PackageFolder(Path.Combine(rootFolder, "solutions", solutionName))));
+
+        RenderGrid(Console, envHeaders, rows);
 
         return 0;
     }
