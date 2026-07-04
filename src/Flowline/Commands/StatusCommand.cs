@@ -203,7 +203,7 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILog
 
         if (solutions.Count == 0)
         {
-            Console.MarkupLine("[dim]No solutions configured.[/]");
+            Console.MarkupLine("[dim]No solutions configured[/]");
             return 0;
         }
 
