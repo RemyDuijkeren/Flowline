@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ideation: Contoso Real Estate ALM Patterns vs Flowline — Flowline CLI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#ffffff;--surface:#f8fafc;--border:#e2e8f0;
+  --text:#0f172a;--muted:#64748b;
+  --accent:#2563eb;--accent-soft:#eff6ff;--accent-text:#1d4ed8;
+  --ax1-bg:#f3e8ff;--ax1-text:#7c3aed;
+  --ax2-bg:#dbeafe;--ax2-text:#1d4ed8;
+  --ax3-bg:#ccfbf1;--ax3-text:#0f766e;
+  --ax4-bg:#ffedd5;--ax4-text:#c2410c;
+  --ax5-bg:#dcfce7;--ax5-text:#15803d;
+  --rej-bg:#fef2f2;--rej-text:#b91c1c;--rej-border:#fecaca;
+  --top-bg:#fffbeb;--top-border:#fde68a;--top-text:#92400e;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0f172a;--surface:#1a2540;--border:#2c3a5c;
+    --text:#e6ebf5;--muted:#93a1c0;
+    --accent:#7aa2ff;--accent-soft:#1a2748;--accent-text:#9dbcff;
+    --ax1-bg:#3a2560;--ax1-text:#d4b8ff;
+    --ax2-bg:#1c3560;--ax2-text:#9dbcff;
+    --ax3-bg:#0f3d3a;--ax3-text:#6fd8ce;
+    --ax4-bg:#4a2a0f;--ax4-text:#ffbd80;
+    --ax5-bg:#123a20;--ax5-text:#7de79b;
+    --rej-bg:#3a1616;--rej-text:#ff9c9c;--rej-border:#5c2222;
+    --top-bg:#3a2e0f;--top-border:#5c4a1e;--top-text:#ffd27a;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f172a;--surface:#1a2540;--border:#2c3a5c;
+  --text:#e6ebf5;--muted:#93a1c0;
+  --accent:#7aa2ff;--accent-soft:#1a2748;--accent-text:#9dbcff;
+  --ax1-bg:#3a2560;--ax1-text:#d4b8ff;
+  --ax2-bg:#1c3560;--ax2-text:#9dbcff;
+  --ax3-bg:#0f3d3a;--ax3-text:#6fd8ce;
+  --ax4-bg:#4a2a0f;--ax4-text:#ffbd80;
+  --ax5-bg:#123a20;--ax5-text:#7de79b;
+  --rej-bg:#3a1616;--rej-text:#ff9c9c;--rej-border:#5c2222;
+  --top-bg:#3a2e0f;--top-border:#5c4a1e;--top-text:#ffd27a;
+}
+:root[data-theme="light"]{
+  --bg:#ffffff;--surface:#f8fafc;--border:#e2e8f0;
+  --text:#0f172a;--muted:#64748b;
+  --accent:#2563eb;--accent-soft:#eff6ff;--accent-text:#1d4ed8;
+  --ax1-bg:#f3e8ff;--ax1-text:#7c3aed;
+  --ax2-bg:#dbeafe;--ax2-text:#1d4ed8;
+  --ax3-bg:#ccfbf1;--ax3-text:#0f766e;
+  --ax4-bg:#ffedd5;--ax4-text:#c2410c;
+  --ax5-bg:#dcfce7;--ax5-text:#15803d;
+  --rej-bg:#fef2f2;--rej-text:#b91c1c;--rej-border:#fecaca;
+  --top-bg:#fffbeb;--top-border:#fde68a;--top-text:#92400e;
+}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:1.6;color:var(--text);background:var(--bg)}
+.page{max-width:920px;margin-inline:auto;padding:48px 32px 80px}
+
+.doc-header{margin-bottom:36px;border-bottom:2px solid var(--border);padding-bottom:28px}
+.doc-eyebrow{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.doc-title{font-size:26px;font-weight:700;line-height:1.25;color:var(--text);margin-bottom:14px}
+.doc-dek{font-size:14.5px;color:var(--muted);max-width:70ch;margin-bottom:14px}
+.doc-meta{display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.doc-meta span strong{color:var(--text);font-weight:500}
+
+.stats-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:48px}
+.stat{background:var(--bg);padding:18px 16px;text-align:center}
+.stat-number{font-size:30px;font-weight:700;color:var(--accent);line-height:1}
+.stat-label{font-size:11px;font-weight:600;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.05em}
+
+section{margin-bottom:52px}
+.section-eyebrow{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+h2{font-size:19px;font-weight:700;color:var(--text);margin-bottom:18px}
+h3{font-size:15px;font-weight:700;color:var(--text);margin:18px 0 8px}
+
+.grounding-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.gc{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:18px}
+.gc h4{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:8px}
+.gc p,.gc ul{font-size:13.5px;color:var(--text);line-height:1.55}
+.gc p+p{margin-top:7px}
+.gc ul{padding-left:16px}
+.gc li{margin-bottom:3px}
+
+.axis-list{display:flex;flex-direction:column;gap:10px}
+.axis-item{display:flex;align-items:baseline;gap:10px}
+.axis-badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:100px;white-space:nowrap;letter-spacing:.03em;flex-shrink:0}
+.ax1{background:var(--ax1-bg);color:var(--ax1-text)}
+.ax2{background:var(--ax2-bg);color:var(--ax2-text)}
+.ax3{background:var(--ax3-bg);color:var(--ax3-text)}
+.ax4{background:var(--ax4-bg);color:var(--ax4-text)}
+.ax5{background:var(--ax5-bg);color:var(--ax5-text)}
+.axis-desc{font-size:13.5px;color:var(--text)}
+.axis-desc strong{font-weight:600}
+
+.jump-list{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 18px;margin-bottom:28px}
+.jump-list h4{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px}
+.jump-list ol{padding-left:18px}
+.jump-list li{margin-bottom:5px;font-size:13.5px}
+.jump-list li::marker{color:var(--muted)}
+.jump-list a{color:var(--accent-text);text-decoration:none}
+.jump-list a:hover{text-decoration:underline}
+
+.idea-card{border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:24px}
+.idea-card.top{border-color:var(--top-border);border-width:2px}
+.idea-header{padding:18px 22px 14px;border-bottom:1px solid var(--border)}
+.idea-rank{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin-bottom:5px}
+.idea-title{font-size:17px;font-weight:700;color:var(--text);margin-bottom:10px}
+.idea-title code{font-size:.88em}
+.idea-chips{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.chip{font-size:11.5px;font-weight:600;padding:3px 10px;border-radius:100px;border:1px solid transparent}
+.chip-top{background:var(--top-bg);color:var(--top-text);border-color:var(--top-border)}
+.chip-high{background:#f0fdf4;color:#16a34a;border-color:#bbf7d0}
+.chip-med{background:#fffbeb;color:#d97706;border-color:#fde68a}
+.chip-cx-low{background:#f0fdf4;color:#166534;border-color:#bbf7d0}
+.chip-cx-med{background:#fffbeb;color:#92400e;border-color:#fde68a}
+
+.idea-body{padding:22px}
+.idea-field{margin-bottom:16px}
+.idea-field:last-child{margin-bottom:0}
+.idea-field dt{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:4px}
+.idea-field dd{font-size:14px;line-height:1.65;max-width:74ch}
+
+code{font-family:'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace;font-size:.875em;background:var(--surface);color:var(--text);padding:1px 5px;border-radius:4px;border:1px solid var(--border)}
+
+.diagram{margin:16px 0;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:18px;overflow-x:auto;display:flex;justify-content:center}
+.diagram svg{display:block;max-width:100%}
+
+.callout{border-radius:8px;padding:14px 18px;margin:14px 0;font-size:13.5px;line-height:1.6}
+.callout.tension{background:var(--top-bg);border:1px solid var(--top-border);color:var(--text)}
+.callout.tension .eyebrow{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--top-text);margin-bottom:6px;display:block}
+
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:9px 13px;border-bottom:2px solid var(--border)}
+td{padding:10px 13px;border-bottom:1px solid var(--border);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:nth-child(even) td{background:var(--surface)}
+td:first-child{font-weight:600;color:var(--muted);width:36px}
+
+footer.composition-signal{margin-top:60px;padding-top:20px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);text-align:center}
+
+@media(max-width:640px){
+  .grounding-grid{grid-template-columns:1fr}
+  .stats-strip{grid-template-columns:1fr 1fr}
+  .page{padding:28px 16px 56px}
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="doc-header">
+  <p class="doc-eyebrow">Flowline CLI · Ideation</p>
+  <h1 class="doc-title">What Microsoft's Contoso Real Estate ALM Reference Earns Flowline</h1>
+  <p class="doc-dek">Microsoft's <code>contoso-real-estate-power-platform</code> (Scott Durow's reference architecture for developing, deploying, and managing a Dataverse solution via Power Platform, Azure, and GitHub) is the enterprise-managed-ALM answer to the same problem Flowline solves fast and unmanaged. This pass reads the live contoso repo line-by-line against Flowline's actual source to find what's worth adapting — and names what should stay out on purpose.</p>
+  <div class="doc-meta">
+    <span><strong>Date:</strong> 2026-07-05</span>
+    <span><strong>Topic:</strong> contoso-alm-comparison</span>
+    <span><strong>Mode:</strong> repo-grounded</span>
+    <span><strong>Focus:</strong> microsoft/contoso-real-estate-power-platform vs Flowline — adapt vs reject</span>
+  </div>
+</header>
+
+<div class="stats-strip">
+  <div class="stat"><div class="stat-number">35</div><div class="stat-label">Raw candidates</div></div>
+  <div class="stat"><div class="stat-number">5</div><div class="stat-label">Frames</div></div>
+  <div class="stat"><div class="stat-number">11</div><div class="stat-label">Survivors</div></div>
+  <div class="stat"><div class="stat-number">5</div><div class="stat-label">Axes</div></div>
+</div>
+
+<!-- ── Grounding Context ─────────────────────────────────────────────── -->
+<section id="grounding-context">
+  <p class="section-eyebrow">Grounding</p>
+  <h2>Codebase Context</h2>
+  <div class="grounding-grid">
+
+    <div class="gc">
+      <h4>Flowline CLI (current state)</h4>
+      <p>C# .NET 10 CLI, v0.9.0 (released 2026-06-29, v1.0 targeted 2026-07-20). Commands: <code>clone</code>/<code>push</code>/<code>sync</code>/<code>deploy</code>/<code>provision</code>/<code>generate</code>/<code>status</code>. Convention-over-configuration (attribute-driven plugin registration), PAC-CLI-auth-reuse, AI-native (<code>DATAVERSE_CONTEXT.md</code>).</p>
+      <p>Already shipped, verified by reading source: non-bypassable <strong>DTAP gate</strong> in <code>DeployCommand</code> (tier promotion, <code>System.Version</code> comparison); a <strong>managed/unmanaged type guard</strong>; an <strong>IPostDeployService</strong> DI fan-out with three implementers — <code>SolutionCheckService</code> (already runs <code>pac solution check</code> pre-import!), <code>BackupService</code>, and a two-phase <code>OrphanCleanupService</code> that already computes cross-solution component membership. Fully automated semver via MinVer + git tags (no manual bump needed).</p>
+      <p>Confirmed gaps: <code>ProjectSolution</code> has only <code>Name</code>/<code>IncludeManaged</code>/<code>Generate</code> — no dependency/order field; <code>ProjectConfig.Solutions</code> is an unordered <code>HashSet</code>; <code>PushCommand.cs</code> has zero references to the Solution Checker; CI auth uses stored service-principal secrets, no OIDC.</p>
+    </div>
+
+    <div class="gc">
+      <h4>contoso-real-estate-power-platform (verified via GitHub API/raw fetch)</h4>
+      <p>Three segmented solutions (Controls → Core → Portal) driven by a Dataverse dependency-versioning constraint (PCF components must be managed and pre-built before a canvas app can reference them) — <strong>not</strong> a general multi-solution design pattern.</p>
+      <p>CI/CD: GitHub Actions, federated identity (<code>pac auth create --githubFederated</code>), per-solution semantic versioning via <code>changeScope</code>-scoped commit tags, <code>pac solution check</code> parsing SARIF with a Critical/High threshold, GitHub Environments with required-reviewer approval gates, <code>deploymentSettings.json</code> synthesized at deploy time from a GitHub Actions <em>variable</em> (never committed), <code>azd</code>/Bicep for the companion Azure Functions payments API.</p>
+      <p>Live-fetched fact that reshapes the multi-solution question: <code>SOLUTIONS_CONFIG</code> is a flat, manually ordered JSON array; the deploy matrix runs it with <code>max-parallel: 1</code> — <strong>no dependency graph, no topological sort exists anywhere in contoso's own repo.</strong></p>
+    </div>
+
+  </div>
+
+  <h3>Market signal (external research, value: high)</h3>
+  <div class="gc" style="max-width:100%">
+    <p>2026 community consensus (Microsoft Learn, engineering blogs) treats full custom DevOps construction as unnecessary overhead for most teams — minimal ALM (environment separation, version control, approval-gated deploy, rollback) is the mainstream position, not Flowline's fringe stance. ALM Accelerator for Power Platform is now deprecated by Microsoft; <code>spkl</code> is cited as prior art in Flowline's exact "simple ALM" niche. Managed Environments (Feb 2026+) auto-enforce Solution Checker on import regardless of what CI already ran — a platform-level constraint no tool can opt out of.</p>
+  </div>
+</section>
+
+<!-- ── Topic Axes ────────────────────────────────────────────────────── -->
+<section id="topic-axes">
+  <p class="section-eyebrow">Decomposition</p>
+  <h2>Topic Axes</h2>
+  <div class="axis-list">
+    <div class="axis-item"><span class="axis-badge ax1">ci-auth-versioning</span><span class="axis-desc">CI/CD authentication (OIDC/federated identity) and build/version integrity</span></div>
+    <div class="axis-item"><span class="axis-badge ax2">solution-checker-gate</span><span class="axis-desc">Pre/post-deploy safety gates, Solution Checker integration and refinement</span></div>
+    <div class="axis-item"><span class="axis-badge ax3">config-data-import</span><span class="axis-desc">Connection references, environment variables, reference/sample-data promotion</span></div>
+    <div class="axis-item"><span class="axis-badge ax4">multi-solution-topology</span><span class="axis-desc">Cross-solution dependency ordering and build/deploy sequencing</span></div>
+    <div class="axis-item"><span class="axis-badge ax5">architecture-docs</span><span class="axis-desc">Schema/architecture documentation generation (<code>DATAVERSE_CONTEXT.md</code>, diagrams)</span></div>
+  </div>
+</section>
+
+<!-- ── Ranked Ideas ──────────────────────────────────────────────────── -->
+<section id="ranked-ideas">
+  <p class="section-eyebrow">Survivors</p>
+  <h2>Ranked Ideas</h2>
+
+  <div class="jump-list">
+    <h4>Jump to</h4>
+    <ol>
+      <li><a href="#idea-1">Multi-solution deploy ordering — pick one of three designs</a></li>
+      <li><a href="#idea-2">Shift Solution Checker left to <code>push</code></a></li>
+      <li><a href="#idea-3">Cross-solution impact preview</a></li>
+      <li><a href="#idea-4">Per-tier Solution Checker severity</a></li>
+      <li><a href="#idea-5">Cache Solution Checker results</a></li>
+      <li><a href="#idea-6">Build-once, promote-many immutable artifact</a></li>
+      <li><a href="#idea-7">OIDC-native CI auth via the existing token-provider callback</a></li>
+      <li><a href="#idea-8">Generated relationship diagram in <code>DATAVERSE_CONTEXT.md</code></a></li>
+      <li><a href="#idea-9">Managed Environment awareness warning</a></li>
+      <li><a href="#idea-10"><code>flowline status --drift</code></a></li>
+      <li><a href="#idea-11">CI-native exit-code rendering</a></li>
+    </ol>
+  </div>
+
+  <!-- IDEA 1 -->
+  <article class="idea-card top" id="idea-1">
+    <div class="idea-header">
+      <p class="idea-rank">1</p>
+      <h3 class="idea-title">Multi-solution deploy ordering — pick one of three designs</h3>
+      <div class="idea-chips">
+        <span class="chip chip-top">Top pick</span>
+        <span class="chip" style="background:var(--ax4-bg);color:var(--ax4-text)">multi-solution-topology</span>
+        <span class="chip chip-high">Confidence: High</span>
+        <span class="chip chip-cx-med">Complexity: Medium</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field">
+          <dt>Description</dt>
+          <dd>Flowline's <code>ProjectSolution</code> has only <code>Name</code>/<code>IncludeManaged</code>/<code>Generate</code> — confirmed by direct read, no dependency or order field exists — and <code>ProjectConfig.Solutions</code> is an unordered <code>HashSet</code>, confirmed to have no deterministic enumeration order at all. That's a real correctness gap the moment a project has two solutions with an import dependency between them. Three independently-proposed designs solve it, and they're genuinely in tension:
+            <br><br><strong>(A) Declared dependency graph</strong> — add <code>Dependencies: string[]</code> to <code>ProjectSolution</code>; <code>deploy</code>/<code>push</code> topologically sort before acting.
+            <br><strong>(B) Flat declared order + change-scoped skip</strong> — an ordered array in <code>.flowline</code>, plus a <code>--all</code> flag that iterates it sequentially and skips solutions whose folder didn't change.
+            <br><strong>(C) Error-driven emergent ordering</strong> — zero config surface at all; <code>deploy --all</code> attempts every solution, catches Dataverse's own missing-dependency import error and retries failures in a second pass — reusing the exact catch-and-defer pattern already proven in <code>OrphanCleanupService</code>.
+          </dd>
+        </div>
+        <div class="idea-field">
+          <dt>Basis</dt>
+          <dd><code>direct:</code> live-fetched contoso <code>build.yml</code>/<code>deploy-environment.yml</code> confirm <code>SOLUTIONS_CONFIG</code> is a flat GitHub Actions variable JSON array consumed by a matrix with <code>max-parallel: 1</code> — <strong>no topological sort or dependency field exists anywhere in contoso's own workflow YAML</strong>, verified by direct fetch, not assumption. <code>direct:</code> <code>ProjectSolution.cs</code> confirmed to hold only <code>Name</code>/<code>IncludeManaged</code>/<code>Generate</code>; <code>ProjectConfig.cs</code> confirmed <code>Solutions</code> is a <code>HashSet</code> with no order guarantee. <code>direct:</code> <code>OrphanCleanupService</code>'s two-phase catch-on-error-code-0x80047002-and-defer pattern is confirmed, proven architecture (docs/solutions, high severity) that option (C) reuses directly.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Rationale</dt>
+          <dd>This is the single most consequential design fork in the whole comparison: even Microsoft's own flagship multi-solution example doesn't build a dependency graph — it gets away with a flat ordered list. That's hard evidence against reaching for graph/topological-sort machinery by default (option A), and evidence <em>for</em> either the equally lightweight flat-order approach (B) or the zero-config-surface approach (C) that best matches Flowline's convention-over-configuration philosophy. This isn't a "nice to have" — it's the one Flowline currently has zero answer for.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Downsides</dt>
+          <dd>Option (A) is the most powerful but adds a config surface Flowline has consistently avoided elsewhere, and contoso's own repo doesn't validate the extra complexity. Option (C) needs careful scoping of retry semantics (how many passes, what counts as a permanent vs. transient failure) before it's safe to ship. Whichever option ships, do not let it grow into "spin up an environment per solution" — that overhead exists in contoso only to satisfy a managed-solution boundary constraint Flowline doesn't share.</dd>
+        </div>
+      </dl>
+      <div class="diagram">
+        <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" font-family="Inter,sans-serif">
+          <style>
+            .lbl{font-size:12px;fill:var(--text,#0f172a)}
+            .sub{font-size:10.5px;fill:var(--muted,#64748b)}
+            .box{fill:var(--surface,#f8fafc);stroke:var(--border,#e2e8f0);stroke-width:1.5}
+            .boxa{fill:var(--top-bg,#fffbeb);stroke:var(--top-border,#fde68a);stroke-width:1.5}
+          </style>
+          <rect x="10" y="20" width="220" height="150" rx="8" class="box"/>
+          <text x="120" y="42" text-anchor="middle" class="lbl" font-weight="700">(A) Declared graph</text>
+          <text x="120" y="64" text-anchor="middle" class="sub">Dependencies: string[]</text>
+          <text x="120" y="80" text-anchor="middle" class="sub">+ topological sort</text>
+          <text x="120" y="104" text-anchor="middle" class="sub" font-style="italic">most power,</text>
+          <text x="120" y="118" text-anchor="middle" class="sub" font-style="italic">most new config surface</text>
+          <text x="120" y="148" text-anchor="middle" class="sub">not what contoso does</text>
+
+          <rect x="250" y="20" width="220" height="150" rx="8" class="boxa"/>
+          <text x="360" y="42" text-anchor="middle" class="lbl" font-weight="700">(B) Flat order</text>
+          <text x="360" y="64" text-anchor="middle" class="sub">ordered array + --all</text>
+          <text x="360" y="80" text-anchor="middle" class="sub">+ change-scoped skip</text>
+          <text x="360" y="104" text-anchor="middle" class="sub" font-style="italic">matches contoso's</text>
+          <text x="360" y="118" text-anchor="middle" class="sub" font-style="italic">actual (proven) design</text>
+          <text x="360" y="148" text-anchor="middle" class="sub">best-evidenced option</text>
+
+          <rect x="490" y="20" width="220" height="150" rx="8" class="box"/>
+          <text x="600" y="42" text-anchor="middle" class="lbl" font-weight="700">(C) Emergent order</text>
+          <text x="600" y="64" text-anchor="middle" class="sub">no config at all</text>
+          <text x="600" y="80" text-anchor="middle" class="sub">catch Dataverse's own</text>
+          <text x="600" y="94" text-anchor="middle" class="sub">import-dependency error</text>
+          <text x="600" y="118" text-anchor="middle" class="sub" font-style="italic">reuses OrphanCleanup's</text>
+          <text x="600" y="132" text-anchor="middle" class="sub" font-style="italic">proven retry pattern</text>
+          <text x="600" y="156" text-anchor="middle" class="sub">most "Flowline" fit</text>
+        </svg>
+      </div>
+    </div>
+  </article>
+
+  <!-- IDEA 2 -->
+  <article class="idea-card" id="idea-2">
+    <div class="idea-header">
+      <p class="idea-rank">2</p>
+      <h3 class="idea-title">Shift Solution Checker left to <code>push</code>, not just <code>deploy</code></h3>
+      <div class="idea-chips">
+        <span class="chip" style="background:var(--ax2-bg);color:var(--ax2-text)">solution-checker-gate</span>
+        <span class="chip chip-high">Confidence: High</span>
+        <span class="chip chip-cx-low">Complexity: Low</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field">
+          <dt>Description</dt>
+          <dd><code>SolutionCheckService</code> is wired exclusively into <code>DeployCommand</code>'s <code>IPostDeployService</code> fan-out. A grep of the full <code>PushCommand.cs</code> for <code>SolutionCheckService</code>/<code>IPostDeployService</code> returns zero matches — confirmed by direct read. That means the fastest point in the dev loop never sees checker feedback; a solo developer only learns about a Critical finding at deploy time, potentially after several pushes. Add an optional fast local check at <code>push</code> time against the unpacked solution folder, before packaging.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Basis</dt>
+          <dd><code>direct:</code> full read of <code>PushCommand.cs</code> (415 lines) confirms zero references to <code>SolutionCheckService</code> or <code>IPostDeployService</code> — verified independently by two ideation frames and confirmed exactly by the Phase 3 verifier.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Rationale</dt>
+          <dd>Directly serves the "zero CI minutes, solo dev, no team to approve" end of Flowline's positioning — the check becomes a local dev-loop habit instead of a CI-stage gate, the opposite of contoso's pipeline-stage model. The hard part (running <code>pac solution check</code>, interpreting the result) is already built; this is a wiring change, not new logic.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Downsides</dt>
+          <dd>Running the checker on every <code>push</code> adds real latency (~30-90s) to the fastest command in the loop — should almost certainly be opt-in (a flag or config toggle), not default-on.</dd>
+        </div>
+      </dl>
+    </div>
+  </article>
+
+  <!-- IDEA 3 -->
+  <article class="idea-card" id="idea-3">
+    <div class="idea-header">
+      <p class="idea-rank">3</p>
+      <h3 class="idea-title">Cross-solution impact preview (<code>flowline status --cross-solution</code>)</h3>
+      <div class="idea-chips">
+        <span class="chip" style="background:var(--ax4-bg);color:var(--ax4-text)">multi-solution-topology</span>
+        <span class="chip chip-high">Confidence: High</span>
+        <span class="chip chip-cx-low">Complexity: Low</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field">
+          <dt>Description</dt>
+          <dd><code>OrphanCleanupService</code> already computes cross-solution component membership (which components a solution shares with sibling solutions) to decide <code>RemoveFromSolution</code> vs <code>Delete</code> during cleanup — but only reactively, after a deploy has already happened. Expose that same computation as a pre-deploy diagnostic: "if I deploy solution B, what does it share with solution A, and what would this touch."</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Basis</dt>
+          <dd><code>direct:</code> <code>OrphanCleanupService.GetCrossSolutionMembershipAsync</code> confirmed by direct read to genuinely compute solution-component cross-membership, currently consumed only inside <code>RunPreImportAsync</code>/<code>RunPostImportAsync</code>.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Rationale</dt>
+          <dd>Reuses computation Flowline already built and pays for, just repointed to run earlier and surface to the user instead of being thrown away until cleanup time. Near-zero net-new logic for a real diagnostic gap.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Downsides</dt>
+          <dd>Only useful once a project actually has 2+ solutions with genuine overlap — low priority for the common single-solution case, but cheap enough that this isn't really a cost.</dd>
+        </div>
+      </dl>
+    </div>
+  </article>
+
+  <!-- IDEA 4 -->
+  <article class="idea-card" id="idea-4">
+    <div class="idea-header">
+      <p class="idea-rank">4</p>
+      <h3 class="idea-title">Per-tier Solution Checker severity threshold</h3>
+      <div class="idea-chips">
+        <span class="chip" style="background:var(--ax2-bg);color:var(--ax2-text)">solution-checker-gate</span>
+        <span class="chip chip-high">Confidence: High</span>
+        <span class="chip chip-cx-low">Complexity: Low</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field">
+          <dt>Description</dt>
+          <dd>Today the checker gate is binary and global: <code>SolutionCheckService.ShouldAbort</code> only ever aborts on <code>criticalCount &gt; 0</code>, for every tier. But <code>DeployCommand</code>'s DTAP gate already resolves a full tier-ordering concept (Dev &lt; Test &lt; UAT &lt; Prod) for version gating. Reuse that same tier hierarchy to vary checker strictness by target: Dev/Test tolerate Medium findings, UAT blocks High+, Prod blocks Critical+High — one config value per tier, not a new subsystem.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Basis</dt>
+          <dd><code>direct:</code> <code>SolutionCheckService.cs</code> confirmed hardcoded threshold <code>ShouldAbort(int criticalCount) =&gt; criticalCount &gt; 0</code>; <code>DeployCommand</code>'s tier/predecessor resolution logic confirmed already implemented for version gating (docs/solutions, DTAP gate, high severity). Independently proposed by two separate ideation frames working from the same evidence — cross-validated.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Rationale</dt>
+          <dd>The DTAP tier hierarchy is architecture already paid for once; extending it to severity gating is near-zero net-new plumbing compared to contoso's separate environment-tier config layer, and answers the real complaint that Dev and Prod get identically lenient checker gates today.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Downsides</dt>
+          <dd>Touches the <code>.flowline</code> config schema and <code>PostDeployContext</code> shape (which currently carries no tier field) — small scoping conversation needed before building.</dd>
+        </div>
+      </dl>
+    </div>
+  </article>
+
+  <!-- IDEA 5 -->
+  <article class="idea-card" id="idea-5">
+    <div class="idea-header">
+      <p class="idea-rank">5</p>
+      <h3 class="idea-title">Cache Solution Checker results by content hash</h3>
+      <div class="idea-chips">
+        <span class="chip" style="background:var(--ax2-bg);color:var(--ax2-text)">solution-checker-gate</span>
+        <span class="chip chip-med">Confidence: Medium</span>
+        <span class="chip chip-cx-med">Complexity: Medium</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field">
+          <dt>Description</dt>
+          <dd>Neither Flowline nor contoso caches <code>pac solution check</code> output — contoso's <code>build.yml</code> re-runs it fully every build (confirmed: no hash/skip logic in the fetched workflow step). Key a cache on (packed-zip content hash, checker ruleset version, target tier) so a repeat deploy of an unchanged package skips a 30-90s re-run. While touching this service, also wire the missing exclude-files plumbing: <code>PacUtils.CheckSolutionAsync</code> has no <code>-ef</code>/exclude parameter at all today, so Flowline can't yet do what contoso does manually (<code>-ef bundle.js</code> to suppress transpiled-JS false positives) — auto-derive the exclude list from the existing <code>WebResources/dist/</code> gitignored-build-output convention instead of asking users to hand-maintain one.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Basis</dt>
+          <dd><code>direct:</code> <code>PacUtils.CheckSolutionAsync</code> confirmed to have no caching and no exclude-files parameter wired today. <code>external:</code> contoso's <code>build.yml</code> `pac solution check -ef bundle.js` — hand-maintained exclude list, no caching. <code>reasoned:</code> the packed zip is already deterministic pre-check, making content-hash keying straightforward; must key on ruleset version too since a cache can only ever skip Flowline's own gate, never the platform's Managed-Environment-enforced one.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Rationale</dt>
+          <dd>Cuts real deploy latency for the common "nothing changed in this solution, just deploying its sibling" case on multi-solution repos, and closes a plumbing gap (no exclude-list support exists at all yet) while the service is already being touched.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Downsides</dt>
+          <dd>Cache-invalidation correctness (ruleset-version bumps, partial-content changes) needs real design scrutiny before shipping — this is exactly the kind of tradeoff that benefits from a second pair of eyes.</dd>
+        </div>
+      </dl>
+    </div>
+  </article>
+
+  <!-- IDEA 6 -->
+  <article class="idea-card" id="idea-6">
+    <div class="idea-header">
+      <p class="idea-rank">6</p>
+      <h3 class="idea-title">Build-once, promote-many: immutable artifact across DTAP tiers</h3>
+      <div class="idea-chips">
+        <span class="chip" style="background:var(--ax1-bg);color:var(--ax1-text)">ci-auth-versioning</span>
+        <span class="chip chip-high">Confidence: High</span>
+        <span class="chip chip-cx-med">Complexity: Medium</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field">
+          <dt>Description</dt>
+          <dd>Contoso versions each solution independently, packs it once, and publishes it as a tagged GitHub Release asset — the same zip is promoted dev→test→prod, never rebuilt. Flowline's <code>DeployCommand</code> calls <code>PackSolutionAsync</code> fresh from local source XML on every <code>deploy</code> invocation, so two deploys of "the same version" to different tiers aren't guaranteed to be identical bytes. Add a <code>--from-artifact &lt;zip&gt;</code> flag that skips re-packing and lets the existing DTAP gate verify the artifact's embedded version instead.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Basis</dt>
+          <dd><code>direct:</code> contoso <code>build.yml</code> (<code>softprops/action-gh-release</code>, tag-named asset) + <code>import-solution.yml</code> (regex-matched tag download) confirmed via live fetch. <code>direct:</code> <code>DeployCommand.cs</code> confirmed <code>PackSolutionAsync</code> runs unconditionally, no artifact-reuse path exists today. <code>external:</code> build-once/promote-immutable-artifact is standard practice (OCI images, npm publish).</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Rationale</dt>
+          <dd>The DTAP gate checks version <em>number</em> only — it never confirms the artifact hitting Prod is bit-identical to what passed UAT. This closes an integrity gap contoso solves with heavier machinery (GitHub Releases); Flowline can solve it with one local flag instead.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Downsides</dt>
+          <dd>Distinct from the already-proposed Git-Tag-as-approval-gate idea (that's about permission to promote; this is about artifact identity) — worth keeping the two ideas separate in any future design doc so they don't get conflated.</dd>
+        </div>
+      </dl>
+    </div>
+  </article>
+
+  <!-- IDEA 7 -->
+  <article class="idea-card" id="idea-7">
+    <div class="idea-header">
+      <p class="idea-rank">7</p>
+      <h3 class="idea-title">OIDC-native CI auth via the existing token-provider callback</h3>
+      <div class="idea-chips">
+        <span class="chip" style="background:var(--ax1-bg);color:var(--ax1-text)">ci-auth-versioning</span>
+        <span class="chip chip-med">Confidence: Medium</span>
+        <span class="chip chip-cx-med">Complexity: Medium</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field">
+          <dt>Description</dt>
+          <dd><code>DataverseConnector</code> confirmed by direct read to hand <code>ServiceClient</code> a token via an <code>async _ =&gt; token</code> callback constructor — a mechanism generic enough to accept any bearer token, not only one sourced from PAC CLI's own MSAL cache. Today CI auth goes through <code>pac auth create --kind ServicePrincipal --clientSecret</code> (PAC's own profile store, read via <code>ConnectServicePrincipalAsync</code>), which requires a stored client secret. Add a CI-only connect path that acquires an Entra token externally (via <code>azure/login</code> + a federated-credential app registration) and feeds it directly into the existing callback — bypassing PAC's profile lookup for that path entirely, without waiting on PAC CLI itself to ever add OIDC support.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Basis</dt>
+          <dd><code>direct:</code> <code>DataverseConnector.cs</code> token-provider callback confirmed by the Phase 3 verifier via full read. <em>Correction from verification:</em> the mechanism is not the <code>SecretResolver.cs</code> chain (that class only serves XrmContext code generation, unrelated to deploy auth) — the actual current SP-auth path is PAC's own stored profile via <code>ConnectServicePrincipalAsync</code>. <code>external:</code> OIDC/federated identity is MS's own documented standard for GitHub Actions → Power Platform (<code>microsoft/powerplatform-actions</code> v1.5.0 + <code>azure/login</code>), but <code>pac auth create</code> itself has no <code>--federatedToken</code> flag today (only <code>--managedIdentity</code>).</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Rationale</dt>
+          <dd>Two ideation frames drew different conclusions from adjacent facts here, worth naming explicitly: one frame concluded OIDC is not buildable until PAC CLI itself ships a federated-credential flag; another found that Flowline's own auth-consumption code doesn't actually require going through PAC's stored profiles at all — the token-provider callback is auth-mechanism-agnostic. Both facts are true simultaneously; the second reading is the sharper one, because it identifies a path that doesn't wait on an upstream PAC CLI feature that doesn't exist yet.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Downsides</dt>
+          <dd>This needs a short design spike to confirm the callback route works end-to-end with an externally-acquired token before committing — the confidence is Medium, not High, specifically because that spike hasn't happened yet. This would be a new CI-only code path alongside PAC-based auth, not a <code>pac auth create</code> feature.</dd>
+        </div>
+      </dl>
+    </div>
+  </article>
+
+  <!-- IDEA 8 -->
+  <article class="idea-card" id="idea-8">
+    <div class="idea-header">
+      <p class="idea-rank">8</p>
+      <h3 class="idea-title">Generated relationship diagram in <code>DATAVERSE_CONTEXT.md</code></h3>
+      <div class="idea-chips">
+        <span class="chip" style="background:var(--ax5-bg);color:var(--ax5-text)">architecture-docs</span>
+        <span class="chip chip-high">Confidence: High</span>
+        <span class="chip chip-cx-low">Complexity: Low</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field">
+          <dt>Description</dt>
+          <dd><code>DataverseContextGenerator.ReadRelationships</code> already parses <code>EntityRelationship</code> XML per entity and emits a markdown relationships table into <code>DATAVERSE_CONTEXT.md</code>, regenerated fresh on every <code>sync</code>/<code>clone</code>. Add a second renderer over the same already-parsed data: a Mermaid entity-relationship diagram, generated — never hand-drawn like contoso's static <code>docs/06-design.md</code> C4 diagrams, which drift the moment the schema changes since nothing regenerates them.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Basis</dt>
+          <dd><code>direct:</code> <code>ReadRelationships</code> confirmed by direct read (parses OneToMany/ManyToOne/ManyToMany, already builds a table); <code>GenerateAsync</code> confirmed called from both <code>SyncCommand.cs</code> and <code>CloneCommand.cs</code>. <code>external:</code> contoso's <code>docs/06-design.md</code> ships hand-authored, git-committed Mermaid C4 diagrams that never regenerate.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Rationale</dt>
+          <dd>Independently proposed by three separate ideation frames working from the same evidence — the strongest convergence signal in this entire set. Zero new extraction code: a second output over data already parsed, not a new subsystem. Directly serves Flowline's AI-native pitch — a flat 625-line markdown list partially defeats the "agents shouldn't have to reconstruct structure by reading" goal for relationship-heavy solutions.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Downsides</dt>
+          <dd>Adds Mermaid noise to every <code>DATAVERSE_CONTEXT.md</code> diff on schema change — consider a flag on the existing generation step rather than always-on, for teams that don't want it.</dd>
+        </div>
+      </dl>
+    </div>
+  </article>
+
+  <!-- IDEA 9 -->
+  <article class="idea-card" id="idea-9">
+    <div class="idea-header">
+      <p class="idea-rank">9</p>
+      <h3 class="idea-title">Managed Environment awareness warning</h3>
+      <div class="idea-chips">
+        <span class="chip" style="background:var(--ax2-bg);color:var(--ax2-text)">solution-checker-gate</span>
+        <span class="chip chip-med">Confidence: Medium</span>
+        <span class="chip chip-cx-low">Complexity: Low</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field">
+          <dt>Description</dt>
+          <dd>Managed Environments (Feb 2026+) will auto-enforce Solution Checker on every import at the platform level, regardless of what Flowline's own <code>SolutionCheckService</code> already ran. A user who bypasses or soft-fails Flowline's existing gate today can get blindsided later when an org admin flips the environment to Managed — same solution, same code, a new platform-level block with zero warning from Flowline. Have <code>status</code>/<code>deploy</code> query org settings (via the existing <code>DataverseConnector</code>) for the Managed Environment flag and surface a warning if the local gate was bypassed against it.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Basis</dt>
+          <dd><code>direct:</code> <code>IPostDeployService</code> fan-out and its three implementers confirmed by direct read. <code>external:</code> Managed Environments' Feb 2026 forced-checker enforcement, per external research grounding.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Rationale</dt>
+          <dd>Operator education, not a new blocking control — respects "don't rebuild what the platform already enforces." The explicit companion non-goal matters as much as the warning itself: do not build detection/workaround code that tries to replicate or bypass the platform's own enforcement — one paragraph in <code>Known-Limitations.md</code> plus this warning is the right scope, nothing more.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Downsides</dt>
+          <dd>Requires an org-settings read Flowline doesn't do today — small, but it's a new capability, not free.</dd>
+        </div>
+      </dl>
+    </div>
+  </article>
+
+  <!-- IDEA 10 -->
+  <article class="idea-card" id="idea-10">
+    <div class="idea-header">
+      <p class="idea-rank">10</p>
+      <h3 class="idea-title"><code>flowline status --drift &lt;env&gt;</code></h3>
+      <div class="idea-chips">
+        <span class="chip" style="background:var(--ax3-bg);color:var(--ax3-text)">config-data-import</span>
+        <span class="chip chip-med">Confidence: Medium</span>
+        <span class="chip chip-cx-med">Complexity: Medium</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field">
+          <dt>Description</dt>
+          <dd>Contoso's <code>PAC_DEPLOY_CONFIG</code> is a GitHub Actions variable hand-edited through the Settings UI — opaque, not diffable, no PR review on config changes. The prior Flowline ideation doc already proposed the better alternative: a git-tracked <code>flowline.env.&lt;name&gt;.json</code>. This adds a genuinely new capability on top of whichever settings-file design lands: a non-blocking command that diffs the committed file against the live environment's actual connection-reference/env-variable values (reusing service calls <code>sync</code> already makes).</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Basis</dt>
+          <dd><code>direct:</code> contoso's variable-storage mechanism (quoted from <code>docs/04-ci-cd-setup.md</code>, live-fetched) has no diff/review path. <code>external:</code> Terraform <code>plan</code>/drift detection — the entire IaC discipline exists to replace exactly this "hand-edited external config" anti-pattern.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Rationale</dt>
+          <dd>Config drift (someone hand-edits a connection reference live in the maker portal) is invisible today in both tools; contoso doubles the exposure by keeping its source of truth outside git entirely. This is the one genuinely new angle on an axis two prior ideation docs already covered in depth (16 ideas) — everything else on this axis was a restatement and was cut (see Rejection Summary).</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Downsides</dt>
+          <dd>Depends on the eventual settings-file design from the prior ideation doc actually shipping first — this isn't standalone. "Advisory or blocking" is a real product call to make before building.</dd>
+        </div>
+      </dl>
+    </div>
+  </article>
+
+  <!-- IDEA 11 -->
+  <article class="idea-card" id="idea-11">
+    <div class="idea-header">
+      <p class="idea-rank">11</p>
+      <h3 class="idea-title">CI-native exit-code rendering</h3>
+      <div class="idea-chips">
+        <span class="chip" style="background:var(--ax1-bg);color:var(--ax1-text)">ci-auth-versioning</span>
+        <span class="chip chip-high">Confidence: High</span>
+        <span class="chip chip-cx-low">Complexity: Low</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field">
+          <dt>Description</dt>
+          <dd><code>ExitCode.cs</code> states its codes are "a stable public API — agents and scripts pattern-match on these values," and each value carries remediation text as an XML doc comment (e.g. <code>PartialSuccess</code>: "Check output for items to remove manually via maker portal"). None of that reaches a CI run as anything other than buried console text. Detect <code>$GITHUB_ACTIONS</code>/<code>$TF_BUILD</code> and render the existing remediation strings as <code>::error::</code> annotations or a step summary.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Basis</dt>
+          <dd><code>direct:</code> <code>ExitCode.cs</code> confirmed to carry exact remediation text as doc comments on every value, unused outside console output today.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Rationale</dt>
+          <dd>The hard part — deciding what each failure means and how to fix it — is already written. Only rendering is missing. Small, cheap, no new copywriting, no new subsystem — genuinely a quick win rather than a design decision, which is why it ranks last despite scoring High confidence.</dd>
+        </div>
+        <div class="idea-field">
+          <dt>Downsides</dt>
+          <dd>Loosest axis fit of the set — this is CI output ergonomics more than auth or versioning specifically; kept on this axis since it's CI-facing.</dd>
+        </div>
+      </dl>
+    </div>
+  </article>
+
+</section>
+
+<!-- ── Rejection Summary ─────────────────────────────────────────────── -->
+<section id="rejection-summary">
+  <p class="section-eyebrow">What didn't survive</p>
+  <h2>Rejection Summary</h2>
+  <table>
+    <thead>
+      <tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td><code>flowline ci bootstrap</code> (automate Azure AD app registration + Dataverse app-user creation + push secret to GitHub/ADO)</td><td>Weak — greenfield, cross-cutting Azure/GitHub-API surface Flowline doesn't touch anywhere today. Worth phasing later, not for v1.</td></tr>
+      <tr><td>2</td><td>Never-commit secret-typed config values — three candidate mechanisms (ephemeral synthesis / carry-forward reconciliation / two-tier file)</td><td>Restatement — the 2026-07-01 prior ideation doc already covers this exact design space at depth (16 ideas). No genuinely new angle beyond what's proposed there; see idea 10 for the one angle that <em>is</em> new.</td></tr>
+      <tr><td>3</td><td>Parallel deploy across independent solutions</td><td>Fully dependent on idea 1's ordering fork resolving first, and understates <code>DeployCommand</code>'s shared <code>RootFolder</code>/git-clean-check isolation needs. Premature — revisit once idea 1 ships.</td></tr>
+      <tr><td>4</td><td>Cross-solution relationship view (root <code>ARCHITECTURE.md</code> or per-file cross-reference note)</td><td>Premature — no existing data model connects sibling solutions today; bigger lift than framed. Revisit once idea 1 ships declared dependencies to correlate against.</td></tr>
+      <tr><td>5</td><td>GitHub Environments audit-trail scaffolding + <code>provision</code>-emits-CI-descriptor</td><td>Both presuppose a <code>ci init</code> command that doesn't exist yet (already proposed in the 2026-07-02 prior doc). Fold into that command's design when it's built, not standalone ideas.</td></tr>
+      <tr><td>6</td><td>azd/Bicep Azure infrastructure provisioning</td><td>Out of scope — Flowline manages Dataverse solutions, not Azure infra; <code>provision</code> assumes the environment already exists. No adaptation path.</td></tr>
+      <tr><td>7</td><td>GitHub Environments' required-reviewer approval ceremony</td><td>Redundant with Flowline's existing non-bypassable DTAP gate; adopting it would import exactly the enterprise-approval overhead Flowline's positioning rejects.</td></tr>
+      <tr><td>8</td><td>Contoso's 3-way solution segmentation as an enforced/auto-split pattern</td><td>Scale- and managed-solution-driven choice for contoso's own repo, not evidence Flowline should encourage or auto-split solutions. Idea 3 (impact preview) stays strictly advisory, never auto-splitting.</td></tr>
+      <tr><td>9</td><td>Environment-per-solution scaling</td><td>Driven by managed-solution component-versioning constraints (PCF version pinning) Flowline explicitly doesn't share as an unmanaged tool.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<footer class="composition-signal">Composed 2026-07-05 by ce-ideate from research into microsoft/contoso-real-estate-power-platform (verified via GitHub API/raw fetch) cross-referenced against the Flowline CLI source.</footer>
+
+</div>
+</body>
+</html>
