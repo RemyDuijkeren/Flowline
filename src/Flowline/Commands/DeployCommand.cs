@@ -52,14 +52,14 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        await GitUtils.AssertRepoCleanAsync(_capture, cancellationToken);
-
         var runMode = settings.NoDelete ? RunMode.NoDelete : RunMode.Normal;
         var targetUrl = ResolveTargetUrl(settings);
         var sln = Config!.GetOrUpdateSolution(settings.Solution, settings.Managed.IsSet ? settings.Managed.Value : (bool?)null, settings)
             ?? throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — use --solution <name>.");
         var slnFolder = Path.Combine(RootFolder, "solutions", sln.Name);
         Logger.LogInformation("target={TargetUrl} solution={SolutionName} mode={RunMode} managed={Managed}", targetUrl, sln.Name, runMode, sln.IncludeManaged);
+
+        await ValidateGitCleanAsync(sln.Name, slnFolder, cancellationToken);
 
         var targetEnv = await ValidateTargetAsync(targetUrl, sln, settings, cancellationToken);
         await ValidateDtapGateAsync(sln, slnFolder, targetUrl, settings, cancellationToken);
@@ -183,6 +183,15 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             || predVer < localVer)
             throw new FlowlineException(ExitCode.ValidationFailed,
                 $"'{sln.Name}' in {dtapDecision.PredecessorLabel} environment is v{predecessorInfo.VersionNumber ?? "unknown"} — promote v{localVersion} there first, or use --skip-dtap-check.");
+    }
+
+    private async Task ValidateGitCleanAsync(string solutionName, string slnFolder, CancellationToken ct)
+    {
+        var changes = await GitUtils.GetUncommittedChangesInPathAsync(slnFolder, RootFolder, _capture, ct);
+        if (changes.Count == 0) return;
+
+        throw new FlowlineException(ExitCode.DirtyWorkingDirectory,
+            $"Uncommitted changes in 'solutions/{solutionName}/' — commit or stash changes first before deploying.");
     }
 
     private void ValidateLocalState(string slnFolder, Settings settings, CancellationToken ct)

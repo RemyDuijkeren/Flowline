@@ -137,16 +137,6 @@ public static class GitUtils
         return (remoteName, remoteUrl);
     }
 
-    public static async Task<bool> IsRepoCleanAsync(SubprocessCapture capture, CancellationToken cancellationToken = default)
-    {
-        var result = await capture.Apply(
-                          Cli.Wrap("git")
-                          .WithArguments("status --porcelain"))
-                          .ExecuteBufferedAsync(cancellationToken);
-
-        return string.IsNullOrWhiteSpace(result.StandardOutput);
-    }
-
     public static async Task<IReadOnlyList<string>> GetUncommittedChangesInPathAsync(string path, string? workingDirectory = null, SubprocessCapture? capture = null, CancellationToken cancellationToken = default)
     {
         var cmd = Cli.Wrap("git");
@@ -167,15 +157,6 @@ public static class GitUtils
                      .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
                      .Select(line => line[3..]) // porcelain v1: "XY filename" — 2-char status + space
                      .ToList();
-    }
-
-    public static async Task AssertRepoCleanAsync(SubprocessCapture capture, CancellationToken cancellationToken = default)
-    {
-        if (!await IsRepoCleanAsync(capture, cancellationToken))
-        {
-            AnsiConsole.MarkupLine("[red]Git has uncommitted changes. Commit or stash changes first before deploying.[/]");
-            Environment.Exit((int)ExitCode.DirtyWorkingDirectory);
-        }
     }
 
     public static async Task CreateTagAsync(string tagName, string? workingDirectory, CancellationToken cancellationToken = default)
