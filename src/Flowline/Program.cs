@@ -70,13 +70,14 @@ try
 {
     var logPath = FlowlineStoragePaths.GetLogsPath(runTime, args.FirstOrDefault());
     try { Directory.CreateDirectory(Path.GetDirectoryName(logPath)!); } catch { } // Intentional: dir creation failure must not block launch (R16).
+    runtimeOptions.TelemetrySalt = new TelemetrySaltStore().LoadOrCreate();
     serilogLogger = new LoggerConfiguration()
         .MinimumLevel.Debug()
         .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
         .MinimumLevel.Override("System", LogEventLevel.Warning)
         .Enrich.With(new ActivityTraceEnricher())
-        .Enrich.With(new UrlScrubEnricher())
-        .Enrich.With(new EmailScrubEnricher())
+        .Enrich.With(new UrlScrubEnricher(runtimeOptions.TelemetrySalt))
+        .Enrich.With(new EmailScrubEnricher(runtimeOptions.TelemetrySalt))
         .WriteTo.File(logPath, rollingInterval: RollingInterval.Infinite)
         .CreateLogger();
     Log.Logger = serilogLogger;

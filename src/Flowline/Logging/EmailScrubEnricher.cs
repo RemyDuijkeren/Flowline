@@ -6,7 +6,7 @@ using Serilog.Events;
 
 namespace Flowline.Logging;
 
-public sealed class EmailScrubEnricher : ILogEventEnricher
+public sealed class EmailScrubEnricher(byte[] salt) : ILogEventEnricher
 {
     static readonly Regex s_email =
         new(@"([\w.+-]+)@([\w-]+(?:\.[\w-]+)+)", RegexOptions.Compiled);
@@ -17,12 +17,12 @@ public sealed class EmailScrubEnricher : ILogEventEnricher
         {
             if (value is ScalarValue { Value: string str } && s_email.IsMatch(str))
             {
-                var scrubbed = s_email.Replace(str, m => $"usr_{Hash(m.Groups[1].Value)}.tnt_{Hash(m.Groups[2].Value)}");
+                var scrubbed = s_email.Replace(str, m => $"usr_{Hash(m.Groups[1].Value, salt)}.tnt_{Hash(m.Groups[2].Value, salt)}");
                 logEvent.AddOrUpdateProperty(propertyFactory.CreateProperty(key, scrubbed));
             }
         }
     }
 
-    internal static string Hash(string value) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value.ToLowerInvariant())))[..8].ToLowerInvariant();
+    internal static string Hash(string value, byte[] salt) =>
+        Convert.ToHexString(HMACSHA256.HashData(salt, Encoding.UTF8.GetBytes(value.ToLowerInvariant())))[..8].ToLowerInvariant();
 }

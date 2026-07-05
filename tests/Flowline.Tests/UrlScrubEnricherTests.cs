@@ -9,6 +9,8 @@ namespace Flowline.Tests;
 
 public class UrlScrubEnricherTests
 {
+    static readonly byte[] TestSalt = "test-salt"u8.ToArray();
+
     // HashUrl
 
     [Theory]
@@ -16,17 +18,24 @@ public class UrlScrubEnricherTests
     [InlineData("https://example.com")]
     public void HashUrl_ReturnsDeterministicEightCharLowercaseHex(string url)
     {
-        var hash = UrlScrubEnricher.HashUrl(url);
+        var hash = UrlScrubEnricher.HashUrl(url, TestSalt);
         hash.Should().HaveLength(8);
         hash.Should().MatchRegex("^[0-9a-f]+$");
-        UrlScrubEnricher.HashUrl(url).Should().Be(hash);
+        UrlScrubEnricher.HashUrl(url, TestSalt).Should().Be(hash);
     }
 
     [Fact]
     public void HashUrl_DifferentUrls_ProduceDifferentHashes()
     {
-        UrlScrubEnricher.HashUrl("https://a.example.com")
-            .Should().NotBe(UrlScrubEnricher.HashUrl("https://b.example.com"));
+        UrlScrubEnricher.HashUrl("https://a.example.com", TestSalt)
+            .Should().NotBe(UrlScrubEnricher.HashUrl("https://b.example.com", TestSalt));
+    }
+
+    [Fact]
+    public void HashUrl_DifferentSalts_ProduceDifferentHashes()
+    {
+        UrlScrubEnricher.HashUrl("https://a.example.com", TestSalt)
+            .Should().NotBe(UrlScrubEnricher.HashUrl("https://a.example.com", "other-salt"u8.ToArray()));
     }
 
     // Enricher — structured property containing a URL
@@ -36,7 +45,7 @@ public class UrlScrubEnricherTests
     {
         var captured = new List<LogEvent>();
         var logger = new LoggerConfiguration()
-            .Enrich.With(new UrlScrubEnricher())
+            .Enrich.With(new UrlScrubEnricher(TestSalt))
             .WriteTo.Sink(new CapturingSink(captured))
             .CreateLogger();
 
@@ -46,7 +55,7 @@ public class UrlScrubEnricherTests
         props.Should().ContainKey("EnvironmentUrl");
         var value = (props["EnvironmentUrl"] as ScalarValue)?.Value as string;
         value.Should().HaveLength(8).And.MatchRegex("^[0-9a-f]+$");
-        value.Should().Be(UrlScrubEnricher.HashUrl("https://contoso.crm.dynamics.com"));
+        value.Should().Be(UrlScrubEnricher.HashUrl("https://contoso.crm.dynamics.com", TestSalt));
     }
 
     // Enricher — URL embedded in a longer string (LoggingRenderHook path)
@@ -56,7 +65,7 @@ public class UrlScrubEnricherTests
     {
         var captured = new List<LogEvent>();
         var logger = new LoggerConfiguration()
-            .Enrich.With(new UrlScrubEnricher())
+            .Enrich.With(new UrlScrubEnricher(TestSalt))
             .WriteTo.Sink(new CapturingSink(captured))
             .CreateLogger();
 
@@ -65,7 +74,7 @@ public class UrlScrubEnricherTests
         var props = captured.Single().Properties;
         var value = (props["Message"] as ScalarValue)?.Value as string;
         value.Should().NotContain("https://");
-        value.Should().Contain(UrlScrubEnricher.HashUrl("https://contoso.crm.dynamics.com"));
+        value.Should().Contain(UrlScrubEnricher.HashUrl("https://contoso.crm.dynamics.com", TestSalt));
         value.Should().Contain("✔ Prod env Contoso (");
     }
 
@@ -74,7 +83,7 @@ public class UrlScrubEnricherTests
     {
         var captured = new List<LogEvent>();
         var logger = new LoggerConfiguration()
-            .Enrich.With(new UrlScrubEnricher())
+            .Enrich.With(new UrlScrubEnricher(TestSalt))
             .WriteTo.Sink(new CapturingSink(captured))
             .CreateLogger();
 
@@ -83,8 +92,8 @@ public class UrlScrubEnricherTests
 
         var value = (captured.Single().Properties["Message"] as ScalarValue)?.Value as string;
         value.Should().NotContain("https://");
-        value.Should().Contain(UrlScrubEnricher.HashUrl("https://contoso.crm.dynamics.com"));
-        value.Should().Contain(UrlScrubEnricher.HashUrl("https://contoso-uat.crm.dynamics.com"));
+        value.Should().Contain(UrlScrubEnricher.HashUrl("https://contoso.crm.dynamics.com", TestSalt));
+        value.Should().Contain(UrlScrubEnricher.HashUrl("https://contoso-uat.crm.dynamics.com", TestSalt));
     }
 
     [Fact]
@@ -92,7 +101,7 @@ public class UrlScrubEnricherTests
     {
         var captured = new List<LogEvent>();
         var logger = new LoggerConfiguration()
-            .Enrich.With(new UrlScrubEnricher())
+            .Enrich.With(new UrlScrubEnricher(TestSalt))
             .WriteTo.Sink(new CapturingSink(captured))
             .CreateLogger();
 

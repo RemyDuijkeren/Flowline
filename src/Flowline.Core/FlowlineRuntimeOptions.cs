@@ -16,4 +16,5 @@ public sealed class FlowlineRuntimeOptions
     public string? CommandName { get; set; }
     public string? ArgsRedacted { get; set; }
     public FlowlineToolVersions? ToolVersions { get; set; }
+    public byte[]? TelemetrySalt { get; set; }
 }

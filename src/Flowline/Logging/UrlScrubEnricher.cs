@@ -6,7 +6,7 @@ using Serilog.Events;
 
 namespace Flowline.Logging;
 
-public sealed class UrlScrubEnricher : ILogEventEnricher
+public sealed class UrlScrubEnricher(byte[] salt) : ILogEventEnricher
 {
     static readonly Regex s_url =
         new(@"https?://[^\s""'\]\)\(,;]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -17,12 +17,12 @@ public sealed class UrlScrubEnricher : ILogEventEnricher
         {
             if (value is ScalarValue { Value: string str } && s_url.IsMatch(str))
             {
-                var scrubbed = s_url.Replace(str, m => HashUrl(m.Value));
+                var scrubbed = s_url.Replace(str, m => HashUrl(m.Value, salt));
                 logEvent.AddOrUpdateProperty(propertyFactory.CreateProperty(key, scrubbed));
             }
         }
     }
 
-    internal static string HashUrl(string url) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(url)))[..8].ToLowerInvariant();
+    internal static string HashUrl(string url, byte[] salt) =>
+        Convert.ToHexString(HMACSHA256.HashData(salt, Encoding.UTF8.GetBytes(url)))[..8].ToLowerInvariant();
 }
