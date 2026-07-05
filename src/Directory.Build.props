@@ -23,7 +23,7 @@
     <PackageProjectUrl>https://github.com/RemyDuijkeren/Flowline</PackageProjectUrl>
     <RepositoryUrl>https://github.com/RemyDuijkeren/Flowline.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageReleaseNotes>https://github.com/RemyDuijkeren/Flowline/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <PackageReleaseNotes>https://github.com/RemyDuijkeren/Flowline/blob/master/CHANGELOG.md</PackageReleaseNotes>
   </PropertyGroup>
 
   <PropertyGroup Label="SourceLink">
