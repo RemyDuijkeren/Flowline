@@ -32,45 +32,25 @@
 
 ---
 
-### 1b. WebResource-dependencies — integration test
+### 2. WebResource-dependencies — integration test
 `// flowline:depends` and RESX auto-link (shipped in v0.7.0) have no integration test yet against a real WebResources project/push. Needs verification before v1.0.
 
 ---
 
-### 2. Observability + bug reproduction
+### 3. `push` — NuGet package support (Dependent Assemblies) instead of plugin `.dll`
+**Status (2026-07-05):** New v1 scope, added on request. Not yet planned or implemented — `PushCommand.ResolveStandalonePluginFilePath` currently rejects `.nupkg` outright (`PushCommand.cs:353`, "NuGet packages not yet supported — use a .dll file.").
 
-Every invocation leaves enough context for a bug report without re-running.
+Uses Dataverse's Dependent Assemblies feature (`pluginpackage` table) instead of raw `pluginassembly` `.dll` upload — removes the ILMerge/ILRepack step for plugins with external NuGet dependencies.
 
-**Status (2026-07-04):** Wave 1 and Wave 2 done. Shipped design diverged from the original I1–I6 sketch below but covers the same ground — see `docs/brainstorms/2026-06-29-wave-2-invocation-context-requirements.md` and `docs/plans/2026-06-29-001-feat-wave2-invocation-context-plan.md` for the as-built spec. Notably: I1's JSONL run log was implemented then replaced by structured `ILogger` invocation logging + `FlowlineActivitySource` (commit `8e7ba06`); I6's correlation ID is W3C `Activity.TraceId` (via `ActivityTraceEnricher`) rather than a custom `FLOWLINE_TRACE_ID` env var.
+Brainstorm already exists with the full mechanism (detection, `pluginpackage` upload/update, hash-skip, assembly reflection, `Mapping.xml` implications, constraints): `docs/brainstorms/2026-06-12-plugin-nuget-packages-requirements.md`. It has **5 open questions** still unresolved (solution-pack support for `pluginpackage`, exact content attribute name, migration path from existing `pluginassembly` + steps, feature-flag requirements, signing validation) and no implementation plan yet.
 
-Wave 3 (crash bundle) and Wave 4 (telemetry) are **not v1.0 blockers** — moved to should-haves below.
-
-**Wave 1 — Foundation (I1 + I2 + I3):** ✓ done
-- I1: run log — superseded by structured `ILogger` invocation logging (see above)
-- I2: Subprocess stderr capture — shipped as `SubprocessCapture` (DI-injected), wired into GitUtils/PacUtils/DotNetUtils/commands/generators
-- I3: `ILogger<T>` debug file sink — shipped
-
-**Wave 2 — Rich context (I4 + I6):** ✓ done
-- I4: stage/invocation context — shipped as structured invocation logging + `Activity` tags per command (`FlowlineCommand.cs`)
-- I6: correlation ID — shipped as W3C `Activity.TraceId`, enriched onto every log line via `ActivityTraceEnricher`
-
-**References:** `docs/ideation/2026-06-25-cli-observability-ideation.html`
-
----
-
-## Shipped since original plan
-
-### 3. `deploy` pre-backup ✓ (2026-07-03)
-`BackupService` wired as a pre-import safety net before orphan cleanup (`PacUtils.BackupEnvironmentAsync`, commit `1f57dbd`). Has unit tests (`PacUtilsBackupTests.cs`). Plan: `docs/plans/2026-07-03-002-feat-pre-deploy-backup-plan.md`.
+**Before implementing:** run `/ce-plan` (or `/ce-brainstorm` first if the open questions need narrowing) against the brainstorm doc — this is real scope, not a quick add.
 
 ---
 
 ## Should-haves (good to add, not v1.0 blockers)
 
-### 4. Observability Wave 3 — crash bundle (I5)
-On unhandled exception, writes zip to `%LOCALAPPDATA%/Flowline/bug-reports/<timestamp>.zip` (last N log records, redacted `.flowline` config, tool versions, exception). Prints: "Bug report saved: <path> — attach to issue at github.com/...". Not implemented — the shipped "wave 3" work (`docs/plans/2026-06-30-001-feat-verbose-log-routing-wave3-plan.md`) is a differently-scoped verbose-log-routing effort (VerboseMarkup, SubprocessCapture, LoggingRenderHook), not the crash bundle.
-
-### 5. Observability Wave 4 — telemetry (I7)
+### 4. Observability Wave 4 — telemetry (I7)
 Separate product decision (opt-in usage telemetry). Not scoped for v1.0.
 
 ---
@@ -92,12 +72,12 @@ Separate product decision (opt-in usage telemetry). Not scoped for v1.0.
 - [x] `deploy` core flow tested against real org (pack, import, DTAP gate, type guard, drift check) — basic path works
 - [ ] Orphan cleanup (AE1–AE8) tested against real org — currently mocked unit tests only
 - [ ] WebResource-dependencies (`// flowline:depends`, RESX auto-link) integration tested against real push
+- [ ] `push` NuGet package (`pluginpackage`/Dependent Assemblies) support planned and implemented — not started
 - [x] Observability Wave 1 implemented (structured invocation logging, stderr capture, ILogger file sink)
 - [x] Observability Wave 2 implemented (invocation context, W3C `Activity.TraceId` correlation)
 - [x] `deploy` pre-backup implemented (`BackupService` wired as pre-import safety net)
 - [x] `componenttype` constants confirmed via `PicklistAttributeMetadata` — low-numbered types are stable platform constants, one org sufficient
 - [x] Greenfield getting-started path documented in wiki (`01-Getting-Started`, `14-Planned-Features`)
 - [ ] All tests pass (`dotnet test`)
-- [ ] Tone reviewed on any new CLI output (`/tone`)
 - [ ] CHANGELOG entry written for v1.0
 - [ ] Release tag triggers pipeline → NuGet publish confirmed

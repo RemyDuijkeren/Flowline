@@ -73,6 +73,11 @@ assets without a full solution import; this makes Flowline practical for daily
 work. Type generation removes the last reason to keep spkl installed alongside
 Flowline.
 
+**v1.0 addition:** NuGet package (`pluginpackage`/Dependent Assemblies) support in
+`push`, replacing raw `.dll` upload — removes the ILMerge/ILRepack step for
+plugins with external NuGet dependencies. Brainstormed but not yet planned:
+`docs/brainstorms/2026-06-12-plugin-nuget-packages-requirements.md`.
+
 ### Drift detection + component cleanup
 
 Surface drift between environments, detect deleted components, and eventually
@@ -100,13 +105,13 @@ over unmanaged.
 - **2026-07-04** — `deploy` core flow (pack, import, DTAP gate, type guard, drift check) tested against real org — basic path works ✓
 - **2026-07-04** — Orphan cleanup (AE1–AE8) real-org testing — open, unit tests only so far
 - **2026-07-04** — WebResource-dependencies integration testing — open
+- **2026-07-05** — `push` NuGet package (Dependent Assemblies) support — open, added to v1 scope; not yet planned
 - **2026-07-20** — v1.0 release (moved from 2026-07-01)
 
 ## Deferred
 
 - `flowline init` for greenfield projects (create publisher + solution in DEV, scaffold local structure) — post-v1
 - Restore state of workflows on deploy (`--no-restore` flag; requirements: `docs/brainstorms/2026-06-12-deploy-state-restoration-requirements.md`) — post-v1
-- CLI observability Wave 3 (crash bundle zip on unhandled exception) — should-have, not a v1.0 blocker
 - CLI observability Wave 4 (opt-in telemetry) — should-have, separate product decision
 
 ## Marketing

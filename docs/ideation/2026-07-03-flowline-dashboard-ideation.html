@@ -269,6 +269,19 @@
     .chip-conf-med { background: var(--warn-soft); color: var(--warn); }
     .chip-cx-lo { background: #f0fdf4; color: #16a34a; }
     .chip-cx-med { background: #fefce8; color: #a16207; }
+    .chip-shipped { background: var(--success); color: #fff; }
+
+    .idea-card.card-shipped { border-color: var(--success-border); background: var(--success-soft); }
+    .shipped-note {
+      background: var(--success-soft);
+      border: 1px solid var(--success-border);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      margin-bottom: 1.1rem;
+      font-size: 13.5px;
+      color: var(--text);
+    }
+    .shipped-note strong { color: var(--success); }
 
     .idea-field { margin-bottom: 0.9rem; }
     .idea-field:last-child { margin-bottom: 0; }
@@ -511,8 +524,8 @@
     <div class="jump-list">
       <div class="jump-list-label">Jump to idea</div>
       <ol>
-        <li><a href="#idea-a1">1. Solutions × Environments Grid</a></li>
-        <li><a href="#idea-a3">2. Local-as-First-Column</a></li>
+        <li><a href="#idea-a1">1. Solutions × Environments Grid (shipped)</a></li>
+        <li><a href="#idea-a3">2. Local-as-First-Column (shipped)</a></li>
         <li><a href="#idea-b2">3. Import Health Badge</a></li>
         <li><a href="#idea-e1">4. --json as Versioned Schema</a></li>
         <li><a href="#idea-d2">5. Exception-First Collapse</a></li>
@@ -521,18 +534,23 @@
       </ol>
     </div>
 
-    <!-- ─── Idea 1: A1 ─── -->
-    <article class="idea-card" id="idea-a1">
+    <!-- ─── Idea 1: A1 — SHIPPED ─── -->
+    <article class="idea-card card-shipped" id="idea-a1">
       <div class="idea-card-top">
         <div class="idea-rank-badge top">1</div>
         <div class="idea-head">
           <div class="idea-title">Solutions × Environments Grid</div>
           <div class="chips">
+            <span class="chip chip-shipped">✓ Shipped</span>
             <span class="chip chip-axis">environment-solution-matrix</span>
             <span class="chip chip-conf-hi">Conf 90%</span>
             <span class="chip chip-cx-lo">Cx Low</span>
           </div>
         </div>
+      </div>
+
+      <div class="shipped-note">
+        <strong>Shipped 2026-07-04.</strong> Implemented as a pivot of the existing <code>flowline status</code> command, not a new <code>dashboard</code> command — see <code>docs/plans/2026-07-04-001-feat-status-dashboard-grid-plan.md</code>. Landed via <code>StatusGrid.BuildGridRows</code> / <code>StatusGrid.RenderGrid</code> (<code>src/Flowline/Commands/StatusCommand.cs</code>, extracted into <code>StatusGrid.cs</code>), with follow-on additions beyond this idea's original scope: a repo column, drift detection, dirty indicator, and an icon legend.
       </div>
 
       <div class="idea-field">
@@ -648,18 +666,23 @@
       </div>
     </article>
 
-    <!-- ─── Idea 2: A3 ─── -->
-    <article class="idea-card" id="idea-a3">
+    <!-- ─── Idea 2: A3 — SHIPPED ─── -->
+    <article class="idea-card card-shipped" id="idea-a3">
       <div class="idea-card-top">
         <div class="idea-rank-badge">2</div>
         <div class="idea-head">
           <div class="idea-title">Local-as-First-Column</div>
           <div class="chips">
+            <span class="chip chip-shipped">✓ Shipped</span>
             <span class="chip chip-axis">environment-solution-matrix</span>
             <span class="chip chip-conf-hi">Conf 90%</span>
             <span class="chip chip-cx-lo">Cx Low</span>
           </div>
         </div>
+      </div>
+
+      <div class="shipped-note">
+        <strong>Shipped 2026-07-04.</strong> Local column implemented alongside idea 1 in the same pass — see <code>docs/plans/2026-07-04-001-feat-status-dashboard-grid-plan.md</code> (R2, KTD4). Reuses <code>DeployCommand.ReadLocalSolutionVersion</code>; a solution with no local checkout yet renders a dash.
       </div>
 
       <div class="idea-field">

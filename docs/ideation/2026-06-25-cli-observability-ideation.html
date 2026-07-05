@@ -255,7 +255,7 @@
 
   <!-- RANKED IDEAS -->
   <section id="ranked-ideas" aria-labelledby="ideas-title">
-    <div class="section-eyebrow">3 Shipped · 2 Dropped · 3 Planned</div>
+    <div class="section-eyebrow">3 Shipped · 3 Dropped · 2 Planned</div>
     <h2 class="section-title" id="ideas-title">Ideas</h2>
 
     <nav class="jump-list" aria-label="Idea jump list">
@@ -266,7 +266,7 @@
         <li><a href="#i-3" class="shipped-link">I3. ILogger Debug File Sink ✓</a></li>
         <li><a href="#i-3b" class="shipped-link">I3b. Console-to-ILogger Tee ✓ (new)</a></li>
         <li><a href="#i-4" class="dropped-link">I4. DiagnosticContext Stage Chain (dropped)</a></li>
-        <li><a href="#i-5">I5. Crash-Initiated Support Bundle</a></li>
+        <li><a href="#i-5" class="dropped-link">I5. Crash-Initiated Support Bundle (dropped)</a></li>
         <li><a href="#i-6">I6. Per-Invocation Trace via ActivitySource</a></li>
         <li><a href="#i-7">I7. App Insights Telemetry</a></li>
       </ol>
@@ -440,18 +440,18 @@
         </div>
       </article>
 
-      <!-- I5 — PLANNED -->
-      <article class="idea-card" id="i-5">
+      <!-- I5 — DROPPED -->
+      <article class="idea-card card-dropped" id="i-5">
         <div class="idea-header">
           <div class="idea-rank-title">
             <span class="idea-rank">I5.</span>
-            <h3 class="idea-title">Crash-Initiated Support Bundle</h3>
+            <h3 class="idea-title dropped">Crash-Initiated Support Bundle</h3>
           </div>
           <div class="idea-chips">
             <span class="chip axis-chip axis-br">Bug Report Packaging</span>
             <span class="chip conf-high">Confidence 87%</span>
             <span class="chip cx-m">Complexity M</span>
-            <span class="chip status-planned">Planned · Wave 3</span>
+            <span class="chip status-dropped">Dropped</span>
           </div>
         </div>
         <div class="idea-body">
@@ -463,12 +463,16 @@
               <span class="field-value"><code>Program.cs default:</code> branch for unhandled exceptions is confirmed — currently only calls <code>AnsiConsole.WriteException</code> then exits; this is exactly where the bundle write attaches. <code>RedactSensitiveArgs</code> in <code>CommandExtensions.cs</code> is confirmed and reusable. <code>FlowlineStoragePaths</code> already exists and resolves the correct base path. ILogger files (I3) are the log source — the bundle zips the most recent few from <code>logs/</code>.</span>
             </div>
             <div class="idea-field">
-              <span class="field-label">Rationale</span>
+              <span class="field-label">Rationale (original)</span>
               <span class="field-value">Most unhandled Flowline exceptions come from edge-case PAC CLI state, MSAL cache mismatches, or Dataverse auth errors. Every such failure currently produces zero useful diagnostic output beyond the exception message. The bundle-on-crash captures the exact environment state at the moment of failure and transforms the support conversation from "can you reproduce this?" to "attach the zip." With I3 shipped, the ILogger file already captures the full terminal session — the bundle just packages it.</span>
             </div>
             <div class="idea-field">
               <span class="field-label">Downsides</span>
               <span class="field-value">File I/O in an exception handler must be robust — wrap in try/catch so a write failure doesn't mask the original exception. Zip creation adds ~50-100ms to crash paths (acceptable). Disk accumulation: prune to last 10 bundles on startup.</span>
+            </div>
+            <div class="idea-field">
+              <span class="field-label">Why Dropped</span>
+              <span class="field-value">Decided 2026-07-05, after Wave 1/2 shipped. <code>Program.cs</code> already prints a link to the per-invocation log file on every run — it already contains tool versions, target/solution context, subprocess stderr, and the <code>Activity.TraceId</code> (I6). The only thing the bundle would add on top is the redacted <code>.flowline</code> config, which doesn't justify the zip/redaction/exception-capture machinery for the marginal gain. If config context turns out to matter for real bug reports, ask users to paste redacted config into the issue template instead of building automation for it.</span>
             </div>
           </div>
         </div>
@@ -590,7 +594,7 @@
     <div class="section-eyebrow">Sequencing — Actual + Planned</div>
     <h2 class="section-title" id="waves-title">Implementation Waves</h2>
 
-    <p style="font-size:14px;color:var(--text-2);margin-bottom:20px;max-width:72ch;">Waves 1 and 1.5 shipped. Wave 2 is the logical next step — small, high-value, touches the same injection points. Wave 3 depends on Wave 1 (ILogger files must exist for the bundle). Wave 4 is a separate product decision.</p>
+    <p style="font-size:14px;color:var(--text-2);margin-bottom:20px;max-width:72ch;">Waves 1 and 1.5 shipped. Wave 2 is the logical next step — small, high-value, touches the same injection points. Wave 3 dropped 2026-07-05 — the per-invocation log link already covers what the bundle would provide. Wave 4 is a separate product decision.</p>
 
     <div style="display:flex;flex-direction:column;gap:12px;">
 
@@ -654,18 +658,21 @@
         <div style="padding:0 20px 14px;font-size:13px;color:var(--text-3);">Why together: I6 and cleanup both touch <code>FlowlineCommand.ExecuteAsync</code> — natural single pass. I4 dropped: its stage-chain value is absorbed by child activities in I6. Cleanup belongs in the same PR to keep the logging picture coherent.</div>
       </div>
 
-      <!-- WAVE 3 — PLANNED -->
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
-        <div style="background:#fff7ed;border-bottom:1px solid #fed7aa;padding:12px 20px;display:flex;align-items:center;gap:12px;">
-          <span style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#9a3412;">Wave 3 — Packaging</span>
-          <span style="font-size:12px;color:#9a3412;font-weight:600;">I5</span>
-          <span style="font-size:12px;color:var(--text-3);margin-left:auto;">Focused PR · after Wave 1</span>
+      <!-- WAVE 3 — DROPPED -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;opacity:0.65;">
+        <div style="background:#f1f5f9;border-bottom:1px solid #cbd5e1;padding:12px 20px;display:flex;align-items:center;gap:12px;">
+          <span style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#64748b;">Wave 3 — Packaging</span>
+          <span style="font-size:12px;color:#64748b;font-weight:600;">I5</span>
+          <span style="font-size:12px;padding:2px 8px;background:#f1f5f9;color:#64748b;border:1px solid #cbd5e1;border-radius:20px;font-weight:700;margin-left:auto;">✗ Dropped</span>
         </div>
         <div style="padding:14px 20px;">
-          <div style="font-size:13.5px;color:var(--text-2);">
+          <div style="font-size:13.5px;color:var(--text-2);text-decoration:line-through;">
             <strong style="color:var(--text);display:block;margin-bottom:4px;">I5 — Crash-Initiated Support Bundle</strong>
-            On unhandled exception: zip last N ILogger log files + redacted <code>.flowline</code> config + cached tool versions + exception → write to <code>bug-reports/</code> → print path. One focused change to <code>Program.cs default:</code> branch. Depends on I3 (ILogger files are the log content in the zip). I4's stage chain makes the bundle substantially more useful — ship after Wave 2 for best results.
+            On unhandled exception: zip last N ILogger log files + redacted <code>.flowline</code> config + cached tool versions + exception → write to <code>bug-reports/</code> → print path.
           </div>
+        </div>
+        <div style="padding:0 20px 14px;font-size:13px;color:#64748b;">
+          <strong style="color:#991b1b;">Dropped 2026-07-05:</strong> the per-invocation log link (<code>Program.cs</code>) already prints tool versions, target/solution context, subprocess stderr, and the <code>Activity.TraceId</code> (I6) on every run. The only addition the bundle offered — redacted <code>.flowline</code> config — doesn't justify the zip/redaction/exception-capture machinery. See I5's card for full reasoning.
         </div>
       </div>
 
@@ -689,7 +696,7 @@
 
   <!-- REJECTION SUMMARY -->
   <section id="rejection-summary" aria-labelledby="rejection-title">
-    <div class="section-eyebrow">12 Considered &amp; Cut · 2 Dropped During Implementation</div>
+    <div class="section-eyebrow">12 Considered &amp; Cut · 3 Dropped During Implementation</div>
     <h2 class="section-title" id="rejection-title">Rejection Summary</h2>
     <table class="rejection-table">
       <thead>
@@ -712,6 +719,12 @@
           <td class="idea-col">I1 — Always-On JSONL Run Log</td>
           <td>Local Persistence</td>
           <td>Dropped during Wave 1 implementation — ILogger/Serilog file (I3) captures the same data in a richer format; one artifact simpler than two. JSONL's machine-readability advantage is moot when the primary consumer is a human reading a bug report.</td>
+        </tr>
+        <tr>
+          <td>1b</td>
+          <td class="idea-col">I5 — Crash-Initiated Support Bundle</td>
+          <td>Bug Report Packaging</td>
+          <td>Dropped 2026-07-05, after Wave 1/2 shipped. The per-invocation log link already covers tool versions, target/solution context, subprocess stderr, and <code>Activity.TraceId</code> — the only remaining gap (redacted <code>.flowline</code> config) doesn't justify the zip/redaction/exception-capture machinery. Ask users to paste redacted config into the issue template instead, if it ever comes up.</td>
         </tr>
         <tr>
           <td>2</td>
