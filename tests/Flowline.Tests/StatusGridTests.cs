@@ -1,17 +1,16 @@
 using System.Xml;
 using FluentAssertions;
-using Flowline.Commands;
 using Flowline.Config;
 using Flowline.Utils;
 using Spectre.Console.Testing;
 
 namespace Flowline.Tests;
 
-public class StatusCommandGridTests
+public class StatusGridTests
 {
     private static ProjectSolution Solution(string name) => new() { Name = name };
 
-    private static StatusCommand.EnvStatus EnvResult(
+    private static StatusGrid.EnvStatus EnvResult(
         string label, string? url, WhoAmIInfo? who, Dictionary<string, string?>? versions = null) =>
         new(label, url, who, versions ?? new Dictionary<string, string?>());
 
@@ -21,20 +20,20 @@ public class StatusCommandGridTests
     public void BuildGridRows_VersionInEveryColumn_WhenDeployedAndCloned()
     {
         var solutions = new List<ProjectSolution> { Solution("MySolution") };
-        var envResults = new List<StatusCommand.EnvStatus>
+        var envResults = new List<StatusGrid.EnvStatus>
         {
             EnvResult("Dev", "https://dev.crm.dynamics.com/", new WhoAmIInfo("user@contoso.com"),
                 new Dictionary<string, string?> { ["MySolution"] = "1.4.0" }),
         };
 
-        var (headers, rows) = StatusCommand.BuildGridRows(solutions, envResults, _ => "1.5.0", _ => false);
+        var (headers, rows) = StatusGrid.BuildGridRows(solutions, envResults, _ => "1.5.0", _ => false);
 
         headers.Should().Equal("Dev", "Repo");
         rows.Should().ContainSingle();
         rows[0].SolutionName.Should().Be("MySolution");
-        rows[0].Cells[0].Kind.Should().Be(StatusCommand.GridCellKind.Version);
+        rows[0].Cells[0].Kind.Should().Be(StatusGrid.GridCellKind.Version);
         rows[0].Cells[0].Value.Should().Be("1.4.0");
-        rows[0].Cells[1].Kind.Should().Be(StatusCommand.GridCellKind.Version);
+        rows[0].Cells[1].Kind.Should().Be(StatusGrid.GridCellKind.Version);
         rows[0].Cells[1].Value.Should().Be("1.5.0");
     }
 
@@ -44,13 +43,13 @@ public class StatusCommandGridTests
     public void BuildGridRows_InsertsRepoRightAfterDev_WhenDevConfigured()
     {
         var solutions = new List<ProjectSolution> { Solution("MySolution") };
-        var envResults = new List<StatusCommand.EnvStatus>
+        var envResults = new List<StatusGrid.EnvStatus>
         {
             EnvResult("Dev", "https://dev.crm.dynamics.com/", new WhoAmIInfo("user@contoso.com")),
             EnvResult("Test", "https://test.crm.dynamics.com/", new WhoAmIInfo("user@contoso.com")),
         };
 
-        var (headers, _) = StatusCommand.BuildGridRows(solutions, envResults, _ => "1.0.0", _ => false);
+        var (headers, _) = StatusGrid.BuildGridRows(solutions, envResults, _ => "1.0.0", _ => false);
 
         headers.Should().Equal("Dev", "Repo", "Test");
     }
@@ -59,15 +58,15 @@ public class StatusCommandGridTests
     public void BuildGridRows_RepoLeadsChain_WhenDevNotConfigured()
     {
         var solutions = new List<ProjectSolution> { Solution("MySolution") };
-        var envResults = new List<StatusCommand.EnvStatus>
+        var envResults = new List<StatusGrid.EnvStatus>
         {
             EnvResult("Test", "https://test.crm.dynamics.com/", new WhoAmIInfo("user@contoso.com")),
         };
 
-        var (headers, rows) = StatusCommand.BuildGridRows(solutions, envResults, _ => "1.0.0", _ => false);
+        var (headers, rows) = StatusGrid.BuildGridRows(solutions, envResults, _ => "1.0.0", _ => false);
 
         headers.Should().Equal("Repo", "Test");
-        rows[0].Cells[0].Kind.Should().Be(StatusCommand.GridCellKind.Version);
+        rows[0].Cells[0].Kind.Should().Be(StatusGrid.GridCellKind.Version);
         rows[0].Cells[0].Value.Should().Be("1.0.0");
     }
 
@@ -77,24 +76,24 @@ public class StatusCommandGridTests
     public void BuildGridRows_RepoIsDash_WhenRepoVersionReaderThrowsFlowlineException()
     {
         var solutions = new List<ProjectSolution> { Solution("MySolution") };
-        var envResults = new List<StatusCommand.EnvStatus>();
+        var envResults = new List<StatusGrid.EnvStatus>();
 
-        var (_, rows) = StatusCommand.BuildGridRows(solutions, envResults,
+        var (_, rows) = StatusGrid.BuildGridRows(solutions, envResults,
             _ => throw new FlowlineException(ExitCode.NotFound, "not cloned"), _ => false);
 
-        rows[0].Cells[0].Kind.Should().Be(StatusCommand.GridCellKind.Dash);
+        rows[0].Cells[0].Kind.Should().Be(StatusGrid.GridCellKind.Dash);
     }
 
     [Fact]
     public void BuildGridRows_RepoIsDash_WhenRepoVersionReaderThrowsMalformedXml()
     {
         var solutions = new List<ProjectSolution> { Solution("MySolution") };
-        var envResults = new List<StatusCommand.EnvStatus>();
+        var envResults = new List<StatusGrid.EnvStatus>();
 
-        var (_, rows) = StatusCommand.BuildGridRows(solutions, envResults,
+        var (_, rows) = StatusGrid.BuildGridRows(solutions, envResults,
             _ => throw new XmlException("malformed Solution.xml"), _ => false);
 
-        rows[0].Cells[0].Kind.Should().Be(StatusCommand.GridCellKind.Dash);
+        rows[0].Cells[0].Kind.Should().Be(StatusGrid.GridCellKind.Dash);
     }
 
     // ── Repo cell: dirty indicator ────────────────────────────────────────────
@@ -103,9 +102,9 @@ public class StatusCommandGridTests
     public void BuildGridRows_MarksRepoDirty_WhenIsRepoDirtyReturnsTrue()
     {
         var solutions = new List<ProjectSolution> { Solution("MySolution") };
-        var envResults = new List<StatusCommand.EnvStatus>();
+        var envResults = new List<StatusGrid.EnvStatus>();
 
-        var (_, rows) = StatusCommand.BuildGridRows(solutions, envResults, _ => "1.0.36", _ => true);
+        var (_, rows) = StatusGrid.BuildGridRows(solutions, envResults, _ => "1.0.36", _ => true);
 
         rows[0].Cells[0].IsDirty.Should().BeTrue();
     }
@@ -114,9 +113,9 @@ public class StatusCommandGridTests
     public void BuildGridRows_RepoNotDirty_WhenIsRepoDirtyReturnsFalse()
     {
         var solutions = new List<ProjectSolution> { Solution("MySolution") };
-        var envResults = new List<StatusCommand.EnvStatus>();
+        var envResults = new List<StatusGrid.EnvStatus>();
 
-        var (_, rows) = StatusCommand.BuildGridRows(solutions, envResults, _ => "1.0.36", _ => false);
+        var (_, rows) = StatusGrid.BuildGridRows(solutions, envResults, _ => "1.0.36", _ => false);
 
         rows[0].Cells[0].IsDirty.Should().BeFalse();
     }
@@ -125,12 +124,12 @@ public class StatusCommandGridTests
     public void BuildGridRows_MarksRepoDirty_EvenWhenRepoVersionIsDash()
     {
         var solutions = new List<ProjectSolution> { Solution("MySolution") };
-        var envResults = new List<StatusCommand.EnvStatus>();
+        var envResults = new List<StatusGrid.EnvStatus>();
 
-        var (_, rows) = StatusCommand.BuildGridRows(solutions, envResults,
+        var (_, rows) = StatusGrid.BuildGridRows(solutions, envResults,
             _ => throw new FlowlineException(ExitCode.NotFound, "not cloned"), _ => true);
 
-        rows[0].Cells[0].Kind.Should().Be(StatusCommand.GridCellKind.Dash);
+        rows[0].Cells[0].Kind.Should().Be(StatusGrid.GridCellKind.Dash);
         rows[0].Cells[0].IsDirty.Should().BeTrue();
     }
 
@@ -140,15 +139,15 @@ public class StatusCommandGridTests
     public void BuildGridRows_EnvAndRepoCellsAreDash_WhenAuthenticatedButSolutionNotInVersions()
     {
         var solutions = new List<ProjectSolution> { Solution("MySolution") };
-        var envResults = new List<StatusCommand.EnvStatus>
+        var envResults = new List<StatusGrid.EnvStatus>
         {
             EnvResult("Dev", "https://dev.crm.dynamics.com/", new WhoAmIInfo("user@contoso.com")),
         };
 
-        var (_, rows) = StatusCommand.BuildGridRows(solutions, envResults, _ => null, _ => false);
+        var (_, rows) = StatusGrid.BuildGridRows(solutions, envResults, _ => null, _ => false);
 
-        rows[0].Cells[0].Kind.Should().Be(StatusCommand.GridCellKind.Dash);
-        rows[0].Cells[1].Kind.Should().Be(StatusCommand.GridCellKind.Dash);
+        rows[0].Cells[0].Kind.Should().Be(StatusGrid.GridCellKind.Dash);
+        rows[0].Cells[1].Kind.Should().Be(StatusGrid.GridCellKind.Dash);
     }
 
     // ── Env columns: auth failure ───────────────────────────────────────────────
@@ -157,15 +156,15 @@ public class StatusCommandGridTests
     public void BuildGridRows_EveryRowGetsAuthFailedMarker_WhenEnvConfiguredButUnauthenticated()
     {
         var solutions = new List<ProjectSolution> { Solution("MySolution"), Solution("OtherSolution") };
-        var envResults = new List<StatusCommand.EnvStatus>
+        var envResults = new List<StatusGrid.EnvStatus>
         {
             EnvResult("UAT", "https://uat.crm.dynamics.com/", null,
                 new Dictionary<string, string?> { ["MySolution"] = "1.3.0" }),
         };
 
-        var (_, rows) = StatusCommand.BuildGridRows(solutions, envResults, _ => null, _ => false);
+        var (_, rows) = StatusGrid.BuildGridRows(solutions, envResults, _ => null, _ => false);
 
-        rows.Should().AllSatisfy(r => r.Cells[1].Kind.Should().Be(StatusCommand.GridCellKind.AuthFailed));
+        rows.Should().AllSatisfy(r => r.Cells[1].Kind.Should().Be(StatusGrid.GridCellKind.AuthFailed));
     }
 
     // ── Env columns: unconfigured omitted ───────────────────────────────────────
@@ -174,13 +173,13 @@ public class StatusCommandGridTests
     public void BuildGridRows_UnconfiguredEnvIsAbsentFromHeaders()
     {
         var solutions = new List<ProjectSolution> { Solution("MySolution") };
-        var envResults = new List<StatusCommand.EnvStatus>
+        var envResults = new List<StatusGrid.EnvStatus>
         {
             EnvResult("Dev", "https://dev.crm.dynamics.com/", new WhoAmIInfo("user@contoso.com")),
             EnvResult("Test", null, null),
         };
 
-        var (headers, rows) = StatusCommand.BuildGridRows(solutions, envResults, _ => null, _ => false);
+        var (headers, rows) = StatusGrid.BuildGridRows(solutions, envResults, _ => null, _ => false);
 
         headers.Should().Equal("Dev", "Repo");
         rows[0].Cells.Should().HaveCount(2);
@@ -191,12 +190,12 @@ public class StatusCommandGridTests
     [Fact]
     public void BuildGridRows_ReturnsEmptyRows_WhenNoSolutionsConfigured()
     {
-        var envResults = new List<StatusCommand.EnvStatus>
+        var envResults = new List<StatusGrid.EnvStatus>
         {
             EnvResult("Dev", "https://dev.crm.dynamics.com/", new WhoAmIInfo("user@contoso.com")),
         };
 
-        var (headers, rows) = StatusCommand.BuildGridRows([], envResults, _ => null, _ => false);
+        var (headers, rows) = StatusGrid.BuildGridRows([], envResults, _ => null, _ => false);
 
         headers.Should().Equal("Dev", "Repo");
         rows.Should().BeEmpty();
@@ -207,28 +206,28 @@ public class StatusCommandGridTests
     [Fact]
     public void TrimUnusedRevisionSegment_DropsFourthSegment_WhenRevisionIsZeroEverywhere()
     {
-        var rows = new List<StatusCommand.GridRow>
+        var rows = new List<StatusGrid.GridRow>
         {
             new("MySolution",
-                [StatusCommand.GridCell.OfVersion("1.0.36.0"), StatusCommand.GridCell.OfVersion("1.0.36.0"), StatusCommand.GridCell.Dash]),
+                [StatusGrid.GridCell.OfVersion("1.0.36.0"), StatusGrid.GridCell.OfVersion("1.0.36.0"), StatusGrid.GridCell.Dash]),
         };
 
-        var trimmed = StatusCommand.TrimUnusedRevisionSegment(rows);
+        var trimmed = StatusGrid.TrimUnusedRevisionSegment(rows);
 
         trimmed[0].Cells[0].Value.Should().Be("1.0.36");
         trimmed[0].Cells[1].Value.Should().Be("1.0.36");
-        trimmed[0].Cells[2].Kind.Should().Be(StatusCommand.GridCellKind.Dash);
+        trimmed[0].Cells[2].Kind.Should().Be(StatusGrid.GridCellKind.Dash);
     }
 
     [Fact]
     public void TrimUnusedRevisionSegment_PreservesIsDirty_WhenTrimmingVersion()
     {
-        var rows = new List<StatusCommand.GridRow>
+        var rows = new List<StatusGrid.GridRow>
         {
-            new("MySolution", [StatusCommand.GridCell.OfVersion("1.0.36.0") with { IsDirty = true }]),
+            new("MySolution", [StatusGrid.GridCell.OfVersion("1.0.36.0") with { IsDirty = true }]),
         };
 
-        var trimmed = StatusCommand.TrimUnusedRevisionSegment(rows);
+        var trimmed = StatusGrid.TrimUnusedRevisionSegment(rows);
 
         trimmed[0].Cells[0].Value.Should().Be("1.0.36");
         trimmed[0].Cells[0].IsDirty.Should().BeTrue();
@@ -237,12 +236,12 @@ public class StatusCommandGridTests
     [Fact]
     public void TrimUnusedRevisionSegment_LeavesVersionsUntouched_WhenAnyRevisionIsNonZero()
     {
-        var rows = new List<StatusCommand.GridRow>
+        var rows = new List<StatusGrid.GridRow>
         {
-            new("MySolution", [StatusCommand.GridCell.OfVersion("1.0.36.0"), StatusCommand.GridCell.OfVersion("1.0.36.1")]),
+            new("MySolution", [StatusGrid.GridCell.OfVersion("1.0.36.0"), StatusGrid.GridCell.OfVersion("1.0.36.1")]),
         };
 
-        var trimmed = StatusCommand.TrimUnusedRevisionSegment(rows);
+        var trimmed = StatusGrid.TrimUnusedRevisionSegment(rows);
 
         trimmed[0].Cells[0].Value.Should().Be("1.0.36.0");
         trimmed[0].Cells[1].Value.Should().Be("1.0.36.1");
@@ -251,12 +250,12 @@ public class StatusCommandGridTests
     [Fact]
     public void TrimUnusedRevisionSegment_LeavesVersionsUntouched_WhenAnyVersionHasDifferentSegmentCount()
     {
-        var rows = new List<StatusCommand.GridRow>
+        var rows = new List<StatusGrid.GridRow>
         {
-            new("MySolution", [StatusCommand.GridCell.OfVersion("1.0.36.0"), StatusCommand.GridCell.OfVersion("1.0.0")]),
+            new("MySolution", [StatusGrid.GridCell.OfVersion("1.0.36.0"), StatusGrid.GridCell.OfVersion("1.0.0")]),
         };
 
-        var trimmed = StatusCommand.TrimUnusedRevisionSegment(rows);
+        var trimmed = StatusGrid.TrimUnusedRevisionSegment(rows);
 
         trimmed[0].Cells[0].Value.Should().Be("1.0.36.0");
         trimmed[0].Cells[1].Value.Should().Be("1.0.0");
@@ -267,60 +266,60 @@ public class StatusCommandGridTests
     [Fact]
     public void DetectVersionDrift_MarksLaggingCellPending_WhenUpstreamIsNewer()
     {
-        var rows = new List<StatusCommand.GridRow>
+        var rows = new List<StatusGrid.GridRow>
         {
-            new("MySolution", [StatusCommand.GridCell.OfVersion("1.0.37"), StatusCommand.GridCell.OfVersion("1.0.36")]),
+            new("MySolution", [StatusGrid.GridCell.OfVersion("1.0.37"), StatusGrid.GridCell.OfVersion("1.0.36")]),
         };
 
-        var drifted = StatusCommand.DetectVersionDrift(rows);
+        var drifted = StatusGrid.DetectVersionDrift(rows);
 
-        drifted[0].Cells[0].Drift.Should().Be(StatusCommand.DriftKind.None);
-        drifted[0].Cells[1].Drift.Should().Be(StatusCommand.DriftKind.Pending);
+        drifted[0].Cells[0].Drift.Should().Be(StatusGrid.DriftKind.None);
+        drifted[0].Cells[1].Drift.Should().Be(StatusGrid.DriftKind.Pending);
     }
 
     [Fact]
     public void DetectVersionDrift_MarksCellInverted_WhenDownstreamIsNewerThanUpstream()
     {
-        var rows = new List<StatusCommand.GridRow>
+        var rows = new List<StatusGrid.GridRow>
         {
             new("MySolution",
-                [StatusCommand.GridCell.OfVersion("1.0.36"), StatusCommand.GridCell.OfVersion("1.0.36"), StatusCommand.GridCell.OfVersion("1.0.38")]),
+                [StatusGrid.GridCell.OfVersion("1.0.36"), StatusGrid.GridCell.OfVersion("1.0.36"), StatusGrid.GridCell.OfVersion("1.0.38")]),
         };
 
-        var drifted = StatusCommand.DetectVersionDrift(rows);
+        var drifted = StatusGrid.DetectVersionDrift(rows);
 
-        drifted[0].Cells[0].Drift.Should().Be(StatusCommand.DriftKind.None);
-        drifted[0].Cells[1].Drift.Should().Be(StatusCommand.DriftKind.None);
-        drifted[0].Cells[2].Drift.Should().Be(StatusCommand.DriftKind.Inverted);
+        drifted[0].Cells[0].Drift.Should().Be(StatusGrid.DriftKind.None);
+        drifted[0].Cells[1].Drift.Should().Be(StatusGrid.DriftKind.None);
+        drifted[0].Cells[2].Drift.Should().Be(StatusGrid.DriftKind.Inverted);
     }
 
     [Fact]
     public void DetectVersionDrift_NoDrift_WhenAllVersionsMatch()
     {
-        var rows = new List<StatusCommand.GridRow>
+        var rows = new List<StatusGrid.GridRow>
         {
             new("MySolution",
-                [StatusCommand.GridCell.OfVersion("1.0.36"), StatusCommand.GridCell.OfVersion("1.0.36"), StatusCommand.GridCell.OfVersion("1.0.36")]),
+                [StatusGrid.GridCell.OfVersion("1.0.36"), StatusGrid.GridCell.OfVersion("1.0.36"), StatusGrid.GridCell.OfVersion("1.0.36")]),
         };
 
-        var drifted = StatusCommand.DetectVersionDrift(rows);
+        var drifted = StatusGrid.DetectVersionDrift(rows);
 
-        drifted[0].Cells.Should().AllSatisfy(c => c.Drift.Should().Be(StatusCommand.DriftKind.None));
+        drifted[0].Cells.Should().AllSatisfy(c => c.Drift.Should().Be(StatusGrid.DriftKind.None));
     }
 
     [Fact]
     public void DetectVersionDrift_SkipsOverDashAndAuthFailedCells_WhenComparingUpstream()
     {
-        var rows = new List<StatusCommand.GridRow>
+        var rows = new List<StatusGrid.GridRow>
         {
             new("MySolution",
-                [StatusCommand.GridCell.OfVersion("1.0.37"), StatusCommand.GridCell.Dash, StatusCommand.GridCell.AuthFailed, StatusCommand.GridCell.OfVersion("1.0.36")]),
+                [StatusGrid.GridCell.OfVersion("1.0.37"), StatusGrid.GridCell.Dash, StatusGrid.GridCell.AuthFailed, StatusGrid.GridCell.OfVersion("1.0.36")]),
         };
 
-        var drifted = StatusCommand.DetectVersionDrift(rows);
+        var drifted = StatusGrid.DetectVersionDrift(rows);
 
-        drifted[0].Cells[0].Drift.Should().Be(StatusCommand.DriftKind.None);
-        drifted[0].Cells[3].Drift.Should().Be(StatusCommand.DriftKind.Pending);
+        drifted[0].Cells[0].Drift.Should().Be(StatusGrid.DriftKind.None);
+        drifted[0].Cells[3].Drift.Should().Be(StatusGrid.DriftKind.Pending);
     }
 
     // ── Full pipeline: Repo's true predecessor is Dev, not display position ────
@@ -329,34 +328,34 @@ public class StatusCommandGridTests
     public void FullPipeline_MarksRepoInverted_WhenRepoAheadOfDev()
     {
         var solutions = new List<ProjectSolution> { Solution("MySolution") };
-        var envResults = new List<StatusCommand.EnvStatus>
+        var envResults = new List<StatusGrid.EnvStatus>
         {
             EnvResult("Dev", "https://dev.crm.dynamics.com/", new WhoAmIInfo("user@contoso.com"),
                 new Dictionary<string, string?> { ["MySolution"] = "1.0.36" }),
         };
 
-        var (headers, rows) = StatusCommand.BuildGridRows(solutions, envResults, _ => "1.0.40", _ => false);
-        rows = StatusCommand.DetectVersionDrift(rows);
+        var (headers, rows) = StatusGrid.BuildGridRows(solutions, envResults, _ => "1.0.40", _ => false);
+        rows = StatusGrid.DetectVersionDrift(rows);
 
         headers.Should().Equal("Dev", "Repo");
-        rows[0].Cells[0].Drift.Should().Be(StatusCommand.DriftKind.None);
-        rows[0].Cells[1].Drift.Should().Be(StatusCommand.DriftKind.Inverted);
+        rows[0].Cells[0].Drift.Should().Be(StatusGrid.DriftKind.None);
+        rows[0].Cells[1].Drift.Should().Be(StatusGrid.DriftKind.Inverted);
     }
 
     [Fact]
     public void FullPipeline_MarksRepoPending_WhenRepoBehindDev()
     {
         var solutions = new List<ProjectSolution> { Solution("MySolution") };
-        var envResults = new List<StatusCommand.EnvStatus>
+        var envResults = new List<StatusGrid.EnvStatus>
         {
             EnvResult("Dev", "https://dev.crm.dynamics.com/", new WhoAmIInfo("user@contoso.com"),
                 new Dictionary<string, string?> { ["MySolution"] = "1.0.36" }),
         };
 
-        var (_, rows) = StatusCommand.BuildGridRows(solutions, envResults, _ => "1.0.35", _ => false);
-        rows = StatusCommand.DetectVersionDrift(rows);
+        var (_, rows) = StatusGrid.BuildGridRows(solutions, envResults, _ => "1.0.35", _ => false);
+        rows = StatusGrid.DetectVersionDrift(rows);
 
-        rows[0].Cells[1].Drift.Should().Be(StatusCommand.DriftKind.Pending);
+        rows[0].Cells[1].Drift.Should().Be(StatusGrid.DriftKind.Pending);
     }
 
     [Fact]
@@ -366,7 +365,7 @@ public class StatusCommandGridTests
         // Dev -> Repo -> Test, Test's predecessor is Repo, not Dev, so Test (behind Repo) is
         // flagged Pending even though it exactly matches Dev.
         var solutions = new List<ProjectSolution> { Solution("MySolution") };
-        var envResults = new List<StatusCommand.EnvStatus>
+        var envResults = new List<StatusGrid.EnvStatus>
         {
             EnvResult("Dev", "https://dev.crm.dynamics.com/", new WhoAmIInfo("user@contoso.com"),
                 new Dictionary<string, string?> { ["MySolution"] = "1.0.36" }),
@@ -374,13 +373,13 @@ public class StatusCommandGridTests
                 new Dictionary<string, string?> { ["MySolution"] = "1.0.36" }),
         };
 
-        var (headers, rows) = StatusCommand.BuildGridRows(solutions, envResults, _ => "1.0.40", _ => false);
-        rows = StatusCommand.DetectVersionDrift(rows);
+        var (headers, rows) = StatusGrid.BuildGridRows(solutions, envResults, _ => "1.0.40", _ => false);
+        rows = StatusGrid.DetectVersionDrift(rows);
 
         headers.Should().Equal("Dev", "Repo", "Test");
-        rows[0].Cells[0].Drift.Should().Be(StatusCommand.DriftKind.None);
-        rows[0].Cells[1].Drift.Should().Be(StatusCommand.DriftKind.Inverted);
-        rows[0].Cells[2].Drift.Should().Be(StatusCommand.DriftKind.Pending);
+        rows[0].Cells[0].Drift.Should().Be(StatusGrid.DriftKind.None);
+        rows[0].Cells[1].Drift.Should().Be(StatusGrid.DriftKind.Inverted);
+        rows[0].Cells[2].Drift.Should().Be(StatusGrid.DriftKind.Pending);
     }
 
     // ── RenderGrid ───────────────────────────────────────────────────────────────
@@ -389,13 +388,13 @@ public class StatusCommandGridTests
     public void RenderGrid_HeadersInSolutionDevRepoEnvOrder_WithMixedCells()
     {
         var console = new TestConsole();
-        var rows = new List<StatusCommand.GridRow>
+        var rows = new List<StatusGrid.GridRow>
         {
             new("MySolution",
-                [StatusCommand.GridCell.OfVersion("1.4.0"), StatusCommand.GridCell.OfVersion("1.5.0"), StatusCommand.GridCell.Dash, StatusCommand.GridCell.AuthFailed]),
+                [StatusGrid.GridCell.OfVersion("1.4.0"), StatusGrid.GridCell.OfVersion("1.5.0"), StatusGrid.GridCell.Dash, StatusGrid.GridCell.AuthFailed]),
         };
 
-        StatusCommand.RenderGrid(console, ["Dev", "Repo", "Test", "UAT"], rows);
+        StatusGrid.RenderGrid(console, ["Dev", "Repo", "Test", "UAT"], rows);
 
         var output = console.Output;
         output.Should().Contain("Solution");
@@ -415,17 +414,17 @@ public class StatusCommandGridTests
     public void RenderGrid_RendersDriftMarkers_ForPendingAndInvertedCells()
     {
         var console = new TestConsole();
-        var rows = new List<StatusCommand.GridRow>
+        var rows = new List<StatusGrid.GridRow>
         {
             new("MySolution",
                 [
-                    StatusCommand.GridCell.OfVersion("1.0.37"),
-                    StatusCommand.GridCell.OfVersion("1.0.36") with { Drift = StatusCommand.DriftKind.Pending },
-                    StatusCommand.GridCell.OfVersion("1.0.38") with { Drift = StatusCommand.DriftKind.Inverted },
+                    StatusGrid.GridCell.OfVersion("1.0.37"),
+                    StatusGrid.GridCell.OfVersion("1.0.36") with { Drift = StatusGrid.DriftKind.Pending },
+                    StatusGrid.GridCell.OfVersion("1.0.38") with { Drift = StatusGrid.DriftKind.Inverted },
                 ]),
         };
 
-        StatusCommand.RenderGrid(console, ["Dev", "Test", "Prod"], rows);
+        StatusGrid.RenderGrid(console, ["Dev", "Test", "Prod"], rows);
 
         var output = console.Output;
         output.Should().Contain("1.0.36 ↑");
@@ -436,16 +435,16 @@ public class StatusCommandGridTests
     public void RenderGrid_RendersDirtyMarker_IndependentlyOfDriftMarker()
     {
         var console = new TestConsole();
-        var rows = new List<StatusCommand.GridRow>
+        var rows = new List<StatusGrid.GridRow>
         {
             new("MySolution",
                 [
-                    StatusCommand.GridCell.OfVersion("1.0.37") with { IsDirty = true },
-                    StatusCommand.GridCell.OfVersion("1.0.36") with { Drift = StatusCommand.DriftKind.Pending, IsDirty = true },
+                    StatusGrid.GridCell.OfVersion("1.0.37") with { IsDirty = true },
+                    StatusGrid.GridCell.OfVersion("1.0.36") with { Drift = StatusGrid.DriftKind.Pending, IsDirty = true },
                 ]),
         };
 
-        StatusCommand.RenderGrid(console, ["Dev", "Test"], rows);
+        StatusGrid.RenderGrid(console, ["Dev", "Test"], rows);
 
         var output = console.Output;
         output.Should().Contain("1.0.37 ●");
@@ -456,12 +455,12 @@ public class StatusCommandGridTests
     public void RenderGrid_ExcludedColumnDoesNotAppear()
     {
         var console = new TestConsole();
-        var rows = new List<StatusCommand.GridRow>
+        var rows = new List<StatusGrid.GridRow>
         {
-            new("MySolution", [StatusCommand.GridCell.OfVersion("1.4.0")]),
+            new("MySolution", [StatusGrid.GridCell.OfVersion("1.4.0")]),
         };
 
-        StatusCommand.RenderGrid(console, ["Dev"], rows);
+        StatusGrid.RenderGrid(console, ["Dev"], rows);
 
         console.Output.Should().NotContain("Prod");
         console.Output.Should().NotContain("UAT");
