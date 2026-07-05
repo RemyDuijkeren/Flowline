@@ -1,4 +1,5 @@
 using System.Reflection;
+using Flowline.Core;
 using Spectre.Console;
 
 namespace Flowline.Validation;
@@ -42,6 +43,8 @@ public sealed class FlowlineValidator
             async () =>
             {
                 var (version, installType) = await _probes.CheckPacAsync(settings.Verbose, cancellationToken);
+                if (IsSlowDnxInstall(installType))
+                    AnsiConsole.Console.Warning("PAC CLI is running via dnx — every command pays a slower cold start. Install it as a dotnet tool instead: [bold]dotnet tool install -g Microsoft.PowerApps.CLI.Tool[/]");
                 return new ToolCheckResult { Version = version, InstallType = installType };
             });
     }
@@ -188,6 +191,9 @@ public sealed class FlowlineValidator
 
     static bool IsFresh(DateTimeOffset checkedAtUtc, TimeSpan ttl) =>
         DateTimeOffset.UtcNow - checkedAtUtc <= ttl;
+
+    internal static bool IsSlowDnxInstall(string installType) =>
+        installType.Contains("dnx", StringComparison.OrdinalIgnoreCase);
 
     internal static string NormalizeEnvironmentUrl(string environmentUrl) =>
         environmentUrl.Trim().TrimEnd('/').ToLowerInvariant();

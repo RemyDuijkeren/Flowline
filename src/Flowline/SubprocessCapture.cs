@@ -30,7 +30,7 @@ public sealed class SubprocessCapture
     /// </summary>
     public Command Apply(Command cmd, StatusContext? ctx = null, Func<string, string>? lineTransform = null)
     {
-        var prefix = cmd.TargetFilePath;
+        var prefix = FormatPrefix(cmd);
 
         return cmd
             .WithStandardOutputPipe(PipeTarget.ToDelegate(line =>
@@ -70,6 +70,15 @@ public sealed class SubprocessCapture
 
     static readonly string[] s_errorPatterns = ["Error: ", "The reason given was: ", ": error"];
     static readonly string[] s_warningPatterns = [": warning"];
+
+    // dnx runs "dnx <package-id> [args...]" for any tool, so its own name in the log ("dnx:") doesn't
+    // say which tool ran. PAC CLI via dnx is the only case Flowline invokes today (GetBestPacCommandAsync
+    // always passes "microsoft.powerapps.cli.tool" as dnx's first argument), so relabel it explicitly.
+    internal static string FormatPrefix(Command cmd) =>
+        cmd.TargetFilePath.Equals("dnx", StringComparison.OrdinalIgnoreCase) &&
+        cmd.Arguments.Contains("microsoft.powerapps.cli.tool", StringComparison.OrdinalIgnoreCase)
+            ? "pac(dnx)"
+            : cmd.TargetFilePath;
 
     void DisplayErrorMessage(string line, string prefix)
     {

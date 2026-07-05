@@ -100,12 +100,12 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         string? gitBranch = null;
         await Console.Status().FlowlineSpinner().StartAsync("Checking your setup...", async ctx =>
         {
-            dotnet = await FlowlineValidator.Default.EnsureDotNetAsync(settings, cancellationToken);
-            pac = await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
             git = await FlowlineValidator.Default.EnsureGitAsync(settings, cancellationToken);
             await FlowlineValidator.Default.EnsureGitRepoAsync(RootFolder, settings, cancellationToken);
             // Fetched fresh (not cached) — branch changes too frequently for 7-day TTL
             gitBranch = await GitUtils.GetCurrentBranchAsync(_capture, cancellationToken);
+            dotnet = await FlowlineValidator.Default.EnsureDotNetAsync(settings, cancellationToken);
+            pac = await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
         });
 
         RuntimeOptions.ToolVersions = new FlowlineToolVersions(

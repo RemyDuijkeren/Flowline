@@ -151,6 +151,45 @@ public class SubprocessCaptureTests
         await act.Should().NotThrowAsync();
     }
 
+    // Test 10: dnx running PAC CLI → prefix relabeled to "pac(dnx)" so the log line isn't ambiguous
+    [Fact]
+    public async Task Apply_DnxRunningPac_PrefixIsRelabeled()
+    {
+        _options.IsVerbose = true;
+        var cmd = Cli.Wrap("dnx").WithArguments(["microsoft.powerapps.cli.tool", "--yes", "solution", "online-version"]);
+        var wrapped = CreateCapture().Apply(cmd);
+
+        await PumpStdoutAsync(wrapped, "Connected to... AutomateValue");
+
+        _console.Output.Should().Contain("pac(dnx): Connected to... AutomateValue");
+        _console.Output.Should().NotContain("dnx: Connected");
+    }
+
+    // Test 11: dnx running some other tool → prefix stays "dnx" (only relabel PAC CLI specifically)
+    [Fact]
+    public async Task Apply_DnxRunningOtherTool_PrefixStaysDnx()
+    {
+        _options.IsVerbose = true;
+        var cmd = Cli.Wrap("dnx").WithArguments(["some.other.tool", "--yes"]);
+        var wrapped = CreateCapture().Apply(cmd);
+
+        await PumpStdoutAsync(wrapped, "doing something");
+
+        _console.Output.Should().Contain("dnx: doing something");
+    }
+
+    // Test 12: non-dnx command → prefix unchanged (matches TargetFilePath, as before)
+    [Fact]
+    public async Task Apply_NonDnxCommand_PrefixIsTargetFilePath()
+    {
+        _options.IsVerbose = true;
+        var cmd = CreateCapture().Apply(BaseCmd());
+
+        await PumpStdoutAsync(cmd, "hello world");
+
+        _console.Output.Should().Contain("echo: hello world");
+    }
+
     private sealed class CaptureLogger : ILogger<SubprocessCapture>
     {
         public List<(LogLevel Level, string Message)> Entries { get; } = [];
