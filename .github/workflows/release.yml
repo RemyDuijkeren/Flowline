@@ -69,4 +69,4 @@ jobs:
       - name: 🚀 Push to GitHub
         run: |
           dotnet nuget add source --username RemyDuijkeren --password ${{ secrets.GITHUB_TOKEN }} --store-password-in-clear-text --name github "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
-          dotnet nuget push ./artifacts/*.nupkg -k ${{ secrets.GITHUB_TOKEN }} --source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+          dotnet nuget push ./artifacts/*.nupkg -k ${{ secrets.GITHUB_TOKEN }} --source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json --skip-duplicate
