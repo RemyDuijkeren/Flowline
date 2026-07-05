@@ -9,13 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Run commands from any subdirectory**: Flowline walks up from the current directory to find `.flowline` — no need to `cd` back to the project root before running a command.
-
 ### Changed
 
 ### Fixed
 
 ### Security
+
+## [0.9.0] - 2026-07-05
+
+### Added
+
+- **Run commands from any subdirectory**: Flowline walks up from the current directory to find `.flowline` — no need to `cd` back to the project root before running a command.
+- **Solution/environment status grid**: `flowline status` renders a solution × environment matrix (Spectre.Console table) with drift detection, dirty-repo indicator, and a legend below the grid — replaces the old nested per-solution output.
+- **Deploy Solution Checker gate**: `flowline deploy` runs `pac solution check` before import by default and aborts on failure. Use `--skip-solution-check` to opt out.
+- **Deploy pre-import environment backup**: `flowline deploy` takes a `pac admin backup` of the target environment before import, as a safety net ahead of orphan-cleanup deletions. Use `--no-backup` to opt out.
+- **`sync --bump none`**: skip version bumping for a sync run.
+- **`sync --no-build`**: skip build validation, matching the existing `push --no-build`.
+- **`[Step].Description`**: description text is now pushed to the step's description field in Dataverse, visible in the Plugin Registration Tool.
+- **`clone` scaffolds a root `.gitignore`**: replaces the previous per-project `.gitignore` files with one at the repo root.
+- **Invocation logs enriched with CI, git, and trace context**: each run's structured log now includes CI platform detection, the current git branch, detected tool versions (PAC CLI/dotnet/npm), and a W3C `Activity.TraceId` for correlating log lines within a run.
+- **Subprocess output captured to the invocation log**: `dotnet`/`npm`/PAC CLI subprocess output is captured into the structured log file, not just echoed to console, with client secrets, tokens, and URLs redacted before writing.
+
+### Changed
+
+- **`[Step]` and `SecondaryTable` require explicit opt-in for "all tables"**: omitting the table on `[Step]`, or `SecondaryTable` on an Associate/Disassociate step, now fails at push time instead of emitting a warning. Use `[Step("none")]` / `SecondaryTable = "none"` to register on all tables explicitly.
+- Dependencies bumped: Serilog, Microsoft.PowerPlatform.Dataverse.Client, Microsoft.Identity.Client.Extensions.Msal, Spectre.Console, Microsoft.Extensions.Logging.Abstractions.
+- Progress spinner defaults and sync status messaging streamlined for clearer feedback during `push` and `sync`.
+- PAC CLI log prefix relabeled in `dnx`-wrapped subprocess output for clarity.
+
+### Fixed
+
+- `deploy`'s DTAP predecessor-version check now always bypasses the validation cache — prevents promoting against stale cached solution info.
+- Solution Checker gate fails closed (blocks the deploy) when `pac solution check`'s summary table can't be parsed, instead of silently passing.
+- `status` grid degrades to a dash instead of erroring when a local `Solution.xml` is malformed.
 
 ## [0.8.0] - 2026-06-29
 
@@ -204,7 +230,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions CI and release workflows.
 
 
-[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.8.0...HEAD
+[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.9.0...HEAD
+[0.9.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.8.0...0.9.0
 [0.8.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.7.0...0.8.0
 [0.7.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.6.0...0.7.0
 [0.6.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.5.0...0.6.0
