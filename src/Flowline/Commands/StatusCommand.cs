@@ -149,6 +149,9 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILog
         console.Write(table);
     }
 
+    private const string Legend =
+        "[dim]—[/] not deployed   [yellow]✗[/] auth failed   [cyan]↑[/] behind   [red]⚠[/] ahead   [magenta]●[/] uncommitted";
+
     private static string RenderCell(GridCell cell)
     {
         var text = cell.Kind switch
@@ -160,7 +163,7 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILog
                 _ => $"[green]{Markup.Escape(cell.Value!)}[/]",
             },
             GridCellKind.Dash => "[dim]—[/]",
-            GridCellKind.AuthFailed => "[yellow]✗[/]",
+            GridCellKind.AuthFailed => "[yellow]✗ auth[/]",
             _ => throw new ArgumentOutOfRangeException(nameof(cell)),
         };
 
@@ -304,6 +307,7 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILog
 
         rows = DetectVersionDrift(TrimUnusedRevisionSegment(rows));
         RenderGrid(Console, headers, rows);
+        Console.MarkupLine(Legend);
 
         var driftKinds = rows.SelectMany(r => r.Cells).Select(c => c.Drift).ToHashSet();
 
