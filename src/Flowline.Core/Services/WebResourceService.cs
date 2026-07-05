@@ -12,7 +12,7 @@ public class WebResourceService(IAnsiConsole console, FlowlineRuntimeOptions opt
     readonly WebResourceExecutor _executor = new(console, opt);
     readonly ILogger<WebResourceService> _logger = logger;
 
-    public async Task SyncSolutionAsync(
+    public async Task<bool> SyncSolutionAsync(
         IOrganizationServiceAsync2 service,
         string webresourceRoot,
         string solutionName,
@@ -46,18 +46,19 @@ public class WebResourceService(IAnsiConsole console, FlowlineRuntimeOptions opt
                 console.Skip($"Web resource '{a.Name}' kept ({a.Reason})");
 
             console.Skip("Web resources already up to date — skipping");
-            return;
+            return false;
         }
 
         // Dry-run: print preview and return without making any changes
         if (runMode == RunMode.DryRun)
         {
             WritePlanReport(plan, PlanReportMode.DryRun, publishAfterSync);
-            return;
+            return true;
         }
 
         // Phase 3: Execute the plan
         await _executor.ExecuteAsync(service, plan, publishAfterSync, runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
+        return true;
     }
 
     public async Task DownloadWebResourcesAsync(

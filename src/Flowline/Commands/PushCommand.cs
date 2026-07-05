@@ -126,17 +126,19 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
 
         var (conn, _) = await ConnectToDataverseAsync(dataverseConnector, environmentUrl, cancellationToken);
 
+        var pushedChanges = false;
+
         if (pluginsDll != null)
         {
             if (pushAssemblyOnly)
             {
                 Logger.LogInformation("Pushing assembly only: {Dll}", pluginsDll);
-                await pluginService.SyncAssemblyOnlyAsync(conn, pluginsDll, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+                pushedChanges |= await pluginService.SyncAssemblyOnlyAsync(conn, pluginsDll, solutionName, runMode, cancellationToken).ConfigureAwait(false);
             }
             else
             {
                 Logger.LogInformation("Pushing plugins: {Dll}", pluginsDll);
-                await pluginService.SyncSolutionAsync(conn, pluginsDll, solutionName, runMode, settings.Force, cancellationToken).ConfigureAwait(false);
+                pushedChanges |= await pluginService.SyncSolutionAsync(conn, pluginsDll, solutionName, runMode, settings.Force, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -146,16 +148,18 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (webResourcesSyncFolder != null)
         {
             Logger.LogInformation("Pushing web resources: {Folder}", webResourcesSyncFolder);
-            await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder, solutionName, publishAfterSync: !settings.NoPublish, runMode: runMode, cancellationToken: cancellationToken).ConfigureAwait(false);
+            pushedChanges |= await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder, solutionName, publishAfterSync: !settings.NoPublish, runMode: runMode, cancellationToken: cancellationToken).ConfigureAwait(false);
             if (settings.NoPublish)
                 Console.Skip("Publish — skipping (--no-publish active).");
         }
 
         Console.Done(runMode == RunMode.DryRun
             ? "Air push complete. Dataverse remains oblivious. Now do it for real without --dry-run!و"
-            : standaloneMode
-                ? "Assets pushed! (•ᴗ•)و"
-                : "Assets pushed! Use 'sync' to keep it in flow. (•ᴗ•)و");
+            : !pushedChanges
+                ? "Nothing to push — already up to date."
+                : standaloneMode
+                    ? "Assets pushed! (•ᴗ•)و"
+                    : "Assets pushed! Use 'sync' to keep it in flow. (•ᴗ•)و");
 
         return 0;
     }

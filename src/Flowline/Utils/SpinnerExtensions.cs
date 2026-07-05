@@ -4,7 +4,7 @@ namespace Flowline.Utils;
 
 public static class SpinnerExtensions
 {
-    internal static readonly Spinner s_spinnerType = Spinner.Known.Default; // BoxBounce2 .Binary .Arrow3 .Dots12
+    internal static readonly Spinner s_spinnerType = Spinner.Known.Arrow3; // Arrow3 > Default > Star > BouncingBar ≈ Aesthetic
     internal static readonly Color s_spinnerColor = Color.Turquoise2; //Turquoise2, Plum4, DarkMagenta, DarkMagenta_1;
 
     extension(Status status)

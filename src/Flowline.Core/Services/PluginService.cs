@@ -18,7 +18,7 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
     readonly SolutionReader _solutionReader = new();
     readonly PluginAssemblyReader _assemblyReader = new(console, opt);
 
-    public async Task SyncAssemblyOnlyAsync(
+    public async Task<bool> SyncAssemblyOnlyAsync(
         IOrganizationServiceAsync2 service,
         string dllPath,
         string solutionName,
@@ -29,10 +29,10 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
             throw new ArgumentException("dllPath is required and cannot be empty.", nameof(dllPath));
 
         var metadata = console.Status().Start("Analyzing plugin assembly...", _ => _assemblyReader.Analyze(dllPath));
-        await SyncAssemblyOnlyAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+        return await SyncAssemblyOnlyAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
     }
 
-    internal async Task SyncAssemblyOnlyAsync(
+    internal async Task<bool> SyncAssemblyOnlyAsync(
         IOrganizationServiceAsync2 service,
         PluginAssemblyMetadata metadata,
         string solutionName,
@@ -68,14 +68,14 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
         if (storedHash == metadata.Hash)
         {
             console.Skip("Assembly already up to date — skipping");
-            return;
+            return false;
         }
 
         if (runMode == RunMode.DryRun)
         {
             console.Info($"  [yellow]~[/] Assembly '{metadata.Name} ({metadata.Version})' — would update content");
             console.Ok("Dry run: 1 update. Run without --dry-run to apply.");
-            return;
+            return true;
         }
 
         await console.Progress()
@@ -87,9 +87,10 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
             })
             .ConfigureAwait(false);
         console.Ok($"Assembly [bold]{metadata.Name}[/] ({metadata.Version}) updated");
+        return true;
     }
 
-    public async Task SyncSolutionAsync(
+    public async Task<bool> SyncSolutionAsync(
         IOrganizationServiceAsync2 service,
         string dllPath,
         string solutionName,
@@ -101,10 +102,10 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
             throw new ArgumentException("dllPath is required and cannot be empty.", nameof(dllPath));
 
         var metadata = console.Status().Start("Analyzing plugin assembly...", ctx => _assemblyReader.Analyze(dllPath));
-        await SyncSolutionAsync(service, metadata, solutionName, runMode, force, cancellationToken).ConfigureAwait(false);
+        return await SyncSolutionAsync(service, metadata, solutionName, runMode, force, cancellationToken).ConfigureAwait(false);
     }
 
-    internal async Task SyncSolutionAsync(
+    internal async Task<bool> SyncSolutionAsync(
         IOrganizationServiceAsync2 service,
         PluginAssemblyMetadata metadata,
         string solutionName,
@@ -172,12 +173,12 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
             await CheckFriendlyNameCollisionsAsync(service, assembly.Id, friendlyNamesToCreate, cancellationToken).ConfigureAwait(false);
 
         if (runMode == RunMode.DryRun)
-            return;
+            return true;
 
         if (!needsUpdate && plan.TotalChanges == 0)
         {
             console.Skip("Plugins already up to date — skipping");
-            return;
+            return false;
         }
 
         // Phase 4: Execute the deletes first — must precede assembly update and upserts
@@ -243,6 +244,8 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
         {
             await _executor.ExecuteAddToSolutionAsync(service, plan, cancellationToken).ConfigureAwait(false);
         }
+
+        return true;
     }
 
     async Task WarnOrphanAssembliesAsync(

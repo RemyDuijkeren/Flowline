@@ -136,7 +136,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         var agentsPath = Path.Combine(RootFolder, "AGENTS.md");
         if (File.Exists(agentsPath))
         {
-            Console.Info("AGENTS.md already exists — skipping.");
+            Console.Skip("AGENTS.md already exists — skipping.");
             return;
         }
 
