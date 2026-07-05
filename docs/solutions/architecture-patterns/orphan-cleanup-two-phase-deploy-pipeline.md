@@ -1,7 +1,7 @@
 ---
 title: Orphan component cleanup — two-phase deploy pipeline
 date: 2026-06-10
-last_updated: 2026-07-05 (part 5)
+last_updated: 2026-07-05 (part 6)
 category: docs/solutions/architecture-patterns
 module: DeployCommand
 problem_type: architecture_pattern
@@ -170,6 +170,8 @@ static readonly HashSet<int> SupportedManualTypes = [EntityComponentType, Attrib
 Everything else — Role, ConnectionRole, connectionreference, bot, and any unrecognized type — is logged via `console.Verbose` only (componenttype + objectid, no recommendation) and excluded entirely from the printed report and the manual count. This is deliberately narrower than the pre-incident behavior; **Form (60) and View (26) were pulled from the allowlist during this same pass** — despite `ScanEntitySubcomponents` existing, it only finds a form/view's file under `Entities/<name>/FormXml|SavedQueries/` for entities this solution actually unpacks. A form on an entity outside that set (the `Form 'Sales Insights'` from the same log — a standard Microsoft form, confirmed by the user, most likely living on an entity like Opportunity that this solution doesn't include as a root component at all) has nothing for the scan to find, so it would false-positive exactly like connectionreference/bot did. Widening `SupportedManualTypes` to include Form/View requires handling that gap first.
 
 The `solutioncomponentdefinition`-based "resolve an unrecognized type's display name" machinery added in part 3 (`ResolveComponentTypeNamesAsync`, `ResolvedTypeNameAttributes`, `OrphanEntry.TypeNameResolved`) was removed rather than kept dormant: once gated by `SupportedManualTypes`, every type that reaches the manual-entry-building code is already a key in `ManualTypeLabels`, so the resolution path was unreachable dead code, not future-proofing. Re-add the equivalent mechanism only when actually opting in a new env-specific type with test coverage to back it.
+
+**Update (2026-07-05, part 6): verbose preview for unsupported types, so opt-in decisions have real data behind them.** Dropping unsupported types to a bare `console.Verbose($"Solution component type {N} ({id})...")` solved the false-positive problem but lost the information needed to actually widen `SupportedManualTypes` later — the user asked to see the resolved type name (`connectionreference`, `bot`, `Form`, ...), the individual record's own name (`av_sharedcalendlyv2_bffc3`), and what the pre-opt-in logic would have recommended, entirely for evaluation purposes. `LogUnsupportedOrphansAsync` re-introduces the `ResolveComponentTypeNamesAsync`/`ResolvedTypeNameAttributes` machinery removed in part 5 — this time deliberately scoped to the verbose-only preview path so it can never influence `entries`/the printed report/the manual count. A resolved instance name is informational context for a human decision, not a finding Flowline is confident enough to act on; the two are structurally separated by which method reads the resolution result (`BuildManualEntriesAsync` for the former, `LogUnsupportedOrphansAsync` for the latter), not just by a comment.
 
 ### CustomApi detection via entity queries
 

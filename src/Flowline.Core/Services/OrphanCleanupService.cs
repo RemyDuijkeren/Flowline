@@ -372,6 +372,56 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         ["customapiresponseproperty"] = "customapiresponsepropertyid",
     };
 
+    // Resolves componenttype → display name via solutioncomponentdefinition, Dataverse's own lookup
+    // table for component types (documented for the Web API as GET solutioncomponentdefinitions?
+    // $select=name,solutioncomponenttype — see Power Pages CLI solution docs). Used ONLY for the
+    // unsupportedOrphans verbose preview below — it identifies a type, it does not verify one, so it
+    // must never feed into SupportedManualTypes or the printed report.
+    static async Task<Dictionary<int, string>> ResolveComponentTypeNamesAsync(
+        IOrganizationServiceAsync2 service,
+        IEnumerable<int> componentTypes,
+        CancellationToken ct)
+    {
+        var types = componentTypes.Distinct().Select(t => (object)t).ToArray();
+        if (types.Length == 0) return [];
+
+        var query = new QueryExpression("solutioncomponentdefinition")
+        {
+            ColumnSet = new ColumnSet("name", "solutioncomponenttype"),
+            Criteria  = { Conditions = { new ConditionExpression("solutioncomponenttype", ConditionOperator.In, types) } }
+        };
+
+        var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
+
+        var result = new Dictionary<int, string>();
+        foreach (var entity in entities)
+        {
+            var name = entity.GetAttributeValue<string>("name");
+            if (string.IsNullOrEmpty(name)) continue;
+
+            var type = entity["solutioncomponenttype"] switch
+            {
+                OptionSetValue osv => osv.Value,
+                int i => i,
+                _ => (int?)null
+            };
+            if (type.HasValue)
+                result[type.Value] = name;
+        }
+
+        return result;
+    }
+
+    // solutioncomponentdefinition.name for env-specific types is literally the backing table's
+    // LogicalName (confirmed against a real org: connectionreference/bot resolve to those exact
+    // strings) — so the resolved label doubles as the entity to query for the record's own name.
+    // Verbose-preview only, same caveat as ResolveComponentTypeNamesAsync above.
+    static readonly Dictionary<string, (string IdAttribute, string NameAttribute)> ResolvedTypeNameAttributes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["connectionreference"] = ("connectionreferenceid", "connectionreferencelogicalname"),
+        ["bot"]                 = ("botid", "name"),
+    };
+
     // Builds display entries for orphans that fall outside Classify's AutoDelete set. Attribute (2)
     // orphans get special handling: Solution.xml's RootComponents never lists them (see
     // ComponentClassifier.ParseSolutionXmlComponents), so — same as the entity/form/view gaps fixed
@@ -424,8 +474,8 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         var supportedOrphans   = otherOrphans.Where(o => SupportedManualTypes.Contains(o.ComponentType)).ToList();
         var unsupportedOrphans = otherOrphans.Where(o => !SupportedManualTypes.Contains(o.ComponentType)).ToList();
 
-        foreach (var orphan in unsupportedOrphans)
-            console.Verbose($"Solution component type {orphan.ComponentType} ({orphan.ObjectId}) has no local-source cross-check yet — not reported.");
+        if (unsupportedOrphans.Count > 0)
+            await LogUnsupportedOrphansAsync(service, unsupportedOrphans, ct).ConfigureAwait(false);
 
         foreach (var group in supportedOrphans.GroupBy(o => o.ComponentType))
         {
@@ -441,6 +491,42 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         }
 
         return entries;
+    }
+
+    // Verbose-only preview of orphan candidates Flowline can't yet act on (see SupportedManualTypes).
+    // Resolves the type's own label (ManualTypeLabels, falling back to solutioncomponentdefinition for
+    // env-specific codes like connectionreference/bot) and the individual record's name where a lookup
+    // exists, plus what the pre-opt-in logic would have proposed — purely informational, so a type can
+    // be evaluated with real data before deciding to add it to SupportedManualTypes.
+    async Task LogUnsupportedOrphansAsync(
+        IOrganizationServiceAsync2 service,
+        List<(Guid ObjectId, int ComponentType)> unsupportedOrphans,
+        CancellationToken ct)
+    {
+        var unlabeledTypes = unsupportedOrphans.Select(o => o.ComponentType).Where(t => !ManualTypeLabels.ContainsKey(t)).Distinct().ToList();
+        var resolvedTypeLabels = unlabeledTypes.Count > 0
+            ? await ResolveComponentTypeNamesAsync(service, unlabeledTypes, ct).ConfigureAwait(false)
+            : [];
+
+        foreach (var group in unsupportedOrphans.GroupBy(o => o.ComponentType))
+        {
+            var typeLabel = ManualTypeLabels.TryGetValue(group.Key, out var known) ? known
+                : resolvedTypeLabels.TryGetValue(group.Key, out var resolved) ? resolved
+                : null;
+
+            Dictionary<Guid, string> names = [];
+            if (NameResolvableTypes.TryGetValue(group.Key, out var lookup))
+                names = await GetEntityNamesAsync(service, lookup.EntityLogicalName, lookup.IdAttribute, lookup.NameAttribute, group.Select(o => o.ObjectId), ct).ConfigureAwait(false);
+            else if (typeLabel != null && ResolvedTypeNameAttributes.TryGetValue(typeLabel, out var resolvedLookup))
+                names = await GetEntityNamesAsync(service, typeLabel, resolvedLookup.IdAttribute, resolvedLookup.NameAttribute, group.Select(o => o.ObjectId), ct).ConfigureAwait(false);
+
+            foreach (var orphan in group)
+            {
+                var typeText = typeLabel != null ? $"{orphan.ComponentType} ({typeLabel})" : orphan.ComponentType.ToString();
+                var nameText = names.TryGetValue(orphan.ObjectId, out var name) ? $" '{name}'" : "";
+                console.Verbose($"Solution component type {typeText}{nameText} ({orphan.ObjectId}) — not tracked yet, no action taken. Out-of-the-box logic would have proposed: remove manually via maker portal.");
+            }
+        }
     }
 
     // Cross-entity attribute lookup, scoped to the solution's own entities (context.EntityLogicalNames)

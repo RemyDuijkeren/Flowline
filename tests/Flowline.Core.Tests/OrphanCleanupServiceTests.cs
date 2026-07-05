@@ -370,10 +370,12 @@ public class OrphanCleanupServiceTests : IDisposable
         Assert.Contains("MySolution", _console.Output);
     }
 
-    // -- Opt-in gate: only SupportedManualTypes get a removal recommendation, everything else is
-    // verbose-only. See the connectionreference/bot false-positive incident (2026-07-05): a component
-    // whose name resolves via solutioncomponentdefinition is still not verified against local source —
-    // resolving a name is cosmetic, not a finding, so unsupported types must never reach the report.
+    // -- Opt-in gate: only SupportedManualTypes get a removal recommendation. Unsupported types are
+    // logged verbose-only — with the type name, instance name, and what the pre-opt-in logic would
+    // have proposed, so a type can be evaluated with real data before opting it in — but never reach
+    // the actionable "can't be removed automatically" report. See the connectionreference/bot
+    // false-positive incident (2026-07-05): a name resolving via solutioncomponentdefinition is not
+    // verification against local source, so it must never drive an actual recommendation.
 
     [Fact]
     public async Task RunPreImportAsync_UnsupportedManualType_NotReportedOnlyLoggedVerbose()
@@ -384,16 +386,17 @@ public class OrphanCleanupServiceTests : IDisposable
         await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
 
         Assert.DoesNotContain("can't be removed automatically", _console.Output);
-        Assert.DoesNotContain("remove manually via maker portal", _console.Output);
         Assert.Contains(orphanId.ToString(), _console.Output); // still visible in verbose, just not recommended
+        Assert.Contains("would have proposed: remove manually via maker portal", _console.Output);
         Assert.Contains("0 manual", _console.Output);
     }
 
     [Fact]
-    public async Task RunPreImportAsync_UnsupportedType_NameResolutionDoesNotPromoteItToReport()
+    public async Task RunPreImportAsync_UnsupportedType_ShowsResolvedNameInVerbosePreviewOnly()
     {
-        // Even when solutioncomponentdefinition successfully resolves a display name, that's cosmetic —
-        // it doesn't mean Flowline verified the component against local source. Must stay unreported.
+        // Resolving a display name via solutioncomponentdefinition is informational, not verification —
+        // it must appear in the verbose preview (so the user can evaluate the type for opt-in) but never
+        // promote the component into the actionable "can't be removed automatically" report.
         var orphanId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (orphanId, 10064));
 
@@ -412,8 +415,9 @@ public class OrphanCleanupServiceTests : IDisposable
 
         await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
 
-        Assert.DoesNotContain("remove manually via maker portal", _console.Output);
-        Assert.DoesNotContain("av_sharedcalendlyv2_bffc3", _console.Output);
+        Assert.DoesNotContain("can't be removed automatically", _console.Output);
+        Assert.Contains("10064 (connectionreference) 'av_sharedcalendlyv2_bffc3'", _console.Output);
+        Assert.Contains("would have proposed: remove manually via maker portal", _console.Output);
     }
 
     [Fact]
@@ -572,8 +576,9 @@ public class OrphanCleanupServiceTests : IDisposable
 
         await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
 
-        Assert.DoesNotContain("remove manually via maker portal", _console.Output);
-        Assert.Contains(formId.ToString(), _console.Output); // still visible in verbose, just not recommended
+        Assert.DoesNotContain("can't be removed automatically", _console.Output);
+        Assert.Contains($"60 (Form) ({formId})", _console.Output); // visible in verbose preview, just not recommended
+        Assert.Contains("would have proposed: remove manually via maker portal", _console.Output);
     }
 
     [Fact]
@@ -601,8 +606,9 @@ public class OrphanCleanupServiceTests : IDisposable
 
         await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
 
-        Assert.DoesNotContain("remove manually via maker portal", _console.Output);
-        Assert.Contains(viewId.ToString(), _console.Output);
+        Assert.DoesNotContain("can't be removed automatically", _console.Output);
+        Assert.Contains($"26 (View) ({viewId})", _console.Output);
+        Assert.Contains("would have proposed: remove manually via maker portal", _console.Output);
     }
 
     [Fact]
