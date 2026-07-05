@@ -88,19 +88,12 @@ public class SetNamePostCreatePlugin : IPlugin { ... }
 
 The logical name is always lowercase and found in the maker portal under **Table → Properties → Name**.
 
-**Registering on all tables:** omit the table argument to fire on every table. Flowline warns so you don't do this accidentally. Pass `"none"` to suppress the warning and make the intent explicit:
+**Registering on all tables:** pass `"none"` explicitly:
 
 ```csharp
-// Warns: "[Step] has no table — this step will fire for all tables."
-[Step]
-public class GlobalPreCreatePlugin : IPlugin { ... }
-
-// No warning — intentional global registration
 [Step("none")]
 public class GlobalPreCreatePlugin : IPlugin { ... }
 ```
-
-Passing an empty string (`[Step("")]`) is an error.
 
 Optional named properties:
 
@@ -111,7 +104,7 @@ Optional named properties:
 | `Config` | `string?` | `null` | Passed to the plugin constructor as `unsecureConfig`. |
 | `Description` | `string?` | `null` | Description shown in the Plugin Registration Tool. |
 | `DeleteJobOnSuccess` | `bool` | `true` | Automatically delete the `AsyncOperation` job record when the step succeeds. Async post-operation steps only. Set to `false` to retain the record for auditing. |
-| `SecondaryTable` | `string?` | `null` | Secondary table for Associate / Disassociate steps. Pass `"none"` to fire on any secondary table without a warning. See [Associate / Disassociate](#associate--disassociate) below. |
+| `SecondaryTable` | `string?` | `null` | Secondary table for Associate / Disassociate steps. Pass `"none"` to match any secondary table. See [Associate / Disassociate](#associate--disassociate) below. |
 
 Use `RunAs` to run the plugin as a specific service account. Pass the string form of the user's GUID:
 
@@ -151,7 +144,7 @@ public class InvoicePostUpdateAsyncPlugin : IPlugin { ... }
 
 ### Associate / Disassociate
 
-Use `SecondaryTable` on `[Step]` to scope the step to a specific secondary table. Pass `"none"` to fire on any secondary table without a warning.
+Use `SecondaryTable` on `[Step]` to scope the step to a specific secondary table. Pass `"none"` to match any secondary table.
 
 ```csharp
 // Fires when a contact is associated with any record type

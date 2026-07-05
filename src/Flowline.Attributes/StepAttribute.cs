@@ -64,7 +64,7 @@ namespace Flowline.Attributes
     [AttributeUsage(AttributeTargets.Class)]
     public sealed class StepAttribute : Attribute
     {
-        /// <summary>Marks a class as a Dataverse plugin step on all tables.</summary>
+        /// <summary>Marks a class as a Dataverse plugin step. See <see cref="StepAttribute(string)"/>.</summary>
         public StepAttribute()
             : this(null)
         {
@@ -76,9 +76,7 @@ namespace Flowline.Attributes
         /// Use the schema name in lowercase: <c>"account"</c>, <c>"contact"</c>,
         /// <c>"cr123_invoice"</c>. Found in the maker portal under Table → Properties → Name.
         /// <para>
-        /// Omit this argument to register the step on <b>all tables</b> — Flowline will warn that
-        /// the step fires globally. To make this intentional and suppress the warning, pass
-        /// <c>"none"</c> explicitly. Passing an empty string is an error.
+        /// Pass <c>"none"</c> to register the step on <b>all tables</b>.
         /// </para>
         /// </param>
         public StepAttribute(string table)
@@ -87,9 +85,8 @@ namespace Flowline.Attributes
         }
 
         /// <summary>
-        /// Logical name of the Dataverse table this step is registered on, or <see langword="null"/>
-        /// when no table was specified. <c>"none"</c> means the step is intentionally registered on
-        /// all tables (no filter).
+        /// Logical name of the Dataverse table this step is registered on. <c>"none"</c> means the
+        /// step is intentionally registered on all tables (no filter).
         /// </summary>
         public string Table { get; }
 
@@ -162,9 +159,7 @@ namespace Flowline.Attributes
         /// </summary>
         /// <remarks>
         /// <para>
-        /// Omit (leave <see langword="null"/>) to register on <b>all secondary tables</b> — Flowline
-        /// will warn that the step fires globally. To make this intentional and suppress the warning,
-        /// pass <c>"none"</c> explicitly. Passing an empty string is an error.
+        /// On Associate/Disassociate steps, pass <c>"none"</c> to match <b>any secondary table</b>.
         /// </para>
         /// </remarks>
         public string SecondaryTable { get; set; }

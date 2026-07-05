@@ -359,7 +359,7 @@ public class PluginAssemblyReader(IAnsiConsole console, FlowlineRuntimeOptions o
         var images = ReadImageAttributes(type);
         ValidateImages(type.Name, message, stage, images);
 
-        var warnings = BuildStepWarnings(type.Name, message, table, filteringColumns, secondaryTable, images);
+        var warnings = BuildStepWarnings(type.Name, message, filteringColumns, images);
 
         // [Handles] is redundant when the class name parses to the same message+stage+mode.
         if (handlesUsed &&
@@ -441,7 +441,7 @@ public class PluginAssemblyReader(IAnsiConsole console, FlowlineRuntimeOptions o
                 : $"{type.FullName}: {msg} of {tableDisplay}";
             var stepName = qualifyWithStage ? $"{baseName} at {stageSuffix}" : baseName;
 
-            var stepWarnings = BuildStepWarnings(type.Name, msg, table, stepFilter, secondaryTable, stepImages);
+            var stepWarnings = BuildStepWarnings(type.Name, msg, stepFilter, stepImages);
             if (!nudgeEmitted) { stepWarnings.Add(nudgeWarning); nudgeEmitted = true; }
 
             var deleteJobOnSuccess = m == (int)ProcessingMode.Asynchronous && (deleteJobOnSuccessExplicit ?? true);
@@ -581,7 +581,12 @@ public class PluginAssemblyReader(IAnsiConsole console, FlowlineRuntimeOptions o
 
     internal static void ValidateLogicalName(string className, string? table)
     {
-        if (table is not null && string.IsNullOrWhiteSpace(table))
+        if (table is null)
+            throw new InvalidOperationException(
+                $"{className}: [Step] has no table — specify a table logical name e.g. [Step(\"account\")], " +
+                $"or use [Step(\"none\")] to explicitly register on all tables.");
+
+        if (string.IsNullOrWhiteSpace(table))
             throw new InvalidOperationException(
                 $"{className}: [Step] table cannot be an empty string — use [Step(\"none\")] to register on all tables, " +
                 $"or specify a table logical name e.g. [Step(\"account\")].");
@@ -610,7 +615,16 @@ public class PluginAssemblyReader(IAnsiConsole console, FlowlineRuntimeOptions o
 
     internal static void ValidateSecondaryTable(string className, string message, string? secondaryTable)
     {
-        if (secondaryTable is not (null or "none") && message is not ("Associate" or "Disassociate"))
+        if (message is "Associate" or "Disassociate")
+        {
+            if (secondaryTable is null)
+                throw new InvalidOperationException(
+                    $"{className}: {message} step has no SecondaryTable — specify the secondary table logical name e.g. SecondaryTable = \"contact\", " +
+                    $"or use SecondaryTable = \"none\" to explicitly match any secondary table.");
+            return;
+        }
+
+        if (secondaryTable is not (null or "none"))
             throw new InvalidOperationException(
                 $"{className}: SecondaryTable has no effect on {message} — it only applies to Associate and Disassociate steps. " +
                 $"Remove SecondaryTable from [Step] or change the step message.");
@@ -689,14 +703,9 @@ public class PluginAssemblyReader(IAnsiConsole console, FlowlineRuntimeOptions o
             $"Remove [PostImage] or add a compatible [[Handles]].");
     }
 
-    private static List<string> BuildStepWarnings(string className, string message, string? table, string? filteringColumns, string? secondaryTable, List<PluginImageMetadata> images)
+    private static List<string> BuildStepWarnings(string className, string message, string? filteringColumns, List<PluginImageMetadata> images)
     {
         var warnings = new List<string>();
-
-        if (table == null)
-            warnings.Add(
-                $"{className}: [[Step]] has no table — this step will fire for all tables. " +
-                $"If intentional, specify [[Step(\"none\")]] to suppress this warning.");
 
         if (message is "Update" or "UpdateMultiple" && filteringColumns == null)
             warnings.Add(
@@ -709,14 +718,6 @@ public class PluginAssemblyReader(IAnsiConsole console, FlowlineRuntimeOptions o
                 $"{className}: DeleteMultiple is only supported on elastic tables. " +
                 $"Using it on a standard table will fail at runtime with 'DeleteMultiple has not yet been implemented.' " +
                 $"Verify your table is elastic before pushing.");
-
-        if (message is "Associate" or "Disassociate")
-        {
-            if (secondaryTable == null)
-                warnings.Add(
-                    $"{className}: {message} step has no secondary table — it will fire for any table on the other side of the relationship. " +
-                    $"Add [[Step(..., SecondaryTable = \"none\")]] to make this explicit, or specify the exact secondary table logical name.");
-        }
 
         foreach (var image in images)
         {

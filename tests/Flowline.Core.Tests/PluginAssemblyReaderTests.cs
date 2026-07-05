@@ -181,9 +181,12 @@ public class PluginAssemblyReaderTests
     }
 
     [Fact]
-    public void ValidateLogicalName_Null_DoesNotThrow()
+    public void ValidateLogicalName_Null_Throws()
     {
-        PluginAssemblyReader.ValidateLogicalName("MockPreCreatePlugin", null);
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            PluginAssemblyReader.ValidateLogicalName("MockPreCreatePlugin", null));
+        Assert.Contains("[Step]", ex.Message);
+        Assert.Contains("\"none\"", ex.Message);
     }
 
     [Fact]
@@ -244,6 +247,16 @@ public class PluginAssemblyReaderTests
     }
 
     [Fact]
+    public void ValidateSecondaryTable_AssociateWithoutSecondaryTable_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            PluginAssemblyReader.ValidateSecondaryTable("MockPreAssociatePlugin", "Associate", null));
+        Assert.Contains("SecondaryTable", ex.Message);
+        Assert.Contains("Associate", ex.Message);
+        Assert.Contains("\"none\"", ex.Message);
+    }
+
+    [Fact]
     public void Analyze_UpdatePluginWithoutFilter_AddsWarning()
     {
         var step = Assert.Single(GetPlugin(Analyze(), nameof(MockNoFilterPostUpdatePlugin)).Steps);
@@ -260,26 +273,6 @@ public class PluginAssemblyReaderTests
 
         Assert.Equal("account", step.SecondaryTable);
         Assert.Empty(step.Warnings);
-    }
-
-    [Fact]
-    public void Analyze_AssociatePluginWithoutSecondaryTable_AddsWarning()
-    {
-        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockNoSecondaryPreAssociatePlugin)).Steps);
-
-        Assert.Single(step.Warnings);
-        Assert.Contains("secondary table", step.Warnings[0]);
-    }
-
-    [Fact]
-    public void Analyze_StepWithNoEntity_ProducesStepWithWarning()
-    {
-        var step = Assert.Single(GetPlugin(Analyze(), nameof(MockNoEntityStepPreCreatePlugin)).Steps);
-
-        Assert.Null(step.TableName);
-        Assert.Single(step.Warnings);
-        Assert.Contains("[Step]", step.Warnings[0]);
-        Assert.Contains("[Step(\"none\")]", step.Warnings[0]);
     }
 
     [Fact]
@@ -927,19 +920,6 @@ public class MockNoFilterPostUpdatePlugin : IPlugin
 
 [Step("contact", SecondaryTable = "account")]
 public class MockPreAssociatePlugin : IPlugin
-{
-    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
-}
-
-[Step("contact")]
-public class MockNoSecondaryPreAssociatePlugin : IPlugin
-{
-    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
-}
-
-// [Step] with no entity — should produce a step with a warning
-[Step]
-public class MockNoEntityStepPreCreatePlugin : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }
