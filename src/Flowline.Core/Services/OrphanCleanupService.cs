@@ -1,6 +1,9 @@
 using System.ServiceModel;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Messages;
+using Microsoft.Xrm.Sdk.Metadata;
+using Microsoft.Xrm.Sdk.Metadata.Query;
 using Microsoft.Xrm.Sdk.Query;
 using Spectre.Console;
 
@@ -32,6 +35,44 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         [29] = "workflow",
     };
 
+    // Manual-orphan display labels for solutioncomponent.componenttype, verified against the
+    // "Solution Component" table reference (learn.microsoft.com/power-apps/developer/data-platform/
+    // reference/entities/solutioncomponent). Not exhaustive — covers types plausible in a manual-cleanup
+    // report. Types outside this map (e.g. env-specific 10000+ codes not in the public componenttype
+    // choice set) are reported as unrecognized rather than guessed at.
+    static readonly Dictionary<int, string> ManualTypeLabels = new()
+    {
+        [1]   = "Entity",
+        [2]   = "Attribute",
+        [3]   = "Relationship",
+        [9]   = "OptionSet",
+        [14]  = "EntityKey",
+        [20]  = "Role",
+        [24]  = "Form",
+        [26]  = "View",
+        [36]  = "EmailTemplate",
+        [44]  = "DuplicateRule",
+        [46]  = "EntityMap",
+        [60]  = "Form",
+        [62]  = "SiteMap",
+        [63]  = "ConnectionRole",
+        [66]  = "CustomControl",
+        [70]  = "FieldSecurityProfile",
+        [71]  = "FieldPermission",
+        [95]  = "ServiceEndpoint",
+        [150] = "RoutingRule",
+        [152] = "SLA",
+        [161] = "MobileOfflineProfile",
+        [165] = "SimilarityRule",
+        [166] = "DataSourceMapping",
+        [208] = "ImportMap",
+        [300] = "CanvasApp",
+        [371] = "Connector",
+        [372] = "Connector",
+        [380] = "EnvironmentVariableDefinition",
+        [381] = "EnvironmentVariableValue",
+    };
+
     public async Task RunPreImportAsync(PostDeployContext context, CancellationToken ct)
     {
         var service         = context.Service;
@@ -61,7 +102,26 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
             return;
         }
 
-        var orphans = sOld.Where(c => !sNewIds.Contains(c.ObjectId)).ToList();
+        // Entity roots in Solution.xml are recorded by schemaName, not MetadataId — resolve them live
+        // so entity components aren't misdiagnosed as orphans. See ComponentClassifier.ParseSolutionXmlComponents.
+        if (context.EntityLogicalNames.Count > 0)
+        {
+            var resolvedEntityIds = await ResolveEntityMetadataIdsAsync(service, context.EntityLogicalNames, ct).ConfigureAwait(false);
+            sNewIds.UnionWith(resolvedEntityIds);
+        }
+
+        // Other types recorded by schemaName instead of id (e.g. WebResource — its id is not portable
+        // across environments, so pac always records it by name) — resolve live for the same reason.
+        if (context.NamedComponents.Count > 0)
+        {
+            var resolvedNamedIds = await ResolveNamedComponentIdsAsync(service, context.NamedComponents, ct).ConfigureAwait(false);
+            sNewIds.UnionWith(resolvedNamedIds);
+        }
+
+        var orphans = sOld
+            .Where(c => !sNewIds.Contains(c.ObjectId))
+            .Where(c => !ComponentClassifier.IsWellKnownSystemComponent(c.ObjectId))
+            .ToList();
 
         if (orphans.Count == 0)
         {
@@ -92,6 +152,35 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         var customApiOrphans = unknownOrphans.Where(c => customApiEntities.ContainsKey(c.ObjectId)).ToList();
         var manualOrphans    = unknownOrphans.Where(c => !customApiEntities.ContainsKey(c.ObjectId)).ToList();
 
+        // CustomApi source has no GUID at all — uniquename is the only local identity (see
+        // ComponentClassifier.ScanCustomApiNames) — so a recreated CustomApi (same uniquename, new
+        // customapiid) looks orphaned by id alone. Resolve names once here, drop the ones still in
+        // source, and reuse the same lookup below instead of querying names twice.
+        Dictionary<Guid, string> customApiNames = [];
+        if (customApiOrphans.Count > 0)
+        {
+            foreach (var group in customApiOrphans.GroupBy(o => customApiEntities[o.ObjectId]))
+            {
+                var names = await GetEntityNamesAsync(service, group.Key, CustomApiIdAttributes[group.Key], "name", group.Select(o => o.ObjectId), ct).ConfigureAwait(false);
+                foreach (var (id, name) in names)
+                    customApiNames[id] = name;
+            }
+
+            var localCustomApiNames = ComponentClassifier.ScanCustomApiNames(context.PackageSrcRoot);
+            customApiOrphans = customApiOrphans.Where(o =>
+            {
+                if (!customApiNames.TryGetValue(o.ObjectId, out var name)) return true;
+                var localNames = customApiEntities[o.ObjectId] switch
+                {
+                    "customapi"                 => localCustomApiNames.ApiUniqueNames,
+                    "customapirequestparameter" => localCustomApiNames.RequestParameterNames,
+                    "customapiresponseproperty" => localCustomApiNames.ResponsePropertyNames,
+                    _                           => (IReadOnlySet<string>)new HashSet<string>()
+                };
+                return !localNames.Contains(name);
+            }).ToList();
+        }
+
         var crossSolutionIds = autoOrphans.Select(c => c.ObjectId).Concat(customApiOrphans.Select(c => c.ObjectId));
         var crossSolution = crossSolutionIds.Any()
             ? await GetCrossSolutionMembershipAsync(service, crossSolutionIds, ct).ConfigureAwait(false)
@@ -99,27 +188,37 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
         var entries = new List<OrphanEntry>();
 
-        foreach (var orphan in autoOrphans)
+        foreach (var group in autoOrphans.GroupBy(o => o.ComponentType))
         {
-            var otherSolutions = OtherRelevantSolutions(crossSolution, orphan.ObjectId, solutionName);
+            Dictionary<Guid, string> names = [];
+            if (NameResolvableTypes.TryGetValue(group.Key, out var lookup))
+                names = await GetEntityNamesAsync(service, lookup.EntityLogicalName, lookup.IdAttribute, lookup.NameAttribute, group.Select(o => o.ObjectId), ct).ConfigureAwait(false);
 
-            var action = otherSolutions.Count > 0 ? OrphanAction.RemoveFromSolution : OrphanAction.Delete;
-            entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId), action));
+            foreach (var orphan in group)
+            {
+                var otherSolutions = OtherRelevantSolutions(crossSolution, orphan.ObjectId, solutionName);
+                var action = otherSolutions.Count > 0 ? OrphanAction.RemoveFromSolution : OrphanAction.Delete;
+                var detail = names.TryGetValue(orphan.ObjectId, out var name) ? name : null;
+                entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId, detail: detail), action));
+            }
         }
 
-        foreach (var orphan in customApiOrphans)
+        foreach (var group in customApiOrphans.GroupBy(o => customApiEntities[o.ObjectId]))
         {
-            var entityName = customApiEntities[orphan.ObjectId];
-            var otherSolutions = OtherRelevantSolutions(crossSolution, orphan.ObjectId, solutionName);
+            var entityName = group.Key;
 
-            var action = otherSolutions.Count > 0 ? OrphanAction.RemoveFromSolution : OrphanAction.Delete;
-            entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId, entityName), action, EntityName: entityName));
+            foreach (var orphan in group)
+            {
+                var otherSolutions = OtherRelevantSolutions(crossSolution, orphan.ObjectId, solutionName);
+                var action = otherSolutions.Count > 0 ? OrphanAction.RemoveFromSolution : OrphanAction.Delete;
+                var detail = customApiNames.TryGetValue(orphan.ObjectId, out var name) ? name : null;
+                entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId, entityName, detail), action, EntityName: entityName));
+            }
         }
 
-        foreach (var orphan in manualOrphans)
-            entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId), OrphanAction.Manual));
+        entries.AddRange(await BuildManualEntriesAsync(service, context, manualOrphans, ct).ConfigureAwait(false));
 
-        PrintReport(entries, mode);
+        PrintReport(entries, mode, solutionName, context.EnvironmentUrl);
 
         if (mode == RunMode.NoDelete)
             return;
@@ -167,6 +266,227 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         return failed.Count;
     }
 
+    const int MaxConcurrentMetadataRequests = 20;
+
+    static async Task<HashSet<Guid>> ResolveEntityMetadataIdsAsync(
+        IOrganizationServiceAsync2 service,
+        IReadOnlyList<string> logicalNames,
+        CancellationToken ct)
+    {
+        using var semaphore = new SemaphoreSlim(MaxConcurrentMetadataRequests, MaxConcurrentMetadataRequests);
+
+        var tasks = logicalNames.Select(async name =>
+        {
+            await semaphore.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                var request = new RetrieveEntityRequest { LogicalName = name, EntityFilters = EntityFilters.Entity, RetrieveAsIfPublished = false };
+                var response = (RetrieveEntityResponse)await service.ExecuteAsync(request, ct).ConfigureAwait(false);
+                return response.EntityMetadata?.MetadataId;
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+
+        var metadataIds = await Task.WhenAll(tasks).ConfigureAwait(false);
+        return metadataIds.Where(id => id.HasValue).Select(id => id!.Value).ToHashSet();
+    }
+
+    // Resolves non-entity schemaName-recorded RootComponents (e.g. WebResource) to their live id, by
+    // querying each type's NameResolvableTypes-mapped table for name-attribute IN (schemaNames). A type
+    // not present in NameResolvableTypes is skipped — same as before this method existed, it's just not
+    // folded into sNewIds — rather than guessed at.
+    static async Task<HashSet<Guid>> ResolveNamedComponentIdsAsync(
+        IOrganizationServiceAsync2 service,
+        IReadOnlyList<(int ComponentType, string SchemaName)> namedComponents,
+        CancellationToken ct)
+    {
+        var result = new HashSet<Guid>();
+
+        foreach (var group in namedComponents.GroupBy(c => c.ComponentType))
+        {
+            if (!NameResolvableTypes.TryGetValue(group.Key, out var lookup)) continue;
+
+            var names = group.Select(c => (object)c.SchemaName).Distinct().ToArray();
+            if (names.Length == 0) continue;
+            if (names.Length > 2000)
+                throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {names.Length} names (max 2000). Solution has too many {lookup.EntityLogicalName} schemaName roots for live resolution.");
+
+            var query = new QueryExpression(lookup.EntityLogicalName)
+            {
+                ColumnSet = new ColumnSet(false),
+                Criteria  = { Conditions = { new ConditionExpression(lookup.NameAttribute, ConditionOperator.In, names) } }
+            };
+
+            var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
+            foreach (var entity in entities)
+                result.Add(entity.Id);
+        }
+
+        return result;
+    }
+
+    const int EntityComponentType = 1;
+    const int AttributeComponentType = 2;
+
+    // Manual-bucket types Flowline recommends removal for — each has a local-source cross-check
+    // (Entity: EntityLogicalNames/RetrieveEntityRequest; Attribute: Entity.xml scan) verified against a
+    // real org. Recommending removal for a type without that verification is a guess, not a finding —
+    // two incidents confirm it (2026-07-05): connectionreference/bot resolved a real display name via
+    // solutioncomponentdefinition but have no local representation at all, so a still-needed connection
+    // reference got flagged; and Form (60) — despite ScanEntitySubcomponents — false-positives for any
+    // form whose entity isn't unpacked under Entities/<name>/ locally (e.g. a standard Microsoft form
+    // like "Sales Insights" living on an entity this solution's Entities/ folder doesn't include at
+    // all — behavior="1" entities still get FormXml unpacked for editing, but a form on an entity
+    // outside that set has nothing for the scan to find). View (26) shares the same untested gap.
+    // Widen this set only after adding the equivalent local-source verification and tests for a new
+    // type — everything else is logged at verbose only, never recommended for action.
+    static readonly HashSet<int> SupportedManualTypes = [EntityComponentType, AttributeComponentType];
+
+    // componenttype → backing table, keyed by the componenttype value, resolvable via a single bulk
+    // QueryExpression per type (same pattern as the original webresource-only name lookup). Covers both
+    // AutoDelete types (so deploy shows what it's actually deleting, not just a GUID) and the common
+    // Manual types. Column names verified against existing queries in PluginReader.cs.
+    static readonly Dictionary<int, (string EntityLogicalName, string IdAttribute, string NameAttribute)> NameResolvableTypes = new()
+    {
+        [91] = ("pluginassembly", "pluginassemblyid", "name"),
+        [90] = ("plugintype", "plugintypeid", "typename"),
+        [92] = ("sdkmessageprocessingstep", "sdkmessageprocessingstepid", "name"),
+        [93] = ("sdkmessageprocessingstepimage", "sdkmessageprocessingstepimageid", "name"),
+        [61] = ("webresource", "webresourceid", "name"),
+        [29] = ("workflow", "workflowid", "name"),
+        [60] = ("systemform", "formid", "name"),
+        [26] = ("savedquery", "savedqueryid", "name"),
+        [20] = ("role", "roleid", "name"),
+        [63] = ("connectionrole", "connectionroleid", "name"),
+    };
+
+    // CustomApi family entities are detected by entity-side query rather than componenttype (see
+    // IdentifyCustomApiEntityTypesAsync) — keyed by entity LogicalName instead.
+    static readonly Dictionary<string, string> CustomApiIdAttributes = new()
+    {
+        ["customapi"]                 = "customapiid",
+        ["customapirequestparameter"] = "customapirequestparameterid",
+        ["customapiresponseproperty"] = "customapiresponsepropertyid",
+    };
+
+    // Builds display entries for orphans that fall outside Classify's AutoDelete set. Attribute (2)
+    // orphans get special handling: Solution.xml's RootComponents never lists them (see
+    // ComponentClassifier.ParseSolutionXmlComponents), so — same as the entity/form/view gaps fixed
+    // earlier — a customized-but-still-present attribute on a solution entity looks orphaned. Resolving
+    // to (entity, attribute) LogicalName lets us check Entity.xml and suppress those false positives;
+    // genuine leftovers get a real name instead of a bare GUID.
+    async Task<List<OrphanEntry>> BuildManualEntriesAsync(
+        IOrganizationServiceAsync2 service,
+        PostDeployContext context,
+        List<(Guid ObjectId, int ComponentType)> manualOrphans,
+        CancellationToken ct)
+    {
+        var attributeOrphans = manualOrphans.Where(c => c.ComponentType == AttributeComponentType).ToList();
+        var otherOrphans     = manualOrphans.Where(c => c.ComponentType != AttributeComponentType).ToList();
+
+        var entries = new List<OrphanEntry>();
+
+        if (attributeOrphans.Count > 0 && context.EntityLogicalNames.Count > 0)
+        {
+            var attributeInfo = await ResolveAttributeInfoAsync(service, context.EntityLogicalNames, attributeOrphans.Select(o => o.ObjectId), ct).ConfigureAwait(false);
+            var localAttributesByEntity = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var orphan in attributeOrphans)
+            {
+                if (!attributeInfo.TryGetValue(orphan.ObjectId, out var info))
+                {
+                    entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId), OrphanAction.Manual));
+                    continue;
+                }
+
+                if (!localAttributesByEntity.TryGetValue(info.EntityLogicalName, out var localAttributes))
+                    localAttributesByEntity[info.EntityLogicalName] = localAttributes =
+                        ComponentClassifier.ScanEntityAttributeLogicalNames(context.PackageSrcRoot, info.EntityLogicalName);
+
+                if (localAttributes.Contains(info.AttributeLogicalName))
+                    continue; // still declared in Entity.xml — false positive, not an orphan
+
+                var detail = $"{info.EntityLogicalName}.{info.AttributeLogicalName}";
+                entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId, detail: detail), OrphanAction.Manual));
+            }
+        }
+        else
+        {
+            foreach (var orphan in attributeOrphans)
+                entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId), OrphanAction.Manual));
+        }
+
+        // Only recommend removal for types Flowline has verified via local source (see
+        // SupportedManualTypes) — everything else is surfaced at verbose only, not in the report.
+        var supportedOrphans   = otherOrphans.Where(o => SupportedManualTypes.Contains(o.ComponentType)).ToList();
+        var unsupportedOrphans = otherOrphans.Where(o => !SupportedManualTypes.Contains(o.ComponentType)).ToList();
+
+        foreach (var orphan in unsupportedOrphans)
+            console.Verbose($"Solution component type {orphan.ComponentType} ({orphan.ObjectId}) has no local-source cross-check yet — not reported.");
+
+        foreach (var group in supportedOrphans.GroupBy(o => o.ComponentType))
+        {
+            Dictionary<Guid, string> names = [];
+            if (NameResolvableTypes.TryGetValue(group.Key, out var lookup))
+                names = await GetEntityNamesAsync(service, lookup.EntityLogicalName, lookup.IdAttribute, lookup.NameAttribute, group.Select(o => o.ObjectId), ct).ConfigureAwait(false);
+
+            foreach (var orphan in group)
+            {
+                var detail = names.TryGetValue(orphan.ObjectId, out var name) ? name : null;
+                entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId, detail: detail), OrphanAction.Manual));
+            }
+        }
+
+        return entries;
+    }
+
+    // Cross-entity attribute lookup, scoped to the solution's own entities (context.EntityLogicalNames)
+    // rather than an unfiltered scan — an EntityQueryExpression with no Criteria is the RetrieveAllEntities-
+    // equivalent full metadata walk, which doesn't scale. Attributes on entities outside this solution's
+    // root list won't resolve — those fall back to a bare GUID rather than a guessed name.
+    static async Task<Dictionary<Guid, (string EntityLogicalName, string AttributeLogicalName)>> ResolveAttributeInfoAsync(
+        IOrganizationServiceAsync2 service,
+        IReadOnlyList<string> entityLogicalNames,
+        IEnumerable<Guid> attributeIds,
+        CancellationToken ct)
+    {
+        // MetadataConditionExpression is strictly typed — MetadataId is Guid?, so the In-array must be
+        // Guid[], not object[]. An object[] (even one boxing only Guids) throws OrganizationServiceFault
+        // 0x80044183 "cannot be compared with a condition value of type System.Object" server-side.
+        var idArray = attributeIds.Distinct().Where(id => id != Guid.Empty).ToArray();
+        if (idArray.Length == 0) return [];
+
+        var query = new EntityQueryExpression
+        {
+            Properties = new MetadataPropertiesExpression("LogicalName", "Attributes"),
+            Criteria = new MetadataFilterExpression(LogicalOperator.Or)
+            {
+                Conditions = { new MetadataConditionExpression("LogicalName", MetadataConditionOperator.In, entityLogicalNames.ToArray()) }
+            },
+            AttributeQuery = new AttributeQueryExpression
+            {
+                Properties = new MetadataPropertiesExpression("LogicalName"),
+                Criteria = new MetadataFilterExpression
+                {
+                    Conditions = { new MetadataConditionExpression("MetadataId", MetadataConditionOperator.In, idArray) }
+                }
+            }
+        };
+
+        var response = (RetrieveMetadataChangesResponse)await service.ExecuteAsync(new RetrieveMetadataChangesRequest { Query = query }, ct).ConfigureAwait(false);
+
+        var result = new Dictionary<Guid, (string, string)>();
+        foreach (var entity in response.EntityMetadata)
+        foreach (var attribute in entity.Attributes)
+            if (attribute.MetadataId.HasValue)
+                result[attribute.MetadataId.Value] = (entity.LogicalName, attribute.LogicalName);
+
+        return result;
+    }
+
     async Task<List<(Guid ObjectId, int ComponentType)>> ExemptAnnotationReferencedWebResourcesAsync(
         IOrganizationServiceAsync2 service,
         List<(Guid ObjectId, int ComponentType)> autoOrphans,
@@ -197,26 +517,35 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         return autoOrphans.Where(o => !exemptIds.Contains(o.ObjectId)).ToList();
     }
 
-    async Task<Dictionary<Guid, string>> GetWebResourceNamesAsync(
+    static Task<Dictionary<Guid, string>> GetWebResourceNamesAsync(
         IOrganizationServiceAsync2 service,
+        IEnumerable<Guid> ids,
+        CancellationToken ct) =>
+        GetEntityNamesAsync(service, "webresource", "webresourceid", "name", ids, ct);
+
+    static async Task<Dictionary<Guid, string>> GetEntityNamesAsync(
+        IOrganizationServiceAsync2 service,
+        string entityLogicalName,
+        string idAttribute,
+        string nameAttribute,
         IEnumerable<Guid> ids,
         CancellationToken ct)
     {
         var idList = ids.Distinct().Where(id => id != Guid.Empty).ToList();
         if (idList.Count == 0) return [];
         if (idList.Count > 2000)
-            throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {idList.Count} IDs (max 2000). Solution has too many web resource orphans for name resolution.");
+            throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {idList.Count} IDs (max 2000). Solution has too many {entityLogicalName} orphans for name resolution.");
 
-        var query = new QueryExpression("webresource")
+        var query = new QueryExpression(entityLogicalName)
         {
-            ColumnSet = new ColumnSet("name"),
-            Criteria  = { Conditions = { new ConditionExpression("webresourceid", ConditionOperator.In, idList.Select(id => (object)id).ToArray()) } }
+            ColumnSet = new ColumnSet(nameAttribute),
+            Criteria  = { Conditions = { new ConditionExpression(idAttribute, ConditionOperator.In, idList.Select(id => (object)id).ToArray()) } }
         };
 
         var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
         return entities
-            .Where(e => !string.IsNullOrEmpty(e.GetAttributeValue<string>("name")))
-            .ToDictionary(e => e.Id, e => e.GetAttributeValue<string>("name")!);
+            .Where(e => !string.IsNullOrEmpty(e.GetAttributeValue<string>(nameAttribute)))
+            .ToDictionary(e => e.Id, e => e.GetAttributeValue<string>(nameAttribute)!);
     }
 
     async Task<List<(Guid ObjectId, int ComponentType)>> QuerySolutionComponentsAsync(
@@ -465,27 +794,42 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         }
     }
 
-    void PrintReport(IReadOnlyList<OrphanEntry> entries, RunMode mode)
+    void PrintReport(IReadOnlyList<OrphanEntry> entries, RunMode mode, string solutionName, string environmentUrl)
     {
-        var deleteCount = entries.Count(e => e.Action == OrphanAction.Delete);
-        var removeCount = entries.Count(e => e.Action == OrphanAction.RemoveFromSolution);
-        var manualCount = entries.Count(e => e.Action == OrphanAction.Manual);
+        var automated = entries.Where(e => e.Action != OrphanAction.Manual)
+            .OrderBy(e => ExecutionOrderIndex(e.ComponentType, e.EntityName))
+            .ToList();
+        var manual = entries.Where(e => e.Action == OrphanAction.Manual)
+            .OrderBy(e => ExecutionOrderIndex(e.ComponentType, e.EntityName))
+            .ToList();
 
         console.MarkupLine($"[bold]Orphan components ({entries.Count}):[/]");
 
-        foreach (var entry in entries.OrderBy(e => ExecutionOrderIndex(e.ComponentType, e.EntityName)))
+        foreach (var entry in automated)
         {
-            var label = mode == RunMode.NoDelete && entry.Action != OrphanAction.Manual
-                ? NoDeleteLabel(entry.Action)
-                : ActionLabel(entry.Action);
+            var label = mode == RunMode.NoDelete ? NoDeleteLabel(entry.Action) : ActionLabel(entry.Action);
             console.MarkupLine($"  [{ActionColor(entry.Action)}]{Markup.Escape(entry.DisplayName)} — {label}[/]");
         }
 
+        if (manual.Count > 0)
+        {
+            console.Warning($"{manual.Count} component{(manual.Count == 1 ? "" : "s")} can't be removed automatically:");
+            foreach (var entry in manual)
+                console.MarkupLine($"  [yellow]{Markup.Escape(entry.DisplayName)}[/] — remove manually via maker portal");
+            console.MarkupLine($"  Open {SolutionsListUrl(environmentUrl)}, find '{solutionName}', and remove these from there.");
+        }
+
+        var deleteCount = entries.Count(e => e.Action == OrphanAction.Delete);
+        var removeCount = entries.Count(e => e.Action == OrphanAction.RemoveFromSolution);
+
         if (mode == RunMode.NoDelete)
-            console.Skip($"{deleteCount} would be deleted, {removeCount} would be removed from solution, {manualCount} manual. (--no-delete active)");
+            console.Skip($"{deleteCount} would be deleted, {removeCount} would be removed from solution, {manual.Count} manual. (--no-delete active)");
         else
-            console.Skip($"{deleteCount} to delete, {removeCount} to remove from solution, {manualCount} manual");
+            console.Skip($"{deleteCount} to delete, {removeCount} to remove from solution, {manual.Count} manual");
     }
+
+    static string SolutionsListUrl(string environmentUrl) =>
+        $"{environmentUrl.TrimEnd('/')}/tools/Solution/home_solution.aspx?etn=solution";
 
     static int ExecutionOrderIndex(int componentType, string? entityName)
     {
@@ -498,7 +842,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         return idx < 0 ? ExecutionOrder.Length - 1 : idx;
     }
 
-    static string TypeName(int componentType, Guid objectId, string? entityName = null)
+    static string TypeName(int componentType, Guid objectId, string? entityName = null, string? detail = null)
     {
         var name = entityName switch
         {
@@ -513,17 +857,17 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
                 93 => "SdkMessageProcessingStepImage",
                 61 => "WebResource",
                 29 => "Workflow",
-                _  => $"Component({componentType})"
+                _ when ManualTypeLabels.TryGetValue(componentType, out var label) => label,
+                _  => $"Unrecognized component (type {componentType})"
             }
         };
-        return $"{name} {objectId}";
+        return detail != null ? $"{name} '{detail}' ({objectId})" : $"{name} {objectId}";
     }
 
     static string ActionLabel(OrphanAction action) => action switch
     {
         OrphanAction.Delete             => "delete",
         OrphanAction.RemoveFromSolution => "remove from solution",
-        OrphanAction.Manual             => "manual — remove via maker portal",
         _                               => action.ToString()
     };
 
@@ -538,7 +882,6 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     {
         OrphanAction.Delete             => "red",
         OrphanAction.RemoveFromSolution => "yellow",
-        OrphanAction.Manual             => "dim",
         _                               => "white"
     };
 

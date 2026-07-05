@@ -1,7 +1,7 @@
 ---
 title: Orphan component cleanup — two-phase deploy pipeline
 date: 2026-06-10
-last_updated: 2026-07-03
+last_updated: 2026-07-05 (part 5)
 category: docs/solutions/architecture-patterns
 module: DeployCommand
 problem_type: architecture_pattern
@@ -78,9 +78,9 @@ public static class ComponentClassifier
 
 **Why only stable componenttype values:** Dataverse `solutioncomponent.componenttype` values below 100 are stable platform constants across all orgs. The CustomApi family uses env-specific component type numbers that differ per org — they cannot be classified by integer. They are detected separately via parallel entity queries (see below).
 
-### S_new: use Solution.xml RootComponents, not customizations.xml
+### S_new: Solution.xml RootComponents, plus entity subcomponent files — not customizations.xml
 
-The diff source must come from `Solution.xml` `<RootComponents>`, not from `customizations.xml`. `customizations.xml` contains entity metadata (attribute definitions, form XML) — not component object references. `<RootComponents>` contains exactly the `(ObjectId, ComponentType)` pairs that map to `solutioncomponent` records.
+The diff source must come from the unpacked solution source, not from `customizations.xml` (`customizations.xml` contains entity metadata — attribute definitions, form XML — not component object references). But `Solution.xml` `<RootComponents>` alone under-reports S_new (see 2026-07-05 update below): entity roots can be recorded by `schemaName` instead of `id`, and subcomponents like Forms/Views live under `Entities/<name>/**` with no `<RootComponent>` entry at all.
 
 ```csharp
 var rootComponents = doc.Root
@@ -89,13 +89,28 @@ var rootComponents = doc.Root
     ?.Elements("RootComponent")
     ?? [];
 
+var components = new List<(Guid, int)>();
+var entityLogicalNames = new List<string>();
+
 foreach (var component in rootComponents)
 {
     if (!int.TryParse(component.Attribute("type")?.Value, out var type)) continue;
-    if (!Guid.TryParse(component.Attribute("id")?.Value, out var id)) continue;
-    result.Add((id, type));
+
+    if (Guid.TryParse(component.Attribute("id")?.Value, out var id))
+    {
+        components.Add((id, type));
+        continue;
+    }
+
+    // Entity roots use schemaName instead of id — caller must resolve to MetadataId live.
+    if (type != EntityComponentType) continue;
+    var schemaName = component.Attribute("schemaName")?.Value;
+    if (!string.IsNullOrEmpty(schemaName))
+        entityLogicalNames.Add(schemaName);
 }
 ```
+
+`ScanEntitySubcomponents` separately walks `Entities/<name>/{FormXml,SavedQueries}/**` for GUID-named files, since these are never enumerated as `<RootComponent>` nodes regardless of the entity's `behavior` setting.
 
 ### Always use RetrieveAllAsync for solutioncomponent queries
 
@@ -112,6 +127,49 @@ var entities = await service.RetrieveAllAsync(query, ct);
 See `src/Flowline.Core/Services/OrganizationServiceExtensions.cs` for the paging extension. Applied in all four query methods in `OrphanCleanupService`.
 
 **Update (2026-07-03):** `OrphanCleanupService` now implements `IPostDeployService` and threads its deferred-entry state across the two phases via a private mutable instance field (`_deferred`) rather than an explicit parameter/return value passed by the caller. This is safe only because the service is registered `AddSingleton` and Flowline runs one command per process — see [post-deploy-service-di-fanout-protocol.md](post-deploy-service-di-fanout-protocol.md) for the interface shape and the tradeoffs of that design.
+
+**Update (2026-07-05): `<RootComponents>` alone under-reports S_new — three false-positive sources found and fixed.** A real deploy flagged 53 "manual" orphans; verification against the actual unpacked solution source showed most were still legitimately part of the solution:
+
+1. **Entity roots recorded by `schemaName`, not `id`.** `<RootComponent type="1" schemaName="account" behavior="1" />` has no `id` attribute — the old parser's `Guid.TryParse(id)` silently dropped these, so every entity added as a root (Account, Contact, Lead, ...) looked orphaned. `ParseSolutionXmlComponents` now returns a `SolutionXmlComponents(Components, EntityLogicalNames)` record; callers with a live connection resolve `EntityLogicalNames` to MetadataIds via `RetrieveEntityRequest { LogicalName = name }` (see `OrphanCleanupService.ResolveEntityMetadataIdsAsync`) and fold the result into the S_new id set before diffing.
+2. **Subcomponents unpacked under `Entities/<name>/**` are never listed as `<RootComponent>` nodes at all** — Forms (`FormXml/**/{guid}.xml`, componenttype 60) and Views (`SavedQueries/{guid}.xml`, componenttype 26) exist as tracked, git-diffable files but have no corresponding manifest entry. `ComponentClassifier.ScanEntitySubcomponents(srcRoot)` recovers their GUIDs by filename scan; `DeployCommand.ParseSolutionXml` merges this into S_new alongside the manifest components.
+3. **Microsoft system components use a fixed GUID prefix** (`00000000-0000-0000-00aa-...` — confirmed on out-of-box system views) and are never user-deletable regardless of manifest state. `ComponentClassifier.IsWellKnownSystemComponent` excludes them from the orphan set entirely, independent of S_new.
+
+**Update (2026-07-05, part 2): Attribute-type orphans (componenttype 2), manual-report naming, and `PackageSrcRoot`.** Unlike Forms/Views, attributes have no GUID-named file to scan — `Entity.xml` declares them by `LogicalName`/`PhysicalName`, not by their solutioncomponent MetadataId. Closing this gap needed a live metadata round-trip regardless of local source:
+
+- `OrphanCleanupService.ResolveAttributeInfoAsync` issues one `RetrieveMetadataChangesRequest` with `EntityQueryExpression.Criteria` scoped to `context.EntityLogicalNames` (the solution's own entities) and `AttributeQuery.Criteria` filtered to the orphan attribute MetadataIds. Leaving `Criteria` unset would make this the `RetrieveAllEntities`-equivalent full-org metadata walk the SDK docs warn against — scoping to known entities keeps it a single, cheap, bounded call that only fires when Attribute-type orphans exist.
+- For each resolved `(entityLogicalName, attributeLogicalName)`, `ComponentClassifier.ScanEntityAttributeLogicalNames(packageSrcRoot, entityLogicalName)` checks whether that LogicalName is still declared in `Entities/<name>/Entity.xml`. If yes, it's a false positive (a customized-but-still-present field on a `behavior="1"` entity like Account) and is suppressed rather than listed. If no, it's a genuine leftover and gets a real name instead of a bare GUID.
+- `PostDeployContext` gained `PackageSrcRoot` (the `Package/src` folder), mirroring the existing `WebResourceRoot` precedent — a raw folder reference alongside the parsed `LocalComponents`, for services that need to read unpacked source directly. Note this can't solve the naming problem alone: attributes are keyed by LogicalName in Entity.xml, not the MetadataId GUID a solutioncomponent row carries, so correlating the two still requires the live metadata call above.
+- Manual-orphan output also got a label pass: a verified `componenttype → display label` table (`ManualTypeLabels`, sourced from the Solution Component table reference on learn.microsoft.com) replaced the bare `Component(N)` fallback; types outside that table (e.g. env-specific 10000+ codes, same category as the CustomApi family) are shown as "Unrecognized component" rather than guessed at; and the manual bucket is now grouped separately from what Flowline handles automatically, with a pointer to the org's classic solutions list (`/tools/Solution/home_solution.aspx?etn=solution`, a documented Dataverse URL) since "remove via maker portal" alone was a dead end.
+- Data-backed manual types (Form/View/Role/ConnectionRole) get names via `OrphanCleanupService.GetEntityNamesAsync`, a generalization of the existing webresource-name lookup (`QueryExpression` on the backing table's `name` column) — no metadata call needed for these, they're plain data rows.
+
+**Update (2026-07-05, part 3): names everywhere, and a real fix for "unrecognized" types via `solutioncomponentdefinition`.** Part 2 only named the Manual bucket — the AutoDelete and CustomApi entries (WebResource, PluginAssembly, PluginType, SdkMessageProcessingStep(Image), Workflow, CustomApi family) still showed bare GUIDs, which defeats the point when deciding whether a delete is safe.
+
+- `NameResolvableTypes` now covers the AutoDelete componenttypes too (column names verified against the existing queries in `PluginReader.cs` — `plugintype.typename`, `sdkmessageprocessingstep.name`, etc.), and the `autoOrphans`/`customApiOrphans` loops in `RunPreImportAsync` resolve names the same way the Manual loop already did — grouped by componenttype (or by entity LogicalName for the CustomApi family), one bulk query per group.
+- **`solutioncomponentdefinition` resolves "unrecognized" componenttype codes to a real name.** This is Dataverse's own component-type lookup table — documented for the Web API as `GET solutioncomponentdefinitions?$select=name,solutioncomponenttype` (Power Pages CLI solution docs) — queryable via the SDK exactly like any other entity. `ResolveComponentTypeNamesAsync` queries it for any componenttype not already in `ManualTypeLabels`, turning e.g. `Unrecognized component (type 10064)` into the type's actual name (e.g. `Connection Reference`) wherever Dataverse itself knows what it is. `OrphanEntry.TypeNameResolved` tracks whether this resolved, so `ManualLabel` can drop the "unrecognized" wording once the type is identified — genuinely unresolvable codes (nothing found in `solutioncomponentdefinition` either — e.g. a private/deleted definition) keep the more cautious wording.
+- Test-mock note: `OrphanCleanupServiceTests`' `IOrganizationServiceAsync2` mock needed a catch-all default (`Arg.Any<QueryExpression>()` → empty `EntityCollection`) once name resolution started firing unconditionally for every orphan group — real Dataverse never returns a null `EntityCollection`, but NSubstitute does for unconfigured calls, so bulk name queries not explicitly mocked in older tests threw `NullReferenceException` inside `RetrieveAllAsync` until the default was added.
+
+**Update (2026-07-05, part 4): non-entity schemaName roots and CustomApi's GUID-less source — the same under-reporting bug, two more places.** A real deploy flagged every WebResource in the solution (7/7) plus the entire CustomApi family for deletion, even though all of them were still declared in local source. Root cause was the identical class of bug fixed in part 1 for Entity roots, just unhandled for two more shapes:
+
+- **WebResource (and any other `NameResolvableTypes` type) recorded by `schemaName`, not `id`.** `<RootComponent type="61" schemaName="av_pkg/example1.js" behavior="0" />` — in the real `Solution.xml` that surfaced this, every WebResource root used `schemaName` with no `id`, while every PluginAssembly/Workflow/SdkMessageProcessingStep root carried an `id` (n=1 solution — not verified across every org/pac version, but consistent with pac recording by name specifically when the id isn't portable). The old parser's `if (type != EntityComponentType) continue;` silently dropped every non-Entity schemaName root, so WebResource identity was never captured in S_new at all — it looked orphaned regardless of whether the live id matched, on every deploy, not just cross-environment ones. `SolutionXmlComponents` gained `NamedComponents: IReadOnlyList<(int ComponentType, string SchemaName)>` for these; `OrphanCleanupService.ResolveNamedComponentIdsAsync` resolves each group live via `NameResolvableTypes`' entity/name-attribute mapping (same table already used for display-name lookups, now reused in reverse — name→id instead of id→name) and folds the result into the S_new id set, mirroring `ResolveEntityMetadataIdsAsync`.
+- **CustomApi source has no GUID anywhere** — `Package/src/customapis/<uniquename>/customapi.xml` (and its `customapirequestparameters/<name>/`, `customapiresponseproperties/<name>/` children) is keyed purely by `uniquename`/folder name, and isn't listed in `Solution.xml` at all (its componenttype is env-specific — see CustomApi detection below). `ComponentClassifier.ScanCustomApiNames(packageSrcRoot)` scans this folder structure; `RunPreImportAsync` resolves each CustomApi-family orphan candidate's live name (already needed for display) and drops it from `customApiOrphans` if that name is still present locally, before cross-solution membership and delete execution ever see it.
+
+Both fixes only ever narrow the orphan set (never widen it) — a type not covered by `NameResolvableTypes`, or a `customapis/` folder that doesn't exist, falls back to the pre-fix behavior exactly, not a worse one.
+
+**`connectionreference`/`bot` manual-bucket entries also got instance names, not just the type label.** These have env-specific componenttype codes like the CustomApi family, so they can't be keyed in `NameResolvableTypes` by componenttype. But `solutioncomponentdefinition.name` for them resolves to literally the backing table's LogicalName (confirmed against a real org — a type resolves to the string `"connectionreference"`/`"bot"`, not a display label like "Connection Reference"). `ResolvedTypeNameAttributes` maps that resolved label to `(IdAttribute, NameAttribute)` — `connectionreferenceid`/`connectionreferencelogicalname` and `botid`/`name` respectively — so `BuildManualEntriesAsync` can query the actual record's name once the type itself resolves, rather than showing a bare GUID next to the type name.
+
+**Manual-bucket entries are informational only — Flowline never auto-deletes or auto-removes them.** Worth restating: everything in the "can't be removed automatically" bucket is a candidate for the human to verify via the maker portal link, not something Flowline acts on. A manual-bucket component that's intentionally still wanted (e.g. a standard Microsoft form the solution legitimately depends on) requires no action — it's flagged because Flowline can't confirm its presence from local source, not because it's scheduled for deletion.
+
+**Update (2026-07-05, part 5): explicit opt-in per componenttype for the manual bucket — the connectionreference/bot fix above was still wrong.** A real deploy against the same solution showed the part-4 fix working for WebResource/CustomApi, but the manual bucket recommended removing two `connectionreference` rows that resolved to `av_sharedcalendlyv2_bffc3` and `cr993_sharedcommondataserviceforapps_d75a1` — names the user confirmed were still actively used by flows in the solution. The bug: resolving a display name via `solutioncomponentdefinition` is cosmetic (it tells you *what* the component is) and had been conflated with verification (*whether* Flowline can confirm it's actually orphaned). `ManualLabel` treated "name resolved" as "confident to recommend," when connectionreference/bot have no local source representation at all — Flowline can't check them against anything.
+
+The fix, per the user's own proposal: an explicit opt-in allowlist, `SupportedManualTypes`, gates which componenttypes are recommended for manual removal at all. A type only joins once it has a real local-source cross-check *and* test coverage for both directions (still-present → suppressed, genuinely-removed → reported):
+
+```csharp
+static readonly HashSet<int> SupportedManualTypes = [EntityComponentType, AttributeComponentType]; // 1, 2
+```
+
+Everything else — Role, ConnectionRole, connectionreference, bot, and any unrecognized type — is logged via `console.Verbose` only (componenttype + objectid, no recommendation) and excluded entirely from the printed report and the manual count. This is deliberately narrower than the pre-incident behavior; **Form (60) and View (26) were pulled from the allowlist during this same pass** — despite `ScanEntitySubcomponents` existing, it only finds a form/view's file under `Entities/<name>/FormXml|SavedQueries/` for entities this solution actually unpacks. A form on an entity outside that set (the `Form 'Sales Insights'` from the same log — a standard Microsoft form, confirmed by the user, most likely living on an entity like Opportunity that this solution doesn't include as a root component at all) has nothing for the scan to find, so it would false-positive exactly like connectionreference/bot did. Widening `SupportedManualTypes` to include Form/View requires handling that gap first.
+
+The `solutioncomponentdefinition`-based "resolve an unrecognized type's display name" machinery added in part 3 (`ResolveComponentTypeNamesAsync`, `ResolvedTypeNameAttributes`, `OrphanEntry.TypeNameResolved`) was removed rather than kept dormant: once gated by `SupportedManualTypes`, every type that reaches the manual-entry-building code is already a key in `ManualTypeLabels`, so the resolution path was unreachable dead code, not future-proofing. Re-add the equivalent mechanism only when actually opting in a new env-specific type with test coverage to back it.
 
 ### CustomApi detection via entity queries
 

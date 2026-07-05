@@ -19,9 +19,15 @@ public class OrphanCleanupServiceTests : IDisposable
     {
         _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
         _console = new TestConsole();
+        _console.Profile.Width = 400; // avoid word-wrap splitting longer assertion substrings across lines
         _service = new OrphanCleanupService(_console, new FlowlineRuntimeOptions());
         _webresourceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(_webresourceRoot);
+
+        // Default: any unconfigured RetrieveMultipleAsync (e.g. bulk name-resolution queries) returns
+        // empty rather than NSubstitute's null default — real Dataverse never returns a null EntityCollection.
+        _serviceMock.RetrieveMultipleAsync(Arg.Any<QueryExpression>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection()));
 
         // Default: no cross-solution membership
         _serviceMock.RetrieveMultipleAsync(
@@ -40,8 +46,13 @@ public class OrphanCleanupServiceTests : IDisposable
         string solutionName,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> localComponents,
         RunMode mode = RunMode.Normal,
-        string? webresourceRoot = null) =>
-        new(_serviceMock, solutionName, localComponents, mode, webresourceRoot, "solution.zip", "https://example.crm.dynamics.com");
+        string? webresourceRoot = null,
+        IReadOnlyList<string>? entityLogicalNames = null,
+        string? packageSrcRoot = null,
+        IReadOnlyList<(int ComponentType, string SchemaName)>? namedComponents = null) =>
+        new(_serviceMock, solutionName, localComponents, mode, webresourceRoot, "solution.zip", "https://example.crm.dynamics.com",
+            entityLogicalNames ?? [], packageSrcRoot ?? Path.Combine(Path.GetTempPath(), $"flowline-test-nonexistent-{Guid.NewGuid():N}"),
+            namedComponents ?? []);
 
     void SetupSolutionComponents(string solutionName, params (Guid Id, int ComponentType)[] components)
     {
@@ -173,6 +184,94 @@ public class OrphanCleanupServiceTests : IDisposable
         await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
     }
 
+    // -- Auto-delete/CustomApi naming: show what's actually being deleted, not just a GUID --
+
+    [Fact]
+    public async Task RunPreImportAsync_WebResourceOrphan_DeleteEntryShowsResolvedName()
+    {
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 61)); // 61 = WebResource
+        SetupWebResourceNames((orphanId, "av_ext/old.js"));
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Contains($"WebResource 'av_ext/old.js' ({orphanId})", _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_CustomApiOrphan_DeleteEntryShowsResolvedName()
+    {
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 10036)); // env-specific CustomApi componenttype
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "customapi"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("customapi", orphanId) { ["name"] = "av_OldCustomApi" }
+            ])));
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Contains($"CustomApi 'av_OldCustomApi' ({orphanId})", _console.Output);
+    }
+
+    // -- Cross-environment id drift: schemaName-recorded RootComponents and CustomApi's GUID-less source --
+
+    [Fact]
+    public async Task RunPreImportAsync_WebResourceNamedComponent_ResolvesLiveIdByName_NotReportedAsOrphan()
+    {
+        // WebResource RootComponents in Solution.xml are recorded by schemaName, not id (pac never emits
+        // an id for them — see ComponentClassifier.ParseSolutionXmlComponents). Previously this meant the
+        // webresource's identity was never captured at all, so it always looked orphaned regardless of
+        // whether the live id matched — reproduces the reported false positive for every webresource.
+        var liveId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (liveId, 61)); // 61 = WebResource
+        SetupWebResourceNames((liveId, "av_Cr07982/example1.js"));
+
+        await _service.RunPreImportAsync(
+            Ctx("MySolution", [(Guid.NewGuid(), 0)], namedComponents: [(61, "av_Cr07982/example1.js")]), default);
+
+        Assert.DoesNotContain(liveId.ToString(), _console.Output);
+        Assert.Contains("No orphan components", _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_CustomApiStillInLocalSource_NotReportedAsOrphan()
+    {
+        // CustomApi source (Package/src/customapis/<uniquename>/customapi.xml) has no GUID at all —
+        // uniquename is the only local identity. A CustomApi recreated with a new customapiid still
+        // has the same uniquename in source, so it must not be reported as an orphan.
+        var liveId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (liveId, 10036)); // env-specific CustomApi componenttype
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "customapi"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("customapi", liveId) { ["name"] = "av_AatYourService" }
+            ])));
+
+        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(Path.Combine(packageSrcRoot, "customapis", "av_AatYourService"));
+
+        try
+        {
+            await _service.RunPreImportAsync(
+                Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: packageSrcRoot), default);
+
+            // Unlike WebResource, CustomApi's componenttype isn't AutoDelete-classified, so this doesn't
+            // hit the early "No orphan components" return — it clears the entity-side detection and gets
+            // filtered out of customApiOrphans, leaving an empty report instead.
+            Assert.DoesNotContain(liveId.ToString(), _console.Output);
+            Assert.Contains("0 to delete, 0 to remove from solution, 0 manual", _console.Output);
+        }
+        finally
+        {
+            Directory.Delete(packageSrcRoot, true);
+        }
+    }
+
     [Fact]
     public async Task RunPreImportAsync_OrphanInAnotherRealSolution_RemovesFromSolutionOnly()
     {
@@ -199,6 +298,323 @@ public class OrphanCleanupServiceTests : IDisposable
 
         // With no name query setup, it falls through to delete the orphan
         await _serviceMock.Received(1).DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
+    }
+
+    // -- False-positive guards: system components and schemaName-only entity roots --
+
+    [Fact]
+    public async Task RunPreImportAsync_WellKnownSystemComponent_NeverReportedAsOrphan()
+    {
+        var systemViewId = Guid.Parse("00000000-0000-0000-00aa-000010001001");
+        SetupSolutionComponents("MySolution", (systemViewId, 26)); // 26 = SavedQuery (View)
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.DoesNotContain(systemViewId.ToString(), _console.Output);
+        Assert.Contains("No orphan components", _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_EntityLogicalNameResolvesToPresentMetadataId_NotReportedAsOrphan()
+    {
+        var entityMetadataId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (entityMetadataId, 1)); // 1 = Entity
+
+        var metadata = new Microsoft.Xrm.Sdk.Metadata.EntityMetadata { LogicalName = "account" };
+        typeof(Microsoft.Xrm.Sdk.Metadata.EntityMetadata).GetProperty("MetadataId")!.SetValue(metadata, entityMetadataId);
+        var response = new Microsoft.Xrm.Sdk.Messages.RetrieveEntityResponse
+        {
+            Results = new Microsoft.Xrm.Sdk.ParameterCollection { ["EntityMetadata"] = metadata }
+        };
+
+        _serviceMock.ExecuteAsync(
+                Arg.Is<OrganizationRequest>(r => r.RequestName == "RetrieveEntity" && (string)r.Parameters["LogicalName"] == "account"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(response));
+
+        await _service.RunPreImportAsync(
+            Ctx("MySolution", [(Guid.NewGuid(), 0)], entityLogicalNames: ["account"]), default);
+
+        Assert.DoesNotContain(entityMetadataId.ToString(), _console.Output);
+        Assert.Contains("No orphan components", _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_EntityGenuinelyRemoved_ReportedAsManualEntity()
+    {
+        // No EntityLogicalNames given at all — nothing to resolve live, so this entity is genuinely
+        // gone from Solution.xml, not a schemaName-resolution gap. Entity(1) is a SupportedManualTypes
+        // member, so it must still surface in the report (unlike connectionreference/bot).
+        var entityMetadataId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (entityMetadataId, 1)); // 1 = Entity
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Contains($"Entity {entityMetadataId}", _console.Output);
+        Assert.Contains("remove manually via maker portal", _console.Output);
+    }
+
+    // -- Manual orphan reporting: recognized vs unrecognized types, maker-portal pointer --
+
+    [Fact]
+    public async Task RunPreImportAsync_RecognizedManualType_ShowsFriendlyLabelAndPortalPointer()
+    {
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 2)); // 2 = Attribute
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Contains($"Attribute {orphanId}", _console.Output);
+        Assert.Contains("remove manually via maker portal", _console.Output);
+        Assert.Contains("tools/Solution/home_solution.aspx?etn=solution", _console.Output);
+        Assert.Contains("MySolution", _console.Output);
+    }
+
+    // -- Opt-in gate: only SupportedManualTypes get a removal recommendation, everything else is
+    // verbose-only. See the connectionreference/bot false-positive incident (2026-07-05): a component
+    // whose name resolves via solutioncomponentdefinition is still not verified against local source —
+    // resolving a name is cosmetic, not a finding, so unsupported types must never reach the report.
+
+    [Fact]
+    public async Task RunPreImportAsync_UnsupportedManualType_NotReportedOnlyLoggedVerbose()
+    {
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 10064)); // outside SupportedManualTypes
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.DoesNotContain("can't be removed automatically", _console.Output);
+        Assert.DoesNotContain("remove manually via maker portal", _console.Output);
+        Assert.Contains(orphanId.ToString(), _console.Output); // still visible in verbose, just not recommended
+        Assert.Contains("0 manual", _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_UnsupportedType_NameResolutionDoesNotPromoteItToReport()
+    {
+        // Even when solutioncomponentdefinition successfully resolves a display name, that's cosmetic —
+        // it doesn't mean Flowline verified the component against local source. Must stay unreported.
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 10064));
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "solutioncomponentdefinition"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("solutioncomponentdefinition") { ["name"] = "connectionreference", ["solutioncomponenttype"] = 10064 }
+            ])));
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "connectionreference"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("connectionreference", orphanId) { ["connectionreferencelogicalname"] = "av_sharedcalendlyv2_bffc3" }
+            ])));
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.DoesNotContain("remove manually via maker portal", _console.Output);
+        Assert.DoesNotContain("av_sharedcalendlyv2_bffc3", _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_NoManualOrphans_NoPortalPointerPrinted()
+    {
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 91)); // 91 = PluginAssembly, auto-delete
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.DoesNotContain("can't be removed automatically", _console.Output);
+        Assert.DoesNotContain("tools/Solution/home_solution.aspx", _console.Output);
+    }
+
+    // -- Attribute orphan resolution: suppress false positives, name genuine leftovers --
+
+    void SetupEntityMetadataId(string logicalName, Guid metadataId)
+    {
+        var metadata = new Microsoft.Xrm.Sdk.Metadata.EntityMetadata { LogicalName = logicalName };
+        typeof(Microsoft.Xrm.Sdk.Metadata.EntityMetadata).GetProperty("MetadataId")!.SetValue(metadata, metadataId);
+        var response = new Microsoft.Xrm.Sdk.Messages.RetrieveEntityResponse
+        {
+            Results = new Microsoft.Xrm.Sdk.ParameterCollection { ["EntityMetadata"] = metadata }
+        };
+
+        _serviceMock.ExecuteAsync(
+                Arg.Is<OrganizationRequest>(r => r.RequestName == "RetrieveEntity" && (string)r.Parameters["LogicalName"] == logicalName),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(response));
+    }
+
+    static void WriteEntityXml(string packageSrcRoot, string folderName, params string[] attributeLogicalNames)
+    {
+        var entityDir = Path.Combine(packageSrcRoot, "Entities", folderName);
+        Directory.CreateDirectory(entityDir);
+        var attributesXml = string.Concat(attributeLogicalNames.Select(n => $"<attribute PhysicalName=\"{n}\"><LogicalName>{n}</LogicalName></attribute>"));
+        File.WriteAllText(Path.Combine(entityDir, "Entity.xml"),
+            $"<Entity><EntityInfo><entity Name=\"{folderName}\"><attributes>{attributesXml}</attributes></entity></EntityInfo></Entity>");
+    }
+
+    void SetupAttributeMetadata(string entityLogicalName, params (Guid Id, string LogicalName)[] attributes)
+    {
+        var attrMetas = attributes.Select(a =>
+        {
+            var attr = new Microsoft.Xrm.Sdk.Metadata.StringAttributeMetadata { LogicalName = a.LogicalName };
+            typeof(Microsoft.Xrm.Sdk.Metadata.AttributeMetadata).GetProperty("MetadataId")!.SetValue(attr, a.Id);
+            return (Microsoft.Xrm.Sdk.Metadata.AttributeMetadata)attr;
+        }).ToArray();
+
+        var entityMeta = new Microsoft.Xrm.Sdk.Metadata.EntityMetadata { LogicalName = entityLogicalName };
+        typeof(Microsoft.Xrm.Sdk.Metadata.EntityMetadata).GetProperty("Attributes")!.SetValue(entityMeta, attrMetas);
+
+        var collection = new Microsoft.Xrm.Sdk.Metadata.EntityMetadataCollection();
+        collection.Add(entityMeta);
+
+        var response = new Microsoft.Xrm.Sdk.Messages.RetrieveMetadataChangesResponse
+        {
+            Results = new Microsoft.Xrm.Sdk.ParameterCollection { ["EntityMetadata"] = collection }
+        };
+
+        _serviceMock.ExecuteAsync(
+                Arg.Is<OrganizationRequest>(r => r.RequestName == "RetrieveMetadataChanges"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(response));
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_AttributeStillInEntityXml_SuppressedNotReported()
+    {
+        var attributeId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (attributeId, 2)); // 2 = Attribute
+        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        WriteEntityXml(packageSrcRoot, "Account", "av_taxid");
+        SetupAttributeMetadata("account", (attributeId, "av_taxid"));
+        SetupEntityMetadataId("account", Guid.NewGuid());
+
+        try
+        {
+            await _service.RunPreImportAsync(
+                Ctx("MySolution", [(Guid.NewGuid(), 0)], entityLogicalNames: ["account"], packageSrcRoot: packageSrcRoot), default);
+
+            Assert.DoesNotContain(attributeId.ToString(), _console.Output);
+            Assert.DoesNotContain("can't be removed automatically", _console.Output);
+        }
+        finally
+        {
+            Directory.Delete(packageSrcRoot, true);
+        }
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_AttributeNotInEntityXml_ReportedWithResolvedName()
+    {
+        var attributeId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (attributeId, 2)); // 2 = Attribute
+        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        WriteEntityXml(packageSrcRoot, "Account"); // no attributes declared locally
+        SetupAttributeMetadata("account", (attributeId, "av_removedfield"));
+        SetupEntityMetadataId("account", Guid.NewGuid());
+
+        try
+        {
+            await _service.RunPreImportAsync(
+                Ctx("MySolution", [(Guid.NewGuid(), 0)], entityLogicalNames: ["account"], packageSrcRoot: packageSrcRoot), default);
+
+            Assert.Contains("Attribute 'account.av_removedfield'", _console.Output);
+        }
+        finally
+        {
+            Directory.Delete(packageSrcRoot, true);
+        }
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_AttributeMetadataQuery_UsesStronglyTypedGuidArray()
+    {
+        // Regression guard: MetadataConditionExpression is strictly typed server-side — an object[]
+        // (even one boxing only Guids) throws OrganizationServiceFault 0x80044183 at runtime. A mock
+        // can't catch that on its own, so assert the constructed request carries a real Guid[].
+        var attributeId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (attributeId, 2)); // 2 = Attribute
+        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        WriteEntityXml(packageSrcRoot, "Account");
+        SetupAttributeMetadata("account", (attributeId, "av_removedfield"));
+        SetupEntityMetadataId("account", Guid.NewGuid());
+
+        try
+        {
+            await _service.RunPreImportAsync(
+                Ctx("MySolution", [(Guid.NewGuid(), 0)], entityLogicalNames: ["account"], packageSrcRoot: packageSrcRoot), default);
+
+            var call = _serviceMock.ReceivedCalls()
+                .Select(c => c.GetArguments()[0])
+                .OfType<Microsoft.Xrm.Sdk.Messages.RetrieveMetadataChangesRequest>()
+                .Single();
+
+            var condition = call.Query.AttributeQuery.Criteria.Conditions.Single(c => c.PropertyName == "MetadataId");
+            Assert.IsType<Guid[]>(condition.Value);
+        }
+        finally
+        {
+            Directory.Delete(packageSrcRoot, true);
+        }
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_FormOrphan_NotReportedFormIsNotInSupportedManualTypes()
+    {
+        // Form (60) is deliberately NOT in SupportedManualTypes: ScanEntitySubcomponents only finds a
+        // form's FormXml file for entities unpacked under Entities/<name>/ — a form on an entity this
+        // solution doesn't include at all (e.g. a standard Microsoft form like "Sales Insights" on an
+        // entity outside the solution's Entities/ folder) has nothing for the scan to find, so it would
+        // always false-positive. See the Sales Insights incident (2026-07-05).
+        var formId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (formId, 60)); // 60 = SystemForm
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.DoesNotContain("remove manually via maker portal", _console.Output);
+        Assert.Contains(formId.ToString(), _console.Output); // still visible in verbose, just not recommended
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_FormStillInLocalComponents_NotReportedAsOrphan()
+    {
+        // DeployCommand.ParseSolutionXml merges ComponentClassifier.ScanEntitySubcomponents' Form GUIDs
+        // into LocalComponents before RunPreImportAsync ever runs — simulated here directly to confirm
+        // OrphanCleanupService respects that merged set (the file-scan itself is unit-tested separately
+        // in ComponentClassifierTests).
+        var formId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (formId, 60)); // 60 = SystemForm
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(formId, 60)]), default);
+
+        Assert.DoesNotContain(formId.ToString(), _console.Output);
+        Assert.Contains("No orphan components", _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_ViewOrphan_NotReportedViewIsNotInSupportedManualTypes()
+    {
+        // View (26) shares Form's untested gap — not opted in yet (see SupportedManualTypes comment).
+        var viewId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (viewId, 26)); // 26 = SavedQuery (View)
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.DoesNotContain("remove manually via maker portal", _console.Output);
+        Assert.Contains(viewId.ToString(), _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_ViewStillInLocalComponents_NotReportedAsOrphan()
+    {
+        var viewId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (viewId, 26));
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(viewId, 26)]), default);
+
+        Assert.DoesNotContain(viewId.ToString(), _console.Output);
+        Assert.Contains("No orphan components", _console.Output);
     }
 
     // -- Pre-import → post-import deferred-entry round trip (instance-field state threading) --

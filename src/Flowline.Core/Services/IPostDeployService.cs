@@ -9,7 +9,10 @@ public sealed record PostDeployContext(
     RunMode Mode,
     string? WebResourceRoot,
     string PackagePath,
-    string EnvironmentUrl);
+    string EnvironmentUrl,
+    IReadOnlyList<string> EntityLogicalNames,
+    string PackageSrcRoot,
+    IReadOnlyList<(int ComponentType, string SchemaName)> NamedComponents);
 
 public interface IPostDeployService
 {

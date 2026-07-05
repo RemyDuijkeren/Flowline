@@ -89,10 +89,36 @@ public class ComponentClassifierTests : IDisposable
 
         var result = ComponentClassifier.ParseSolutionXmlComponents(SolutionXmlPath);
 
-        result.Should().HaveCount(3);
-        result.Should().Contain((id1, 91));
-        result.Should().Contain((id2, 61));
-        result.Should().Contain((id3, 1));
+        result.Components.Should().HaveCount(3);
+        result.Components.Should().Contain((id1, 91));
+        result.Components.Should().Contain((id2, 61));
+        result.Components.Should().Contain((id3, 1));
+        result.EntityLogicalNames.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ParseSolutionXmlComponents_ReturnsEntityLogicalName_ForSchemaNameOnlyEntityRoot()
+    {
+        WriteSolutionXml("""
+            <RootComponent type="1" schemaName="account" behavior="1" />
+            <RootComponent type="1" schemaName="contact" behavior="1" />
+            """);
+
+        var result = ComponentClassifier.ParseSolutionXmlComponents(SolutionXmlPath);
+
+        result.Components.Should().BeEmpty();
+        result.EntityLogicalNames.Should().BeEquivalentTo(["account", "contact"]);
+    }
+
+    [Fact]
+    public void ParseSolutionXmlComponents_IgnoresSchemaNameOnly_ForNonEntityType()
+    {
+        WriteSolutionXml("""<RootComponent type="29" schemaName="somename" />""");
+
+        var result = ComponentClassifier.ParseSolutionXmlComponents(SolutionXmlPath);
+
+        result.Components.Should().BeEmpty();
+        result.EntityLogicalNames.Should().BeEmpty();
     }
 
     [Fact]
@@ -102,7 +128,8 @@ public class ComponentClassifierTests : IDisposable
 
         var result = ComponentClassifier.ParseSolutionXmlComponents(SolutionXmlPath);
 
-        result.Should().BeEmpty();
+        result.Components.Should().BeEmpty();
+        result.EntityLogicalNames.Should().BeEmpty();
     }
 
     [Fact]
@@ -119,7 +146,7 @@ public class ComponentClassifierTests : IDisposable
 
         var result = ComponentClassifier.ParseSolutionXmlComponents(SolutionXmlPath);
 
-        result.Should().BeEmpty();
+        result.Components.Should().BeEmpty();
     }
 
     [Fact]
@@ -134,8 +161,8 @@ public class ComponentClassifierTests : IDisposable
 
         var result = ComponentClassifier.ParseSolutionXmlComponents(SolutionXmlPath);
 
-        result.Should().HaveCount(1);
-        result.Should().Contain((validId, 91));
+        result.Components.Should().HaveCount(1);
+        result.Components.Should().Contain((validId, 91));
     }
 
     // ── ParseSolutionXmlComponents — error paths ─────────────────────────────
@@ -159,5 +186,116 @@ public class ComponentClassifierTests : IDisposable
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("Solution.xml is malformed*");
+    }
+
+    // ── IsWellKnownSystemComponent ────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("00000000-0000-0000-00aa-000010001001")] // system view
+    [InlineData("00000000-0000-0000-00AA-000010001002")] // case-insensitive
+    public void IsWellKnownSystemComponent_ReturnsTrue_ForSystemGuidPrefix(string id)
+    {
+        ComponentClassifier.IsWellKnownSystemComponent(Guid.Parse(id)).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsWellKnownSystemComponent_ReturnsFalse_ForCustomGuid()
+    {
+        ComponentClassifier.IsWellKnownSystemComponent(Guid.NewGuid()).Should().BeFalse();
+    }
+
+    // ── ScanEntitySubcomponents ───────────────────────────────────────────────
+
+    [Fact]
+    public void ScanEntitySubcomponents_FindsFormsAndViews_ByGuidFilename()
+    {
+        var formId = Guid.NewGuid();
+        var viewId = Guid.NewGuid();
+        var formDir = Path.Combine(_dir, "Entities", "Account", "FormXml", "main");
+        var viewDir = Path.Combine(_dir, "Entities", "Account", "SavedQueries");
+        Directory.CreateDirectory(formDir);
+        Directory.CreateDirectory(viewDir);
+        File.WriteAllText(Path.Combine(formDir, $"{{{formId}}}.xml"), "<form/>");
+        File.WriteAllText(Path.Combine(viewDir, $"{{{viewId}}}.xml"), "<savedquery/>");
+
+        var result = ComponentClassifier.ScanEntitySubcomponents(_dir);
+
+        result.Should().Contain((formId, 60));
+        result.Should().Contain((viewId, 26));
+    }
+
+    [Fact]
+    public void ScanEntitySubcomponents_IgnoresNonGuidFilenames()
+    {
+        var viewDir = Path.Combine(_dir, "Entities", "Account", "SavedQueries");
+        Directory.CreateDirectory(viewDir);
+        File.WriteAllText(Path.Combine(viewDir, "notaguid.xml"), "<savedquery/>");
+
+        var result = ComponentClassifier.ScanEntitySubcomponents(_dir);
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ScanEntitySubcomponents_ReturnsEmpty_WhenEntitiesFolderMissing()
+    {
+        var result = ComponentClassifier.ScanEntitySubcomponents(_dir);
+
+        result.Should().BeEmpty();
+    }
+
+    // ── ScanEntityAttributeLogicalNames ───────────────────────────────────────
+
+    [Fact]
+    public void ScanEntityAttributeLogicalNames_ReturnsDeclaredAttributes()
+    {
+        var entityDir = Path.Combine(_dir, "Entities", "Account");
+        Directory.CreateDirectory(entityDir);
+        File.WriteAllText(Path.Combine(entityDir, "Entity.xml"), """
+            <Entity>
+              <EntityInfo>
+                <entity Name="Account">
+                  <attributes>
+                    <attribute PhysicalName="av_TaxID"><LogicalName>av_taxid</LogicalName></attribute>
+                    <attribute PhysicalName="av_LastActivityOn"><LogicalName>av_lastactivityon</LogicalName></attribute>
+                  </attributes>
+                </entity>
+              </EntityInfo>
+            </Entity>
+            """);
+
+        var result = ComponentClassifier.ScanEntityAttributeLogicalNames(_dir, "account");
+
+        result.Should().BeEquivalentTo(["av_taxid", "av_lastactivityon"]);
+    }
+
+    [Fact]
+    public void ScanEntityAttributeLogicalNames_IsCaseInsensitive_ForEntityFolderMatch()
+    {
+        var entityDir = Path.Combine(_dir, "Entities", "Account");
+        Directory.CreateDirectory(entityDir);
+        File.WriteAllText(Path.Combine(entityDir, "Entity.xml"), """
+            <Entity>
+              <EntityInfo>
+                <entity Name="Account">
+                  <attributes>
+                    <attribute PhysicalName="av_TaxID"><LogicalName>av_taxid</LogicalName></attribute>
+                  </attributes>
+                </entity>
+              </EntityInfo>
+            </Entity>
+            """);
+
+        var result = ComponentClassifier.ScanEntityAttributeLogicalNames(_dir, "ACCOUNT");
+
+        result.Should().Contain("av_taxid");
+    }
+
+    [Fact]
+    public void ScanEntityAttributeLogicalNames_ReturnsEmpty_WhenEntityFolderMissing()
+    {
+        var result = ComponentClassifier.ScanEntityAttributeLogicalNames(_dir, "account");
+
+        result.Should().BeEmpty();
     }
 }

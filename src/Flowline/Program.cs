@@ -60,8 +60,8 @@ services.AddSingleton<IGenerator, XrmContext3Generator>();
 services.AddSingleton<IGenerator, XrmContextGenerator>();
 services.AddSingleton<PluginService>();
 services.AddSingleton<WebResourceService>();
-services.AddSingleton<IPostDeployService, SolutionCheckService>();
-services.AddSingleton<IPostDeployService, BackupService>();
+// services.AddSingleton<IPostDeployService, SolutionCheckService>();
+// services.AddSingleton<IPostDeployService, BackupService>();
 services.AddSingleton<IPostDeployService, OrphanCleanupService>();
 services.AddSingleton<SubprocessCapture>();
 
@@ -76,6 +76,7 @@ try
         .MinimumLevel.Override("System", LogEventLevel.Warning)
         .Enrich.With(new ActivityTraceEnricher())
         .Enrich.With(new UrlScrubEnricher())
+        .Enrich.With(new EmailScrubEnricher())
         .WriteTo.File(logPath, rollingInterval: RollingInterval.Infinite)
         .CreateLogger();
     Log.Logger = serilogLogger;

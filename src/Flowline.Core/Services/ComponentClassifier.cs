@@ -4,6 +4,29 @@ namespace Flowline.Core.Services;
 
 public enum ComponentAction { AutoDelete, Manual }
 
+/// <summary>
+/// S_new candidates parsed from a solution's unpacked source. <see cref="EntityLogicalNames"/> holds
+/// entity roots that Solution.xml records by schemaName instead of id. <see cref="NamedComponents"/> holds
+/// every other type recorded by schemaName instead of id (e.g. WebResource — its id is not portable
+/// across environments, so pac always records it by name) — callers with a live connection must resolve
+/// both to live ids and fold them into the orphan-diff "in solution" set themselves.
+/// See <see cref="ComponentClassifier.ParseSolutionXmlComponents"/>.
+/// </summary>
+public sealed record SolutionXmlComponents(
+    IReadOnlyList<(Guid ObjectId, int ComponentType)> Components,
+    IReadOnlyList<string> EntityLogicalNames,
+    IReadOnlyList<(int ComponentType, string SchemaName)> NamedComponents);
+
+/// <summary>
+/// CustomApi family names still declared in Package/src/customapis/**. Solution.xml never lists these
+/// as RootComponents (componenttype codes are env-specific — see OrphanCleanupService), and the unpacked
+/// XML has no GUID at all — uniquename is the only local identity.
+/// </summary>
+public sealed record CustomApiNames(
+    IReadOnlySet<string> ApiUniqueNames,
+    IReadOnlySet<string> RequestParameterNames,
+    IReadOnlySet<string> ResponsePropertyNames);
+
 public static class ComponentClassifier
 {
     // solutioncomponent.componenttype values for AUTO-delete candidates.
@@ -19,6 +42,19 @@ public static class ComponentClassifier
     private const int WebResource                   = 61;
     private const int Workflow                      = 29;
 
+    // Entity RootComponents in Solution.xml are keyed by schemaName, not id (portable across
+    // environments) — ParseSolutionXmlComponents surfaces these separately for live resolution.
+    private const int EntityComponentType = 1;
+
+    // componenttype values for subcomponents unpacked under Entities/<name>/** — never listed as
+    // top-level RootComponents in Solution.xml, so ScanEntitySubcomponents recovers them by file scan.
+    private const int SystemForm = 60;
+    private const int SavedQuery = 26;
+
+    // Microsoft system components (out-of-box views, forms, etc.) use this fixed GUID prefix across
+    // every Dataverse org. They can surface as solutioncomponent rows but are never user-deletable.
+    private const string SystemComponentIdPrefix = "00000000-0000-0000-00aa-";
+
     static readonly HashSet<int> AutoTypes =
     [
         PluginAssembly,
@@ -32,12 +68,17 @@ public static class ComponentClassifier
     public static ComponentAction Classify(int componentType) =>
         AutoTypes.Contains(componentType) ? ComponentAction.AutoDelete : ComponentAction.Manual;
 
+    public static bool IsWellKnownSystemComponent(Guid objectId) =>
+        objectId.ToString().StartsWith(SystemComponentIdPrefix, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
-    /// Parses Solution.xml RootComponents to produce S_new for orphan diff.
+    /// Parses Solution.xml RootComponents to produce S_new candidates for the orphan diff.
+    /// Entity roots recorded by schemaName (no id) are returned via <see cref="SolutionXmlComponents.EntityLogicalNames"/>
+    /// instead — the caller must resolve them to MetadataIds against a live connection.
     /// Throws <see cref="FileNotFoundException"/> if Solution.xml is absent.
     /// Throws <see cref="InvalidOperationException"/> if XML is malformed.
     /// </summary>
-    public static IReadOnlyList<(Guid ObjectId, int ComponentType)> ParseSolutionXmlComponents(string solutionXmlPath)
+    public static SolutionXmlComponents ParseSolutionXmlComponents(string solutionXmlPath)
     {
         if (!File.Exists(solutionXmlPath))
             throw new FileNotFoundException($"Solution.xml not found at '{solutionXmlPath}' — run 'clone' first.", solutionXmlPath);
@@ -58,14 +99,129 @@ public static class ComponentClassifier
             ?.Elements("RootComponent")
             ?? [];
 
-        var result = new List<(Guid, int)>();
+        var components         = new List<(Guid, int)>();
+        var entityLogicalNames = new List<string>();
+        var namedComponents    = new List<(int, string)>();
+
         foreach (var component in rootComponents)
         {
             if (!int.TryParse(component.Attribute("type")?.Value, out var type)) continue;
-            if (!Guid.TryParse(component.Attribute("id")?.Value, out var id)) continue;
-            result.Add((id, type));
+
+            if (Guid.TryParse(component.Attribute("id")?.Value, out var id))
+            {
+                components.Add((id, type));
+                continue;
+            }
+
+            var schemaName = component.Attribute("schemaName")?.Value;
+            if (string.IsNullOrEmpty(schemaName)) continue;
+
+            if (type == EntityComponentType)
+                entityLogicalNames.Add(schemaName);
+            else
+                namedComponents.Add((type, schemaName));
+        }
+
+        return new SolutionXmlComponents(components.AsReadOnly(), entityLogicalNames.AsReadOnly(), namedComponents.AsReadOnly());
+    }
+
+    /// <summary>
+    /// Scans unpacked entity folders for subcomponent files that Solution.xml never lists as
+    /// top-level RootComponents: Entities/&lt;name&gt;/FormXml/**/{guid}.xml (Form) and
+    /// Entities/&lt;name&gt;/SavedQueries/{guid}.xml (View).
+    /// </summary>
+    public static IReadOnlyList<(Guid ObjectId, int ComponentType)> ScanEntitySubcomponents(string packageSrcRoot)
+    {
+        var entitiesRoot = Path.Combine(packageSrcRoot, "Entities");
+        if (!Directory.Exists(entitiesRoot)) return [];
+
+        var result = new List<(Guid, int)>();
+
+        foreach (var entityDir in Directory.EnumerateDirectories(entitiesRoot))
+        {
+            CollectGuidFiles(Path.Combine(entityDir, "FormXml"), SystemForm, result);
+            CollectGuidFiles(Path.Combine(entityDir, "SavedQueries"), SavedQuery, result);
         }
 
         return result.AsReadOnly();
+    }
+
+    static void CollectGuidFiles(string dir, int componentType, List<(Guid, int)> result)
+    {
+        if (!Directory.Exists(dir)) return;
+
+        foreach (var file in Directory.EnumerateFiles(dir, "*.xml", SearchOption.AllDirectories))
+        {
+            var name = Path.GetFileNameWithoutExtension(file).Trim('{', '}');
+            if (Guid.TryParse(name, out var id))
+                result.Add((id, componentType));
+        }
+    }
+
+    /// <summary>
+    /// Reads the attribute LogicalNames still declared in Entities/&lt;entityLogicalName&gt;/Entity.xml
+    /// (Entity/EntityInfo/entity/attributes/attribute/LogicalName). Unlike Forms/Views, attribute
+    /// subcomponents have no GUID-named file to scan — they're keyed by LogicalName inside Entity.xml,
+    /// not by their solutioncomponent MetadataId — so callers must already know the attribute's
+    /// LogicalName (via a live metadata lookup) before this can confirm whether it's still in source.
+    /// Returns an empty set if the entity folder or Entity.xml is absent.
+    /// </summary>
+    public static HashSet<string> ScanEntityAttributeLogicalNames(string packageSrcRoot, string entityLogicalName)
+    {
+        var entitiesRoot = Path.Combine(packageSrcRoot, "Entities");
+        if (!Directory.Exists(entitiesRoot)) return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var entityDir = Directory.EnumerateDirectories(entitiesRoot)
+            .FirstOrDefault(dir => string.Equals(Path.GetFileName(dir), entityLogicalName, StringComparison.OrdinalIgnoreCase));
+        if (entityDir == null) return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var entityXmlPath = Path.Combine(entityDir, "Entity.xml");
+        if (!File.Exists(entityXmlPath)) return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var doc = XDocument.Load(entityXmlPath);
+        var logicalNames = doc.Root
+            ?.Element("EntityInfo")
+            ?.Element("entity")
+            ?.Element("attributes")
+            ?.Elements("attribute")
+            .Select(a => a.Element("LogicalName")?.Value)
+            .Where(n => !string.IsNullOrEmpty(n))
+            .Select(n => n!)
+            ?? [];
+
+        return new HashSet<string>(logicalNames, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Scans Package/src/customapis/&lt;uniquename&gt;/** for CustomApi family components still in source.
+    /// Used to cross-check live CustomApi orphan candidates by name before reporting them — a recreated
+    /// CustomApi (same uniquename, new customapiid) is not actually orphaned.
+    /// </summary>
+    public static CustomApiNames ScanCustomApiNames(string packageSrcRoot)
+    {
+        var apiNames   = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var paramNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var propNames  = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var root = Path.Combine(packageSrcRoot, "customapis");
+        if (!Directory.Exists(root))
+            return new CustomApiNames(apiNames, paramNames, propNames);
+
+        foreach (var apiDir in Directory.EnumerateDirectories(root))
+        {
+            apiNames.Add(Path.GetFileName(apiDir));
+
+            var paramsDir = Path.Combine(apiDir, "customapirequestparameters");
+            if (Directory.Exists(paramsDir))
+                foreach (var dir in Directory.EnumerateDirectories(paramsDir))
+                    paramNames.Add(Path.GetFileName(dir));
+
+            var propsDir = Path.Combine(apiDir, "customapiresponseproperties");
+            if (Directory.Exists(propsDir))
+                foreach (var dir in Directory.EnumerateDirectories(propsDir))
+                    propNames.Add(Path.GetFileName(dir));
+        }
+
+        return new CustomApiNames(apiNames, paramNames, propNames);
     }
 }

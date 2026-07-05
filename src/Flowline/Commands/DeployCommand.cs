@@ -65,14 +65,15 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         await ValidateDtapGateAsync(sln, slnFolder, targetUrl, settings, cancellationToken);
         ValidateLocalState(slnFolder, settings, cancellationToken);
 
-        var sNew = ParseSolutionXml(slnFolder);
+        var (sNew, entityLogicalNames, namedComponents) = ParseSolutionXml(slnFolder);
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, targetUrl, cancellationToken);
 
         Logger.LogInformation("Packing: {SolutionName}", sln.Name);
         var packagePath = await PackSolutionAsync(sln, slnFolder, settings, cancellationToken);
 
         var webresourceRoot = Path.Combine(slnFolder, "WebResources");
-        var postDeployContext = new PostDeployContext(service, sln.Name, sNew, runMode, webresourceRoot, packagePath, targetEnv.EnvironmentUrl!);
+        var packageSrcRoot = Path.Combine(PackageFolder(slnFolder), "src");
+        var postDeployContext = new PostDeployContext(service, sln.Name, sNew, runMode, webresourceRoot, packagePath, targetEnv.EnvironmentUrl!, entityLogicalNames, packageSrcRoot, namedComponents);
 
         bool IsSkipped(IPostDeployService s) =>
             settings.SkipSolutionCheck && s is SolutionCheckService ||
@@ -217,12 +218,14 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
                 "Local changes not in Dataverse — deploy would revert them. Run 'sync' first, or use --force to skip.");
     }
 
-    private IReadOnlyList<(Guid ObjectId, int ComponentType)> ParseSolutionXml(string slnFolder)
+    private (IReadOnlyList<(Guid ObjectId, int ComponentType)> Components, IReadOnlyList<string> EntityLogicalNames, IReadOnlyList<(int ComponentType, string SchemaName)> NamedComponents) ParseSolutionXml(string slnFolder)
     {
         try
         {
-            return ComponentClassifier.ParseSolutionXmlComponents(
-                Path.Combine(PackageFolder(slnFolder), "src", "Other", "Solution.xml"));
+            var srcRoot = Path.Combine(PackageFolder(slnFolder), "src");
+            var parsed = ComponentClassifier.ParseSolutionXmlComponents(Path.Combine(srcRoot, "Other", "Solution.xml"));
+            var subcomponents = ComponentClassifier.ScanEntitySubcomponents(srcRoot);
+            return (parsed.Components.Concat(subcomponents).ToList(), parsed.EntityLogicalNames, parsed.NamedComponents);
         }
         catch (FileNotFoundException ex)
         {
