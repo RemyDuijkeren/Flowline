@@ -71,9 +71,8 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         Logger.LogInformation("Packing: {SolutionName}", sln.Name);
         var packagePath = await PackSolutionAsync(sln, slnFolder, settings, cancellationToken);
 
-        var webresourceRoot = Path.Combine(slnFolder, "WebResources");
         var packageSrcRoot = Path.Combine(PackageFolder(slnFolder), "src");
-        var postDeployContext = new PostDeployContext(service, sln.Name, sNew, runMode, webresourceRoot, packagePath, targetEnv.EnvironmentUrl!, entityLogicalNames, packageSrcRoot, namedComponents);
+        var postDeployContext = new PostDeployContext(service, sln.Name, sNew, runMode, packagePath, targetEnv.EnvironmentUrl!, entityLogicalNames, packageSrcRoot, namedComponents);
 
         bool IsSkipped(IPostDeployService s) =>
             settings.SkipSolutionCheck && s is SolutionCheckService ||

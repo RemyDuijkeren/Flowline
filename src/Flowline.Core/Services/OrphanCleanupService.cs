@@ -75,11 +75,10 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
     public async Task RunPreImportAsync(PostDeployContext context, CancellationToken ct)
     {
-        var service         = context.Service;
-        var solutionName    = context.SolutionName;
-        var sNew            = context.LocalComponents;
-        var mode            = context.Mode;
-        var webresourceRoot = context.WebResourceRoot;
+        var service      = context.Service;
+        var solutionName = context.SolutionName;
+        var sNew         = context.LocalComponents;
+        var mode         = context.Mode;
 
         _deferred = [];
 
@@ -133,7 +132,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         var unknownOrphans = orphans.Where(c => ComponentClassifier.Classify(c.ComponentType) == ComponentAction.Manual).ToList();
 
         // Exempt webresource orphans referenced in // flowline:depends annotations.
-        autoOrphans = await ExemptAnnotationReferencedWebResourcesAsync(service, autoOrphans, webresourceRoot, ct).ConfigureAwait(false);
+        autoOrphans = await ExemptAnnotationReferencedWebResourcesAsync(service, autoOrphans, context.PackageSrcRoot, ct).ConfigureAwait(false);
 
         // CustomApi family has an env-specific componenttype — detect via entity-side queries instead.
         Dictionary<Guid, string> customApiEntities = [];
@@ -190,9 +189,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
         foreach (var group in autoOrphans.GroupBy(o => o.ComponentType))
         {
-            Dictionary<Guid, string> names = [];
-            if (NameResolvableTypes.TryGetValue(group.Key, out var lookup))
-                names = await GetEntityNamesAsync(service, lookup.EntityLogicalName, lookup.IdAttribute, lookup.NameAttribute, group.Select(o => o.ObjectId), ct).ConfigureAwait(false);
+            var names = await ResolveGroupNamesAsync(service, group.Key, group.Select(o => o.ObjectId), ct).ConfigureAwait(false);
 
             foreach (var orphan in group)
             {
@@ -479,9 +476,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
         foreach (var group in supportedOrphans.GroupBy(o => o.ComponentType))
         {
-            Dictionary<Guid, string> names = [];
-            if (NameResolvableTypes.TryGetValue(group.Key, out var lookup))
-                names = await GetEntityNamesAsync(service, lookup.EntityLogicalName, lookup.IdAttribute, lookup.NameAttribute, group.Select(o => o.ObjectId), ct).ConfigureAwait(false);
+            var names = await ResolveGroupNamesAsync(service, group.Key, group.Select(o => o.ObjectId), ct).ConfigureAwait(false);
 
             foreach (var orphan in group)
             {
@@ -514,10 +509,8 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
                 : resolvedTypeLabels.TryGetValue(group.Key, out var resolved) ? resolved
                 : null;
 
-            Dictionary<Guid, string> names = [];
-            if (NameResolvableTypes.TryGetValue(group.Key, out var lookup))
-                names = await GetEntityNamesAsync(service, lookup.EntityLogicalName, lookup.IdAttribute, lookup.NameAttribute, group.Select(o => o.ObjectId), ct).ConfigureAwait(false);
-            else if (typeLabel != null && ResolvedTypeNameAttributes.TryGetValue(typeLabel, out var resolvedLookup))
+            var names = await ResolveGroupNamesAsync(service, group.Key, group.Select(o => o.ObjectId), ct).ConfigureAwait(false);
+            if (names.Count == 0 && typeLabel != null && ResolvedTypeNameAttributes.TryGetValue(typeLabel, out var resolvedLookup))
                 names = await GetEntityNamesAsync(service, typeLabel, resolvedLookup.IdAttribute, resolvedLookup.NameAttribute, group.Select(o => o.ObjectId), ct).ConfigureAwait(false);
 
             foreach (var orphan in group)
@@ -573,18 +566,20 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         return result;
     }
 
+    // Scans Package/src/WebResources — the content this deploy is actually packing and importing —
+    // never WebResources/dist. Deploy promotes whatever's committed in Package/src; reading a separate
+    // local build artifact here would check content that may not match what's shipping (or, on a CI
+    // agent that never runs the WebResources build, may not exist at all).
     async Task<List<(Guid ObjectId, int ComponentType)>> ExemptAnnotationReferencedWebResourcesAsync(
         IOrganizationServiceAsync2 service,
         List<(Guid ObjectId, int ComponentType)> autoOrphans,
-        string? webresourceRoot,
+        string packageSrcRoot,
         CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(webresourceRoot)) return autoOrphans;
-
         var webResourceOrphans = autoOrphans.Where(c => c.ComponentType == 61).ToList();
         if (webResourceOrphans.Count == 0) return autoOrphans;
 
-        var annotationRefs = WebResourceAnnotationParser.CollectAllReferences(webresourceRoot);
+        var annotationRefs = WebResourceAnnotationParser.CollectAllReferences(Path.Combine(packageSrcRoot, "WebResources"));
         if (annotationRefs.Count == 0) return autoOrphans;
 
         var orphanNames = await GetWebResourceNamesAsync(service, webResourceOrphans.Select(c => c.ObjectId), ct).ConfigureAwait(false);
@@ -608,6 +603,18 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         IEnumerable<Guid> ids,
         CancellationToken ct) =>
         GetEntityNamesAsync(service, "webresource", "webresourceid", "name", ids, ct);
+
+    // Shared by every "group orphans by componentType, resolve display names via NameResolvableTypes"
+    // loop (AutoDelete entries, supported Manual entries, and the unsupported-type verbose preview) —
+    // a type with no NameResolvableTypes entry resolves to an empty map rather than a query.
+    static Task<Dictionary<Guid, string>> ResolveGroupNamesAsync(
+        IOrganizationServiceAsync2 service,
+        int componentType,
+        IEnumerable<Guid> ids,
+        CancellationToken ct) =>
+        NameResolvableTypes.TryGetValue(componentType, out var lookup)
+            ? GetEntityNamesAsync(service, lookup.EntityLogicalName, lookup.IdAttribute, lookup.NameAttribute, ids, ct)
+            : Task.FromResult(new Dictionary<Guid, string>());
 
     static async Task<Dictionary<Guid, string>> GetEntityNamesAsync(
         IOrganizationServiceAsync2 service,

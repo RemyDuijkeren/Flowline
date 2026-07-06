@@ -13,7 +13,8 @@ public class OrphanCleanupServiceTests : IDisposable
     readonly IOrganizationServiceAsync2 _serviceMock;
     readonly TestConsole _console;
     readonly OrphanCleanupService _service;
-    readonly string _webresourceRoot;
+    readonly string _packageSrcRoot;
+    readonly string _webResourcesDir;
 
     public OrphanCleanupServiceTests()
     {
@@ -21,8 +22,9 @@ public class OrphanCleanupServiceTests : IDisposable
         _console = new TestConsole();
         _console.Profile.Width = 400; // avoid word-wrap splitting longer assertion substrings across lines
         _service = new OrphanCleanupService(_console, new FlowlineRuntimeOptions());
-        _webresourceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        Directory.CreateDirectory(_webresourceRoot);
+        _packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        _webResourcesDir = Path.Combine(_packageSrcRoot, "WebResources");
+        Directory.CreateDirectory(_webResourcesDir);
 
         // Default: any unconfigured RetrieveMultipleAsync (e.g. bulk name-resolution queries) returns
         // empty rather than NSubstitute's null default — real Dataverse never returns a null EntityCollection.
@@ -38,19 +40,18 @@ public class OrphanCleanupServiceTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_webresourceRoot))
-            Directory.Delete(_webresourceRoot, true);
+        if (Directory.Exists(_packageSrcRoot))
+            Directory.Delete(_packageSrcRoot, true);
     }
 
     PostDeployContext Ctx(
         string solutionName,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> localComponents,
         RunMode mode = RunMode.Normal,
-        string? webresourceRoot = null,
         IReadOnlyList<string>? entityLogicalNames = null,
         string? packageSrcRoot = null,
         IReadOnlyList<(int ComponentType, string SchemaName)>? namedComponents = null) =>
-        new(_serviceMock, solutionName, localComponents, mode, webresourceRoot, "solution.zip", "https://example.crm.dynamics.com",
+        new(_serviceMock, solutionName, localComponents, mode, "solution.zip", "https://example.crm.dynamics.com",
             entityLogicalNames ?? [], packageSrcRoot ?? Path.Combine(Path.GetTempPath(), $"flowline-test-nonexistent-{Guid.NewGuid():N}"),
             namedComponents ?? []);
 
@@ -89,10 +90,10 @@ public class OrphanCleanupServiceTests : IDisposable
         var orphanId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (orphanId, 61));
         SetupWebResourceNames((orphanId, "av_ext/shared.js"));
-        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+        File.WriteAllText(Path.Combine(_webResourcesDir, "form.js"),
             "// flowline:depends av_ext/shared.js\nconsole.log('hi');");
 
-        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], webresourceRoot: _webresourceRoot), default);
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: _packageSrcRoot), default);
 
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
@@ -103,10 +104,10 @@ public class OrphanCleanupServiceTests : IDisposable
         var orphanId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (orphanId, 61));
         SetupWebResourceNames((orphanId, "av_ext/shared.js"));
-        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+        File.WriteAllText(Path.Combine(_webResourcesDir, "form.js"),
             "// flowline:depends av_ext/shared.js\ncode();");
 
-        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], webresourceRoot: _webresourceRoot), default);
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: _packageSrcRoot), default);
 
         Assert.Contains("av_ext/shared.js", _console.Output);
         Assert.Contains("preserved", _console.Output);
@@ -119,9 +120,9 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("MySolution", (orphanId, 61));
         SetupWebResourceNames((orphanId, "av_ext/unref.js"));
         // No annotations referencing unref.js
-        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"), "// no deps\ncode();");
+        File.WriteAllText(Path.Combine(_webResourcesDir, "form.js"), "// no deps\ncode();");
 
-        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], webresourceRoot: _webresourceRoot), default);
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: _packageSrcRoot), default);
 
         await _serviceMock.Received(1).DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
@@ -132,9 +133,9 @@ public class OrphanCleanupServiceTests : IDisposable
         var orphanId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (orphanId, 61));
         SetupWebResourceNames((orphanId, "av_ext/lib.js"));
-        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"), "code(); // no annotations");
+        File.WriteAllText(Path.Combine(_webResourcesDir, "form.js"), "code(); // no annotations");
 
-        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], webresourceRoot: _webresourceRoot), default);
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: _packageSrcRoot), default);
 
         await _serviceMock.Received(1).DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
@@ -145,12 +146,12 @@ public class OrphanCleanupServiceTests : IDisposable
         var orphanId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (orphanId, 61));
         SetupWebResourceNames((orphanId, "av_ext/shared.js"));
-        File.WriteAllText(Path.Combine(_webresourceRoot, "a.js"),
+        File.WriteAllText(Path.Combine(_webResourcesDir, "a.js"),
             "// flowline:depends av_ext/shared.js\ncode();");
-        File.WriteAllText(Path.Combine(_webresourceRoot, "b.js"),
+        File.WriteAllText(Path.Combine(_webResourcesDir, "b.js"),
             "// flowline:depends av_ext/shared.js\ncode();");
 
-        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], webresourceRoot: _webresourceRoot), default);
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: _packageSrcRoot), default);
 
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
@@ -286,13 +287,13 @@ public class OrphanCleanupServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task RunPreImportAsync_NoWebresourceRoot_NoExemptionCheck()
+    public async Task RunPreImportAsync_NoWebResourcesDirUnderPackageSrc_NoExemptionCheck()
     {
         var orphanId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (orphanId, 61));
-        // No webresource name query is set up — if exemption ran, it would try to query
-        // and the mock would return an empty collection, potentially still deleting.
-        // The point is: no webresourceRoot → no name query, normal orphan flow.
+        // No Package/src/WebResources dir at the default (nonexistent) packageSrcRoot — if exemption
+        // ran, it would try to query and the mock would return an empty collection, potentially still
+        // deleting. The point is: no WebResources dir → no name query, normal orphan flow.
 
         await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
 

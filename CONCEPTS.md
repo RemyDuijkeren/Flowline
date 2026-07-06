@@ -51,6 +51,9 @@ The tuple of Dataverse field values that uniquely identifies a plugin step varia
 ### Post-deploy service
 A pluggable behavior that runs during a deploy's pre-import and post-import phases — for example, orphan-component cleanup. Every registered post-deploy service executes on every deploy (fan-out), unlike a [[Generator]], where exactly one is selected for a run. A post-deploy service may hold its own state between its pre-import and post-import calls; state does not cross the shared interface between services.
 
+### Package folder
+The packed, committed mirror of a solution's Dataverse content that `deploy` always packs and imports from — the single artifact of record for what a given deploy actually ships, at every pipeline stage from a first TEST promotion through PROD. Distinct from a project's own local build output (e.g. a web-resources build's output folder): the two are expected to hold equivalent content after a sync, but only the Package folder is guaranteed to exist and be current on a build agent that never runs the local build step. A [[Post-deploy service]] that needs to inspect "what's actually being deployed" must read from the Package folder, never from a separate build artifact.
+
 ## Web Resources
 
 ### Logical name
