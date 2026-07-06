@@ -298,4 +298,101 @@ public class ComponentClassifierTests : IDisposable
 
         result.Should().BeEmpty();
     }
+
+    // ── ScanCustomApiNames ────────────────────────────────────────────────────
+
+    [Fact]
+    public void ScanCustomApiNames_ReturnsUniqueNamesAndChildCollections()
+    {
+        var apiDir = Path.Combine(_dir, "customapis", "av_AatYourService");
+        Directory.CreateDirectory(apiDir);
+        File.WriteAllText(Path.Combine(apiDir, "customapi.xml"), "<customapi/>");
+        Directory.CreateDirectory(Path.Combine(apiDir, "customapirequestparameters", "av_Input1"));
+        Directory.CreateDirectory(Path.Combine(apiDir, "customapirequestparameters", "av_Input2"));
+        Directory.CreateDirectory(Path.Combine(apiDir, "customapiresponseproperties", "av_Output1"));
+
+        Directory.CreateDirectory(Path.Combine(_dir, "customapis", "av_AnotherApi"));
+
+        var result = ComponentClassifier.ScanCustomApiNames(_dir);
+
+        result.ApiUniqueNames.Should().BeEquivalentTo(["av_AatYourService", "av_AnotherApi"]);
+        result.RequestParameterNames.Should().BeEquivalentTo(["av_Input1", "av_Input2"]);
+        result.ResponsePropertyNames.Should().BeEquivalentTo(["av_Output1"]);
+    }
+
+    [Fact]
+    public void ScanCustomApiNames_ReturnsEmpty_WhenCustomApisFolderMissing()
+    {
+        var result = ComponentClassifier.ScanCustomApiNames(_dir);
+
+        result.ApiUniqueNames.Should().BeEmpty();
+        result.RequestParameterNames.Should().BeEmpty();
+        result.ResponsePropertyNames.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ScanCustomApiNames_IncludesApi_WhenCustomApiXmlFileMissing()
+    {
+        // Identity comes from the folder name alone — no file inside the subfolder is ever opened.
+        // Matches OrphanCleanupServiceTests' fixture, which creates the uniquename folder with no
+        // customapi.xml inside and still expects the name to be recognized as "still in local source".
+        Directory.CreateDirectory(Path.Combine(_dir, "customapis", "av_AatYourService"));
+
+        var result = ComponentClassifier.ScanCustomApiNames(_dir);
+
+        result.ApiUniqueNames.Should().BeEquivalentTo(["av_AatYourService"]);
+    }
+
+    // ── ScanShapeFolder (generalized helper) ─────────────────────────────────
+
+    [Fact]
+    public void ScanShapeFolder_ReturnsFlatTopSet_WhenNoChildCollectionsConfigured()
+    {
+        Directory.CreateDirectory(Path.Combine(_dir, "bots", "av_MyBot"));
+        Directory.CreateDirectory(Path.Combine(_dir, "bots", "av_OtherBot"));
+
+        var (top, children) = ComponentClassifier.ScanShapeFolder(_dir, "bots");
+
+        top.Should().BeEquivalentTo(["av_MyBot", "av_OtherBot"]);
+        children.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ScanShapeFolder_ReturnsPerChildSets_MatchingScanCustomApiNamesShape()
+    {
+        var apiDir = Path.Combine(_dir, "customapis", "av_AatYourService");
+        Directory.CreateDirectory(Path.Combine(apiDir, "customapirequestparameters", "av_Input1"));
+        Directory.CreateDirectory(Path.Combine(apiDir, "customapiresponseproperties", "av_Output1"));
+
+        var (top, children) = ComponentClassifier.ScanShapeFolder(
+            _dir, "customapis", "customapirequestparameters", "customapiresponseproperties");
+
+        top.Should().BeEquivalentTo(["av_AatYourService"]);
+        children["customapirequestparameters"].Should().BeEquivalentTo(["av_Input1"]);
+        children["customapiresponseproperties"].Should().BeEquivalentTo(["av_Output1"]);
+    }
+
+    [Fact]
+    public void ScanShapeFolder_ReturnsEmpty_WhenTopLevelFolderMissing()
+    {
+        var (top, children) = ComponentClassifier.ScanShapeFolder(_dir, "bots");
+
+        top.Should().BeEmpty();
+        children.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ScanShapeFolder_SkipsChildCollection_WhenComponentSubfolderHasNoMatchingXmlOrChildren()
+    {
+        // A component subfolder present with no child-collection folders inside — resolves to an
+        // empty child set for it, not an error.
+        Directory.CreateDirectory(Path.Combine(_dir, "customapis", "av_NoChildren"));
+
+        var (top, children) = ComponentClassifier.ScanShapeFolder(
+            _dir, "customapis", "customapirequestparameters", "customapiresponseproperties");
+
+        top.Should().BeEquivalentTo(["av_NoChildren"]);
+        children["customapirequestparameters"].Should().BeEmpty();
+        children["customapiresponseproperties"].Should().BeEmpty();
+    }
 }

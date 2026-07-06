@@ -199,29 +199,52 @@ public static class ComponentClassifier
     /// </summary>
     public static CustomApiNames ScanCustomApiNames(string packageSrcRoot)
     {
-        var apiNames   = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var paramNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var propNames  = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        const string requestParams  = "customapirequestparameters";
+        const string responseProps = "customapiresponseproperties";
 
-        var root = Path.Combine(packageSrcRoot, "customapis");
+        var (apiNames, children) = ScanShapeFolder(packageSrcRoot, "customapis", requestParams, responseProps);
+
+        return new CustomApiNames(apiNames, children[requestParams], children[responseProps]);
+    }
+
+    /// <summary>
+    /// Generalized scanner for the schemaname/uniquename-keyed-folder shape shared by CustomApi and Bot:
+    /// a top-level folder with one subfolder per component (subfolder name = the component's local key),
+    /// plus zero or more named child-collection subfolders one level deeper following the same pattern
+    /// (e.g. customapis/&lt;uniquename&gt;/customapirequestparameters/&lt;name&gt;/). Identity comes purely
+    /// from folder names — no file inside a subfolder is ever opened, so a subfolder present without its
+    /// usual XML file still counts. A missing top-level folder, a missing child-collection folder, or a
+    /// component subfolder with no matching child items all resolve to an empty set for that level —
+    /// never an exception. Single-collection callers (no <paramref name="childCollectionFolders"/>) get
+    /// an empty <c>Children</c> dictionary and just use <c>Top</c>.
+    /// </summary>
+    internal static (HashSet<string> Top, Dictionary<string, HashSet<string>> Children) ScanShapeFolder(
+        string packageSrcRoot, string folderName, params string[] childCollectionFolders)
+    {
+        var top      = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var children = childCollectionFolders.ToDictionary(
+            name => name,
+            _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            StringComparer.OrdinalIgnoreCase);
+
+        var root = Path.Combine(packageSrcRoot, folderName);
         if (!Directory.Exists(root))
-            return new CustomApiNames(apiNames, paramNames, propNames);
+            return (top, children);
 
-        foreach (var apiDir in Directory.EnumerateDirectories(root))
+        foreach (var itemDir in Directory.EnumerateDirectories(root))
         {
-            apiNames.Add(Path.GetFileName(apiDir));
+            top.Add(Path.GetFileName(itemDir));
 
-            var paramsDir = Path.Combine(apiDir, "customapirequestparameters");
-            if (Directory.Exists(paramsDir))
-                foreach (var dir in Directory.EnumerateDirectories(paramsDir))
-                    paramNames.Add(Path.GetFileName(dir));
+            foreach (var childFolder in childCollectionFolders)
+            {
+                var childDir = Path.Combine(itemDir, childFolder);
+                if (!Directory.Exists(childDir)) continue;
 
-            var propsDir = Path.Combine(apiDir, "customapiresponseproperties");
-            if (Directory.Exists(propsDir))
-                foreach (var dir in Directory.EnumerateDirectories(propsDir))
-                    propNames.Add(Path.GetFileName(dir));
+                foreach (var dir in Directory.EnumerateDirectories(childDir))
+                    children[childFolder].Add(Path.GetFileName(dir));
+            }
         }
 
-        return new CustomApiNames(apiNames, paramNames, propNames);
+        return (top, children);
     }
 }
