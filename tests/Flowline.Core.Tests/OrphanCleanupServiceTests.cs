@@ -237,6 +237,79 @@ public class OrphanCleanupServiceTests : IDisposable
         Assert.Contains("No orphan components", _console.Output);
     }
 
+    void SetupOptionSetMetadataId(string schemaName, Guid metadataId)
+    {
+        var metadata = new Microsoft.Xrm.Sdk.Metadata.OptionSetMetadata { Name = schemaName };
+        typeof(Microsoft.Xrm.Sdk.Metadata.OptionSetMetadataBase).GetProperty("MetadataId")!.SetValue(metadata, metadataId);
+        var response = new Microsoft.Xrm.Sdk.Messages.RetrieveOptionSetResponse
+        {
+            Results = new Microsoft.Xrm.Sdk.ParameterCollection { ["OptionSetMetadata"] = metadata }
+        };
+
+        _serviceMock.ExecuteAsync(
+                Arg.Is<OrganizationRequest>(r => r.RequestName == "RetrieveOptionSet" && (string)r.Parameters["Name"] == schemaName),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(response));
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_OptionSetNamedComponent_ResolvesLiveMetadataId_NotReportedAsOrphan()
+    {
+        // AE4: OptionSet RootComponents in Solution.xml are recorded by schemaName, not id — same
+        // schemaName-declared shape as WebResource/Entity, but OptionSet has no backing data table, so
+        // ResolveNamedComponentIdsAsync's QueryExpression can't resolve it (NameResolvableTypes has no
+        // entry for componenttype 9). It needs its own metadata-request path (RetrieveOptionSetRequest),
+        // resolved before the orphan diff runs, per KTD1.
+        var liveId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (liveId, 9)); // 9 = OptionSet
+        SetupOptionSetMetadataId("av_globalchoice", liveId);
+
+        await _service.RunPreImportAsync(
+            Ctx("MySolution", [(Guid.NewGuid(), 0)], namedComponents: [(9, "av_globalchoice")]), default);
+
+        Assert.DoesNotContain(liveId.ToString(), _console.Output);
+        Assert.Contains("No orphan components", _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_OptionSetGenuinelyRemoved_FallsThroughToUnsupportedVerbosePath()
+    {
+        // OptionSet's schemaName no longer exists in the org's metadata — RetrieveOptionSetRequest fails
+        // for it, so it isn't folded into sNewIds and surfaces as a genuine orphan candidate. OptionSet
+        // (9) is not in SupportedManualTypes (KTD1 — this unit doesn't promote it), so it falls through
+        // to the unsupported/verbose-only path, same as before this fix, rather than the actionable report.
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 9)); // 9 = OptionSet
+        // No SetupOptionSetMetadataId call — RetrieveOptionSet is unconfigured, ExecuteAsync returns
+        // NSubstitute's default null, so the response cast throws and the name resolves to nothing.
+
+        await _service.RunPreImportAsync(
+            Ctx("MySolution", [(Guid.NewGuid(), 0)], namedComponents: [(9, "av_deletedchoice")]), default);
+
+        Assert.DoesNotContain("can't be removed automatically", _console.Output);
+        Assert.Contains(orphanId.ToString(), _console.Output);
+        Assert.Contains("would have proposed: remove manually via maker portal", _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_OptionSetMetadataRequestFailsForOne_OthersStillResolve()
+    {
+        // One schemaName's metadata request fails (e.g. a deleted global choice) — the failure must not
+        // block resolution of the others in the same batch.
+        var stillPresentId = Guid.NewGuid();
+        var deletedId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (stillPresentId, 9), (deletedId, 9));
+        SetupOptionSetMetadataId("av_stillpresent", stillPresentId);
+        // "av_deletedchoice" left unconfigured — simulates a failed/missing metadata lookup.
+
+        await _service.RunPreImportAsync(
+            Ctx("MySolution", [(Guid.NewGuid(), 0)],
+                namedComponents: [(9, "av_stillpresent"), (9, "av_deletedchoice")]), default);
+
+        Assert.DoesNotContain(stillPresentId.ToString(), _console.Output);
+        Assert.Contains(deletedId.ToString(), _console.Output);
+    }
+
     [Fact]
     public async Task RunPreImportAsync_CustomApiStillInLocalSource_NotReportedAsOrphan()
     {

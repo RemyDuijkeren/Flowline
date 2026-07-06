@@ -117,6 +117,21 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
             sNewIds.UnionWith(resolvedNamedIds);
         }
 
+        // OptionSet (9) roots are also schemaName-declared in Solution.xml, but OptionSet is metadata,
+        // not a data-table row — NameResolvableTypes' QueryExpression pattern can't resolve it, so
+        // ResolveNamedComponentIdsAsync silently skips it. Resolve it via a metadata request instead
+        // (RetrieveOptionSetRequest) and fold it into sNewIds the same way, before the orphan diff runs
+        // (KTD1) — a still-declared OptionSet must never become an orphan candidate at all.
+        var optionSetSchemaNames = context.NamedComponents
+            .Where(c => c.ComponentType == OptionSetComponentType)
+            .Select(c => c.SchemaName)
+            .ToList();
+        if (optionSetSchemaNames.Count > 0)
+        {
+            var resolvedOptionSetIds = await ResolveOptionSetMetadataIdsAsync(service, optionSetSchemaNames, ct).ConfigureAwait(false);
+            sNewIds.UnionWith(resolvedOptionSetIds);
+        }
+
         var orphans = sOld
             .Where(c => !sNewIds.Contains(c.ObjectId))
             .Where(c => !ComponentClassifier.IsWellKnownSystemComponent(c.ObjectId))
@@ -333,6 +348,45 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
                 var request = new RetrieveEntityRequest { LogicalName = name, EntityFilters = EntityFilters.Entity, RetrieveAsIfPublished = false };
                 var response = (RetrieveEntityResponse)await service.ExecuteAsync(request, ct).ConfigureAwait(false);
                 return response.EntityMetadata?.MetadataId;
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+
+        var metadataIds = await Task.WhenAll(tasks).ConfigureAwait(false);
+        return metadataIds.Where(id => id.HasValue).Select(id => id!.Value).ToHashSet();
+    }
+
+    const int OptionSetComponentType = 9;
+
+    // OptionSet's own metadata-request resolution path (see the call site in RunPreImportAsync) — kept
+    // separate from ResolveNamedComponentIdsAsync's NameResolvableTypes/QueryExpression pattern since
+    // OptionSet has no backing data table to query. Unlike ResolveEntityMetadataIdsAsync, a failed
+    // request here (e.g. a genuinely-deleted global choice) is caught per-name so it doesn't block
+    // resolution of the others — RetrieveOptionSetRequest throws for a name that no longer exists,
+    // whereas RetrieveEntityRequest's precondition (context.EntityLogicalNames) never includes deleted
+    // entities in the first place.
+    static async Task<HashSet<Guid>> ResolveOptionSetMetadataIdsAsync(
+        IOrganizationServiceAsync2 service,
+        IEnumerable<string> schemaNames,
+        CancellationToken ct)
+    {
+        using var semaphore = new SemaphoreSlim(MaxConcurrentMetadataRequests, MaxConcurrentMetadataRequests);
+
+        var tasks = schemaNames.Distinct().Select(async name =>
+        {
+            await semaphore.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                var request = new RetrieveOptionSetRequest { Name = name };
+                var response = (RetrieveOptionSetResponse)await service.ExecuteAsync(request, ct).ConfigureAwait(false);
+                return response.OptionSetMetadata?.MetadataId;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                return null;
             }
             finally
             {
