@@ -208,6 +208,18 @@ public static class ComponentClassifier
     }
 
     /// <summary>
+    /// Scans Package/src/bots/&lt;schemaname&gt;/** for Bot components still in source. Used to cross-check
+    /// live Bot orphan candidates by schemaname before reporting them — a Bot re-created with the same
+    /// schemaname (new botid) is not actually orphaned. Bot has no request/response-property equivalent,
+    /// so unlike ScanCustomApiNames there's only a top-level set, no child collections.
+    /// </summary>
+    public static HashSet<string> ScanBotSchemaNames(string packageSrcRoot)
+    {
+        var (top, _) = ScanShapeFolder(packageSrcRoot, "bots");
+        return top;
+    }
+
+    /// <summary>
     /// Generalized scanner for the schemaname/uniquename-keyed-folder shape shared by CustomApi and Bot:
     /// a top-level folder with one subfolder per component (subfolder name = the component's local key),
     /// plus zero or more named child-collection subfolders one level deeper following the same pattern

@@ -395,4 +395,36 @@ public class ComponentClassifierTests : IDisposable
         children["customapirequestparameters"].Should().BeEmpty();
         children["customapiresponseproperties"].Should().BeEmpty();
     }
+
+    // ── ScanBotSchemaNames ────────────────────────────────────────────────────
+
+    [Fact]
+    public void ScanBotSchemaNames_ReturnsSchemaNamesFromBotsFolder()
+    {
+        Directory.CreateDirectory(Path.Combine(_dir, "bots", "msdyn_salesCopilot"));
+        Directory.CreateDirectory(Path.Combine(_dir, "bots", "av_AnotherBot"));
+
+        var result = ComponentClassifier.ScanBotSchemaNames(_dir);
+
+        result.Should().BeEquivalentTo(["msdyn_salesCopilot", "av_AnotherBot"]);
+    }
+
+    [Fact]
+    public void ScanBotSchemaNames_ReturnsEmpty_WhenBotsFolderMissing()
+    {
+        var result = ComponentClassifier.ScanBotSchemaNames(_dir);
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ScanBotSchemaNames_IncludesBot_WhenBotXmlFileMissing()
+    {
+        // Identity comes from the folder name alone — no file inside the subfolder is ever opened.
+        Directory.CreateDirectory(Path.Combine(_dir, "bots", "msdyn_salesCopilot"));
+
+        var result = ComponentClassifier.ScanBotSchemaNames(_dir);
+
+        result.Should().BeEquivalentTo(["msdyn_salesCopilot"]);
+    }
 }

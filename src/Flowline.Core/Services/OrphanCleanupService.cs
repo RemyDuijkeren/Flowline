@@ -134,22 +134,24 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         // Exempt webresource orphans referenced in // flowline:depends annotations.
         autoOrphans = await ExemptAnnotationReferencedWebResourcesAsync(service, autoOrphans, context.PackageSrcRoot, ct).ConfigureAwait(false);
 
-        // CustomApi family has an env-specific componenttype — detect via entity-side queries instead.
-        Dictionary<Guid, string> customApiEntities = [];
+        // CustomApi and Bot both have env-specific componenttypes — detect via entity-side queries
+        // instead (see IdentifyEntityDetectedTypesAsync).
+        Dictionary<Guid, string> entityDetectedTypes = [];
         if (unknownOrphans.Count > 0)
         {
             try
             {
-                customApiEntities = await IdentifyCustomApiEntityTypesAsync(service, unknownOrphans.Select(c => c.ObjectId), ct).ConfigureAwait(false);
+                entityDetectedTypes = await IdentifyEntityDetectedTypesAsync(service, unknownOrphans.Select(c => c.ObjectId), ct).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                console.Warning($"CustomApi entity detection failed ({Markup.Escape(ex.Message)}) — unknown orphan components will be marked Manual.");
+                console.Warning($"Entity-side orphan detection failed ({Markup.Escape(ex.Message)}) — unknown orphan components will be marked Manual.");
             }
         }
 
-        var customApiOrphans = unknownOrphans.Where(c => customApiEntities.ContainsKey(c.ObjectId)).ToList();
-        var manualOrphans    = unknownOrphans.Where(c => !customApiEntities.ContainsKey(c.ObjectId)).ToList();
+        var customApiOrphans = unknownOrphans.Where(c => entityDetectedTypes.TryGetValue(c.ObjectId, out var e) && CustomApiIdAttributes.ContainsKey(e)).ToList();
+        var botOrphans        = unknownOrphans.Where(c => entityDetectedTypes.TryGetValue(c.ObjectId, out var e) && e == "bot").ToList();
+        var manualOrphans     = unknownOrphans.Where(c => !entityDetectedTypes.ContainsKey(c.ObjectId)).ToList();
 
         // CustomApi source has no GUID at all — uniquename is the only local identity (see
         // ComponentClassifier.ScanCustomApiNames) — so a recreated CustomApi (same uniquename, new
@@ -158,7 +160,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         Dictionary<Guid, string> customApiNames = [];
         if (customApiOrphans.Count > 0)
         {
-            foreach (var group in customApiOrphans.GroupBy(o => customApiEntities[o.ObjectId]))
+            foreach (var group in customApiOrphans.GroupBy(o => entityDetectedTypes[o.ObjectId]))
             {
                 var names = await GetEntityNamesAsync(service, group.Key, CustomApiIdAttributes[group.Key], "name", group.Select(o => o.ObjectId), ct).ConfigureAwait(false);
                 foreach (var (id, name) in names)
@@ -169,7 +171,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
             customApiOrphans = customApiOrphans.Where(o =>
             {
                 if (!customApiNames.TryGetValue(o.ObjectId, out var name)) return true;
-                var localNames = customApiEntities[o.ObjectId] switch
+                var localNames = entityDetectedTypes[o.ObjectId] switch
                 {
                     "customapi"                 => localCustomApiNames.ApiUniqueNames,
                     "customapirequestparameter" => localCustomApiNames.RequestParameterNames,
@@ -177,6 +179,22 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
                     _                           => (IReadOnlySet<string>)new HashSet<string>()
                 };
                 return !localNames.Contains(name);
+            }).ToList();
+        }
+
+        // Bot's live identity attribute is schemaname, not name (KTD3) — ResolvedTypeNameAttributes'
+        // bot entry maps to name for the unsupported-preview's display purpose only, never for
+        // verification. Cross-check against bots/<schemaname>/bot.xml before reporting.
+        Dictionary<Guid, string> botSchemaNames = [];
+        if (botOrphans.Count > 0)
+        {
+            botSchemaNames = await GetEntityNamesAsync(service, "bot", "botid", "schemaname", botOrphans.Select(o => o.ObjectId), ct).ConfigureAwait(false);
+
+            var localBotSchemaNames = ComponentClassifier.ScanBotSchemaNames(context.PackageSrcRoot);
+            botOrphans = botOrphans.Where(o =>
+            {
+                if (!botSchemaNames.TryGetValue(o.ObjectId, out var schemaName)) return true;
+                return !localBotSchemaNames.Contains(schemaName);
             }).ToList();
         }
 
@@ -200,7 +218,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
             }
         }
 
-        foreach (var group in customApiOrphans.GroupBy(o => customApiEntities[o.ObjectId]))
+        foreach (var group in customApiOrphans.GroupBy(o => entityDetectedTypes[o.ObjectId]))
         {
             var entityName = group.Key;
 
@@ -211,6 +229,15 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
                 var detail = customApiNames.TryGetValue(orphan.ObjectId, out var name) ? name : null;
                 entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId, entityName, detail), action, EntityName: entityName));
             }
+        }
+
+        // Bot can't be deleted automatically like CustomApi — a genuinely-orphaned Bot is reported as
+        // Manual, same as any other unsupported/opt-in-gated type, but bypasses SupportedManualTypes
+        // entirely per KTD2 (entity-side detection, not a componenttype gate).
+        foreach (var orphan in botOrphans)
+        {
+            var detail = botSchemaNames.TryGetValue(orphan.ObjectId, out var name) ? name : null;
+            entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId, "bot", detail), OrphanAction.Manual, EntityName: "bot"));
         }
 
         entries.AddRange(await BuildManualEntriesAsync(service, context, manualOrphans, ct).ConfigureAwait(false));
@@ -365,7 +392,9 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     };
 
     // CustomApi family entities are detected by entity-side query rather than componenttype (see
-    // IdentifyCustomApiEntityTypesAsync) — keyed by entity LogicalName instead.
+    // IdentifyEntityDetectedTypesAsync) — keyed by entity LogicalName instead. Bot uses the same
+    // detection query but resolves its display name via schemaname, not this map — see the botOrphans
+    // block in RunPreImportAsync.
     static readonly Dictionary<string, string> CustomApiIdAttributes = new()
     {
         ["customapi"]                 = "customapiid",
@@ -672,7 +701,12 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         return result;
     }
 
-    async Task<Dictionary<Guid, string>> IdentifyCustomApiEntityTypesAsync(
+    // Identifies orphan candidates that fall outside the componenttype-int gate (SupportedManualTypes)
+    // by checking membership in a fixed set of env-specific-componenttype tables — CustomApi family
+    // (customapi/customapirequestparameter/customapiresponseproperty) and Bot — via a single bulk
+    // query per table (same "IN (ids)" pattern as GetEntityNamesAsync). See KTD2: a hardcoded
+    // componenttype constant would only be valid for the org it was captured in.
+    async Task<Dictionary<Guid, string>> IdentifyEntityDetectedTypesAsync(
         IOrganizationServiceAsync2 service,
         IEnumerable<Guid> objectIds,
         CancellationToken ct)
@@ -681,7 +715,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         if (ids.Count == 0)
             return [];
         if (ids.Count > 2000)
-            throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {ids.Count} IDs (max 2000). Solution has too many CustomApi components for orphan detection.");
+            throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {ids.Count} IDs (max 2000). Solution has too many entity-detected components for orphan detection.");
 
         var idArray = ids.Select(id => (object)id).ToArray();
 
@@ -695,12 +729,14 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         var caTask    = service.RetrieveAllAsync(EntityQuery("customapi",                 "customapiid",                 idArray), ct);
         var paramTask = service.RetrieveAllAsync(EntityQuery("customapirequestparameter", "customapirequestparameterid", idArray), ct);
         var propTask  = service.RetrieveAllAsync(EntityQuery("customapiresponseproperty", "customapiresponsepropertyid", idArray), ct);
-        await Task.WhenAll(caTask, paramTask, propTask).ConfigureAwait(false);
+        var botTask   = service.RetrieveAllAsync(EntityQuery("bot",                       "botid",                       idArray), ct);
+        await Task.WhenAll(caTask, paramTask, propTask, botTask).ConfigureAwait(false);
 
         var result = new Dictionary<Guid, string>();
         foreach (var e in caTask.Result)    result[e.Id] = "customapi";
         foreach (var e in paramTask.Result) result[e.Id] = "customapirequestparameter";
         foreach (var e in propTask.Result)  result[e.Id] = "customapiresponseproperty";
+        foreach (var e in botTask.Result)   result[e.Id] = "bot";
         return result;
     }
 
@@ -946,6 +982,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
             "customapi"                 => "CustomApi",
             "customapirequestparameter" => "CustomApiRequestParameter",
             "customapiresponseproperty" => "CustomApiResponseProperty",
+            "bot"                       => "Bot",
             _ => componentType switch
             {
                 91 => "PluginAssembly",

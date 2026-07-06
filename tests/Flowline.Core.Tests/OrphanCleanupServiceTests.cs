@@ -273,6 +273,121 @@ public class OrphanCleanupServiceTests : IDisposable
         }
     }
 
+    // -- Bot orphan detection: entity-side query (KTD2/R3), schemaname-keyed folder verification (KTD3) --
+
+    [Fact]
+    public async Task RunPreImportAsync_BotStillInLocalSource_NotReportedAsOrphan()
+    {
+        // AE3: Bot's live schemaname matches a bots/<schemaname>/bot.xml folder still present locally.
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 10082)); // env-specific Bot componenttype
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "bot"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("bot", orphanId) { ["schemaname"] = "msdyn_salesCopilot" }
+            ])));
+
+        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(Path.Combine(packageSrcRoot, "bots", "msdyn_salesCopilot"));
+
+        try
+        {
+            await _service.RunPreImportAsync(
+                Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: packageSrcRoot), default);
+
+            // Like CustomApi, Bot's componenttype isn't AutoDelete-classified, so this doesn't hit the
+            // early "No orphan components" return — it clears entity-side detection and gets filtered
+            // out of botOrphans, leaving an empty report instead.
+            Assert.DoesNotContain(orphanId.ToString(), _console.Output);
+            Assert.Contains("0 to delete, 0 to remove from solution, 0 manual", _console.Output);
+        }
+        finally
+        {
+            Directory.Delete(packageSrcRoot, true);
+        }
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_BotNoMatchingLocalFolder_ReportedAsManualWithResolvedSchemaName()
+    {
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 10082));
+
+        // KTD3: schemaname is the identity attribute, not name (a separate, unrelated display string
+        // in real orgs — e.g. schemaname="msdyn_salesCopilot" vs name="Sales Copilot Power Virtual
+        // Agents Bot"). The report must show the resolved schemaname, not name.
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "bot"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("bot", orphanId) { ["schemaname"] = "msdyn_salesCopilot", ["name"] = "Sales Copilot Power Virtual Agents Bot" }
+            ])));
+
+        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(Path.Combine(packageSrcRoot, "bots", "av_SomeOtherBot")); // no match
+
+        try
+        {
+            await _service.RunPreImportAsync(
+                Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: packageSrcRoot), default);
+
+            Assert.Contains($"Bot 'msdyn_salesCopilot' ({orphanId})", _console.Output);
+            Assert.DoesNotContain("Sales Copilot Power Virtual Agents Bot", _console.Output);
+            Assert.Contains("remove manually via maker portal", _console.Output);
+        }
+        finally
+        {
+            Directory.Delete(packageSrcRoot, true);
+        }
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_BotsFolderAbsent_NoFalseSuppressionAllBotOrphansReported()
+    {
+        // No Package/src/bots dir at all (default nonexistent packageSrcRoot) — ScanBotSchemaNames
+        // returns an empty scan result, so the Bot orphan is still reported rather than suppressed.
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 10082));
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "bot"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("bot", orphanId) { ["schemaname"] = "msdyn_salesCopilot" }
+            ])));
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Contains($"Bot 'msdyn_salesCopilot' ({orphanId})", _console.Output);
+        Assert.Contains("remove manually via maker portal", _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_BotOrphan_NoLongerLoggedInUnsupportedVerbosePath()
+    {
+        // Regression: before entity-side detection, Bot fell through to LogUnsupportedOrphansAsync's
+        // verbose-only "not tracked yet" preview (see the connectionreference/bot false-positive
+        // incident, 2026-07-05). It must now reach the actionable report instead, and SupportedManualTypes
+        // itself must be untouched — Bot's env-specific componenttype (10082 here) is never added to it,
+        // detection happens purely via the entity-side bot-table query.
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 10082));
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "bot"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("bot", orphanId) { ["schemaname"] = "msdyn_salesCopilot" }
+            ])));
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.DoesNotContain("not tracked yet", _console.Output);
+        Assert.Contains("can't be removed automatically", _console.Output);
+    }
+
     [Fact]
     public async Task RunPreImportAsync_OrphanInAnotherRealSolution_RemovesFromSolutionOnly()
     {
