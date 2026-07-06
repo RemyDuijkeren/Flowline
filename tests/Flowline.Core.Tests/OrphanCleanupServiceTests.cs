@@ -989,6 +989,87 @@ public class OrphanCleanupServiceTests : IDisposable
         Assert.Contains("No orphan components", _console.Output);
     }
 
+    // -- R6/R7: "possible match found locally" signal for unsupported-type verbose preview (KTD5) --
+
+    [Fact]
+    public async Task RunPreImportAsync_UnsupportedOrphanNameMatchesLocalIdentifier_VerboseNotesPossibleLocalMatch()
+    {
+        // AE5: unsupported type (View, 26 — not in SupportedManualTypes) whose resolved name matches an
+        // identifier already harvested from a known local-source shape (here: context.NamedComponents'
+        // schemaNames, one of the KTD5 sources) — verbose preview notes a possible local match.
+        var viewId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (viewId, 26));
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "savedquery"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("savedquery", viewId) { ["name"] = "av_ActiveAccounts" }
+            ])));
+
+        var ctx = Ctx("MySolution", [(Guid.NewGuid(), 0)],
+            namedComponents: [(61, "av_ActiveAccounts")]);
+
+        await _service.RunPreImportAsync(ctx, default);
+
+        Assert.Contains("26 (View) 'av_ActiveAccounts'", _console.Output);
+        Assert.Contains("Possible match found locally.", _console.Output);
+
+        // Load-bearing invariant: the match is informational only — it never promotes the orphan into
+        // the actionable report or the manual count (2026-07-05 connectionreference/bot incident).
+        Assert.DoesNotContain("can't be removed automatically", _console.Output);
+        Assert.Contains("0 to delete, 0 to remove from solution, 0 manual", _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_UnsupportedOrphanNameMatchesNothingLocal_VerboseWordingUnchanged()
+    {
+        // Same unsupported type/name as above, but the harvested identifier set has no overlap — the
+        // verbose message keeps today's exact wording, with no local-match note appended.
+        var viewId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (viewId, 26));
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "savedquery"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("savedquery", viewId) { ["name"] = "av_ActiveAccounts" }
+            ])));
+
+        var ctx = Ctx("MySolution", [(Guid.NewGuid(), 0)],
+            namedComponents: [(61, "av_SomethingElse")]);
+
+        await _service.RunPreImportAsync(ctx, default);
+
+        Assert.Contains(
+            $"Solution component type 26 (View) 'av_ActiveAccounts' ({viewId}) — not tracked yet, no action taken. Out-of-the-box logic would have proposed: remove manually via maker portal.",
+            _console.Output);
+        Assert.DoesNotContain("Possible match found locally.", _console.Output);
+
+        Assert.DoesNotContain("can't be removed automatically", _console.Output);
+        Assert.Contains("0 to delete, 0 to remove from solution, 0 manual", _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_UnsupportedOrphanNoResolvableName_NoMatchAttemptedNoException()
+    {
+        // Edge case: an unlabeled type with no NameResolvableTypes entry resolves no name at all — the
+        // local-match check must be skipped rather than throw on a null name.
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 9999));
+
+        var ctx = Ctx("MySolution", [(Guid.NewGuid(), 0)],
+            namedComponents: [(61, "whatever")]);
+
+        var exception = await Record.ExceptionAsync(() => _service.RunPreImportAsync(ctx, default));
+
+        Assert.Null(exception);
+        Assert.Contains(
+            $"Solution component type 9999 ({orphanId}) — not tracked yet, no action taken. Out-of-the-box logic would have proposed: remove manually via maker portal.",
+            _console.Output);
+        Assert.DoesNotContain("Possible match found locally.", _console.Output);
+    }
+
     // -- Pre-import → post-import deferred-entry round trip (instance-field state threading) --
 
     [Fact]

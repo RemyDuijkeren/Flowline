@@ -585,7 +585,10 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         var unsupportedOrphans = otherOrphans.Where(o => !SupportedManualTypes.Contains(o.ComponentType)).ToList();
 
         if (unsupportedOrphans.Count > 0)
-            await LogUnsupportedOrphansAsync(service, unsupportedOrphans, ct).ConfigureAwait(false);
+        {
+            var localIdentifiers = BuildLocalIdentifierHarvest(context);
+            await LogUnsupportedOrphansAsync(service, unsupportedOrphans, localIdentifiers, ct).ConfigureAwait(false);
+        }
 
         foreach (var group in supportedOrphans.GroupBy(o => o.ComponentType))
         {
@@ -601,14 +604,42 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         return entries;
     }
 
+    // KTD5: flat, case-insensitive identifier set drawn only from local shapes already scanned for
+    // supported or shape-known types (R7 — never an unscoped, whole-repo string search). Built once per
+    // BuildManualEntriesAsync call (itself called exactly once per RunPreImportAsync run) and used only
+    // to enrich LogUnsupportedOrphansAsync's verbose preview (R6) — membership here is informational
+    // only and never promotes a type into the actionable report or manual count.
+    static HashSet<string> BuildLocalIdentifierHarvest(PostDeployContext context)
+    {
+        var harvest = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (_, schemaName) in context.NamedComponents)
+            harvest.Add(schemaName);
+
+        harvest.UnionWith(context.EntityLogicalNames);
+
+        var customApiNames = ComponentClassifier.ScanCustomApiNames(context.PackageSrcRoot);
+        harvest.UnionWith(customApiNames.ApiUniqueNames);
+        harvest.UnionWith(customApiNames.RequestParameterNames);
+        harvest.UnionWith(customApiNames.ResponsePropertyNames);
+
+        harvest.UnionWith(ComponentClassifier.ScanBotSchemaNames(context.PackageSrcRoot));
+        harvest.UnionWith(ComponentClassifier.ScanConnectionReferenceLogicalNames(context.PackageSrcRoot));
+
+        return harvest;
+    }
+
     // Verbose-only preview of orphan candidates Flowline can't yet act on (see SupportedManualTypes).
     // Resolves the type's own label (ManualTypeLabels, falling back to solutioncomponentdefinition for
     // env-specific codes like connectionreference/bot) and the individual record's name where a lookup
     // exists, plus what the pre-opt-in logic would have proposed — purely informational, so a type can
-    // be evaluated with real data before deciding to add it to SupportedManualTypes.
+    // be evaluated with real data before deciding to add it to SupportedManualTypes. R6: when the
+    // resolved name matches localIdentifiers (KTD5), the line also notes a possible local match — this
+    // never changes control flow, the orphan still doesn't reach entries/the report/the manual count.
     async Task LogUnsupportedOrphansAsync(
         IOrganizationServiceAsync2 service,
         List<(Guid ObjectId, int ComponentType)> unsupportedOrphans,
+        IReadOnlySet<string> localIdentifiers,
         CancellationToken ct)
     {
         var unlabeledTypes = unsupportedOrphans.Select(o => o.ComponentType).Where(t => !ManualTypeLabels.ContainsKey(t)).Distinct().ToList();
@@ -628,9 +659,11 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
             foreach (var orphan in group)
             {
-                var typeText = typeLabel != null ? $"{orphan.ComponentType} ({typeLabel})" : orphan.ComponentType.ToString();
-                var nameText = names.TryGetValue(orphan.ObjectId, out var name) ? $" '{name}'" : "";
-                console.Verbose($"Solution component type {typeText}{nameText} ({orphan.ObjectId}) — not tracked yet, no action taken. Out-of-the-box logic would have proposed: remove manually via maker portal.");
+                var typeText  = typeLabel != null ? $"{orphan.ComponentType} ({typeLabel})" : orphan.ComponentType.ToString();
+                var hasName   = names.TryGetValue(orphan.ObjectId, out var name);
+                var nameText  = hasName ? $" '{name}'" : "";
+                var matchNote = name != null && localIdentifiers.Contains(name) ? " Possible match found locally." : "";
+                console.Verbose($"Solution component type {typeText}{nameText} ({orphan.ObjectId}) — not tracked yet, no action taken. Out-of-the-box logic would have proposed: remove manually via maker portal.{matchNote}");
             }
         }
     }
