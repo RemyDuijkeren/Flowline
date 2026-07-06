@@ -338,7 +338,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     // resolution of the others — RetrieveOptionSetRequest throws for a name that no longer exists,
     // whereas RetrieveEntityRequest's precondition (context.EntityLogicalNames) never includes deleted
     // entities in the first place.
-    static async Task<HashSet<Guid>> ResolveOptionSetMetadataIdsAsync(
+    async Task<HashSet<Guid>> ResolveOptionSetMetadataIdsAsync(
         IOrganizationServiceAsync2 service,
         IEnumerable<string> schemaNames,
         CancellationToken ct)
@@ -354,8 +354,17 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
                 var response = (RetrieveOptionSetResponse)await service.ExecuteAsync(request, ct).ConfigureAwait(false);
                 return response.OptionSetMetadata?.MetadataId;
             }
+            // A genuinely-deleted global choice faults at the organization-service level — the same
+            // "well-formed Dataverse business-logic response" shape TryExecuteEntryAsync already treats
+            // as expected elsewhere in this file. Anything else (network, auth, throttling) is a real
+            // failure the operator should see, not silently equivalent to "not found".
+            catch (FaultException<OrganizationServiceFault>)
+            {
+                return null;
+            }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                console.Warning($"OptionSet metadata lookup for '{name}' failed ({Markup.Escape(ex.Message)}) — treating as unresolved this run.");
                 return null;
             }
             finally
@@ -809,11 +818,28 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
                 Criteria  = { Conditions = { new ConditionExpression(idAttr, ConditionOperator.In, ids) } }
             };
 
-        var caTask    = service.RetrieveAllAsync(EntityQuery("customapi",                 "customapiid",                 idArray), ct);
-        var paramTask = service.RetrieveAllAsync(EntityQuery("customapirequestparameter", "customapirequestparameterid", idArray), ct);
-        var propTask  = service.RetrieveAllAsync(EntityQuery("customapiresponseproperty", "customapiresponsepropertyid", idArray), ct);
-        var botTask   = service.RetrieveAllAsync(EntityQuery("bot",                       "botid",                       idArray), ct);
-        var crTask    = service.RetrieveAllAsync(EntityQuery("connectionreference",       "connectionreferenceid",      idArray), ct);
+        // Each table is queried and caught independently — one table failing (e.g. "bot" unavailable in
+        // an org without Copilot Studio provisioned) must not blank out detection for the other four.
+        // Before this, a single shared try/catch around the whole Task.WhenAll meant one failing table
+        // silently lost CustomApi's own detection too.
+        async Task<IEnumerable<Entity>> TryQuery(string entityName, string idAttr)
+        {
+            try
+            {
+                return await service.RetrieveAllAsync(EntityQuery(entityName, idAttr, idArray), ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                console.Warning($"Entity-side orphan detection failed for '{entityName}' ({Markup.Escape(ex.Message)}) — its orphan candidates will be marked Manual.");
+                return [];
+            }
+        }
+
+        var caTask    = TryQuery("customapi",                 "customapiid");
+        var paramTask = TryQuery("customapirequestparameter", "customapirequestparameterid");
+        var propTask  = TryQuery("customapiresponseproperty", "customapiresponsepropertyid");
+        var botTask   = TryQuery("bot",                       "botid");
+        var crTask    = TryQuery("connectionreference",       "connectionreferenceid");
         await Task.WhenAll(caTask, paramTask, propTask, botTask, crTask).ConfigureAwait(false);
 
         var result = new Dictionary<Guid, string>();
@@ -847,11 +873,14 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
         foreach (var orphan in orphans)
         {
-            if (names.TryGetValue(orphan.ObjectId, out var name) && localIdentities.Contains(name))
-                continue; // still declared locally — not orphaned
+            // No resolved identity attribute means local-source verification never actually ran for
+            // this candidate — unlike a resolved-but-unmatched name, this isn't evidence of removal.
+            // Skip rather than default to "orphaned": the exact false-positive shape this trust bar
+            // exists to prevent (KTD2) is reporting a component nobody actually verified as gone.
+            if (!names.TryGetValue(orphan.ObjectId, out var name)) continue;
+            if (localIdentities.Contains(name)) continue; // still declared locally — not orphaned
 
-            var detail = names.TryGetValue(orphan.ObjectId, out var resolvedName) ? resolvedName : null;
-            entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId, entityLogicalName, detail), OrphanAction.Manual, EntityName: entityLogicalName));
+            entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId, entityLogicalName, name), OrphanAction.Manual, EntityName: entityLogicalName));
         }
 
         return entries;

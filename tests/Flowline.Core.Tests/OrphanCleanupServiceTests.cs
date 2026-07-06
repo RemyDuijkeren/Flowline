@@ -295,7 +295,10 @@ public class OrphanCleanupServiceTests : IDisposable
     public async Task RunPreImportAsync_OptionSetMetadataRequestFailsForOne_OthersStillResolve()
     {
         // One schemaName's metadata request fails (e.g. a deleted global choice) — the failure must not
-        // block resolution of the others in the same batch.
+        // block resolution of the others in the same batch. The unconfigured mock throws a plain
+        // NullReferenceException, not a FaultException<OrganizationServiceFault> — an unexpected failure
+        // shape (network/auth/etc.), not a genuine "record not found" fault, so it must warn rather than
+        // silently resolve to null (code-review finding: distinguish real failures from "not found").
         var stillPresentId = Guid.NewGuid();
         var deletedId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (stillPresentId, 9), (deletedId, 9));
@@ -308,6 +311,28 @@ public class OrphanCleanupServiceTests : IDisposable
 
         Assert.DoesNotContain(stillPresentId.ToString(), _console.Output);
         Assert.Contains(deletedId.ToString(), _console.Output);
+        Assert.Contains("OptionSet metadata lookup for 'av_deletedchoice' failed", _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_OptionSetGenuinelyDeletedFault_NoWarningLogged()
+    {
+        // A genuine "record not found" faults at the organization-service level — this is the expected,
+        // safe-to-treat-as-null shape and must not be logged as a failure warning.
+        var deletedId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (deletedId, 9));
+
+        _serviceMock.ExecuteAsync(
+                Arg.Is<OrganizationRequest>(r => r.RequestName == "RetrieveOptionSet"),
+                Arg.Any<CancellationToken>())
+            .Returns<OrganizationResponse>(_ => throw new System.ServiceModel.FaultException<OrganizationServiceFault>(
+                new OrganizationServiceFault()));
+
+        await _service.RunPreImportAsync(
+            Ctx("MySolution", [(Guid.NewGuid(), 0)], namedComponents: [(9, "av_deletedchoice")]), default);
+
+        Assert.Contains(deletedId.ToString(), _console.Output);
+        Assert.DoesNotContain("OptionSet metadata lookup", _console.Output);
     }
 
     [Fact]
@@ -344,6 +369,34 @@ public class OrphanCleanupServiceTests : IDisposable
         {
             Directory.Delete(packageSrcRoot, true);
         }
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_BotEntityQueryFails_CustomApiDetectionStillSucceeds()
+    {
+        // Code-review finding: the entity-detection query used to share one failure domain across all
+        // five backing tables (Task.WhenAll under one try/catch) — a single failing table (e.g. "bot"
+        // unavailable in an org without Copilot Studio provisioned) blanked out CustomApi detection too.
+        // Each table is now queried and caught independently.
+        var customApiId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (customApiId, 10036)); // env-specific CustomApi componenttype
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "bot"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("bot table unavailable")));
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "customapi"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("customapi", customApiId) { ["name"] = "av_GenuinelyRemovedApi" }
+            ])));
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Contains("bot table unavailable", _console.Output);
+        Assert.Contains($"CustomApi 'av_GenuinelyRemovedApi' ({customApiId})", _console.Output);
     }
 
     // -- Bot orphan detection: entity-side query (KTD2/R3), schemaname-keyed folder verification (KTD3) --
@@ -435,6 +488,31 @@ public class OrphanCleanupServiceTests : IDisposable
 
         Assert.Contains($"Bot 'msdyn_salesCopilot' ({orphanId})", _console.Output);
         Assert.Contains("remove manually via maker portal", _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_BotSchemaNameUnresolvable_NotReportedAsOrphan()
+    {
+        // Code-review finding: local-source verification never actually runs when the live record's
+        // identity attribute fails to resolve (e.g. a data anomaly clears schemaname while the bot
+        // still exists) — GetEntityNamesAsync filters out entities with no schemaname value before
+        // ResolveEntityDetectedManualEntriesAsync's suppression check ever sees them. Defaulting to
+        // "orphaned" here would be the same false-positive shape the evidence-gated trust bar exists
+        // to prevent (KTD2) — an unresolvable identity is inconclusive, not evidence of removal.
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 10082));
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "bot"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("bot", orphanId) // detected, but schemaname never populated
+            ])));
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.DoesNotContain(orphanId.ToString(), _console.Output);
+        Assert.Contains("0 to delete, 0 to remove from solution, 0 manual", _console.Output);
     }
 
     [Fact]
