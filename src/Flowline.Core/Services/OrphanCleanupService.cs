@@ -327,6 +327,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
     const int EntityComponentType = 1;
     const int AttributeComponentType = 2;
+    const int RoleComponentType = 20;
 
     // Manual-bucket types Flowline recommends removal for — each has a local-source cross-check
     // (Entity: EntityLogicalNames/RetrieveEntityRequest; Attribute: Entity.xml scan) verified against a
@@ -338,9 +339,12 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     // like "Sales Insights" living on an entity this solution's Entities/ folder doesn't include at
     // all — behavior="1" entities still get FormXml unpacked for editing, but a form on an entity
     // outside that set has nothing for the scan to find). View (26) shares the same untested gap.
+    // Role (20) needs no new scanner: its id is declared directly in Solution.xml's RootComponent and
+    // mirrored in the unpacked Roles/<name>.xml file, so the existing plain id-in-LocalComponents match
+    // already resolves it correctly in both directions (2026-07-06).
     // Widen this set only after adding the equivalent local-source verification and tests for a new
     // type — everything else is logged at verbose only, never recommended for action.
-    static readonly HashSet<int> SupportedManualTypes = [EntityComponentType, AttributeComponentType];
+    static readonly HashSet<int> SupportedManualTypes = [EntityComponentType, AttributeComponentType, RoleComponentType];
 
     // componenttype → backing table, keyed by the componenttype value, resolvable via a single bulk
     // QueryExpression per type (same pattern as the original webresource-only name lookup). Covers both

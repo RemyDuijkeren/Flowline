@@ -355,6 +355,58 @@ public class OrphanCleanupServiceTests : IDisposable
         Assert.Contains("remove manually via maker portal", _console.Output);
     }
 
+    [Fact]
+    public async Task RunPreImportAsync_RoleStillInLocalComponents_NotReportedAsOrphan()
+    {
+        // AE1: Role's id is declared directly in Solution.xml's RootComponent and mirrored in the
+        // unpacked Roles/<name>.xml file — the existing plain id-match already suppresses it, no new
+        // scanner needed for the promotion to SupportedManualTypes.
+        var roleId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (roleId, 20)); // 20 = Role
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(roleId, 20)]), default);
+
+        Assert.DoesNotContain(roleId.ToString(), _console.Output);
+        Assert.Contains("No orphan components", _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_RoleGenuinelyRemoved_ReportedAsManualRoleWithResolvedName()
+    {
+        // Role (20) is now a SupportedManualTypes member (R1) — a genuinely removed Role (absent from
+        // LocalComponents) must surface in the actionable report, using NameResolvableTypes[20]
+        // ("role", "roleid", "name") to resolve its display name instead of a bare GUID.
+        var roleId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (roleId, 20)); // 20 = Role
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "role"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("role", roleId) { ["name"] = "Custom Sales Role" }
+            ])));
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Contains($"Role 'Custom Sales Role' ({roleId})", _console.Output);
+        Assert.Contains("remove manually via maker portal", _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_RoleOrphan_NoLongerLoggedInUnsupportedVerbosePath()
+    {
+        // Regression: before promotion, Role (20) fell through to LogUnsupportedOrphansAsync's
+        // verbose-only "not tracked yet" preview. Now that it's a SupportedManualTypes member, it must
+        // reach the actionable report instead — not the unsupported-type verbose log line.
+        var roleId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (roleId, 20)); // 20 = Role
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.DoesNotContain("not tracked yet", _console.Output);
+        Assert.Contains("can't be removed automatically", _console.Output);
+    }
+
     // -- Manual orphan reporting: recognized vs unrecognized types, maker-portal pointer --
 
     [Fact]
