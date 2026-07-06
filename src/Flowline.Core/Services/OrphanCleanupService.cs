@@ -149,9 +149,10 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
             }
         }
 
-        var customApiOrphans = unknownOrphans.Where(c => entityDetectedTypes.TryGetValue(c.ObjectId, out var e) && CustomApiIdAttributes.ContainsKey(e)).ToList();
-        var botOrphans        = unknownOrphans.Where(c => entityDetectedTypes.TryGetValue(c.ObjectId, out var e) && e == "bot").ToList();
-        var manualOrphans     = unknownOrphans.Where(c => !entityDetectedTypes.ContainsKey(c.ObjectId)).ToList();
+        var customApiOrphans           = unknownOrphans.Where(c => entityDetectedTypes.TryGetValue(c.ObjectId, out var e) && CustomApiIdAttributes.ContainsKey(e)).ToList();
+        var botOrphans                 = unknownOrphans.Where(c => entityDetectedTypes.TryGetValue(c.ObjectId, out var e) && e == "bot").ToList();
+        var connectionReferenceOrphans = unknownOrphans.Where(c => entityDetectedTypes.TryGetValue(c.ObjectId, out var e) && e == "connectionreference").ToList();
+        var manualOrphans              = unknownOrphans.Where(c => !entityDetectedTypes.ContainsKey(c.ObjectId)).ToList();
 
         // CustomApi source has no GUID at all — uniquename is the only local identity (see
         // ComponentClassifier.ScanCustomApiNames) — so a recreated CustomApi (same uniquename, new
@@ -198,6 +199,23 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
             }).ToList();
         }
 
+        // ConnectionReference has no dedicated top-level folder (unlike Bot's bots/<schemaname>/bot.xml
+        // shape) — it's declared inline in Other/Customizations.xml's <connectionreferences> section
+        // (see R2), not the separately-generated deploymentSettings.json, which is optional and can go
+        // stale. Cross-check against that section before reporting, same pattern as Bot's schemaname check.
+        Dictionary<Guid, string> connectionReferenceLogicalNames = [];
+        if (connectionReferenceOrphans.Count > 0)
+        {
+            connectionReferenceLogicalNames = await GetEntityNamesAsync(service, "connectionreference", "connectionreferenceid", "connectionreferencelogicalname", connectionReferenceOrphans.Select(o => o.ObjectId), ct).ConfigureAwait(false);
+
+            var localConnectionReferenceLogicalNames = ComponentClassifier.ScanConnectionReferenceLogicalNames(context.PackageSrcRoot);
+            connectionReferenceOrphans = connectionReferenceOrphans.Where(o =>
+            {
+                if (!connectionReferenceLogicalNames.TryGetValue(o.ObjectId, out var logicalName)) return true;
+                return !localConnectionReferenceLogicalNames.Contains(logicalName);
+            }).ToList();
+        }
+
         var crossSolutionIds = autoOrphans.Select(c => c.ObjectId).Concat(customApiOrphans.Select(c => c.ObjectId));
         var crossSolution = crossSolutionIds.Any()
             ? await GetCrossSolutionMembershipAsync(service, crossSolutionIds, ct).ConfigureAwait(false)
@@ -238,6 +256,14 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         {
             var detail = botSchemaNames.TryGetValue(orphan.ObjectId, out var name) ? name : null;
             entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId, "bot", detail), OrphanAction.Manual, EntityName: "bot"));
+        }
+
+        // ConnectionReference can't be deleted automatically either — same treatment as Bot, entity-side
+        // detected and reported Manual, never routed through SupportedManualTypes (KTD2/R2).
+        foreach (var orphan in connectionReferenceOrphans)
+        {
+            var detail = connectionReferenceLogicalNames.TryGetValue(orphan.ObjectId, out var name) ? name : null;
+            entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId, "connectionreference", detail), OrphanAction.Manual, EntityName: "connectionreference"));
         }
 
         entries.AddRange(await BuildManualEntriesAsync(service, context, manualOrphans, ct).ConfigureAwait(false));
@@ -703,9 +729,9 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
     // Identifies orphan candidates that fall outside the componenttype-int gate (SupportedManualTypes)
     // by checking membership in a fixed set of env-specific-componenttype tables — CustomApi family
-    // (customapi/customapirequestparameter/customapiresponseproperty) and Bot — via a single bulk
-    // query per table (same "IN (ids)" pattern as GetEntityNamesAsync). See KTD2: a hardcoded
-    // componenttype constant would only be valid for the org it was captured in.
+    // (customapi/customapirequestparameter/customapiresponseproperty), Bot, and ConnectionReference —
+    // via a single bulk query per table (same "IN (ids)" pattern as GetEntityNamesAsync). See KTD2: a
+    // hardcoded componenttype constant would only be valid for the org it was captured in.
     async Task<Dictionary<Guid, string>> IdentifyEntityDetectedTypesAsync(
         IOrganizationServiceAsync2 service,
         IEnumerable<Guid> objectIds,
@@ -730,13 +756,15 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         var paramTask = service.RetrieveAllAsync(EntityQuery("customapirequestparameter", "customapirequestparameterid", idArray), ct);
         var propTask  = service.RetrieveAllAsync(EntityQuery("customapiresponseproperty", "customapiresponsepropertyid", idArray), ct);
         var botTask   = service.RetrieveAllAsync(EntityQuery("bot",                       "botid",                       idArray), ct);
-        await Task.WhenAll(caTask, paramTask, propTask, botTask).ConfigureAwait(false);
+        var crTask    = service.RetrieveAllAsync(EntityQuery("connectionreference",       "connectionreferenceid",      idArray), ct);
+        await Task.WhenAll(caTask, paramTask, propTask, botTask, crTask).ConfigureAwait(false);
 
         var result = new Dictionary<Guid, string>();
         foreach (var e in caTask.Result)    result[e.Id] = "customapi";
         foreach (var e in paramTask.Result) result[e.Id] = "customapirequestparameter";
         foreach (var e in propTask.Result)  result[e.Id] = "customapiresponseproperty";
         foreach (var e in botTask.Result)   result[e.Id] = "bot";
+        foreach (var e in crTask.Result)    result[e.Id] = "connectionreference";
         return result;
     }
 
@@ -983,6 +1011,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
             "customapirequestparameter" => "CustomApiRequestParameter",
             "customapiresponseproperty" => "CustomApiResponseProperty",
             "bot"                       => "Bot",
+            "connectionreference"       => "ConnectionReference",
             _ => componentType switch
             {
                 91 => "PluginAssembly",

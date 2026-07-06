@@ -427,4 +427,55 @@ public class ComponentClassifierTests : IDisposable
 
         result.Should().BeEquivalentTo(["msdyn_salesCopilot"]);
     }
+
+    // ── ScanConnectionReferenceLogicalNames ─────────────────────────────────────
+
+    void WriteCustomizationsXml(string connectionReferencesXml)
+    {
+        var otherDir = Path.Combine(_dir, "Other");
+        Directory.CreateDirectory(otherDir);
+        File.WriteAllText(Path.Combine(otherDir, "Customizations.xml"), $"""
+            <?xml version="1.0" encoding="utf-8"?>
+            <ImportExportXml>
+              {connectionReferencesXml}
+            </ImportExportXml>
+            """);
+    }
+
+    [Fact]
+    public void ScanConnectionReferenceLogicalNames_ReturnsLogicalNamesFromCustomizationsXml()
+    {
+        WriteCustomizationsXml("""
+            <connectionreferences>
+              <connectionreference connectionreferencelogicalname="av_sharepoint">
+                <connectorid>/providers/Microsoft.PowerApps/apis/shared_sharepointonline</connectorid>
+              </connectionreference>
+              <connectionreference connectionreferencelogicalname="av_dataverse">
+                <connectorid>/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps</connectorid>
+              </connectionreference>
+            </connectionreferences>
+            """);
+
+        var result = ComponentClassifier.ScanConnectionReferenceLogicalNames(_dir);
+
+        result.Should().BeEquivalentTo(["av_sharepoint", "av_dataverse"]);
+    }
+
+    [Fact]
+    public void ScanConnectionReferenceLogicalNames_ReturnsEmpty_WhenSectionEmpty()
+    {
+        WriteCustomizationsXml("<connectionreferences />");
+
+        var result = ComponentClassifier.ScanConnectionReferenceLogicalNames(_dir);
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ScanConnectionReferenceLogicalNames_ReturnsEmpty_WhenCustomizationsXmlMissing()
+    {
+        var result = ComponentClassifier.ScanConnectionReferenceLogicalNames(_dir);
+
+        result.Should().BeEmpty();
+    }
 }

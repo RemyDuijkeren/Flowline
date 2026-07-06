@@ -220,6 +220,47 @@ public static class ComponentClassifier
     }
 
     /// <summary>
+    /// Reads the connectionreferencelogicalname attributes still declared in
+    /// Other/Customizations.xml's &lt;connectionreferences&gt; section — ConnectionReference has no
+    /// dedicated top-level folder (unlike Bot's bots/&lt;schemaname&gt;/bot.xml shape), it's declared
+    /// inline in the same Customizations.xml file ParseSolutionXmlComponents reads Solution.xml
+    /// alongside. Used to cross-check live ConnectionReference orphan candidates before reporting them.
+    /// Returns an empty set if the file or section is missing or empty — never throws.
+    /// </summary>
+    public static HashSet<string> ScanConnectionReferenceLogicalNames(string packageSrcRoot)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var customizationsXmlPath = Path.Combine(packageSrcRoot, "Other", "Customizations.xml");
+        if (!File.Exists(customizationsXmlPath)) return result;
+
+        XDocument doc;
+        try
+        {
+            doc = XDocument.Load(customizationsXmlPath);
+        }
+        catch (Exception ex) when (ex is System.Xml.XmlException or IOException or UnauthorizedAccessException)
+        {
+            return result;
+        }
+
+        // Descendants(...), not Root.Element(...): unlike Solution.xml's RootComponents (a fixed,
+        // known nesting depth), Customizations.xml's <connectionreferences> position under the root
+        // isn't verified against a real unpacked solution fixture in this repo — same defensive style
+        // as DataverseContextGenerator.ReadConnectionReferences, which reads this same file.
+        var logicalNames = doc.Descendants("connectionreferences")
+            .Elements("connectionreference")
+            .Select(e => e.Attribute("connectionreferencelogicalname")?.Value)
+            .Where(n => !string.IsNullOrEmpty(n))
+            .Select(n => n!);
+
+        foreach (var name in logicalNames)
+            result.Add(name);
+
+        return result;
+    }
+
+    /// <summary>
     /// Generalized scanner for the schemaname/uniquename-keyed-folder shape shared by CustomApi and Bot:
     /// a top-level folder with one subfolder per component (subfolder name = the component's local key),
     /// plus zero or more named child-collection subfolders one level deeper following the same pattern

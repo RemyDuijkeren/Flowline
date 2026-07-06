@@ -388,6 +388,134 @@ public class OrphanCleanupServiceTests : IDisposable
         Assert.Contains("can't be removed automatically", _console.Output);
     }
 
+    // -- ConnectionReference orphan detection: entity-side query (KTD2/R2), inline Customizations.xml
+    // <connectionreferences> section verification (not deploymentSettings.json — optional, can go stale) --
+
+    static void WriteConnectionReferencesXml(string packageSrcRoot, params string[] logicalNames)
+    {
+        var otherDir = Path.Combine(packageSrcRoot, "Other");
+        Directory.CreateDirectory(otherDir);
+        var refsXml = string.Concat(logicalNames.Select(n => $"<connectionreference connectionreferencelogicalname=\"{n}\"><connectorid>/providers/Microsoft.PowerApps/apis/shared_x</connectorid></connectionreference>"));
+        File.WriteAllText(Path.Combine(otherDir, "Customizations.xml"),
+            $"<ImportExportXml><connectionreferences>{refsXml}</connectionreferences></ImportExportXml>");
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_ConnectionReferenceStillInCustomizationsXml_NotReportedAsOrphan()
+    {
+        // Happy path: connectionreferencelogicalname still present in Other/Customizations.xml.
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 10064)); // env-specific ConnectionReference componenttype
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "connectionreference"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("connectionreference", orphanId) { ["connectionreferencelogicalname"] = "av_sharepoint" }
+            ])));
+
+        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        WriteConnectionReferencesXml(packageSrcRoot, "av_sharepoint");
+
+        try
+        {
+            await _service.RunPreImportAsync(
+                Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: packageSrcRoot), default);
+
+            Assert.DoesNotContain(orphanId.ToString(), _console.Output);
+            Assert.Contains("0 to delete, 0 to remove from solution, 0 manual", _console.Output);
+        }
+        finally
+        {
+            Directory.Delete(packageSrcRoot, true);
+        }
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_ConnectionReferenceNoLongerInCustomizationsXml_ReportedAsManualWithResolvedLogicalName()
+    {
+        // AE2: connectionreferencelogicalname no longer present in Customizations.xml → actionable Manual.
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 10064));
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "connectionreference"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("connectionreference", orphanId) { ["connectionreferencelogicalname"] = "av_sharepoint" }
+            ])));
+
+        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        WriteConnectionReferencesXml(packageSrcRoot, "av_dataverse"); // different logical name — no match
+
+        try
+        {
+            await _service.RunPreImportAsync(
+                Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: packageSrcRoot), default);
+
+            Assert.Contains($"ConnectionReference 'av_sharepoint' ({orphanId})", _console.Output);
+            Assert.Contains("remove manually via maker portal", _console.Output);
+        }
+        finally
+        {
+            Directory.Delete(packageSrcRoot, true);
+        }
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_ConnectionReferencesSectionEmpty_NoFalseSuppressionAllOrphansReported()
+    {
+        // Edge case: <connectionreferences /> empty or absent → no false suppression.
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 10064));
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "connectionreference"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("connectionreference", orphanId) { ["connectionreferencelogicalname"] = "av_sharepoint" }
+            ])));
+
+        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        var otherDir = Path.Combine(packageSrcRoot, "Other");
+        Directory.CreateDirectory(otherDir);
+        File.WriteAllText(Path.Combine(otherDir, "Customizations.xml"), "<ImportExportXml><connectionreferences /></ImportExportXml>");
+
+        try
+        {
+            await _service.RunPreImportAsync(
+                Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: packageSrcRoot), default);
+
+            Assert.Contains($"ConnectionReference 'av_sharepoint' ({orphanId})", _console.Output);
+            Assert.Contains("remove manually via maker portal", _console.Output);
+        }
+        finally
+        {
+            Directory.Delete(packageSrcRoot, true);
+        }
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_CustomizationsXmlMissing_NoFalseSuppressionAllOrphansReported()
+    {
+        // Edge case: Other/Customizations.xml itself missing → scanner returns empty, no exception.
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 10064));
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "connectionreference"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("connectionreference", orphanId) { ["connectionreferencelogicalname"] = "av_sharepoint" }
+            ])));
+
+        // No packageSrcRoot given — defaults to a nonexistent directory, so Other/Customizations.xml is absent.
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Contains($"ConnectionReference 'av_sharepoint' ({orphanId})", _console.Output);
+        Assert.Contains("remove manually via maker portal", _console.Output);
+    }
+
     [Fact]
     public async Task RunPreImportAsync_OrphanInAnotherRealSolution_RemovesFromSolutionOnly()
     {
@@ -560,20 +688,17 @@ public class OrphanCleanupServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task RunPreImportAsync_UnsupportedType_ShowsResolvedNameInVerbosePreviewOnly()
+    public async Task RunPreImportAsync_ConnectionReferenceRecordExists_ReportedInActionableManualNotVerbosePreview()
     {
-        // Resolving a display name via solutioncomponentdefinition is informational, not verification —
-        // it must appear in the verbose preview (so the user can evaluate the type for opt-in) but never
-        // promote the component into the actionable "can't be removed automatically" report.
+        // Superseded by ConnectionReference's own entity-side detection (R2/U4): a live connectionreference
+        // record used to only surface via solutioncomponentdefinition name resolution — informational,
+        // not verification — in the verbose "not tracked yet" preview (see the connectionreference/bot
+        // false-positive incident, 2026-07-05). Now that ConnectionReference is entity-detected and cross-
+        // checked against Other/Customizations.xml, a genuinely-orphaned record reaches the actionable
+        // report instead, with a real name — not a bare GUID behind a verbose-only line.
         var orphanId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (orphanId, 10064));
 
-        _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "solutioncomponentdefinition"),
-                Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new EntityCollection([
-                new Entity("solutioncomponentdefinition") { ["name"] = "connectionreference", ["solutioncomponenttype"] = 10064 }
-            ])));
         _serviceMock.RetrieveMultipleAsync(
                 Arg.Is<QueryExpression>(q => q.EntityName == "connectionreference"),
                 Arg.Any<CancellationToken>())
@@ -583,9 +708,9 @@ public class OrphanCleanupServiceTests : IDisposable
 
         await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
 
-        Assert.DoesNotContain("can't be removed automatically", _console.Output);
-        Assert.Contains("10064 (connectionreference) 'av_sharedcalendlyv2_bffc3'", _console.Output);
-        Assert.Contains("would have proposed: remove manually via maker portal", _console.Output);
+        Assert.DoesNotContain("not tracked yet", _console.Output);
+        Assert.Contains($"ConnectionReference 'av_sharedcalendlyv2_bffc3' ({orphanId})", _console.Output);
+        Assert.Contains("can't be removed automatically", _console.Output);
     }
 
     [Fact]
