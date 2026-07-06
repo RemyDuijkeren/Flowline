@@ -198,38 +198,19 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
             }).ToList();
         }
 
-        // Bot's live identity attribute is schemaname, not name (KTD3) — ResolvedTypeNameAttributes'
-        // bot entry maps to name for the unsupported-preview's display purpose only, never for
-        // verification. Cross-check against bots/<schemaname>/bot.xml before reporting.
-        Dictionary<Guid, string> botSchemaNames = [];
-        if (botOrphans.Count > 0)
-        {
-            botSchemaNames = await GetEntityNamesAsync(service, "bot", "botid", "schemaname", botOrphans.Select(o => o.ObjectId), ct).ConfigureAwait(false);
-
-            var localBotSchemaNames = ComponentClassifier.ScanBotSchemaNames(context.PackageSrcRoot);
-            botOrphans = botOrphans.Where(o =>
-            {
-                if (!botSchemaNames.TryGetValue(o.ObjectId, out var schemaName)) return true;
-                return !localBotSchemaNames.Contains(schemaName);
-            }).ToList();
-        }
-
-        // ConnectionReference has no dedicated top-level folder (unlike Bot's bots/<schemaname>/bot.xml
-        // shape) — it's declared inline in Other/Customizations.xml's <connectionreferences> section
-        // (see R2), not the separately-generated deploymentSettings.json, which is optional and can go
-        // stale. Cross-check against that section before reporting, same pattern as Bot's schemaname check.
-        Dictionary<Guid, string> connectionReferenceLogicalNames = [];
-        if (connectionReferenceOrphans.Count > 0)
-        {
-            connectionReferenceLogicalNames = await GetEntityNamesAsync(service, "connectionreference", "connectionreferenceid", "connectionreferencelogicalname", connectionReferenceOrphans.Select(o => o.ObjectId), ct).ConfigureAwait(false);
-
-            var localConnectionReferenceLogicalNames = ComponentClassifier.ScanConnectionReferenceLogicalNames(context.PackageSrcRoot);
-            connectionReferenceOrphans = connectionReferenceOrphans.Where(o =>
-            {
-                if (!connectionReferenceLogicalNames.TryGetValue(o.ObjectId, out var logicalName)) return true;
-                return !localConnectionReferenceLogicalNames.Contains(logicalName);
-            }).ToList();
-        }
+        // Bot and ConnectionReference share the same entity-detected, no-componenttype-gate shape —
+        // resolve each candidate's live identity attribute and drop the ones still declared locally
+        // (KTD2). Bot's identity is schemaname, not name (KTD3) — ResolvedTypeNameAttributes' bot entry
+        // maps to name for the unsupported-preview's display purpose only, never for verification.
+        // ConnectionReference has no dedicated folder like Bot's bots/<schemaname>/bot.xml — it's
+        // declared inline in Other/Customizations.xml's <connectionreferences> section (R2), not the
+        // separately-generated deploymentSettings.json, which is optional and can go stale.
+        var botEntries = await ResolveEntityDetectedManualEntriesAsync(
+            service, botOrphans, "bot", "botid", "schemaname",
+            ComponentClassifier.ScanBotSchemaNames, context.PackageSrcRoot, ct).ConfigureAwait(false);
+        var connectionReferenceEntries = await ResolveEntityDetectedManualEntriesAsync(
+            service, connectionReferenceOrphans, "connectionreference", "connectionreferenceid", "connectionreferencelogicalname",
+            ComponentClassifier.ScanConnectionReferenceLogicalNames, context.PackageSrcRoot, ct).ConfigureAwait(false);
 
         var crossSolutionIds = autoOrphans.Select(c => c.ObjectId).Concat(customApiOrphans.Select(c => c.ObjectId));
         var crossSolution = crossSolutionIds.Any()
@@ -264,22 +245,11 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
             }
         }
 
-        // Bot can't be deleted automatically like CustomApi — a genuinely-orphaned Bot is reported as
-        // Manual, same as any other unsupported/opt-in-gated type, but bypasses SupportedManualTypes
-        // entirely per KTD2 (entity-side detection, not a componenttype gate).
-        foreach (var orphan in botOrphans)
-        {
-            var detail = botSchemaNames.TryGetValue(orphan.ObjectId, out var name) ? name : null;
-            entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId, "bot", detail), OrphanAction.Manual, EntityName: "bot"));
-        }
-
-        // ConnectionReference can't be deleted automatically either — same treatment as Bot, entity-side
-        // detected and reported Manual, never routed through SupportedManualTypes (KTD2/R2).
-        foreach (var orphan in connectionReferenceOrphans)
-        {
-            var detail = connectionReferenceLogicalNames.TryGetValue(orphan.ObjectId, out var name) ? name : null;
-            entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId, "connectionreference", detail), OrphanAction.Manual, EntityName: "connectionreference"));
-        }
+        // Bot and ConnectionReference can't be deleted automatically like CustomApi — genuinely-orphaned
+        // ones are reported Manual, same as any other unsupported/opt-in-gated type, but bypass
+        // SupportedManualTypes entirely per KTD2 (entity-side detection, not a componenttype gate).
+        entries.AddRange(botEntries);
+        entries.AddRange(connectionReferenceEntries);
 
         entries.AddRange(await BuildManualEntriesAsync(service, context, manualOrphans, ct).ConfigureAwait(false));
 
@@ -853,6 +823,38 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         foreach (var e in botTask.Result)   result[e.Id] = "bot";
         foreach (var e in crTask.Result)    result[e.Id] = "connectionreference";
         return result;
+    }
+
+    // Shared by every entity-detected type that has no data-table componenttype to gate on (Bot,
+    // ConnectionReference — see IdentifyEntityDetectedTypesAsync/KTD2): resolve each candidate's live
+    // identity attribute, drop the ones still declared in local source, and build the resulting Manual
+    // entries. CustomApi keeps its own version above since it groups three sub-entities, not one.
+    static async Task<List<OrphanEntry>> ResolveEntityDetectedManualEntriesAsync(
+        IOrganizationServiceAsync2 service,
+        List<(Guid ObjectId, int ComponentType)> orphans,
+        string entityLogicalName,
+        string idAttribute,
+        string identityAttribute,
+        Func<string, HashSet<string>> scanLocal,
+        string packageSrcRoot,
+        CancellationToken ct)
+    {
+        var entries = new List<OrphanEntry>();
+        if (orphans.Count == 0) return entries;
+
+        var names = await GetEntityNamesAsync(service, entityLogicalName, idAttribute, identityAttribute, orphans.Select(o => o.ObjectId), ct).ConfigureAwait(false);
+        var localIdentities = scanLocal(packageSrcRoot);
+
+        foreach (var orphan in orphans)
+        {
+            if (names.TryGetValue(orphan.ObjectId, out var name) && localIdentities.Contains(name))
+                continue; // still declared locally — not orphaned
+
+            var detail = names.TryGetValue(orphan.ObjectId, out var resolvedName) ? resolvedName : null;
+            entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId, entityLogicalName, detail), OrphanAction.Manual, EntityName: entityLogicalName));
+        }
+
+        return entries;
     }
 
     // Dataverse dual-writes every component added to a custom unmanaged solution into "Default" as
