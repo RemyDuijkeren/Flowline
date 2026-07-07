@@ -28,7 +28,7 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
         if (string.IsNullOrWhiteSpace(dllPath))
             throw new ArgumentException("dllPath is required and cannot be empty.", nameof(dllPath));
 
-        var metadata = console.Status().Start("Analyzing plugin assembly...", _ => _assemblyReader.Analyze(dllPath));
+        var metadata = console.Status().FlowlineSpinner().Start("Analyzing plugin assembly...", _ => _assemblyReader.Analyze(dllPath));
         return await SyncAssemblyOnlyAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
     }
 
@@ -42,7 +42,7 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
         if (string.IsNullOrWhiteSpace(solutionName))
             throw new ArgumentException("solutionName is required and cannot be empty.", nameof(solutionName));
 
-        await console.Status()
+        await console.Status().FlowlineSpinner()
                     .StartAsync($"Looking up solution [bold]{solutionName}[/]...",
                         _ => _solutionReader.GetSupportedSolutionInfoAsync(service, solutionName, cancellationToken))
                     .ConfigureAwait(false);
@@ -101,7 +101,7 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
         if (string.IsNullOrWhiteSpace(dllPath))
             throw new ArgumentException("dllPath is required and cannot be empty.", nameof(dllPath));
 
-        var metadata = console.Status().Start("Analyzing plugin assembly...", ctx => _assemblyReader.Analyze(dllPath));
+        var metadata = console.Status().FlowlineSpinner().Start("Analyzing plugin assembly...", ctx => _assemblyReader.Analyze(dllPath));
         return await SyncSolutionAsync(service, metadata, solutionName, runMode, force, cancellationToken).ConfigureAwait(false);
     }
 
@@ -117,7 +117,7 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
             throw new ArgumentException("solutionName is required and cannot be empty.", nameof(solutionName));
 
         // Phase 0: Check if solution exists and is supported
-        await console.Status()
+        await console.Status().FlowlineSpinner()
                     .StartAsync($"Looking up solution [bold]{solutionName}[/]...",
                         _ => _solutionReader.GetSupportedSolutionInfoAsync(service, solutionName, cancellationToken))
                     .ConfigureAwait(false);
@@ -132,7 +132,7 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
         await WarnOrphanStepsAsync(service, metadata.Name, solutionName, force, runMode, cancellationToken).ConfigureAwait(false);
 
         // Phase 2: Load snapshot (all Dataverse state in parallel)
-        var snapshot = await console.Status()
+        var snapshot = await console.Status().FlowlineSpinner()
             .StartAsync("Loading plugin registration snapshot...", _ => _reader.LoadSnapshotAsync(service, assembly.Id, metadata, solutionName, cancellationToken))
             .ConfigureAwait(false);
         WriteSnapshotVerbose(snapshot);

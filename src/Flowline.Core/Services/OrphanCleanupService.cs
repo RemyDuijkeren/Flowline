@@ -82,7 +82,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
         _deferred = [];
 
-        var sOld = await console.Status()
+        var sOld = await console.Status().FlowlineSpinner()
             .StartAsync($"Querying orphan components in [bold]{solutionName}[/]...",
                 _ => QuerySolutionComponentsAsync(service, solutionName, ct))
             .ConfigureAwait(false);

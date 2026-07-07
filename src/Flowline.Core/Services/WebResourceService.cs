@@ -26,7 +26,7 @@ public class WebResourceService(IAnsiConsole console, FlowlineRuntimeOptions opt
             throw new ArgumentException("solutionName is required.", nameof(solutionName));
 
         // Phase 1: Load snapshot (all Dataverse state in parallel)
-        var snapshot = await console.Status().StartAsync("Loading web resource snapshot...", _ =>
+        var snapshot = await console.Status().FlowlineSpinner().StartAsync("Loading web resource snapshot...", _ =>
             _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, cancellationToken)).ConfigureAwait(false);
         WriteSnapshotVerbose(snapshot);
         console.Ok("Snapshot web resources loaded");
@@ -67,7 +67,7 @@ public class WebResourceService(IAnsiConsole console, FlowlineRuntimeOptions opt
         string solutionName,
         CancellationToken cancellationToken = default)
     {
-        var snapshot = await console.Status().StartAsync(
+        var snapshot = await console.Status().FlowlineSpinner().StartAsync(
             $"Loading web resources for {solutionName}...",
             _ => _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, cancellationToken))
             .ConfigureAwait(false);

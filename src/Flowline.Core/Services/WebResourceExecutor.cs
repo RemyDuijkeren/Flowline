@@ -104,7 +104,7 @@ public class WebResourceExecutor(IAnsiConsole console, FlowlineRuntimeOptions op
         if (publishAfterSync && publishIds.Count > 0)
         {
             var distinctIds = publishIds.Distinct().ToList();
-            await console.Status()
+            await console.Status().FlowlineSpinner()
                         .StartAsync("Publishing web resources", ctx => PublishAsync(service, distinctIds, cancellationToken))
                         .ConfigureAwait(false);
             console.Ok($"{distinctIds.Count} web resource(s) published");

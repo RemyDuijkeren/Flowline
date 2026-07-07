@@ -1,6 +1,6 @@
-﻿using Spectre.Console;
+using Spectre.Console;
 
-namespace Flowline.Utils;
+namespace Flowline.Core;
 
 public static class SpinnerExtensions
 {
