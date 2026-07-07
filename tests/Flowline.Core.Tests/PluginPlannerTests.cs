@@ -341,6 +341,166 @@ public class PluginPlannerTests
         Assert.Contains(stepName, imageAction.Name);
     }
 
+    static Entity ExistingMatchedStep(Guid stepId, Guid typeId, Guid messageId, Guid filterId) => new("sdkmessageprocessingstep", stepId)
+    {
+        ["name"]               = "MyNamespace.MyPlugin: Update of account",
+        ["plugintypeid"]       = new EntityReference("plugintype", typeId),
+        ["stage"]              = new OptionSetValue(20),
+        ["mode"]               = new OptionSetValue(0),
+        ["rank"]               = 1,
+        ["sdkmessageid"]       = new EntityReference("sdkmessage", messageId),
+        ["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId),
+        ["asyncautodelete"]    = false
+    };
+
+    [Fact]
+    public void Plan_ExistingImage_AliasRenamed_UpdatesInPlace()
+    {
+        var typeId    = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var filterId  = Guid.NewGuid();
+        var stepId    = Guid.NewGuid();
+        var existingStep = ExistingMatchedStep(stepId, typeId, messageId, filterId);
+
+        var existingImage = new Entity("sdkmessageprocessingstepimage", Guid.NewGuid())
+        {
+            ["name"]                       = "PreImage",
+            ["sdkmessageprocessingstepid"] = new EntityReference("sdkmessageprocessingstep", stepId),
+            ["imagetype"]                  = new OptionSetValue(0),
+            ["entityalias"]                = "oldAlias",
+            ["attributes"]                 = "name"
+        };
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            steps: [existingStep],
+            images: [existingImage],
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            filterIds: new() { [(messageId, "account", null)] = filterId });
+
+        var image = new PluginImageMetadata("PreImage", "newAlias", 0, "name");
+        var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of account", "Update", "account", 20, 0, 1, null, null, [image], []);
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
+
+        var upsert = Assert.Single(plan.Images.Upserts);
+        Assert.False(upsert.IsCreate);
+        Assert.Equal("newAlias", upsert.Entity.GetAttributeValue<string>("entityalias"));
+        Assert.Empty(plan.Images.Deletes);
+    }
+
+    [Fact]
+    public void Plan_ExistingImage_AttributesChanged_UpdatesInPlace()
+    {
+        var typeId    = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var filterId  = Guid.NewGuid();
+        var stepId    = Guid.NewGuid();
+        var existingStep = ExistingMatchedStep(stepId, typeId, messageId, filterId);
+
+        var existingImage = new Entity("sdkmessageprocessingstepimage", Guid.NewGuid())
+        {
+            ["name"]                       = "PreImage",
+            ["sdkmessageprocessingstepid"] = new EntityReference("sdkmessageprocessingstep", stepId),
+            ["imagetype"]                  = new OptionSetValue(0),
+            ["entityalias"]                = "alias",
+            ["attributes"]                 = "name"
+        };
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            steps: [existingStep],
+            images: [existingImage],
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            filterIds: new() { [(messageId, "account", null)] = filterId });
+
+        var image = new PluginImageMetadata("PreImage", "alias", 0, "name,statecode");
+        var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of account", "Update", "account", 20, 0, 1, null, null, [image], []);
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
+
+        var upsert = Assert.Single(plan.Images.Upserts);
+        Assert.False(upsert.IsCreate);
+        Assert.Equal("name,statecode", upsert.Entity.GetAttributeValue<string>("attributes"));
+    }
+
+    [Fact]
+    public void Plan_DuplicateSameTypeImages_LowestIdMatchedRestOrphaned()
+    {
+        var typeId    = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var filterId  = Guid.NewGuid();
+        var stepId    = Guid.NewGuid();
+        var existingStep = ExistingMatchedStep(stepId, typeId, messageId, filterId);
+
+        var lowerId  = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var higherId = Guid.Parse("00000000-0000-0000-0000-000000000002");
+        var imageLow = new Entity("sdkmessageprocessingstepimage", lowerId)
+        {
+            ["name"] = "PreImage", ["sdkmessageprocessingstepid"] = new EntityReference("sdkmessageprocessingstep", stepId),
+            ["imagetype"] = new OptionSetValue(0), ["entityalias"] = "lowAlias", ["attributes"] = "name"
+        };
+        var imageHigh = new Entity("sdkmessageprocessingstepimage", higherId)
+        {
+            ["name"] = "PreImageDuplicate", ["sdkmessageprocessingstepid"] = new EntityReference("sdkmessageprocessingstep", stepId),
+            ["imagetype"] = new OptionSetValue(0), ["entityalias"] = "highAlias", ["attributes"] = "name"
+        };
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            steps: [existingStep],
+            images: [imageHigh, imageLow],
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            filterIds: new() { [(messageId, "account", null)] = filterId });
+
+        var image = new PluginImageMetadata("PreImage", "lowAlias", 0, "name");
+        var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of account", "Update", "account", 20, 0, 1, null, null, [image], []);
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
+
+        Assert.Empty(plan.Images.Upserts); // lowest-id row already matches — no change detected
+        Assert.Contains(plan.Images.Deletes, d => d.Id == higherId);
+        Assert.DoesNotContain(plan.Images.Deletes, d => d.Id == lowerId);
+    }
+
+    [Fact]
+    public void Plan_ImageTypeWithNoCodeDeclaration_DeletedAsOrphan()
+    {
+        var typeId    = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var filterId  = Guid.NewGuid();
+        var stepId    = Guid.NewGuid();
+        var existingStep = ExistingMatchedStep(stepId, typeId, messageId, filterId);
+
+        var existingImage = new Entity("sdkmessageprocessingstepimage", Guid.NewGuid())
+        {
+            ["name"] = "PostImage", ["sdkmessageprocessingstepid"] = new EntityReference("sdkmessageprocessingstep", stepId),
+            ["imagetype"] = new OptionSetValue(1), ["entityalias"] = "alias", ["attributes"] = "name"
+        };
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            steps: [existingStep],
+            images: [existingImage],
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            filterIds: new() { [(messageId, "account", null)] = filterId });
+
+        // Code declares no images at all for this step
+        var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of account", "Update", "account", 20, 0, 1, null, null, [], []);
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
+
+        Assert.Contains(plan.Images.Deletes, d => d.Name.StartsWith("PostImage"));
+    }
+
     [Fact]
     public void Plan_UnsupportedMessageForImage_ThrowsClearException()
     {

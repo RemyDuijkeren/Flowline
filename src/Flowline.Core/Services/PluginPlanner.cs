@@ -338,25 +338,35 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
     {
         ActionPlan plan = new();
 
-        var dvImages = snapshot.Images
+        var dvImagesForStep = snapshot.Images
             .Where(i => (i.GetAttributeValue<EntityReference>("sdkmessageprocessingstepid")?.Id ?? Guid.Empty) == stepEntity.Id)
-            .ToDictionary(i => i.GetAttributeValue<string>("name"), i => i, StringComparer.OrdinalIgnoreCase)
-            .AsReadOnly();
+            .ToList();
+
+        // Identity key: imagetype within the resolved step (R6). [PreImage]/[PostImage] cap at one
+        // instance per class (R7), so the assembly side never presents two images of the same type
+        // for one step. On the snapshot side, if organic accretion left 2+ images of the same type,
+        // the lowest-id row is the match and the rest are treated as orphans (KTD4).
+        var dvImageByType = dvImagesForStep
+            .GroupBy(i => i.GetAttributeValue<OptionSetValue>("imagetype")?.Value ?? 0)
+            .ToDictionary(g => g.Key, g => g.OrderBy(i => i.Id).First());
+
+        var matchedIds = new HashSet<Guid>();
 
         foreach (var asmImage in asmImages)
         {
-            if (dvImages.TryGetValue(asmImage.Name, out var dvImage))
+            if (dvImageByType.TryGetValue(asmImage.ImageType, out var dvImage))
             {
+                matchedIds.Add(dvImage.Id);
+
                 var changed =
+                    dvImage.GetAttributeValue<string>("name") != asmImage.Name ||
                     dvImage.GetAttributeValue<string>("entityalias") != asmImage.Alias ||
-                    (dvImage.GetAttributeValue<OptionSetValue>("imagetype")?.Value ?? 0) != asmImage.ImageType ||
                     dvImage.GetAttributeValue<string>("attributes") != asmImage.Attributes;
 
                 if (!changed) continue;
 
                 dvImage["name"]        = asmImage.Name;
                 dvImage["entityalias"] = asmImage.Alias;
-                dvImage["imagetype"]   = new OptionSetValue(asmImage.ImageType);
                 dvImage["attributes"]  = asmImage.Attributes;
 
                 plan.Upserts.Add(new UpsertAction($"{asmImage.Name}' on '{stepName}", dvImage, IsCreate: false));
@@ -383,8 +393,11 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
             }
         }
 
-        foreach (var obsoleteImage in dvImages.Where(i => asmImages.All(a => a.Name != i.Key)))
-            plan.Deletes.Add(new DeleteAction($"{obsoleteImage.Key}' on '{stepName}", "sdkmessageprocessingstepimage", obsoleteImage.Value.Id));
+        foreach (var obsoleteImage in dvImagesForStep.Where(i => !matchedIds.Contains(i.Id)))
+        {
+            var imageName = obsoleteImage.GetAttributeValue<string>("name");
+            plan.Deletes.Add(new DeleteAction($"{imageName}' on '{stepName}", "sdkmessageprocessingstepimage", obsoleteImage.Id));
+        }
 
         return plan;
     }
