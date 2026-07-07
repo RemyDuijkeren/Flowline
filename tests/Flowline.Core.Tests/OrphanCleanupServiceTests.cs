@@ -15,6 +15,7 @@ public class OrphanCleanupServiceTests : IDisposable
     readonly OrphanCleanupService _service;
     readonly string _packageSrcRoot;
     readonly string _webResourcesDir;
+    readonly List<string> _autoCreatedPackageFolders = [];
 
     public OrphanCleanupServiceTests()
     {
@@ -42,18 +43,75 @@ public class OrphanCleanupServiceTests : IDisposable
     {
         if (Directory.Exists(_packageSrcRoot))
             Directory.Delete(_packageSrcRoot, true);
+
+        foreach (var packageFolder in _autoCreatedPackageFolders)
+            if (Directory.Exists(packageFolder))
+                Directory.Delete(packageFolder, true);
     }
 
+    // PostDeployContext no longer carries LocalComponents/EntityLogicalNames/NamedComponents (KTD12) —
+    // OrphanCleanupService.CompareAsync parses PackageSrcRoot itself now. Ctx() keeps the same test-facing
+    // shape every existing call site already uses by writing a synthetic Solution.xml fixture that
+    // round-trips back to the same (localComponents, entityLogicalNames, namedComponents) via
+    // ComponentClassifier.ParseSolutionXmlComponents, rather than requiring 59 call sites to be rewritten
+    // into hand-built fixtures. When packageSrcRoot isn't explicitly overridden, a fresh temp folder is
+    // created per call and cleaned up in Dispose(); when a test passes its own real packageSrcRoot (e.g.
+    // for CustomApi/Bot/annotation fixtures), the fixture is written into that existing folder instead.
     PostDeployContext Ctx(
         string solutionName,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> localComponents,
         RunMode mode = RunMode.Normal,
         IReadOnlyList<string>? entityLogicalNames = null,
         string? packageSrcRoot = null,
-        IReadOnlyList<(int ComponentType, string SchemaName)>? namedComponents = null) =>
-        new(_serviceMock, solutionName, localComponents, mode, "solution.zip", "https://example.crm.dynamics.com",
-            entityLogicalNames ?? [], packageSrcRoot ?? Path.Combine(Path.GetTempPath(), $"flowline-test-nonexistent-{Guid.NewGuid():N}"),
-            namedComponents ?? []);
+        IReadOnlyList<(int ComponentType, string SchemaName)>? namedComponents = null)
+    {
+        string srcRoot;
+        if (packageSrcRoot != null)
+        {
+            srcRoot = packageSrcRoot;
+        }
+        else
+        {
+            var packageFolder = Path.Combine(Path.GetTempPath(), $"flowline-test-{Guid.NewGuid():N}");
+            _autoCreatedPackageFolders.Add(packageFolder);
+            srcRoot = Path.Combine(packageFolder, "src");
+        }
+
+        WriteSolutionXmlFixture(srcRoot, localComponents, entityLogicalNames ?? [], namedComponents ?? []);
+
+        return new(_serviceMock, solutionName, mode, "solution.zip", "https://example.crm.dynamics.com", srcRoot);
+    }
+
+    static void WriteSolutionXmlFixture(
+        string packageSrcRoot,
+        IReadOnlyList<(Guid ObjectId, int ComponentType)> components,
+        IReadOnlyList<string> entityLogicalNames,
+        IReadOnlyList<(int ComponentType, string SchemaName)> namedComponents)
+    {
+        var otherDir = Path.Combine(packageSrcRoot, "Other");
+        Directory.CreateDirectory(otherDir);
+
+        var rootComponents = new List<string>();
+        foreach (var (id, type) in components)
+            rootComponents.Add($"""<RootComponent type="{type}" id="{id}" />""");
+        foreach (var name in entityLogicalNames)
+            rootComponents.Add($"""<RootComponent type="1" schemaName="{name}" />""");
+        foreach (var (type, name) in namedComponents)
+            rootComponents.Add($"""<RootComponent type="{type}" schemaName="{name}" />""");
+
+        File.WriteAllText(Path.Combine(otherDir, "Solution.xml"), $"""
+            <?xml version="1.0" encoding="utf-8"?>
+            <ImportExportXml>
+              <SolutionManifest>
+                <UniqueName>TestSolution</UniqueName>
+                <Version>1.0.0.0</Version>
+                <RootComponents>
+                  {string.Join("\n                  ", rootComponents)}
+                </RootComponents>
+              </SolutionManifest>
+            </ImportExportXml>
+            """);
+    }
 
     void SetupSolutionComponents(string solutionName, params (Guid Id, int ComponentType)[] components)
     {
@@ -1316,5 +1374,48 @@ public class OrphanCleanupServiceTests : IDisposable
         Assert.Single(result.Entries);
         await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
+    }
+
+    // -- CompareAsync(packageFolder, ...) convenience overload — parses committed source itself,
+    // for callers (DriftCommand) with no packed/mutating context of their own --
+
+    [Fact]
+    public async Task CompareAsync_PackageFolderOverload_ParsesLocalSourceAndDelegatesToContextOverload()
+    {
+        var declaredId = Guid.NewGuid();
+        var unexpectedId = Guid.NewGuid();
+        var packageFolder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        var otherDir = Path.Combine(packageFolder, "src", "Other");
+        Directory.CreateDirectory(otherDir);
+        File.WriteAllText(Path.Combine(otherDir, "Solution.xml"), $$"""
+            <?xml version="1.0" encoding="utf-8"?>
+            <ImportExportXml>
+              <SolutionManifest>
+                <UniqueName>MySolution</UniqueName>
+                <Version>1.0.0.0</Version>
+                <RootComponents>
+                  <RootComponent type="91" id="{{{declaredId}}}" />
+                </RootComponents>
+              </SolutionManifest>
+            </ImportExportXml>
+            """);
+
+        try
+        {
+            SetupSolutionComponents("MySolution", (declaredId, 91), (unexpectedId, 91));
+
+            var result = await _service.CompareAsync(packageFolder, _serviceMock, "MySolution", "https://example.crm.dynamics.com", default);
+
+            // Parses the fixture's Solution.xml itself (no pre-parsed LocalComponents passed in) and
+            // reaches the same classification the context-based overload would: declaredId matched,
+            // unexpectedId reported.
+            Assert.False(result.Skipped);
+            var entry = Assert.Single(result.Entries);
+            Assert.Equal(unexpectedId, entry.ObjectId);
+        }
+        finally
+        {
+            Directory.Delete(packageFolder, true);
+        }
     }
 }

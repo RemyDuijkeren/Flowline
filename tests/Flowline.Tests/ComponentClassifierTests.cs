@@ -222,7 +222,7 @@ public class ComponentClassifierTests : IDisposable
         File.WriteAllText(Path.Combine(formDir, $"{{{formId}}}.xml"), "<form/>");
         File.WriteAllText(Path.Combine(viewDir, $"{{{viewId}}}.xml"), "<savedquery/>");
 
-        var (components, entityLogicalNames, namedComponents) = ComponentClassifier.ParseLocalSource(_dir);
+        var (components, entityLogicalNames, namedComponents) = ComponentClassifier.ParseLocalSource(Path.Combine(_dir, "src"));
 
         components.Should().Contain((pluginAssemblyId, 91));
         components.Should().Contain((entityRootId, 1));
@@ -235,7 +235,7 @@ public class ComponentClassifierTests : IDisposable
     [Fact]
     public void ParseLocalSource_Throws_NotFound_WhenSolutionXmlMissing()
     {
-        var act = () => ComponentClassifier.ParseLocalSource(_dir);
+        var act = () => ComponentClassifier.ParseLocalSource(Path.Combine(_dir, "src"));
 
         act.Should().Throw<FlowlineException>()
             .Where(ex => ex.ExitCode == ExitCode.NotFound);
@@ -248,7 +248,7 @@ public class ComponentClassifierTests : IDisposable
         Directory.CreateDirectory(otherDir);
         File.WriteAllText(Path.Combine(otherDir, "Solution.xml"), "this is not xml <<<");
 
-        var act = () => ComponentClassifier.ParseLocalSource(_dir);
+        var act = () => ComponentClassifier.ParseLocalSource(Path.Combine(_dir, "src"));
 
         act.Should().Throw<FlowlineException>()
             .Where(ex => ex.ExitCode == ExitCode.ValidationFailed);

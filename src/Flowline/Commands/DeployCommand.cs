@@ -66,14 +66,13 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         await ValidateDtapGateAsync(sln, slnFolder, targetUrl, settings, cancellationToken);
         ValidateLocalState(slnFolder, settings, cancellationToken);
 
-        var (sNew, entityLogicalNames, namedComponents) = ComponentClassifier.ParseLocalSource(PackageFolder(slnFolder));
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, targetUrl, cancellationToken);
 
         Logger.LogInformation("Packing: {SolutionName}", sln.Name);
         var packagePath = await PackSolutionAsync(sln, slnFolder, settings, cancellationToken);
 
         var packageSrcRoot = Path.Combine(PackageFolder(slnFolder), "src");
-        var postDeployContext = new PostDeployContext(service, sln.Name, sNew, runMode, packagePath, targetEnv.EnvironmentUrl!, entityLogicalNames, packageSrcRoot, namedComponents);
+        var postDeployContext = new PostDeployContext(service, sln.Name, runMode, packagePath, targetEnv.EnvironmentUrl!, packageSrcRoot);
 
         bool IsSkipped(IPostDeployService s) =>
             settings.SkipSolutionCheck && s is SolutionCheckService ||

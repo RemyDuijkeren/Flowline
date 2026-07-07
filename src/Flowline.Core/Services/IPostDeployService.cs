@@ -2,16 +2,17 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 
 namespace Flowline.Core.Services;
 
+// PackageSrcRoot is the only source-of-truth for committed source — OrphanCleanupService parses it
+// itself (ComponentClassifier.ParseLocalSource) rather than receiving pre-parsed LocalComponents/
+// EntityLogicalNames/NamedComponents fields, since it's the only IPostDeployService implementer that
+// ever reads them.
 public sealed record PostDeployContext(
     IOrganizationServiceAsync2 Service,
     string SolutionName,
-    IReadOnlyList<(Guid ObjectId, int ComponentType)> LocalComponents,
     RunMode Mode,
     string PackagePath,
     string EnvironmentUrl,
-    IReadOnlyList<string> EntityLogicalNames,
-    string PackageSrcRoot,
-    IReadOnlyList<(int ComponentType, string SchemaName)> NamedComponents);
+    string PackageSrcRoot);
 
 public interface IPostDeployService
 {

@@ -90,13 +90,36 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         _deferred = await ExecuteInOrderAsync(context.Service, context.SolutionName, result.Entries, isPostImport: false, ct).ConfigureAwait(false);
     }
 
-    // Comparison-only half of the pre-import step (KTD5): queries live solutioncomponents, resolves
-    // sNewIds via all existing special-casing (schemaName, entity, OptionSet, CustomApi, Bot,
-    // ConnectionReference), classifies orphans, and prints the report — stopping before
-    // ExecuteInOrderAsync (the mutating delete/remove step), so this is callable from a read-only
-    // context (used today by DriftCommand) without mutating anything. `noDeleteHint` lets a caller
-    // that has no `--no-delete` flag of its own (DriftCommand is always read-only) suppress or
+    // Convenience overload for callers with no packed/mutating context of their own (e.g. DriftCommand)
+    // — builds the PostDeployContext internally, always in RunMode.NoDelete, so the caller only needs to
+    // say where the source lives, not construct a PostDeployContext by hand. RunPreImportAsync's caller
+    // (DeployCommand) still builds PostDeployContext itself: it also needs RunMode from --no-delete and a
+    // real PackagePath from its own packing step, neither of which this convenience shape has.
+    public Task<CompareResult> CompareAsync(
+        string packageFolder,
+        IOrganizationServiceAsync2 service,
+        string solutionName,
+        string environmentUrl,
+        CancellationToken ct,
+        string? noDeleteHint = null)
+    {
+        var packageSrcRoot = Path.Combine(packageFolder, "src");
+        var context = new PostDeployContext(service, solutionName, RunMode.NoDelete, string.Empty, environmentUrl, packageSrcRoot);
+        return CompareAsync(context, ct, noDeleteHint);
+    }
+
+    // Comparison-only half of the pre-import step (KTD5): parses committed source, queries live
+    // solutioncomponents, resolves sNewIds via all existing special-casing (schemaName, entity,
+    // OptionSet, CustomApi, Bot, ConnectionReference), classifies orphans, and prints the report —
+    // stopping before ExecuteInOrderAsync (the mutating delete/remove step), so this is callable from a
+    // read-only context (used today by DriftCommand) without mutating anything. `noDeleteHint` lets a
+    // caller that has no `--no-delete` flag of its own (DriftCommand is always read-only) suppress or
     // replace the deploy-specific "(--no-delete active)" phrasing in the printed report.
+    //
+    // Owns parsing PackageSrcRoot itself (via ComponentClassifier.ParseLocalSource) rather than reading
+    // pre-parsed LocalComponents/EntityLogicalNames/NamedComponents fields off the context — this is the
+    // only IPostDeployService implementer that ever needs the parsed source, so PostDeployContext no
+    // longer carries it (KTD12).
     //
     // Returns a CompareResult rather than a bare entry list so a caller can tell "compared and found
     // nothing" (Skipped: false, Entries: []) apart from "the comparison itself didn't run" (Skipped:
@@ -108,8 +131,9 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     {
         var service      = context.Service;
         var solutionName = context.SolutionName;
-        var sNew         = context.LocalComponents;
         var mode         = context.Mode;
+
+        var (sNew, entityLogicalNames, namedComponents) = ComponentClassifier.ParseLocalSource(context.PackageSrcRoot);
 
         var sOld = await console.Status().FlowlineSpinner()
             .StartAsync($"Querying orphan components in [bold]{solutionName}[/]...",
@@ -132,17 +156,17 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
         // Entity roots in Solution.xml are recorded by schemaName, not MetadataId — resolve them live
         // so entity components aren't misdiagnosed as orphans. See ComponentClassifier.ParseSolutionXmlComponents.
-        if (context.EntityLogicalNames.Count > 0)
+        if (entityLogicalNames.Count > 0)
         {
-            var resolvedEntityIds = await ResolveEntityMetadataIdsAsync(service, context.EntityLogicalNames, ct).ConfigureAwait(false);
+            var resolvedEntityIds = await ResolveEntityMetadataIdsAsync(service, entityLogicalNames, ct).ConfigureAwait(false);
             sNewIds.UnionWith(resolvedEntityIds);
         }
 
         // Other types recorded by schemaName instead of id (e.g. WebResource — its id is not portable
         // across environments, so pac always records it by name) — resolve live for the same reason.
-        if (context.NamedComponents.Count > 0)
+        if (namedComponents.Count > 0)
         {
-            var resolvedNamedIds = await ResolveNamedComponentIdsAsync(service, context.NamedComponents, ct).ConfigureAwait(false);
+            var resolvedNamedIds = await ResolveNamedComponentIdsAsync(service, namedComponents, ct).ConfigureAwait(false);
             sNewIds.UnionWith(resolvedNamedIds);
         }
 
@@ -151,7 +175,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         // ResolveNamedComponentIdsAsync silently skips it. Resolve it via a metadata request instead
         // (RetrieveOptionSetRequest) and fold it into sNewIds the same way, before the orphan diff runs
         // (KTD1) — a still-declared OptionSet must never become an orphan candidate at all.
-        var optionSetSchemaNames = context.NamedComponents
+        var optionSetSchemaNames = namedComponents
             .Where(c => c.ComponentType == OptionSetComponentType)
             .Select(c => c.SchemaName)
             .ToList();
@@ -280,7 +304,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         entries.AddRange(botEntries);
         entries.AddRange(connectionReferenceEntries);
 
-        entries.AddRange(await BuildManualEntriesAsync(service, context, manualOrphans, ct).ConfigureAwait(false));
+        entries.AddRange(await BuildManualEntriesAsync(service, context, entityLogicalNames, namedComponents, manualOrphans, ct).ConfigureAwait(false));
 
         PrintReport(entries, mode, solutionName, context.EnvironmentUrl, noDeleteHint);
 
@@ -291,9 +315,13 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     {
         var service      = context.Service;
         var solutionName = context.SolutionName;
-        var sNew         = context.LocalComponents;
         var mode         = context.Mode;
         var deferred     = _deferred;
+
+        // Re-parses committed source (cheap — one small XML file plus a folder scan) rather than
+        // threading the CompareAsync-time parse across the pre/post-import boundary — this is the same
+        // tradeoff RunPreImportAsync/RunPostImportAsync already make for querying live state twice.
+        var (sNew, _, _) = ComponentClassifier.ParseLocalSource(context.PackageSrcRoot);
 
         if (deferred.Count == 0 || mode == RunMode.NoDelete)
             return 0;
@@ -362,7 +390,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     // OptionSet has no backing data table to query. Unlike ResolveEntityMetadataIdsAsync, a failed
     // request here (e.g. a genuinely-deleted global choice) is caught per-name so it doesn't block
     // resolution of the others — RetrieveOptionSetRequest throws for a name that no longer exists,
-    // whereas RetrieveEntityRequest's precondition (context.EntityLogicalNames) never includes deleted
+    // whereas RetrieveEntityRequest's precondition (the parsed entityLogicalNames) never includes deleted
     // entities in the first place.
     async Task<HashSet<Guid>> ResolveOptionSetMetadataIdsAsync(
         IOrganizationServiceAsync2 service,
@@ -546,6 +574,8 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     async Task<List<OrphanEntry>> BuildManualEntriesAsync(
         IOrganizationServiceAsync2 service,
         PostDeployContext context,
+        IReadOnlyList<string> entityLogicalNames,
+        IReadOnlyList<(int ComponentType, string SchemaName)> namedComponents,
         List<(Guid ObjectId, int ComponentType)> manualOrphans,
         CancellationToken ct)
     {
@@ -554,9 +584,9 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
         var entries = new List<OrphanEntry>();
 
-        if (attributeOrphans.Count > 0 && context.EntityLogicalNames.Count > 0)
+        if (attributeOrphans.Count > 0 && entityLogicalNames.Count > 0)
         {
-            var attributeInfo = await ResolveAttributeInfoAsync(service, context.EntityLogicalNames, attributeOrphans.Select(o => o.ObjectId), ct).ConfigureAwait(false);
+            var attributeInfo = await ResolveAttributeInfoAsync(service, entityLogicalNames, attributeOrphans.Select(o => o.ObjectId), ct).ConfigureAwait(false);
             var localAttributesByEntity = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var orphan in attributeOrphans)
@@ -591,7 +621,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
         if (unsupportedOrphans.Count > 0)
         {
-            var localIdentifiers = BuildLocalIdentifierHarvest(context);
+            var localIdentifiers = BuildLocalIdentifierHarvest(context, entityLogicalNames, namedComponents);
             await LogUnsupportedOrphansAsync(service, unsupportedOrphans, localIdentifiers, ct).ConfigureAwait(false);
         }
 
@@ -614,14 +644,17 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     // BuildManualEntriesAsync call (itself called exactly once per RunPreImportAsync run) and used only
     // to enrich LogUnsupportedOrphansAsync's verbose preview (R6) — membership here is informational
     // only and never promotes a type into the actionable report or manual count.
-    static HashSet<string> BuildLocalIdentifierHarvest(PostDeployContext context)
+    static HashSet<string> BuildLocalIdentifierHarvest(
+        PostDeployContext context,
+        IReadOnlyList<string> entityLogicalNames,
+        IReadOnlyList<(int ComponentType, string SchemaName)> namedComponents)
     {
         var harvest = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var (_, schemaName) in context.NamedComponents)
+        foreach (var (_, schemaName) in namedComponents)
             harvest.Add(schemaName);
 
-        harvest.UnionWith(context.EntityLogicalNames);
+        harvest.UnionWith(entityLogicalNames);
 
         var customApiNames = ComponentClassifier.ScanCustomApiNames(context.PackageSrcRoot);
         harvest.UnionWith(customApiNames.ApiUniqueNames);
@@ -673,7 +706,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         }
     }
 
-    // Cross-entity attribute lookup, scoped to the solution's own entities (context.EntityLogicalNames)
+    // Cross-entity attribute lookup, scoped to the solution's own entities (the parsed entityLogicalNames)
     // rather than an unfiltered scan — an EntityQueryExpression with no Criteria is the RetrieveAllEntities-
     // equivalent full metadata walk, which doesn't scale. Attributes on entities outside this solution's
     // root list won't resolve — those fall back to a bare GUID rather than a guessed name.

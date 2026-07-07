@@ -172,10 +172,11 @@ app.Configure(config =>
 
     // drift = read-only comparison of committed source vs a named live environment (never mutates)
     config.AddCommand<DriftCommand>("drift")
-          .WithDescription("Compare committed source against a live environment (dev, test, uat, or prod) and report components present there but not declared in source. Read-only — never deletes or modifies anything. Run against prod/test for drift detection, or dev before sync/deploy as a preview.")
+          .WithDescription("Compare committed source against a live environment (dev, test, uat, prod, or a URL) and report components present there but not declared in source. Read-only — never deletes or modifies anything. Run against prod/test for drift detection, or dev before sync/deploy as a preview.")
           .WithExample("drift", "prod")
           .WithExample("drift", "dev")
-          .WithExample("drift", "test ContosoCustomizations");
+          .WithExample("drift", "test ContosoCustomizations")
+          .WithExample("drift", "https://contoso-test.crm4.dynamics.com/");
 });
 
 var hookLoggerFactory = LoggerFactory.Create(b => b.AddSerilog(serilogLogger));

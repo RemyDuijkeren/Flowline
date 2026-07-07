@@ -3,6 +3,8 @@ using Flowline.Core;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Services;
+using Flowline.Utils;
+using Flowline.Validation;
 using Spectre.Console;
 using Microsoft.Extensions.Logging;
 using Spectre.Console.Cli;
@@ -14,47 +16,17 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "<target>")]
-        [Description("Target environment: prod, uat, test, or dev")]
+        [Description("Target environment: prod, uat, test, dev, or a URL")]
         public string Target { get; set; } = null!;
 
         [CommandArgument(1, "[solution]")]
         [Description("Solution to check (optional in project mode)")]
         public string? Solution { get; set; }
-
-        [CommandOption("--prod <URL>")]
-        [Description("Production environment URL (only used when target is prod)")]
-        public string? ProdUrl { get; set; }
-
-        [CommandOption("--uat <URL>")]
-        [Description("UAT environment URL (only used when target is uat)")]
-        public string? UatUrl { get; set; }
-
-        [CommandOption("--test <URL>")]
-        [Description("Test environment URL (only used when target is test)")]
-        public string? TestUrl { get; set; }
-
-        [CommandOption("--dev <URL>")]
-        [Description("Development environment URL (only used when target is dev)")]
-        public string? DevUrl { get; set; }
     }
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        var role = ResolveRole(settings.Target);
-        // Matches whichever --prod/--uat/--test/--dev override was passed for this target, so the
-        // ConfigInvalid error GetAndCheckEnvironmentInfoAsync throws for an unconfigured environment
-        // names a flag this command actually accepts (mirroring SyncCommand's single-role pattern,
-        // generalized across all four roles since drift's target is chosen at runtime).
-        var inputUrl = role switch
-        {
-            EnvironmentRole.Prod => settings.ProdUrl,
-            EnvironmentRole.Uat  => settings.UatUrl,
-            EnvironmentRole.Test => settings.TestUrl,
-            EnvironmentRole.Dev  => settings.DevUrl,
-            _                    => null
-        };
-
-        var env = await GetAndCheckEnvironmentInfoAsync(role, inputUrl, settings, cancellationToken);
+        var env = await ResolveEnvironmentAsync(settings.Target, settings, cancellationToken);
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, env.EnvironmentUrl!, cancellationToken);
         // bypassCache: true — drift is a health-check signal with no downstream step (unlike deploy's
         // import, or sync's export) to catch a stale "solution still exists" cache entry. Without this,
@@ -64,27 +36,47 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
 
         var slnFolder = Path.Combine(RootFolder, AllSolutionsFolderName, projectSln.Name);
         var packageFolder = PackageFolder(slnFolder);
-        var packageSrcRoot = Path.Combine(packageFolder, "src");
-        var (localComponents, entityLogicalNames, namedComponents) = ComponentClassifier.ParseLocalSource(packageFolder);
-
-        // drift never packs a solution, so there's no real PackagePath value — pass an explicit
-        // empty sentinel rather than packageSrcRoot, which means something else in every other caller.
-        var postDeployContext = new PostDeployContext(service, projectSln.Name, localComponents, RunMode.NoDelete, string.Empty, env.EnvironmentUrl!, entityLogicalNames, packageSrcRoot, namedComponents);
 
         // drift has no --no-delete flag of its own — it's always read-only — so suppress the
-        // deploy-specific "(--no-delete active)" hint in the printed report entirely.
-        var result = await orphanCleanupService.CompareAsync(postDeployContext, cancellationToken, noDeleteHint: null);
+        // deploy-specific "(--no-delete active)" hint in the printed report entirely. OrphanCleanupService
+        // owns parsing committed source itself here — drift has no packing step or RunMode choice of its
+        // own, so it only needs to say where the source lives (unlike DeployCommand, which builds
+        // PostDeployContext directly because it also carries PackagePath/RunMode from its own packing step).
+        var result = await orphanCleanupService.CompareAsync(packageFolder, service, projectSln.Name, env.EnvironmentUrl!, cancellationToken, noDeleteHint: null);
 
         return SelectExitCode(result);
     }
 
-    internal static EnvironmentRole ResolveRole(string target) => target.ToLowerInvariant() switch
+    // <target> accepts a role keyword or a raw URL, mirroring DeployCommand's target-argument shape —
+    // unlike KTD2's original role-only design, which forced a --prod/--uat/--test/--dev override per
+    // role even though drift only ever acts on one role per invocation (those flags exist on CloneCommand
+    // because clone can configure all four roles in one run; drift can't and shouldn't inherit that shape).
+    // A role keyword still resolves via the shared, role-generic GetAndCheckEnvironmentInfoAsync (config
+    // lookup + Production-type safety check); anything else is treated as a literal URL, matching how
+    // DeployCommand's ResolveTargetUrl falls through to the raw target string.
+    async Task<EnvironmentInfo> ResolveEnvironmentAsync(string target, Settings settings, CancellationToken ct)
+    {
+        var role = TryResolveRole(target);
+        if (role is not null)
+            return await GetAndCheckEnvironmentInfoAsync(role.Value, null, settings, ct);
+
+        var env = await Console.Status().FlowlineSpinner().StartAsync(
+            $"Checking [bold]{target}[/]...",
+            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(target, settings, ct));
+        if (env == null)
+            throw new FlowlineException(ExitCode.ConnectionFailed, $"Environment not found — check the URL '{target}' or your PAC login.");
+
+        Console.Ok($"Env [bold]{env.DisplayName}[/] ({env.EnvironmentUrl}) exists");
+        return env;
+    }
+
+    internal static EnvironmentRole? TryResolveRole(string target) => target.ToLowerInvariant() switch
     {
         "prod" => EnvironmentRole.Prod,
         "uat"  => EnvironmentRole.Uat,
         "test" => EnvironmentRole.Test,
         "dev"  => EnvironmentRole.Dev,
-        _      => throw new FlowlineException(ExitCode.ConfigInvalid, $"Unknown target '{target}' — use prod, uat, test, or dev.")
+        _      => null
     };
 
     internal static int SelectExitCode(CompareResult result) => result switch

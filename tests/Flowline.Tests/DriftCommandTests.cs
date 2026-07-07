@@ -16,20 +16,21 @@ public class DriftCommandTests
     [InlineData("dev", EnvironmentRole.Dev)]
     [InlineData("PROD", EnvironmentRole.Prod)]
     [InlineData("Dev", EnvironmentRole.Dev)]
-    public void ResolveRole_MapsKeywordToRole(string target, EnvironmentRole expected)
+    public void TryResolveRole_MapsKeywordToRole(string target, EnvironmentRole expected)
     {
-        DriftCommand.ResolveRole(target).Should().Be(expected);
+        DriftCommand.TryResolveRole(target).Should().Be(expected);
     }
 
-    // ── Target → EnvironmentRole resolution: edge case ────────────────────────
+    // ── Target → EnvironmentRole resolution: not a role keyword ───────────────
 
-    [Fact]
-    public void ResolveRole_Throws_WhenTargetIsUnknown()
+    [Theory]
+    [InlineData("staging")]
+    [InlineData("https://contoso-test.crm4.dynamics.com/")]
+    public void TryResolveRole_ReturnsNull_WhenTargetIsNotARoleKeyword(string target)
     {
-        var act = () => DriftCommand.ResolveRole("staging");
-
-        act.Should().Throw<FlowlineException>()
-            .Which.Message.Should().ContainAll("prod", "uat", "test", "dev");
+        // Anything that isn't one of the four role keywords is treated as a literal URL by the
+        // caller (ResolveEnvironmentAsync) — TryResolveRole itself just signals "not a role."
+        DriftCommand.TryResolveRole(target).Should().BeNull();
     }
 
     // ── Exit code selection ───────────────────────────────────────────────────

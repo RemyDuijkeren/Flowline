@@ -159,20 +159,20 @@ public static class ComponentClassifier
     }
 
     /// <summary>
-    /// Parses committed source under a solution's Package folder into S_new candidates: Solution.xml
+    /// Parses committed source under a solution's unpacked src root into S_new candidates: Solution.xml
     /// RootComponents (<see cref="ParseSolutionXmlComponents"/>) plus entity subcomponents unpacked
-    /// under Entities/** (<see cref="ScanEntitySubcomponents"/>). Shared by <c>DeployCommand</c>'s
-    /// orphan-cleanup pre-import step and the drift-detection command — both need the identical
-    /// committed-source parse, wrapped with the same <see cref="FlowlineException"/> translation so
-    /// callers get identical error messages and exit codes.
+    /// under Entities/** (<see cref="ScanEntitySubcomponents"/>). Takes <c>packageSrcRoot</c> (the src
+    /// folder itself), matching every other local-source scan on this class (<see cref="ScanEntitySubcomponents"/>,
+    /// <see cref="ScanCustomApiNames"/>, etc.) — not its parent. Wrapped with the same
+    /// <see cref="FlowlineException"/> translation every caller needs, so callers get identical error
+    /// messages and exit codes.
     /// </summary>
-    public static (IReadOnlyList<(Guid ObjectId, int ComponentType)> Components, IReadOnlyList<string> EntityLogicalNames, IReadOnlyList<(int ComponentType, string SchemaName)> NamedComponents) ParseLocalSource(string packageFolder)
+    public static (IReadOnlyList<(Guid ObjectId, int ComponentType)> Components, IReadOnlyList<string> EntityLogicalNames, IReadOnlyList<(int ComponentType, string SchemaName)> NamedComponents) ParseLocalSource(string packageSrcRoot)
     {
         try
         {
-            var srcRoot = Path.Combine(packageFolder, "src");
-            var parsed = ParseSolutionXmlComponents(Path.Combine(srcRoot, "Other", "Solution.xml"));
-            var subcomponents = ScanEntitySubcomponents(srcRoot);
+            var parsed = ParseSolutionXmlComponents(Path.Combine(packageSrcRoot, "Other", "Solution.xml"));
+            var subcomponents = ScanEntitySubcomponents(packageSrcRoot);
             return (parsed.Components.Concat(subcomponents).ToList(), parsed.EntityLogicalNames, parsed.NamedComponents);
         }
         catch (FileNotFoundException ex)
