@@ -121,6 +121,33 @@ public class PluginPlannerTests
     }
 
     [Fact]
+    public void Plan_ObsoletePluginTypeWithProtectedStep_NotDeleted()
+    {
+        var typeId = Guid.NewGuid();
+        var protectedStep = new Entity("sdkmessageprocessingstep", Guid.NewGuid())
+        {
+            ["name"]                                  = "Orphaned.Step",
+            ["plugintypeid"]                           = new EntityReference("plugintype", typeId),
+            ["sdkmessageprocessingstepsecureconfigid"] = new EntityReference("sdkmessageprocessingstepsecureconfig", Guid.NewGuid())
+        };
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Obsolete.Plugin"] = new Entity("plugintype", typeId) { ["typename"] = "Obsolete.Plugin", ["isworkflowactivity"] = false }
+            },
+            steps: [protectedStep]);
+
+        var plan = _planner.Plan(snapshot, Metadata(), _assembly, "MySolution");
+
+        // The step is protected (Secure Configuration) so it's left in place; the type still
+        // references it, so the type must not be deleted alongside it (KTD7).
+        Assert.DoesNotContain(plan.PluginTypes.Deletes, a => a.Name == "Obsolete.Plugin");
+        Assert.DoesNotContain(plan.Steps.Deletes, a => a.Name == "Orphaned.Step");
+        Assert.Contains(plan.Warnings, w => w.Contains("Obsolete.Plugin"));
+    }
+
+    [Fact]
     public void Plan_ObsoleteWorkflowType_DeletesTypeOnly()
     {
         var typeId = Guid.NewGuid();
@@ -597,6 +624,33 @@ public class PluginPlannerTests
 
         Assert.Contains(plan.Steps.Deletes, a => a.Name == stepName);
         Assert.Equal(stepId, plan.Steps.Deletes.Single(a => a.Name == stepName).Id);
+    }
+
+    [Fact]
+    public void Plan_ObsoleteStepWithSecureConfig_ReportsInsteadOfDeleting()
+    {
+        var typeId  = Guid.NewGuid();
+        var stepId  = Guid.NewGuid();
+        const string stepName = "Orphaned.Step";
+
+        var obsoleteStep = new Entity("sdkmessageprocessingstep", stepId)
+        {
+            ["name"]                                   = stepName,
+            ["plugintypeid"]                            = new EntityReference("plugintype", typeId),
+            ["sdkmessageprocessingstepsecureconfigid"]  = new EntityReference("sdkmessageprocessingstepsecureconfig", Guid.NewGuid())
+        };
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            steps: [obsoleteStep]);
+
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [], false)), _assembly, "MySolution");
+
+        Assert.DoesNotContain(plan.Steps.Deletes, a => a.Name == stepName);
+        Assert.Contains(plan.Warnings, w => w.Contains(stepName) && w.Contains("Secure Configuration"));
     }
 
     // -- asyncautodelete / DeleteJobOnSuccess --
