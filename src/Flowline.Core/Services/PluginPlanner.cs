@@ -66,7 +66,7 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
             }
             else
             {
-                var (stepPlan, imagePlan) = PlanPluginSteps(snapshot, dvPluginType, asmPluginType, solutionName);
+                var (stepPlan, imagePlan) = PlanPluginSteps(snapshot, dvPluginType, asmPluginType, solutionName, plan.Warnings);
                 plan.Steps.Add(stepPlan);
                 plan.Images.Add(imagePlan);
             }
@@ -95,11 +95,24 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
                 [],
                 [],
                 false);
-            var (stepPlan, imagePlan) = PlanPluginSteps(snapshot, obsoletePluginType.Value, obsoleteMetadata, solutionName);
+            var (stepPlan, imagePlan) = PlanPluginSteps(snapshot, obsoletePluginType.Value, obsoleteMetadata, solutionName, plan.Warnings);
             plan.Steps.Add(stepPlan);
             plan.Images.Add(imagePlan);
 
-            plan.PluginTypes.Deletes.Add(new DeleteAction(obsoletePluginType.Key, "plugintype", obsoletePluginType.Value.Id));
+            // A step with a linked Secure Configuration is left in place by PlanPluginSteps' obsolete-step
+            // guard (R3) rather than deleted, so the type it belongs to can no longer be deleted either —
+            // Dataverse rejects deleting a plugin type a step still references.
+            var typeStepCount = snapshot.Steps.Count(s =>
+                (s.GetAttributeValue<EntityReference>("plugintypeid")?.Id ?? Guid.Empty) == obsoletePluginType.Value.Id);
+            if (stepPlan.Deletes.Count < typeStepCount)
+            {
+                plan.Warnings.Add(
+                    $"Skipping deletion of plugin type '{obsoletePluginType.Key}' — one or more of its steps has a linked Secure Configuration and was left in place.");
+            }
+            else
+            {
+                plan.PluginTypes.Deletes.Add(new DeleteAction(obsoletePluginType.Key, "plugintype", obsoletePluginType.Value.Id));
+            }
         }
 
         // Unlinked Custom APIs — plugintypeid is null/empty or references a plugin type not in the snapshot.
@@ -158,19 +171,25 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
         solutions.Any(s => string.Equals(s, solutionName, StringComparison.OrdinalIgnoreCase));
 
     (ActionPlan stepPlan, ActionPlan imagePlan) PlanPluginSteps(
-        RegistrationSnapshot snapshot, Entity typeEntity, PluginTypeMetadata asmPluginType, string solutionName)
+        RegistrationSnapshot snapshot, Entity typeEntity, PluginTypeMetadata asmPluginType, string solutionName, List<string> warnings)
     {
         ActionPlan stepPlan = new();
         ActionPlan imagesPlan = new();
         var asmPluginSteps = asmPluginType.Steps;
 
-        var dvSteps = snapshot.Steps
+        var dvStepsForType = snapshot.Steps
             .Where(s => (s.GetAttributeValue<EntityReference>("plugintypeid")?.Id ?? Guid.Empty) == typeEntity.Id)
-            .ToDictionary(s => s.GetAttributeValue<string>("name"), s => s, StringComparer.OrdinalIgnoreCase)
-            .AsReadOnly();
+            .ToList();
 
-        var secondaryMatchedIds = new HashSet<Guid>();
-        var asmStepNames = new HashSet<string>(asmPluginSteps.Select(p => p.Name), StringComparer.OrdinalIgnoreCase);
+        // Identity key: (sdkmessageid, sdkmessagefilterid, stage, mode) — the sole lookup path (R1).
+        // Grouped, not a dictionary: two pre-Flowline rows can legitimately share a key (R5 collision).
+        var dvStepsByKey = dvStepsForType.ToLookup(s => (
+            s.GetAttributeValue<EntityReference?>("sdkmessageid")?.Id,
+            s.GetAttributeValue<EntityReference?>("sdkmessagefilterid")?.Id,
+            s.GetAttributeValue<OptionSetValue>("stage")?.Value,
+            s.GetAttributeValue<OptionSetValue>("mode")?.Value));
+
+        var matchedIds = new HashSet<Guid>();
 
         foreach (var asmStep in asmPluginSteps)
         {
@@ -193,7 +212,42 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
                     $"Step '{asmStep.Name}' references RunAs system user '{asmStep.RunAs.Value}' which does not exist in this environment. " +
                     $"Check RunAs on [Step] for '{asmPluginType.FullName}'.");
 
-            if (dvSteps.TryGetValue(asmStep.Name, out var dvStep))
+            var matches = dvStepsByKey[(messageId, filterId, asmStep.Stage, asmStep.Mode)].ToList();
+
+            Entity? dvStep;
+            if (matches.Count == 1)
+            {
+                dvStep = matches[0];
+                matchedIds.Add(dvStep.Id);
+            }
+            else if (matches.Count > 1)
+            {
+                // Collision: more than one existing row shares this identity key (only possible for
+                // pre-Flowline history — build-time validation rules this out for Flowline-authored steps).
+                var withSecureConfig = matches.Any(m =>
+                    m.GetAttributeValue<EntityReference?>("sdkmessageprocessingstepsecureconfigid") != null);
+                if (withSecureConfig)
+                    throw new InvalidOperationException(StepCollisionMessage(asmStep, asmPluginType, matches,
+                        "one or more of them has a linked Secure Configuration, so automatic resolution is not attempted"));
+
+                var nameMatches = matches
+                    .Where(m => string.Equals(m.GetAttributeValue<string>("name"), asmStep.Name, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (nameMatches.Count != 1)
+                    throw new InvalidOperationException(StepCollisionMessage(asmStep, asmPluginType, matches,
+                        "no single row's name matches what the current code would generate"));
+
+                dvStep = nameMatches[0];
+                matchedIds.Add(dvStep.Id);
+                // The other colliding row is deliberately left out of matchedIds — it flows into the
+                // obsolete-step sweep below, which applies the same Secure Configuration guard (R3).
+            }
+            else
+            {
+                dvStep = null;
+            }
+
+            if (dvStep != null)
             {
                 if (!IsInSolution(snapshot, dvStep.Id, solutionName))
                 {
@@ -202,110 +256,70 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
                             snapshot.ComponentTypeById.GetValueOrDefault(dvStep.Id, 92)));
                 }
 
+                // stage, mode, sdkmessageid, and sdkmessagefilterid are the identity key (R1) — already
+                // equal on a matched row by construction, so they are not compared or written back here.
                 var changed =
+                    dvStep.GetAttributeValue<string>("name") != asmStep.Name ||
                     dvStep.GetAttributeValue<string>("configuration") != asmStep.Configuration ||
                     dvStep.GetAttributeValue<string>("filteringattributes") != asmStep.FilteringColumns ||
-                    dvStep.GetAttributeValue<OptionSetValue>("stage")?.Value != asmStep.Stage ||
-                    dvStep.GetAttributeValue<OptionSetValue>("mode")?.Value != asmStep.Mode ||
                     dvStep.GetAttributeValue<int?>("rank") != asmStep.Order ||
-                    dvStep.GetAttributeValue<EntityReference?>("sdkmessageid")?.Id != messageId ||
-                    dvStep.GetAttributeValue<EntityReference?>("sdkmessagefilterid")?.Id != filterId ||
                     dvStep.GetAttributeValue<bool>("asyncautodelete") != asmStep.AsyncAutoDelete ||
                     dvStep.GetAttributeValue<EntityReference?>("impersonatinguserid")?.Id != asmStep.RunAs ||
                     dvStep.GetAttributeValue<string>("description") != asmStep.Description;
 
-                if (!changed)
+                if (changed)
                 {
-                    imagesPlan.Add(PlanImages(snapshot, dvStep, asmStep.Images, asmStep.Message, asmStep.Name));
-                    continue;
-                }
-
-                dvStep["stage"]                = new OptionSetValue(asmStep.Stage);
-                dvStep["mode"]                 = new OptionSetValue(asmStep.Mode);
-                dvStep["rank"]                 = asmStep.Order;
-                dvStep["filteringattributes"]  = asmStep.FilteringColumns;
-                dvStep["configuration"]        = asmStep.Configuration;
-                dvStep["description"]          = asmStep.Description;
-                dvStep["asyncautodelete"]      = asmStep.AsyncAutoDelete;
-                dvStep["impersonatinguserid"]  = asmStep.RunAs.HasValue ? new EntityReference("systemuser", asmStep.RunAs.Value) : null;
-                dvStep["sdkmessageid"]         = new EntityReference("sdkmessage", messageId);
-                dvStep["sdkmessagefilterid"]   = filterId.HasValue ? new EntityReference("sdkmessagefilter", filterId.Value) : null;
-
-                stepPlan.Upserts.Add(new UpsertAction(asmStep.Name, dvStep, IsCreate: false));
-            }
-            else
-            {
-                // Secondary match: (messageId + filterId + stage) within the same plugin type.
-                // Catches steps renamed by multi-[Handles] stage-qualification and prevents delete + create.
-                var secondaryMatch = dvSteps.Values.FirstOrDefault(s =>
-                    s.GetAttributeValue<EntityReference?>("sdkmessageid")?.Id == messageId &&
-                    s.GetAttributeValue<EntityReference?>("sdkmessagefilterid")?.Id == filterId &&
-                    s.GetAttributeValue<OptionSetValue>("stage")?.Value == asmStep.Stage &&
-                    s.GetAttributeValue<OptionSetValue>("mode")?.Value == asmStep.Mode &&
-                    !asmStepNames.Contains(s.GetAttributeValue<string>("name")) &&
-                    !secondaryMatchedIds.Contains(s.Id));
-
-                if (secondaryMatch != null)
-                {
-                    dvStep = secondaryMatch;
-                    secondaryMatchedIds.Add(dvStep.Id);
-
-                    if (!IsInSolution(snapshot, dvStep.Id, solutionName))
-                    {
-                        stepPlan.AddSolutionComponents.Add(
-                            new AddToSolutionAction(asmStep.Name, "sdkmessageprocessingstep", dvStep.Id, solutionName,
-                                snapshot.ComponentTypeById.GetValueOrDefault(dvStep.Id, 92)));
-                    }
-
-                    dvStep["name"]                = asmStep.Name;
-                    dvStep["stage"]               = new OptionSetValue(asmStep.Stage);
-                    dvStep["mode"]                = new OptionSetValue(asmStep.Mode);
-                    dvStep["rank"]                = asmStep.Order;
-                    dvStep["filteringattributes"] = asmStep.FilteringColumns;
-                    dvStep["configuration"]       = asmStep.Configuration;
-                    dvStep["description"]         = asmStep.Description;
-                    dvStep["asyncautodelete"]     = asmStep.AsyncAutoDelete;
-                    dvStep["impersonatinguserid"] = asmStep.RunAs.HasValue ? new EntityReference("systemuser", asmStep.RunAs.Value) : null;
-                    dvStep["sdkmessageid"]        = new EntityReference("sdkmessage", messageId);
-                    dvStep["sdkmessagefilterid"]  = filterId.HasValue ? new EntityReference("sdkmessagefilter", filterId.Value) : null;
+                    dvStep["name"]                 = asmStep.Name;
+                    dvStep["rank"]                 = asmStep.Order;
+                    dvStep["filteringattributes"]  = asmStep.FilteringColumns;
+                    dvStep["configuration"]        = asmStep.Configuration;
+                    dvStep["description"]          = asmStep.Description;
+                    dvStep["asyncautodelete"]      = asmStep.AsyncAutoDelete;
+                    dvStep["impersonatinguserid"]  = asmStep.RunAs.HasValue ? new EntityReference("systemuser", asmStep.RunAs.Value) : null;
 
                     stepPlan.Upserts.Add(new UpsertAction(asmStep.Name, dvStep, IsCreate: false));
                 }
-                else
+            }
+            else
+            {
+                dvStep = new Entity("sdkmessageprocessingstep", Guid.NewGuid())
                 {
-                    var entity = new Entity("sdkmessageprocessingstep", Guid.NewGuid())
-                    {
-                        ["name"]               = asmStep.Name,
-                        ["plugintypeid"]       = typeEntity.ToEntityReference(),
-                        ["sdkmessageid"]       = new EntityReference("sdkmessage", messageId),
-                        ["stage"]              = new OptionSetValue(asmStep.Stage),
-                        ["mode"]               = new OptionSetValue(asmStep.Mode),
-                        ["rank"]               = asmStep.Order,
-                        ["filteringattributes"] = asmStep.FilteringColumns,
-                        ["configuration"]      = asmStep.Configuration,
-                        ["asyncautodelete"]    = asmStep.AsyncAutoDelete,
-                        ["impersonatinguserid"] = asmStep.RunAs.HasValue ? new EntityReference("systemuser", asmStep.RunAs.Value) : null,
-                        ["description"]        = asmStep.Description
-                    };
-                    if (filterId.HasValue)
-                        entity["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId.Value);
+                    ["name"]               = asmStep.Name,
+                    ["plugintypeid"]       = typeEntity.ToEntityReference(),
+                    ["sdkmessageid"]       = new EntityReference("sdkmessage", messageId),
+                    ["stage"]              = new OptionSetValue(asmStep.Stage),
+                    ["mode"]               = new OptionSetValue(asmStep.Mode),
+                    ["rank"]               = asmStep.Order,
+                    ["filteringattributes"] = asmStep.FilteringColumns,
+                    ["configuration"]      = asmStep.Configuration,
+                    ["asyncautodelete"]    = asmStep.AsyncAutoDelete,
+                    ["impersonatinguserid"] = asmStep.RunAs.HasValue ? new EntityReference("systemuser", asmStep.RunAs.Value) : null,
+                    ["description"]        = asmStep.Description
+                };
+                if (filterId.HasValue)
+                    dvStep["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId.Value);
 
-                    stepPlan.Upserts.Add(new UpsertAction(asmStep.Name, entity, IsCreate: true, SolutionName: solutionName));
-                    dvStep = entity;
-                }
+                stepPlan.Upserts.Add(new UpsertAction(asmStep.Name, dvStep, IsCreate: true, SolutionName: solutionName));
             }
 
             imagesPlan.Add(PlanImages(snapshot, dvStep, asmStep.Images, asmStep.Message, asmStep.Name));
         }
 
-        foreach (var obsoleteStep in dvSteps.Where(s =>
-            asmPluginSteps.All(p => p.Name != s.Key) &&
-            !secondaryMatchedIds.Contains(s.Value.Id)))
+        // Obsolete-step sweep: every snapshot row for this type not consumed as a match above (R3).
+        foreach (var obsoleteStep in dvStepsForType.Where(s => !matchedIds.Contains(s.Id)))
         {
-            var stepName = obsoleteStep.Value.GetAttributeValue<string>("name");
-            stepPlan.Deletes.Add(new DeleteAction(stepName, "sdkmessageprocessingstep", obsoleteStep.Value.Id));
+            var stepName = obsoleteStep.GetAttributeValue<string>("name");
 
-            foreach (var obsoleteImage in snapshot.Images.Where(i => (i.GetAttributeValue<EntityReference>("sdkmessageprocessingstepid")?.Id ?? Guid.Empty) == obsoleteStep.Value.Id))
+            if (obsoleteStep.GetAttributeValue<EntityReference?>("sdkmessageprocessingstepsecureconfigid") != null)
+            {
+                warnings.Add(
+                    $"Skipping deletion of step '{stepName}' — has a linked Secure Configuration; remove manually via the Plugin Registration Tool if intended.");
+                continue;
+            }
+
+            stepPlan.Deletes.Add(new DeleteAction(stepName, "sdkmessageprocessingstep", obsoleteStep.Id));
+
+            foreach (var obsoleteImage in snapshot.Images.Where(i => (i.GetAttributeValue<EntityReference>("sdkmessageprocessingstepid")?.Id ?? Guid.Empty) == obsoleteStep.Id))
             {
                 var imageName = obsoleteImage.GetAttributeValue<string>("name");
                 imagesPlan.Deletes.Add(new DeleteAction($"{imageName}' on '{stepName}", "sdkmessageprocessingstepimage", obsoleteImage.Id));
@@ -314,6 +328,11 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
 
         return (stepPlan, imagesPlan);
     }
+
+    static string StepCollisionMessage(PluginStepMetadata asmStep, PluginTypeMetadata asmPluginType, List<Entity> matches, string reason) =>
+        $"Step '{asmStep.Name}' matches multiple existing steps " +
+        $"({string.Join(", ", matches.Select(m => m.Id))}) for message '{asmStep.Message}' on '{asmPluginType.FullName}', and {reason}. " +
+        "Resolve the duplicate registration manually via the Plugin Registration Tool before pushing again.";
 
     ActionPlan PlanImages(RegistrationSnapshot snapshot, Entity stepEntity, List<PluginImageMetadata> asmImages, string message, string stepName)
     {

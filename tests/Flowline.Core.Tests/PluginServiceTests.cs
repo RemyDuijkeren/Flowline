@@ -18,6 +18,8 @@ public class PluginServiceTests
     private readonly TestConsole _console;
     private readonly FlowlineRuntimeOptions _runtimeOptions;
     private readonly PluginService _service;
+    private readonly Guid _defaultMessageId;
+    private readonly Guid _defaultFilterId;
 
     public PluginServiceTests()
     {
@@ -33,15 +35,18 @@ public class PluginServiceTests
             .Returns(Task.FromResult(new EntityCollection()));
 
         var defaultMessage = new Entity("sdkmessage", Guid.NewGuid()) { ["name"] = "Update" };
+        _defaultMessageId = defaultMessage.Id;
         _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessage"))
             .Returns(Task.FromResult(new EntityCollection([defaultMessage])));
         _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessage"), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([defaultMessage])));
 
+        var defaultFilter = new Entity("sdkmessagefilter", Guid.NewGuid());
+        _defaultFilterId = defaultFilter.Id;
         _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter"))
-            .Returns(Task.FromResult(new EntityCollection([new Entity("sdkmessagefilter", Guid.NewGuid())])));
+            .Returns(Task.FromResult(new EntityCollection([defaultFilter])));
         _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessagefilter"), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new EntityCollection([new Entity("sdkmessagefilter", Guid.NewGuid())])));
+            .Returns(Task.FromResult(new EntityCollection([defaultFilter])));
 
         var defaultSolution = new Entity("solution")
         {
@@ -704,7 +709,11 @@ public class PluginServiceTests
         SetupSteps(new Entity("sdkmessageprocessingstep", existingStepId)
         {
             ["name"] = "MyNamespace.MyPlugin: Update of contact",
-            ["plugintypeid"] = pluginType.ToEntityReference()
+            ["plugintypeid"] = pluginType.ToEntityReference(),
+            ["sdkmessageid"] = new EntityReference("sdkmessage", _defaultMessageId),
+            ["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", _defaultFilterId),
+            ["stage"] = new OptionSetValue(20),
+            ["mode"] = new OptionSetValue(0)
         });
         SetupImages();
 
