@@ -43,11 +43,8 @@ A file in the generate output folder that carries the standard C# `<auto-generat
 
 ## Plugin Registration
 
-### Secondary match
-A fallback lookup strategy used during step reconciliation when a Dataverse step's name no longer matches the assembly step's name — typically after a multi-`[Handles]` migration renames a step. Instead of concluding the old step is obsolete and the new one must be created, the planner searches existing Dataverse steps by content: messageId, filterId, stage, and mode. A content match is treated as a rename rather than a delete+create pair. If no content match is found, the old step is deleted and the new one is created.
-
 ### Step identity
-The tuple of Dataverse field values that uniquely identifies a plugin step variant independent of its name: `sdkmessageid`, `sdkmessagefilterid`, `stage`, and `mode`. Stage alone is insufficient because `PostOperation` (value 40) is shared by both synchronous (mode=0) and asynchronous (mode=1) steps. All step-matching predicates — primary and secondary — must include all four fields to avoid ambiguous matches between sync and async PostOperation registrations.
+The tuple of Dataverse field values that is the *sole* lookup key for an existing plugin step, independent of its generated display name: `plugintypeid`, `sdkmessageid`, `sdkmessagefilterid`, `stage`, and `mode`. Stage alone is insufficient because `PostOperation` (value 40) is shared by both synchronous (mode=0) and asynchronous (mode=1) steps — all five fields participate to avoid ambiguous matches. A step whose display name changes (e.g. after a multi-`[Handles]` migration) is still found by this tuple and updated in place rather than deleted and recreated; the name is written on match, never read for identity. Because these same fields disambiguate multiple `[Handles]` registrations on one class, changing the message, table filter, stage, or mode of an already-registered step is treated as a different registration — it recreates the step rather than updating it in place. If the tuple matches more than one existing row (only possible for pre-Flowline history), Flowline checks whether either colliding row has a linked Secure Configuration — if so it fails immediately, since deleting the wrong one is irrecoverable; otherwise it falls back to a name-based tiebreak, and fails if that is still ambiguous.
 
 ## Deploy Pipeline
 

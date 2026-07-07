@@ -230,6 +230,13 @@ Default aliases are `"preimage"` and `"postimage"`. Override `Alias` when migrat
 [PreImage(Alias = "legacy_pre")]  // retrieve with: ctx.PreEntityImages["legacy_pre"]
 ```
 
+**One image per type, by design.** `[PreImage]` and `[PostImage]` each allow at most one instance
+per class — this is intentional, not a Dataverse limitation (the platform itself allows multiple
+images of the same type on one step). Splitting one step's columns across several same-type images
+has no benefit over declaring them together on a single image, so Flowline doesn't expose the
+option. Flowline finds an existing image by `(step, image type)`; renaming `Alias` or changing the
+column list updates the same record in place.
+
 ### Examples
 
 **Minimal — reject an operation before anything is written:**
@@ -346,6 +353,14 @@ Flowline treats the DLL as the source of truth. On every `flowline push`:
 - **Steps** — created or updated for every class with `[Step]`; deleted when `[Step]` is removed or the class is deleted.
 
 Steps created by Flowline are stamped with `[flowline]` in their description, visible in Plugin Registration Tool.
+
+**Step identity.** Flowline finds an existing step by `(message, table filter, stage, mode)` on the
+owning plugin type — never by the generated display name. Renaming a class, adding a
+`[DescriptiveName]`, or otherwise changing the display text updates the same Dataverse row in
+place; it never deletes and recreates the step. Changing the message, table, stage, or mode itself
+is a different registration, so it does recreate the step — Dataverse runs a `PreValidation` step
+at a genuinely different point in the pipeline than a `PostOperation` step, so this reflects a real
+behavior change, not just cosmetics.
 
 **Disabling a step without deleting it:** remove `[Step]` — Flowline deletes the step but keeps the plugin type registered.
 

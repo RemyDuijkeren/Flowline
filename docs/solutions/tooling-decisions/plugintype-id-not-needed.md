@@ -35,7 +35,7 @@ spkl's `Id` field solved a specific idempotency problem: without a stored GUID a
 Flowline solves this differently and more robustly:
 
 - **Plugin types** matched by `FullName` — unambiguous discovery, no stored ID needed
-- **Steps** matched by name (primary), then by content tuple `(sdkmessageid, sdkmessagefilterid, stage, mode)` as a secondary match — handles renames without a pinned GUID (see CONCEPTS.md: `Secondary match`, `Step identity`)
+- **Steps** matched solely by the content tuple `(plugintypeid, sdkmessageid, sdkmessagefilterid, stage, mode)` — handles renames without a pinned GUID; the generated display name is written but never read for identity (see CONCEPTS.md: `Step identity`)
 
 The remaining edge cases that IDs would address are niche:
 
@@ -72,9 +72,9 @@ If cross-environment GUID consistency ever becomes a real requirement, the appro
 [Step(Stage.PreOperation, "account", "Create")]
 public class AccountPlugin : IPlugin { ... }
 // PluginPlanner discovers existing types by FullName,
-// matches steps by name then by content tuple.
+// matches steps solely by content tuple.
 ```
 
 ## Related
 
-- CONCEPTS.md: `Secondary match`, `Step identity`
+- CONCEPTS.md: `Step identity`
