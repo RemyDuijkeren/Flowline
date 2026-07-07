@@ -169,6 +169,13 @@ app.Configure(config =>
     config.AddCommand<StatusCommand>("status")
           .WithDescription("Show configured environments, connection status, solution version, PAC CLI auth status, and git state. Use to verify setup before running commands.")
           .WithExample("status");
+
+    // drift = read-only comparison of committed source vs a named live environment (never mutates)
+    config.AddCommand<DriftCommand>("drift")
+          .WithDescription("Compare committed source against a live environment (dev, test, uat, prod, or URL) and report components present there but not declared in source. Read-only — never deletes or modifies anything. Run against prod/test for drift detection, or dev before sync/deploy as a preview.")
+          .WithExample("drift", "prod")
+          .WithExample("drift", "dev")
+          .WithExample("drift", "test --solution ContosoCustomizations");
 });
 
 var hookLoggerFactory = LoggerFactory.Create(b => b.AddSerilog(serilogLogger));

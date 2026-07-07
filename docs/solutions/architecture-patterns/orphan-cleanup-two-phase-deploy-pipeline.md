@@ -1,7 +1,7 @@
 ---
 title: Orphan component cleanup — two-phase deploy pipeline
 date: 2026-06-10
-last_updated: 2026-07-07 (part 9)
+last_updated: 2026-07-07 (part 10)
 category: docs/solutions/architecture-patterns
 module: DeployCommand
 problem_type: architecture_pattern
@@ -22,6 +22,7 @@ related_components:
   - IPostDeployService
   - PostDeployContext
   - ExitCode
+  - DriftCommand
 tags:
   - dataverse
   - orphan-cleanup
@@ -330,6 +331,10 @@ Applied in `IdentifyEntityDetectedTypesAsync` (renamed from `IdentifyCustomApiEn
 ### --no-delete flag: report without acting
 
 `--no-delete` maps to `RunMode.NoDelete`. Pre-import prints the full report but returns an empty deferred list. Post-import is skipped entirely. Mirrors the `--no-delete` flag on `push` — consistent "report without acting" pattern across Flowline commands.
+
+**Update (2026-07-07, part 10): the comparison itself is now a reusable, standalone `drift <target>` command, not just a deploy-time side effect.** `RunPreImportAsync` (query live components, resolve `sNewIds` via every identity shape above, classify, print) is split into a new `CompareAsync(PostDeployContext, ct)` that returns the classified entries — `RunPreImportAsync` is now a thin wrapper: call `CompareAsync`, then (unless `RunMode.NoDelete`) call `ExecuteInOrderAsync` on the result, exactly as before the split. Every guard documented above — `SupportedManualTypes`, the empty-`S_new`/empty-live short-circuits, `RetrieveAllAsync`, the `ConditionOperator.In` cap, per-table failure isolation — moved verbatim; nothing about deploy's own orphan-cleanup behavior changed. The new `flowline drift <target> [solution]` command calls `CompareAsync` directly against any named environment (dev/test/uat/prod), always in `RunMode.NoDelete`, and never calls `ExecuteInOrderAsync` — a read-only report, usable as a standalone drift check against prod/test or a pre-sync/pre-deploy preview against dev. `OrphanCleanupService` had to be registered in DI as itself (`services.AddSingleton<OrphanCleanupService>()` plus a forwarding `IPostDeployService` registration resolving to the same singleton) alongside its existing `IPostDeployService` registration, so `DriftCommand` could depend on it directly without creating a second instance that would have made deploy's orphan-cleanup fan-out run twice.
+
+**Known limitation, not a bug:** `CompareAsync`'s comparison only computes one direction — "present live, not declared in committed source" (which is all deploy's mutating cleanup ever needed; a component missing from live doesn't need cleanup, since `deploy`'s own import recreates it). `drift` inherits that same one-directional scope: it detects components created directly in the target or added in DEV since the last sync, but not components deleted directly in a live environment while committed source still declares them. Building that reverse direction is new comparison logic, not a byproduct of this extraction — an unresolved live identity in that direction would need to *suppress*, not report as "missing," mirroring exactly the part 9 false-positive class this document exists to prevent. Deferred rather than built ad hoc; see `docs/plans/2026-07-07-002-feat-drift-preview-diff-engine-plan.md`.
 
 ### Deploy command execution order
 
