@@ -30,12 +30,14 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, env.EnvironmentUrl!, cancellationToken);
         var (projectSln, _) = await GetAndCheckSolutionAsync(settings.Solution, env.EnvironmentUrl!, includeManaged: null, settings, cancellationToken);
 
-        var slnFolder = Path.Combine(RootFolder, "solutions", projectSln.Name);
+        var slnFolder = Path.Combine(RootFolder, AllSolutionsFolderName, projectSln.Name);
         var packageFolder = PackageFolder(slnFolder);
         var packageSrcRoot = Path.Combine(packageFolder, "src");
         var (localComponents, entityLogicalNames, namedComponents) = ComponentClassifier.ParseLocalSource(packageFolder);
 
-        var postDeployContext = new PostDeployContext(service, projectSln.Name, localComponents, RunMode.NoDelete, packageSrcRoot, env.EnvironmentUrl!, entityLogicalNames, packageSrcRoot, namedComponents);
+        // drift never packs a solution, so there's no real PackagePath value — pass an explicit
+        // empty sentinel rather than packageSrcRoot, which means something else in every other caller.
+        var postDeployContext = new PostDeployContext(service, projectSln.Name, localComponents, RunMode.NoDelete, string.Empty, env.EnvironmentUrl!, entityLogicalNames, packageSrcRoot, namedComponents);
 
         var entries = await orphanCleanupService.CompareAsync(postDeployContext, cancellationToken);
 
