@@ -63,7 +63,8 @@ services.AddSingleton<PluginService>();
 services.AddSingleton<WebResourceService>();
 services.AddSingleton<IPostDeployService, SolutionCheckService>();
 services.AddSingleton<IPostDeployService, BackupService>();
-services.AddSingleton<IPostDeployService, OrphanCleanupService>();
+services.AddSingleton<OrphanCleanupService>();
+services.AddSingleton<IPostDeployService>(sp => sp.GetRequiredService<OrphanCleanupService>());
 services.AddSingleton<SubprocessCapture>();
 
 Serilog.ILogger? serilogLogger = null;
