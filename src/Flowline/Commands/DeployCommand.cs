@@ -66,7 +66,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         await ValidateDtapGateAsync(sln, slnFolder, targetUrl, settings, cancellationToken);
         ValidateLocalState(slnFolder, settings, cancellationToken);
 
-        var (sNew, entityLogicalNames, namedComponents) = ParseSolutionXml(slnFolder);
+        var (sNew, entityLogicalNames, namedComponents) = ComponentClassifier.ParseLocalSource(PackageFolder(slnFolder));
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, targetUrl, cancellationToken);
 
         Logger.LogInformation("Packing: {SolutionName}", sln.Name);
@@ -216,25 +216,6 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         if (!settings.Force)
             throw new FlowlineException(ExitCode.ValidationFailed,
                 "Local changes not in Dataverse — deploy would revert them. Run 'sync' first, or use --force to skip.");
-    }
-
-    private (IReadOnlyList<(Guid ObjectId, int ComponentType)> Components, IReadOnlyList<string> EntityLogicalNames, IReadOnlyList<(int ComponentType, string SchemaName)> NamedComponents) ParseSolutionXml(string slnFolder)
-    {
-        try
-        {
-            var srcRoot = Path.Combine(PackageFolder(slnFolder), "src");
-            var parsed = ComponentClassifier.ParseSolutionXmlComponents(Path.Combine(srcRoot, "Other", "Solution.xml"));
-            var subcomponents = ComponentClassifier.ScanEntitySubcomponents(srcRoot);
-            return (parsed.Components.Concat(subcomponents).ToList(), parsed.EntityLogicalNames, parsed.NamedComponents);
-        }
-        catch (FileNotFoundException ex)
-        {
-            throw new FlowlineException(ExitCode.NotFound, ex.Message);
-        }
-        catch (InvalidOperationException ex)
-        {
-            throw new FlowlineException(ExitCode.ValidationFailed, ex.Message);
-        }
     }
 
     private async Task<string> PackSolutionAsync(ProjectSolution sln, string slnFolder, Settings settings, CancellationToken ct)

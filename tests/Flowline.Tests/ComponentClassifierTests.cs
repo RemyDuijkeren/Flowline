@@ -188,6 +188,59 @@ public class ComponentClassifierTests : IDisposable
             .WithMessage("Solution.xml is malformed*");
     }
 
+    // ── ParseLocalSource ──────────────────────────────────────────────────────
+
+    [Fact]
+    public void ParseLocalSource_ReturnsComponentsAndSubcomponents_ForValidFixture()
+    {
+        var pluginAssemblyId = Guid.NewGuid();
+        var entityRootId     = Guid.NewGuid();
+        var formId            = Guid.NewGuid();
+        var viewId             = Guid.NewGuid();
+
+        var otherDir = Path.Combine(_dir, "src", "Other");
+        Directory.CreateDirectory(otherDir);
+        File.WriteAllText(Path.Combine(otherDir, "Solution.xml"), $$"""
+            <?xml version="1.0" encoding="utf-8"?>
+            <ImportExportXml>
+              <SolutionManifest>
+                <UniqueName>MySolution</UniqueName>
+                <Version>1.0.0.0</Version>
+                <RootComponents>
+                  <RootComponent type="91" id="{{{pluginAssemblyId}}}" />
+                  <RootComponent type="1" id="{{{entityRootId}}}" />
+                  <RootComponent type="1" schemaName="account" behavior="1" />
+                </RootComponents>
+              </SolutionManifest>
+            </ImportExportXml>
+            """);
+
+        var formDir = Path.Combine(_dir, "src", "Entities", "Account", "FormXml", "main");
+        var viewDir = Path.Combine(_dir, "src", "Entities", "Account", "SavedQueries");
+        Directory.CreateDirectory(formDir);
+        Directory.CreateDirectory(viewDir);
+        File.WriteAllText(Path.Combine(formDir, $"{{{formId}}}.xml"), "<form/>");
+        File.WriteAllText(Path.Combine(viewDir, $"{{{viewId}}}.xml"), "<savedquery/>");
+
+        var (components, entityLogicalNames, namedComponents) = ComponentClassifier.ParseLocalSource(_dir);
+
+        components.Should().Contain((pluginAssemblyId, 91));
+        components.Should().Contain((entityRootId, 1));
+        components.Should().Contain((formId, 60));
+        components.Should().Contain((viewId, 26));
+        entityLogicalNames.Should().BeEquivalentTo(["account"]);
+        namedComponents.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ParseLocalSource_Throws_NotFound_WhenSolutionXmlMissing()
+    {
+        var act = () => ComponentClassifier.ParseLocalSource(_dir);
+
+        act.Should().Throw<FlowlineException>()
+            .Where(ex => ex.ExitCode == ExitCode.NotFound);
+    }
+
     // ── IsWellKnownSystemComponent ────────────────────────────────────────────
 
     [Theory]

@@ -159,6 +159,33 @@ public static class ComponentClassifier
     }
 
     /// <summary>
+    /// Parses committed source under a solution's Package folder into S_new candidates: Solution.xml
+    /// RootComponents (<see cref="ParseSolutionXmlComponents"/>) plus entity subcomponents unpacked
+    /// under Entities/** (<see cref="ScanEntitySubcomponents"/>). Shared by <c>DeployCommand</c>'s
+    /// orphan-cleanup pre-import step and the drift-detection command — both need the identical
+    /// committed-source parse, wrapped with the same <see cref="FlowlineException"/> translation so
+    /// callers get identical error messages and exit codes.
+    /// </summary>
+    public static (IReadOnlyList<(Guid ObjectId, int ComponentType)> Components, IReadOnlyList<string> EntityLogicalNames, IReadOnlyList<(int ComponentType, string SchemaName)> NamedComponents) ParseLocalSource(string packageFolder)
+    {
+        try
+        {
+            var srcRoot = Path.Combine(packageFolder, "src");
+            var parsed = ParseSolutionXmlComponents(Path.Combine(srcRoot, "Other", "Solution.xml"));
+            var subcomponents = ScanEntitySubcomponents(srcRoot);
+            return (parsed.Components.Concat(subcomponents).ToList(), parsed.EntityLogicalNames, parsed.NamedComponents);
+        }
+        catch (FileNotFoundException ex)
+        {
+            throw new FlowlineException(ExitCode.NotFound, ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new FlowlineException(ExitCode.ValidationFailed, ex.Message);
+        }
+    }
+
+    /// <summary>
     /// Reads the attribute LogicalNames still declared in Entities/&lt;entityLogicalName&gt;/Entity.xml
     /// (Entity/EntityInfo/entity/attributes/attribute/LogicalName). Unlike Forms/Views, attribute
     /// subcomponents have no GUID-named file to scan — they're keyed by LogicalName inside Entity.xml,
