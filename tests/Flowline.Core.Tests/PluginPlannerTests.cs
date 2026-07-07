@@ -911,10 +911,10 @@ public class PluginPlannerTests
         Assert.Empty(plan.ResponseProps.AddSolutionComponents);
     }
 
-    // -- Secondary match (R9/R10) --
+    // -- Tuple identity match (R1/R2) --
 
     [Fact]
-    public void Plan_StepRenamedToStageQualified_SecondaryMatchProducesUpdate()
+    public void Plan_StepRenamedToStageQualified_TupleMatchProducesUpdate()
     {
         // Simulate a class that gained a second [Handles], causing the step name to acquire
         // a stage suffix. The snapshot still holds the old (unsuffixed) name.
@@ -958,7 +958,7 @@ public class PluginPlannerTests
     }
 
     [Fact]
-    public void Plan_SecondaryMatch_DoesNotDeleteOldStepName()
+    public void Plan_TupleMatch_DoesNotDeleteOldStepName()
     {
         var typeId    = Guid.NewGuid();
         var messageId = Guid.NewGuid();
@@ -995,11 +995,11 @@ public class PluginPlannerTests
     }
 
     [Fact]
-    public void Plan_PrimaryMatchPreferredOverSecondary()
+    public void Plan_CollisionWithNameTiebreak_UpdatesMatchAndDeletesOther()
     {
-        // The assembly step name matches snapshot step A by name.
-        // Snapshot also has step B with the same (message+table+stage) but different name.
-        // Primary match (A) should be used; B should be treated as obsolete.
+        // Two existing rows share the same identity tuple (message+table+stage+mode) — a
+        // collision (R5). Neither has a Secure Configuration, and exactly one (A) matches the
+        // name the current code would generate, so A is updated and B is deleted as obsolete.
         var typeId     = Guid.NewGuid();
         var messageId  = Guid.NewGuid();
         var filterId   = Guid.NewGuid();
@@ -1042,10 +1042,142 @@ public class PluginPlannerTests
         var step = new PluginStepMetadata(stepName, "Update", "account", 20, 0, 1, null, null, [], []);
         var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
 
-        // Primary match used → no upsert (no changes detected), step B is obsolete → deleted
+        // Name-tiebreak winner (A) matched → no upsert (no changes detected), B is obsolete → deleted
         Assert.Empty(plan.Steps.Upserts);
         Assert.Contains(plan.Steps.Deletes, d => d.Id == stepBId);
         Assert.DoesNotContain(plan.Steps.Deletes, d => d.Id == stepAId);
+    }
+
+    // -- Collision handling (R5) --
+
+    static (Entity stepA, Entity stepB, Guid typeId, Guid messageId, Guid filterId) CollidingSteps(
+        Action<Entity>? configureA = null, Action<Entity>? configureB = null)
+    {
+        var typeId    = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var filterId  = Guid.NewGuid();
+
+        var stepA = new Entity("sdkmessageprocessingstep", Guid.NewGuid())
+        {
+            ["name"]               = "MyNamespace.MyPlugin: Update of account",
+            ["plugintypeid"]       = new EntityReference("plugintype", typeId),
+            ["stage"]              = new OptionSetValue(20),
+            ["mode"]               = new OptionSetValue(0),
+            ["rank"]               = 1,
+            ["sdkmessageid"]       = new EntityReference("sdkmessage", messageId),
+            ["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId),
+            ["asyncautodelete"]    = false
+        };
+        var stepB = new Entity("sdkmessageprocessingstep", Guid.NewGuid())
+        {
+            ["name"]               = "Some Other Display Name",
+            ["plugintypeid"]       = new EntityReference("plugintype", typeId),
+            ["stage"]              = new OptionSetValue(20),
+            ["mode"]               = new OptionSetValue(0),
+            ["rank"]               = 1,
+            ["sdkmessageid"]       = new EntityReference("sdkmessage", messageId),
+            ["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId),
+            ["asyncautodelete"]    = false
+        };
+        configureA?.Invoke(stepA);
+        configureB?.Invoke(stepB);
+
+        return (stepA, stepB, typeId, messageId, filterId);
+    }
+
+    [Fact]
+    public void Plan_CollisionWithNoNameMatch_ThrowsNamingBothRows()
+    {
+        var (stepA, stepB, typeId, messageId, filterId) = CollidingSteps(
+            configureA: s => s["name"] = "Neither Matches A",
+            configureB: s => s["name"] = "Neither Matches B");
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            steps: [stepA, stepB],
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            filterIds: new() { [(messageId, "account", null)] = filterId });
+
+        var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of account", "Update", "account", 20, 0, 1, null, null, [], []);
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution"));
+
+        Assert.Contains(stepA.Id.ToString(), ex.Message);
+        Assert.Contains(stepB.Id.ToString(), ex.Message);
+    }
+
+    [Fact]
+    public void Plan_CollisionWithBothNamesMatching_ThrowsNamingBothRows()
+    {
+        var (stepA, stepB, typeId, messageId, filterId) = CollidingSteps(
+            configureB: s => s["name"] = "MyNamespace.MyPlugin: Update of account");
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            steps: [stepA, stepB],
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            filterIds: new() { [(messageId, "account", null)] = filterId });
+
+        var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of account", "Update", "account", 20, 0, 1, null, null, [], []);
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution"));
+
+        Assert.Contains(stepA.Id.ToString(), ex.Message);
+        Assert.Contains(stepB.Id.ToString(), ex.Message);
+    }
+
+    [Fact]
+    public void Plan_CollisionWithSecureConfigOnNonMatchingRow_ThrowsWithoutAttemptingTiebreak()
+    {
+        var (stepA, stepB, typeId, messageId, filterId) = CollidingSteps(
+            configureB: s => s["sdkmessageprocessingstepsecureconfigid"] = new EntityReference("sdkmessageprocessingstepsecureconfig", Guid.NewGuid()));
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            steps: [stepA, stepB],
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            filterIds: new() { [(messageId, "account", null)] = filterId });
+
+        // stepA's name matches exactly — the tiebreak would resolve if attempted — but stepB
+        // carries a Secure Configuration, so the gate must fire before any tiebreak is attempted.
+        var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of account", "Update", "account", 20, 0, 1, null, null, [], []);
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution"));
+
+        Assert.Contains("Secure Configuration", ex.Message);
+    }
+
+    [Fact]
+    public void Plan_CollisionWithSecureConfigOnMatchingRow_ThrowsWithoutAttemptingTiebreak()
+    {
+        var (stepA, stepB, typeId, messageId, filterId) = CollidingSteps(
+            configureA: s => s["sdkmessageprocessingstepsecureconfigid"] = new EntityReference("sdkmessageprocessingstepsecureconfig", Guid.NewGuid()));
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            steps: [stepA, stepB],
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            filterIds: new() { [(messageId, "account", null)] = filterId });
+
+        // stepA would win the name tiebreak, but stepA itself carries the Secure Configuration —
+        // the gate checks all colliding rows, not just the one that would lose the tiebreak.
+        var step = new PluginStepMetadata("MyNamespace.MyPlugin: Update of account", "Update", "account", 20, 0, 1, null, null, [], []);
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution"));
+
+        Assert.Contains("Secure Configuration", ex.Message);
     }
 
     [Fact]
