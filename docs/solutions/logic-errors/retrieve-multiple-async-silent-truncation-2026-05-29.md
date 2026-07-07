@@ -1,6 +1,7 @@
 ---
 title: "RetrieveMultipleAsync silently truncates results at default page size"
 date: 2026-05-29
+last_updated: 2026-07-07
 category: docs/solutions/logic-errors/
 module: flowline-cli
 problem_type: logic_error
@@ -94,7 +95,7 @@ var entities = await service.RetrieveAllAsync(query, cancellationToken);
 | `src/Flowline.Core/Services/OrphanCleanupService.cs` | `QuerySolutionComponentsAsync` | `solutioncomponent` (S_old query for orphan diff) |
 | `src/Flowline.Core/Services/OrphanCleanupService.cs` | `GetCrossSolutionMembershipAsync` | `solutioncomponent` (cross-solution membership check) |
 | `src/Flowline.Core/Services/OrphanCleanupService.cs` | `GetStillPresentAsync` | `solutioncomponent` (post-import re-check of deferred components) |
-| `src/Flowline.Core/Services/OrphanCleanupService.cs` | `IdentifyCustomApiEntityTypesAsync` | `customapi`, `customapirequestparameter`, `customapiresponseproperty` |
+| `src/Flowline.Core/Services/OrphanCleanupService.cs` | `IdentifyEntityDetectedTypesAsync` (renamed from `IdentifyCustomApiEntityTypesAsync`) | `customapi`, `customapirequestparameter`, `customapiresponseproperty`, `bot`, `connectionreference` |
 
 ### Call sites that don't need paging
 

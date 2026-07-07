@@ -1,7 +1,7 @@
 ---
 title: Orphan component cleanup — two-phase deploy pipeline
 date: 2026-06-10
-last_updated: 2026-07-06 (part 8)
+last_updated: 2026-07-07 (part 9)
 category: docs/solutions/architecture-patterns
 module: DeployCommand
 problem_type: architecture_pattern
@@ -14,6 +14,8 @@ applies_when:
   - Some orphaned components may be shared with other solutions (RemoveFromSolution vs Delete)
   - Dependency errors block deletion before import but resolve after import completes
   - A --no-delete flag is needed to report what would be deleted without acting
+  - An entity-detection query spans multiple backing tables (e.g. CustomApi family plus Bot/ConnectionReference) sharing one failure boundary
+  - A live metadata or data lookup can return a null or unresolved identity attribute for a candidate orphan
 related_components:
   - ComponentClassifier
   - OrphanCleanupService
@@ -29,6 +31,9 @@ tags:
   - dependency-order
   - cross-solution
   - exit-codes
+  - failure-isolation
+  - false-positive-prevention
+  - exception-handling
 ---
 
 # Orphan component cleanup — two-phase deploy pipeline
@@ -195,17 +200,38 @@ The three near-identical "group orphans by componentType, resolve names via `Nam
 - **OptionSet's false positive was a different bug class entirely.** Its Solution.xml declaration shares WebResource's schemaName-only shape, but OptionSet (global choice) is Dataverse metadata, not a data-table row — `NameResolvableTypes`' `QueryExpression` pattern can't resolve it, so `ResolveNamedComponentIdsAsync` silently skipped componenttype 9 with no signal. Rather than another manual-bucket verification, this fix (`ResolveOptionSetMetadataIdsAsync`, mirroring `ResolveEntityMetadataIdsAsync`'s semaphore-bounded shape but using `RetrieveOptionSetRequest`) resolves still-declared OptionSets into `sNewIds` *before* the orphan diff runs — a still-declared OptionSet never becomes an orphan candidate at all, matching how Entity and WebResource schemaName roots already behave, not how the Manual bucket behaves.
 - **A soft "possible match found locally" signal for everything still unsupported.** `BuildLocalIdentifierHarvest` unions every identifier already surfaced by the shapes above (`NamedComponents` schemaNames, `EntityLogicalNames`, the CustomApi/Bot/ConnectionReference scanners) into one flat, case-insensitive set, built once per run and passed into `LogUnsupportedOrphansAsync`. When an unsupported orphan's resolved name matches, the verbose line gains one sentence — control flow is untouched, the entry still never reaches `entries`/the report/the manual count. Deliberately scoped to identifiers already harvested for known shapes, never an unscoped repo-wide search. **Caveat found during implementation:** the signal is inert for any unsupported type whose instance name never resolves at all — `EnvironmentVariableDefinition` (componenttype 380) has a `ManualTypeLabels` entry for its type label, but no `NameResolvableTypes`/`ResolvedTypeNameAttributes` entry for its own name, so it can never produce a name to check against the harvest. The mechanism was proven instead against View (componenttype 26, already name-resolvable). Adding a name-resolution entry for 380 is a natural, low-risk follow-up if `EnvironmentVariableDefinition` needs this signal specifically — not done here since it wasn't part of this work's stated scope.
 
-### CustomApi and Bot/ConnectionReference detection via entity queries
+**Update (2026-07-07, part 9): three bugs in part 8's own work, all found by a code-review pass run immediately after implementation — a generalization effort re-derives its assumptions each time, or it silently carries the previous ones forward.** Part 8 generalized entity-side detection from CustomApi-only to also cover Bot and ConnectionReference. That generalization itself introduced three separate defects, none caught by the unit tests written alongside it:
 
-Because these component types' componenttype numbers are env-specific, detection uses one parallel entity query per backing table, independent of componenttype entirely:
+- **Shared failure domain widened silently.** `IdentifyEntityDetectedTypesAsync` grew from three CustomApi-family queries under one `Task.WhenAll` to five (adding `bot`/`connectionreference`), but the single shared `try/catch` around the whole batch didn't grow with it — a failure on either of the two *new* tables (Bot/ConnectionReference tables aren't guaranteed present in every org edition, e.g. no Copilot Studio provisioning) silently blanked out detection for the three *original*, already-reliable CustomApi-family tables too. Fixed by isolating each table's query in its own `try/catch` (a local `TryQuery` helper), so one table's failure only removes that table's candidates from detection — the general rule: a shared batch's failure-isolation boundary has to be re-examined every time a new consumer joins it, especially one with different reliability characteristics than the existing consumers.
+- **Unresolvable identity attribute defaulted to "orphaned."** `ResolveEntityDetectedManualEntriesAsync` (the new shared Bot/ConnectionReference resolve-and-suppress helper) was modeled on the pre-existing CustomApi code, which itself has always defaulted to reporting a component as orphaned when its live identity attribute fails to resolve (`if (!names.TryGetValue(...)) return true;`) — copied uncritically into the new helper. A record whose `schemaname`/`connectionreferencelogicalname` comes back null or empty was never actually checked against local source, but got reported as an actionable removal recommendation anyway — the exact false-positive shape `SupportedManualTypes`'s entire evidence-gated trust bar exists to prevent, reintroduced one level down inside a type that was supposed to be safely verified. Fixed to skip reporting when the identity attribute is unresolvable (`if (!names.TryGetValue(orphan.ObjectId, out var name)) continue;`) rather than treating "couldn't verify" as "verified as gone." The pre-existing CustomApi code has the same latent defect and was not touched by this fix — mirroring an existing pattern carries its bugs forward along with its logic.
+- **OptionSet's exception handling conflated "not found" with "couldn't ask."** `ResolveOptionSetMetadataIdsAsync`'s per-item catch treated every exception identically as "this OptionSet was genuinely deleted," including network failures, auth failures, and throttling — a systemic failure degraded silently with no operator-visible signal. Fixed by catching `FaultException<OrganizationServiceFault>` specifically (the well-formed Dataverse business-logic response a genuine "not found" produces, matching the pattern `TryExecuteEntryAsync`'s dependency-error handling already uses elsewhere in this file) and warning on anything else.
+
+None of these three would have been caught by generalizing correctly the first time — they're each a different way "reuse the existing pattern for a new case" goes wrong even when the reuse instinct itself is right: matching a pattern's *surface* (a working scanner) isn't the same as matching its *founding assumption* (a componenttype stable across environments, already corrected once in part 8 itself for the SupportedManualTypes decision); a batch's failure boundary that was fine for N consumers isn't automatically fine for N+2; and copying an existing check forward copies its bugs unless the copy is re-verified against what "no evidence either way" should actually do.
+
+### CustomApi, Bot, and ConnectionReference detection via entity queries
+
+Because these component types' componenttype numbers are env-specific, detection uses one parallel entity query per backing table, independent of componenttype entirely — each wrapped in its **own** `try/catch` (part 9), not one shared catch around the whole batch:
 
 ```csharp
-var caTask    = service.RetrieveAllAsync(EntityQuery("customapi",                 "customapiid",                 idArray), ct);
-var paramTask = service.RetrieveAllAsync(EntityQuery("customapirequestparameter", "customapirequestparameterid", idArray), ct);
-var propTask  = service.RetrieveAllAsync(EntityQuery("customapiresponseproperty", "customapiresponsepropertyid", idArray), ct);
-var botTask   = service.RetrieveAllAsync(EntityQuery("bot",                       "botid",                       idArray), ct);
-var crTask    = service.RetrieveAllAsync(EntityQuery("connectionreference",       "connectionreferenceid",      idArray), ct);
-await Task.WhenAll(caTask, paramTask, propTask, botTask, crTask);
+async Task<IEnumerable<Entity>> TryQuery(string entityName, string idAttr)
+{
+    try
+    {
+        return await service.RetrieveAllAsync(EntityQuery(entityName, idAttr, idArray), ct).ConfigureAwait(false);
+    }
+    catch (Exception ex) when (ex is not OperationCanceledException)
+    {
+        console.Warning($"Entity-side orphan detection failed for '{entityName}' ({Markup.Escape(ex.Message)}) — its orphan candidates will be marked Manual.");
+        return [];
+    }
+}
+
+var caTask    = TryQuery("customapi",                 "customapiid");
+var paramTask = TryQuery("customapirequestparameter", "customapirequestparameterid");
+var propTask  = TryQuery("customapiresponseproperty", "customapiresponsepropertyid");
+var botTask   = TryQuery("bot",                       "botid");
+var crTask    = TryQuery("connectionreference",       "connectionreferenceid");
+await Task.WhenAll(caTask, paramTask, propTask, botTask, crTask).ConfigureAwait(false);
 
 var result = new Dictionary<Guid, string>();
 foreach (var e in caTask.Result)    result[e.Id] = "customapi";
@@ -215,7 +241,7 @@ foreach (var e in botTask.Result)   result[e.Id] = "bot";
 foreach (var e in crTask.Result)    result[e.Id] = "connectionreference";
 ```
 
-This is wrapped in `catch (Exception ex) when (ex is not OperationCanceledException)` — failure downgrades unresolved unknowns to `OrphanAction.Manual` rather than crashing the deploy. This is a deliberate exception to the project-wide "no try/catch around service calls" rule: failure has explicit recovery logic (downgrade, warn, continue).
+`TryQuery`'s catch is the same deliberate exception to the project-wide "no try/catch around service calls" rule as before — failure has explicit recovery logic (drop that table's candidates, warn, continue) — but it's now scoped per table instead of around the whole `Task.WhenAll`, so one table's failure can't take the others down with it (part 9).
 
 ### Dependency execution order
 
@@ -299,7 +325,7 @@ if (ids.Count > 2000)
     throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {ids.Count} IDs (max 2000).");
 ```
 
-Applied in `IdentifyCustomApiEntityTypesAsync`, `GetCrossSolutionMembershipAsync`, and `GetStillPresentAsync`.
+Applied in `IdentifyEntityDetectedTypesAsync` (renamed from `IdentifyCustomApiEntityTypesAsync` in part 8), `GetCrossSolutionMembershipAsync`, and `GetStillPresentAsync`.
 
 ### --no-delete flag: report without acting
 
