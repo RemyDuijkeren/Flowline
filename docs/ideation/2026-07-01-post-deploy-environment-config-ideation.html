@@ -1086,6 +1086,10 @@
         <span class="callout-label">Design stance note</span>
         The prohibition in <code>StepAttribute.Config</code> is about unsecure config carrying secrets visible in solution XML — not about calling the secure config API post-deploy. This idea doesn't violate that stance, but the docs should be updated to clarify the distinction.
       </div>
+      <div class="callout callout-amber">
+        <span class="callout-label">Naming fragility note</span>
+        Keying <code>secure-config.&lt;env&gt;.json</code> by the step's generated display name (<code>"MyNs.MyPlugin: Create of account"</code>) has the same fragility that <code>docs/plans/2026-07-07-001-refactor-plugin-matching-identity-plan.md</code> removes from <code>PluginPlanner</code>'s own step matching: if a step's name ever changes — a multi-<code>[Handles]</code> stage-requalification, or any future Flowline naming-convention change — the JSON key goes stale and secure-config injection silently no-ops on the next deploy, with no error. When this idea is built, prefer keying by the same stable identity tuple (<code>plugintypeid</code>, <code>sdkmessageid</code>, <code>sdkmessagefilterid</code>, <code>stage</code>, <code>mode</code>) that plan introduces, or another value that survives a display-name change, rather than the raw generated name.
+      </div>
       <div class="meta-dl">
         <div class="meta-pair"><dt>Confidence</dt><dd>
           <div class="confidence-bar-wrap">
