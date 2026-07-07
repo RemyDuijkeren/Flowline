@@ -241,6 +241,19 @@ public class ComponentClassifierTests : IDisposable
             .Where(ex => ex.ExitCode == ExitCode.NotFound);
     }
 
+    [Fact]
+    public void ParseLocalSource_Throws_ValidationFailed_WhenSolutionXmlIsMalformed()
+    {
+        var otherDir = Path.Combine(_dir, "src", "Other");
+        Directory.CreateDirectory(otherDir);
+        File.WriteAllText(Path.Combine(otherDir, "Solution.xml"), "this is not xml <<<");
+
+        var act = () => ComponentClassifier.ParseLocalSource(_dir);
+
+        act.Should().Throw<FlowlineException>()
+            .Where(ex => ex.ExitCode == ExitCode.ValidationFailed);
+    }
+
     // ── IsWellKnownSystemComponent ────────────────────────────────────────────
 
     [Theory]

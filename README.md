@@ -96,6 +96,7 @@ For full setup, auth, and project workflow: **[Getting Started](https://github.c
 | [`provision [dev\|test\|uat]`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#provision) | Provision a DEV, TEST or UAT environment by copying from production                          |
 | [`generate [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/05-Generate-Early-Bound-Types)         | Generate early-bound C# types into `Plugins/Models/` (configurable with `--output`)          |
 | [`status`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#status)                        | Show environment info, Flowline version, and PAC CLI status                                  |
+| [`drift <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#drift)                 | Compare committed source against a live environment; read-only, never deletes or modifies    |
 
 ---
 

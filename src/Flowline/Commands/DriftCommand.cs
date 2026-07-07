@@ -20,13 +20,41 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
         [CommandArgument(1, "[solution]")]
         [Description("Solution to check (optional in project mode)")]
         public string? Solution { get; set; }
+
+        [CommandOption("--prod <URL>")]
+        [Description("Production environment URL (only used when target is prod)")]
+        public string? ProdUrl { get; set; }
+
+        [CommandOption("--uat <URL>")]
+        [Description("UAT environment URL (only used when target is uat)")]
+        public string? UatUrl { get; set; }
+
+        [CommandOption("--test <URL>")]
+        [Description("Test environment URL (only used when target is test)")]
+        public string? TestUrl { get; set; }
+
+        [CommandOption("--dev <URL>")]
+        [Description("Development environment URL (only used when target is dev)")]
+        public string? DevUrl { get; set; }
     }
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         var role = ResolveRole(settings.Target);
+        // Matches whichever --prod/--uat/--test/--dev override was passed for this target, so the
+        // ConfigInvalid error GetAndCheckEnvironmentInfoAsync throws for an unconfigured environment
+        // names a flag this command actually accepts (mirroring SyncCommand's single-role pattern,
+        // generalized across all four roles since drift's target is chosen at runtime).
+        var inputUrl = role switch
+        {
+            EnvironmentRole.Prod => settings.ProdUrl,
+            EnvironmentRole.Uat  => settings.UatUrl,
+            EnvironmentRole.Test => settings.TestUrl,
+            EnvironmentRole.Dev  => settings.DevUrl,
+            _                    => null
+        };
 
-        var env = await GetAndCheckEnvironmentInfoAsync(role, null, settings, cancellationToken);
+        var env = await GetAndCheckEnvironmentInfoAsync(role, inputUrl, settings, cancellationToken);
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, env.EnvironmentUrl!, cancellationToken);
         var (projectSln, _) = await GetAndCheckSolutionAsync(settings.Solution, env.EnvironmentUrl!, includeManaged: null, settings, cancellationToken);
 
@@ -39,7 +67,9 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
         // empty sentinel rather than packageSrcRoot, which means something else in every other caller.
         var postDeployContext = new PostDeployContext(service, projectSln.Name, localComponents, RunMode.NoDelete, string.Empty, env.EnvironmentUrl!, entityLogicalNames, packageSrcRoot, namedComponents);
 
-        var entries = await orphanCleanupService.CompareAsync(postDeployContext, cancellationToken);
+        // drift has no --no-delete flag of its own — it's always read-only — so suppress the
+        // deploy-specific "(--no-delete active)" hint in the printed report entirely.
+        var entries = await orphanCleanupService.CompareAsync(postDeployContext, cancellationToken, noDeleteHint: null);
 
         return SelectExitCode(entries.Count);
     }

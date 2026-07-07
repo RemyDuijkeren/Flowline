@@ -88,9 +88,11 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     // Comparison-only half of the pre-import step (KTD5): queries live solutioncomponents, resolves
     // sNewIds via all existing special-casing (schemaName, entity, OptionSet, CustomApi, Bot,
     // ConnectionReference), classifies orphans, and prints the report — stopping before
-    // ExecuteInOrderAsync (the mutating delete/remove step), so this is callable from a future
-    // read-only context (e.g. a `drift` command) without mutating anything.
-    public async Task<IReadOnlyList<OrphanEntry>> CompareAsync(PostDeployContext context, CancellationToken ct)
+    // ExecuteInOrderAsync (the mutating delete/remove step), so this is callable from a read-only
+    // context (used today by DriftCommand) without mutating anything. `noDeleteHint` lets a caller
+    // that has no `--no-delete` flag of its own (DriftCommand is always read-only) suppress or
+    // replace the deploy-specific "(--no-delete active)" phrasing in the printed report.
+    public async Task<IReadOnlyList<OrphanEntry>> CompareAsync(PostDeployContext context, CancellationToken ct, string? noDeleteHint = "(--no-delete active)")
     {
         var service      = context.Service;
         var solutionName = context.SolutionName;
@@ -268,7 +270,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
         entries.AddRange(await BuildManualEntriesAsync(service, context, manualOrphans, ct).ConfigureAwait(false));
 
-        PrintReport(entries, mode, solutionName, context.EnvironmentUrl);
+        PrintReport(entries, mode, solutionName, context.EnvironmentUrl, noDeleteHint);
 
         return entries;
     }
@@ -1085,7 +1087,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         }
     }
 
-    void PrintReport(IReadOnlyList<OrphanEntry> entries, RunMode mode, string solutionName, string environmentUrl)
+    void PrintReport(IReadOnlyList<OrphanEntry> entries, RunMode mode, string solutionName, string environmentUrl, string? noDeleteHint = "(--no-delete active)")
     {
         var automated = entries.Where(e => e.Action != OrphanAction.Manual)
             .OrderBy(e => ExecutionOrderIndex(e.ComponentType, e.EntityName))
@@ -1114,7 +1116,10 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         var removeCount = entries.Count(e => e.Action == OrphanAction.RemoveFromSolution);
 
         if (mode == RunMode.NoDelete)
-            console.Skip($"{deleteCount} would be deleted, {removeCount} would be removed from solution, {manual.Count} manual. (--no-delete active)");
+        {
+            var hint = string.IsNullOrEmpty(noDeleteHint) ? "" : $" {noDeleteHint}";
+            console.Skip($"{deleteCount} would be deleted, {removeCount} would be removed from solution, {manual.Count} manual.{hint}");
+        }
         else
             console.Skip($"{deleteCount} to delete, {removeCount} to remove from solution, {manual.Count} manual");
     }
