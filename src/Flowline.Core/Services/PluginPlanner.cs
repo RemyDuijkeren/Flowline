@@ -148,20 +148,37 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
             .Where(a => !a.IsCreate);
 
         foreach (var action in updates)
-        {
-            if (!snapshot.ComponentSolutionMembership.TryGetValue(action.Entity.Id, out var solutions))
-                continue;
+            WarnIfInOtherSolutions(plan, snapshot, solutionName, "Updating", action.Entity.LogicalName, action.Name, action.Entity.Id);
 
-            var others = solutions
-                .Where(s => !string.Equals(s, solutionName, StringComparison.OrdinalIgnoreCase)
-                         && !string.Equals(s, "Default", StringComparison.OrdinalIgnoreCase))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+        // A step whose identity-key field changed is now deleted, not updated (Key Decisions) — so a
+        // shared-solution warning must also fire on deletes, not just updates, or a cross-solution
+        // registration can be silently removed with no warning.
+        var deletes = plan.Steps.Deletes
+            .Concat(plan.Images.Deletes)
+            .Concat(plan.CustomApis.Deletes)
+            .Concat(plan.RequestParams.Deletes)
+            .Concat(plan.ResponseProps.Deletes)
+            .Concat(plan.PluginTypes.Deletes);
 
-            if (others.Count > 0)
-                plan.Warnings.Add($"Updating {action.Entity.LogicalName} '{action.Name}' which also exists in other solutions: {string.Join(", ", others)}.");
-        }
+        foreach (var action in deletes)
+            WarnIfInOtherSolutions(plan, snapshot, solutionName, "Deleting", action.EntityLogicalName, action.Name, action.Id);
+    }
+
+    static void WarnIfInOtherSolutions(RegistrationPlan plan, RegistrationSnapshot snapshot, string solutionName,
+        string verb, string logicalName, string name, Guid componentId)
+    {
+        if (!snapshot.ComponentSolutionMembership.TryGetValue(componentId, out var solutions))
+            return;
+
+        var others = solutions
+            .Where(s => !string.Equals(s, solutionName, StringComparison.OrdinalIgnoreCase)
+                     && !string.Equals(s, "Default", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (others.Count > 0)
+            plan.Warnings.Add($"{verb} {logicalName} '{name}' which also exists in other solutions: {string.Join(", ", others)}.");
     }
 
     static bool IsInSolution(RegistrationSnapshot snapshot, Guid componentId, string solutionName) =>
@@ -222,9 +239,7 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
             {
                 // Collision: more than one existing row shares this identity key (only possible for
                 // pre-Flowline history — build-time validation rules this out for Flowline-authored steps).
-                var withSecureConfig = matches.Any(m =>
-                    m.GetAttributeValue<EntityReference?>("sdkmessageprocessingstepsecureconfigid") != null);
-                if (withSecureConfig)
+                if (matches.Any(HasLinkedSecureConfiguration))
                     throw new InvalidOperationException(StepCollisionMessage(asmStep, asmPluginType, matches,
                         "one or more of them has a linked Secure Configuration, so automatic resolution is not attempted"));
 
@@ -309,10 +324,18 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
         {
             var stepName = obsoleteStep.GetAttributeValue<string>("name");
 
-            if (obsoleteStep.GetAttributeValue<EntityReference?>("sdkmessageprocessingstepsecureconfigid") != null)
+            if (HasLinkedSecureConfiguration(obsoleteStep))
             {
+                // If this same push also created a new step for this plugin type, both this protected
+                // row and the new one are now active in Dataverse — e.g. code changed the step's stage,
+                // which recreates it (Key Decisions), but the old row can't be deleted while it still
+                // carries a Secure Configuration. Flag that explicitly rather than implying a harmless pause.
+                var replacementCreated = stepPlan.Upserts.Any(u => u.IsCreate);
+                var suffix = replacementCreated
+                    ? " A new step was also created for this plugin type in this push, so both registrations are now active — verify this is intended."
+                    : "";
                 warnings.Add(
-                    $"Skipping deletion of step '{stepName}' — has a linked Secure Configuration; remove manually via the Plugin Registration Tool if intended.");
+                    $"Skipping deletion of step '{stepName}' — has a linked Secure Configuration; remove manually via the Plugin Registration Tool if intended.{suffix}");
                 protectedStepCount++;
                 continue;
             }
@@ -328,6 +351,9 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
 
         return (stepPlan, imagesPlan, protectedStepCount);
     }
+
+    static bool HasLinkedSecureConfiguration(Entity step) =>
+        step.GetAttributeValue<EntityReference?>("sdkmessageprocessingstepsecureconfigid") != null;
 
     static string StepCollisionMessage(PluginStepMetadata asmStep, PluginTypeMetadata asmPluginType, List<Entity> matches, string reason) =>
         $"Step '{asmStep.Name}' matches multiple existing steps " +

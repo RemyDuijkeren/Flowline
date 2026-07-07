@@ -329,6 +329,34 @@ decoupled from mutable display fields — but Steps and Images never adopted the
   (i.e., the Secure Configuration guard fired for at least one child step); if so, skip adding the
   plugin type to `PluginTypes.Deletes` and report it via the same `RegistrationPlan.Warnings`
   mechanism as KTD5/R3 instead.
+- **Cross-solution warnings extend to deletes, not just updates — a code-review finding, not part
+  of the original design.** `AddCrossSolutionWarnings` only ever inspected `Upserts`, because before
+  this plan every mutable-field change (including stage/mode) was an update. Once identity-key
+  changes recreate a step instead (see the tuple-primary Key Decision above), a shared step whose
+  stage changes is now deleted, not updated — silently, with no warning, for a case that would have
+  warned under the old name-based matching. Fixed by extending the same warning check to
+  `Steps.Deletes`/`Images.Deletes`/`CustomApis.Deletes`/`RequestParams.Deletes`/
+  `ResponseProps.Deletes`/`PluginTypes.Deletes` via a shared `WarnIfInOtherSolutions` helper.
+- **The Secure-Configuration-protected-obsolete-step warning names the duplicate-active-step risk
+  when a replacement was also created in the same push — a code-review finding.** Combining
+  "identity-key changes recreate the step" with "a step with a linked Secure Configuration is left
+  in place rather than deleted" means both the old (protected) and new (just-created) registration
+  can be active in Dataverse simultaneously after a stage/mode/message/filter edit on a
+  Secure-Configuration-carrying step. Rather than attempting to correlate and auto-resolve this (out
+  of scope — the planner has no reliable way to know a new create is "the same logical registration,
+  moved" versus a genuinely new one), the warning text itself now says so explicitly when
+  `stepPlan.Upserts` contains a create for the same plugin type, so an operator sees the real risk
+  instead of assuming a harmless pause.
+- **Concurrent first-time `flowline push` runs racing to create the same brand-new step is an
+  accepted, documented residual risk, not fixed here.** Two racing pushes can both see zero matches
+  for a new `[Handles]` registration and both create a row with the identical Flowline-generated
+  name (Dataverse has no server-side uniqueness constraint on the identity tuple). Every subsequent
+  push then hits R5's collision path with two identically-named rows, which the name tiebreak can
+  never resolve automatically (`nameMatches.Count` is always 2, never 1) — a hard, permanent failure
+  requiring manual cleanup via the Plugin Registration Tool. This is a concurrency/architecture
+  question (no push-time lock exists, and adding one is a separate feature) out of this plan's scope;
+  documented here rather than silently left undiscovered. Operators should serialize `flowline push`
+  runs against the same environment/solution (e.g. one CI job at a time), which already avoids it.
 
 ### Assumptions
 
@@ -698,8 +726,13 @@ matching, in any of the four files.
 
 - R1-R10 implemented and covered by the test scenarios listed in U1-U5.
 - All existing `PluginPlannerTests.cs` and `PluginServiceTests.cs` tests pass, including the three
-  renamed/re-verified tests from U2 and the dual-mode regression test from
+  renamed/re-verified tests from U2 and the dual-mode regression test
+  (`Plan_TwoHandlesSameStageDifferentMode_MatchIndependently`) confirming sync (mode=0) and async
+  (mode=1) `PostOperation` steps are never confused by `dvStepsByKey`, per
   `docs/solutions/logic-errors/secondary-match-predicate-missing-mode.md`.
+- Cross-solution warnings fire on deletes as well as updates (`Plan_ObsoleteStepInOtherSolution_AddsWarning`),
+  closing the gap identified in code review once identity-key changes started deleting rather than
+  updating a step.
 - The obsolete-step sweep is rewritten against `matchedIds` (KTD6), not the removed name-keyed
   `dvSteps`/`secondaryMatchedIds` shape — a step tuple-matched-and-renamed by U2/U3 is never
   re-selected by the sweep and deleted immediately after being updated.

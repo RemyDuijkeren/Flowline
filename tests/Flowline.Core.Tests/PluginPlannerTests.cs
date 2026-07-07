@@ -723,6 +723,41 @@ public class PluginPlannerTests
     }
 
     [Fact]
+    public void Plan_ObsoleteStepInOtherSolution_AddsWarning()
+    {
+        // A step whose identity-key field changed (or that was simply removed from source) is now
+        // deleted, not updated — the cross-solution warning must fire on deletes too, or a shared
+        // registration can be silently removed with no warning.
+        var typeId = Guid.NewGuid();
+        var stepId = Guid.NewGuid();
+        const string stepName = "Orphaned.Step";
+
+        var obsoleteStep = new Entity("sdkmessageprocessingstep", stepId)
+        {
+            ["name"] = stepName,
+            ["plugintypeid"] = new EntityReference("plugintype", typeId)
+        };
+
+        var membership = new Dictionary<Guid, IReadOnlyList<string>>
+        {
+            [stepId] = ["MySolution", "OtherSolution"]
+        };
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            steps: [obsoleteStep],
+            componentMembership: membership);
+
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [], false)), _assembly, "MySolution");
+
+        Assert.Contains(plan.Steps.Deletes, d => d.Id == stepId);
+        Assert.Contains(plan.Warnings, w => w.Contains("OtherSolution") && w.Contains(stepName));
+    }
+
+    [Fact]
     public void Plan_UpdatedStepInCurrentSolutionOnly_NoWarning()
     {
         var typeId    = Guid.NewGuid();
@@ -799,18 +834,26 @@ public class PluginPlannerTests
             ["plugintypeid"]                            = new EntityReference("plugintype", typeId),
             ["sdkmessageprocessingstepsecureconfigid"]  = new EntityReference("sdkmessageprocessingstepsecureconfig", Guid.NewGuid())
         };
+        var obsoleteImage = new Entity("sdkmessageprocessingstepimage", Guid.NewGuid())
+        {
+            ["name"] = "PreImage",
+            ["sdkmessageprocessingstepid"] = new EntityReference("sdkmessageprocessingstep", stepId),
+            ["imagetype"] = new OptionSetValue(0)
+        };
 
         var snapshot = Snapshot(
             pluginTypes: new(StringComparer.OrdinalIgnoreCase)
             {
                 ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
             },
-            steps: [obsoleteStep]);
+            steps: [obsoleteStep],
+            images: [obsoleteImage]);
 
         var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [], false)), _assembly, "MySolution");
 
         Assert.DoesNotContain(plan.Steps.Deletes, a => a.Name == stepName);
         Assert.Contains(plan.Warnings, w => w.Contains(stepName) && w.Contains("Secure Configuration"));
+        Assert.Empty(plan.Images.Deletes);
     }
 
     // -- asyncautodelete / DeleteJobOnSuccess --
@@ -1206,6 +1249,65 @@ public class PluginPlannerTests
         var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [step], [], false)), _assembly, "MySolution");
 
         Assert.DoesNotContain(plan.Steps.Deletes, d => d.Id == stepId);
+    }
+
+    [Fact]
+    public void Plan_TwoHandlesSameStageDifferentMode_MatchIndependently()
+    {
+        // Regression for docs/solutions/logic-errors/secondary-match-predicate-missing-mode.md:
+        // sync (mode=0) and async (mode=1) PostOperation (stage=40) steps on one class must never
+        // be confused by the tuple lookup — mode is part of the identity key (R1) precisely because
+        // stage alone is shared by both.
+        var typeId     = Guid.NewGuid();
+        var messageId  = Guid.NewGuid();
+        var filterId   = Guid.NewGuid();
+        var syncStepId  = Guid.NewGuid();
+        var asyncStepId = Guid.NewGuid();
+        const string syncName  = "MyNamespace.MyPlugin: Update of account";
+        const string asyncName = "MyNamespace.MyPlugin: Update of account at PostOperationAsync";
+
+        var syncStep = new Entity("sdkmessageprocessingstep", syncStepId)
+        {
+            ["name"]               = syncName,
+            ["plugintypeid"]       = new EntityReference("plugintype", typeId),
+            ["stage"]              = new OptionSetValue(40),
+            ["mode"]               = new OptionSetValue(0),
+            ["rank"]               = 1,
+            ["sdkmessageid"]       = new EntityReference("sdkmessage", messageId),
+            ["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId),
+            ["asyncautodelete"]    = false
+        };
+        var asyncStep = new Entity("sdkmessageprocessingstep", asyncStepId)
+        {
+            ["name"]               = asyncName,
+            ["plugintypeid"]       = new EntityReference("plugintype", typeId),
+            ["stage"]              = new OptionSetValue(40),
+            ["mode"]               = new OptionSetValue(1),
+            ["rank"]               = 2,
+            ["sdkmessageid"]       = new EntityReference("sdkmessage", messageId),
+            ["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId),
+            ["asyncautodelete"]    = true
+        };
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            steps: [syncStep, asyncStep],
+            messageIds: new(StringComparer.OrdinalIgnoreCase) { ["Update"] = messageId },
+            filterIds: new() { [(messageId, "account", null)] = filterId });
+
+        var syncMeta  = new PluginStepMetadata(syncName, "Update", "account", 40, 0, 1, null, null, [], []);
+        var asyncMeta = new PluginStepMetadata(asyncName, "Update", "account", 40, 1, 2, null, null, [], [], AsyncAutoDelete: true);
+        var plan = _planner.Plan(snapshot,
+            Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [syncMeta, asyncMeta], [], false)),
+            _assembly, "MySolution");
+
+        // Both rows already match their own asmStep exactly — nothing changed, and critically,
+        // neither is mistaken for the other's match (which would show up as an obsolete delete).
+        Assert.Empty(plan.Steps.Upserts);
+        Assert.Empty(plan.Steps.Deletes);
     }
 
     [Fact]
