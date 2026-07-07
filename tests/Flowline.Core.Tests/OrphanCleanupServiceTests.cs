@@ -1179,4 +1179,123 @@ public class OrphanCleanupServiceTests : IDisposable
         Assert.Equal(0, failures);
         await _serviceMock.DidNotReceiveWithAnyArgs().DeleteAsync(default!, default, default);
     }
+
+    // -- U2: CompareAsync extraction — comparison-only, read-only half of RunPreImportAsync (KTD5) --
+
+    [Fact]
+    public async Task CompareAsync_MixedFixture_ReturnsSameClassifiedEntriesRunPreImportAsyncWouldProduce()
+    {
+        // Happy path: CompareAsync, called directly, classifies an orphan the same way the
+        // RunPreImportAsync path does for the same fixture (91 = PluginAssembly, AutoDelete).
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 91));
+
+        var entries = await _service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        var entry = Assert.Single(entries);
+        Assert.Equal(orphanId, entry.ObjectId);
+        Assert.Equal(91, entry.ComponentType);
+        Assert.Equal(OrphanAction.Delete, entry.Action);
+    }
+
+    [Fact]
+    public async Task CompareAsync_LiveMatchesEveryLocalIdentity_ReturnsNoEntries()
+    {
+        // AE1: every live solutioncomponent is matched by a locally-declared identity — no drift.
+        var componentId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (componentId, 91)); // 91 = PluginAssembly
+
+        var entries = await _service.CompareAsync(
+            Ctx("MySolution", [(componentId, 91)]), default);
+
+        Assert.Empty(entries);
+        Assert.Contains("No orphan components", _console.Output);
+    }
+
+    [Fact]
+    public async Task CompareAsync_LiveHasComponentNotInLocalFixture_ReturnsUnexpectedlyPresentEntry()
+    {
+        // AE3: live has a component (e.g. added since the last sync) that local source never
+        // declared — CompareAsync's one computed direction (live-minus-source) reports it.
+        var unexpectedId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (unexpectedId, 91)); // 91 = PluginAssembly
+
+        var entries = await _service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        var entry = Assert.Single(entries);
+        Assert.Equal(unexpectedId, entry.ObjectId);
+    }
+
+    [Fact]
+    public async Task CompareAsync_LocalFixtureDeclaresComponentAbsentFromLive_NoEntryForIt()
+    {
+        // Characterization, not AE2 coverage: CompareAsync computes only sOld-minus-sNew (live
+        // components unmatched by local source) — see the single `.Where(c => !sNewIds.Contains(...))`
+        // read in the method. It never walks source-minus-live, so a component declared locally but
+        // absent from the live set (e.g. deleted directly in a target environment) produces no entry
+        // at all, not a "missing" entry — OrphanAction has no such case. Reporting that direction
+        // (AE2's "declared in committed source was deleted in PROD" scenario) would need new
+        // source-minus-live logic that this extraction deliberately does not add (KTD6 — relocate
+        // existing logic verbatim, don't extend it).
+        var liveOnlyId = Guid.NewGuid();
+        var localOnlyId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (liveOnlyId, 91)); // 91 = PluginAssembly, AutoDelete
+
+        var entries = await _service.CompareAsync(
+            Ctx("MySolution", [(localOnlyId, 91)]), default);
+
+        // Only the live-but-undeclared component is reported; the locally-declared-but-absent-from-live
+        // one (localOnlyId) never appears anywhere in the result.
+        var entry = Assert.Single(entries);
+        Assert.Equal(liveOnlyId, entry.ObjectId);
+        Assert.DoesNotContain(entries, e => e.ObjectId == localOnlyId);
+    }
+
+    [Fact]
+    public async Task CompareAsync_EmptyLiveComponentSet_ReturnsEmptyWithSkipMessage_NoException()
+    {
+        // Edge case: no solutioncomponent rows at all for the solution — existing skip short-circuit.
+        SetupSolutionComponents("MySolution"); // no components configured — empty EntityCollection
+
+        var exception = await Record.ExceptionAsync(() =>
+            _service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default));
+
+        Assert.Null(exception);
+        var entries = await _service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+        Assert.Empty(entries);
+        Assert.Contains("No solution components in Dataverse — skipping orphan check.", _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_NoDeleteMode_ReportBuiltButExecuteInOrderAsyncNotCalled()
+    {
+        // Edge case: RunMode.NoDelete — behavior must be identical to today: CompareAsync's report is
+        // still built and printed, but the mutating step never runs.
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 91)); // 91 = PluginAssembly
+
+        await _service.RunPreImportAsync(
+            Ctx("MySolution", [(Guid.NewGuid(), 0)], mode: RunMode.NoDelete), default);
+
+        Assert.Contains("would delete", _console.Output);
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CompareAsync_NeverCallsExecuteInOrderAsync_RegardlessOfInput()
+    {
+        // AE4/Regression: CompareAsync itself never mutates — only RunPreImportAsync does, and only
+        // when not RunMode.NoDelete. A deletable orphan (91 = PluginAssembly, AutoDelete) is the
+        // clearest observable proxy: if CompareAsync ever reached ExecuteInOrderAsync, this delete
+        // call would fire.
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 91));
+
+        var entries = await _service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], mode: RunMode.Normal), default);
+
+        Assert.Single(entries);
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
+    }
 }

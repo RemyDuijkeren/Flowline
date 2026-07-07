@@ -75,12 +75,27 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
     public async Task RunPreImportAsync(PostDeployContext context, CancellationToken ct)
     {
+        _deferred = [];
+
+        var entries = await CompareAsync(context, ct).ConfigureAwait(false);
+
+        if (context.Mode == RunMode.NoDelete)
+            return;
+
+        _deferred = await ExecuteInOrderAsync(context.Service, context.SolutionName, entries, isPostImport: false, ct).ConfigureAwait(false);
+    }
+
+    // Comparison-only half of the pre-import step (KTD5): queries live solutioncomponents, resolves
+    // sNewIds via all existing special-casing (schemaName, entity, OptionSet, CustomApi, Bot,
+    // ConnectionReference), classifies orphans, and prints the report — stopping before
+    // ExecuteInOrderAsync (the mutating delete/remove step), so this is callable from a future
+    // read-only context (e.g. a `drift` command) without mutating anything.
+    public async Task<IReadOnlyList<OrphanEntry>> CompareAsync(PostDeployContext context, CancellationToken ct)
+    {
         var service      = context.Service;
         var solutionName = context.SolutionName;
         var sNew         = context.LocalComponents;
         var mode         = context.Mode;
-
-        _deferred = [];
 
         var sOld = await console.Status().FlowlineSpinner()
             .StartAsync($"Querying orphan components in [bold]{solutionName}[/]...",
@@ -90,7 +105,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         if (sOld.Count == 0)
         {
             console.Skip("No solution components in Dataverse — skipping orphan check.");
-            return;
+            return [];
         }
 
         var sNewIds = sNew.Select(c => c.ObjectId).ToHashSet();
@@ -98,7 +113,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         if (sNew.Count == 0)
         {
             console.Warning("No components in Solution.xml — orphan check skipped to prevent mass deletion.");
-            return;
+            return [];
         }
 
         // Entity roots in Solution.xml are recorded by schemaName, not MetadataId — resolve them live
@@ -140,7 +155,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         if (orphans.Count == 0)
         {
             console.Ok("No orphan components.");
-            return;
+            return [];
         }
 
         var autoOrphans    = orphans.Where(c => ComponentClassifier.Classify(c.ComponentType) == ComponentAction.AutoDelete).ToList();
@@ -255,10 +270,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
         PrintReport(entries, mode, solutionName, context.EnvironmentUrl);
 
-        if (mode == RunMode.NoDelete)
-            return;
-
-        _deferred = await ExecuteInOrderAsync(service, solutionName, entries, isPostImport: false, ct).ConfigureAwait(false);
+        return entries;
     }
 
     public async Task<int> RunPostImportAsync(PostDeployContext context, CancellationToken ct)
