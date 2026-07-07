@@ -66,7 +66,7 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
             }
             else
             {
-                var (stepPlan, imagePlan) = PlanPluginSteps(snapshot, dvPluginType, asmPluginType, solutionName, plan.Warnings);
+                var (stepPlan, imagePlan, _) = PlanPluginSteps(snapshot, dvPluginType, asmPluginType, solutionName, plan.Warnings);
                 plan.Steps.Add(stepPlan);
                 plan.Images.Add(imagePlan);
             }
@@ -95,16 +95,14 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
                 [],
                 [],
                 false);
-            var (stepPlan, imagePlan) = PlanPluginSteps(snapshot, obsoletePluginType.Value, obsoleteMetadata, solutionName, plan.Warnings);
+            var (stepPlan, imagePlan, protectedStepCount) = PlanPluginSteps(snapshot, obsoletePluginType.Value, obsoleteMetadata, solutionName, plan.Warnings);
             plan.Steps.Add(stepPlan);
             plan.Images.Add(imagePlan);
 
             // A step with a linked Secure Configuration is left in place by PlanPluginSteps' obsolete-step
             // guard (R3) rather than deleted, so the type it belongs to can no longer be deleted either —
             // Dataverse rejects deleting a plugin type a step still references.
-            var typeStepCount = snapshot.Steps.Count(s =>
-                (s.GetAttributeValue<EntityReference>("plugintypeid")?.Id ?? Guid.Empty) == obsoletePluginType.Value.Id);
-            if (stepPlan.Deletes.Count < typeStepCount)
+            if (protectedStepCount > 0)
             {
                 plan.Warnings.Add(
                     $"Skipping deletion of plugin type '{obsoletePluginType.Key}' — one or more of its steps has a linked Secure Configuration and was left in place.");
@@ -170,7 +168,7 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
         snapshot.ComponentSolutionMembership.TryGetValue(componentId, out var solutions) &&
         solutions.Any(s => string.Equals(s, solutionName, StringComparison.OrdinalIgnoreCase));
 
-    (ActionPlan stepPlan, ActionPlan imagePlan) PlanPluginSteps(
+    (ActionPlan stepPlan, ActionPlan imagePlan, int protectedStepCount) PlanPluginSteps(
         RegistrationSnapshot snapshot, Entity typeEntity, PluginTypeMetadata asmPluginType, string solutionName, List<string> warnings)
     {
         ActionPlan stepPlan = new();
@@ -306,6 +304,7 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
         }
 
         // Obsolete-step sweep: every snapshot row for this type not consumed as a match above (R3).
+        var protectedStepCount = 0;
         foreach (var obsoleteStep in dvStepsForType.Where(s => !matchedIds.Contains(s.Id)))
         {
             var stepName = obsoleteStep.GetAttributeValue<string>("name");
@@ -314,6 +313,7 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
             {
                 warnings.Add(
                     $"Skipping deletion of step '{stepName}' — has a linked Secure Configuration; remove manually via the Plugin Registration Tool if intended.");
+                protectedStepCount++;
                 continue;
             }
 
@@ -326,7 +326,7 @@ public class PluginPlanner(IAnsiConsole console, bool isVerbose)
             }
         }
 
-        return (stepPlan, imagesPlan);
+        return (stepPlan, imagesPlan, protectedStepCount);
     }
 
     static string StepCollisionMessage(PluginStepMetadata asmStep, PluginTypeMetadata asmPluginType, List<Entity> matches, string reason) =>
