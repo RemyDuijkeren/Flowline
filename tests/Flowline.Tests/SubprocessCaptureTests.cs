@@ -1,6 +1,7 @@
 using System.Text;
 using CliWrap;
 using Flowline.Core;
+using Flowline.Diagnostics;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Services;
+using Flowline.Diagnostics;
 using Flowline.Services;
 using Spectre.Console;
 using Microsoft.Extensions.Logging;

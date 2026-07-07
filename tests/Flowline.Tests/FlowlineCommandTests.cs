@@ -1,5 +1,6 @@
 using Flowline;
 using Flowline.Commands;
+using Flowline.Diagnostics;
 using FluentAssertions;
 
 namespace Flowline.Tests;

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using CliWrap;
 using Flowline.Core;
+using Flowline.Diagnostics;
 using Flowline.Services;
 using Flowline.Utils;
 using Flowline.Validation;

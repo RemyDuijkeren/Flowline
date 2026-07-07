@@ -5,6 +5,7 @@ using CliWrap.Buffered;
 using System.Text.Json;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
+using Flowline.Diagnostics;
 using Spectre.Console;
 
 [assembly: InternalsVisibleTo("Flowline.Tests")]

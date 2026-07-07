@@ -16,6 +16,7 @@ using Spectre.Console.Cli;
 using System.Diagnostics;
 using System.Reflection;
 using System.Text;
+using Flowline.Diagnostics;
 using ILogger = Serilog.ILogger;
 
 Console.OutputEncoding = Encoding.UTF8;
@@ -60,8 +61,8 @@ services.AddSingleton<IGenerator, XrmContext3Generator>();
 services.AddSingleton<IGenerator, XrmContextGenerator>();
 services.AddSingleton<PluginService>();
 services.AddSingleton<WebResourceService>();
-// services.AddSingleton<IPostDeployService, SolutionCheckService>();
-// services.AddSingleton<IPostDeployService, BackupService>();
+services.AddSingleton<IPostDeployService, SolutionCheckService>();
+services.AddSingleton<IPostDeployService, BackupService>();
 services.AddSingleton<IPostDeployService, OrphanCleanupService>();
 services.AddSingleton<SubprocessCapture>();
 

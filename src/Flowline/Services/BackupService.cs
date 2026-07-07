@@ -1,6 +1,6 @@
 using Flowline.Core;
 using Flowline.Core.Services;
-using Flowline.Utils;
+using Flowline.Diagnostics;
 using Spectre.Console;
 
 namespace Flowline.Services;

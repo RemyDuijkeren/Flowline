@@ -6,6 +6,7 @@ using CliWrap.Buffered;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Services;
+using Flowline.Diagnostics;
 using Flowline.Utils;
 using Spectre.Console;
 

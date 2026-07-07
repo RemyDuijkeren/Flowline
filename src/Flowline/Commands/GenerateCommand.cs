@@ -3,6 +3,7 @@ using System.Diagnostics;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Services;
+using Flowline.Diagnostics;
 using Flowline.Generators;
 using Flowline.Services;
 using Flowline.Utils;

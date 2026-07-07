@@ -4,7 +4,7 @@ using Flowline.Core;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
 
-namespace Flowline;
+namespace Flowline.Diagnostics;
 
 /// <summary>
 /// DI-injectable subprocess output capture. Always routes stdout/stderr to Serilog via ILogger,

@@ -5,6 +5,7 @@ using Flowline.Core.Services;
 using Flowline.Utils;
 using Spectre.Console;
 using System.Runtime.CompilerServices;
+using Flowline.Diagnostics;
 
 [assembly: InternalsVisibleTo("Flowline.Tests")]
 

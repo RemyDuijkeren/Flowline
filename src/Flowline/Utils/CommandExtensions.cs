@@ -1,4 +1,5 @@
 using CliWrap;
+using Flowline.Diagnostics;
 using Spectre.Console;
 
 namespace Flowline.Utils;

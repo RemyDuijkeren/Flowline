@@ -1,7 +1,6 @@
 using Flowline;
 using Flowline.Core;
 using Flowline.Core.Services;
-using Microsoft.Crm.Sdk.Messages;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Spectre.Console.Testing;
 using Xunit;

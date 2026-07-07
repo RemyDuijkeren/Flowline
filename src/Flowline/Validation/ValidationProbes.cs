@@ -1,4 +1,5 @@
 using Flowline.Core;
+using Flowline.Diagnostics;
 using Flowline.Utils;
 using Microsoft.Extensions.Logging.Abstractions;
 using Spectre.Console;
