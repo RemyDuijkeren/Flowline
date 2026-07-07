@@ -13,6 +13,11 @@ public enum OrphanAction { Delete, RemoveFromSolution, Manual }
 
 public sealed record OrphanEntry(Guid ObjectId, int ComponentType, string DisplayName, OrphanAction Action, string? EntityName = null);
 
+// Skipped distinguishes "the comparison ran and found nothing" (false) from "an empty-input guard
+// short-circuited before any comparison happened" (true) — callers that need a trustworthy read-only
+// signal (e.g. DriftCommand) must not treat those two cases as equivalent.
+public sealed record CompareResult(IReadOnlyList<OrphanEntry> Entries, bool Skipped = false);
+
 public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions opt) : IPostDeployService
 {
     // R8: step images → steps → types → assemblies; web resources; workflows
@@ -77,12 +82,12 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     {
         _deferred = [];
 
-        var entries = await CompareAsync(context, ct).ConfigureAwait(false);
+        var result = await CompareAsync(context, ct).ConfigureAwait(false);
 
         if (context.Mode == RunMode.NoDelete)
             return;
 
-        _deferred = await ExecuteInOrderAsync(context.Service, context.SolutionName, entries, isPostImport: false, ct).ConfigureAwait(false);
+        _deferred = await ExecuteInOrderAsync(context.Service, context.SolutionName, result.Entries, isPostImport: false, ct).ConfigureAwait(false);
     }
 
     // Comparison-only half of the pre-import step (KTD5): queries live solutioncomponents, resolves
@@ -92,7 +97,14 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     // context (used today by DriftCommand) without mutating anything. `noDeleteHint` lets a caller
     // that has no `--no-delete` flag of its own (DriftCommand is always read-only) suppress or
     // replace the deploy-specific "(--no-delete active)" phrasing in the printed report.
-    public async Task<IReadOnlyList<OrphanEntry>> CompareAsync(PostDeployContext context, CancellationToken ct, string? noDeleteHint = "(--no-delete active)")
+    //
+    // Returns a CompareResult rather than a bare entry list so a caller can tell "compared and found
+    // nothing" (Skipped: false, Entries: []) apart from "the comparison itself didn't run" (Skipped:
+    // true) — the two empty-input guards below are a skip, not a verified-clean result. RunPreImportAsync
+    // doesn't need this distinction (it only ever acts on Entries), but DriftCommand does: a solution
+    // with no local components or no live components at all should not report the same "no drift" as
+    // one that was actually compared and matched.
+    public async Task<CompareResult> CompareAsync(PostDeployContext context, CancellationToken ct, string? noDeleteHint = "(--no-delete active)")
     {
         var service      = context.Service;
         var solutionName = context.SolutionName;
@@ -107,7 +119,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         if (sOld.Count == 0)
         {
             console.Skip("No solution components in Dataverse — skipping orphan check.");
-            return [];
+            return new CompareResult([], Skipped: true);
         }
 
         var sNewIds = sNew.Select(c => c.ObjectId).ToHashSet();
@@ -115,7 +127,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         if (sNew.Count == 0)
         {
             console.Warning("No components in Solution.xml — orphan check skipped to prevent mass deletion.");
-            return [];
+            return new CompareResult([], Skipped: true);
         }
 
         // Entity roots in Solution.xml are recorded by schemaName, not MetadataId — resolve them live
@@ -157,7 +169,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         if (orphans.Count == 0)
         {
             console.Ok("No orphan components.");
-            return [];
+            return new CompareResult([]);
         }
 
         var autoOrphans    = orphans.Where(c => ComponentClassifier.Classify(c.ComponentType) == ComponentAction.AutoDelete).ToList();
@@ -272,7 +284,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
         PrintReport(entries, mode, solutionName, context.EnvironmentUrl, noDeleteHint);
 
-        return entries;
+        return new CompareResult(entries);
     }
 
     public async Task<int> RunPostImportAsync(PostDeployContext context, CancellationToken ct)

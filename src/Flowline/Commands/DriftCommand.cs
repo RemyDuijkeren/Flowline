@@ -56,7 +56,11 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
 
         var env = await GetAndCheckEnvironmentInfoAsync(role, inputUrl, settings, cancellationToken);
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, env.EnvironmentUrl!, cancellationToken);
-        var (projectSln, _) = await GetAndCheckSolutionAsync(settings.Solution, env.EnvironmentUrl!, includeManaged: null, settings, cancellationToken);
+        // bypassCache: true — drift is a health-check signal with no downstream step (unlike deploy's
+        // import, or sync's export) to catch a stale "solution still exists" cache entry. Without this,
+        // a solution deleted or renamed in the target could read as "no drift" for up to the solution
+        // cache's TTL.
+        var (projectSln, _) = await GetAndCheckSolutionAsync(settings.Solution, env.EnvironmentUrl!, includeManaged: null, settings, cancellationToken, bypassCache: true);
 
         var slnFolder = Path.Combine(RootFolder, AllSolutionsFolderName, projectSln.Name);
         var packageFolder = PackageFolder(slnFolder);
@@ -69,9 +73,9 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
 
         // drift has no --no-delete flag of its own — it's always read-only — so suppress the
         // deploy-specific "(--no-delete active)" hint in the printed report entirely.
-        var entries = await orphanCleanupService.CompareAsync(postDeployContext, cancellationToken, noDeleteHint: null);
+        var result = await orphanCleanupService.CompareAsync(postDeployContext, cancellationToken, noDeleteHint: null);
 
-        return SelectExitCode(entries.Count);
+        return SelectExitCode(result);
     }
 
     internal static EnvironmentRole ResolveRole(string target) => target.ToLowerInvariant() switch
@@ -83,6 +87,10 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
         _      => throw new FlowlineException(ExitCode.ConfigInvalid, $"Unknown target '{target}' — use prod, uat, test, or dev.")
     };
 
-    internal static int SelectExitCode(int driftEntryCount) =>
-        driftEntryCount == 0 ? (int)ExitCode.Success : (int)ExitCode.ValidationFailed;
+    internal static int SelectExitCode(CompareResult result) => result switch
+    {
+        { Skipped: true }             => (int)ExitCode.Inconclusive,
+        { Entries.Count: 0 }          => (int)ExitCode.Success,
+        _                             => (int)ExitCode.ValidationFailed
+    };
 }

@@ -1190,9 +1190,10 @@ public class OrphanCleanupServiceTests : IDisposable
         var orphanId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (orphanId, 91));
 
-        var entries = await _service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+        var result = await _service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
 
-        var entry = Assert.Single(entries);
+        Assert.False(result.Skipped);
+        var entry = Assert.Single(result.Entries);
         Assert.Equal(orphanId, entry.ObjectId);
         Assert.Equal(91, entry.ComponentType);
         Assert.Equal(OrphanAction.Delete, entry.Action);
@@ -1205,10 +1206,11 @@ public class OrphanCleanupServiceTests : IDisposable
         var componentId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (componentId, 91)); // 91 = PluginAssembly
 
-        var entries = await _service.CompareAsync(
+        var result = await _service.CompareAsync(
             Ctx("MySolution", [(componentId, 91)]), default);
 
-        Assert.Empty(entries);
+        Assert.False(result.Skipped);
+        Assert.Empty(result.Entries);
         Assert.Contains("No orphan components", _console.Output);
     }
 
@@ -1220,9 +1222,10 @@ public class OrphanCleanupServiceTests : IDisposable
         var unexpectedId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (unexpectedId, 91)); // 91 = PluginAssembly
 
-        var entries = await _service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+        var result = await _service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
 
-        var entry = Assert.Single(entries);
+        Assert.False(result.Skipped);
+        var entry = Assert.Single(result.Entries);
         Assert.Equal(unexpectedId, entry.ObjectId);
     }
 
@@ -1241,14 +1244,14 @@ public class OrphanCleanupServiceTests : IDisposable
         var localOnlyId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (liveOnlyId, 91)); // 91 = PluginAssembly, AutoDelete
 
-        var entries = await _service.CompareAsync(
+        var result = await _service.CompareAsync(
             Ctx("MySolution", [(localOnlyId, 91)]), default);
 
         // Only the live-but-undeclared component is reported; the locally-declared-but-absent-from-live
         // one (localOnlyId) never appears anywhere in the result.
-        var entry = Assert.Single(entries);
+        var entry = Assert.Single(result.Entries);
         Assert.Equal(liveOnlyId, entry.ObjectId);
-        Assert.DoesNotContain(entries, e => e.ObjectId == localOnlyId);
+        Assert.DoesNotContain(result.Entries, e => e.ObjectId == localOnlyId);
     }
 
     [Fact]
@@ -1261,9 +1264,24 @@ public class OrphanCleanupServiceTests : IDisposable
             _service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default));
 
         Assert.Null(exception);
-        var entries = await _service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
-        Assert.Empty(entries);
+        var result = await _service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+        Assert.True(result.Skipped);
+        Assert.Empty(result.Entries);
         Assert.Contains("No solution components in Dataverse — skipping orphan check.", _console.Output);
+    }
+
+    [Fact]
+    public async Task CompareAsync_EmptyLocalComponentSet_ReturnsSkippedTrue_NoException()
+    {
+        // Edge case: Solution.xml has no RootComponents at all — existing "prevent mass deletion"
+        // short-circuit. This must also surface as Skipped: true, not a verified-zero-drift result.
+        SetupSolutionComponents("MySolution", (Guid.NewGuid(), 91));
+
+        var result = await _service.CompareAsync(Ctx("MySolution", []), default);
+
+        Assert.True(result.Skipped);
+        Assert.Empty(result.Entries);
+        Assert.Contains("No components in Solution.xml — orphan check skipped to prevent mass deletion.", _console.Output);
     }
 
     [Fact]
@@ -1292,9 +1310,10 @@ public class OrphanCleanupServiceTests : IDisposable
         var orphanId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (orphanId, 91));
 
-        var entries = await _service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], mode: RunMode.Normal), default);
+        var result = await _service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], mode: RunMode.Normal), default);
 
-        Assert.Single(entries);
+        Assert.False(result.Skipped);
+        Assert.Single(result.Entries);
         await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
     }

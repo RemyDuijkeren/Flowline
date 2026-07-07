@@ -50,6 +50,9 @@ public enum ExitCode
     /// <summary>Deploy completed but orphan cleanup failed for some components. Check output for items to remove manually via maker portal.</summary>
     PartialSuccess = 18,
 
+    /// <summary>Check could not run to completion — an empty-input guard skipped the comparison (e.g. no local or no live components). Not a pass/fail signal; investigate the printed reason before trusting the result.</summary>
+    Inconclusive = 19,
+
     /// <summary>Operation cancelled by user (Ctrl+C / SIGINT). Follows de facto convention 128+2=130.</summary>
     Cancelled = 130,
 }

@@ -189,7 +189,8 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         string environmentUrl,
         bool? includeManaged = null,
         TSettings settings = default!,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool bypassCache = false)
     {
         var projectSln = Config!.GetOrUpdateSolution(inputName, includeManaged, settings);
         if (projectSln == null)
@@ -197,7 +198,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
 
         SolutionInfo? remoteSln = await Console.Status().FlowlineSpinner().StartAsync(
             $"Looking up solution [bold]{projectSln.Name}[/]...",
-            ctx => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, projectSln.Name, includeManaged ?? false, settings, cancellationToken));
+            ctx => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, projectSln.Name, includeManaged ?? false, settings, cancellationToken, bypassCache));
         if (remoteSln == null)
             throw new FlowlineException(ExitCode.NotFound, $"Solution '{projectSln.Name}' not found in that environment.");
 

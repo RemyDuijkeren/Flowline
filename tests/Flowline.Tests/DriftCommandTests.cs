@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Core;
+using Flowline.Core.Services;
 
 namespace Flowline.Tests;
 
@@ -34,9 +35,11 @@ public class DriftCommandTests
     // ── Exit code selection ───────────────────────────────────────────────────
 
     [Fact]
-    public void SelectExitCode_ReturnsSuccess_WhenNoDriftEntries()
+    public void SelectExitCode_ReturnsSuccess_WhenComparedAndNoDriftEntries()
     {
-        DriftCommand.SelectExitCode(0).Should().Be((int)ExitCode.Success);
+        var result = new CompareResult([]);
+
+        DriftCommand.SelectExitCode(result).Should().Be((int)ExitCode.Success);
     }
 
     [Theory]
@@ -44,6 +47,19 @@ public class DriftCommandTests
     [InlineData(5)]
     public void SelectExitCode_ReturnsValidationFailed_WhenDriftEntriesFound(int entryCount)
     {
-        DriftCommand.SelectExitCode(entryCount).Should().Be((int)ExitCode.ValidationFailed);
+        var entries = Enumerable.Range(0, entryCount)
+            .Select(_ => new OrphanEntry(Guid.NewGuid(), 91, "SomeComponent", OrphanAction.Delete))
+            .ToList();
+        var result = new CompareResult(entries);
+
+        DriftCommand.SelectExitCode(result).Should().Be((int)ExitCode.ValidationFailed);
+    }
+
+    [Fact]
+    public void SelectExitCode_ReturnsInconclusive_WhenComparisonWasSkipped()
+    {
+        var result = new CompareResult([], Skipped: true);
+
+        DriftCommand.SelectExitCode(result).Should().Be((int)ExitCode.Inconclusive);
     }
 }
