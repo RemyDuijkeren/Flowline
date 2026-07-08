@@ -16,13 +16,17 @@ public sealed class WebResourceHandler : IOrphanHandler
 
     public HandlerStatus Status => HandlerStatus.Active;
 
-    public async Task<IReadOnlyList<HandlerFinding>> DetectAsync(
+    public async Task<HandlerDetectionResult> DetectAsync(
         DetectionContext context,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates,
         CancellationToken ct)
     {
         var webResourceCandidates = candidates.Where(c => c.ComponentType == WebResourceComponentType).ToList();
-        if (webResourceCandidates.Count == 0) return [];
+        if (webResourceCandidates.Count == 0) return new HandlerDetectionResult([], new HashSet<Guid>());
+
+        // Every componenttype-61 candidate is claimed, even one the annotation exemption below
+        // suppresses out of Findings — it's still a recognized WebResource, just not orphaned.
+        var claimedIds = webResourceCandidates.Select(c => c.ObjectId).ToHashSet();
 
         var names = await GetWebResourceNamesAsync(context.Service, webResourceCandidates.Select(c => c.ObjectId), ct).ConfigureAwait(false);
 
@@ -53,7 +57,7 @@ public sealed class WebResourceHandler : IOrphanHandler
                 OrphanTiming.PreImportEligible));
         }
 
-        return findings;
+        return new HandlerDetectionResult(findings, claimedIds);
     }
 
     static async Task<Dictionary<Guid, string>> GetWebResourceNamesAsync(

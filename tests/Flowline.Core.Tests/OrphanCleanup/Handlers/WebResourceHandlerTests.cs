@@ -74,7 +74,7 @@ public class WebResourceHandlerTests : IDisposable
         SetupWebResourceNames((orphanId, "av_ext/unref.js"));
         File.WriteAllText(Path.Combine(_webResourcesDir, "form.js"), "// no deps\ncode();");
 
-        var findings = await _handler.DetectAsync(Ctx(), [(orphanId, WebResourceComponentType)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(orphanId, WebResourceComponentType)], default)).Findings;
 
         var finding = Assert.Single(findings);
         Assert.Equal(orphanId, finding.ObjectId);
@@ -95,9 +95,26 @@ public class WebResourceHandlerTests : IDisposable
         File.WriteAllText(Path.Combine(_webResourcesDir, "form.js"),
             "// flowline:depends av_ext/shared.js\nconsole.log('hi');");
 
-        var findings = await _handler.DetectAsync(Ctx(), [(orphanId, WebResourceComponentType)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(orphanId, WebResourceComponentType)], default)).Findings;
 
         Assert.Empty(findings);
+    }
+
+    [Fact]
+    public async Task DetectAsync_ClaimedIds_IncludesAnnotationExemptedCandidateDespiteEmptyFindings()
+    {
+        // The annotation exemption suppresses this candidate out of Findings, but it's still a
+        // recognized componenttype-61 candidate — ClaimedIds must include it so the orchestrator
+        // never routes it to generic fallback as "unrecognized."
+        var orphanId = Guid.NewGuid();
+        SetupWebResourceNames((orphanId, "av_ext/shared.js"));
+        File.WriteAllText(Path.Combine(_webResourcesDir, "form.js"),
+            "// flowline:depends av_ext/shared.js\nconsole.log('hi');");
+
+        var result = await _handler.DetectAsync(Ctx(), [(orphanId, WebResourceComponentType)], default);
+
+        Assert.Empty(result.Findings);
+        Assert.Contains(orphanId, result.ClaimedIds);
     }
 
     [Fact]
@@ -110,7 +127,7 @@ public class WebResourceHandlerTests : IDisposable
         File.WriteAllText(Path.Combine(_webResourcesDir, "b.js"),
             "// flowline:depends av_ext/shared.js\ncode();");
 
-        var findings = await _handler.DetectAsync(Ctx(), [(orphanId, WebResourceComponentType)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(orphanId, WebResourceComponentType)], default)).Findings;
 
         Assert.Empty(findings);
     }
@@ -124,7 +141,7 @@ public class WebResourceHandlerTests : IDisposable
         Directory.CreateDirectory(packageSrcRootWithoutWebResourcesDir);
         try
         {
-            var findings = await _handler.DetectAsync(Ctx(packageSrcRootWithoutWebResourcesDir), [(orphanId, WebResourceComponentType)], default);
+            var findings = (await _handler.DetectAsync(Ctx(packageSrcRootWithoutWebResourcesDir), [(orphanId, WebResourceComponentType)], default)).Findings;
 
             var finding = Assert.Single(findings);
             Assert.Equal(orphanId, finding.ObjectId);
@@ -152,7 +169,7 @@ public class WebResourceHandlerTests : IDisposable
                 "// flowline:depends av_ext/shared.js\ncode();");
             // No such reference under _webResourcesDir (packageSrcRoot/WebResources) itself.
 
-            var findings = await _handler.DetectAsync(Ctx(), [(orphanId, WebResourceComponentType)], default);
+            var findings = (await _handler.DetectAsync(Ctx(), [(orphanId, WebResourceComponentType)], default)).Findings;
 
             var finding = Assert.Single(findings);
             Assert.Equal(orphanId, finding.ObjectId);
@@ -168,7 +185,7 @@ public class WebResourceHandlerTests : IDisposable
     {
         var pluginAssemblyId = Guid.NewGuid();
 
-        var findings = await _handler.DetectAsync(Ctx(), [(pluginAssemblyId, 91)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(pluginAssemblyId, 91)], default)).Findings;
 
         Assert.Empty(findings);
     }
@@ -176,7 +193,7 @@ public class WebResourceHandlerTests : IDisposable
     [Fact]
     public async Task DetectAsync_NoCandidates_ReturnsEmpty()
     {
-        var findings = await _handler.DetectAsync(Ctx(), [], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [], default)).Findings;
 
         Assert.Empty(findings);
     }

@@ -60,7 +60,7 @@ public class PluginAssemblyFamilyHandlerTests
         var id = Guid.NewGuid();
         SetupName("pluginassembly", "name", id, "MyPlugins.dll");
 
-        var findings = await _handler.DetectAsync(Ctx(), [(id, 91)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(id, 91)], default)).Findings;
 
         var finding = Assert.Single(findings);
         Assert.Equal(OrphanAction.Delete, finding.Action);
@@ -76,7 +76,7 @@ public class PluginAssemblyFamilyHandlerTests
         // fallback branch in OrphanCleanupService.TypeName ("{label} {id}", no quoted detail).
         var id = Guid.NewGuid();
 
-        var findings = await _handler.DetectAsync(Ctx(), [(id, 91)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(id, 91)], default)).Findings;
 
         var finding = Assert.Single(findings);
         Assert.Equal($"PluginAssembly {id}", finding.DisplayName);
@@ -88,7 +88,7 @@ public class PluginAssemblyFamilyHandlerTests
         var id = Guid.NewGuid();
         SetupName("plugintype", "typename", id, "MyNamespace.MyPlugin");
 
-        var findings = await _handler.DetectAsync(Ctx(), [(id, 90)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(id, 90)], default)).Findings;
 
         var finding = Assert.Single(findings);
         Assert.Equal(OrphanAction.Delete, finding.Action);
@@ -101,7 +101,7 @@ public class PluginAssemblyFamilyHandlerTests
         var id = Guid.NewGuid();
         SetupName("sdkmessageprocessingstep", "name", id, "MyPlugin: Create of account");
 
-        var findings = await _handler.DetectAsync(Ctx(), [(id, 92)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(id, 92)], default)).Findings;
 
         var finding = Assert.Single(findings);
         Assert.Equal(OrphanAction.Delete, finding.Action);
@@ -114,7 +114,7 @@ public class PluginAssemblyFamilyHandlerTests
         var id = Guid.NewGuid();
         SetupName("sdkmessageprocessingstepimage", "name", id, "PreImage");
 
-        var findings = await _handler.DetectAsync(Ctx(), [(id, 93)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(id, 93)], default)).Findings;
 
         var finding = Assert.Single(findings);
         Assert.Equal(OrphanAction.Delete, finding.Action);
@@ -124,7 +124,7 @@ public class PluginAssemblyFamilyHandlerTests
     [Fact]
     public async Task DetectAsync_CandidateOutsideFamily_IsNotClaimed()
     {
-        var findings = await _handler.DetectAsync(Ctx(), [(Guid.NewGuid(), 61)], default); // 61 = WebResource
+        var findings = (await _handler.DetectAsync(Ctx(), [(Guid.NewGuid(), 61)], default)).Findings; // 61 = WebResource
 
         Assert.Empty(findings);
     }
@@ -141,10 +141,10 @@ public class PluginAssemblyFamilyHandlerTests
         // only signal knowable at classify time — takes precedence over the Enabled check).
         SetupStepStates((stepId, typeId, true));
 
-        var findings = await _handler.DetectAsync(
+        var findings = (await _handler.DetectAsync(
             Ctx(RunMode.NoDelete),
             [(assemblyId, 91), (typeId, 90), (stepId, 92), (imageId, 93)],
-            default);
+            default)).Findings;
 
         Assert.Equal(4, findings.Count);
         Assert.All(findings, f => Assert.Equal(OrphanPriority.Prio1, f.Priority));
@@ -157,7 +157,7 @@ public class PluginAssemblyFamilyHandlerTests
         var stepId = Guid.NewGuid();
         SetupStepStates((stepId, typeId, false));
 
-        var findings = await _handler.DetectAsync(Ctx(), [(typeId, 90)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(typeId, 90)], default)).Findings;
 
         var finding = Assert.Single(findings);
         Assert.Equal(OrphanPriority.Prio3, finding.Priority);
@@ -170,7 +170,7 @@ public class PluginAssemblyFamilyHandlerTests
         var stepId = Guid.NewGuid();
         SetupStepStates((stepId, typeId, true));
 
-        var findings = await _handler.DetectAsync(Ctx(), [(typeId, 90)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(typeId, 90)], default)).Findings;
 
         var finding = Assert.Single(findings);
         Assert.Equal(OrphanPriority.Prio2, finding.Priority);
@@ -182,7 +182,7 @@ public class PluginAssemblyFamilyHandlerTests
         var stepId = Guid.NewGuid();
         SetupStepStates((stepId, Guid.NewGuid(), true));
 
-        var findings = await _handler.DetectAsync(Ctx(), [(stepId, 92)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(stepId, 92)], default)).Findings;
 
         var finding = Assert.Single(findings);
         Assert.Equal(OrphanPriority.Prio2, finding.Priority);
@@ -194,7 +194,7 @@ public class PluginAssemblyFamilyHandlerTests
         var stepId = Guid.NewGuid();
         SetupStepStates((stepId, Guid.NewGuid(), false));
 
-        var findings = await _handler.DetectAsync(Ctx(), [(stepId, 92)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(stepId, 92)], default)).Findings;
 
         var finding = Assert.Single(findings);
         Assert.Equal(OrphanPriority.Prio3, finding.Priority);
@@ -208,7 +208,7 @@ public class PluginAssemblyFamilyHandlerTests
         var imageId    = Guid.NewGuid();
         var assemblyId = Guid.NewGuid();
 
-        var findings = await _handler.DetectAsync(Ctx(), [(imageId, 93), (assemblyId, 91)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(imageId, 93), (assemblyId, 91)], default)).Findings;
 
         Assert.Equal(2, findings.Count);
         Assert.All(findings, f => Assert.Equal(OrphanPriority.Prio3, f.Priority));
@@ -222,15 +222,30 @@ public class PluginAssemblyFamilyHandlerTests
         var stepId     = Guid.NewGuid();
         var imageId    = Guid.NewGuid();
 
-        var findings = await _handler.DetectAsync(
+        var findings = (await _handler.DetectAsync(
             Ctx(),
             [(assemblyId, 91), (typeId, 90), (stepId, 92), (imageId, 93)],
-            default);
+            default)).Findings;
 
         var byType = findings.ToDictionary(f => f.ComponentType, f => f.SequenceHint);
         Assert.Equal(0, byType[93]); // StepImage
         Assert.Equal(1, byType[92]); // Step
         Assert.Equal(2, byType[90]); // PluginType
         Assert.Equal(3, byType[91]); // PluginAssembly
+    }
+
+    [Fact]
+    public async Task DetectAsync_ClaimedIds_EqualsFullComponentTypeMatchedSet()
+    {
+        // No suppression path exists in this handler — ClaimedIds always equals every candidate that
+        // survived the componenttype gate, which is exactly the set of returned Findings.
+        var assemblyId = Guid.NewGuid();
+        var webResourceId = Guid.NewGuid(); // 61 = WebResource, outside this family
+
+        var result = await _handler.DetectAsync(Ctx(), [(assemblyId, 91), (webResourceId, 61)], default);
+
+        Assert.Equal(result.Findings.Select(f => f.ObjectId).ToHashSet(), result.ClaimedIds);
+        Assert.Contains(assemblyId, result.ClaimedIds);
+        Assert.DoesNotContain(webResourceId, result.ClaimedIds);
     }
 }

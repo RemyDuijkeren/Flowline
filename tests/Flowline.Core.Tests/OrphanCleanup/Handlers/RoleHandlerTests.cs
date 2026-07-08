@@ -61,7 +61,7 @@ public class RoleHandlerTests
         var roleId = Guid.NewGuid();
         SetupRoleName(roleId, "Custom Sales Role");
 
-        var findings = await _handler.DetectAsync(Ctx(), [(roleId, RoleComponentType)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(roleId, RoleComponentType)], default)).Findings;
 
         var finding = Assert.Single(findings);
         Assert.Equal(roleId, finding.ObjectId);
@@ -79,7 +79,7 @@ public class RoleHandlerTests
         var roleId = Guid.NewGuid();
         // No SetupRoleName call — the live query returns no matching role record.
 
-        var findings = await _handler.DetectAsync(Ctx(), [(roleId, RoleComponentType)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(roleId, RoleComponentType)], default)).Findings;
 
         var finding = Assert.Single(findings);
         Assert.Equal(OrphanAction.Manual, finding.Action);
@@ -92,7 +92,7 @@ public class RoleHandlerTests
     {
         var webResourceId = Guid.NewGuid();
 
-        var findings = await _handler.DetectAsync(Ctx(), [(webResourceId, 61)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(webResourceId, 61)], default)).Findings;
 
         Assert.Empty(findings);
     }
@@ -100,9 +100,23 @@ public class RoleHandlerTests
     [Fact]
     public async Task DetectAsync_NoCandidates_ReturnsEmptyWithoutQuerying()
     {
-        var findings = await _handler.DetectAsync(Ctx(), [], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [], default)).Findings;
 
         Assert.Empty(findings);
         _ = _serviceMock.DidNotReceive().RetrieveMultipleAsync(Arg.Any<QueryExpression>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DetectAsync_ClaimedIds_EqualsFindingsObjectIds()
+    {
+        // No suppression path in this handler — every componenttype-20 candidate always produces a
+        // finding, so ClaimedIds equals Findings' ObjectIds exactly.
+        var roleId = Guid.NewGuid();
+        SetupRoleName(roleId, "Custom Sales Role");
+
+        var result = await _handler.DetectAsync(Ctx(), [(roleId, RoleComponentType)], default);
+
+        Assert.Equal(result.Findings.Select(f => f.ObjectId).ToHashSet(), result.ClaimedIds);
+        Assert.Contains(roleId, result.ClaimedIds);
     }
 }

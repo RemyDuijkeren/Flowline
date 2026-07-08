@@ -42,13 +42,18 @@ public sealed class PluginAssemblyFamilyHandler : IOrphanHandler
         [93] = "SdkMessageProcessingStepImage",
     };
 
-    public async Task<IReadOnlyList<HandlerFinding>> DetectAsync(
+    public async Task<HandlerDetectionResult> DetectAsync(
         DetectionContext context,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates,
         CancellationToken ct)
     {
         var claimed = candidates.Where(c => Lookups.ContainsKey(c.ComponentType)).ToList();
-        if (claimed.Count == 0) return [];
+        if (claimed.Count == 0) return new HandlerDetectionResult([], new HashSet<Guid>());
+
+        // Every candidate matching this family's componenttype gate is claimed, regardless of the
+        // Prio branch it ends up in below — this handler never suppresses a claimed candidate out of
+        // Findings.
+        var claimedIds = claimed.Select(c => c.ObjectId).ToHashSet();
 
         var names = await ResolveNamesAsync(context.Service, claimed, ct).ConfigureAwait(false);
 
@@ -56,7 +61,7 @@ public sealed class PluginAssemblyFamilyHandler : IOrphanHandler
         // Timing note on why the reactively-deferred/still-blocking-at-post-import case is out of
         // scope this round (this handler does not implement it).
         if (context.Mode == RunMode.NoDelete)
-            return claimed.Select(c => BuildFinding(c, names, OrphanPriority.Prio1)).ToList();
+            return new HandlerDetectionResult(claimed.Select(c => BuildFinding(c, names, OrphanPriority.Prio1)).ToList(), claimedIds);
 
         // KTD8 Prio2 names exactly PluginType and Step ("the live PluginType/Step is Enabled") —
         // StepImage and PluginAssembly have no Enabled concept of their own and default to Prio3.
@@ -82,7 +87,7 @@ public sealed class PluginAssemblyFamilyHandler : IOrphanHandler
             findings.Add(BuildFinding(candidate, names, priority));
         }
 
-        return findings;
+        return new HandlerDetectionResult(findings, claimedIds);
     }
 
     static HandlerFinding BuildFinding((Guid ObjectId, int ComponentType) candidate, Dictionary<Guid, string> names, OrphanPriority priority)

@@ -74,7 +74,7 @@ public class EntityFamilyHandlerTests
     {
         var id = Guid.NewGuid();
 
-        var findings = await _handler.DetectAsync(Ctx(), [(id, 1)], CancellationToken.None);
+        var findings = (await _handler.DetectAsync(Ctx(), [(id, 1)], CancellationToken.None)).Findings;
 
         var finding = Assert.Single(findings);
         Assert.Equal(1, finding.ComponentType);
@@ -93,8 +93,8 @@ public class EntityFamilyHandlerTests
 
         try
         {
-            var findings = await _handler.DetectAsync(
-                Ctx(packageSrcRoot, entityLogicalNames: ["account"]), [(attributeId, 2)], CancellationToken.None);
+            var findings = (await _handler.DetectAsync(
+                Ctx(packageSrcRoot, entityLogicalNames: ["account"]), [(attributeId, 2)], CancellationToken.None)).Findings;
 
             var finding = Assert.Single(findings);
             Assert.Equal(2, finding.ComponentType);
@@ -118,10 +118,14 @@ public class EntityFamilyHandlerTests
 
         try
         {
-            var findings = await _handler.DetectAsync(
+            var result = await _handler.DetectAsync(
                 Ctx(packageSrcRoot, entityLogicalNames: ["account"]), [(attributeId, 2)], CancellationToken.None);
 
-            Assert.Empty(findings);
+            Assert.Empty(result.Findings);
+            // ClaimedIds still includes the suppressed attribute — it's recognized as this handler's
+            // own (componenttype 2), just not reported, so it must not fall through to generic
+            // fallback as an unrecognized type.
+            Assert.Contains(attributeId, result.ClaimedIds);
         }
         finally
         {
@@ -134,7 +138,7 @@ public class EntityFamilyHandlerTests
     {
         var attributeId = Guid.NewGuid();
 
-        var findings = await _handler.DetectAsync(Ctx(entityLogicalNames: []), [(attributeId, 2)], CancellationToken.None);
+        var findings = (await _handler.DetectAsync(Ctx(entityLogicalNames: []), [(attributeId, 2)], CancellationToken.None)).Findings;
 
         var finding = Assert.Single(findings);
         Assert.Equal(2, finding.ComponentType);
@@ -159,8 +163,8 @@ public class EntityFamilyHandlerTests
 
         try
         {
-            var findings = await _handler.DetectAsync(
-                Ctx(packageSrcRoot, entityLogicalNames: ["account"]), [(attributeId, 2)], CancellationToken.None);
+            var findings = (await _handler.DetectAsync(
+                Ctx(packageSrcRoot, entityLogicalNames: ["account"]), [(attributeId, 2)], CancellationToken.None)).Findings;
 
             var finding = Assert.Single(findings);
             Assert.Equal($"Attribute {attributeId}", finding.DisplayName);
@@ -174,7 +178,7 @@ public class EntityFamilyHandlerTests
     [Fact]
     public async Task DetectAsync_NoEntityOrAttributeCandidates_ReturnsEmpty()
     {
-        var findings = await _handler.DetectAsync(Ctx(), [(Guid.NewGuid(), 61)], CancellationToken.None);
+        var findings = (await _handler.DetectAsync(Ctx(), [(Guid.NewGuid(), 61)], CancellationToken.None)).Findings;
 
         Assert.Empty(findings);
     }
@@ -182,9 +186,38 @@ public class EntityFamilyHandlerTests
     [Fact]
     public async Task DetectAsync_NoCandidates_ReturnsEmptyWithoutQuerying()
     {
-        var findings = await _handler.DetectAsync(Ctx(), [], CancellationToken.None);
+        var findings = (await _handler.DetectAsync(Ctx(), [], CancellationToken.None)).Findings;
 
         Assert.Empty(findings);
         _ = _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<OrganizationRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DetectAsync_ClaimedIds_IncludesEntityAndSuppressedAttributeDespitePartialFindings()
+    {
+        // Entity is always claimed (no suppression path). The Attribute is claimed too even though
+        // it's still declared in Entity.xml and suppressed out of Findings — both componenttype 1 and
+        // 2 candidates are always recognized as this handler's own regardless of Findings membership.
+        var entityId = Guid.NewGuid();
+        var attributeId = Guid.NewGuid();
+        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        WriteEntityXml(packageSrcRoot, "Account", "av_taxid");
+        SetupAttributeMetadata("account", (attributeId, "av_taxid"));
+
+        try
+        {
+            var result = await _handler.DetectAsync(
+                Ctx(packageSrcRoot, entityLogicalNames: ["account"]),
+                [(entityId, 1), (attributeId, 2)],
+                CancellationToken.None);
+
+            var finding = Assert.Single(result.Findings);
+            Assert.Equal(entityId, finding.ObjectId); // Attribute suppressed, Entity is not
+            Assert.Equal(new HashSet<Guid> { entityId, attributeId }, result.ClaimedIds);
+        }
+        finally
+        {
+            Directory.Delete(packageSrcRoot, true);
+        }
     }
 }

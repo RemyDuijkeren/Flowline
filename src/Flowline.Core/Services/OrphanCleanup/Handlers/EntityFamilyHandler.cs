@@ -30,7 +30,7 @@ public sealed class EntityFamilyHandler : IOrphanHandler
 
     public HandlerStatus Status => HandlerStatus.Active;
 
-    public async Task<IReadOnlyList<HandlerFinding>> DetectAsync(
+    public async Task<HandlerDetectionResult> DetectAsync(
         DetectionContext context,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates,
         CancellationToken ct)
@@ -38,7 +38,14 @@ public sealed class EntityFamilyHandler : IOrphanHandler
         var entityOrphans    = candidates.Where(c => c.ComponentType == EntityComponentType).ToList();
         var attributeOrphans = candidates.Where(c => c.ComponentType == AttributeComponentType).ToList();
 
-        if (entityOrphans.Count == 0 && attributeOrphans.Count == 0) return [];
+        if (entityOrphans.Count == 0 && attributeOrphans.Count == 0) return new HandlerDetectionResult([], new HashSet<Guid>());
+
+        // Every componenttype-1/2 candidate is claimed, regardless of whether the Attribute path below
+        // suppresses it out of Findings (still declared in Entity.xml) — both Entity and Attribute
+        // candidates are always recognized as this handler's own.
+        var claimedIds = entityOrphans.Select(c => c.ObjectId)
+            .Concat(attributeOrphans.Select(c => c.ObjectId))
+            .ToHashSet();
 
         var findings = new List<HandlerFinding>();
 
@@ -47,7 +54,7 @@ public sealed class EntityFamilyHandler : IOrphanHandler
         foreach (var (id, componentType) in entityOrphans)
             findings.Add(EntityFinding(id, componentType, $"Entity {id}"));
 
-        if (attributeOrphans.Count == 0) return findings;
+        if (attributeOrphans.Count == 0) return new HandlerDetectionResult(findings, claimedIds);
 
         if (context.EntityLogicalNames.Count == 0)
         {
@@ -55,7 +62,7 @@ public sealed class EntityFamilyHandler : IOrphanHandler
             // (OrphanCleanupService.BuildManualEntriesAsync's `else` branch when entityLogicalNames is empty).
             foreach (var (id, componentType) in attributeOrphans)
                 findings.Add(EntityFinding(id, componentType, $"Attribute {id}"));
-            return findings;
+            return new HandlerDetectionResult(findings, claimedIds);
         }
 
         var attributeInfo = await ResolveAttributeInfoAsync(
@@ -75,13 +82,13 @@ public sealed class EntityFamilyHandler : IOrphanHandler
                     ComponentClassifier.ScanEntityAttributeLogicalNames(context.PackageSrcRoot, info.EntityLogicalName);
 
             if (localAttributes.Contains(info.AttributeLogicalName))
-                continue; // still declared in Entity.xml — false positive, not an orphan
+                continue; // still declared in Entity.xml — false positive, not an orphan (still claimed above)
 
             var detail = $"{info.EntityLogicalName}.{info.AttributeLogicalName}";
             findings.Add(EntityFinding(id, componentType, $"Attribute '{detail}' ({id})"));
         }
 
-        return findings;
+        return new HandlerDetectionResult(findings, claimedIds);
     }
 
     // Prio3 always (KTD8) — hygiene, human review before removal given data-loss risk, but not blocking

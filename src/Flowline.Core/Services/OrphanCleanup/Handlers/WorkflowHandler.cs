@@ -19,7 +19,7 @@ public sealed class WorkflowHandler : IOrphanHandler
 
     public HandlerStatus Status => HandlerStatus.Active;
 
-    public async Task<IReadOnlyList<HandlerFinding>> DetectAsync(
+    public async Task<HandlerDetectionResult> DetectAsync(
         DetectionContext context,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates,
         CancellationToken ct)
@@ -30,7 +30,11 @@ public sealed class WorkflowHandler : IOrphanHandler
             .Distinct()
             .ToList();
 
-        if (workflowIds.Count == 0) return [];
+        if (workflowIds.Count == 0) return new HandlerDetectionResult([], new HashSet<Guid>());
+
+        // Every componenttype-29 candidate is claimed — this handler always emits a finding for each
+        // one (Prio3-default when unresolved), so ClaimedIds equals the full workflowIds set.
+        var claimedIds = workflowIds.ToHashSet();
 
         var query = new QueryExpression("workflow")
         {
@@ -68,6 +72,6 @@ public sealed class WorkflowHandler : IOrphanHandler
                 OrphanTiming.PreImportEligible));
         }
 
-        return findings;
+        return new HandlerDetectionResult(findings, claimedIds);
     }
 }

@@ -25,12 +25,12 @@ public sealed class CustomApiFamilyHandler(IAnsiConsole console) : IOrphanHandle
     const int ChildSequenceHint  = 0;
     const int ParentSequenceHint = 1;
 
-    public async Task<IReadOnlyList<HandlerFinding>> DetectAsync(
+    public async Task<HandlerDetectionResult> DetectAsync(
         DetectionContext context,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates,
         CancellationToken ct)
     {
-        if (candidates.Count == 0) return [];
+        if (candidates.Count == 0) return new HandlerDetectionResult([], new HashSet<Guid>());
 
         var idList = candidates.Select(c => c.ObjectId).Distinct().ToList();
         if (idList.Count > 2000)
@@ -44,7 +44,14 @@ public sealed class CustomApiFamilyHandler(IAnsiConsole console) : IOrphanHandle
         // claimed for this table" (KTD5/KTD6 — not evidence any of them were deleted), the latter warns
         // and does the same. Either way, a candidate this table can't resolve a name for is simply never
         // added to `resolved` below, so it's skipped rather than reported as orphaned (KTD5).
-        async Task<Dictionary<Guid, string>> ResolveNamesAsync(string entityLogicalName, string idAttribute)
+        //
+        // RowIds carries every id the query actually found a row for, independent of the name filter
+        // below — a row with a null/empty name is still evidence this candidate belongs to this table
+        // (KTD5 skip, not "not claimed"), so ClaimedIds must include it even though Names (and so
+        // AddFindings) does not. Each async local call computes and returns its own tuple entirely
+        // within its own async context, so reading .Result after Task.WhenAll below is race-free — no
+        // shared mutable state between the three concurrent calls.
+        async Task<(Dictionary<Guid, string> Names, HashSet<Guid> RowIds)> ResolveNamesAsync(string entityLogicalName, string idAttribute)
         {
             try
             {
@@ -54,18 +61,20 @@ public sealed class CustomApiFamilyHandler(IAnsiConsole console) : IOrphanHandle
                     Criteria  = { Conditions = { new ConditionExpression(idAttribute, ConditionOperator.In, idArray) } }
                 };
                 var entities = await context.Service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
-                return entities
+                var names = entities
                     .Where(e => !string.IsNullOrEmpty(e.GetAttributeValue<string>("name")))
                     .ToDictionary(e => e.Id, e => e.GetAttributeValue<string>("name")!);
+                var rowIds = entities.Select(e => e.Id).ToHashSet();
+                return (names, rowIds);
             }
             catch (FaultException<OrganizationServiceFault>)
             {
-                return [];
+                return ([], []);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 console.Warning($"CustomApi-family orphan detection failed for '{entityLogicalName}' ({Markup.Escape(ex.Message)}) — its candidates are skipped this run.");
-                return [];
+                return ([], []);
             }
         }
 
@@ -83,12 +92,21 @@ public sealed class CustomApiFamilyHandler(IAnsiConsole console) : IOrphanHandle
         foreach (var candidate in candidates)
             componentTypeById[candidate.ObjectId] = candidate.ComponentType;
 
-        var findings = new List<HandlerFinding>();
-        AddFindings(findings, caTask.Result,    "customapi",                 "CustomApi",                 localNames.ApiUniqueNames,        ParentSequenceHint, componentTypeById);
-        AddFindings(findings, paramTask.Result, "customapirequestparameter", "CustomApiRequestParameter", localNames.RequestParameterNames, ChildSequenceHint,  componentTypeById);
-        AddFindings(findings, propTask.Result,  "customapiresponseproperty", "CustomApiResponseProperty", localNames.ResponsePropertyNames, ChildSequenceHint,  componentTypeById);
+        // A candidate is claimed once its table lookup found a matching row — regardless of whether the
+        // row's name was null (KTD5 skip) or the local-source suppression below (AddFindings) then
+        // keeps it out of Findings. Union across all three tables since a single candidate id only ever
+        // appears in one.
+        var claimedIds = caTask.Result.RowIds
+            .Concat(paramTask.Result.RowIds)
+            .Concat(propTask.Result.RowIds)
+            .ToHashSet();
 
-        return findings;
+        var findings = new List<HandlerFinding>();
+        AddFindings(findings, caTask.Result.Names,    "customapi",                 "CustomApi",                 localNames.ApiUniqueNames,        ParentSequenceHint, componentTypeById);
+        AddFindings(findings, paramTask.Result.Names, "customapirequestparameter", "CustomApiRequestParameter", localNames.RequestParameterNames, ChildSequenceHint,  componentTypeById);
+        AddFindings(findings, propTask.Result.Names,  "customapiresponseproperty", "CustomApiResponseProperty", localNames.ResponsePropertyNames, ChildSequenceHint,  componentTypeById);
+
+        return new HandlerDetectionResult(findings, claimedIds);
     }
 
     static void AddFindings(

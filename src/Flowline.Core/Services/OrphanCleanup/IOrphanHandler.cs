@@ -10,13 +10,14 @@ namespace Flowline.Core.Services.OrphanCleanup;
 // Bot, ConnectionReference) can only tell whether a candidate is theirs by querying their own backing
 // table — for those, match and detect are the same batched async call. DetectAsync accommodates both
 // shapes uniformly: the orchestrator (U9) hands every still-unclaimed candidate to each handler once,
-// and the handler returns only the findings it claims (filtering by componenttype then verifying, or
-// batch-querying then matching).
+// and the handler returns the findings it claims (filtering by componenttype then verifying, or
+// batch-querying then matching) alongside every candidate it recognized as its own (ClaimedIds), even
+// when a recognized candidate produced no finding (see HandlerDetectionResult).
 public interface IOrphanHandler
 {
     HandlerStatus Status { get; }
 
-    Task<IReadOnlyList<HandlerFinding>> DetectAsync(
+    Task<HandlerDetectionResult> DetectAsync(
         DetectionContext context,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates,
         CancellationToken ct);

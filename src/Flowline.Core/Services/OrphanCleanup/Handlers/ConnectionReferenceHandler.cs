@@ -15,12 +15,12 @@ public sealed class ConnectionReferenceHandler(IAnsiConsole console) : IOrphanHa
 {
     public HandlerStatus Status => HandlerStatus.Active;
 
-    public async Task<IReadOnlyList<HandlerFinding>> DetectAsync(
+    public async Task<HandlerDetectionResult> DetectAsync(
         DetectionContext context,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates,
         CancellationToken ct)
     {
-        if (candidates.Count == 0) return [];
+        if (candidates.Count == 0) return new HandlerDetectionResult([], new HashSet<Guid>());
 
         var idList = candidates.Select(c => c.ObjectId).Distinct().ToList();
         if (idList.Count > 2000)
@@ -44,13 +44,19 @@ public sealed class ConnectionReferenceHandler(IAnsiConsole console) : IOrphanHa
         // failure the operator should see.
         catch (FaultException<OrganizationServiceFault>)
         {
-            return [];
+            return new HandlerDetectionResult([], new HashSet<Guid>());
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             console.Warning($"ConnectionReference orphan detection failed ({Markup.Escape(ex.Message)}) — its candidates are skipped this run.");
-            return [];
+            return new HandlerDetectionResult([], new HashSet<Guid>());
         }
+
+        // Every row the "connectionreference" table query returned is claimed — regardless of whether
+        // its logical name came back null (KTD5 skip) or it's still declared locally (suppressed
+        // below) — a row existing in the table at all is enough evidence this candidate is a
+        // ConnectionReference.
+        var claimedIds = rows.Select(r => r.Id).ToHashSet();
 
         // ConnectionReference has no dedicated folder like Bot's bots/<schemaname>/bot.xml — it's
         // declared inline in Other/Customizations.xml's <connectionreferences> section (see
@@ -85,6 +91,6 @@ public sealed class ConnectionReferenceHandler(IAnsiConsole console) : IOrphanHa
                 EntityName: "connectionreference"));
         }
 
-        return findings;
+        return new HandlerDetectionResult(findings, claimedIds);
     }
 }

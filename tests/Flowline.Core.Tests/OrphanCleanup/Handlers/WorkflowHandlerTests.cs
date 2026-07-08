@@ -52,7 +52,7 @@ public class WorkflowHandlerTests
         var id = Guid.NewGuid();
         SetupWorkflow(id, "MyFlow", stateCode: 1); // Activated
 
-        var findings = await _handler.DetectAsync(Ctx(), [(id, 29)], CancellationToken.None);
+        var findings = (await _handler.DetectAsync(Ctx(), [(id, 29)], CancellationToken.None)).Findings;
 
         var finding = Assert.Single(findings);
         Assert.Equal(29, finding.ComponentType);
@@ -67,7 +67,7 @@ public class WorkflowHandlerTests
         var id = Guid.NewGuid();
         SetupWorkflow(id, "MyFlow", stateCode: 0); // Draft/Deactivated
 
-        var findings = await _handler.DetectAsync(Ctx(), [(id, 29)], CancellationToken.None);
+        var findings = (await _handler.DetectAsync(Ctx(), [(id, 29)], CancellationToken.None)).Findings;
 
         var finding = Assert.Single(findings);
         Assert.Equal(29, finding.ComponentType);
@@ -87,7 +87,7 @@ public class WorkflowHandlerTests
     {
         var id = Guid.NewGuid();
 
-        var findings = await _handler.DetectAsync(Ctx(), [(id, 61)], CancellationToken.None);
+        var findings = (await _handler.DetectAsync(Ctx(), [(id, 61)], CancellationToken.None)).Findings;
 
         Assert.Empty(findings);
     }
@@ -95,9 +95,23 @@ public class WorkflowHandlerTests
     [Fact]
     public async Task DetectAsync_NoCandidates_ReturnsEmptyWithoutQuerying()
     {
-        var findings = await _handler.DetectAsync(Ctx(), [], CancellationToken.None);
+        var findings = (await _handler.DetectAsync(Ctx(), [], CancellationToken.None)).Findings;
 
         Assert.Empty(findings);
         _ = _serviceMock.DidNotReceive().RetrieveMultipleAsync(Arg.Any<QueryExpression>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DetectAsync_ClaimedIds_EqualsFindingsObjectIds()
+    {
+        // No suppression path in this handler — every componenttype-29 candidate always produces a
+        // finding (Prio3-default when unresolved), so ClaimedIds equals Findings' ObjectIds exactly.
+        var id = Guid.NewGuid();
+        SetupWorkflow(id, "MyFlow", stateCode: 1);
+
+        var result = await _handler.DetectAsync(Ctx(), [(id, 29)], CancellationToken.None);
+
+        Assert.Equal(result.Findings.Select(f => f.ObjectId).ToHashSet(), result.ClaimedIds);
+        Assert.Contains(id, result.ClaimedIds);
     }
 }

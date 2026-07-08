@@ -58,7 +58,7 @@ public class CustomApiFamilyHandlerTests : IDisposable
         var orphanId = Guid.NewGuid();
         SetupTableNames("customapi", (orphanId, "av_GenuinelyRemovedApi"));
 
-        var findings = await _handler.DetectAsync(Ctx(), [(orphanId, 10036)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(orphanId, 10036)], default)).Findings;
 
         var finding = Assert.Single(findings);
         Assert.Equal(orphanId, finding.ObjectId);
@@ -80,7 +80,7 @@ public class CustomApiFamilyHandlerTests : IDisposable
         SetupTableNames("customapi", (liveId, "av_AatYourService"));
         Directory.CreateDirectory(Path.Combine(_packageSrcRoot, "customapis", "av_AatYourService"));
 
-        var findings = await _handler.DetectAsync(Ctx(), [(liveId, 10036)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(liveId, 10036)], default)).Findings;
 
         Assert.Empty(findings);
     }
@@ -95,7 +95,7 @@ public class CustomApiFamilyHandlerTests : IDisposable
         // handler — never added to the findings list, not reported as orphaned.
         var unresolvedId = Guid.NewGuid();
 
-        var findings = await _handler.DetectAsync(Ctx(), [(unresolvedId, 10036)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(unresolvedId, 10036)], default)).Findings;
 
         Assert.Empty(findings);
     }
@@ -116,7 +116,7 @@ public class CustomApiFamilyHandlerTests : IDisposable
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([entity])));
 
-        var findings = await _handler.DetectAsync(Ctx(), [(candidateId, 10036)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(candidateId, 10036)], default)).Findings;
 
         Assert.Empty(findings);
     }
@@ -138,7 +138,7 @@ public class CustomApiFamilyHandlerTests : IDisposable
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("table unavailable")));
 
-        var findings = await _handler.DetectAsync(Ctx(), [(customApiId, 10036), (paramId, 10037), (propId, 10034)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(customApiId, 10036), (paramId, 10037), (propId, 10034)], default)).Findings;
 
         Assert.Contains(findings, f => f.ObjectId == customApiId);
         Assert.Contains(findings, f => f.ObjectId == paramId);
@@ -161,7 +161,7 @@ public class CustomApiFamilyHandlerTests : IDisposable
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new FaultException<OrganizationServiceFault>(new OrganizationServiceFault())));
 
-        var findings = await _handler.DetectAsync(Ctx(), [(candidateId, 10036)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(candidateId, 10036)], default)).Findings;
 
         Assert.Empty(findings);
         Assert.DoesNotContain("Warning", _console.Output);
@@ -179,7 +179,7 @@ public class CustomApiFamilyHandlerTests : IDisposable
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("network timeout")));
 
-        var findings = await _handler.DetectAsync(Ctx(), [(candidateId, 10036)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(candidateId, 10036)], default)).Findings;
 
         Assert.Empty(findings);
         Assert.Contains("network timeout", _console.Output);
@@ -199,7 +199,7 @@ public class CustomApiFamilyHandlerTests : IDisposable
         SetupTableNames("customapirequestparameter", (paramId, "av_Param"));
         SetupTableNames("customapiresponseproperty", (propId, "av_Prop"));
 
-        var findings = await _handler.DetectAsync(Ctx(), [(customApiId, 10036), (paramId, 10037), (propId, 10034)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(customApiId, 10036), (paramId, 10037), (propId, 10034)], default)).Findings;
 
         var byId = findings.ToDictionary(f => f.ObjectId);
         Assert.Equal(3, byId.Count);
@@ -211,7 +211,7 @@ public class CustomApiFamilyHandlerTests : IDisposable
     [Fact]
     public async Task DetectAsync_EmptyCandidateList_ReturnsEmptyWithoutQuerying()
     {
-        var findings = await _handler.DetectAsync(Ctx(), [], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [], default)).Findings;
 
         Assert.Empty(findings);
         await _serviceMock.DidNotReceive().RetrieveMultipleAsync(Arg.Any<QueryExpression>(), Arg.Any<CancellationToken>());
@@ -221,5 +221,45 @@ public class CustomApiFamilyHandlerTests : IDisposable
     public void Status_IsActive()
     {
         Assert.Equal(HandlerStatus.Active, _handler.Status);
+    }
+
+    // -- ClaimedIds: recognized-but-clean vs genuinely-unrecognized --
+
+    [Fact]
+    public async Task DetectAsync_ClaimedIds_IncludesRecreatedCustomApiButNotUnresolvedCandidate()
+    {
+        // liveId has a matching row (still declared locally, so suppressed out of Findings) — it must
+        // still be claimed. unresolvedId has no matching row in any of the three tables at all — it
+        // must not be claimed, so it can fall through to generic fallback.
+        var liveId = Guid.NewGuid();
+        var unresolvedId = Guid.NewGuid();
+        SetupTableNames("customapi", (liveId, "av_AatYourService"));
+        Directory.CreateDirectory(Path.Combine(_packageSrcRoot, "customapis", "av_AatYourService"));
+
+        var result = await _handler.DetectAsync(Ctx(), [(liveId, 10036), (unresolvedId, 10036)], default);
+
+        Assert.Empty(result.Findings);
+        Assert.Contains(liveId, result.ClaimedIds);
+        Assert.DoesNotContain(unresolvedId, result.ClaimedIds);
+    }
+
+    [Fact]
+    public async Task DetectAsync_ClaimedIds_IncludesRowWithNullName()
+    {
+        // Mirrors DetectAsync_CandidateRowExistsButNameIsNull_SkippedNotReported: the row IS found in
+        // the customapi table, but its name is null (KTD5 skip — not reported). A row existing in the
+        // table at all is still evidence this candidate is a CustomApi, so it must be claimed.
+        var candidateId = Guid.NewGuid();
+        var entity = new Entity("customapi", candidateId) { ["name"] = null };
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "customapi"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([entity])));
+
+        var result = await _handler.DetectAsync(Ctx(), [(candidateId, 10036)], default);
+
+        Assert.Empty(result.Findings);
+        Assert.Contains(candidateId, result.ClaimedIds);
     }
 }

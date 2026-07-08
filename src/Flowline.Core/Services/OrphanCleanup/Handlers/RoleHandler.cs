@@ -18,13 +18,17 @@ public sealed class RoleHandler : IOrphanHandler
 
     public HandlerStatus Status => HandlerStatus.Active;
 
-    public async Task<IReadOnlyList<HandlerFinding>> DetectAsync(
+    public async Task<HandlerDetectionResult> DetectAsync(
         DetectionContext context,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates,
         CancellationToken ct)
     {
         var roleCandidates = candidates.Where(c => c.ComponentType == RoleComponentType).ToList();
-        if (roleCandidates.Count == 0) return [];
+        if (roleCandidates.Count == 0) return new HandlerDetectionResult([], new HashSet<Guid>());
+
+        // Every componenttype-20 candidate is claimed — this handler always emits a finding for each
+        // one, so ClaimedIds equals the full roleCandidates set.
+        var claimedIds = roleCandidates.Select(c => c.ObjectId).ToHashSet();
 
         var names = await GetRoleNamesAsync(context.Service, roleCandidates.Select(c => c.ObjectId), ct).ConfigureAwait(false);
 
@@ -44,7 +48,7 @@ public sealed class RoleHandler : IOrphanHandler
                 OrphanTiming.PreImportEligible));
         }
 
-        return findings;
+        return new HandlerDetectionResult(findings, claimedIds);
     }
 
     static async Task<Dictionary<Guid, string>> GetRoleNamesAsync(

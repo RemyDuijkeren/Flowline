@@ -61,7 +61,7 @@ public class BotHandlerTests : IDisposable
         var orphanId = Guid.NewGuid();
         SetupBotRow(orphanId, "av_UnpublishedBot", publishedOn: null); // never published — draft
 
-        var findings = await _handler.DetectAsync(Ctx(), [(orphanId, 10082)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(orphanId, 10082)], default)).Findings;
 
         var finding = Assert.Single(findings);
         Assert.Equal(orphanId, finding.ObjectId);
@@ -77,7 +77,7 @@ public class BotHandlerTests : IDisposable
         var orphanId = Guid.NewGuid();
         SetupBotRow(orphanId, "av_PublishedBot", publishedOn: new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)); // published/live
 
-        var findings = await _handler.DetectAsync(Ctx(), [(orphanId, 10082)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(orphanId, 10082)], default)).Findings;
 
         var finding = Assert.Single(findings);
         Assert.Equal(OrphanAction.Manual, finding.Action);
@@ -93,7 +93,7 @@ public class BotHandlerTests : IDisposable
         SetupBotRow(liveId, "msdyn_salesCopilot", publishedOn: null);
         Directory.CreateDirectory(Path.Combine(_packageSrcRoot, "bots", "msdyn_salesCopilot"));
 
-        var findings = await _handler.DetectAsync(Ctx(), [(liveId, 10082)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(liveId, 10082)], default)).Findings;
 
         Assert.Empty(findings);
     }
@@ -105,7 +105,7 @@ public class BotHandlerTests : IDisposable
     {
         var unresolvedId = Guid.NewGuid();
 
-        var findings = await _handler.DetectAsync(Ctx(), [(unresolvedId, 10082)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(unresolvedId, 10082)], default)).Findings;
 
         Assert.Empty(findings);
     }
@@ -119,9 +119,12 @@ public class BotHandlerTests : IDisposable
         var candidateId = Guid.NewGuid();
         SetupBotRow(candidateId, schemaName: null, publishedOn: null);
 
-        var findings = await _handler.DetectAsync(Ctx(), [(candidateId, 10082)], default);
+        var result = await _handler.DetectAsync(Ctx(), [(candidateId, 10082)], default);
 
-        Assert.Empty(findings);
+        Assert.Empty(result.Findings);
+        // A row existing in the "bot" table at all is still evidence this candidate is a Bot, so it's
+        // claimed even though the null schemaname keeps it out of Findings (KTD5).
+        Assert.Contains(candidateId, result.ClaimedIds);
     }
 
     // -- KTD4: per-handler query isolation (mirrors bug #1's shared-try/catch regression) --
@@ -136,7 +139,7 @@ public class BotHandlerTests : IDisposable
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("bot table unavailable")));
 
-        var findings = await _handler.DetectAsync(Ctx(), [(candidateId, 10082)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(candidateId, 10082)], default)).Findings;
 
         Assert.Empty(findings);
         Assert.Contains("bot table unavailable", _console.Output);
@@ -166,8 +169,8 @@ public class BotHandlerTests : IDisposable
 
         var connectionReferenceHandler = new ConnectionReferenceHandler(_console);
 
-        var botFindings = await _handler.DetectAsync(Ctx(), [(botId, 10082)], default);
-        var connectionReferenceFindings = await connectionReferenceHandler.DetectAsync(Ctx(), [(connectionReferenceId, 10064)], default);
+        var botFindings = (await _handler.DetectAsync(Ctx(), [(botId, 10082)], default)).Findings;
+        var connectionReferenceFindings = (await connectionReferenceHandler.DetectAsync(Ctx(), [(connectionReferenceId, 10064)], default)).Findings;
 
         Assert.Empty(botFindings);
         var finding = Assert.Single(connectionReferenceFindings);
@@ -186,7 +189,7 @@ public class BotHandlerTests : IDisposable
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new FaultException<OrganizationServiceFault>(new OrganizationServiceFault())));
 
-        var findings = await _handler.DetectAsync(Ctx(), [(candidateId, 10082)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(candidateId, 10082)], default)).Findings;
 
         Assert.Empty(findings);
         Assert.DoesNotContain("Warning", _console.Output);
@@ -202,7 +205,7 @@ public class BotHandlerTests : IDisposable
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("network timeout")));
 
-        var findings = await _handler.DetectAsync(Ctx(), [(candidateId, 10082)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(candidateId, 10082)], default)).Findings;
 
         Assert.Empty(findings);
         Assert.Contains("network timeout", _console.Output);
@@ -212,7 +215,7 @@ public class BotHandlerTests : IDisposable
     [Fact]
     public async Task DetectAsync_EmptyCandidateList_ReturnsEmptyWithoutQuerying()
     {
-        var findings = await _handler.DetectAsync(Ctx(), [], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [], default)).Findings;
 
         Assert.Empty(findings);
         await _serviceMock.DidNotReceive().RetrieveMultipleAsync(Arg.Any<QueryExpression>(), Arg.Any<CancellationToken>());
@@ -222,5 +225,31 @@ public class BotHandlerTests : IDisposable
     public void Status_IsActive()
     {
         Assert.Equal(HandlerStatus.Active, _handler.Status);
+    }
+
+    // -- ClaimedIds: row found (even if suppressed) vs no matching row at all --
+
+    [Fact]
+    public async Task DetectAsync_ClaimedIds_IncludesLiveBotStillLocalButNotUnresolvedCandidate()
+    {
+        // liveId has a matching "bot" row (still declared locally, so suppressed out of Findings) — it
+        // must still be claimed. unresolvedId has no matching row in the "bot" table at all — it must
+        // not be claimed, so it can fall through to generic fallback.
+        var liveId = Guid.NewGuid();
+        var unresolvedId = Guid.NewGuid();
+        Directory.CreateDirectory(Path.Combine(_packageSrcRoot, "bots", "msdyn_salesCopilot"));
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "bot"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("bot", liveId) { ["schemaname"] = "msdyn_salesCopilot" }
+            ])));
+
+        var result = await _handler.DetectAsync(Ctx(), [(liveId, 10082), (unresolvedId, 10082)], default);
+
+        Assert.Empty(result.Findings);
+        Assert.Contains(liveId, result.ClaimedIds);
+        Assert.DoesNotContain(unresolvedId, result.ClaimedIds);
     }
 }

@@ -69,7 +69,7 @@ public class ConnectionReferenceHandlerTests : IDisposable
         var orphanId = Guid.NewGuid();
         SetupConnectionReferenceRow(orphanId, "av_sharepoint");
 
-        var findings = await _handler.DetectAsync(Ctx(), [(orphanId, 10064)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(orphanId, 10064)], default)).Findings;
 
         var finding = Assert.Single(findings);
         Assert.Equal(orphanId, finding.ObjectId);
@@ -88,7 +88,7 @@ public class ConnectionReferenceHandlerTests : IDisposable
         SetupConnectionReferenceRow(liveId, "av_sharepoint");
         WriteConnectionReferencesXml(_packageSrcRoot, "av_sharepoint");
 
-        var findings = await _handler.DetectAsync(Ctx(), [(liveId, 10064)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(liveId, 10064)], default)).Findings;
 
         Assert.Empty(findings);
     }
@@ -100,7 +100,7 @@ public class ConnectionReferenceHandlerTests : IDisposable
     {
         var unresolvedId = Guid.NewGuid();
 
-        var findings = await _handler.DetectAsync(Ctx(), [(unresolvedId, 10064)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(unresolvedId, 10064)], default)).Findings;
 
         Assert.Empty(findings);
     }
@@ -114,9 +114,13 @@ public class ConnectionReferenceHandlerTests : IDisposable
         var candidateId = Guid.NewGuid();
         SetupConnectionReferenceRow(candidateId, logicalName: null);
 
-        var findings = await _handler.DetectAsync(Ctx(), [(candidateId, 10064)], default);
+        var result = await _handler.DetectAsync(Ctx(), [(candidateId, 10064)], default);
 
-        Assert.Empty(findings);
+        Assert.Empty(result.Findings);
+        // A row existing in the "connectionreference" table at all is still evidence this candidate is
+        // a ConnectionReference, so it's claimed even though the null logical name keeps it out of
+        // Findings (KTD5).
+        Assert.Contains(candidateId, result.ClaimedIds);
     }
 
     // -- KTD4: per-handler query isolation (mirrors bug #1's shared-try/catch regression) --
@@ -131,7 +135,7 @@ public class ConnectionReferenceHandlerTests : IDisposable
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("connectionreference table unavailable")));
 
-        var findings = await _handler.DetectAsync(Ctx(), [(candidateId, 10064)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(candidateId, 10064)], default)).Findings;
 
         Assert.Empty(findings);
         Assert.Contains("connectionreference table unavailable", _console.Output);
@@ -160,8 +164,8 @@ public class ConnectionReferenceHandlerTests : IDisposable
 
         var botHandler = new BotHandler(_console);
 
-        var connectionReferenceFindings = await _handler.DetectAsync(Ctx(), [(connectionReferenceId, 10064)], default);
-        var botFindings = await botHandler.DetectAsync(Ctx(), [(botId, 10082)], default);
+        var connectionReferenceFindings = (await _handler.DetectAsync(Ctx(), [(connectionReferenceId, 10064)], default)).Findings;
+        var botFindings = (await botHandler.DetectAsync(Ctx(), [(botId, 10082)], default)).Findings;
 
         Assert.Empty(connectionReferenceFindings);
         var finding = Assert.Single(botFindings);
@@ -180,7 +184,7 @@ public class ConnectionReferenceHandlerTests : IDisposable
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new FaultException<OrganizationServiceFault>(new OrganizationServiceFault())));
 
-        var findings = await _handler.DetectAsync(Ctx(), [(candidateId, 10064)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(candidateId, 10064)], default)).Findings;
 
         Assert.Empty(findings);
         Assert.DoesNotContain("Warning", _console.Output);
@@ -196,7 +200,7 @@ public class ConnectionReferenceHandlerTests : IDisposable
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("network timeout")));
 
-        var findings = await _handler.DetectAsync(Ctx(), [(candidateId, 10064)], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [(candidateId, 10064)], default)).Findings;
 
         Assert.Empty(findings);
         Assert.Contains("network timeout", _console.Output);
@@ -206,7 +210,7 @@ public class ConnectionReferenceHandlerTests : IDisposable
     [Fact]
     public async Task DetectAsync_EmptyCandidateList_ReturnsEmptyWithoutQuerying()
     {
-        var findings = await _handler.DetectAsync(Ctx(), [], default);
+        var findings = (await _handler.DetectAsync(Ctx(), [], default)).Findings;
 
         Assert.Empty(findings);
         await _serviceMock.DidNotReceive().RetrieveMultipleAsync(Arg.Any<QueryExpression>(), Arg.Any<CancellationToken>());
@@ -216,5 +220,31 @@ public class ConnectionReferenceHandlerTests : IDisposable
     public void Status_IsActive()
     {
         Assert.Equal(HandlerStatus.Active, _handler.Status);
+    }
+
+    // -- ClaimedIds: row found (even if suppressed) vs no matching row at all --
+
+    [Fact]
+    public async Task DetectAsync_ClaimedIds_IncludesLiveConnectionReferenceStillLocalButNotUnresolvedCandidate()
+    {
+        // liveId has a matching "connectionreference" row (still declared in Customizations.xml, so
+        // suppressed out of Findings) — it must still be claimed. unresolvedId has no matching row in
+        // the table at all — it must not be claimed, so it can fall through to generic fallback.
+        var liveId = Guid.NewGuid();
+        var unresolvedId = Guid.NewGuid();
+        WriteConnectionReferencesXml(_packageSrcRoot, "av_sharepoint");
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "connectionreference"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("connectionreference", liveId) { ["connectionreferencelogicalname"] = "av_sharepoint" }
+            ])));
+
+        var result = await _handler.DetectAsync(Ctx(), [(liveId, 10064), (unresolvedId, 10064)], default);
+
+        Assert.Empty(result.Findings);
+        Assert.Contains(liveId, result.ClaimedIds);
+        Assert.DoesNotContain(unresolvedId, result.ClaimedIds);
     }
 }

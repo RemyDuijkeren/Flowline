@@ -16,12 +16,12 @@ public sealed class BotHandler(IAnsiConsole console) : IOrphanHandler
 {
     public HandlerStatus Status => HandlerStatus.Active;
 
-    public async Task<IReadOnlyList<HandlerFinding>> DetectAsync(
+    public async Task<HandlerDetectionResult> DetectAsync(
         DetectionContext context,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates,
         CancellationToken ct)
     {
-        if (candidates.Count == 0) return [];
+        if (candidates.Count == 0) return new HandlerDetectionResult([], new HashSet<Guid>());
 
         var idList = candidates.Select(c => c.ObjectId).Distinct().ToList();
         if (idList.Count > 2000)
@@ -53,13 +53,18 @@ public sealed class BotHandler(IAnsiConsole console) : IOrphanHandler
         // warns since it's a real failure the operator should see.
         catch (FaultException<OrganizationServiceFault>)
         {
-            return [];
+            return new HandlerDetectionResult([], new HashSet<Guid>());
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             console.Warning($"Bot orphan detection failed ({Markup.Escape(ex.Message)}) — its candidates are skipped this run.");
-            return [];
+            return new HandlerDetectionResult([], new HashSet<Guid>());
         }
+
+        // Every row the "bot" table query returned is claimed — regardless of whether its schemaname
+        // came back null (KTD5 skip) or it's still declared locally (suppressed below) — a row existing
+        // in the table at all is enough evidence this candidate is a Bot.
+        var claimedIds = rows.Select(r => r.Id).ToHashSet();
 
         // Bot has no GUID anywhere in local source — schemaname (bots/<schemaname>/bot.xml) is the only
         // local identity (see ComponentClassifier.ScanBotSchemaNames).
@@ -95,6 +100,6 @@ public sealed class BotHandler(IAnsiConsole console) : IOrphanHandler
                 EntityName: "bot"));
         }
 
-        return findings;
+        return new HandlerDetectionResult(findings, claimedIds);
     }
 }
