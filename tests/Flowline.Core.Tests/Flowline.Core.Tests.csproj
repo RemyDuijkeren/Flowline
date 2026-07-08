@@ -4,4 +4,10 @@
     <ProjectReference Include="..\..\src\Flowline.Core\Flowline.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- HandlerRegistryTests (OrphanCleanup) resolves IEnumerable<IOrphanHandler> from a real
+         ServiceCollection to document KTD7's DI fan-out convention. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+
 </Project>
