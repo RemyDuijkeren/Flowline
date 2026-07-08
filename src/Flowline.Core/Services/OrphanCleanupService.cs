@@ -90,23 +90,26 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         _deferred = await ExecuteInOrderAsync(context.Service, context.SolutionName, result.Entries, isPostImport: false, ct).ConfigureAwait(false);
     }
 
-    // Convenience overload for callers with no packed/mutating context of their own (e.g. DriftCommand)
-    // — builds the PostDeployContext internally, always in RunMode.NoDelete, so the caller only needs to
-    // say where the source lives, not construct a PostDeployContext by hand. RunPreImportAsync's caller
-    // (DeployCommand) still builds PostDeployContext itself: it also needs RunMode from --no-delete and a
-    // real PackagePath from its own packing step, neither of which this convenience shape has.
+    // Thin wrapper for RunPreImportAsync's caller (DeployCommand), which already has a PostDeployContext
+    // built for the whole IPostDeployService fan-out (it also carries RunMode from --no-delete and a real
+    // PackagePath from its own packing step). Unpacks it and delegates to the primitives-based overload
+    // below, which is where the actual comparison logic lives (KTD12) — PostDeployContext is a deploy-
+    // pipeline type (it still carries PackagePath, which this comparison never reads), so the engine
+    // itself shouldn't be coupled to its shape.
+    public Task<CompareResult> CompareAsync(PostDeployContext context, CancellationToken ct, string? noDeleteHint = "(--no-delete active)") =>
+        CompareAsync(context.PackageSrcRoot, context.Service, context.SolutionName, context.EnvironmentUrl, context.Mode, ct, noDeleteHint);
+
+    // Convenience overload for callers with no packed/mutating context of their own (e.g. DriftCommand) —
+    // takes a packageFolder (parent of src) rather than packageSrcRoot, matching ComponentClassifier.
+    // ParseLocalSource's own parameter, and always runs in RunMode.NoDelete since these callers never mutate.
     public Task<CompareResult> CompareAsync(
         string packageFolder,
         IOrganizationServiceAsync2 service,
         string solutionName,
         string environmentUrl,
         CancellationToken ct,
-        string? noDeleteHint = null)
-    {
-        var packageSrcRoot = Path.Combine(packageFolder, "src");
-        var context = new PostDeployContext(service, solutionName, RunMode.NoDelete, string.Empty, environmentUrl, packageSrcRoot);
-        return CompareAsync(context, ct, noDeleteHint);
-    }
+        string? noDeleteHint = null) =>
+        CompareAsync(Path.Combine(packageFolder, "src"), service, solutionName, environmentUrl, RunMode.NoDelete, ct, noDeleteHint);
 
     // Comparison-only half of the pre-import step (KTD5): parses committed source, queries live
     // solutioncomponents, resolves sNewIds via all existing special-casing (schemaName, entity,
@@ -116,10 +119,11 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     // caller that has no `--no-delete` flag of its own (DriftCommand is always read-only) suppress or
     // replace the deploy-specific "(--no-delete active)" phrasing in the printed report.
     //
-    // Owns parsing PackageSrcRoot itself (via ComponentClassifier.ParseLocalSource) rather than reading
-    // pre-parsed LocalComponents/EntityLogicalNames/NamedComponents fields off the context — this is the
-    // only IPostDeployService implementer that ever needs the parsed source, so PostDeployContext no
-    // longer carries it (KTD12).
+    // Takes packageSrcRoot/service/solutionName/environmentUrl/mode directly rather than a PostDeployContext
+    // — this is the real comparison engine both public overloads above delegate to, and its dependencies
+    // should be exactly what it needs, not a deploy-pipeline type carrying fields (like PackagePath) it
+    // never reads (KTD12). Owns parsing packageSrcRoot itself (via ComponentClassifier.ParseLocalSource)
+    // rather than reading pre-parsed LocalComponents/EntityLogicalNames/NamedComponents.
     //
     // Returns a CompareResult rather than a bare entry list so a caller can tell "compared and found
     // nothing" (Skipped: false, Entries: []) apart from "the comparison itself didn't run" (Skipped:
@@ -127,13 +131,16 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     // doesn't need this distinction (it only ever acts on Entries), but DriftCommand does: a solution
     // with no local components or no live components at all should not report the same "no drift" as
     // one that was actually compared and matched.
-    public async Task<CompareResult> CompareAsync(PostDeployContext context, CancellationToken ct, string? noDeleteHint = "(--no-delete active)")
+    public async Task<CompareResult> CompareAsync(
+        string packageSrcRoot,
+        IOrganizationServiceAsync2 service,
+        string solutionName,
+        string environmentUrl,
+        RunMode mode,
+        CancellationToken ct,
+        string? noDeleteHint = "(--no-delete active)")
     {
-        var service      = context.Service;
-        var solutionName = context.SolutionName;
-        var mode         = context.Mode;
-
-        var (sNew, entityLogicalNames, namedComponents) = ComponentClassifier.ParseLocalSource(context.PackageSrcRoot);
+        var (sNew, entityLogicalNames, namedComponents) = ComponentClassifier.ParseLocalSource(packageSrcRoot);
 
         var sOld = await console.Status().FlowlineSpinner()
             .StartAsync($"Querying orphan components in [bold]{solutionName}[/]...",
@@ -200,7 +207,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         var unknownOrphans = orphans.Where(c => ComponentClassifier.Classify(c.ComponentType) == ComponentAction.Manual).ToList();
 
         // Exempt webresource orphans referenced in // flowline:depends annotations.
-        autoOrphans = await ExemptAnnotationReferencedWebResourcesAsync(service, autoOrphans, context.PackageSrcRoot, ct).ConfigureAwait(false);
+        autoOrphans = await ExemptAnnotationReferencedWebResourcesAsync(service, autoOrphans, packageSrcRoot, ct).ConfigureAwait(false);
 
         // CustomApi and Bot both have env-specific componenttypes — detect via entity-side queries
         // instead (see IdentifyEntityDetectedTypesAsync).
@@ -236,7 +243,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
                     customApiNames[id] = name;
             }
 
-            var localCustomApiNames = ComponentClassifier.ScanCustomApiNames(context.PackageSrcRoot);
+            var localCustomApiNames = ComponentClassifier.ScanCustomApiNames(packageSrcRoot);
             customApiOrphans = customApiOrphans.Where(o =>
             {
                 if (!customApiNames.TryGetValue(o.ObjectId, out var name)) return true;
@@ -260,10 +267,10 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         // separately-generated deploymentSettings.json, which is optional and can go stale.
         var botEntries = await ResolveEntityDetectedManualEntriesAsync(
             service, botOrphans, "bot", "botid", "schemaname",
-            ComponentClassifier.ScanBotSchemaNames, context.PackageSrcRoot, ct).ConfigureAwait(false);
+            ComponentClassifier.ScanBotSchemaNames, packageSrcRoot, ct).ConfigureAwait(false);
         var connectionReferenceEntries = await ResolveEntityDetectedManualEntriesAsync(
             service, connectionReferenceOrphans, "connectionreference", "connectionreferenceid", "connectionreferencelogicalname",
-            ComponentClassifier.ScanConnectionReferenceLogicalNames, context.PackageSrcRoot, ct).ConfigureAwait(false);
+            ComponentClassifier.ScanConnectionReferenceLogicalNames, packageSrcRoot, ct).ConfigureAwait(false);
 
         var crossSolutionIds = autoOrphans.Select(c => c.ObjectId).Concat(customApiOrphans.Select(c => c.ObjectId));
         var crossSolution = crossSolutionIds.Any()
@@ -304,9 +311,9 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         entries.AddRange(botEntries);
         entries.AddRange(connectionReferenceEntries);
 
-        entries.AddRange(await BuildManualEntriesAsync(service, context, entityLogicalNames, namedComponents, manualOrphans, ct).ConfigureAwait(false));
+        entries.AddRange(await BuildManualEntriesAsync(service, packageSrcRoot, entityLogicalNames, namedComponents, manualOrphans, ct).ConfigureAwait(false));
 
-        PrintReport(entries, mode, solutionName, context.EnvironmentUrl, noDeleteHint);
+        PrintReport(entries, mode, solutionName, environmentUrl, noDeleteHint);
 
         return new CompareResult(entries);
     }
@@ -573,7 +580,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     // genuine leftovers get a real name instead of a bare GUID.
     async Task<List<OrphanEntry>> BuildManualEntriesAsync(
         IOrganizationServiceAsync2 service,
-        PostDeployContext context,
+        string packageSrcRoot,
         IReadOnlyList<string> entityLogicalNames,
         IReadOnlyList<(int ComponentType, string SchemaName)> namedComponents,
         List<(Guid ObjectId, int ComponentType)> manualOrphans,
@@ -599,7 +606,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
                 if (!localAttributesByEntity.TryGetValue(info.EntityLogicalName, out var localAttributes))
                     localAttributesByEntity[info.EntityLogicalName] = localAttributes =
-                        ComponentClassifier.ScanEntityAttributeLogicalNames(context.PackageSrcRoot, info.EntityLogicalName);
+                        ComponentClassifier.ScanEntityAttributeLogicalNames(packageSrcRoot, info.EntityLogicalName);
 
                 if (localAttributes.Contains(info.AttributeLogicalName))
                     continue; // still declared in Entity.xml — false positive, not an orphan
@@ -621,7 +628,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
         if (unsupportedOrphans.Count > 0)
         {
-            var localIdentifiers = BuildLocalIdentifierHarvest(context, entityLogicalNames, namedComponents);
+            var localIdentifiers = BuildLocalIdentifierHarvest(packageSrcRoot, entityLogicalNames, namedComponents);
             await LogUnsupportedOrphansAsync(service, unsupportedOrphans, localIdentifiers, ct).ConfigureAwait(false);
         }
 
@@ -645,7 +652,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     // to enrich LogUnsupportedOrphansAsync's verbose preview (R6) — membership here is informational
     // only and never promotes a type into the actionable report or manual count.
     static HashSet<string> BuildLocalIdentifierHarvest(
-        PostDeployContext context,
+        string packageSrcRoot,
         IReadOnlyList<string> entityLogicalNames,
         IReadOnlyList<(int ComponentType, string SchemaName)> namedComponents)
     {
@@ -656,13 +663,13 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
         harvest.UnionWith(entityLogicalNames);
 
-        var customApiNames = ComponentClassifier.ScanCustomApiNames(context.PackageSrcRoot);
+        var customApiNames = ComponentClassifier.ScanCustomApiNames(packageSrcRoot);
         harvest.UnionWith(customApiNames.ApiUniqueNames);
         harvest.UnionWith(customApiNames.RequestParameterNames);
         harvest.UnionWith(customApiNames.ResponsePropertyNames);
 
-        harvest.UnionWith(ComponentClassifier.ScanBotSchemaNames(context.PackageSrcRoot));
-        harvest.UnionWith(ComponentClassifier.ScanConnectionReferenceLogicalNames(context.PackageSrcRoot));
+        harvest.UnionWith(ComponentClassifier.ScanBotSchemaNames(packageSrcRoot));
+        harvest.UnionWith(ComponentClassifier.ScanConnectionReferenceLogicalNames(packageSrcRoot));
 
         return harvest;
     }
