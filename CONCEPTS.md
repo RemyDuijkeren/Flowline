@@ -20,6 +20,17 @@ A Dataverse solution whose components can be created, modified, and deleted indi
 ### Local-source identity shape
 The pattern by which a solution component's identity is recorded in unpacked solution source, used by [[Orphan component]] detection to check whether a live component is still declared locally. Three shapes recur across component types: an id embedded directly in the component's own file and mirrored by `id` in Solution.xml (e.g. Role); a schemaname/uniquename-keyed folder with no GUID anywhere locally (e.g. CustomApi, Bot); and a declaration inline within Customizations.xml's own named section, also with no GUID (e.g. ConnectionReference). A component type is only trusted for removal recommendations once its shape has a verified local-source check with test coverage for both directions — still-declared components suppressed, genuinely-removed components reported.
 
+## Orphan Cleanup
+
+### Orphan handler
+A self-contained unit that owns matching, live-querying, and classifying [[Orphan component]] candidates for one family of related component types (e.g. the CustomApi family, or the PluginAssembly/PluginType/Step/StepImage family), grouped where detection logic already overlaps rather than one handler per componenttype. Replaces a single monolithic per-type lookup table approach with independently-addable units.
+
+### Handler status
+A maturity level a handler declares about itself, hardcoded in its own code rather than external config. **Active** handlers produce real findings included in the actionable report, with a real [[Orphan priority]] verdict, eligible for auto-delete when the type is Auto. **Preview** handlers run full detection and print verbose findings, but are excluded from the actionable report and never act — this lets a handler ship and be field-tested with no action risk before promotion to Active. A component type with no handler at all falls back to the generic search-all identifier-harvest signal (verbose "possible match" only, never prioritized, never acted on).
+
+### Orphan priority
+A per-instance risk classification for an [[Orphan component]], independent of the existing Auto/Manual axis. **Prio1** blocks deployment outright (e.g. a plugin assembly update failing because orphaned plugin types still reference it). **Prio2** doesn't block anything but keeps silently executing logic source no longer has (e.g. an Activated workflow or Enabled plugin step still triggering on deleted business logic). **Prio3** is harmless but should eventually be cleaned up. Unlike Auto/Manual (a static property of the component type), priority is decided per instance inside the [[Orphan handler]] that owns the type — a type is only ever capable of a given priority, not fixed to it.
+
 ## Sync
 
 ### Sync change summary
