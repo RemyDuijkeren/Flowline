@@ -6,8 +6,8 @@ using Spectre.Console;
 namespace Flowline.Core.Services.OrphanCleanup.Handlers;
 
 // U6: migrates Bot's entity-detected orphan detection out of OrphanCleanupService.
-// Bot's componenttype is env-specific (see OrphanCleanupService.CustomApiIdAttributes' comment on the
-// same shape) — a candidate can only be identified as a Bot by querying the "bot" table directly, so
+// Bot's componenttype is env-specific (same shape CustomApiFamilyHandler documents for its own family) —
+// a candidate can only be identified as a Bot by querying the "bot" table directly, so
 // match and detect are the same batched async call (see the Planning Contract's HTD note). KTD4: this
 // handler owns its own query and try/catch against "bot" only — a ConnectionReferenceHandler failure
 // (or vice versa) can never affect this handler's detection, since each is now a fully separate handler
@@ -34,7 +34,7 @@ public sealed class BotHandler(IAnsiConsole console) : IOrphanHandler
         {
             var query = new QueryExpression("bot")
             {
-                // schemaname is Bot's identity attribute (KTD3 note in OrphanCleanupService.TypeName/
+                // schemaname is Bot's identity attribute (KTD3 note in OrphanCleanupService's
                 // ResolvedTypeNameAttributes) — "name" is a separate, unrelated display string.
                 // publishedon ("Date and time when the Copilot was last published", nullable — Microsoft
                 // Dataverse "Copilot (bot)" table reference) distinguishes Published/live (non-null) from

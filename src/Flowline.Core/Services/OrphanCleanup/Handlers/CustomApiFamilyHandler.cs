@@ -8,9 +8,9 @@ namespace Flowline.Core.Services.OrphanCleanup.Handlers;
 // U5: migrates the CustomApi/CustomApiRequestParameter/CustomApiResponseProperty entity-detected family
 // (see docs/plans/2026-07-08-001-refactor-orphan-cleanup-handler-architecture-plan.md, KTD2/KTD4/KTD5/
 // KTD6/KTD8) into its own handler. Unlike the componenttype-gated handlers, this family's componenttype
-// is env-specific (see OrphanCleanupService.CustomApiIdAttributes) — a candidate can only be identified
-// as CustomApi-family by querying the backing tables directly, so match and detect are the same batched
-// async call (see the Planning Contract's HTD note on entity-detected dispatch).
+// is env-specific — a candidate can only be identified as CustomApi-family by querying the backing
+// tables directly, so match and detect are the same batched async call (see the Planning Contract's HTD
+// note on entity-detected dispatch).
 //
 // KTD4: each of the three tables is queried and caught independently — a failure on one table (e.g.
 // customapiresponseproperty) must not blank out detection for the other two. This is the structural fix
@@ -20,8 +20,10 @@ public sealed class CustomApiFamilyHandler(IAnsiConsole console) : IOrphanHandle
 {
     public HandlerStatus Status => HandlerStatus.Active;
 
-    // KTD1: children before parent, matching today's CustomApiEntityOrder — the request-parameter and
-    // response-property child records execute first (SequenceHint 0), the customapi parent last (1).
+    // KTD1: children before parent, matching the deletion order OrphanCleanupService's old
+    // CustomApiEntityOrder array previously encoded (removed during U9's orchestrator rewrite, now
+    // expressed as a per-family SequenceHint) — the request-parameter and response-property child
+    // records execute first (SequenceHint 0), the customapi parent last (1).
     const int ChildSequenceHint  = 0;
     const int ParentSequenceHint = 1;
 

@@ -9,11 +9,11 @@ using NSubstitute;
 namespace Flowline.Core.Tests.OrphanCleanup.Handlers;
 
 // Characterization + Prio coverage for U2: PluginAssemblyFamilyHandler migrates PluginAssembly (91) /
-// PluginType (90) / Step (92) / StepImage (93) detection from OrphanCleanupService's
-// NameResolvableTypes/ExecutionOrder, preserving today's exact Auto/Delete output and ordering, plus
-// the new Prio1/Prio2/Prio3 axis (KTD8). Tests call DetectAsync directly — execution (DeleteAsync,
-// dependency-fault deferral) stays in the orchestrator (U9), so this suite asserts only on the
-// returned HandlerFinding, never on service-mutation calls.
+// PluginType (90) / Step (92) / StepImage (93) detection from OrphanCleanupService's NameResolvableTypes
+// and its old ExecutionOrder array (removed during U9's orchestrator rewrite), preserving today's exact
+// Auto/Delete output and ordering, plus the new Prio1/Prio2/Prio3 axis (KTD8). Tests call DetectAsync
+// directly — execution (DeleteAsync, dependency-fault deferral) stays in the orchestrator (U9), so this
+// suite asserts only on the returned HandlerFinding, never on service-mutation calls.
 public class PluginAssemblyFamilyHandlerTests
 {
     readonly IOrganizationServiceAsync2 _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
@@ -65,15 +65,16 @@ public class PluginAssemblyFamilyHandlerTests
         var finding = Assert.Single(findings);
         Assert.Equal(OrphanAction.Delete, finding.Action);
         // Exact match, not Contains: this is the characterization gate — the display format must stay
-        // byte-identical to OrphanCleanupService.TypeName's "{label} '{detail}' ({id})" shape.
+        // byte-identical to OrphanCleanupService's old TypeName helper's "{label} '{detail}' ({id})" shape
+        // (that helper was removed during U9's orchestrator rewrite).
         Assert.Equal($"PluginAssembly 'MyPlugins.dll' ({id})", finding.DisplayName);
     }
 
     [Fact]
     public async Task DetectAsync_OrphanedPluginAssemblyWithUnresolvableName_FallsBackToBareIdFormat()
     {
-        // No SetupName call — the live name query returns empty, matching today's unresolved-name
-        // fallback branch in OrphanCleanupService.TypeName ("{label} {id}", no quoted detail).
+        // No SetupName call — the live name query returns empty, matching the unresolved-name fallback
+        // branch OrphanCleanupService's old TypeName helper used ("{label} {id}", no quoted detail).
         var id = Guid.NewGuid();
 
         var findings = (await _handler.DetectAsync(Ctx(), [(id, 91)], default)).Findings;

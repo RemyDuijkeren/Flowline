@@ -20,9 +20,9 @@ namespace Flowline.Core.Services.OrphanCleanup.Handlers;
 //
 // The Attribute path carries the real work: Attribute is never recorded in Solution.xml's
 // RootComponents at all (see ComponentClassifier.ParseSolutionXmlComponents), so it has no pre-diff
-// equivalent — an attribute still declared in Entity.xml is only caught here, via
+// equivalent — an attribute still declared in Entity.xml is only caught here, via this handler's own
 // ResolveAttributeInfoAsync + ComponentClassifier.ScanEntityAttributeLogicalNames, migrated unchanged
-// from OrphanCleanupService.BuildManualEntriesAsync's attribute-handling block.
+// from OrphanCleanupService's old attribute-handling block (removed during U9's orchestrator rewrite).
 public sealed class EntityFamilyHandler : IOrphanHandler
 {
     const int EntityComponentType = 1;
@@ -58,8 +58,8 @@ public sealed class EntityFamilyHandler : IOrphanHandler
 
         if (context.EntityLogicalNames.Count == 0)
         {
-            // No entity context to cross-check against — report bare, matching today's fallback path
-            // (OrphanCleanupService.BuildManualEntriesAsync's `else` branch when entityLogicalNames is empty).
+            // No entity context to cross-check against — report bare, matching the fallback path
+            // OrphanCleanupService's old attribute-handling block used for this same empty-entityLogicalNames case.
             foreach (var (id, componentType) in attributeOrphans)
                 findings.Add(EntityFinding(id, componentType, $"Attribute {id}"));
             return new HandlerDetectionResult(findings, claimedIds);
@@ -98,8 +98,9 @@ public sealed class EntityFamilyHandler : IOrphanHandler
     static HandlerFinding EntityFinding(Guid id, int componentType, string displayName) =>
         new(id, componentType, displayName, OrphanAction.Manual, OrphanPriority.Prio3, SequenceHint: 0, OrphanTiming.PreImportEligible);
 
-    // Moved unchanged from OrphanCleanupService.ResolveAttributeInfoAsync. Cross-entity attribute lookup,
-    // scoped to the solution's own entities (context.EntityLogicalNames) rather than an unfiltered scan —
+    // Moved unchanged from OrphanCleanupService's old ResolveAttributeInfoAsync (removed during U9's
+    // orchestrator rewrite). Cross-entity attribute lookup, scoped to the solution's own entities
+    // (context.EntityLogicalNames) rather than an unfiltered scan —
     // an EntityQueryExpression with no Criteria is the RetrieveAllEntities-equivalent full metadata walk,
     // which doesn't scale. Attributes on entities outside this solution's root list won't resolve — those
     // fall back to a bare GUID rather than a guessed name.

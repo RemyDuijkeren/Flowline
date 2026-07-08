@@ -5,10 +5,10 @@ using Microsoft.Xrm.Sdk.Query;
 namespace Flowline.Core.Services.OrphanCleanup.Handlers;
 
 // U2: migrates PluginAssembly (91) / PluginType (90) / Step (92) / StepImage (93) detection,
-// classification, and ordering from OrphanCleanupService's NameResolvableTypes/ExecutionOrder into a
-// handler, preserving today's exact Auto/Delete behavior and name resolution, plus the new
-// Prio1/Prio2/Prio3 axis (KTD8). Ships Active per KTD2 — this family already has a verified
-// local-source check today (R14).
+// classification, and ordering from OrphanCleanupService's NameResolvableTypes and its old ExecutionOrder
+// array (the latter removed during U9's orchestrator rewrite) into a handler, preserving today's exact
+// Auto/Delete behavior and name resolution, plus the new Prio1/Prio2/Prio3 axis (KTD8). Ships Active per
+// KTD2 — this family already has a verified local-source check today (R14).
 public sealed class PluginAssemblyFamilyHandler : IOrphanHandler
 {
     public HandlerStatus Status => HandlerStatus.Active;
@@ -23,9 +23,10 @@ public sealed class PluginAssemblyFamilyHandler : IOrphanHandler
         [93] = ("sdkmessageprocessingstepimage", "sdkmessageprocessingstepimageid", "name"),
     };
 
-    // Migrated from OrphanCleanupService.ExecutionOrder's [93, 92, 90, 91] subset, re-expressed as a
-    // per-family SequenceHint (KTD1) — deepest child executes first (StepImage = 0) through shallowest
-    // parent last (PluginAssembly = 3), preserving today's exact deletion order.
+    // Migrated from OrphanCleanupService's old ExecutionOrder array's [93, 92, 90, 91] subset (removed
+    // during U9's orchestrator rewrite), re-expressed as a per-family SequenceHint (KTD1) — deepest child
+    // executes first (StepImage = 0) through shallowest parent last (PluginAssembly = 3), preserving
+    // today's exact deletion order.
     static readonly Dictionary<int, int> SequenceHints = new()
     {
         [93] = 0, // StepImage
@@ -97,7 +98,8 @@ public sealed class PluginAssemblyFamilyHandler : IOrphanHandler
         return new HandlerFinding(candidate.ObjectId, candidate.ComponentType, displayName, OrphanAction.Delete, priority, SequenceHints[candidate.ComponentType], OrphanTiming.PreImportEligible);
     }
 
-    // Same display format as OrphanCleanupService.TypeName for this family.
+    // Same display format as OrphanCleanupService's old TypeName helper produced for this family
+    // (removed during U9's orchestrator rewrite).
     static string TypeName(int componentType, Guid objectId, string? detail) =>
         detail != null ? $"{TypeLabels[componentType]} '{detail}' ({objectId})" : $"{TypeLabels[componentType]} {objectId}";
 
@@ -111,36 +113,12 @@ public sealed class PluginAssemblyFamilyHandler : IOrphanHandler
         foreach (var group in claimed.GroupBy(c => c.ComponentType))
         {
             var lookup = Lookups[group.Key];
-            var names = await GetEntityNamesAsync(service, lookup.EntityLogicalName, lookup.IdAttribute, lookup.NameAttribute, group.Select(c => c.ObjectId), ct).ConfigureAwait(false);
+            var names = await EntityNameLookup.GetEntityNamesAsync(service, lookup.EntityLogicalName, lookup.IdAttribute, lookup.NameAttribute, group.Select(c => c.ObjectId), ct).ConfigureAwait(false);
             foreach (var (id, name) in names)
                 result[id] = name;
         }
 
         return result;
-    }
-
-    // Migrated from OrphanCleanupService.GetEntityNamesAsync — same bulk IN-query pattern.
-    static async Task<Dictionary<Guid, string>> GetEntityNamesAsync(
-        IOrganizationServiceAsync2 service,
-        string entityLogicalName,
-        string idAttribute,
-        string nameAttribute,
-        IEnumerable<Guid> ids,
-        CancellationToken ct)
-    {
-        var idList = ids.Distinct().Where(id => id != Guid.Empty).ToList();
-        if (idList.Count == 0) return [];
-
-        var query = new QueryExpression(entityLogicalName)
-        {
-            ColumnSet = new ColumnSet(nameAttribute),
-            Criteria  = { Conditions = { new ConditionExpression(idAttribute, ConditionOperator.In, idList.Select(id => (object)id).ToArray()) } }
-        };
-
-        var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
-        return entities
-            .Where(e => !string.IsNullOrEmpty(e.GetAttributeValue<string>(nameAttribute)))
-            .ToDictionary(e => e.Id, e => e.GetAttributeValue<string>(nameAttribute)!);
     }
 
     // Single sdkmessageprocessingstep query resolves both Step's own statecode (Prio2 when Enabled —

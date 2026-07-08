@@ -31,7 +31,7 @@ public class OrphanCleanupServiceTests : IDisposable
         IReadOnlyList<IOrphanHandler> handlers =
         [
             new PluginAssemblyFamilyHandler(),
-            new WebResourceHandler(),
+            new WebResourceHandler(_console),
             new WorkflowHandler(),
             new CustomApiFamilyHandler(_console),
             new BotHandler(_console),
@@ -351,8 +351,8 @@ public class OrphanCleanupServiceTests : IDisposable
     {
         // OptionSet's schemaName no longer exists in the org's metadata — RetrieveOptionSetRequest fails
         // for it, so it isn't folded into sNewIds and surfaces as a genuine orphan candidate. OptionSet
-        // (9) is not in SupportedManualTypes (KTD1 — this unit doesn't promote it), so it falls through
-        // to the unsupported/verbose-only path, same as before this fix, rather than the actionable report.
+        // (9) has no handler in the roster claiming it (KTD1 — this unit doesn't promote it), so it falls
+        // through to the unsupported/verbose-only path, same as before this fix, rather than the actionable report.
         var orphanId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (orphanId, 9)); // 9 = OptionSet
         // No SetupOptionSetMetadataId call — RetrieveOptionSet is unconfigured, ExecuteAsync returns
@@ -570,10 +570,10 @@ public class OrphanCleanupServiceTests : IDisposable
     {
         // Code-review finding: local-source verification never actually runs when the live record's
         // identity attribute fails to resolve (e.g. a data anomaly clears schemaname while the bot
-        // still exists) — GetEntityNamesAsync filters out entities with no schemaname value before
-        // ResolveEntityDetectedManualEntriesAsync's suppression check ever sees them. Defaulting to
-        // "orphaned" here would be the same false-positive shape the evidence-gated trust bar exists
-        // to prevent (KTD2) — an unresolvable identity is inconclusive, not evidence of removal.
+        // still exists) — BotHandler's own KTD5 check skips a row with no resolved schemaname before its
+        // local-declaration suppression check ever sees it. Defaulting to "orphaned" here would be the
+        // same false-positive shape the evidence-gated trust bar exists to prevent (KTD2) — an
+        // unresolvable identity is inconclusive, not evidence of removal.
         var orphanId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (orphanId, 10082));
 
@@ -595,9 +595,10 @@ public class OrphanCleanupServiceTests : IDisposable
     {
         // Regression: before entity-side detection, Bot fell through to LogUnsupportedOrphansAsync's
         // verbose-only "not tracked yet" preview (see the connectionreference/bot false-positive
-        // incident, 2026-07-05). It must now reach the actionable report instead, and SupportedManualTypes
-        // itself must be untouched — Bot's env-specific componenttype (10082 here) is never added to it,
-        // detection happens purely via the entity-side bot-table query.
+        // incident, 2026-07-05). It must now reach the actionable report instead, and no componenttype-
+        // gated handler's own gate is touched to make that happen — Bot's env-specific componenttype
+        // (10082 here) is never added to any of them, detection happens purely via BotHandler's own
+        // entity-side bot-table query.
         var orphanId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (orphanId, 10082));
 
@@ -813,8 +814,8 @@ public class OrphanCleanupServiceTests : IDisposable
     public async Task RunPreImportAsync_EntityGenuinelyRemoved_ReportedAsManualEntity()
     {
         // No EntityLogicalNames given at all — nothing to resolve live, so this entity is genuinely
-        // gone from Solution.xml, not a schemaName-resolution gap. Entity(1) is a SupportedManualTypes
-        // member, so it must still surface in the report (unlike connectionreference/bot).
+        // gone from Solution.xml, not a schemaName-resolution gap. Entity (1) is claimed by
+        // EntityFamilyHandler, so it must still surface in the report (unlike connectionreference/bot).
         var entityMetadataId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (entityMetadataId, 1)); // 1 = Entity
 
@@ -829,7 +830,7 @@ public class OrphanCleanupServiceTests : IDisposable
     {
         // AE1: Role's id is declared directly in Solution.xml's RootComponent and mirrored in the
         // unpacked Roles/<name>.xml file — the existing plain id-match already suppresses it, no new
-        // scanner needed for the promotion to SupportedManualTypes.
+        // scanner needed for RoleHandler to recognize it as still-declared.
         var roleId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (roleId, 20)); // 20 = Role
 
@@ -842,9 +843,9 @@ public class OrphanCleanupServiceTests : IDisposable
     [Fact]
     public async Task RunPreImportAsync_RoleGenuinelyRemoved_ReportedAsManualRoleWithResolvedName()
     {
-        // Role (20) is now a SupportedManualTypes member (R1) — a genuinely removed Role (absent from
-        // LocalComponents) must surface in the actionable report, using NameResolvableTypes[20]
-        // ("role", "roleid", "name") to resolve its display name instead of a bare GUID.
+        // Role (20) is claimed by RoleHandler (R1) — a genuinely removed Role (absent from
+        // LocalComponents) must surface in the actionable report, using the ("role", "roleid", "name")
+        // lookup triple to resolve its display name instead of a bare GUID.
         var roleId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (roleId, 20)); // 20 = Role
 
@@ -865,8 +866,8 @@ public class OrphanCleanupServiceTests : IDisposable
     public async Task RunPreImportAsync_RoleOrphan_NoLongerLoggedInUnsupportedVerbosePath()
     {
         // Regression: before promotion, Role (20) fell through to LogUnsupportedOrphansAsync's
-        // verbose-only "not tracked yet" preview. Now that it's a SupportedManualTypes member, it must
-        // reach the actionable report instead — not the unsupported-type verbose log line.
+        // verbose-only "not tracked yet" preview. Now that RoleHandler claims it, it must reach the
+        // actionable report instead — not the unsupported-type verbose log line.
         var roleId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (roleId, 20)); // 20 = Role
 
@@ -892,18 +893,19 @@ public class OrphanCleanupServiceTests : IDisposable
         Assert.Contains("MySolution", _console.Output);
     }
 
-    // -- Opt-in gate: only SupportedManualTypes get a removal recommendation. Unsupported types are
-    // logged verbose-only — with the type name, instance name, and what the pre-opt-in logic would
-    // have proposed, so a type can be evaluated with real data before opting it in — but never reach
-    // the actionable "can't be removed automatically" report. See the connectionreference/bot
-    // false-positive incident (2026-07-05): a name resolving via solutioncomponentdefinition is not
-    // verification against local source, so it must never drive an actual recommendation.
+    // -- Opt-in gate: only a componenttype claimed by some handler in the roster gets a removal
+    // recommendation. Unclaimed types are logged verbose-only — with the type name, instance name, and
+    // what the pre-opt-in logic would have proposed, so a type can be evaluated with real data before a
+    // handler opts it in — but never reach the actionable "can't be removed automatically" report. See
+    // the connectionreference/bot false-positive incident (2026-07-05): a name resolving via
+    // solutioncomponentdefinition is not verification against local source, so it must never drive an
+    // actual recommendation.
 
     [Fact]
     public async Task RunPreImportAsync_UnsupportedManualType_NotReportedOnlyLoggedVerbose()
     {
         var orphanId = Guid.NewGuid();
-        SetupSolutionComponents("MySolution", (orphanId, 10064)); // outside SupportedManualTypes
+        SetupSolutionComponents("MySolution", (orphanId, 10064)); // outside every handler's componenttype gate
 
         await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
 
@@ -1083,13 +1085,13 @@ public class OrphanCleanupServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task RunPreImportAsync_FormOrphan_NotReportedFormIsNotInSupportedManualTypes()
+    public async Task RunPreImportAsync_FormOrphan_NotReportedNoHandlerClaimsFormType()
     {
-        // Form (60) is deliberately NOT in SupportedManualTypes: ScanEntitySubcomponents only finds a
-        // form's FormXml file for entities unpacked under Entities/<name>/ — a form on an entity this
-        // solution doesn't include at all (e.g. a standard Microsoft form like "Sales Insights" on an
-        // entity outside the solution's Entities/ folder) has nothing for the scan to find, so it would
-        // always false-positive. See the Sales Insights incident (2026-07-05).
+        // Form (60) is deliberately claimed by no handler in the roster: ScanEntitySubcomponents only
+        // finds a form's FormXml file for entities unpacked under Entities/<name>/ — a form on an entity
+        // this solution doesn't include at all (e.g. a standard Microsoft form like "Sales Insights" on
+        // an entity outside the solution's Entities/ folder) has nothing for the scan to find, so it
+        // would always false-positive. See the Sales Insights incident (2026-07-05).
         var formId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (formId, 60)); // 60 = SystemForm
 
@@ -1117,9 +1119,9 @@ public class OrphanCleanupServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task RunPreImportAsync_ViewOrphan_NotReportedViewIsNotInSupportedManualTypes()
+    public async Task RunPreImportAsync_ViewOrphan_NotReportedNoHandlerClaimsViewType()
     {
-        // View (26) shares Form's untested gap — not opted in yet (see SupportedManualTypes comment).
+        // View (26) shares Form's untested gap — no handler in the roster claims it yet (see the Form test above).
         var viewId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (viewId, 26)); // 26 = SavedQuery (View)
 
@@ -1147,7 +1149,7 @@ public class OrphanCleanupServiceTests : IDisposable
     [Fact]
     public async Task RunPreImportAsync_UnsupportedOrphanNameMatchesLocalIdentifier_VerboseNotesPossibleLocalMatch()
     {
-        // AE5: unsupported type (View, 26 — not in SupportedManualTypes) whose resolved name matches an
+        // AE5: unsupported type (View, 26 — claimed by no handler in the roster) whose resolved name matches an
         // identifier already harvested from a known local-source shape (here: context.NamedComponents'
         // schemaNames, one of the KTD5 sources) — verbose preview notes a possible local match.
         var viewId = Guid.NewGuid();

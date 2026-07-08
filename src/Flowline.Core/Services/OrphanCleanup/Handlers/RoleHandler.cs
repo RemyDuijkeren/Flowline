@@ -1,7 +1,3 @@
-using Microsoft.PowerPlatform.Dataverse.Client;
-using Microsoft.Xrm.Sdk;
-using Microsoft.Xrm.Sdk.Query;
-
 namespace Flowline.Core.Services.OrphanCleanup.Handlers;
 
 // Migrates Role (20) detection (U7) out of OrphanCleanupService's NameResolvableTypes[20]-driven lookup.
@@ -30,7 +26,7 @@ public sealed class RoleHandler : IOrphanHandler
         // one, so ClaimedIds equals the full roleCandidates set.
         var claimedIds = roleCandidates.Select(c => c.ObjectId).ToHashSet();
 
-        var names = await GetRoleNamesAsync(context.Service, roleCandidates.Select(c => c.ObjectId), ct).ConfigureAwait(false);
+        var names = await EntityNameLookup.GetEntityNamesAsync(context.Service, "role", "roleid", "name", roleCandidates.Select(c => c.ObjectId), ct).ConfigureAwait(false);
 
         var findings = new List<HandlerFinding>();
         foreach (var candidate in roleCandidates)
@@ -49,25 +45,5 @@ public sealed class RoleHandler : IOrphanHandler
         }
 
         return new HandlerDetectionResult(findings, claimedIds);
-    }
-
-    static async Task<Dictionary<Guid, string>> GetRoleNamesAsync(
-        IOrganizationServiceAsync2 service,
-        IEnumerable<Guid> ids,
-        CancellationToken ct)
-    {
-        var idList = ids.Distinct().Where(id => id != Guid.Empty).ToList();
-        if (idList.Count == 0) return [];
-
-        var query = new QueryExpression("role")
-        {
-            ColumnSet = new ColumnSet("name"),
-            Criteria  = { Conditions = { new ConditionExpression("roleid", ConditionOperator.In, idList.Select(id => (object)id).ToArray()) } }
-        };
-
-        var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
-        return entities
-            .Where(e => !string.IsNullOrEmpty(e.GetAttributeValue<string>("name")))
-            .ToDictionary(e => e.Id, e => e.GetAttributeValue<string>("name")!);
     }
 }

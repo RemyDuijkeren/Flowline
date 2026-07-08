@@ -271,8 +271,8 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
             return new CompareResult([]);
         }
 
-        var entries = await DispatchToHandlersAsync(
-            service, packageSrcRoot, solutionName, environmentUrl, mode, entityLogicalNames, namedComponents, orphans, ct).ConfigureAwait(false);
+        var detectionContext = new DetectionContext(packageSrcRoot, service, solutionName, environmentUrl, mode, entityLogicalNames);
+        var entries = await DispatchToHandlersAsync(detectionContext, namedComponents, orphans, ct).ConfigureAwait(false);
 
         PrintReport(entries, mode, solutionName, environmentUrl, noDeleteHint);
 
@@ -298,26 +298,35 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     // minus the union of Findings (that earlier shape would leak a spurious "not tracked yet" line for a
     // recognized-but-clean candidate that doesn't exist in today's behavior).
     async Task<List<OrphanEntry>> DispatchToHandlersAsync(
-        IOrganizationServiceAsync2 service,
-        string packageSrcRoot,
-        string solutionName,
-        string environmentUrl,
-        RunMode mode,
-        IReadOnlyList<string> entityLogicalNames,
+        DetectionContext detectionContext,
         IReadOnlyList<(int ComponentType, string SchemaName)> namedComponents,
         List<(Guid ObjectId, int ComponentType)> orphans,
         CancellationToken ct)
     {
-        var detectionContext = new DetectionContext(packageSrcRoot, service, solutionName, environmentUrl, mode, entityLogicalNames);
+        // Caller (CompareAsync) already has every piece DetectionContext needs and builds it once — this
+        // method's own dependencies are the context plus the two locally-computed collections (KTD1's
+        // FamilyOrder dispatch needs orphans; the generic-fallback preview needs namedComponents) that
+        // aren't part of DetectionContext's shape.
+        var service            = detectionContext.Service;
+        var packageSrcRoot     = detectionContext.PackageSrcRoot;
+        var solutionName       = detectionContext.SolutionName;
+        var entityLogicalNames = detectionContext.EntityLogicalNames;
 
         var claimedIds      = new HashSet<Guid>();
         var findings         = new List<HandlerFinding>();
         var familyIndexById  = new Dictionary<Guid, int>();
 
-        async Task RunHandlerAsync(int index, IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates)
+        // Split into a detect-only step and a merge-into-shared-state step so Pass 2 below can fan the
+        // three entity-detected handlers' DetectAsync calls out concurrently via Task.WhenAll while still
+        // merging their results into claimedIds/findings/familyIndexById single-threaded afterward — those
+        // are plain HashSet/List/Dictionary, not thread-safe, so no merge may happen inside a concurrent
+        // handler's own async continuation.
+        async Task<HandlerDetectionResult> DetectHandlerAsync(int index, IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates) =>
+            await _orderedHandlers[index].DetectAsync(detectionContext, candidates, ct).ConfigureAwait(false);
+
+        void MergeResult(int index, HandlerDetectionResult result)
         {
             var handler = _orderedHandlers[index];
-            var result  = await handler.DetectAsync(detectionContext, candidates, ct).ConfigureAwait(false);
             claimedIds.UnionWith(result.ClaimedIds);
 
             if (handler.Status == HandlerStatus.Active)
@@ -335,21 +344,12 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
                 foreach (var finding in result.Findings)
                     console.Verbose($"[Preview: {handler.GetType().Name}] {finding.DisplayName}");
             }
+        }
 
-            // WebResourceHandler's // flowline:depends annotation exemption (KTD2) suppresses a claimed
-            // candidate out of Findings but has no console of its own to announce it (DetectionContext
-            // carries no logger) — reproduce ExemptAnnotationReferencedWebResourcesAsync's original
-            // "preserved" skip line here for every WebResource candidate claimed but not reported.
-            if (handler is WebResourceHandler)
-            {
-                var suppressedIds = result.ClaimedIds.Except(result.Findings.Select(f => f.ObjectId)).ToList();
-                if (suppressedIds.Count > 0)
-                {
-                    var names = await GetEntityNamesAsync(service, "webresource", "webresourceid", "name", suppressedIds, ct).ConfigureAwait(false);
-                    foreach (var (id, name) in names)
-                        console.Skip($"'{name}' preserved — referenced in // flowline:depends annotation.");
-                }
-            }
+        async Task RunHandlerAsync(int index, IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates)
+        {
+            var result = await DetectHandlerAsync(index, candidates).ConfigureAwait(false);
+            MergeResult(index, result);
         }
 
         // Pass 1: componenttype-gated handlers (PluginAssembly family, WebResource, Workflow, Role,
@@ -374,12 +374,24 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         // would silently skip a later handler's query whenever an earlier one claimed the same candidate
         // first, which is observable (e.g. a live diagnostic warning) even though the claim itself was
         // correct.
+        //
+        // The three handlers' own queries have no data dependency on each other, so they dispatch
+        // concurrently via Task.WhenAll (matching pre-refactor latency — this was one shared Task.WhenAll
+        // batch before U9's orchestrator rewrite serialized it into three sequential waves). Results are
+        // merged single-threaded afterward, in _orderedHandlers' declared order (KTD1) rather than
+        // task-completion order — Task.WhenAll(IEnumerable<Task<T>>) already returns its result array in
+        // input order, so zipping entityDetectedIndices with entityDetectedResults below preserves that
+        // order for familyIndexById/findings.
         var remainderForEntityDetected = orphans.Where(c => !claimedIds.Contains(c.ObjectId)).ToList();
-        for (var i = 0; i < _orderedHandlers.Count; i++)
-        {
-            if (!EntityDetectedHandlerTypes.Contains(_orderedHandlers[i].GetType())) continue;
-            await RunHandlerAsync(i, remainderForEntityDetected).ConfigureAwait(false);
-        }
+        var entityDetectedIndices = Enumerable.Range(0, _orderedHandlers.Count)
+            .Where(i => EntityDetectedHandlerTypes.Contains(_orderedHandlers[i].GetType()))
+            .ToList();
+
+        var entityDetectedResults = await Task.WhenAll(
+            entityDetectedIndices.Select(i => DetectHandlerAsync(i, remainderForEntityDetected))).ConfigureAwait(false);
+
+        foreach (var (index, result) in entityDetectedIndices.Zip(entityDetectedResults))
+            MergeResult(index, result);
 
         var unclaimed = orphans.Where(c => !claimedIds.Contains(c.ObjectId)).ToList();
         if (unclaimed.Count > 0)
@@ -719,7 +731,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
             var names = await ResolveGroupNamesAsync(service, group.Key, group.Select(o => o.ObjectId), ct).ConfigureAwait(false);
             if (names.Count == 0 && typeLabel != null && ResolvedTypeNameAttributes.TryGetValue(typeLabel, out var resolvedLookup))
-                names = await GetEntityNamesAsync(service, typeLabel, resolvedLookup.IdAttribute, resolvedLookup.NameAttribute, group.Select(o => o.ObjectId), ct).ConfigureAwait(false);
+                names = await EntityNameLookup.GetEntityNamesAsync(service, typeLabel, resolvedLookup.IdAttribute, resolvedLookup.NameAttribute, group.Select(o => o.ObjectId), ct).ConfigureAwait(false);
 
             foreach (var orphan in group)
             {
@@ -741,33 +753,8 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         IEnumerable<Guid> ids,
         CancellationToken ct) =>
         NameResolvableTypes.TryGetValue(componentType, out var lookup)
-            ? GetEntityNamesAsync(service, lookup.EntityLogicalName, lookup.IdAttribute, lookup.NameAttribute, ids, ct)
+            ? EntityNameLookup.GetEntityNamesAsync(service, lookup.EntityLogicalName, lookup.IdAttribute, lookup.NameAttribute, ids, ct)
             : Task.FromResult(new Dictionary<Guid, string>());
-
-    static async Task<Dictionary<Guid, string>> GetEntityNamesAsync(
-        IOrganizationServiceAsync2 service,
-        string entityLogicalName,
-        string idAttribute,
-        string nameAttribute,
-        IEnumerable<Guid> ids,
-        CancellationToken ct)
-    {
-        var idList = ids.Distinct().Where(id => id != Guid.Empty).ToList();
-        if (idList.Count == 0) return [];
-        if (idList.Count > 2000)
-            throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {idList.Count} IDs (max 2000). Solution has too many {entityLogicalName} orphans for name resolution.");
-
-        var query = new QueryExpression(entityLogicalName)
-        {
-            ColumnSet = new ColumnSet(nameAttribute),
-            Criteria  = { Conditions = { new ConditionExpression(idAttribute, ConditionOperator.In, idList.Select(id => (object)id).ToArray()) } }
-        };
-
-        var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
-        return entities
-            .Where(e => !string.IsNullOrEmpty(e.GetAttributeValue<string>(nameAttribute)))
-            .ToDictionary(e => e.Id, e => e.GetAttributeValue<string>(nameAttribute)!);
-    }
 
     async Task<List<(Guid ObjectId, int ComponentType)>> QuerySolutionComponentsAsync(
         IOrganizationServiceAsync2 service,

@@ -5,6 +5,7 @@ using NSubstitute;
 using Flowline.Core.Services;
 using Flowline.Core.Services.OrphanCleanup;
 using Flowline.Core.Services.OrphanCleanup.Handlers;
+using Spectre.Console.Testing;
 
 namespace Flowline.Core.Tests.OrphanCleanup.Handlers;
 
@@ -16,6 +17,7 @@ public class WebResourceHandlerTests : IDisposable
     const int WebResourceComponentType = 61;
 
     readonly IOrganizationServiceAsync2 _serviceMock;
+    readonly TestConsole _console;
     readonly WebResourceHandler _handler;
     readonly string _packageSrcRoot;
     readonly string _webResourcesDir;
@@ -23,7 +25,9 @@ public class WebResourceHandlerTests : IDisposable
     public WebResourceHandlerTests()
     {
         _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
-        _handler = new WebResourceHandler();
+        _console = new TestConsole();
+        _console.Profile.Width = 400; // avoid word-wrap splitting longer assertion substrings across lines
+        _handler = new WebResourceHandler(_console);
         _packageSrcRoot = Path.Combine(Path.GetTempPath(), $"flowline-test-{Guid.NewGuid():N}");
         _webResourcesDir = Path.Combine(_packageSrcRoot, "WebResources");
         Directory.CreateDirectory(_webResourcesDir);
@@ -98,6 +102,10 @@ public class WebResourceHandlerTests : IDisposable
         var findings = (await _handler.DetectAsync(Ctx(), [(orphanId, WebResourceComponentType)], default)).Findings;
 
         Assert.Empty(findings);
+        // The handler now prints its own "preserved" skip line (previously a redundant re-query the
+        // orchestrator did after the fact) — asserted here since this handler has the name in hand.
+        Assert.Contains("av_ext/shared.js", _console.Output);
+        Assert.Contains("preserved", _console.Output);
     }
 
     [Fact]

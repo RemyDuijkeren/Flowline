@@ -1,16 +1,14 @@
-using Microsoft.PowerPlatform.Dataverse.Client;
-using Microsoft.Xrm.Sdk;
-using Microsoft.Xrm.Sdk.Query;
+using Spectre.Console;
 
 namespace Flowline.Core.Services.OrphanCleanup.Handlers;
 
 // Migrates WebResource (61) detection and the // flowline:depends annotation exemption (U3) out of
-// OrphanCleanupService.ExemptAnnotationReferencedWebResourcesAsync. Auto/Manual is static Auto — every
-// finding carries OrphanAction.Delete (R2); the orchestrator (U9) still owns the cross-solution
-// Delete-vs-RemoveFromSolution override, same as it does for every other Auto handler's findings, since
-// that check spans handlers and isn't this family's concern. Prio is a constant Prio3 (KTD8) — a
-// WebResource never executes business logic, so it can never be Prio1/Prio2.
-public sealed class WebResourceHandler : IOrphanHandler
+// OrphanCleanupService's old dedicated exemption step (removed during U9's orchestrator rewrite).
+// Auto/Manual is static Auto — every finding carries OrphanAction.Delete (R2); the orchestrator (U9)
+// still owns the cross-solution Delete-vs-RemoveFromSolution override, same as it does for every other
+// Auto handler's findings, since that check spans handlers and isn't this family's concern. Prio is a
+// constant Prio3 (KTD8) — a WebResource never executes business logic, so it can never be Prio1/Prio2.
+public sealed class WebResourceHandler(IAnsiConsole console) : IOrphanHandler
 {
     const int WebResourceComponentType = 61;
 
@@ -28,7 +26,8 @@ public sealed class WebResourceHandler : IOrphanHandler
         // suppresses out of Findings — it's still a recognized WebResource, just not orphaned.
         var claimedIds = webResourceCandidates.Select(c => c.ObjectId).ToHashSet();
 
-        var names = await GetWebResourceNamesAsync(context.Service, webResourceCandidates.Select(c => c.ObjectId), ct).ConfigureAwait(false);
+        var names = await EntityNameLookup.GetEntityNamesAsync(
+            context.Service, "webresource", "webresourceid", "name", webResourceCandidates.Select(c => c.ObjectId), ct).ConfigureAwait(false);
 
         // Scans Package/src/WebResources — the content this deploy is actually packing and importing —
         // never WebResources/dist. Deploy promotes whatever's committed in Package/src; reading a
@@ -41,9 +40,14 @@ public sealed class WebResourceHandler : IOrphanHandler
             var hasName = names.TryGetValue(candidate.ObjectId, out var name);
 
             // Still referenced via // flowline:depends elsewhere in the committed WebResources — exempt
-            // it, matching today's ExemptAnnotationReferencedWebResourcesAsync behavior exactly.
+            // it from the orphan report, announcing the suppression here since this handler is the only
+            // place that resolves the name needed to print it (previously re-queried by the orchestrator
+            // for the same purpose — see U9/this-pass cleanup).
             if (hasName && annotationRefs.Contains(name!))
+            {
+                console.Skip($"'{name}' preserved — referenced in // flowline:depends annotation.");
                 continue;
+            }
 
             var displayName = hasName ? $"WebResource '{name}' ({candidate.ObjectId})" : $"WebResource {candidate.ObjectId}";
 
@@ -58,25 +62,5 @@ public sealed class WebResourceHandler : IOrphanHandler
         }
 
         return new HandlerDetectionResult(findings, claimedIds);
-    }
-
-    static async Task<Dictionary<Guid, string>> GetWebResourceNamesAsync(
-        IOrganizationServiceAsync2 service,
-        IEnumerable<Guid> ids,
-        CancellationToken ct)
-    {
-        var idList = ids.Distinct().Where(id => id != Guid.Empty).ToList();
-        if (idList.Count == 0) return [];
-
-        var query = new QueryExpression("webresource")
-        {
-            ColumnSet = new ColumnSet("name"),
-            Criteria  = { Conditions = { new ConditionExpression("webresourceid", ConditionOperator.In, idList.Select(id => (object)id).ToArray()) } }
-        };
-
-        var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
-        return entities
-            .Where(e => !string.IsNullOrEmpty(e.GetAttributeValue<string>("name")))
-            .ToDictionary(e => e.Id, e => e.GetAttributeValue<string>("name")!);
     }
 }
