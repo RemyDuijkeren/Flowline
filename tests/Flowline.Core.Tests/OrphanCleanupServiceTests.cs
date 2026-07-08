@@ -1255,6 +1255,94 @@ public class OrphanCleanupServiceTests : IDisposable
         await _serviceMock.DidNotReceiveWithAnyArgs().DeleteAsync(default!, default, default);
     }
 
+    // -- U11: declared PostImportOnly timing (R12) — synthetic handler, no real handler declares this
+    // yet (KTD2 defers the motivating use case, Attribute-Auto) --
+
+    sealed class FakePostImportOnlyHandler(int componentType, string displayName, string entityName) : IOrphanHandler
+    {
+        public HandlerStatus Status => HandlerStatus.Active;
+
+        public Task<HandlerDetectionResult> DetectAsync(
+            DetectionContext context,
+            IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates,
+            CancellationToken ct)
+        {
+            var claimed = candidates.Where(c => c.ComponentType == componentType).ToList();
+            var findings = claimed
+                .Select(c => new HandlerFinding(c.ObjectId, c.ComponentType, displayName, OrphanAction.Delete, OrphanPriority.Prio3, SequenceHint: 0, OrphanTiming.PostImportOnly, EntityName: entityName))
+                .ToList();
+            return Task.FromResult(new HandlerDetectionResult(findings, claimed.Select(c => c.ObjectId).ToHashSet()));
+        }
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_PostImportOnlyEntry_NeverAttemptedPreImport()
+    {
+        var orphanId = Guid.NewGuid();
+        var postImportOnlyService = new OrphanCleanupService(_console, new FlowlineRuntimeOptions(),
+            [new FakePostImportOnlyHandler(9999, "Widget 'thing'", "widgettable")]);
+        SetupSolutionComponents("MySolution", (orphanId, 9999));
+
+        await postImportOnlyService.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        // R12 is purely about execution timing, not visibility — the entry still reaches the printed
+        // report same as any other entry (CompareAsync's Entries carries every finding regardless of
+        // Timing), it just must never be attempted this pass.
+        Assert.Contains("Widget 'thing'", _console.Output);
+        await _serviceMock.DidNotReceive().DeleteAsync("widgettable", orphanId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RunPostImportAsync_PostImportOnlyEntry_AttemptedUnconditionallyAfterImport()
+    {
+        var orphanId = Guid.NewGuid();
+        var postImportOnlyService = new OrphanCleanupService(_console, new FlowlineRuntimeOptions(),
+            [new FakePostImportOnlyHandler(9999, "Widget 'thing'", "widgettable")]);
+        SetupSolutionComponents("MySolution", (orphanId, 9999));
+
+        await postImportOnlyService.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+        await _serviceMock.DidNotReceive().DeleteAsync("widgettable", orphanId, Arg.Any<CancellationToken>());
+
+        var failures = await postImportOnlyService.RunPostImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Equal(0, failures);
+        await _serviceMock.Received(1).DeleteAsync("widgettable", orphanId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RunPostImportAsync_PostImportOnlyEntry_AttemptedRegardlessOfConcurrentDependencyDeferral()
+    {
+        // A PostImportOnly entry (never attempted pre-import, R12) and a reactively-deferred entry
+        // (attempted pre-import, faulted, deferred, R13) converge on the same RunPostImportAsync call —
+        // the two mechanisms are independent, so both must execute regardless of the other occurring.
+        var deferredId = Guid.NewGuid();       // 91 = PluginAssembly, attempted pre-import, faults, deferred
+        var postImportOnlyId = Guid.NewGuid(); // 9999 = synthetic PostImportOnly, never attempted pre-import
+
+        SetupSolutionComponents("MySolution", (deferredId, 91), (postImportOnlyId, 9999));
+        _serviceMock.DeleteAsync("pluginassembly", deferredId, Arg.Any<CancellationToken>())
+            .Returns(
+                _ => throw new System.ServiceModel.FaultException<OrganizationServiceFault>(
+                    new OrganizationServiceFault { ErrorCode = unchecked((int)0x80047002) }),
+                _ => Task.CompletedTask); // second call (post-import retry) succeeds
+
+        IReadOnlyList<IOrphanHandler> handlers =
+        [
+            new PluginAssemblyFamilyHandler(),
+            new FakePostImportOnlyHandler(9999, "Widget 'thing'", "widgettable"),
+        ];
+        var mixedService = new OrphanCleanupService(_console, new FlowlineRuntimeOptions(), handlers);
+
+        await mixedService.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+        Assert.Contains("Deferred", _console.Output);
+        await _serviceMock.DidNotReceive().DeleteAsync("widgettable", postImportOnlyId, Arg.Any<CancellationToken>());
+
+        var failures = await mixedService.RunPostImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Equal(0, failures);
+        await _serviceMock.Received(2).DeleteAsync("pluginassembly", deferredId, Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).DeleteAsync("widgettable", postImportOnlyId, Arg.Any<CancellationToken>());
+    }
+
     // -- U2: CompareAsync extraction — comparison-only, read-only half of RunPreImportAsync (KTD5) --
 
     [Fact]

@@ -76,6 +76,13 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     // Threads dependency-deferred entries from RunPreImportAsync to RunPostImportAsync on the same instance.
     IReadOnlyList<OrphanEntry> _deferred = [];
 
+    // U11 (R12): threads declared-PostImportOnly entries from RunPreImportAsync to RunPostImportAsync on
+    // the same instance — mirrors _deferred's role but for entries never attempted pre-import at all
+    // (distinct from _deferred's entries, which were attempted and reactively deferred only after a
+    // dependency fault, per R13/KTD10). Merged with _deferred in RunPostImportAsync before the single
+    // ExecuteInOrderAsync call.
+    IReadOnlyList<OrphanEntry> _postImportOnly = [];
+
     // Execution-time fallback for componenttype-gated Auto handlers: their findings leave EntityName
     // null (see e.g. PluginAssemblyFamilyHandler.BuildFinding), so PerformActionAsync resolves the
     // delete target's table name from ComponentType here instead. Entity-detected handlers (CustomApi
@@ -133,13 +140,21 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     public async Task RunPreImportAsync(PostDeployContext context, CancellationToken ct)
     {
         _deferred = [];
+        _postImportOnly = [];
 
         var result = await CompareAsync(context, ct).ConfigureAwait(false);
 
         if (context.Mode == RunMode.NoDelete)
             return;
 
-        _deferred = await ExecuteInOrderAsync(context.Service, context.SolutionName, result.Entries, isPostImport: false, ct).ConfigureAwait(false);
+        // R12: entries declared PostImportOnly by their handler are excluded from the pre-import
+        // execution pass entirely — never attempted, never subject to TryExecuteEntryAsync's reactive
+        // dependency-deferral (R13, untouched) — and threaded to RunPostImportAsync via _postImportOnly
+        // instead, mirroring _deferred's existing instance-field pattern.
+        var preImportEntries = result.Entries.Where(e => e.Timing == OrphanTiming.PreImportEligible).ToList();
+        _postImportOnly = result.Entries.Where(e => e.Timing == OrphanTiming.PostImportOnly).ToList();
+
+        _deferred = await ExecuteInOrderAsync(context.Service, context.SolutionName, preImportEntries, isPostImport: false, ct).ConfigureAwait(false);
     }
 
     // Thin wrapper for RunPreImportAsync's caller (DeployCommand), which already has a PostDeployContext
@@ -410,27 +425,42 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         var service      = context.Service;
         var solutionName = context.SolutionName;
         var mode         = context.Mode;
-        var deferred     = _deferred;
+
+        // U11 (R12): merges reactively-deferred entries (_deferred — attempted pre-import, faulted on a
+        // dependency, retried here per R13/KTD10) with declared-PostImportOnly entries (_postImportOnly —
+        // never attempted pre-import at all) into one candidate list up front. Both sets were classified
+        // from the same CompareAsync-time live-state snapshot, and live state can equally have moved on
+        // for either kind by the time this runs (e.g. cross-solution membership changed as a side effect
+        // of the import) — so both need the same "still present / not re-declared locally / cross-solution
+        // override" re-validation below before executing, and both converge on the single
+        // ExecuteInOrderAsync call at the end (KTD10 — one code path decides execution order). The two
+        // sets are concatenated, not re-sorted by family/SequenceHint: _deferred already preserves its own
+        // DispatchToHandlersAsync-derived order (see ExecuteInOrderAsync's comment), and _postImportOnly
+        // is itself a filtered, order-preserving subset of that same sorted list — cross-cutting order
+        // between the two sets was never established by any SequenceHint (family-scoped only, per KTD1),
+        // and any real ordering surprise here still falls back to the existing warn-and-report-failed path
+        // TryExecuteEntryAsync already uses for any post-import fault.
+        var candidates = _deferred.Concat(_postImportOnly).ToList();
 
         // Re-parses committed source (cheap — one small XML file plus a folder scan) rather than
         // threading the CompareAsync-time parse across the pre/post-import boundary — this is the same
         // tradeoff RunPreImportAsync/RunPostImportAsync already make for querying live state twice.
         var (sNew, _, _) = ComponentClassifier.ParseLocalSource(context.PackageSrcRoot);
 
-        if (deferred.Count == 0 || mode == RunMode.NoDelete)
+        if (candidates.Count == 0 || mode == RunMode.NoDelete)
             return 0;
 
-        var sNewIds     = sNew.Select(c => c.ObjectId).ToHashSet();
-        var deferredIds = deferred.Select(e => e.ObjectId).ToList();
+        var sNewIds      = sNew.Select(c => c.ObjectId).ToHashSet();
+        var candidateIds = candidates.Select(e => e.ObjectId).ToList();
 
-        var stillPresent  = await GetStillPresentAsync(service, solutionName, deferredIds, ct).ConfigureAwait(false);
+        var stillPresent  = await GetStillPresentAsync(service, solutionName, candidateIds, ct).ConfigureAwait(false);
         var presentIds    = stillPresent.ToList();
         var crossSolution = presentIds.Count > 0
             ? await GetCrossSolutionMembershipAsync(service, presentIds, ct).ConfigureAwait(false)
             : [];
 
         var reEntries = new List<OrphanEntry>();
-        foreach (var entry in deferred)
+        foreach (var entry in candidates)
         {
             if (!stillPresent.Contains(entry.ObjectId)) continue;
             if (sNewIds.Contains(entry.ObjectId)) continue;
@@ -444,7 +474,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         if (reEntries.Count == 0)
             return 0;
 
-        console.Skip("Post-import: retrying deferred orphan cleanup...");
+        console.Skip("Post-import: running orphan cleanup...");
         var failed = await ExecuteInOrderAsync(service, solutionName, reEntries, isPostImport: true, ct).ConfigureAwait(false);
         return failed.Count;
     }
@@ -845,10 +875,11 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     // DispatchToHandlersAsync per KTD1 — cross-family via FamilyOrder, then per-family via SequenceHint)
     // rather than re-deriving order from the old static ExecutionOrder/CustomApiEntityOrder arrays.
     // RunPostImportAsync's reEntries preserve that same relative order (they're built by filtering
-    // _deferred, which was itself populated by this method's own attempt loop in list order), so no
-    // re-sort is needed here either way. The IsDependencyError-triggered reactive deferral in
-    // TryExecuteEntryAsync is untouched (R13) — this generalization only changes what decides the
-    // *attempt* order, never the fault-handling/deferral behavior.
+    // _deferred concatenated with _postImportOnly — U11, R12 — each of which is itself an
+    // order-preserving subset of this method's own attempt loop / DispatchToHandlersAsync's sorted list,
+    // in that order), so no re-sort is needed here either way. The IsDependencyError-triggered reactive
+    // deferral in TryExecuteEntryAsync is untouched (R13) — this generalization only changes what decides
+    // the *attempt* order, never the fault-handling/deferral behavior.
     async Task<IReadOnlyList<OrphanEntry>> ExecuteInOrderAsync(
         IOrganizationServiceAsync2 service,
         string solutionName,
