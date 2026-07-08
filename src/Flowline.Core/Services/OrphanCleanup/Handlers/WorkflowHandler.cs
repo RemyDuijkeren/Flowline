@@ -1,6 +1,8 @@
+using System.ServiceModel;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
+using Spectre.Console;
 
 namespace Flowline.Core.Services.OrphanCleanup.Handlers;
 
@@ -9,7 +11,11 @@ namespace Flowline.Core.Services.OrphanCleanup.Handlers;
 // step (U9) — it's an execution-time action, not a classification decision. This handler only reads
 // the live statecode to decide Prio (KTD8): Activated -> Prio2 (still silently running deleted logic),
 // Deactivated -> Prio3 (default/safe to clean up). It does not execute, delete, or deactivate anything.
-public sealed class WorkflowHandler : IOrphanHandler
+//
+// Code-review fault-isolation fix: the live query is now caught (KTD6) — a failed query degrades to an
+// empty byId map, which the loop below already treats identically to "record already gone" (Prio3
+// default, bare id) — no new fallback shape.
+public sealed class WorkflowHandler(IAnsiConsole console) : IOrphanHandler
 {
     const int WorkflowComponentType = 29;
 
@@ -42,7 +48,20 @@ public sealed class WorkflowHandler : IOrphanHandler
             Criteria  = { Conditions = { new ConditionExpression("workflowid", ConditionOperator.In, workflowIds.Select(id => (object)id).ToArray()) } }
         };
 
-        var entities = await context.Service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
+        List<Entity> entities;
+        try
+        {
+            entities = await context.Service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
+        }
+        catch (FaultException<OrganizationServiceFault>)
+        {
+            entities = [];
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            console.Warning($"Workflow orphan detection failed ({Markup.Escape(ex.Message)}) — defaulting to Prio3 this run.");
+            entities = [];
+        }
         var byId = entities.ToDictionary(e => e.Id);
 
         var findings = new List<HandlerFinding>(workflowIds.Count);

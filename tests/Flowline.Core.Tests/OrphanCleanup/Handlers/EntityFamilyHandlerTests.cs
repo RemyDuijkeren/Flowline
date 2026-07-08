@@ -6,18 +6,22 @@ using NSubstitute;
 using Flowline.Core.Services;
 using Flowline.Core.Services.OrphanCleanup;
 using Flowline.Core.Services.OrphanCleanup.Handlers;
+using Spectre.Console.Testing;
 
 namespace Flowline.Core.Tests.OrphanCleanup.Handlers;
 
 public class EntityFamilyHandlerTests
 {
     readonly IOrganizationServiceAsync2 _serviceMock;
+    readonly TestConsole _console;
     readonly EntityFamilyHandler _handler;
 
     public EntityFamilyHandlerTests()
     {
         _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
-        _handler = new EntityFamilyHandler();
+        _console = new TestConsole();
+        _console.Profile.Width = 400; // avoid word-wrap splitting longer assertion substrings across lines
+        _handler = new EntityFamilyHandler(_console);
     }
 
     DetectionContext Ctx(string packageSrcRoot = "irrelevant", IReadOnlyList<string>? entityLogicalNames = null) => new(

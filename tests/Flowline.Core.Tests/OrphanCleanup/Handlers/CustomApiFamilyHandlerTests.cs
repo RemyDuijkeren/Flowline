@@ -105,9 +105,9 @@ public class CustomApiFamilyHandlerTests : IDisposable
     {
         // Part-9 bug #2 shape (docs/solutions/architecture-patterns/orphan-cleanup-two-phase-deploy-
         // pipeline.md): the row IS found in the table, but its identity attribute (here, name) comes
-        // back null — this is "couldn't verify," not "verified as gone." Today's CustomApi path
-        // (OrphanCleanupService.cs customApiOrphans filter) still has this latent defect; this handler
-        // must not carry it forward. A row with a null/empty name must never be reported.
+        // back null — this is "couldn't verify," not "verified as gone." AddFindings' name filter
+        // (`if (localNames.Contains(name)) continue;`) must not carry this defect forward. A row with
+        // a null/empty name must never be reported.
         var candidateId = Guid.NewGuid();
         var entity = new Entity("customapi", candidateId) { ["name"] = null };
 

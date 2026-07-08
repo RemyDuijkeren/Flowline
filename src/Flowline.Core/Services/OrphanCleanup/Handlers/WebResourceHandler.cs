@@ -1,3 +1,5 @@
+using System.ServiceModel;
+using Microsoft.Xrm.Sdk;
 using Spectre.Console;
 
 namespace Flowline.Core.Services.OrphanCleanup.Handlers;
@@ -8,6 +10,10 @@ namespace Flowline.Core.Services.OrphanCleanup.Handlers;
 // still owns the cross-solution Delete-vs-RemoveFromSolution override, same as it does for every other
 // Auto handler's findings, since that check spans handlers and isn't this family's concern. Prio is a
 // constant Prio3 (KTD8) — a WebResource never executes business logic, so it can never be Prio1/Prio2.
+//
+// Code-review fault-isolation fix: name resolution is now caught the same way the entity-detected
+// handlers already catch their queries (KTD6) — a failed lookup degrades to the same bare-id display the
+// unresolved-name path below already produces, rather than propagating uncaught.
 public sealed class WebResourceHandler(IAnsiConsole console) : IOrphanHandler
 {
     const int WebResourceComponentType = 61;
@@ -26,8 +32,21 @@ public sealed class WebResourceHandler(IAnsiConsole console) : IOrphanHandler
         // suppresses out of Findings — it's still a recognized WebResource, just not orphaned.
         var claimedIds = webResourceCandidates.Select(c => c.ObjectId).ToHashSet();
 
-        var names = await EntityNameLookup.GetEntityNamesAsync(
-            context.Service, "webresource", "webresourceid", "name", webResourceCandidates.Select(c => c.ObjectId), ct).ConfigureAwait(false);
+        Dictionary<Guid, string> names;
+        try
+        {
+            names = await EntityNameLookup.GetEntityNamesAsync(
+                context.Service, "webresource", "webresourceid", "name", webResourceCandidates.Select(c => c.ObjectId), ct).ConfigureAwait(false);
+        }
+        catch (FaultException<OrganizationServiceFault>)
+        {
+            names = [];
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            console.Warning($"WebResource name resolution failed ({Markup.Escape(ex.Message)}) — display falls back to bare id this run.");
+            names = [];
+        }
 
         // Scans Package/src/WebResources — the content this deploy is actually packing and importing —
         // never WebResources/dist. Deploy promotes whatever's committed in Package/src; reading a

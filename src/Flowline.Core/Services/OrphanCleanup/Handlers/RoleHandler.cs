@@ -1,3 +1,7 @@
+using System.ServiceModel;
+using Microsoft.Xrm.Sdk;
+using Spectre.Console;
+
 namespace Flowline.Core.Services.OrphanCleanup.Handlers;
 
 // Migrates Role (20) detection (U7) out of OrphanCleanupService's NameResolvableTypes[20]-driven lookup.
@@ -8,7 +12,10 @@ namespace Flowline.Core.Services.OrphanCleanup.Handlers;
 // Auto/Manual is static Manual (R2) — a Role needs human review before removal via the maker portal,
 // same as today. Prio is a constant Prio3 (KTD8) — roles don't execute logic, so they can never be
 // Prio1/Prio2.
-public sealed class RoleHandler : IOrphanHandler
+//
+// Code-review fault-isolation fix: name resolution is now caught (KTD6) — a failed lookup degrades to
+// the same bare-id display the unresolved-name path below already produces.
+public sealed class RoleHandler(IAnsiConsole console) : IOrphanHandler
 {
     const int RoleComponentType = 20;
 
@@ -26,7 +33,20 @@ public sealed class RoleHandler : IOrphanHandler
         // one, so ClaimedIds equals the full roleCandidates set.
         var claimedIds = roleCandidates.Select(c => c.ObjectId).ToHashSet();
 
-        var names = await EntityNameLookup.GetEntityNamesAsync(context.Service, "role", "roleid", "name", roleCandidates.Select(c => c.ObjectId), ct).ConfigureAwait(false);
+        Dictionary<Guid, string> names;
+        try
+        {
+            names = await EntityNameLookup.GetEntityNamesAsync(context.Service, "role", "roleid", "name", roleCandidates.Select(c => c.ObjectId), ct).ConfigureAwait(false);
+        }
+        catch (FaultException<OrganizationServiceFault>)
+        {
+            names = [];
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            console.Warning($"Role name resolution failed ({Markup.Escape(ex.Message)}) — display falls back to bare id this run.");
+            names = [];
+        }
 
         var findings = new List<HandlerFinding>();
         foreach (var candidate in roleCandidates)

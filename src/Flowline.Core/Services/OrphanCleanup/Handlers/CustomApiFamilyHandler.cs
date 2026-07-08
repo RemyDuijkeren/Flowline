@@ -35,10 +35,6 @@ public sealed class CustomApiFamilyHandler(IAnsiConsole console) : IOrphanHandle
         if (candidates.Count == 0) return new HandlerDetectionResult([], new HashSet<Guid>());
 
         var idList = candidates.Select(c => c.ObjectId).Distinct().ToList();
-        if (idList.Count > 2000)
-            throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {idList.Count} IDs (max 2000). Solution has too many orphan candidates for CustomApi-family detection.");
-
-        var idArray = idList.Select(id => (object)id).ToArray();
 
         // Each table is queried and caught independently (KTD4) — a business fault (the table genuinely
         // has no matching rows, e.g. not provisioned in this org edition) is distinguished from an
@@ -57,6 +53,14 @@ public sealed class CustomApiFamilyHandler(IAnsiConsole console) : IOrphanHandle
         {
             try
             {
+                // Code-review fault-isolation fix: the 2000-id guard now runs inside each table's own
+                // try, per KTD4 (independent isolation) — an oversized batch degrades the same way any
+                // other query fault for this table does (warn + skip), rather than throwing uncaught for
+                // all three tables before any of their tries start.
+                if (idList.Count > 2000)
+                    throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {idList.Count} IDs (max 2000). Solution has too many orphan candidates for CustomApi-family detection.");
+
+                var idArray = idList.Select(id => (object)id).ToArray();
                 var query = new QueryExpression(entityLogicalName)
                 {
                     ColumnSet = new ColumnSet("name"),

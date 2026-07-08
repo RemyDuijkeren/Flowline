@@ -24,14 +24,17 @@ public sealed class BotHandler(IAnsiConsole console) : IOrphanHandler
         if (candidates.Count == 0) return new HandlerDetectionResult([], new HashSet<Guid>());
 
         var idList = candidates.Select(c => c.ObjectId).Distinct().ToList();
-        if (idList.Count > 2000)
-            throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {idList.Count} IDs (max 2000). Solution has too many orphan candidates for Bot detection.");
-
-        var idArray = idList.Select(id => (object)id).ToArray();
 
         List<Entity> rows;
         try
         {
+            // Code-review fault-isolation fix: the 2000-id guard now runs inside this try so an
+            // oversized batch degrades the same way any other query fault does (warn + skip), rather
+            // than throwing uncaught before the try even starts.
+            if (idList.Count > 2000)
+                throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {idList.Count} IDs (max 2000). Solution has too many orphan candidates for Bot detection.");
+
+            var idArray = idList.Select(id => (object)id).ToArray();
             var query = new QueryExpression("bot")
             {
                 // schemaname is Bot's identity attribute (KTD3 note in OrphanCleanupService's

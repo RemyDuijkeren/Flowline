@@ -5,6 +5,7 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using NSubstitute;
+using Spectre.Console.Testing;
 
 namespace Flowline.Core.Tests.OrphanCleanup.Handlers;
 
@@ -17,10 +18,13 @@ namespace Flowline.Core.Tests.OrphanCleanup.Handlers;
 public class PluginAssemblyFamilyHandlerTests
 {
     readonly IOrganizationServiceAsync2 _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
-    readonly PluginAssemblyFamilyHandler _handler = new();
+    readonly TestConsole _console = new();
+    readonly PluginAssemblyFamilyHandler _handler;
 
     public PluginAssemblyFamilyHandlerTests()
     {
+        _console.Profile.Width = 400; // avoid word-wrap splitting longer assertion substrings across lines
+        _handler = new PluginAssemblyFamilyHandler(_console);
         // Default: any unconfigured RetrieveMultipleAsync returns empty rather than NSubstitute's null
         // default — real Dataverse never returns a null EntityCollection. Matches OrphanCleanupServiceTests'
         // own convention.

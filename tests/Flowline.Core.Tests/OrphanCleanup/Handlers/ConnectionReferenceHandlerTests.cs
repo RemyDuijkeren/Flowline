@@ -207,6 +207,23 @@ public class ConnectionReferenceHandlerTests : IDisposable
         Assert.Contains("Warning", _console.Output);
     }
 
+    // -- Fix2 (code-review): the >2000 ConditionOperator.In guard now degrades instead of throwing uncaught --
+
+    [Fact]
+    public async Task DetectAsync_MoreThan2000Candidates_DegradesInsteadOfThrowingUncaught()
+    {
+        // The >2000 guard previously ran BEFORE this handler's try/catch started, so an oversized batch
+        // threw InvalidOperationException uncaught, crashing the whole dispatch. It now runs inside the
+        // try, so it's caught by the same "warn + skip" branch as any other query fault.
+        var candidates = Enumerable.Range(0, 2001).Select(_ => (Guid.NewGuid(), 10064)).ToList();
+
+        var findings = (await _handler.DetectAsync(Ctx(), candidates, default)).Findings;
+
+        Assert.Empty(findings);
+        Assert.Contains("2001", _console.Output);
+        Assert.Contains("Warning", _console.Output);
+    }
+
     [Fact]
     public async Task DetectAsync_EmptyCandidateList_ReturnsEmptyWithoutQuerying()
     {

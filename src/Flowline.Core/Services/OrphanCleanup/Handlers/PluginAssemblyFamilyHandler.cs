@@ -1,6 +1,8 @@
+using System.ServiceModel;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
+using Spectre.Console;
 
 namespace Flowline.Core.Services.OrphanCleanup.Handlers;
 
@@ -9,7 +11,14 @@ namespace Flowline.Core.Services.OrphanCleanup.Handlers;
 // array (the latter removed during U9's orchestrator rewrite) into a handler, preserving today's exact
 // Auto/Delete behavior and name resolution, plus the new Prio1/Prio2/Prio3 axis (KTD8). Ships Active per
 // KTD2 — this family already has a verified local-source check today (R14).
-public sealed class PluginAssemblyFamilyHandler : IOrphanHandler
+//
+// Code-review fault-isolation fix: this was a Pass-1 (componenttype-gated) handler with zero try/catch —
+// a transient Dataverse fault on either live query (name resolution or enabled-state) propagated uncaught
+// through DispatchToHandlersAsync, aborting the whole deploy before Pass 2 ever ran. Both queries now
+// catch and degrade the same way the entity-detected handlers (Bot/ConnectionReference/CustomApi) already
+// do — FaultException<OrganizationServiceFault> quietly skips (KTD6), anything else warns and skips —
+// falling back to each query's existing "unresolved" display/Prio path rather than a new fallback shape.
+public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanHandler
 {
     public HandlerStatus Status => HandlerStatus.Active;
 
@@ -56,7 +65,7 @@ public sealed class PluginAssemblyFamilyHandler : IOrphanHandler
         // Findings.
         var claimedIds = claimed.Select(c => c.ObjectId).ToHashSet();
 
-        var names = await ResolveNamesAsync(context.Service, claimed, ct).ConfigureAwait(false);
+        var names = await ResolveNamesAsync(context.Service, claimed, console, ct).ConfigureAwait(false);
 
         // KTD8 Prio1: RunMode.NoDelete is the only signal knowable at classify time — see the plan's
         // Timing note on why the reactively-deferred/still-blocking-at-post-import case is out of
@@ -70,7 +79,7 @@ public sealed class PluginAssemblyFamilyHandler : IOrphanHandler
         var typeIds = claimed.Where(c => c.ComponentType == 90).Select(c => c.ObjectId).ToList();
 
         var (stepEnabled, typeHasEnabledStep) = stepIds.Count > 0 || typeIds.Count > 0
-            ? await QueryEnabledStateAsync(context.Service, stepIds, typeIds, ct).ConfigureAwait(false)
+            ? await QueryEnabledStateAsync(context.Service, stepIds, typeIds, console, ct).ConfigureAwait(false)
             : (new Dictionary<Guid, bool>(), new HashSet<Guid>());
 
         var findings = new List<HandlerFinding>(claimed.Count);
@@ -106,6 +115,7 @@ public sealed class PluginAssemblyFamilyHandler : IOrphanHandler
     static async Task<Dictionary<Guid, string>> ResolveNamesAsync(
         IOrganizationServiceAsync2 service,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> claimed,
+        IAnsiConsole console,
         CancellationToken ct)
     {
         var result = new Dictionary<Guid, string>();
@@ -113,9 +123,23 @@ public sealed class PluginAssemblyFamilyHandler : IOrphanHandler
         foreach (var group in claimed.GroupBy(c => c.ComponentType))
         {
             var lookup = Lookups[group.Key];
-            var names = await EntityNameLookup.GetEntityNamesAsync(service, lookup.EntityLogicalName, lookup.IdAttribute, lookup.NameAttribute, group.Select(c => c.ObjectId), ct).ConfigureAwait(false);
-            foreach (var (id, name) in names)
-                result[id] = name;
+            try
+            {
+                var names = await EntityNameLookup.GetEntityNamesAsync(service, lookup.EntityLogicalName, lookup.IdAttribute, lookup.NameAttribute, group.Select(c => c.ObjectId), ct).ConfigureAwait(false);
+                foreach (var (id, name) in names)
+                    result[id] = name;
+            }
+            // KTD6: a business fault (the table genuinely has no matching rows) is not evidence any
+            // candidate was deleted — this group's names simply stay unresolved, same as an
+            // infrastructure fault, which additionally warns. Either way BuildFinding's existing
+            // unresolved-name fallback (bare-id TypeName) already covers it — no new fallback shape.
+            catch (FaultException<OrganizationServiceFault>)
+            {
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                console.Warning($"{lookup.EntityLogicalName} name resolution failed ({Markup.Escape(ex.Message)}) — display falls back to bare id this run.");
+            }
         }
 
         return result;
@@ -128,6 +152,7 @@ public sealed class PluginAssemblyFamilyHandler : IOrphanHandler
         IOrganizationServiceAsync2 service,
         IReadOnlyList<Guid> stepIds,
         IReadOnlyList<Guid> typeIds,
+        IAnsiConsole console,
         CancellationToken ct)
     {
         var filter = new FilterExpression(LogicalOperator.Or);
@@ -142,7 +167,23 @@ public sealed class PluginAssemblyFamilyHandler : IOrphanHandler
             Criteria  = filter,
         };
 
-        var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
+        List<Entity> entities;
+        try
+        {
+            entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
+        }
+        // Unresolved enabled-state is not evidence of anything — BuildFinding's priority switch already
+        // defaults Step/PluginType to Prio3 when neither dictionary has an entry, the same safe fallback
+        // an empty result set (record already gone) produces today.
+        catch (FaultException<OrganizationServiceFault>)
+        {
+            return (new Dictionary<Guid, bool>(), new HashSet<Guid>());
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            console.Warning($"PluginType/Step enabled-state lookup failed ({Markup.Escape(ex.Message)}) — defaulting to Prio3 this run.");
+            return (new Dictionary<Guid, bool>(), new HashSet<Guid>());
+        }
 
         var stepEnabled = new Dictionary<Guid, bool>();
         var typeHasEnabledStep = new HashSet<Guid>();

@@ -30,14 +30,14 @@ public class OrphanCleanupServiceTests : IDisposable
         // path rather than a hand-rolled stand-in.
         IReadOnlyList<IOrphanHandler> handlers =
         [
-            new PluginAssemblyFamilyHandler(),
+            new PluginAssemblyFamilyHandler(_console),
             new WebResourceHandler(_console),
-            new WorkflowHandler(),
+            new WorkflowHandler(_console),
             new CustomApiFamilyHandler(_console),
             new BotHandler(_console),
             new ConnectionReferenceHandler(_console),
-            new RoleHandler(),
-            new EntityFamilyHandler(),
+            new RoleHandler(_console),
+            new EntityFamilyHandler(_console),
         ];
         _service = new OrphanCleanupService(_console, new FlowlineRuntimeOptions(), handlers);
         _packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
@@ -435,8 +435,9 @@ public class OrphanCleanupServiceTests : IDisposable
                 Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: packageSrcRoot), default);
 
             // Unlike WebResource, CustomApi's componenttype isn't AutoDelete-classified, so this doesn't
-            // hit the early "No orphan components" return — it clears the entity-side detection and gets
-            // filtered out of customApiOrphans, leaving an empty report instead.
+            // hit the early "No orphan components" return — it's claimed and resolved by
+            // CustomApiFamilyHandler, then suppressed because its uniquename is still declared locally,
+            // leaving an empty report instead.
             Assert.DoesNotContain(liveId.ToString(), _console.Output);
             Assert.Contains("0 to delete, 0 to remove from solution, 0 manual", _console.Output);
         }
@@ -472,6 +473,38 @@ public class OrphanCleanupServiceTests : IDisposable
 
         Assert.Contains("bot table unavailable", _console.Output);
         Assert.Contains($"CustomApi 'av_GenuinelyRemovedApi' ({customApiId})", _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_PluginAssemblyQueryFails_OtherFamiliesStillSucceed()
+    {
+        // Fix1 (code-review): Pass-1 (componenttype-gated) handlers previously had zero try/catch
+        // anywhere — a transient fault on ANY Pass-1 handler's live query (here,
+        // PluginAssemblyFamilyHandler's name resolution) propagated uncaught through
+        // DispatchToHandlersAsync, aborting the whole deploy before another Pass-1 family (or Pass 2)
+        // ever ran. Each Pass-1 handler now catches and degrades independently, so a PluginAssembly
+        // query fault must not prevent RoleHandler's own detection (a different Pass-1 family) from
+        // completing and being reported.
+        var assemblyId = Guid.NewGuid();
+        var roleId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (assemblyId, 91), (roleId, 20));
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("pluginassembly table unavailable")));
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "role"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("role", roleId) { ["name"] = "Custom Sales Role" }
+            ])));
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Contains("pluginassembly table unavailable", _console.Output);
+        Assert.Contains("Custom Sales Role", _console.Output);
     }
 
     // -- Bot orphan detection: entity-side query (KTD2/R3), schemaname-keyed folder verification (KTD3) --
@@ -1329,7 +1362,7 @@ public class OrphanCleanupServiceTests : IDisposable
 
         IReadOnlyList<IOrphanHandler> handlers =
         [
-            new PluginAssemblyFamilyHandler(),
+            new PluginAssemblyFamilyHandler(_console),
             new FakePostImportOnlyHandler(9999, "Widget 'thing'", "widgettable"),
         ];
         var mixedService = new OrphanCleanupService(_console, new FlowlineRuntimeOptions(), handlers);

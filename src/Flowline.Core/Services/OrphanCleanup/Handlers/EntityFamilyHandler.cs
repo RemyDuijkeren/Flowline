@@ -1,8 +1,11 @@
+using System.ServiceModel;
 using Microsoft.PowerPlatform.Dataverse.Client;
+using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Metadata;
 using Microsoft.Xrm.Sdk.Metadata.Query;
 using Microsoft.Xrm.Sdk.Query;
+using Spectre.Console;
 
 namespace Flowline.Core.Services.OrphanCleanup.Handlers;
 
@@ -23,7 +26,7 @@ namespace Flowline.Core.Services.OrphanCleanup.Handlers;
 // equivalent — an attribute still declared in Entity.xml is only caught here, via this handler's own
 // ResolveAttributeInfoAsync + ComponentClassifier.ScanEntityAttributeLogicalNames, migrated unchanged
 // from OrphanCleanupService's old attribute-handling block (removed during U9's orchestrator rewrite).
-public sealed class EntityFamilyHandler : IOrphanHandler
+public sealed class EntityFamilyHandler(IAnsiConsole console) : IOrphanHandler
 {
     const int EntityComponentType = 1;
     const int AttributeComponentType = 2;
@@ -65,8 +68,24 @@ public sealed class EntityFamilyHandler : IOrphanHandler
             return new HandlerDetectionResult(findings, claimedIds);
         }
 
-        var attributeInfo = await ResolveAttributeInfoAsync(
-            context.Service, context.EntityLogicalNames, attributeOrphans.Select(o => o.ObjectId), ct).ConfigureAwait(false);
+        // Code-review fault-isolation fix: a failed metadata query is now caught (KTD6) — attributeInfo
+        // degrades to empty, which the loop below already treats identically to "unresolved" (bare-id
+        // "Attribute {id}" fallback) — no new fallback shape.
+        Dictionary<Guid, (string EntityLogicalName, string AttributeLogicalName)> attributeInfo;
+        try
+        {
+            attributeInfo = await ResolveAttributeInfoAsync(
+                context.Service, context.EntityLogicalNames, attributeOrphans.Select(o => o.ObjectId), ct).ConfigureAwait(false);
+        }
+        catch (FaultException<OrganizationServiceFault>)
+        {
+            attributeInfo = [];
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            console.Warning($"Attribute metadata resolution failed ({Markup.Escape(ex.Message)}) — falling back to bare id display this run.");
+            attributeInfo = [];
+        }
         var localAttributesByEntity = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var (id, componentType) in attributeOrphans)

@@ -23,14 +23,17 @@ public sealed class ConnectionReferenceHandler(IAnsiConsole console) : IOrphanHa
         if (candidates.Count == 0) return new HandlerDetectionResult([], new HashSet<Guid>());
 
         var idList = candidates.Select(c => c.ObjectId).Distinct().ToList();
-        if (idList.Count > 2000)
-            throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {idList.Count} IDs (max 2000). Solution has too many orphan candidates for ConnectionReference detection.");
-
-        var idArray = idList.Select(id => (object)id).ToArray();
 
         List<Entity> rows;
         try
         {
+            // Code-review fault-isolation fix: the 2000-id guard now runs inside this try so an
+            // oversized batch degrades the same way any other query fault does (warn + skip), rather
+            // than throwing uncaught before the try even starts.
+            if (idList.Count > 2000)
+                throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {idList.Count} IDs (max 2000). Solution has too many orphan candidates for ConnectionReference detection.");
+
+            var idArray = idList.Select(id => (object)id).ToArray();
             var query = new QueryExpression("connectionreference")
             {
                 ColumnSet = new ColumnSet("connectionreferencelogicalname"),

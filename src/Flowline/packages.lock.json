@@ -314,6 +314,7 @@
         "type": "Project",
         "dependencies": {
           "Flowline.Attributes": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection": "[10.0.9, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )",
           "Microsoft.Identity.Client.Extensions.Msal": "[4.85.2, )",
           "Microsoft.PowerPlatform.Dataverse.Client": "[1.2.26, )",

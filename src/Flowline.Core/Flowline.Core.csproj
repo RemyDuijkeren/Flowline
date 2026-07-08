@@ -5,6 +5,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- OrphanHandlerRegistration shares the IOrphanHandler DI registration list between Program.cs and
+         HandlerRegistryTests (code review: HandlerRegistryTests previously hand-copied the list, so it
+         couldn't catch drift from the real registration). -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.PowerPlatform.Dataverse.Client" />
     <PackageReference Include="Microsoft.Identity.Client.Extensions.Msal" />

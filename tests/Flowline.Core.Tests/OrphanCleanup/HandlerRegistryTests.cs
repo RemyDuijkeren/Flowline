@@ -24,26 +24,20 @@ public class HandlerRegistryTests
         Assert.Empty(handlers);
     }
 
-    // U9: completes the arity guard stubbed in U1. Mirrors Program.cs's registration block (a
-    // ServiceCollection standing in for the real one, same DI container/convention) — a dropped
-    // registration here is caught at CI time instead of silently resolving to fewer handlers in
-    // production (KTD7's accepted missing-registration tradeoff is about DI resolution itself, not
-    // about this test's job of catching an accidental omission). Update this expected set whenever a
-    // future handler is added (KTD7 — this guard is a standing convention, not a one-time ship-time
-    // check).
+    // U9: completes the arity guard stubbed in U1. Calls the SAME OrphanHandlerRegistration.
+    // RegisterOrphanHandlers method Program.cs's real registration block calls (code review: this test
+    // previously hand-copied its own AddSingleton list, so it couldn't catch a drift between the two —
+    // it now exercises production wiring directly). A dropped registration is caught at CI time instead
+    // of silently resolving to fewer handlers in production (KTD7's accepted missing-registration
+    // tradeoff is about DI resolution itself, not about this test's job of catching an accidental
+    // omission). Update this expected set whenever a future handler is added (KTD7 — this guard is a
+    // standing convention, not a one-time ship-time check).
     [Fact]
     public void ProductionContainer_RegistersAllEightR14HandlerClasses()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IAnsiConsole>(new TestConsole());
-        services.AddSingleton<IOrphanHandler, PluginAssemblyFamilyHandler>();
-        services.AddSingleton<IOrphanHandler, WebResourceHandler>();
-        services.AddSingleton<IOrphanHandler, WorkflowHandler>();
-        services.AddSingleton<IOrphanHandler, CustomApiFamilyHandler>();
-        services.AddSingleton<IOrphanHandler, BotHandler>();
-        services.AddSingleton<IOrphanHandler, ConnectionReferenceHandler>();
-        services.AddSingleton<IOrphanHandler, RoleHandler>();
-        services.AddSingleton<IOrphanHandler, EntityFamilyHandler>();
+        OrphanHandlerRegistration.RegisterOrphanHandlers(services);
 
         using var provider = services.BuildServiceProvider();
         var handlers = provider.GetRequiredService<IEnumerable<IOrphanHandler>>().ToList();
