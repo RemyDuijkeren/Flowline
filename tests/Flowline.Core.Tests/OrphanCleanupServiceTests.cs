@@ -3,6 +3,8 @@ using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using NSubstitute;
 using Flowline.Core.Services;
+using Flowline.Core.Services.OrphanCleanup;
+using Flowline.Core.Services.OrphanCleanup.Handlers;
 using Flowline.Core;
 using Spectre.Console.Testing;
 
@@ -22,7 +24,22 @@ public class OrphanCleanupServiceTests : IDisposable
         _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
         _console = new TestConsole();
         _console.Profile.Width = 400; // avoid word-wrap splitting longer assertion substrings across lines
-        _service = new OrphanCleanupService(_console, new FlowlineRuntimeOptions());
+
+        // U9: mirrors Program.cs's IOrphanHandler registration — all eight R14 handlers (KTD2), same
+        // instances the production DI container resolves, so this suite exercises the real dispatch
+        // path rather than a hand-rolled stand-in.
+        IReadOnlyList<IOrphanHandler> handlers =
+        [
+            new PluginAssemblyFamilyHandler(),
+            new WebResourceHandler(),
+            new WorkflowHandler(),
+            new CustomApiFamilyHandler(_console),
+            new BotHandler(_console),
+            new ConnectionReferenceHandler(_console),
+            new RoleHandler(),
+            new EntityFamilyHandler(),
+        ];
+        _service = new OrphanCleanupService(_console, new FlowlineRuntimeOptions(), handlers);
         _packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         _webResourcesDir = Path.Combine(_packageSrcRoot, "WebResources");
         Directory.CreateDirectory(_webResourcesDir);

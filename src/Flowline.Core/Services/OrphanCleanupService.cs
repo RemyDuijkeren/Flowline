@@ -3,33 +3,84 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Metadata;
-using Microsoft.Xrm.Sdk.Metadata.Query;
 using Microsoft.Xrm.Sdk.Query;
 using Spectre.Console;
+using Flowline.Core.Services.OrphanCleanup;
+using Flowline.Core.Services.OrphanCleanup.Handlers;
 
 namespace Flowline.Core.Services;
 
 public enum OrphanAction { Delete, RemoveFromSolution, Manual }
 
-public sealed record OrphanEntry(Guid ObjectId, int ComponentType, string DisplayName, OrphanAction Action, string? EntityName = null);
+// EntityName, Priority, SequenceHint, and Timing all default so every pre-existing 4-arg call site
+// (OrphanEntry(ObjectId, ComponentType, DisplayName, Action)) keeps compiling unchanged. Priority/
+// SequenceHint/Timing are the handler-architecture bridge (see HandlerFinding, U9): a handler's
+// per-instance Prio (R3), its family-scoped ordering hint (R11, KTD1), and its declared pre/post-import
+// timing (R12) all survive from HandlerFinding into the entry the orchestrator executes and prints.
+public sealed record OrphanEntry(
+    Guid ObjectId,
+    int ComponentType,
+    string DisplayName,
+    OrphanAction Action,
+    string? EntityName = null,
+    OrphanPriority Priority = OrphanPriority.None,
+    int SequenceHint = 0,
+    OrphanTiming Timing = OrphanTiming.PreImportEligible);
 
 // Skipped distinguishes "the comparison ran and found nothing" (false) from "an empty-input guard
 // short-circuited before any comparison happened" (true) — callers that need a trustworthy read-only
 // signal (e.g. DriftCommand) must not treat those two cases as equivalent.
 public sealed record CompareResult(IReadOnlyList<OrphanEntry> Entries, bool Skipped = false);
 
-public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions opt) : IPostDeployService
+public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions opt, IEnumerable<IOrphanHandler> handlers) : IPostDeployService
 {
-    // R8: step images → steps → types → assemblies; web resources; workflows
-    // CustomApi family has env-specific componenttype — handled separately via entity-side detection.
-    static readonly int[] ExecutionOrder = [93, 92, 90, 91, 61, 29];
+    // KTD1: explicit, centrally-declared cross-family order — NOT DI-registration order (a future
+    // unrelated edit to Program.cs's AddSingleton<IOrphanHandler, _> call sequence must not silently
+    // reorder execution/report sequencing). Mirrors the role the old flat ExecutionOrder/
+    // CustomApiEntityOrder arrays played as sole source of truth for cross-family sequencing. Adding a
+    // future handler means appending to this one visible list, matching KTD2's roster order exactly.
+    static readonly Type[] FamilyOrder =
+    [
+        typeof(PluginAssemblyFamilyHandler),
+        typeof(WebResourceHandler),
+        typeof(WorkflowHandler),
+        typeof(CustomApiFamilyHandler),
+        typeof(BotHandler),
+        typeof(ConnectionReferenceHandler),
+        typeof(RoleHandler),
+        typeof(EntityFamilyHandler),
+    ];
+
+    readonly IReadOnlyList<IOrphanHandler> _orderedHandlers = handlers
+        .OrderBy(h => FamilyIndex(h))
+        .ToList();
+
+    static int FamilyIndex(IOrphanHandler handler)
+    {
+        var idx = Array.IndexOf(FamilyOrder, handler.GetType());
+        return idx >= 0 ? idx : FamilyOrder.Length; // unlisted handler (future addition not yet in FamilyOrder) sorts last
+    }
+
+    // The three handlers that can only tell whether a candidate is theirs by querying their own backing
+    // table (KTD4/HTD note) — DispatchToHandlersAsync gives all three the identical still-unclaimed batch
+    // left after the componenttype-gated handlers run, rather than progressively narrowing it relative to
+    // each other, so one handler's claim or query failure never silently skips another's independent
+    // attempt against the same candidate.
+    static readonly HashSet<Type> EntityDetectedHandlerTypes =
+    [
+        typeof(CustomApiFamilyHandler),
+        typeof(BotHandler),
+        typeof(ConnectionReferenceHandler),
+    ];
 
     // Threads dependency-deferred entries from RunPreImportAsync to RunPostImportAsync on the same instance.
     IReadOnlyList<OrphanEntry> _deferred = [];
 
-    // CustomApi child entities deleted before parent to avoid dependency errors.
-    static readonly string[] CustomApiEntityOrder = ["customapirequestparameter", "customapiresponseproperty", "customapi"];
-
+    // Execution-time fallback for componenttype-gated Auto handlers: their findings leave EntityName
+    // null (see e.g. PluginAssemblyFamilyHandler.BuildFinding), so PerformActionAsync resolves the
+    // delete target's table name from ComponentType here instead. Entity-detected handlers (CustomApi
+    // family, Bot, ConnectionReference) set EntityName explicitly since their componenttype is
+    // env-specific and can't be mapped through a fixed table like this one.
     static readonly Dictionary<int, string> EntityNames = new()
     {
         [91] = "pluginassembly",
@@ -44,7 +95,8 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     // "Solution Component" table reference (learn.microsoft.com/power-apps/developer/data-platform/
     // reference/entities/solutioncomponent). Not exhaustive — covers types plausible in a manual-cleanup
     // report. Types outside this map (e.g. env-specific 10000+ codes not in the public componenttype
-    // choice set) are reported as unrecognized rather than guessed at.
+    // choice set) are reported as unrecognized rather than guessed at. Still used by the generic-fallback
+    // path (LogUnsupportedOrphansAsync) for any candidate no handler claims.
     static readonly Dictionary<int, string> ManualTypeLabels = new()
     {
         [1]   = "Entity",
@@ -113,11 +165,12 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
     // Comparison-only half of the pre-import step (KTD5): parses committed source, queries live
     // solutioncomponents, resolves sNewIds via all existing special-casing (schemaName, entity,
-    // OptionSet, CustomApi, Bot, ConnectionReference), classifies orphans, and prints the report —
-    // stopping before ExecuteInOrderAsync (the mutating delete/remove step), so this is callable from a
-    // read-only context (used today by DriftCommand) without mutating anything. `noDeleteHint` lets a
-    // caller that has no `--no-delete` flag of its own (DriftCommand is always read-only) suppress or
-    // replace the deploy-specific "(--no-delete active)" phrasing in the printed report.
+    // OptionSet), dispatches raw orphan candidates to the U1-U8 handler set (U9), classifies orphans, and
+    // prints the report — stopping before ExecuteInOrderAsync (the mutating delete/remove step), so this
+    // is callable from a read-only context (used today by DriftCommand) without mutating anything.
+    // `noDeleteHint` lets a caller that has no `--no-delete` flag of its own (DriftCommand is always
+    // read-only) suppress or replace the deploy-specific "(--no-delete active)" phrasing in the printed
+    // report.
     //
     // Takes packageSrcRoot/service/solutionName/environmentUrl/mode directly rather than a PostDeployContext
     // — this is the real comparison engine both public overloads above delegate to, and its dependencies
@@ -203,119 +256,153 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
             return new CompareResult([]);
         }
 
-        var autoOrphans    = orphans.Where(c => ComponentClassifier.Classify(c.ComponentType) == ComponentAction.AutoDelete).ToList();
-        var unknownOrphans = orphans.Where(c => ComponentClassifier.Classify(c.ComponentType) == ComponentAction.Manual).ToList();
-
-        // Exempt webresource orphans referenced in // flowline:depends annotations.
-        autoOrphans = await ExemptAnnotationReferencedWebResourcesAsync(service, autoOrphans, packageSrcRoot, ct).ConfigureAwait(false);
-
-        // CustomApi and Bot both have env-specific componenttypes — detect via entity-side queries
-        // instead (see IdentifyEntityDetectedTypesAsync).
-        Dictionary<Guid, string> entityDetectedTypes = [];
-        if (unknownOrphans.Count > 0)
-        {
-            try
-            {
-                entityDetectedTypes = await IdentifyEntityDetectedTypesAsync(service, unknownOrphans.Select(c => c.ObjectId), ct).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                console.Warning($"Entity-side orphan detection failed ({Markup.Escape(ex.Message)}) — unknown orphan components will be marked Manual.");
-            }
-        }
-
-        var customApiOrphans           = unknownOrphans.Where(c => entityDetectedTypes.TryGetValue(c.ObjectId, out var e) && CustomApiIdAttributes.ContainsKey(e)).ToList();
-        var botOrphans                 = unknownOrphans.Where(c => entityDetectedTypes.TryGetValue(c.ObjectId, out var e) && e == "bot").ToList();
-        var connectionReferenceOrphans = unknownOrphans.Where(c => entityDetectedTypes.TryGetValue(c.ObjectId, out var e) && e == "connectionreference").ToList();
-        var manualOrphans              = unknownOrphans.Where(c => !entityDetectedTypes.ContainsKey(c.ObjectId)).ToList();
-
-        // CustomApi source has no GUID at all — uniquename is the only local identity (see
-        // ComponentClassifier.ScanCustomApiNames) — so a recreated CustomApi (same uniquename, new
-        // customapiid) looks orphaned by id alone. Resolve names once here, drop the ones still in
-        // source, and reuse the same lookup below instead of querying names twice.
-        Dictionary<Guid, string> customApiNames = [];
-        if (customApiOrphans.Count > 0)
-        {
-            foreach (var group in customApiOrphans.GroupBy(o => entityDetectedTypes[o.ObjectId]))
-            {
-                var names = await GetEntityNamesAsync(service, group.Key, CustomApiIdAttributes[group.Key], "name", group.Select(o => o.ObjectId), ct).ConfigureAwait(false);
-                foreach (var (id, name) in names)
-                    customApiNames[id] = name;
-            }
-
-            var localCustomApiNames = ComponentClassifier.ScanCustomApiNames(packageSrcRoot);
-            customApiOrphans = customApiOrphans.Where(o =>
-            {
-                if (!customApiNames.TryGetValue(o.ObjectId, out var name)) return true;
-                var localNames = entityDetectedTypes[o.ObjectId] switch
-                {
-                    "customapi"                 => localCustomApiNames.ApiUniqueNames,
-                    "customapirequestparameter" => localCustomApiNames.RequestParameterNames,
-                    "customapiresponseproperty" => localCustomApiNames.ResponsePropertyNames,
-                    _                           => (IReadOnlySet<string>)new HashSet<string>()
-                };
-                return !localNames.Contains(name);
-            }).ToList();
-        }
-
-        // Bot and ConnectionReference share the same entity-detected, no-componenttype-gate shape —
-        // resolve each candidate's live identity attribute and drop the ones still declared locally
-        // (KTD2). Bot's identity is schemaname, not name (KTD3) — ResolvedTypeNameAttributes' bot entry
-        // maps to name for the unsupported-preview's display purpose only, never for verification.
-        // ConnectionReference has no dedicated folder like Bot's bots/<schemaname>/bot.xml — it's
-        // declared inline in Other/Customizations.xml's <connectionreferences> section (R2), not the
-        // separately-generated deploymentSettings.json, which is optional and can go stale.
-        var botEntries = await ResolveEntityDetectedManualEntriesAsync(
-            service, botOrphans, "bot", "botid", "schemaname",
-            ComponentClassifier.ScanBotSchemaNames, packageSrcRoot, ct).ConfigureAwait(false);
-        var connectionReferenceEntries = await ResolveEntityDetectedManualEntriesAsync(
-            service, connectionReferenceOrphans, "connectionreference", "connectionreferenceid", "connectionreferencelogicalname",
-            ComponentClassifier.ScanConnectionReferenceLogicalNames, packageSrcRoot, ct).ConfigureAwait(false);
-
-        var crossSolutionIds = autoOrphans.Select(c => c.ObjectId).Concat(customApiOrphans.Select(c => c.ObjectId));
-        var crossSolution = crossSolutionIds.Any()
-            ? await GetCrossSolutionMembershipAsync(service, crossSolutionIds, ct).ConfigureAwait(false)
-            : [];
-
-        var entries = new List<OrphanEntry>();
-
-        foreach (var group in autoOrphans.GroupBy(o => o.ComponentType))
-        {
-            var names = await ResolveGroupNamesAsync(service, group.Key, group.Select(o => o.ObjectId), ct).ConfigureAwait(false);
-
-            foreach (var orphan in group)
-            {
-                var otherSolutions = OtherRelevantSolutions(crossSolution, orphan.ObjectId, solutionName);
-                var action = otherSolutions.Count > 0 ? OrphanAction.RemoveFromSolution : OrphanAction.Delete;
-                var detail = names.TryGetValue(orphan.ObjectId, out var name) ? name : null;
-                entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId, detail: detail), action));
-            }
-        }
-
-        foreach (var group in customApiOrphans.GroupBy(o => entityDetectedTypes[o.ObjectId]))
-        {
-            var entityName = group.Key;
-
-            foreach (var orphan in group)
-            {
-                var otherSolutions = OtherRelevantSolutions(crossSolution, orphan.ObjectId, solutionName);
-                var action = otherSolutions.Count > 0 ? OrphanAction.RemoveFromSolution : OrphanAction.Delete;
-                var detail = customApiNames.TryGetValue(orphan.ObjectId, out var name) ? name : null;
-                entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId, entityName, detail), action, EntityName: entityName));
-            }
-        }
-
-        // Bot and ConnectionReference can't be deleted automatically like CustomApi — genuinely-orphaned
-        // ones are reported Manual, same as any other unsupported/opt-in-gated type, but bypass
-        // SupportedManualTypes entirely per KTD2 (entity-side detection, not a componenttype gate).
-        entries.AddRange(botEntries);
-        entries.AddRange(connectionReferenceEntries);
-
-        entries.AddRange(await BuildManualEntriesAsync(service, packageSrcRoot, entityLogicalNames, namedComponents, manualOrphans, ct).ConfigureAwait(false));
+        var entries = await DispatchToHandlersAsync(
+            service, packageSrcRoot, solutionName, environmentUrl, mode, entityLogicalNames, namedComponents, orphans, ct).ConfigureAwait(false);
 
         PrintReport(entries, mode, solutionName, environmentUrl, noDeleteHint);
 
         return new CompareResult(entries);
+    }
+
+    // U9: replaces the old inline per-type branching (autoOrphans/unknownOrphans/entityDetectedTypes
+    // split) with dispatch to the U1-U8 handler set. Handlers run once each, in FamilyOrder (KTD1),
+    // always against the candidates still unclaimed by an earlier handler in that order — this covers
+    // both dispatch shapes the Planning Contract describes uniformly: a componenttype-gated handler
+    // (PluginAssembly family, WebResource, Workflow, Role, Entity family) simply ignores candidates
+    // outside its own componenttype gate no matter how large the batch it's handed, while an
+    // entity-detected handler (CustomApi family, Bot, ConnectionReference) receives the same
+    // "still-unclaimed-so-far" batch as its one batched query — since a real candidate can only ever be a
+    // row in one of these tables, this is behaviorally identical to handing every entity-detected handler
+    // an identical fixed "remainder after componenttype-gated dispatch" batch, without the orchestrator
+    // needing to special-case which shape a given handler is.
+    //
+    // A candidate absent from a handler's Findings is either recognized-but-clean (in ClaimedIds — e.g.
+    // still locally declared, or a WebResource exempted via annotation) and silently dropped, or
+    // unrecognized by every handler (never in any ClaimedIds) and routed to the generic-fallback verbose
+    // preview (R8) — computed as the candidate set minus the union of every handler's ClaimedIds, never
+    // minus the union of Findings (that earlier shape would leak a spurious "not tracked yet" line for a
+    // recognized-but-clean candidate that doesn't exist in today's behavior).
+    async Task<List<OrphanEntry>> DispatchToHandlersAsync(
+        IOrganizationServiceAsync2 service,
+        string packageSrcRoot,
+        string solutionName,
+        string environmentUrl,
+        RunMode mode,
+        IReadOnlyList<string> entityLogicalNames,
+        IReadOnlyList<(int ComponentType, string SchemaName)> namedComponents,
+        List<(Guid ObjectId, int ComponentType)> orphans,
+        CancellationToken ct)
+    {
+        var detectionContext = new DetectionContext(packageSrcRoot, service, solutionName, environmentUrl, mode, entityLogicalNames);
+
+        var claimedIds      = new HashSet<Guid>();
+        var findings         = new List<HandlerFinding>();
+        var familyIndexById  = new Dictionary<Guid, int>();
+
+        async Task RunHandlerAsync(int index, IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates)
+        {
+            var handler = _orderedHandlers[index];
+            var result  = await handler.DetectAsync(detectionContext, candidates, ct).ConfigureAwait(false);
+            claimedIds.UnionWith(result.ClaimedIds);
+
+            if (handler.Status == HandlerStatus.Active)
+            {
+                foreach (var finding in result.Findings)
+                {
+                    findings.Add(finding);
+                    familyIndexById[finding.ObjectId] = index;
+                }
+            }
+            else
+            {
+                // KTD3: no handler ships Preview this round (KTD2) — this branch exists so a future
+                // Preview handler is field-tested with zero action risk, per R7, without a code change here.
+                foreach (var finding in result.Findings)
+                    console.Verbose($"[Preview: {handler.GetType().Name}] {finding.DisplayName}");
+            }
+
+            // WebResourceHandler's // flowline:depends annotation exemption (KTD2) suppresses a claimed
+            // candidate out of Findings but has no console of its own to announce it (DetectionContext
+            // carries no logger) — reproduce ExemptAnnotationReferencedWebResourcesAsync's original
+            // "preserved" skip line here for every WebResource candidate claimed but not reported.
+            if (handler is WebResourceHandler)
+            {
+                var suppressedIds = result.ClaimedIds.Except(result.Findings.Select(f => f.ObjectId)).ToList();
+                if (suppressedIds.Count > 0)
+                {
+                    var names = await GetEntityNamesAsync(service, "webresource", "webresourceid", "name", suppressedIds, ct).ConfigureAwait(false);
+                    foreach (var (id, name) in names)
+                        console.Skip($"'{name}' preserved — referenced in // flowline:depends annotation.");
+                }
+            }
+        }
+
+        // Pass 1: componenttype-gated handlers (PluginAssembly family, WebResource, Workflow, Role,
+        // Entity family — KTD2) each match by componenttype alone, so their gates never overlap; each
+        // runs against whatever the prior one left unclaimed purely as an optimization (skips a handler
+        // a needless empty-candidate call once nothing is left), not because correctness depends on the
+        // shrinking.
+        for (var i = 0; i < _orderedHandlers.Count; i++)
+        {
+            if (EntityDetectedHandlerTypes.Contains(_orderedHandlers[i].GetType())) continue;
+            var remaining = orphans.Where(c => !claimedIds.Contains(c.ObjectId)).ToList();
+            await RunHandlerAsync(i, remaining).ConfigureAwait(false);
+        }
+
+        // Pass 2: entity-detected handlers (CustomApi family, Bot, ConnectionReference — KTD4) each
+        // independently query their own backing table against the SAME still-unclaimed batch left after
+        // pass 1 — not a batch progressively narrowed relative to EACH OTHER. A real candidate can only
+        // ever be a row in one of these three tables, but KTD4's isolation guarantee (one handler's own
+        // query failure or claim must never suppress another's independent attempt) only holds if every
+        // entity-detected handler actually gets to run its own query against the identical batch, exactly
+        // like the old shared Task.WhenAll batch did — narrowing the batch as each handler claims from it
+        // would silently skip a later handler's query whenever an earlier one claimed the same candidate
+        // first, which is observable (e.g. a live diagnostic warning) even though the claim itself was
+        // correct.
+        var remainderForEntityDetected = orphans.Where(c => !claimedIds.Contains(c.ObjectId)).ToList();
+        for (var i = 0; i < _orderedHandlers.Count; i++)
+        {
+            if (!EntityDetectedHandlerTypes.Contains(_orderedHandlers[i].GetType())) continue;
+            await RunHandlerAsync(i, remainderForEntityDetected).ConfigureAwait(false);
+        }
+
+        var unclaimed = orphans.Where(c => !claimedIds.Contains(c.ObjectId)).ToList();
+        if (unclaimed.Count > 0)
+        {
+            var localIdentifiers = BuildLocalIdentifierHarvest(packageSrcRoot, entityLogicalNames, namedComponents);
+            await LogUnsupportedOrphansAsync(service, unclaimed, localIdentifiers, ct).ConfigureAwait(false);
+        }
+
+        // Execution-time cross-solution-membership Delete-vs-RemoveFromSolution override — spans
+        // handlers (a handler only ever proposes Delete; whether another solution still needs the
+        // component is an orchestrator-level concern), so it's re-applied here on top of every Auto
+        // handler's findings, same as today. Only Delete-action findings are ever candidates for the
+        // override — Manual findings (Role, EntityFamily, Bot, ConnectionReference) never reach it,
+        // matching today's exact scope.
+        var deleteCandidateIds = findings.Where(f => f.Action == OrphanAction.Delete).Select(f => f.ObjectId).ToList();
+        var crossSolution = deleteCandidateIds.Count > 0
+            ? await GetCrossSolutionMembershipAsync(service, deleteCandidateIds, ct).ConfigureAwait(false)
+            : [];
+
+        // Sorted once here (KTD1: cross-family via FamilyOrder/familyIndexById, then per-family via each
+        // finding's own SequenceHint) — ExecuteInOrderAsync and PrintReport both just consume this list's
+        // order downstream rather than re-deriving it themselves.
+        return findings
+            .OrderBy(f => familyIndexById[f.ObjectId])
+            .ThenBy(f => f.SequenceHint)
+            .Select(f =>
+            {
+                var action = f.Action;
+                if (action == OrphanAction.Delete)
+                {
+                    var otherSolutions = OtherRelevantSolutions(crossSolution, f.ObjectId, solutionName);
+                    if (otherSolutions.Count > 0)
+                        action = OrphanAction.RemoveFromSolution;
+                }
+
+                return new OrphanEntry(f.ObjectId, f.ComponentType, f.DisplayName, action, f.EntityName, f.Priority, f.SequenceHint, f.Timing);
+            })
+            .ToList();
     }
 
     public async Task<int> RunPostImportAsync(PostDeployContext context, CancellationToken ct)
@@ -392,7 +479,7 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
     const int OptionSetComponentType = 9;
 
-    // OptionSet's own metadata-request resolution path (see the call site in RunPreImportAsync) — kept
+    // OptionSet's own metadata-request resolution path (see the call site in CompareAsync) — kept
     // separate from ResolveNamedComponentIdsAsync's NameResolvableTypes/QueryExpression pattern since
     // OptionSet has no backing data table to query. Unlike ResolveEntityMetadataIdsAsync, a failed
     // request here (e.g. a genuinely-deleted global choice) is caught per-name so it doesn't block
@@ -441,7 +528,10 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     // Resolves non-entity schemaName-recorded RootComponents (e.g. WebResource) to their live id, by
     // querying each type's NameResolvableTypes-mapped table for name-attribute IN (schemaNames). A type
     // not present in NameResolvableTypes is skipped — same as before this method existed, it's just not
-    // folded into sNewIds — rather than guessed at.
+    // folded into sNewIds — rather than guessed at. This is a pre-diff step (KTD1 — a still-declared
+    // component must never become an orphan candidate at all) and stays in the orchestrator regardless of
+    // which handler would eventually claim the component as an orphan; it has nothing to do with the
+    // handler dispatch below.
     static async Task<HashSet<Guid>> ResolveNamedComponentIdsAsync(
         IOrganizationServiceAsync2 service,
         IReadOnlyList<(int ComponentType, string SchemaName)> namedComponents,
@@ -472,31 +562,14 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         return result;
     }
 
-    const int EntityComponentType = 1;
-    const int AttributeComponentType = 2;
-    const int RoleComponentType = 20;
-
-    // Manual-bucket types Flowline recommends removal for — each has a local-source cross-check
-    // (Entity: EntityLogicalNames/RetrieveEntityRequest; Attribute: Entity.xml scan) verified against a
-    // real org. Recommending removal for a type without that verification is a guess, not a finding —
-    // two incidents confirm it (2026-07-05): connectionreference/bot resolved a real display name via
-    // solutioncomponentdefinition but have no local representation at all, so a still-needed connection
-    // reference got flagged; and Form (60) — despite ScanEntitySubcomponents — false-positives for any
-    // form whose entity isn't unpacked under Entities/<name>/ locally (e.g. a standard Microsoft form
-    // like "Sales Insights" living on an entity this solution's Entities/ folder doesn't include at
-    // all — behavior="1" entities still get FormXml unpacked for editing, but a form on an entity
-    // outside that set has nothing for the scan to find). View (26) shares the same untested gap.
-    // Role (20) needs no new scanner: its id is declared directly in Solution.xml's RootComponent and
-    // mirrored in the unpacked Roles/<name>.xml file, so the existing plain id-in-LocalComponents match
-    // already resolves it correctly in both directions (2026-07-06).
-    // Widen this set only after adding the equivalent local-source verification and tests for a new
-    // type — everything else is logged at verbose only, never recommended for action.
-    static readonly HashSet<int> SupportedManualTypes = [EntityComponentType, AttributeComponentType, RoleComponentType];
-
     // componenttype → backing table, keyed by the componenttype value, resolvable via a single bulk
-    // QueryExpression per type (same pattern as the original webresource-only name lookup). Covers both
-    // AutoDelete types (so deploy shows what it's actually deleting, not just a GUID) and the common
-    // Manual types. Column names verified against existing queries in PluginReader.cs.
+    // QueryExpression per type. Still needed by two pre-diff/fallback concerns unaffected by the handler
+    // dispatch: ResolveNamedComponentIdsAsync's schemaName pre-diff resolution (any of these ten types
+    // could in principle be schemaName-declared in Solution.xml) and ResolveGroupNamesAsync's generic-
+    // fallback name resolution for a candidate no handler claims (e.g. Form/View/ConnectionRole, which
+    // have no handler in the R14 roster). The six entries also migrated into their owning handler
+    // (PluginAssemblyFamilyHandler, WebResourceHandler, WorkflowHandler, RoleHandler) keep their own copy
+    // there — this table is not superseded, it now serves the two concerns above only.
     static readonly Dictionary<int, (string EntityLogicalName, string IdAttribute, string NameAttribute)> NameResolvableTypes = new()
     {
         [91] = ("pluginassembly", "pluginassemblyid", "name"),
@@ -511,22 +584,11 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         [63] = ("connectionrole", "connectionroleid", "name"),
     };
 
-    // CustomApi family entities are detected by entity-side query rather than componenttype (see
-    // IdentifyEntityDetectedTypesAsync) — keyed by entity LogicalName instead. Bot uses the same
-    // detection query but resolves its display name via schemaname, not this map — see the botOrphans
-    // block in RunPreImportAsync.
-    static readonly Dictionary<string, string> CustomApiIdAttributes = new()
-    {
-        ["customapi"]                 = "customapiid",
-        ["customapirequestparameter"] = "customapirequestparameterid",
-        ["customapiresponseproperty"] = "customapiresponsepropertyid",
-    };
-
     // Resolves componenttype → display name via solutioncomponentdefinition, Dataverse's own lookup
     // table for component types (documented for the Web API as GET solutioncomponentdefinitions?
     // $select=name,solutioncomponenttype — see Power Pages CLI solution docs). Used ONLY for the
-    // unsupportedOrphans verbose preview below — it identifies a type, it does not verify one, so it
-    // must never feed into SupportedManualTypes or the printed report.
+    // generic-fallback verbose preview below — it identifies a type, it does not verify one, so it must
+    // never feed into the actionable report.
     static async Task<Dictionary<int, string>> ResolveComponentTypeNamesAsync(
         IOrganizationServiceAsync2 service,
         IEnumerable<int> componentTypes,
@@ -565,92 +627,20 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     // solutioncomponentdefinition.name for env-specific types is literally the backing table's
     // LogicalName (confirmed against a real org: connectionreference/bot resolve to those exact
     // strings) — so the resolved label doubles as the entity to query for the record's own name.
-    // Verbose-preview only, same caveat as ResolveComponentTypeNamesAsync above.
+    // Verbose-preview only, same caveat as ResolveComponentTypeNamesAsync above. Bot/ConnectionReference
+    // now have their own handlers, but a real record can still land here if a handler's own live query
+    // failed with an infrastructure fault (KTD6) and its candidates fell through unclaimed.
     static readonly Dictionary<string, (string IdAttribute, string NameAttribute)> ResolvedTypeNameAttributes = new(StringComparer.OrdinalIgnoreCase)
     {
         ["connectionreference"] = ("connectionreferenceid", "connectionreferencelogicalname"),
         ["bot"]                 = ("botid", "name"),
     };
 
-    // Builds display entries for orphans that fall outside Classify's AutoDelete set. Attribute (2)
-    // orphans get special handling: Solution.xml's RootComponents never lists them (see
-    // ComponentClassifier.ParseSolutionXmlComponents), so — same as the entity/form/view gaps fixed
-    // earlier — a customized-but-still-present attribute on a solution entity looks orphaned. Resolving
-    // to (entity, attribute) LogicalName lets us check Entity.xml and suppress those false positives;
-    // genuine leftovers get a real name instead of a bare GUID.
-    async Task<List<OrphanEntry>> BuildManualEntriesAsync(
-        IOrganizationServiceAsync2 service,
-        string packageSrcRoot,
-        IReadOnlyList<string> entityLogicalNames,
-        IReadOnlyList<(int ComponentType, string SchemaName)> namedComponents,
-        List<(Guid ObjectId, int ComponentType)> manualOrphans,
-        CancellationToken ct)
-    {
-        var attributeOrphans = manualOrphans.Where(c => c.ComponentType == AttributeComponentType).ToList();
-        var otherOrphans     = manualOrphans.Where(c => c.ComponentType != AttributeComponentType).ToList();
-
-        var entries = new List<OrphanEntry>();
-
-        if (attributeOrphans.Count > 0 && entityLogicalNames.Count > 0)
-        {
-            var attributeInfo = await ResolveAttributeInfoAsync(service, entityLogicalNames, attributeOrphans.Select(o => o.ObjectId), ct).ConfigureAwait(false);
-            var localAttributesByEntity = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var orphan in attributeOrphans)
-            {
-                if (!attributeInfo.TryGetValue(orphan.ObjectId, out var info))
-                {
-                    entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId), OrphanAction.Manual));
-                    continue;
-                }
-
-                if (!localAttributesByEntity.TryGetValue(info.EntityLogicalName, out var localAttributes))
-                    localAttributesByEntity[info.EntityLogicalName] = localAttributes =
-                        ComponentClassifier.ScanEntityAttributeLogicalNames(packageSrcRoot, info.EntityLogicalName);
-
-                if (localAttributes.Contains(info.AttributeLogicalName))
-                    continue; // still declared in Entity.xml — false positive, not an orphan
-
-                var detail = $"{info.EntityLogicalName}.{info.AttributeLogicalName}";
-                entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId, detail: detail), OrphanAction.Manual));
-            }
-        }
-        else
-        {
-            foreach (var orphan in attributeOrphans)
-                entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId), OrphanAction.Manual));
-        }
-
-        // Only recommend removal for types Flowline has verified via local source (see
-        // SupportedManualTypes) — everything else is surfaced at verbose only, not in the report.
-        var supportedOrphans   = otherOrphans.Where(o => SupportedManualTypes.Contains(o.ComponentType)).ToList();
-        var unsupportedOrphans = otherOrphans.Where(o => !SupportedManualTypes.Contains(o.ComponentType)).ToList();
-
-        if (unsupportedOrphans.Count > 0)
-        {
-            var localIdentifiers = BuildLocalIdentifierHarvest(packageSrcRoot, entityLogicalNames, namedComponents);
-            await LogUnsupportedOrphansAsync(service, unsupportedOrphans, localIdentifiers, ct).ConfigureAwait(false);
-        }
-
-        foreach (var group in supportedOrphans.GroupBy(o => o.ComponentType))
-        {
-            var names = await ResolveGroupNamesAsync(service, group.Key, group.Select(o => o.ObjectId), ct).ConfigureAwait(false);
-
-            foreach (var orphan in group)
-            {
-                var detail = names.TryGetValue(orphan.ObjectId, out var name) ? name : null;
-                entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId, detail: detail), OrphanAction.Manual));
-            }
-        }
-
-        return entries;
-    }
-
     // KTD5: flat, case-insensitive identifier set drawn only from local shapes already scanned for
-    // supported or shape-known types (R7 — never an unscoped, whole-repo string search). Built once per
-    // BuildManualEntriesAsync call (itself called exactly once per RunPreImportAsync run) and used only
-    // to enrich LogUnsupportedOrphansAsync's verbose preview (R6) — membership here is informational
-    // only and never promotes a type into the actionable report or manual count.
+    // known-shape types (R7 — never an unscoped, whole-repo string search). Built once per
+    // DispatchToHandlersAsync call (itself called exactly once per CompareAsync run) and used only to
+    // enrich LogUnsupportedOrphansAsync's verbose preview (R6) — membership here is informational only
+    // and never promotes a type into the actionable report.
     static HashSet<string> BuildLocalIdentifierHarvest(
         string packageSrcRoot,
         IReadOnlyList<string> entityLogicalNames,
@@ -674,13 +664,12 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         return harvest;
     }
 
-    // Verbose-only preview of orphan candidates Flowline can't yet act on (see SupportedManualTypes).
+    // Verbose-only preview of orphan candidates no handler claimed (R8) — the generic-fallback path.
     // Resolves the type's own label (ManualTypeLabels, falling back to solutioncomponentdefinition for
-    // env-specific codes like connectionreference/bot) and the individual record's name where a lookup
-    // exists, plus what the pre-opt-in logic would have proposed — purely informational, so a type can
-    // be evaluated with real data before deciding to add it to SupportedManualTypes. R6: when the
-    // resolved name matches localIdentifiers (KTD5), the line also notes a possible local match — this
-    // never changes control flow, the orphan still doesn't reach entries/the report/the manual count.
+    // env-specific codes) and the individual record's name where a lookup exists, plus what the
+    // no-handler-exists logic would have proposed — purely informational. R6: when the resolved name
+    // matches localIdentifiers (KTD5), the line also notes a possible local match — this never changes
+    // control flow, the orphan still doesn't reach entries/the report.
     async Task LogUnsupportedOrphansAsync(
         IOrganizationServiceAsync2 service,
         List<(Guid ObjectId, int ComponentType)> unsupportedOrphans,
@@ -713,91 +702,9 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         }
     }
 
-    // Cross-entity attribute lookup, scoped to the solution's own entities (the parsed entityLogicalNames)
-    // rather than an unfiltered scan — an EntityQueryExpression with no Criteria is the RetrieveAllEntities-
-    // equivalent full metadata walk, which doesn't scale. Attributes on entities outside this solution's
-    // root list won't resolve — those fall back to a bare GUID rather than a guessed name.
-    static async Task<Dictionary<Guid, (string EntityLogicalName, string AttributeLogicalName)>> ResolveAttributeInfoAsync(
-        IOrganizationServiceAsync2 service,
-        IReadOnlyList<string> entityLogicalNames,
-        IEnumerable<Guid> attributeIds,
-        CancellationToken ct)
-    {
-        // MetadataConditionExpression is strictly typed — MetadataId is Guid?, so the In-array must be
-        // Guid[], not object[]. An object[] (even one boxing only Guids) throws OrganizationServiceFault
-        // 0x80044183 "cannot be compared with a condition value of type System.Object" server-side.
-        var idArray = attributeIds.Distinct().Where(id => id != Guid.Empty).ToArray();
-        if (idArray.Length == 0) return [];
-
-        var query = new EntityQueryExpression
-        {
-            Properties = new MetadataPropertiesExpression("LogicalName", "Attributes"),
-            Criteria = new MetadataFilterExpression(LogicalOperator.Or)
-            {
-                Conditions = { new MetadataConditionExpression("LogicalName", MetadataConditionOperator.In, entityLogicalNames.ToArray()) }
-            },
-            AttributeQuery = new AttributeQueryExpression
-            {
-                Properties = new MetadataPropertiesExpression("LogicalName"),
-                Criteria = new MetadataFilterExpression
-                {
-                    Conditions = { new MetadataConditionExpression("MetadataId", MetadataConditionOperator.In, idArray) }
-                }
-            }
-        };
-
-        var response = (RetrieveMetadataChangesResponse)await service.ExecuteAsync(new RetrieveMetadataChangesRequest { Query = query }, ct).ConfigureAwait(false);
-
-        var result = new Dictionary<Guid, (string, string)>();
-        foreach (var entity in response.EntityMetadata)
-        foreach (var attribute in entity.Attributes)
-            if (attribute.MetadataId.HasValue)
-                result[attribute.MetadataId.Value] = (entity.LogicalName, attribute.LogicalName);
-
-        return result;
-    }
-
-    // Scans Package/src/WebResources — the content this deploy is actually packing and importing —
-    // never WebResources/dist. Deploy promotes whatever's committed in Package/src; reading a separate
-    // local build artifact here would check content that may not match what's shipping (or, on a CI
-    // agent that never runs the WebResources build, may not exist at all).
-    async Task<List<(Guid ObjectId, int ComponentType)>> ExemptAnnotationReferencedWebResourcesAsync(
-        IOrganizationServiceAsync2 service,
-        List<(Guid ObjectId, int ComponentType)> autoOrphans,
-        string packageSrcRoot,
-        CancellationToken ct)
-    {
-        var webResourceOrphans = autoOrphans.Where(c => c.ComponentType == 61).ToList();
-        if (webResourceOrphans.Count == 0) return autoOrphans;
-
-        var annotationRefs = WebResourceAnnotationParser.CollectAllReferences(Path.Combine(packageSrcRoot, "WebResources"));
-        if (annotationRefs.Count == 0) return autoOrphans;
-
-        var orphanNames = await GetWebResourceNamesAsync(service, webResourceOrphans.Select(c => c.ObjectId), ct).ConfigureAwait(false);
-
-        var exemptIds = webResourceOrphans
-            .Where(o => orphanNames.TryGetValue(o.ObjectId, out var name) && annotationRefs.Contains(name))
-            .Select(o => o.ObjectId)
-            .ToHashSet();
-
-        if (exemptIds.Count == 0) return autoOrphans;
-
-        foreach (var (id, name) in orphanNames)
-            if (exemptIds.Contains(id))
-                console.Skip($"'{name}' preserved — referenced in // flowline:depends annotation.");
-
-        return autoOrphans.Where(o => !exemptIds.Contains(o.ObjectId)).ToList();
-    }
-
-    static Task<Dictionary<Guid, string>> GetWebResourceNamesAsync(
-        IOrganizationServiceAsync2 service,
-        IEnumerable<Guid> ids,
-        CancellationToken ct) =>
-        GetEntityNamesAsync(service, "webresource", "webresourceid", "name", ids, ct);
-
     // Shared by every "group orphans by componentType, resolve display names via NameResolvableTypes"
-    // loop (AutoDelete entries, supported Manual entries, and the unsupported-type verbose preview) —
-    // a type with no NameResolvableTypes entry resolves to an empty map rather than a query.
+    // loop still remaining after the handler dispatch (the unsupported-type verbose preview) — a type
+    // with no NameResolvableTypes entry resolves to an empty map rather than a query.
     static Task<Dictionary<Guid, string>> ResolveGroupNamesAsync(
         IOrganizationServiceAsync2 service,
         int componentType,
@@ -857,99 +764,6 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
             result.Add((objectId, componentType.Value));
         }
         return result;
-    }
-
-    // Identifies orphan candidates that fall outside the componenttype-int gate (SupportedManualTypes)
-    // by checking membership in a fixed set of env-specific-componenttype tables — CustomApi family
-    // (customapi/customapirequestparameter/customapiresponseproperty), Bot, and ConnectionReference —
-    // via a single bulk query per table (same "IN (ids)" pattern as GetEntityNamesAsync). See KTD2: a
-    // hardcoded componenttype constant would only be valid for the org it was captured in.
-    async Task<Dictionary<Guid, string>> IdentifyEntityDetectedTypesAsync(
-        IOrganizationServiceAsync2 service,
-        IEnumerable<Guid> objectIds,
-        CancellationToken ct)
-    {
-        var ids = objectIds.Distinct().Where(id => id != Guid.Empty).ToList();
-        if (ids.Count == 0)
-            return [];
-        if (ids.Count > 2000)
-            throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {ids.Count} IDs (max 2000). Solution has too many entity-detected components for orphan detection.");
-
-        var idArray = ids.Select(id => (object)id).ToArray();
-
-        static QueryExpression EntityQuery(string entityName, string idAttr, object[] ids) =>
-            new(entityName)
-            {
-                ColumnSet = new ColumnSet(false),
-                Criteria  = { Conditions = { new ConditionExpression(idAttr, ConditionOperator.In, ids) } }
-            };
-
-        // Each table is queried and caught independently — one table failing (e.g. "bot" unavailable in
-        // an org without Copilot Studio provisioned) must not blank out detection for the other four.
-        // Before this, a single shared try/catch around the whole Task.WhenAll meant one failing table
-        // silently lost CustomApi's own detection too.
-        async Task<IEnumerable<Entity>> TryQuery(string entityName, string idAttr)
-        {
-            try
-            {
-                return await service.RetrieveAllAsync(EntityQuery(entityName, idAttr, idArray), ct).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                console.Warning($"Entity-side orphan detection failed for '{entityName}' ({Markup.Escape(ex.Message)}) — its orphan candidates will be marked Manual.");
-                return [];
-            }
-        }
-
-        var caTask    = TryQuery("customapi",                 "customapiid");
-        var paramTask = TryQuery("customapirequestparameter", "customapirequestparameterid");
-        var propTask  = TryQuery("customapiresponseproperty", "customapiresponsepropertyid");
-        var botTask   = TryQuery("bot",                       "botid");
-        var crTask    = TryQuery("connectionreference",       "connectionreferenceid");
-        await Task.WhenAll(caTask, paramTask, propTask, botTask, crTask).ConfigureAwait(false);
-
-        var result = new Dictionary<Guid, string>();
-        foreach (var e in caTask.Result)    result[e.Id] = "customapi";
-        foreach (var e in paramTask.Result) result[e.Id] = "customapirequestparameter";
-        foreach (var e in propTask.Result)  result[e.Id] = "customapiresponseproperty";
-        foreach (var e in botTask.Result)   result[e.Id] = "bot";
-        foreach (var e in crTask.Result)    result[e.Id] = "connectionreference";
-        return result;
-    }
-
-    // Shared by every entity-detected type that has no data-table componenttype to gate on (Bot,
-    // ConnectionReference — see IdentifyEntityDetectedTypesAsync/KTD2): resolve each candidate's live
-    // identity attribute, drop the ones still declared in local source, and build the resulting Manual
-    // entries. CustomApi keeps its own version above since it groups three sub-entities, not one.
-    static async Task<List<OrphanEntry>> ResolveEntityDetectedManualEntriesAsync(
-        IOrganizationServiceAsync2 service,
-        List<(Guid ObjectId, int ComponentType)> orphans,
-        string entityLogicalName,
-        string idAttribute,
-        string identityAttribute,
-        Func<string, HashSet<string>> scanLocal,
-        string packageSrcRoot,
-        CancellationToken ct)
-    {
-        var entries = new List<OrphanEntry>();
-        if (orphans.Count == 0) return entries;
-
-        var names = await GetEntityNamesAsync(service, entityLogicalName, idAttribute, identityAttribute, orphans.Select(o => o.ObjectId), ct).ConfigureAwait(false);
-        var localIdentities = scanLocal(packageSrcRoot);
-
-        foreach (var orphan in orphans)
-        {
-            // No resolved identity attribute means local-source verification never actually ran for
-            // this candidate — unlike a resolved-but-unmatched name, this isn't evidence of removal.
-            // Skip rather than default to "orphaned": the exact false-positive shape this trust bar
-            // exists to prevent (KTD2) is reporting a component nobody actually verified as gone.
-            if (!names.TryGetValue(orphan.ObjectId, out var name)) continue;
-            if (localIdentities.Contains(name)) continue; // still declared locally — not orphaned
-
-            entries.Add(new OrphanEntry(orphan.ObjectId, orphan.ComponentType, TypeName(orphan.ComponentType, orphan.ObjectId, entityLogicalName, name), OrphanAction.Manual, EntityName: entityLogicalName));
-        }
-
-        return entries;
     }
 
     // Dataverse dual-writes every component added to a custom unmanaged solution into "Default" as
@@ -1027,6 +841,14 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         return entities.Select(e => e.GetAttributeValue<Guid>("objectid")).Where(id => id != Guid.Empty).ToHashSet();
     }
 
+    // KTD10: generalized to execute in the order the entries list already carries (assigned once by
+    // DispatchToHandlersAsync per KTD1 — cross-family via FamilyOrder, then per-family via SequenceHint)
+    // rather than re-deriving order from the old static ExecutionOrder/CustomApiEntityOrder arrays.
+    // RunPostImportAsync's reEntries preserve that same relative order (they're built by filtering
+    // _deferred, which was itself populated by this method's own attempt loop in list order), so no
+    // re-sort is needed here either way. The IsDependencyError-triggered reactive deferral in
+    // TryExecuteEntryAsync is untouched (R13) — this generalization only changes what decides the
+    // *attempt* order, never the fault-handling/deferral behavior.
     async Task<IReadOnlyList<OrphanEntry>> ExecuteInOrderAsync(
         IOrganizationServiceAsync2 service,
         string solutionName,
@@ -1036,35 +858,16 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
     {
         var deferred = new List<OrphanEntry>();
 
-        // Stable componenttype entries in R8 order.
-        var stableByType = entries.Where(e => e.Action != OrphanAction.Manual && e.EntityName == null)
-                                  .GroupBy(e => e.ComponentType)
-                                  .ToDictionary(g => g.Key, g => g.ToList());
-
-        foreach (var componentType in ExecutionOrder)
-        {
-            if (!stableByType.TryGetValue(componentType, out var group)) continue;
-
-            foreach (var entry in group)
-                await TryExecuteEntryAsync(service, solutionName, entry, isPostImport, deferred, ct);
-        }
-
-        // Entity-detected CustomApi family: children before parent.
-        var customApiByEntity = entries.Where(e => e.Action != OrphanAction.Manual && e.EntityName != null)
-                                       .GroupBy(e => e.EntityName!)
-                                       .ToDictionary(g => g.Key, g => g.ToList());
-
-        foreach (var entityName in CustomApiEntityOrder)
-        {
-            if (!customApiByEntity.TryGetValue(entityName, out var group)) continue;
-
-            foreach (var entry in group)
-                await TryExecuteEntryAsync(service, solutionName, entry, isPostImport, deferred, ct);
-        }
+        foreach (var entry in entries.Where(e => e.Action != OrphanAction.Manual))
+            await TryExecuteEntryAsync(service, solutionName, entry, isPostImport, deferred, ct);
 
         return deferred.AsReadOnly();
     }
 
+    // Untouched by U9 (R13/KTD10) — the IsDependencyError-triggered reactive deferral (attempt, catch
+    // dependency fault, defer, retry post-import) and the Workflow deactivate-before-delete step are both
+    // orthogonal to the handler-dispatch refactor. WorkflowHandler only classifies (statecode -> Prio);
+    // this method still owns actually deactivating a Workflow before deleting it, exactly as before.
     async Task TryExecuteEntryAsync(
         IOrganizationServiceAsync2 service,
         string solutionName,
@@ -1139,14 +942,12 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         }
     }
 
+    // Consumes the entries list's existing order (assigned once by DispatchToHandlersAsync per KTD1)
+    // rather than re-sorting — replaces the old ExecutionOrderIndex helper.
     void PrintReport(IReadOnlyList<OrphanEntry> entries, RunMode mode, string solutionName, string environmentUrl, string? noDeleteHint = "(--no-delete active)")
     {
-        var automated = entries.Where(e => e.Action != OrphanAction.Manual)
-            .OrderBy(e => ExecutionOrderIndex(e.ComponentType, e.EntityName))
-            .ToList();
-        var manual = entries.Where(e => e.Action == OrphanAction.Manual)
-            .OrderBy(e => ExecutionOrderIndex(e.ComponentType, e.EntityName))
-            .ToList();
+        var automated = entries.Where(e => e.Action != OrphanAction.Manual).ToList();
+        var manual = entries.Where(e => e.Action == OrphanAction.Manual).ToList();
 
         console.MarkupLine($"[bold]Orphan components ({entries.Count}):[/]");
 
@@ -1178,41 +979,6 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
     static string SolutionsListUrl(string environmentUrl) =>
         $"{environmentUrl.TrimEnd('/')}/tools/Solution/home_solution.aspx?etn=solution";
-
-    static int ExecutionOrderIndex(int componentType, string? entityName)
-    {
-        if (entityName != null)
-        {
-            var customApiIdx = Array.IndexOf(CustomApiEntityOrder, entityName);
-            return ExecutionOrder.Length + (customApiIdx < 0 ? CustomApiEntityOrder.Length : customApiIdx);
-        }
-        var idx = Array.IndexOf(ExecutionOrder, componentType);
-        return idx < 0 ? ExecutionOrder.Length - 1 : idx;
-    }
-
-    static string TypeName(int componentType, Guid objectId, string? entityName = null, string? detail = null)
-    {
-        var name = entityName switch
-        {
-            "customapi"                 => "CustomApi",
-            "customapirequestparameter" => "CustomApiRequestParameter",
-            "customapiresponseproperty" => "CustomApiResponseProperty",
-            "bot"                       => "Bot",
-            "connectionreference"       => "ConnectionReference",
-            _ => componentType switch
-            {
-                91 => "PluginAssembly",
-                90 => "PluginType",
-                92 => "SdkMessageProcessingStep",
-                93 => "SdkMessageProcessingStepImage",
-                61 => "WebResource",
-                29 => "Workflow",
-                _ when ManualTypeLabels.TryGetValue(componentType, out var label) => label,
-                _  => $"Unrecognized component (type {componentType})"
-            }
-        };
-        return detail != null ? $"{name} '{detail}' ({objectId})" : $"{name} {objectId}";
-    }
 
     static string ActionLabel(OrphanAction action) => action switch
     {

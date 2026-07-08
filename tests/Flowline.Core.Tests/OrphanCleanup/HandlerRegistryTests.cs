@@ -1,5 +1,8 @@
 using Flowline.Core.Services.OrphanCleanup;
+using Flowline.Core.Services.OrphanCleanup.Handlers;
 using Microsoft.Extensions.DependencyInjection;
+using Spectre.Console;
+using Spectre.Console.Testing;
 
 namespace Flowline.Core.Tests.OrphanCleanup;
 
@@ -21,13 +24,39 @@ public class HandlerRegistryTests
         Assert.Empty(handlers);
     }
 
-    // U1 is pure scaffolding — no concrete IOrphanHandler implementation exists yet (those land in
-    // U2-U8), so there is nothing to assert an arity of eight against. U9's Files list already expects
-    // to "complete the arity guard stubbed in U1" once Program.cs registers all eight R14 handler
-    // classes (mirroring IPostDeployService's services.AddSingleton<IOrphanHandler, XHandler>()
-    // registration convention).
-    [Fact(Skip = "No concrete IOrphanHandler implementations exist yet (U2-U8) — U9 completes this arity guard once Program.cs registers all eight R14 handlers.")]
+    // U9: completes the arity guard stubbed in U1. Mirrors Program.cs's registration block (a
+    // ServiceCollection standing in for the real one, same DI container/convention) — a dropped
+    // registration here is caught at CI time instead of silently resolving to fewer handlers in
+    // production (KTD7's accepted missing-registration tradeoff is about DI resolution itself, not
+    // about this test's job of catching an accidental omission). Update this expected set whenever a
+    // future handler is added (KTD7 — this guard is a standing convention, not a one-time ship-time
+    // check).
+    [Fact]
     public void ProductionContainer_RegistersAllEightR14HandlerClasses()
     {
+        var services = new ServiceCollection();
+        services.AddSingleton<IAnsiConsole>(new TestConsole());
+        services.AddSingleton<IOrphanHandler, PluginAssemblyFamilyHandler>();
+        services.AddSingleton<IOrphanHandler, WebResourceHandler>();
+        services.AddSingleton<IOrphanHandler, WorkflowHandler>();
+        services.AddSingleton<IOrphanHandler, CustomApiFamilyHandler>();
+        services.AddSingleton<IOrphanHandler, BotHandler>();
+        services.AddSingleton<IOrphanHandler, ConnectionReferenceHandler>();
+        services.AddSingleton<IOrphanHandler, RoleHandler>();
+        services.AddSingleton<IOrphanHandler, EntityFamilyHandler>();
+
+        using var provider = services.BuildServiceProvider();
+        var handlers = provider.GetRequiredService<IEnumerable<IOrphanHandler>>().ToList();
+
+        Assert.Equal(8, handlers.Count);
+        Assert.Equal(8, handlers.Select(h => h.GetType()).Distinct().Count());
+        Assert.Contains(handlers, h => h is PluginAssemblyFamilyHandler);
+        Assert.Contains(handlers, h => h is WebResourceHandler);
+        Assert.Contains(handlers, h => h is WorkflowHandler);
+        Assert.Contains(handlers, h => h is CustomApiFamilyHandler);
+        Assert.Contains(handlers, h => h is BotHandler);
+        Assert.Contains(handlers, h => h is ConnectionReferenceHandler);
+        Assert.Contains(handlers, h => h is RoleHandler);
+        Assert.Contains(handlers, h => h is EntityFamilyHandler);
     }
 }
