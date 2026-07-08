@@ -1393,6 +1393,101 @@ public class OrphanCleanupServiceTests : IDisposable
         await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
     }
 
+    // -- U10: PrintReport groups automated entries by Prio (R1/R6), Prio1 first --
+
+    [Fact]
+    public async Task RunPreImportAsync_MixedPrio1Prio2Prio3_ReportGroupsPrio1First()
+    {
+        // Happy path: three Active-handler findings, one per Prio tier, drives PrintReport's grouping —
+        // Prio1 must render before Prio2, which must render before Prio3, each under a visible label.
+        var pluginAssemblyId = Guid.NewGuid(); // 91, RunMode.NoDelete active -> Prio1 (KTD8)
+        var workflowId = Guid.NewGuid();       // 29, Activated -> Prio2 (KTD8)
+        var webResourceId = Guid.NewGuid();    // 61, always -> Prio3 (KTD8)
+
+        SetupSolutionComponents("MySolution", (pluginAssemblyId, 91), (workflowId, 29), (webResourceId, 61));
+        SetupWebResourceNames((webResourceId, "av_ext/old.js"));
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "workflow"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("workflow", workflowId) { ["name"] = "MyFlow", ["statecode"] = new OptionSetValue(1) }
+            ])));
+
+        await _service.RunPreImportAsync(
+            Ctx("MySolution", [(Guid.NewGuid(), 0)], mode: RunMode.NoDelete), default);
+
+        Assert.Contains("Prio1 — blocks deployment", _console.Output);
+        Assert.Contains("Prio2 — still running deleted logic", _console.Output);
+        Assert.Contains("Prio3 — safe to clean up", _console.Output);
+
+        var prio1Index = _console.Output.IndexOf("Prio1 — blocks deployment", StringComparison.Ordinal);
+        var prio2Index = _console.Output.IndexOf("Prio2 — still running deleted logic", StringComparison.Ordinal);
+        var prio3Index = _console.Output.IndexOf("Prio3 — safe to clean up", StringComparison.Ordinal);
+        Assert.True(prio1Index < prio2Index, "Prio1 group must render before Prio2");
+        Assert.True(prio2Index < prio3Index, "Prio2 group must render before Prio3");
+
+        // Not just label order — each entry must render inside its own group, not merely after its
+        // label (pigeonhole alone can't distinguish this with one entry per tier).
+        var pluginAssemblyIndex = _console.Output.IndexOf(pluginAssemblyId.ToString(), StringComparison.Ordinal);
+        var workflowIndex = _console.Output.IndexOf("MyFlow", StringComparison.Ordinal);
+        var webResourceIndex = _console.Output.IndexOf("av_ext/old.js", StringComparison.Ordinal);
+        Assert.InRange(pluginAssemblyIndex, prio1Index, prio2Index);
+        Assert.InRange(workflowIndex, prio2Index, prio3Index);
+        Assert.True(webResourceIndex > prio3Index, "WebResource entry must render after the Prio3 label");
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_OnlyPrio3Entries_ShowsSinglePrio3GroupNoOtherLabels()
+    {
+        // Regression guard: the pre-Prio-grouping common case (a single Prio tier, no Prio1/2 present)
+        // must still render correctly — the new grouping is additive, not a behavior change for this shape.
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 61)); // WebResource -> always Prio3
+        SetupWebResourceNames((orphanId, "av_ext/old.js"));
+
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Contains("Prio3 — safe to clean up", _console.Output);
+        Assert.DoesNotContain("Prio1 — blocks deployment", _console.Output);
+        Assert.DoesNotContain("Prio2 — still running deleted logic", _console.Output);
+    }
+
+    // Synthetic handler exercising the KTD3 Preview-marker rendering path directly — no handler ships
+    // Preview this round (KTD2), so no real handler can drive this scenario.
+    sealed class FakePreviewHandler(int componentType, string displayName) : IOrphanHandler
+    {
+        public HandlerStatus Status => HandlerStatus.Preview;
+
+        public Task<HandlerDetectionResult> DetectAsync(
+            DetectionContext context,
+            IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates,
+            CancellationToken ct)
+        {
+            var claimed = candidates.Where(c => c.ComponentType == componentType).ToList();
+            var findings = claimed
+                .Select(c => new HandlerFinding(c.ObjectId, c.ComponentType, displayName, OrphanAction.Delete, OrphanPriority.Prio3, SequenceHint: 0, OrphanTiming.PreImportEligible))
+                .ToList();
+            return Task.FromResult(new HandlerDetectionResult(findings, claimed.Select(c => c.ObjectId).ToHashSet()));
+        }
+    }
+
+    [Fact]
+    public async Task CompareAsync_PreviewHandlerFinding_PrintsPreviewMarker_ExcludedFromReport()
+    {
+        // KTD3/R7: a Preview handler's findings print a "[Preview: HandlerName]" verbose marker and
+        // never enter the actionable report (Entries stays empty) — U9 already wires this branch in
+        // DispatchToHandlersAsync; this confirms the marker's exact rendering format from PrintReport's
+        // perspective (nothing else in the report references it).
+        var orphanId = Guid.NewGuid();
+        var previewOnlyService = new OrphanCleanupService(_console, new FlowlineRuntimeOptions(), [new FakePreviewHandler(9999, "Widget 'thing'")]);
+        SetupSolutionComponents("MySolution", (orphanId, 9999));
+
+        var result = await previewOnlyService.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Contains("[Preview: FakePreviewHandler] Widget 'thing'", _console.Output);
+        Assert.Empty(result.Entries);
+    }
+
     // -- CompareAsync(packageFolder, ...) convenience overload — parses committed source itself,
     // for callers (DriftCommand) with no packed/mutating context of their own --
 

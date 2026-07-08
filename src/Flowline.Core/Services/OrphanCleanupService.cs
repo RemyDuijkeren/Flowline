@@ -942,8 +942,16 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         }
     }
 
-    // Consumes the entries list's existing order (assigned once by DispatchToHandlersAsync per KTD1)
-    // rather than re-sorting — replaces the old ExecutionOrderIndex helper.
+    // U10 (R1/R6): automated entries within their existing DispatchToHandlersAsync order (KTD1) are
+    // additionally grouped by Prio — Prio1 first, since these block deployment — layered on top of
+    // today's Action grouping rather than replacing it. Manual entries and the summary line are
+    // unaffected: R7 excludes Preview findings from this report entirely (they never reach `entries`,
+    // see DispatchToHandlersAsync's console.Verbose branch), and generic-fallback candidates never
+    // carry a Prio at all (R8), so every automated entry here is guaranteed a real Prio1/2/3 by
+    // construction — PriorityOrder's trailing None slot only guards against that invariant breaking.
+    static readonly OrphanPriority[] PriorityOrder =
+        [OrphanPriority.Prio1, OrphanPriority.Prio2, OrphanPriority.Prio3, OrphanPriority.None];
+
     void PrintReport(IReadOnlyList<OrphanEntry> entries, RunMode mode, string solutionName, string environmentUrl, string? noDeleteHint = "(--no-delete active)")
     {
         var automated = entries.Where(e => e.Action != OrphanAction.Manual).ToList();
@@ -951,10 +959,17 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
 
         console.MarkupLine($"[bold]Orphan components ({entries.Count}):[/]");
 
-        foreach (var entry in automated)
+        foreach (var priority in PriorityOrder)
         {
-            var label = mode == RunMode.NoDelete ? NoDeleteLabel(entry.Action) : ActionLabel(entry.Action);
-            console.MarkupLine($"  [{ActionColor(entry.Action)}]{Markup.Escape(entry.DisplayName)} — {label}[/]");
+            var group = automated.Where(e => e.Priority == priority).ToList();
+            if (group.Count == 0) continue;
+
+            console.MarkupLine($"  [bold {PriorityColor(priority)}]{PriorityLabel(priority)}:[/]");
+            foreach (var entry in group)
+            {
+                var label = mode == RunMode.NoDelete ? NoDeleteLabel(entry.Action) : ActionLabel(entry.Action);
+                console.MarkupLine($"    [{ActionColor(entry.Action)}]{Markup.Escape(entry.DisplayName)} — {label}[/]");
+            }
         }
 
         if (manual.Count > 0)
@@ -999,6 +1014,24 @@ public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions o
         OrphanAction.Delete             => "red",
         OrphanAction.RemoveFromSolution => "yellow",
         _                               => "white"
+    };
+
+    // KTD9: no default arm — an enum addition to OrphanPriority without a matching case here is a
+    // compile error (CS8509), not a silently-dropped report group.
+    static string PriorityLabel(OrphanPriority priority) => priority switch
+    {
+        OrphanPriority.Prio1 => "Prio1 — blocks deployment",
+        OrphanPriority.Prio2 => "Prio2 — still running deleted logic",
+        OrphanPriority.Prio3 => "Prio3 — safe to clean up",
+        OrphanPriority.None  => "Unclassified",
+    };
+
+    static string PriorityColor(OrphanPriority priority) => priority switch
+    {
+        OrphanPriority.Prio1 => "red",
+        OrphanPriority.Prio2 => "yellow",
+        OrphanPriority.Prio3 => "dim",
+        OrphanPriority.None  => "dim",
     };
 
     static bool IsDependencyError(FaultException<OrganizationServiceFault> ex) =>
