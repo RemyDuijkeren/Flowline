@@ -61,6 +61,7 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
             throw new InvalidOperationException($"Assembly '{metadata.Name}' not found in Dataverse — run push without --scope assemblyonly to register it first.");
 
         var identityChanges = DetectIdentityChanges(existing, metadata);
+        logger.LogDebug("Assembly '{MetadataNamee}' identity changes: {Joinin}", metadata.Name, string.Join(", ", identityChanges ?? Enumerable.Empty<string>()));
         if (identityChanges != null)
             throw new InvalidOperationException($"Assembly '{metadata.Name}' identity changed ({string.Join(", ", identityChanges)}) — cannot update assembly-only. Run push without --scope assemblyonly to delete and recreate registrations.");
 

@@ -1042,6 +1042,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         OrphanPriority.Prio2 => "Prio2 — still running deleted logic",
         OrphanPriority.Prio3 => "Prio3 — safe to clean up",
         OrphanPriority.None  => "Unclassified",
+        _ => throw new ArgumentOutOfRangeException(nameof(priority), priority, null)
     };
 
     static string PriorityColor(OrphanPriority priority) => priority switch
@@ -1050,6 +1051,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         OrphanPriority.Prio2 => "yellow",
         OrphanPriority.Prio3 => "dim",
         OrphanPriority.None  => "dim",
+        _ => throw new ArgumentOutOfRangeException(nameof(priority), priority, null)
     };
 
     static bool IsDependencyError(FaultException<OrganizationServiceFault> ex) =>

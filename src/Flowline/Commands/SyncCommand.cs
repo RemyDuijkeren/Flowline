@@ -68,12 +68,12 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             if (settings.Force)
             {
                 Console.Warning($"Uncommitted changes in '{projectSln.Name}/{PackageName}/src/' — overwriting.");
-                preSyncSummary.WriteFlat(Console, runtimeOptions, "[dim]  ");
+                preSyncSummary.WriteFlat(Console, RuntimeOptions, "[dim]  ");
             }
             else
             {
                 Console.Warning($"Found uncommitted changes in '{projectSln.Name}/{PackageName}/src/'.");
-                preSyncSummary.WriteFlat(Console, runtimeOptions, "[dim]  ");
+                preSyncSummary.WriteFlat(Console, RuntimeOptions, "[dim]  ");
                 throw new FlowlineException(ExitCode.DirtyWorkingDirectory, $"Uncommitted changes in '{projectSln.Name}/{PackageName}/src/' — Commit or stash changes first, or re-run with --force.");
             }
         }
