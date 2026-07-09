@@ -1,6 +1,7 @@
 ---
 title: "Bridging Spectre.Console Terminal Output to ILogger via IRenderHook"
 date: 2026-06-28
+last_updated: 2026-07-09
 category: docs/solutions/architecture-patterns/
 module: "Flowline.Core - Logging and Console Output"
 problem_type: architecture_pattern
@@ -57,9 +58,9 @@ public sealed class LoggingRenderHook(ILogger<LoggingRenderHook> logger) : IRend
 
             try
             {
-                if (renderable is Markup markup)
+                if (renderable is Markup or VerboseRenderable or Tree or Panel or Table)
                 {
-                    var text = string.Concat(((IRenderable)markup).Render(options, int.MaxValue)
+                    var text = string.Concat(renderable.Render(options, int.MaxValue)
                         .Select(s => s.Text)).Trim();
 
                     var level = DetectLevel(text);
@@ -77,14 +78,19 @@ public sealed class LoggingRenderHook(ILogger<LoggingRenderHook> logger) : IRend
     private static LogLevel? DetectLevel(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
-        if (text.StartsWith("✓ ") || text.StartsWith("· ") || text.StartsWith("↷ ") || text.StartsWith("🚀"))
+        if (text.StartsWith(FlowlineConsoleExtensions.OkPrefix) ||
+            text.StartsWith(FlowlineConsoleExtensions.InfoPrefix) ||
+            text.StartsWith(FlowlineConsoleExtensions.SkipPrefix) ||
+            text.StartsWith(FlowlineConsoleExtensions.DonePrefix))
             return LogLevel.Information;
-        if (text.StartsWith("Warning:")) return LogLevel.Warning;
-        if (text.StartsWith("Error:"))   return LogLevel.Error;
+        if (text.StartsWith(FlowlineConsoleExtensions.WarningPrefix)) return LogLevel.Warning;
+        if (text.StartsWith(FlowlineConsoleExtensions.ErrorPrefix)) return LogLevel.Error;
         return LogLevel.Debug;
     }
 }
 ```
+
+The type check covers more than plain `Markup`: `VerboseRenderable` (a marker wrapper originally named `VerboseMarkup`, generalized to wrap any `IRenderable` so verbose-gated `Tree`/`Panel`/`Table` content is logged the same way — see [`../architecture-patterns/verbose-output-render-hook-routing.md`](verbose-output-render-hook-routing.md)), plus `Tree`, `Panel`, and `Table` directly for renderables written without going through the verbose wrapper. `DetectLevel` reads the same named prefix constants (`OkPrefix`, `InfoPrefix`, etc.) that `FlowlineConsoleExtensions`' methods emit, rather than duplicating the literal strings.
 
 **Three design constraints in this implementation:**
 
@@ -221,3 +227,4 @@ private sealed class CaptureLogger(List<(LogLevel, string)> entries)
 - Flowline exception-handling convention — the try/catch here is a deliberate exception to the "no try/catch around service calls" rule (see `memory/feedback_exception_handling.md`)
 - [`activity-correlation-structured-logging.md`](activity-correlation-structured-logging.md) — complementary pattern: W3C TraceId correlation via ActivitySource/ActivityListener + Serilog enricher. Both patterns are wired in `Program.cs` and coexist without interference.
 - [`../logic-errors/stale-bool-capture-hook-construction.md`](../logic-errors/stale-bool-capture-hook-construction.md) — sibling hook `VerboseFilterHook` must accept `FlowlineRuntimeOptions` (reference type) rather than `bool isVerbose` (value copy) so it reads the post-parse `--verbose` state. Stale-capture bug found in code review.
+- [`verbose-output-render-hook-routing.md`](verbose-output-render-hook-routing.md) — extends this pipeline: generalizes the `VerboseMarkup`→`VerboseRenderable` wrapper to any `IRenderable` (not just a markup string), and covers the pattern of routing verbose-gated `Tree`/`Panel`/`Table` output through `console.Verbose(...)` instead of an in-source `if (!opt.IsVerbose) return;` guard.
