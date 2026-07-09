@@ -8,7 +8,7 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class WebResourceExecutor(IAnsiConsole console, FlowlineRuntimeOptions options)
+public class WebResourceExecutor(IAnsiConsole console)
 {
     const int MaxParallelism = 8;
     const int WebResourceComponentType = 61;

@@ -1,4 +1,5 @@
 using Spectre.Console;
+using Spectre.Console.Rendering;
 
 namespace Flowline.Core;
 
@@ -18,7 +19,8 @@ public static class FlowlineConsoleExtensions
 
     public static void Skip(this IAnsiConsole console, string message) => console.MarkupLine($"[dim]{SkipPrefix}{message}[/]");
 
-    public static void Verbose(this IAnsiConsole console, string message) => console.Write(new VerboseMarkup(message));
+    public static void Verbose(this IAnsiConsole console, string message) => console.Write(new VerboseRenderable(message));
+    public static void Verbose(this IAnsiConsole console, IRenderable renderable) => console.Write(new VerboseRenderable(renderable));
 
     public static void Warning(this IAnsiConsole console, string message) => console.MarkupLine($"[yellow]{WarningPrefix}[/]{message}");
 

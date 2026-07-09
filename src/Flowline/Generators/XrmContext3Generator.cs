@@ -1,11 +1,9 @@
 using Flowline.Config;
-using Flowline.Core;
 using Flowline.Services;
 
 namespace Flowline.Generators;
 
 public class XrmContext3Generator(
-    FlowlineRuntimeOptions runtimeOptions,
     XrmContextToolProvider xrmContextToolProvider,
     XrmContextRunner xrmContextRunner)
     : IGenerator

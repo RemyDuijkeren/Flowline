@@ -16,7 +16,7 @@ public abstract record XrmContextAuth
     public sealed record BrowserOAuth(string? AppId = null) : XrmContextAuth;
 }
 
-public class XrmContextRunner(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, SubprocessCapture? capture = null)
+public class XrmContextRunner(IAnsiConsole console, SubprocessCapture? capture = null)
 {
     public virtual async Task RunAsync(
         string exePath,

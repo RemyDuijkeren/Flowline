@@ -11,7 +11,7 @@ using Flowline.Diagnostics;
 
 namespace Flowline.Generators;
 
-public class PacGenerator(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, SubprocessCapture? capture = null) : IGenerator
+public class PacGenerator(IAnsiConsole console, SubprocessCapture? capture = null) : IGenerator
 {
     public GeneratorType Type => GeneratorType.Pac;
 

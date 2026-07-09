@@ -275,7 +275,6 @@ public class XrmContextGeneratorTests : IDisposable
         string? capturedWorkingDir = null;
         var generator = new CapturingXrmContextGenerator(
             new TestConsole(),
-            new Flowline.Core.FlowlineRuntimeOptions(),
             (cmd, ctx, ct) =>
             {
                 capturedWorkingDir = cmd.WorkingDirPath;
@@ -299,7 +298,6 @@ public class XrmContextGeneratorTests : IDisposable
         string? capturedWorkingDir = null;
         var generator = new CapturingXrmContextGenerator(
             new TestConsole(),
-            new Flowline.Core.FlowlineRuntimeOptions(),
             (cmd, ctx, ct) =>
             {
                 capturedWorkingDir = cmd.WorkingDirPath;
@@ -320,7 +318,6 @@ public class XrmContextGeneratorTests : IDisposable
         string? capturedWorkingDir = null;
         var generator = new CapturingXrmContextGenerator(
             new TestConsole(),
-            new Flowline.Core.FlowlineRuntimeOptions(),
             (cmd, ctx, ct) =>
             {
                 capturedWorkingDir = cmd.WorkingDirPath;
@@ -402,9 +399,8 @@ public class XrmContextGeneratorTests : IDisposable
 
     private class CapturingXrmContextGenerator(
         Spectre.Console.IAnsiConsole console,
-        Flowline.Core.FlowlineRuntimeOptions runtimeOptions,
         Func<Command, GenerationContext, CancellationToken, Task<CommandResult>> executeFunc)
-        : XrmContextGenerator(console, runtimeOptions)
+        : XrmContextGenerator(console)
     {
         internal override Task<CommandResult> ExecuteCommandAsync(Command command, GenerationContext context, CancellationToken cancellationToken) =>
             executeFunc(command, context, cancellationToken);

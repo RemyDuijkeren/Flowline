@@ -6,7 +6,7 @@ using Xunit;
 
 namespace Flowline.Core.Tests;
 
-public class VerboseMarkupTests
+public class VerboseRenderableTests
 {
     [Fact]
     public void Render_ProducesIdenticalTextToEquivalentMarkup()
@@ -14,24 +14,24 @@ public class VerboseMarkupTests
         var verboseConsole = new TestConsole();
         var markupConsole = new TestConsole();
 
-        verboseConsole.Write(new VerboseMarkup("hello"));
+        verboseConsole.Write(new VerboseRenderable("hello"));
         markupConsole.Write(new Markup("[dim]hello[/]"));
 
-        // VerboseMarkup includes a trailing newline so VerboseFilterHook can suppress it as a single unit.
+        // VerboseRenderable includes a trailing newline so VerboseFilterHook can suppress it as a single unit.
         verboseConsole.Output.Should().Be(markupConsole.Output + "\n");
     }
 
     [Fact]
-    public void IsVerboseMarkup_ReturnsTrueForVerboseMarkupInstance()
+    public void IsVerboseRenderable_ReturnsTrueForVerboseRenderableInstance()
     {
-        IRenderable renderable = new VerboseMarkup("test");
-        (renderable is VerboseMarkup).Should().BeTrue();
+        IRenderable renderable = new VerboseRenderable("test");
+        (renderable is VerboseRenderable).Should().BeTrue();
     }
 
     [Fact]
-    public void IsMarkup_ReturnsFalseForVerboseMarkupInstance()
+    public void IsMarkup_ReturnsFalseForVerboseRenderableInstance()
     {
-        IRenderable renderable = new VerboseMarkup("test");
+        IRenderable renderable = new VerboseRenderable("test");
         (renderable is Markup).Should().BeFalse();
     }
 
@@ -39,7 +39,7 @@ public class VerboseMarkupTests
     public void Render_EscapesMarkupCharacters()
     {
         var console = new TestConsole();
-        console.Write(new VerboseMarkup("[bold]"));
+        console.Write(new VerboseRenderable("[bold]"));
         console.Output.Should().Contain("[bold]");
     }
 
@@ -47,7 +47,7 @@ public class VerboseMarkupTests
     public void Render_WithMaxWidth_DoesNotThrow()
     {
         // Consistent with LoggingRenderHook's Render(options, int.MaxValue) extraction pattern.
-        IRenderable renderable = new VerboseMarkup("test");
+        IRenderable renderable = new VerboseRenderable("test");
         var console = new TestConsole();
         var act = () => console.Write(renderable);
         act.Should().NotThrow();

@@ -14,7 +14,7 @@ using Spectre.Console;
 
 namespace Flowline.Generators;
 
-public class XrmContextGenerator(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, SubprocessCapture? capture = null)
+public class XrmContextGenerator(IAnsiConsole console, SubprocessCapture? capture = null)
     : IGenerator
 {
     static (string Command, string[]? PrefixArgs, string[]? SuffixArgs)? _cachedXrmContextCommand;

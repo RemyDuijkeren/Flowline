@@ -9,7 +9,7 @@ public sealed class VerboseFilterHook(FlowlineRuntimeOptions options) : IRenderH
     {
         foreach (var renderable in renderables)
         {
-            if (renderable is VerboseMarkup && !options.IsVerbose)
+            if (renderable is VerboseRenderable && !options.IsVerbose)
                 continue;
             yield return renderable;
         }

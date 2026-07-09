@@ -3,7 +3,6 @@ using Microsoft.Xrm.Sdk;
 using Flowline.Attributes;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
-using Flowline.Core;
 using Spectre.Console.Testing;
 
 namespace Flowline.Core.Tests;
@@ -13,7 +12,7 @@ public class PluginAssemblyReaderTests
     private static string DllPath => typeof(PluginAssemblyReaderTests).Assembly.Location;
 
     private static PluginAssemblyMetadata Analyze() =>
-        new PluginAssemblyReader(new TestConsole(), new FlowlineRuntimeOptions()).Analyze(DllPath);
+        new PluginAssemblyReader(new TestConsole()).Analyze(DllPath);
 
     private static PluginTypeMetadata GetPlugin(PluginAssemblyMetadata meta, string name) =>
         meta.Plugins.Single(p => p.Name == name);

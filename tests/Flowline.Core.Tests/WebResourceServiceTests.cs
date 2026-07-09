@@ -16,7 +16,6 @@ public class WebResourceServiceTests : IDisposable
 {
     readonly IOrganizationServiceAsync2 _serviceMock;
     readonly TestConsole _console;
-    readonly FlowlineRuntimeOptions _runtimeOptions;
     readonly WebResourceService _service;
     readonly string _webresourceRoot;
 
@@ -24,8 +23,7 @@ public class WebResourceServiceTests : IDisposable
     {
         _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
         _console = new TestConsole();
-        _runtimeOptions = new FlowlineRuntimeOptions();
-        _service = new WebResourceService(_console, _runtimeOptions, NullLogger<WebResourceService>.Instance);
+        _service = new WebResourceService(_console);
         _webresourceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(_webresourceRoot);
 

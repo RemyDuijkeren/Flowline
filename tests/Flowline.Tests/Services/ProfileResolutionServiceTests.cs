@@ -1,4 +1,3 @@
-using Flowline.Core;
 using Flowline.Core.Services;
 using Flowline.Services;
 using FluentAssertions;
@@ -15,9 +14,8 @@ public class ProfileResolutionServiceTests
         ProfileResolutionResult resolvedResult)
     {
         console = new TestConsole();
-        var opt = new FlowlineRuntimeOptions();
-        var connector = new DataverseConnector(console, opt);
-        var svc = new ProfileResolutionService(console, connector, opt);
+        var connector = new DataverseConnector(console);
+        var svc = new ProfileResolutionService(console, connector);
         svc.FindBestProfileOverride = _ => resolvedResult;
         return svc;
     }

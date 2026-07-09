@@ -3,7 +3,6 @@ using CliWrap;
 using Flowline.Core;
 using Flowline.Diagnostics;
 using FluentAssertions;
-using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using Spectre.Console.Testing;
 using Xunit;
@@ -12,11 +11,16 @@ namespace Flowline.Tests;
 
 public class SubprocessCaptureTests
 {
-    readonly CaptureLogger _logger = new();
     readonly TestConsole _console = new();
     readonly FlowlineRuntimeOptions _options = new();
 
-    SubprocessCapture CreateCapture() => new(_logger, _options, _console);
+    public SubprocessCaptureTests()
+    {
+        // Matches Program.cs wiring — verbose gating is VerboseFilterHook's job, not SubprocessCapture's.
+        _console.Pipeline.Attach(new VerboseFilterHook(_options));
+    }
+
+    SubprocessCapture CreateCapture() => new(_console);
 
     // Cli.Wrap("echo") is never executed — used only to get a Command with TargetFilePath = "echo"
     static Command BaseCmd() => Cli.Wrap("echo");
@@ -35,18 +39,8 @@ public class SubprocessCaptureTests
         await cmd.StandardErrorPipe.CopyFromAsync(stream, CancellationToken.None);
     }
 
-    // Test 1: canary — verifies pipe mechanism works and ILogger.Debug fires
-    [Fact]
-    public async Task Apply_StdoutLine_LogsDebug()
-    {
-        var cmd = CreateCapture().Apply(BaseCmd());
-
-        await PumpStdoutAsync(cmd, "hello world");
-
-        _logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Debug && e.Message.Contains("hello world"));
-    }
-
-    // Test 2: non-error stdout + IsVerbose=false → no terminal output, debug still logged
+    // Test 1: non-error stdout + IsVerbose=false → suppressed from terminal (VerboseFilterHook's job;
+    // LoggingRenderHook still logs it in production — covered by LoggingRenderHookTests)
     [Fact]
     public async Task Apply_NonErrorStdout_NotVerbose_NoTerminalOutput()
     {
@@ -55,11 +49,10 @@ public class SubprocessCaptureTests
 
         await PumpStdoutAsync(cmd, "normal output");
 
-        _logger.Entries.Should().Contain(e => e.Level == LogLevel.Debug && e.Message.Contains("normal output"));
         _console.Output.Should().BeEmpty();
     }
 
-    // Test 3: non-error stdout + IsVerbose=true → terminal output (dim); LoggingRenderHook handles log capture in production
+    // Test 2: non-error stdout + IsVerbose=true → terminal output (dim)
     [Fact]
     public async Task Apply_NonErrorStdout_Verbose_PrintsToTerminal()
     {
@@ -69,10 +62,9 @@ public class SubprocessCaptureTests
         await PumpStdoutAsync(cmd, "normal output");
 
         _console.Output.Should().Contain("normal output");
-        _logger.Entries.Should().BeEmpty(); // LRH (not direct ILogger) captures terminal lines
     }
 
-    // Test 4: error-matching stdout → always printed to terminal; LRH captures in production
+    // Test 3: error-matching stdout → always printed to terminal, regardless of verbosity
     [Fact]
     public async Task Apply_ErrorStdout_NotVerbose_PrintsToTerminal()
     {
@@ -82,10 +74,9 @@ public class SubprocessCaptureTests
         await PumpStdoutAsync(cmd, "Error: something failed");
 
         _console.Output.Should().Contain("Error: something failed");
-        _logger.Entries.Should().BeEmpty(); // LRH (not direct ILogger) captures terminal lines
     }
 
-    // Test 5: warning-matching stdout → always printed to terminal; LRH captures in production
+    // Test 4: warning-matching stdout → always printed to terminal, regardless of verbosity
     [Fact]
     public async Task Apply_WarningStdout_NotVerbose_PrintsToTerminal()
     {
@@ -95,10 +86,9 @@ public class SubprocessCaptureTests
         await PumpStdoutAsync(cmd, "MyPlugin: warning CS8600: Converting null literal");
 
         _console.Output.Should().Contain("warning CS8600");
-        _logger.Entries.Should().BeEmpty(); // LRH (not direct ILogger) captures terminal lines
     }
 
-    // Test 6: stderr → always printed to terminal in red; LRH captures in production
+    // Test 5: stderr → always printed to terminal in red
     [Fact]
     public async Task Apply_Stderr_PrintsRed()
     {
@@ -107,10 +97,9 @@ public class SubprocessCaptureTests
         await PumpStderrAsync(cmd, "error on stderr");
 
         _console.Output.Should().Contain("error on stderr");
-        _logger.Entries.Should().BeEmpty(); // LRH (not direct ILogger) captures terminal lines
     }
 
-    // Test 7: lineTransform — transformed line displayed on terminal when verbose; LRH handles log capture
+    // Test 6: lineTransform — transformed line displayed on terminal when verbose
     [Fact]
     public async Task Apply_LineTransform_DisplaysTransformed()
     {
@@ -122,7 +111,7 @@ public class SubprocessCaptureTests
         _console.Output.Should().Contain("HELLO");
     }
 
-    // Test 8: PAC progress line with real ctx → SetStatusWithExecutionTime updates ctx.Status
+    // Test 7: PAC progress line with real ctx → SetStatusWithExecutionTime updates ctx.Status
     [Fact]
     public async Task Apply_PacProgressLine_WithCtx_StatusUpdated()
     {
@@ -140,7 +129,7 @@ public class SubprocessCaptureTests
         statusAfter.Should().Contain("execution time:");
     }
 
-    // Test 9: PAC progress line with null ctx → SetStatusWithExecutionTime is a no-op, no exception
+    // Test 8: PAC progress line with null ctx → SetStatusWithExecutionTime is a no-op, no exception
     [Fact]
     public async Task Apply_PacProgressLine_NullCtx_NoException()
     {
@@ -152,7 +141,7 @@ public class SubprocessCaptureTests
         await act.Should().NotThrowAsync();
     }
 
-    // Test 10: dnx running PAC CLI → prefix relabeled to "pac(dnx)" so the log line isn't ambiguous
+    // Test 9: dnx running PAC CLI → prefix relabeled to "pac(dnx)" so the log line isn't ambiguous
     [Fact]
     public async Task Apply_DnxRunningPac_PrefixIsRelabeled()
     {
@@ -166,7 +155,7 @@ public class SubprocessCaptureTests
         _console.Output.Should().NotContain("dnx: Connected");
     }
 
-    // Test 11: dnx running some other tool → prefix stays "dnx" (only relabel PAC CLI specifically)
+    // Test 10: dnx running some other tool → prefix stays "dnx" (only relabel PAC CLI specifically)
     [Fact]
     public async Task Apply_DnxRunningOtherTool_PrefixStaysDnx()
     {
@@ -179,7 +168,7 @@ public class SubprocessCaptureTests
         _console.Output.Should().Contain("dnx: doing something");
     }
 
-    // Test 12: non-dnx command → prefix unchanged (matches TargetFilePath, as before)
+    // Test 11: non-dnx command → prefix unchanged (matches TargetFilePath, as before)
     [Fact]
     public async Task Apply_NonDnxCommand_PrefixIsTargetFilePath()
     {
@@ -189,17 +178,5 @@ public class SubprocessCaptureTests
         await PumpStdoutAsync(cmd, "hello world");
 
         _console.Output.Should().Contain("echo: hello world");
-    }
-
-    private sealed class CaptureLogger : ILogger<SubprocessCapture>
-    {
-        public List<(LogLevel Level, string Message)> Entries { get; } = [];
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
-            Func<TState, Exception?, string> formatter)
-            => Entries.Add((logLevel, formatter(state, exception)));
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
     }
 }

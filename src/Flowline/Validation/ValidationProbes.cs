@@ -1,19 +1,13 @@
-using Flowline.Core;
 using Flowline.Diagnostics;
 using Flowline.Utils;
-using Microsoft.Extensions.Logging.Abstractions;
 using Spectre.Console;
 
 namespace Flowline.Validation;
 
 public sealed class ValidationProbes
 {
-    // Default capture for the static FlowlineValidator.Default instance.
-    // Uses NullLogger (no Serilog) + terminal console, non-verbose. Errors still print.
-    static readonly SubprocessCapture s_defaultCapture = new SubprocessCapture(
-        NullLogger<SubprocessCapture>.Instance,
-        new FlowlineRuntimeOptions(),
-        AnsiConsole.Console);
+    // Default capture for the static FlowlineValidator.Default instance. Errors still print.
+    static readonly SubprocessCapture s_defaultCapture = new SubprocessCapture(AnsiConsole.Console);
 
     public Func<bool, CancellationToken, Task<string>> CheckDotNetAsync { get; init; } =
         DotNetUtils.AssertDotNetInstalledAsync;

@@ -6,7 +6,7 @@ problem_type: logic_error
 component: tooling
 severity: critical
 symptoms:
-  - VerboseMarkup not appearing in terminal output despite --verbose flag
+  - VerboseRenderable not appearing in terminal output despite --verbose flag
   - Verbose render hook ignores runtime IsVerbose option
   - Subprocess verbose output permanently suppressed due to stale constructor capture
 root_cause: logic_error
@@ -16,7 +16,7 @@ tags: [hook-pipeline, Spectre.Console, stale-capture, initialization-order, rend
 
 ## Problem
 
-`VerboseFilterHook` captured `bool isVerbose` by value at construction time, but the hook was constructed before `app.RunAsync(args)` parsed CLI arguments. The stored bool was always `false`, so `--verbose` was silently ignored and `VerboseMarkup` was always suppressed from the terminal.
+`VerboseFilterHook` captured `bool isVerbose` by value at construction time, but the hook was constructed before `app.RunAsync(args)` parsed CLI arguments. The stored bool was always `false`, so `--verbose` was silently ignored and `VerboseRenderable` was always suppressed from the terminal.
 
 ## Symptoms
 
@@ -51,7 +51,7 @@ public sealed class VerboseFilterHook(bool isVerbose) : IRenderHook
     {
         foreach (var renderable in renderables)
         {
-            if (renderable is VerboseMarkup && !isVerbose)
+            if (renderable is VerboseRenderable && !isVerbose)
                 continue;
             yield return renderable;
         }
@@ -65,7 +65,7 @@ public sealed class VerboseFilterHook(FlowlineRuntimeOptions options) : IRenderH
     {
         foreach (var renderable in renderables)
         {
-            if (renderable is VerboseMarkup && !options.IsVerbose)
+            if (renderable is VerboseRenderable && !options.IsVerbose)
                 continue;
             yield return renderable;
         }
@@ -104,9 +104,9 @@ Hooks are invoked in reverse attachment order (last-attached = innermost):
 1. `VerboseFilterHook` attached first → outermost: runs last, decides terminal pass-through.
 2. `LoggingRenderHook` attached second → innermost: runs first via yield-before-log.
 
-`LoggingRenderHook` yields each renderable before logging. Execution suspends at `yield return` until `VerboseFilterHook`'s enumerator calls `MoveNext()`. When VFH drops a `VerboseMarkup` (no `yield return`), it never calls `MoveNext()` on LRH's side — the log call in LRH after the yield is never reached for suppressed items.
+`LoggingRenderHook` yields each renderable before logging. Execution suspends at `yield return` until `VerboseFilterHook`'s enumerator calls `MoveNext()`. When VFH drops a `VerboseRenderable` (no `yield return`), it never calls `MoveNext()` on LRH's side — the log call in LRH after the yield is never reached for suppressed items.
 
-This means: with the stale bool bug, VFH always let everything through → log file still complete (correct), terminal showed everything including VerboseMarkup even without `--verbose` (incorrect). With the fix: terminal is filtered correctly and log file remains complete.
+This means: with the stale bool bug, VFH always let everything through → log file still complete (correct), terminal showed everything including VerboseRenderable even without `--verbose` (incorrect). With the fix: terminal is filtered correctly and log file remains complete.
 
 ## Prevention
 
@@ -127,18 +127,18 @@ public void IsVerbose_ReadLazily_EnabledAfterConstruction()
     var console = new TestConsole();
     console.Pipeline.Attach(new VerboseFilterHook(options));
 
-    console.Write(new VerboseMarkup("suppressed"));
+    console.Write(new VerboseRenderable("suppressed"));
     console.Output.Should().BeEmpty();
 
     // Simulate args parse: --verbose sets IsVerbose = true
     options.IsVerbose = true;
 
-    console.Write(new VerboseMarkup("visible"));
+    console.Write(new VerboseRenderable("visible"));
     console.Output.Should().Contain("visible");
 }
 ```
 
-This test is now in `VerboseFilterHookTests.cs` alongside an integration test confirming VerboseMarkup is still logged by `LoggingRenderHook` even when suppressed from terminal.
+This test is now in `VerboseFilterHookTests.cs` alongside an integration test confirming VerboseRenderable is still logged by `LoggingRenderHook` even when suppressed from terminal.
 
 **3. Defensive Split for external process output**
 

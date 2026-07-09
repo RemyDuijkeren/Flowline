@@ -25,8 +25,10 @@ public class PluginServiceTests
     {
         _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
         _console = new TestConsole();
+        _console.Profile.Width = 400; // avoid word-wrap splitting longer assertion substrings across lines
         _runtimeOptions = new FlowlineRuntimeOptions();
-        _service = new PluginService(_console, _runtimeOptions, NullLogger<PluginService>.Instance);
+        _console.Pipeline.Attach(new VerboseFilterHook(_runtimeOptions)); // matches Program.cs wiring — required for verbose-only output to be suppressed
+        _service = new PluginService(_console, NullLogger<PluginService>.Instance);
 
         // Default empty results for all queries
         _serviceMock.RetrieveMultipleAsync(Arg.Any<QueryExpression>())
@@ -886,9 +888,11 @@ public class PluginServiceTests
         SetupPluginTypes();
         SetupIdentityChangeExecuteAsync();
 
-        await _service.SyncSolutionAsync(_serviceMock, Metadata(pkt: "a4d07ffa42de325f"), "MySolution");
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(pkt: "a4d07ffa42de325f"), "MySolution", force: true);
 
-        await _serviceMock.Received(1).DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+        // The mock returns the existing assembly for ALL pluginassembly queries (including the orphan check),
+        // so DeleteAsync may be called more than once — verify at least the identity-change delete happened
+        await _serviceMock.Received().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().UpdateAsync(Arg.Is<Entity>(e => e.LogicalName == "pluginassembly"), Arg.Any<CancellationToken>());
     }
@@ -901,9 +905,9 @@ public class PluginServiceTests
         SetupPluginTypes();
         SetupIdentityChangeExecuteAsync();
 
-        await _service.SyncSolutionAsync(_serviceMock, Metadata(culture: "en"), "MySolution");
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(culture: "en"), "MySolution", force: true);
 
-        await _serviceMock.Received(1).DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+        await _serviceMock.Received().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), Arg.Any<CancellationToken>());
     }
 
@@ -915,9 +919,9 @@ public class PluginServiceTests
         SetupPluginTypes();
         SetupIdentityChangeExecuteAsync();
 
-        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "2.0.0.0"), "MySolution");
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "2.0.0.0"), "MySolution", force: true);
 
-        await _serviceMock.Received(1).DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+        await _serviceMock.Received().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), Arg.Any<CancellationToken>());
     }
 
@@ -929,10 +933,25 @@ public class PluginServiceTests
         SetupPluginTypes();
         SetupIdentityChangeExecuteAsync();
 
-        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "1.1.0.0"), "MySolution");
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "1.1.0.0"), "MySolution", force: true);
 
-        await _serviceMock.Received(1).DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+        await _serviceMock.Received().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncAsync_MajorVersionChanged_NoForce_ThrowsFlowlineException()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, version: "1.0.0.0"));
+        SetupPluginTypes();
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, Metadata(version: "2.0.0.0"), "MySolution", RunMode.Normal));
+
+        Assert.Equal(ExitCode.ForceRequired, ex.ExitCode);
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+        Assert.Contains("--force", _console.Output);
     }
 
     [Fact]
@@ -982,7 +1001,7 @@ public class PluginServiceTests
         SetupPluginTypes();
         SetupIdentityChangeExecuteAsync();
 
-        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "2.0.0.0", pkt: "1122334455667788"), "MySolution");
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "2.0.0.0", pkt: "1122334455667788"), "MySolution", force: true);
 
         Assert.Contains("public key token", _console.Output);
         Assert.Contains("major/minor version", _console.Output);
@@ -1056,16 +1075,44 @@ public class PluginServiceTests
     }
 
     [Fact]
-    public async Task SyncAsync_VersionUpgrade_NoForce_ProceedsWithoutBlocking()
+    public async Task SyncAsync_VersionUpgrade_NoForce_ThrowsFlowlineException()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, version: "1.0.0.0"));
+        SetupPluginTypes();
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, Metadata(version: "3.4.0.0"), "MySolution", RunMode.Normal));
+
+        Assert.Equal(ExitCode.ForceRequired, ex.ExitCode);
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncAsync_VersionUpgrade_WithForce_DeletesAndRecreates()
     {
         var assemblyId = Guid.NewGuid();
         SetupAssembly(ExistingAssembly(assemblyId, version: "1.0.0.0"));
         SetupPluginTypes();
         SetupIdentityChangeExecuteAsync();
 
-        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "3.4.0.0"), "MySolution", RunMode.Normal);
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "3.4.0.0"), "MySolution", RunMode.Normal, force: true);
 
-        await _serviceMock.Received(1).DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+        await _serviceMock.Received().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncAsync_DryRun_VersionUpgrade_ShowsBlockedNote()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, version: "1.0.0.0"));
+        SetupPluginTypes();
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "3.4.0.0"), "MySolution", RunMode.DryRun);
+
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+        Assert.Contains("would be blocked without --force", _console.Output);
+        Assert.Contains("would delete and recreate", _console.Output);
     }
 
     [Fact]
@@ -1103,7 +1150,7 @@ public class PluginServiceTests
         });
         SetupIdentityChangeExecuteAsync();
 
-        await _service.SyncSolutionAsync(_serviceMock, Metadata(pkt: "1122334455667788"), "MySolution", RunMode.Normal);
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(pkt: "1122334455667788"), "MySolution", RunMode.Normal, force: true);
 
         Assert.Contains("cascade delete", _console.Output);
         Assert.Contains("MyPlugin.Handler", _console.Output);

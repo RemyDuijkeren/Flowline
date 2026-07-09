@@ -28,8 +28,8 @@ public class XrmContext3GeneratorTests
         var runtimeOptions = new FlowlineRuntimeOptions();
 
         _toolProvider = Substitute.For<XrmContextToolProvider>(new HttpClient(), console, runtimeOptions);
-        _runner = Substitute.For<XrmContextRunner>(console, runtimeOptions, null);
-        _generator = new XrmContext3Generator(runtimeOptions, _toolProvider, _runner);
+        _runner = Substitute.For<XrmContextRunner>(console, null);
+        _generator = new XrmContext3Generator(_toolProvider, _runner);
 
         _toolProvider.GetExePathAsync(Arg.Any<CancellationToken>()).Returns(ExePath);
         _runner.RunAsync(

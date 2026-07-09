@@ -6,7 +6,7 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class PluginExecutor(IAnsiConsole console, bool isVerbose)
+public class PluginExecutor(IAnsiConsole console)
 {
 
     public Task ExecuteDeletesAsync(

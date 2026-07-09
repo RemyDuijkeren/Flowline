@@ -9,7 +9,7 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class DataverseConnector(IAnsiConsole console, FlowlineRuntimeOptions opt)
+public class DataverseConnector(IAnsiConsole console)
 {
     public const string PacCliAppId = "51f81489-12ee-4a9e-aaae-a2591f45987d";
 

@@ -1,16 +1,14 @@
-using Microsoft.Extensions.Logging;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Flowline.Core.Models;
 using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class WebResourceService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILogger<WebResourceService> logger)
+public class WebResourceService(IAnsiConsole console)
 {
     readonly WebResourceReader _reader = new(console);
-    readonly WebResourcePlanner _planner = new(console, opt.IsVerbose);
-    readonly WebResourceExecutor _executor = new(console, opt);
-    readonly ILogger<WebResourceService> _logger = logger;
+    readonly WebResourcePlanner _planner = new(console);
+    readonly WebResourceExecutor _executor = new(console);
 
     public async Task<bool> SyncSolutionAsync(
         IOrganizationServiceAsync2 service,
@@ -26,19 +24,17 @@ public class WebResourceService(IAnsiConsole console, FlowlineRuntimeOptions opt
             throw new ArgumentException("solutionName is required.", nameof(solutionName));
 
         // Phase 1: Load snapshot (all Dataverse state in parallel)
-        var snapshot = await console.Status().FlowlineSpinner().StartAsync("Loading web resource snapshot...", _ =>
+        var snapshot = await console.Status().FlowlineSpinner().StartAsync("Lookup web resources...", _ =>
             _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, cancellationToken)).ConfigureAwait(false);
         WriteSnapshotVerbose(snapshot);
-        console.Ok("Snapshot web resources loaded");
-        _logger.LogInformation("Snapshot: {DataverseCount} Dataverse, {LocalCount} local resources",
-            snapshot.DataverseResources.Count, snapshot.LocalResources.Count);
+        console.Ok($"Web resources found ({snapshot.DataverseResources.Count} Dataverse, {snapshot.LocalResources.Count} local)");
 
         // Phase 2: Plan registration (pure, synchronous)
         var plan = _planner.Plan(snapshot);
         WritePlanReport(plan, PlanReportMode.Verbose, publishAfterSync);
-        console.Ok("Web resource plan ready");
-        _logger.LogInformation("Plan: {Creates} creates, {Updates} updates, {Deletes} deletes",
-            plan.Creates.Count, plan.Updates.Count, plan.Deletes.Count);
+        console.Ok(plan.TotalChanges > 0
+            ? $"Web resource plan ready: {plan.Creates.Count} creates, {plan.Updates.Count} updates, {plan.Deletes.Count} deletes"
+            : "Web resource plan ready: no changes");
 
         if (plan.TotalChanges == 0)
         {
@@ -101,10 +97,8 @@ public class WebResourceService(IAnsiConsole console, FlowlineRuntimeOptions opt
 
     void WriteSnapshotVerbose(WebResourceSyncSnapshot snapshot)
     {
-        if (!opt.IsVerbose) return;
-
-        console.Write(BuildResourceTree($"Dataverse ({snapshot.DataverseResources.Count})", snapshot.DataverseResources.Keys));
-        console.Write(BuildResourceTree($"Local ({snapshot.LocalResources.Count})", snapshot.LocalResources.Keys));
+        console.Verbose(BuildResourceTree($"Dataverse ({snapshot.DataverseResources.Count})", snapshot.DataverseResources.Keys));
+        console.Verbose(BuildResourceTree($"Local ({snapshot.LocalResources.Count})", snapshot.LocalResources.Keys));
     }
 
     static Tree BuildResourceTree(string label, IEnumerable<string> names)
@@ -147,9 +141,6 @@ public class WebResourceService(IAnsiConsole console, FlowlineRuntimeOptions opt
 
     void WritePlanReport(WebResourceSyncPlan plan, PlanReportMode mode, bool publishAfterSync = false)
     {
-        if (mode == PlanReportMode.Verbose && !opt.IsVerbose)
-            return;
-
         Action<string> line = mode == PlanReportMode.Verbose
             ? msg => console.Verbose(msg)
             : console.Info;

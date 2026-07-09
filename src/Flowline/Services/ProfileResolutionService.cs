@@ -7,7 +7,7 @@ using Spectre.Console;
 
 namespace Flowline.Services;
 
-public class ProfileResolutionService(IAnsiConsole console, DataverseConnector dataverseConnector, FlowlineRuntimeOptions opt)
+public class ProfileResolutionService(IAnsiConsole console, DataverseConnector dataverseConnector)
 {
     /// <summary>Seam for testing — set to override FindBestProfile resolution.</summary>
     internal Func<string, ProfileResolutionResult>? FindBestProfileOverride { get; set; }

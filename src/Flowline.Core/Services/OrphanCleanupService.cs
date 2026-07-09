@@ -32,7 +32,7 @@ public sealed record OrphanEntry(
 // signal (e.g. DriftCommand) must not treat those two cases as equivalent.
 public sealed record CompareResult(IReadOnlyList<OrphanEntry> Entries, bool Skipped = false);
 
-public class OrphanCleanupService(IAnsiConsole console, FlowlineRuntimeOptions opt, IEnumerable<IOrphanHandler> handlers) : IPostDeployService
+public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandler> handlers) : IPostDeployService
 {
     // KTD1: explicit, centrally-declared cross-family order — NOT DI-registration order (a future
     // unrelated edit to Program.cs's AddSingleton<IOrphanHandler, _> call sequence must not silently

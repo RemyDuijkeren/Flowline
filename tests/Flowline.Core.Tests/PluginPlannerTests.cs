@@ -2,7 +2,6 @@ using Microsoft.Xrm.Sdk;
 using NSubstitute;
 using Flowline.Core.Services;
 using Flowline.Core.Models;
-using Flowline.Core;
 using Spectre.Console.Testing;
 
 namespace Flowline.Core.Tests;
@@ -10,13 +9,12 @@ namespace Flowline.Core.Tests;
 public class PluginPlannerTests
 {
     private readonly TestConsole _console = new();
-    private readonly FlowlineRuntimeOptions _runtimeOptions = new();
     private readonly PluginPlanner _planner;
     private readonly Entity _assembly;
 
     public PluginPlannerTests()
     {
-        _planner  = new PluginPlanner(_console, isVerbose: false);
+        _planner  = new PluginPlanner(_console);
         _assembly = new Entity("pluginassembly", Guid.NewGuid()) { ["name"] = "MyPlugin" };
     }
 

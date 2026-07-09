@@ -39,7 +39,7 @@ public class OrphanCleanupServiceTests : IDisposable
             new RoleHandler(_console),
             new EntityFamilyHandler(_console),
         ];
-        _service = new OrphanCleanupService(_console, new FlowlineRuntimeOptions(), handlers);
+        _service = new OrphanCleanupService(_console, handlers);
         _packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         _webResourcesDir = Path.Combine(_packageSrcRoot, "WebResources");
         Directory.CreateDirectory(_webResourcesDir);
@@ -1314,7 +1314,7 @@ public class OrphanCleanupServiceTests : IDisposable
     public async Task RunPreImportAsync_PostImportOnlyEntry_NeverAttemptedPreImport()
     {
         var orphanId = Guid.NewGuid();
-        var postImportOnlyService = new OrphanCleanupService(_console, new FlowlineRuntimeOptions(),
+        var postImportOnlyService = new OrphanCleanupService(_console,
             [new FakePostImportOnlyHandler(9999, "Widget 'thing'", "widgettable")]);
         SetupSolutionComponents("MySolution", (orphanId, 9999));
 
@@ -1331,7 +1331,7 @@ public class OrphanCleanupServiceTests : IDisposable
     public async Task RunPostImportAsync_PostImportOnlyEntry_AttemptedUnconditionallyAfterImport()
     {
         var orphanId = Guid.NewGuid();
-        var postImportOnlyService = new OrphanCleanupService(_console, new FlowlineRuntimeOptions(),
+        var postImportOnlyService = new OrphanCleanupService(_console,
             [new FakePostImportOnlyHandler(9999, "Widget 'thing'", "widgettable")]);
         SetupSolutionComponents("MySolution", (orphanId, 9999));
 
@@ -1365,7 +1365,7 @@ public class OrphanCleanupServiceTests : IDisposable
             new PluginAssemblyFamilyHandler(_console),
             new FakePostImportOnlyHandler(9999, "Widget 'thing'", "widgettable"),
         ];
-        var mixedService = new OrphanCleanupService(_console, new FlowlineRuntimeOptions(), handlers);
+        var mixedService = new OrphanCleanupService(_console, handlers);
 
         await mixedService.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
         Assert.Contains("Deferred", _console.Output);
@@ -1602,7 +1602,7 @@ public class OrphanCleanupServiceTests : IDisposable
         // DispatchToHandlersAsync; this confirms the marker's exact rendering format from PrintReport's
         // perspective (nothing else in the report references it).
         var orphanId = Guid.NewGuid();
-        var previewOnlyService = new OrphanCleanupService(_console, new FlowlineRuntimeOptions(), [new FakePreviewHandler(9999, "Widget 'thing'")]);
+        var previewOnlyService = new OrphanCleanupService(_console, [new FakePreviewHandler(9999, "Widget 'thing'")]);
         SetupSolutionComponents("MySolution", (orphanId, 9999));
 
         var result = await previewOnlyService.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);

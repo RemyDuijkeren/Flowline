@@ -9,29 +9,29 @@ namespace Flowline.Core.Tests;
 public class VerboseFilterHookTests
 {
     [Fact]
-    public void VerboseMarkup_WhenNotVerbose_IsNotRenderedToTerminal()
+    public void VerboseRenderable_WhenNotVerbose_IsNotRenderedToTerminal()
     {
         var console = new TestConsole();
         console.Pipeline.Attach(new VerboseFilterHook(new FlowlineRuntimeOptions()));
 
-        console.Write(new VerboseMarkup("hello"));
+        console.Write(new VerboseRenderable("hello"));
 
         console.Output.Should().BeEmpty();
     }
 
     [Fact]
-    public void VerboseMarkup_WhenVerbose_IsRenderedToTerminal()
+    public void VerboseRenderable_WhenVerbose_IsRenderedToTerminal()
     {
         var console = new TestConsole();
         console.Pipeline.Attach(new VerboseFilterHook(new FlowlineRuntimeOptions { IsVerbose = true }));
 
-        console.Write(new VerboseMarkup("hello"));
+        console.Write(new VerboseRenderable("hello"));
 
         console.Output.Should().NotBeEmpty().And.Contain("hello");
     }
 
     [Fact]
-    public void NonVerboseMarkup_WhenNotVerbose_IsStillRendered()
+    public void NonVerboseRenderable_WhenNotVerbose_IsStillRendered()
     {
         var console = new TestConsole();
         console.Pipeline.Attach(new VerboseFilterHook(new FlowlineRuntimeOptions()));
@@ -48,16 +48,16 @@ public class VerboseFilterHookTests
         var console = new TestConsole();
         console.Pipeline.Attach(new VerboseFilterHook(options));
 
-        console.Write(new VerboseMarkup("suppressed"));
+        console.Write(new VerboseRenderable("suppressed"));
         console.Output.Should().BeEmpty();
 
         options.IsVerbose = true;
-        console.Write(new VerboseMarkup("visible"));
+        console.Write(new VerboseRenderable("visible"));
         console.Output.Should().Contain("visible");
     }
 
     [Fact]
-    public void Pipeline_VerboseMarkup_LoggedByLRH_EvenWhenSuppressedFromTerminal()
+    public void Pipeline_VerboseRenderable_LoggedByLRH_EvenWhenSuppressedFromTerminal()
     {
         var options = new FlowlineRuntimeOptions { IsVerbose = false };
         var logger = new CaptureLogger();
@@ -66,7 +66,7 @@ public class VerboseFilterHookTests
         console.Pipeline.Attach(new VerboseFilterHook(options));
         console.Pipeline.Attach(new LoggingRenderHook(logger));
 
-        console.Write(new VerboseMarkup("verbose detail"));
+        console.Write(new VerboseRenderable("verbose detail"));
 
         console.Output.Should().BeEmpty();
         logger.Entries.Should().ContainSingle(e => e.Message.Contains("verbose detail"));

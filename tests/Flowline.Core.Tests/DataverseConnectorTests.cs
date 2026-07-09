@@ -1,5 +1,4 @@
 using Flowline;
-using Flowline.Core;
 using Flowline.Core.Services;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Spectre.Console.Testing;
@@ -13,7 +12,7 @@ public class DataverseConnectorTests
 
     public DataverseConnectorTests()
     {
-        _service = new DataverseConnector(new TestConsole(), new FlowlineRuntimeOptions());
+        _service = new DataverseConnector(new TestConsole());
     }
 
     [Fact(Skip = "Requires PAC CLI auth profile file on the machine — not available in CI")]

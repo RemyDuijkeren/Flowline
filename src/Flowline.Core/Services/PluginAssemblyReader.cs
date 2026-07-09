@@ -7,7 +7,7 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class PluginAssemblyReader(IAnsiConsole console, FlowlineRuntimeOptions options)
+public class PluginAssemblyReader(IAnsiConsole console)
 {
     private static readonly string[] MessageNames =
         Enum.GetNames<Message>().OrderByDescending(n => n.Length).ToArray();
@@ -60,7 +60,7 @@ public class PluginAssemblyReader(IAnsiConsole console, FlowlineRuntimeOptions o
             : null;
         var culture = string.IsNullOrEmpty(assemblyName.CultureName) ? "neutral" : assemblyName.CultureName;
 
-        console.Info($"Assembly {assemblyName.Name} loaded");
+        console.Info($"Assembly [bold]{assemblyName.Name}[/] ({assemblyName.Version!.ToString()}) analyzed");
 
         return new PluginAssemblyMetadata(
             assemblyName.Name!,

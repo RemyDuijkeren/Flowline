@@ -8,15 +8,15 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILogger<PluginService> logger)
+public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
 {
     const string FlowlineMarker = "[flowline]";
 
     readonly PluginReader _reader = new();
-    readonly PluginPlanner _planner = new(console, opt.IsVerbose);
-    readonly PluginExecutor _executor = new(console, opt.IsVerbose);
+    readonly PluginPlanner _planner = new(console);
+    readonly PluginExecutor _executor = new(console);
     readonly SolutionReader _solutionReader = new();
-    readonly PluginAssemblyReader _assemblyReader = new(console, opt);
+    readonly PluginAssemblyReader _assemblyReader = new(console);
 
     public async Task<bool> SyncAssemblyOnlyAsync(
         IOrganizationServiceAsync2 service,
@@ -73,7 +73,7 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
 
         if (runMode == RunMode.DryRun)
         {
-            console.Info($"  [yellow]~[/] Assembly '{metadata.Name} ({metadata.Version})' — would update content");
+            console.Info($"  [yellow]~[/] Assembly [bold]{metadata.Name}[/] ({metadata.Version}) — would update content");
             console.Ok("Dry run: 1 update. Run without --dry-run to apply.");
             return true;
         }
@@ -121,29 +121,31 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
                     .StartAsync($"Looking up solution [bold]{solutionName}[/]...",
                         _ => _solutionReader.GetSupportedSolutionInfoAsync(service, solutionName, cancellationToken))
                     .ConfigureAwait(false);
-        console.Info("Solution found and supported");
+        console.Info("Solution found");
 
         // Phase 1: Get or register assembly
-        var (assembly, needsUpdate, cascadeDeleteCount) = await GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, force, cancellationToken).ConfigureAwait(false);
-        console.Ok($"Assembly registered [bold]{metadata.Name}[/] ({metadata.Version})");
-        logger.LogInformation("Assembly synced: {Name}", metadata.Name);
+        var (assembly, needsUpdate, cascadeDeleteCount) = await console.Status().FlowlineSpinner()
+            .StartAsync("Lookup or add assembly", _ => GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, force, cancellationToken))
+            .ConfigureAwait(false);
+        console.Info(needsUpdate
+            ? $"Assembly [bold]{metadata.Name}[/] ({metadata.Version}) found but needs content update"
+            : $"Assembly [bold]{metadata.Name}[/] ({metadata.Version}) found");
 
         await WarnOrphanAssembliesAsync(service, metadata.Name, solutionName, force, runMode, cancellationToken).ConfigureAwait(false);
         await WarnOrphanStepsAsync(service, metadata.Name, solutionName, force, runMode, cancellationToken).ConfigureAwait(false);
 
         // Phase 2: Load snapshot (all Dataverse state in parallel)
         var snapshot = await console.Status().FlowlineSpinner()
-            .StartAsync("Loading plugin registration snapshot...", _ => _reader.LoadSnapshotAsync(service, assembly.Id, metadata, solutionName, cancellationToken))
+            .StartAsync("Lookup plugin registrations...", _ => _reader.LoadSnapshotAsync(service, assembly.Id, metadata, solutionName, cancellationToken))
             .ConfigureAwait(false);
         WriteSnapshotVerbose(snapshot);
-        console.Info("Snapshot plugins loaded");
+        console.Info("Plugin registrations found");
 
         // Phase 3: Plan registration (pure, synchronous)
         var plan = _planner.Plan(snapshot, metadata, assembly, solutionName);
-        console.Info("Registration plan ready");
-        logger.LogInformation("Registration plan ready: {PluginTypeCount} plugin types, {StepCount} steps",
-            plan.PluginTypes.Upserts.Count + plan.PluginTypes.Deletes.Count,
-            plan.Steps.Upserts.Count + plan.Steps.Deletes.Count);
+        console.Info(plan.TotalChanges > 0
+            ? $"Registration plan ready: {plan.TotalChanges} changes ({plan.TotalUpserts} upserts, {plan.TotalDeletes} deletes)"
+            : "Registration plan ready: no changes required");
 
         foreach (var warning in plan.Warnings)
             console.Warning(warning);
@@ -157,7 +159,7 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
                 .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
                 .ToList();
             if (otherSolutions.Count > 0)
-                console.Warning($"Updating assembly '{metadata.Name}' which also exists in other solutions: {string.Join(", ", otherSolutions)}.");
+                console.Warning($"Updating assembly [bold]{metadata.Name}[/] ({metadata.Version}) which also exists in other solutions: {string.Join(", ", otherSolutions)}.");
         }
 
         WritePlanTree(metadata, needsUpdate, plan, runMode, cascadeDeleteCount);
@@ -418,7 +420,7 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
         {
             if (runMode == RunMode.DryRun)
             {
-                console.Info($"  [green]+[/] Assembly '{metadata.Name}' — would create");
+                console.Info($"  [green]+[/] Assembly [bold]{metadata.Name}[/] ({metadata.Version}) — would create");
                 // Return a dummy entity so that the caller can continue with the dry-run
                 return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false, 0);
             }
@@ -435,7 +437,7 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
             var response = (CreateResponse)await service.ExecuteAsync(
                 new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName }, cancellationToken).ConfigureAwait(false);
 
-            console.Ok($"Assembly [bold]{metadata.Name}[/] added");
+            console.Ok($"Assembly [bold]{metadata.Name}[/] ({metadata.Version}) added");
 
             entity.Id = response.id;
             return (entity, false, 0);
@@ -447,10 +449,11 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
             var reason = string.Join(", ", identityChanges);
             var isDowngrade = IsVersionDowngrade(existing, metadata);
 
-            if (isDowngrade && !force && runMode == RunMode.Normal)
+            if (!force && runMode == RunMode.Normal)
             {
-                console.Error($"Assembly '{metadata.Name}' version downgraded ({reason}) — Dataverse needs a delete and recreate. Use --force to allow downgrade.");
-                throw new FlowlineException(ExitCode.ForceRequired, $"Assembly '{metadata.Name}' version downgraded ({reason}). Use --force to allow.");
+                var reasonText = isDowngrade ? $"version downgraded ({reason})" : $"identity changed ({reason})";
+                console.Error($"Assembly [bold]{metadata.Name}[/] {reasonText} — Dataverse needs a delete and recreate. Use --force to allow.");
+                throw new FlowlineException(ExitCode.ForceRequired, $"Assembly [bold]{metadata.Name}[/] {reasonText}. Use --force to allow.");
             }
 
             // Load existing registrations before deletion to show what cascades
@@ -460,16 +463,16 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
             switch (runMode)
             {
                 case RunMode.DryRun:
-                    var downgradeNote = isDowngrade ? " — would be blocked without --force" : "";
-                    console.Warning($"Assembly '{metadata.Name}' identity changed ({reason}){downgradeNote} — would delete and recreate");
+                    var blockNote = !force ? " — would be blocked without --force" : "";
+                    console.Warning($"Assembly [bold]{metadata.Name}[/] identity changed ({reason}){blockNote} — would delete and recreate");
                     WriteCascadePreview(oldSnapshot);
                     return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false, cascadeDeleteCount);
                 case RunMode.NoDelete:
-                    console.Error($"Assembly '{metadata.Name}' identity changed ({reason}) — Dataverse needs a delete and recreate. Re-run without --no-delete to apply, or use --dry-run to preview.");
-                    throw new InvalidOperationException($"Assembly '{metadata.Name}' identity changed ({reason}). Cannot continue in no-delete mode — re-run without --no-delete to apply, or use --dry-run to preview.");
+                    console.Error($"Assembly [bold]{metadata.Name}[/] identity changed ({reason}) — Dataverse needs a delete and recreate. Re-run without --no-delete to apply, or use --dry-run to preview.");
+                    throw new InvalidOperationException($"Assembly [bold]{metadata.Name}[/] identity changed ({reason}). Cannot continue in no-delete mode — re-run without --no-delete to apply, or use --dry-run to preview.");
                 case RunMode.Normal:
-                    var forceNote = isDowngrade ? " (version downgrade, --force)" : "";
-                    console.Warning($"Assembly '{metadata.Name}' identity changed ({reason}){forceNote} — deleting and recreating all registrations");
+                    var forceNote = isDowngrade ? " (version downgrade, --force)" : " (--force)";
+                    console.Warning($"Assembly [bold]{metadata.Name}[/] identity changed ({reason}){forceNote} — deleting and recreating all registrations");
                     WriteCascadeNormal(oldSnapshot);
                     await service.DeleteAsync("pluginassembly", existing.Id, cancellationToken).ConfigureAwait(false);
                     break;
@@ -567,8 +570,6 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
 
     void WritePlanTree(PluginAssemblyMetadata metadata, bool needsUpdate, RegistrationPlan plan, RunMode runMode, int cascadeDeleteCount = 0)
     {
-        if (runMode != RunMode.DryRun && !opt.IsVerbose) return;
-
         // --- Name parse helpers ---
         static string TypeFromStep(string stepName)
         {
@@ -774,10 +775,9 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
             }
         }
 
-        console.Write(tree);
-
         if (runMode == RunMode.DryRun)
         {
+            console.Write(tree);
             var creates = plan.PluginTypes.Upserts.Count(u => u.IsCreate)
                           + plan.Steps.Upserts.Count(u => u.IsCreate)
                           + plan.CustomApis.Upserts.Count(u => u.IsCreate)
@@ -787,12 +787,14 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
             var updates = plan.TotalUpserts - creates;
             console.Ok($"Dry run: {plan.TotalDeletes + cascadeDeleteCount} delete(s), {creates} create(s), {updates} update(s). Run without --dry-run to apply.");
         }
+        else
+        {
+            console.Verbose(tree);
+        }
     }
 
     void WriteSnapshotVerbose(RegistrationSnapshot snapshot)
     {
-        if (!opt.IsVerbose) return;
-
         var tree = new Tree("[dim]Dataverse snapshot[/]") { Style = Style.Parse("dim") };
         tree.AddNode($"[dim]Publisher prefix: {Safe(snapshot.PublisherPrefix)}[/]");
 
@@ -930,7 +932,7 @@ public class PluginService(IAnsiConsole console, FlowlineRuntimeOptions opt, ILo
                 usersNode.AddNode($"[dim]{id}[/]");
         }
 
-        console.Write(tree);
+        console.Verbose(tree);
     }
 
     void AddUnlinkedNodes(Tree tree, string title, IReadOnlyList<Entity> items,

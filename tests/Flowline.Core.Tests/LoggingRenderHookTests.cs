@@ -49,9 +49,9 @@ public class LoggingRenderHookTests
     }
 
     [Fact]
-    public void Write_VerboseMarkup_LogsAtDebug()
+    public void Write_VerboseRenderable_LogsAtDebug()
     {
-        _console.Write(new VerboseMarkup("checking version"));
+        _console.Write(new VerboseRenderable("checking version"));
 
         _logger.Entries.Should().ContainSingle(e =>
             e.Level == LogLevel.Debug &&
@@ -59,9 +59,9 @@ public class LoggingRenderHookTests
     }
 
     [Fact]
-    public void Write_VerboseMarkup_WithMarkupChars_EscapesCorrectly()
+    public void Write_VerboseRenderable_WithMarkupChars_EscapesCorrectly()
     {
-        _console.Write(new VerboseMarkup("[bold]"));
+        _console.Write(new VerboseRenderable("[bold]"));
 
         _logger.Entries.Should().ContainSingle(e =>
             e.Level == LogLevel.Debug &&

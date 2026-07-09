@@ -7,7 +7,7 @@ namespace Flowline.Core.Tests;
 public class FlowlineConsoleExtensionsTests
 {
     [Fact]
-    public void Verbose_WritesVerboseMarkupToConsole()
+    public void Verbose_WritesVerboseRenderableToConsole()
     {
         var console = new TestConsole();
         var options = new FlowlineRuntimeOptions();
@@ -18,9 +18,9 @@ public class FlowlineConsoleExtensionsTests
     }
 
     [Fact]
-    public void Verbose_EmitsVerboseMarkupUnconditionally()
+    public void Verbose_EmitsVerboseRenderableUnconditionally()
     {
-        // Without VFH in the pipeline, VerboseMarkup always reaches the console —
+        // Without VFH in the pipeline, VerboseRenderable always reaches the console —
         // suppression is VFH's responsibility, not Console.Verbose's.
         var console = new TestConsole();
         var options = new FlowlineRuntimeOptions { IsVerbose = false };

@@ -1,32 +1,29 @@
 using System.Text.RegularExpressions;
 using CliWrap;
 using Flowline.Core;
-using Microsoft.Extensions.Logging;
 using Spectre.Console;
 
 namespace Flowline.Diagnostics;
 
 /// <summary>
-/// DI-injectable subprocess output capture. Always routes stdout/stderr to Serilog via ILogger,
-/// regardless of --verbose. Replaces the static WithToolExecutionLog extension methods.
+/// DI-injectable subprocess output capture. Non-error stdout always routes through
+/// <c>console.Verbose()</c>, so LoggingRenderHook logs it regardless of --verbose while
+/// VerboseFilterHook decides terminal visibility. Replaces the static WithToolExecutionLog
+/// extension methods.
 /// </summary>
 public sealed class SubprocessCapture
 {
-    readonly ILogger<SubprocessCapture> _logger;
-    readonly FlowlineRuntimeOptions _options;
     readonly IAnsiConsole _console;
 
-    public SubprocessCapture(ILogger<SubprocessCapture> logger, FlowlineRuntimeOptions options, IAnsiConsole console)
+    public SubprocessCapture(IAnsiConsole console)
     {
-        _logger = logger;
-        _options = options;
         _console = console;
     }
 
     /// <summary>
-    /// Configures stdout/stderr piping for a command. Lines that reach the terminal are captured
-    /// by LoggingRenderHook. Lines suppressed from the terminal (non-error, !verbose) are written
-    /// directly to ILogger so the log file is always complete.
+    /// Configures stdout/stderr piping for a command. Error/warning lines and stderr are always
+    /// printed. Other stdout lines go through console.Verbose() — always logged, terminal-visible
+    /// only with --verbose.
     /// </summary>
     public Command Apply(Command cmd, StatusContext? ctx = null, Func<string, string>? lineTransform = null)
     {
@@ -39,7 +36,6 @@ public sealed class SubprocessCapture
 
                 if (IsErrorLine(line))
                 {
-                    // Always printed to terminal → LoggingRenderHook captures it.
                     DisplayErrorMessage(line, prefix);
                     return;
                 }
@@ -49,21 +45,11 @@ public sealed class SubprocessCapture
 
                 if (string.IsNullOrWhiteSpace(line)) return;
 
-                if (_options.IsVerbose)
-                {
-                    var display = lineTransform != null ? lineTransform(line) : line;
-                    // Printed to terminal → LoggingRenderHook captures it.
-                    _console.MarkupLine($"[dim]{Markup.Escape(prefix)}: {Markup.Escape(display)}[/]");
-                }
-                else
-                {
-                    // Suppressed from terminal → LoggingRenderHook never fires; log directly.
-                    _logger.LogDebug("{Prefix}: {Line}", prefix, line);
-                }
+                var display = lineTransform != null ? lineTransform(line) : line;
+                _console.Verbose($"[dim]{Markup.Escape(prefix)}: {Markup.Escape(display)}[/]");
             }))
             .WithStandardErrorPipe(PipeTarget.ToDelegate(line =>
             {
-                // Always printed to terminal → LoggingRenderHook captures it.
                 _console.MarkupLine($"[red]{Markup.Escape(prefix)}: {Markup.Escape(line)}[/]");
             }));
     }
