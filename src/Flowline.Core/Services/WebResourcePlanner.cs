@@ -120,14 +120,39 @@ public class WebResourcePlanner(IAnsiConsole console)
             return new HashSet<DependencyLibrary>();
 
         var result = new HashSet<DependencyLibrary>();
-        foreach (var name in dependsOn.Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var rawName in dependsOn.Distinct(StringComparer.OrdinalIgnoreCase))
         {
+            var name = ResolveQualifiedName(rawName, snapshot);
             if (existingByName.TryGetValue(name, out var existing))
                 result.Add(existing);
             else
                 result.Add(new DependencyLibrary(name, ResolveDisplayName(name, snapshot), Guid.NewGuid()));
         }
         return result;
+    }
+
+    // Maker Portal stores the fully-qualified webresource name (e.g. "av_ns/example1.js") in Library@name,
+    // not the bare filename typed in a // flowline:depends annotation — qualify it so dependencies
+    // added via Flowline resolve the same way as ones added manually in the Maker Portal.
+    string ResolveQualifiedName(string rawName, WebResourceSyncSnapshot snapshot)
+    {
+        if (snapshot.LocalResources.ContainsKey(rawName) || snapshot.DataverseResources.ContainsKey(rawName))
+            return rawName;
+
+        var suffix = "/" + rawName;
+        var matches = snapshot.LocalResources.Keys
+            .Concat(snapshot.DataverseResources.Keys)
+            .Where(k => k.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (matches.Count == 1)
+            return matches[0];
+
+        if (matches.Count > 1)
+            console.Warning($"'{rawName}': multiple web resources match this dependency name — keeping unqualified. Use a folder-qualified name (e.g. 'av_ns/{rawName}') in // flowline:depends to disambiguate.");
+
+        return rawName;
     }
 
     static string ResolveDisplayName(string logicalName, WebResourceSyncSnapshot snapshot)

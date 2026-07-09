@@ -17,7 +17,7 @@
     },
     "push --scope webresources": {
       "commandName": "Project",
-      "commandLineArgs": "push --scope webresources --verbose",
+      "commandLineArgs": "push --scope webresources --verbose --no-build",
       "workingDirectory": "E:/Code/TryOut/MyFlowTest"
     },
     "sync": {

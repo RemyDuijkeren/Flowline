@@ -510,6 +510,30 @@ public class WebResourceServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SyncSolutionAsync_BareSiblingNameAnnotation_QualifiesLibraryName()
+    {
+        // Annotation names a local sibling by its bare filename, matching how the Maker Portal's own
+        // dependency editor writes Library@name (fully qualified) — Flowline must match that, not
+        // echo the bare annotation text back, or the dependency shows a name unresolvable by the UI.
+        File.WriteAllText(Path.Combine(_webresourceRoot, "lib.js"), "code();");
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+            "// flowline:depends lib.js\ncode();");
+        var createResponse = new CreateResponse();
+        createResponse.Results["id"] = Guid.NewGuid();
+        _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(createResponse));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is<CreateRequest>(r =>
+                r.Target.GetAttributeValue<string>("name") == "my_MySolution/form.js" &&
+                r.Target.GetAttributeValue<string>("dependencyxml")!.Contains("name=\"my_MySolution/lib.js\"") &&
+                !r.Target.GetAttributeValue<string>("dependencyxml")!.Contains("name=\"lib.js\"")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task SyncSolutionAsync_NewResourceNoDeps_CreateWithoutDependencyXml()
     {
         File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"), "code();");
