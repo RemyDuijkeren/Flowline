@@ -174,7 +174,9 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         await new DataverseContextGenerator(Console).GenerateAsync(
             srcPath, projectSln.Name, RootFolder, cancellationToken);
 
-        Console.Done($"Synced {tagVersion}. Run 'git commit' to save a checkpoint and 'git tag {tagVersion}' to tag it. ◝(ᵔᵕᵔ)◜");
+        Console.Done(summary.TotalFiles == 0
+            ? $"Synced {tagVersion} — no component changes, nothing to deploy."
+            : $"Synced {tagVersion}. Commit, then 'git tag {tagVersion}' when ready to deploy. ◝(ᵔᵕᵔ)◜");
 
         return 0;
     }

@@ -155,7 +155,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         }
 
         Console.Done(runMode == RunMode.DryRun
-            ? "Air push complete. Dataverse remains oblivious. Now do it for real without --dry-run!و"
+            ? "Air push complete. Dataverse remains oblivious. Now do it for real without --dry-run!"
             : !pushedChanges
                 ? "Nothing to push — already up to date."
                 : standaloneMode
