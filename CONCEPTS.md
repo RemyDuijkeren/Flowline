@@ -92,3 +92,12 @@ anywhere in the file — not only before other code — because a build tool may
 content ahead of it. A RESX file sharing a base name with a script is linked automatically and
 needs no annotation; annotations are for everything else (shared libraries, cross-solution
 references, explicit overrides when auto-linking is ambiguous).
+
+### Event annotation
+A developer-authored declaration in a web resource's source binding one of its functions to a form's
+`onLoad`/`onSave` event, read by `flowline push` to register the handler in the form's `formxml`.
+Shape: `// flowline:onload <entity> <form> [Function[(params,...)]]` (and `flowline:onsave`), same
+comment styles and whole-file scanning as the dependency annotation. Function name is optional
+(defaults to `onLoad`/`onSave`) and matched case-insensitively against the file's real exports.
+Flowline only ever manages handlers pointing at its own tracked web resources — handlers added by
+other solutions or ISVs are left untouched.
