@@ -15,7 +15,10 @@ A solution component present in the Dataverse environment that is absent from th
 
 ### Unmanaged solution
 A Dataverse solution whose components can be created, modified, and deleted individually in the target environment. Flowline prefers to targets unmanaged solutions, but can also work with managed solutions. Because unmanaged imports are additive, deployed components are never automatically removed — orphan cleanup must run explicitly to remove components deleted from source.
-*managed solution (distinct — a locked distributable solution package. Only the Upgrade import action removes components no longer present in the new version; a plain import ("Update") does not. `deploy` uses Upgrade when the solution already exists in the target and stays a plain import on first install, so cleanup of a genuine [[Orphan component]] still depends on that upgrade running)*
+*managed solution (distinct — a locked distributable solution package. See [[Solution import action]] for how Update vs Upgrade determines whether components get removed)*
+
+### Solution import action
+Whether a solution import is treated as an **Update** (adds and modifies components, never removes any) or an **Upgrade** (also removes components no longer present in the imported version). Upgrade only applies to managed solutions, and only when a prior version of the same solution already exists in the target — a first-time install has nothing to upgrade from and is always a plain Update. [[Unmanaged solution]] imports are always additive regardless of which action is chosen.
 
 ### Local-source identity shape
 The pattern by which a solution component's identity is recorded in unpacked solution source, used by [[Orphan component]] detection to check whether a live component is still declared locally. Three shapes recur across component types: an id embedded directly in the component's own file and mirrored by `id` in Solution.xml (e.g. Role); a schemaname/uniquename-keyed folder with no GUID anywhere locally (e.g. CustomApi, Bot); and a declaration inline within Customizations.xml's own named section, also with no GUID (e.g. ConnectionReference). A component type is only trusted for removal recommendations once its shape has a verified local-source check with test coverage for both directions — still-declared components suppressed, genuinely-removed components reported.

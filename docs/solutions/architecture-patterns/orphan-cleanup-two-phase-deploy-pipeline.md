@@ -1,7 +1,7 @@
 ---
 title: Orphan component cleanup — two-phase deploy pipeline
 date: 2026-06-10
-last_updated: 2026-07-08 (part 10)
+last_updated: 2026-07-10 (part 11)
 category: docs/solutions/architecture-patterns
 module: DeployCommand
 problem_type: architecture_pattern
@@ -16,11 +16,13 @@ applies_when:
   - A --no-delete flag is needed to report what would be deleted without acting
   - An entity-detection query spans multiple backing tables (e.g. CustomApi family plus Bot/ConnectionReference) sharing one failure boundary
   - A live metadata or data lookup can return a null or unresolved identity attribute for a candidate orphan
+  - A managed solution redeploy relies on Dataverse's own Upgrade import to remove components instead of this service's own Delete/RemoveSolutionComponent calls
 related_components:
   - ComponentClassifier
   - OrphanCleanupService
   - IPostDeployService
   - PostDeployContext
+  - DeploySolutionInfo
   - ExitCode
   - DriftCommand
 tags:
@@ -83,6 +85,8 @@ public static class ComponentClassifier
 ```
 
 **Why only stable componenttype values:** Dataverse `solutioncomponent.componenttype` values below 100 are stable platform constants across all orgs. The CustomApi family uses env-specific component type numbers that differ per org — they cannot be classified by integer. They are detected separately via parallel entity queries (see below).
+
+**Refresh note (2026-07-10):** `ComponentClassifier.Classify`/`ComponentAction`/`AutoTypes` above still exist in the codebase (`src/Flowline.Core/Services/ComponentClassifier.cs`) but are no longer called anywhere — dead code left over from before the handler-dispatch rewrite this doc's later updates refer to as "U9." Classification of AUTO vs Manual, and each candidate's [[Orphan priority]], now happens inside each `IOrphanHandler` implementation (`src/Flowline.Core/Services/OrphanCleanup/Handlers/*Handler.cs`) rather than this one static classifier — see `CONCEPTS.md`'s Orphan handler/Handler status/Orphan priority entries for the current vocabulary, and `IOrphanHandler.DetectAsync` (`src/Flowline.Core/Services/OrphanCleanup/IOrphanHandler.cs`) for the current per-handler detection contract.
 
 ### S_new: Solution.xml RootComponents, plus entity subcomponent files — not customizations.xml
 
@@ -244,6 +248,8 @@ foreach (var e in crTask.Result)    result[e.Id] = "connectionreference";
 
 `TryQuery`'s catch is the same deliberate exception to the project-wide "no try/catch around service calls" rule as before — failure has explicit recovery logic (drop that table's candidates, warn, continue) — but it's now scoped per table instead of around the whole `Task.WhenAll`, so one table's failure can't take the others down with it (part 9).
 
+**Refresh note (2026-07-10):** the `TryQuery` helper and inline `caTask`/`paramTask`/`propTask`/`botTask`/`crTask` dispatch above have moved out of this one function — `CustomApiFamilyHandler`, `BotHandler`, and `ConnectionReferenceHandler` (`src/Flowline.Core/Services/OrphanCleanup/Handlers/`) each now own their own `DetectAsync` implementation with the same per-table `try/catch` isolation (part 9) described here. `OrphanCleanupService.DispatchToHandlersAsync` dispatches all still-unclaimed candidates to these three handlers concurrently via `Task.WhenAll` in what it calls "Pass 2" — the same shape shown above, just no longer one function in this file.
+
 ### Dependency execution order
 
 The deletion order matches the Dataverse dependency chain:
@@ -255,6 +261,8 @@ static readonly int[] ExecutionOrder = [93, 92, 90, 91, 61, 29];
 // CustomApi: children deleted before parent
 static readonly string[] CustomApiEntityOrder = ["customapirequestparameter", "customapiresponseproperty", "customapi"];
 ```
+
+**Refresh note (2026-07-10):** these flat arrays no longer exist. Cross-family execution order is now `OrphanCleanupService.FamilyOrder` — an ordered array of handler `Type`s (`PluginAssemblyFamilyHandler`, `WebResourceHandler`, `WorkflowHandler`, `CustomApiFamilyHandler`, `BotHandler`, `ConnectionReferenceHandler`, `RoleHandler`, `EntityFamilyHandler`), with each `OrphanEntry`'s own `SequenceHint` providing intra-family ordering within that. `ExecuteInOrderAsync`/`TryExecuteEntryAsync` (below) are otherwise unchanged — this is a change to how the order is *derived*, not to the dependency-deferral execution mechanism itself.
 
 Violating this order causes `FaultException<OrganizationServiceFault>` with error code `0x80047002`. The pre-import phase catches dependency errors specifically and defers rather than failing:
 
@@ -349,6 +357,36 @@ Pre-import runs before Pack: if Dataverse connection or the orphan query fails, 
 
 **Update (2026-07-03):** `RunPreImport`/`RunPostImport` are no longer direct calls to `OrphanCleanupService`. `DeployCommand` builds one `PostDeployContext` per deploy and fans out over every registered `IEnumerable<IPostDeployService>` implementer at each point (`foreach (var postDeployService in postDeployServices) await postDeployService.RunPreImportAsync(...)`, and symmetrically for post-import) — `OrphanCleanupService` is currently the only registered implementer, but the pipeline now runs all of them, not just it. See [post-deploy-service-di-fanout-protocol.md](post-deploy-service-di-fanout-protocol.md) for why this changed and what it enables.
 
+**Update (2026-07-10, part 11): managed solutions get a different actor for cleanup, not no cleanup at all — `DeployCommand` now forces `RunMode.NoDelete` for managed deploys, and `pac solution import` gets solution-type-aware flags.** This doc's "When to Apply" item 1 below ("Dataverse unmanaged solution import never removes components") only ever covered the unmanaged case. A managed solution redeploy that Dataverse imports as an **Upgrade** (`pac`'s `--stage-and-upgrade`) *does* remove components no longer in the new version — just via a different mechanism than this service's own `Delete`/`RemoveSolutionComponent` calls. Those calls target components that, on a managed target, are owned by the previously-installed managed solution's own layer, and Dataverse rejects ad-hoc deletion of managed-solution-owned components outside its own Upgrade/uninstall path — confirmed via a Microsoft SLA-deletion KB ("The process is part of a managed solution and cannot be individually deleted. Uninstall the parent solution to remove the process.") and the `RemoveSolutionComponentRequest` SDK docs, which describe the request as data needed "to remove a component from an *unmanaged* solution." Running this service's mutating cleanup against a managed target produced failed-cleanup noise (`ExitCode.PartialSuccess`) that never once succeeded.
+
+The fix is not to skip this service for managed deploys — an earlier iteration tried exactly that (via an `IsSkipped` predicate) and it was wrong: it threw away the orphan *report* along with the (broken) deletion, and the report stays genuinely useful — a preview of what the Upgrade import is about to remove, or a signal that cleanup still needs a later Upgrade deploy when there's no prior version yet. Instead, `DeployCommand.ExecuteFlowlineAsync` forces `RunMode.NoDelete` whenever `sln.IncludeManaged` is true (`src/Flowline/Commands/DeployCommand.cs:78`), reusing this service's already-tested report-only path (previously reachable only via the explicit `--no-delete` flag) rather than adding a new skip branch:
+
+```csharp
+var useStageAndUpgrade = sln.IncludeManaged && existingSolutionInTarget;
+var runMode = settings.NoDelete || sln.IncludeManaged ? RunMode.NoDelete : RunMode.Normal;
+```
+
+`useStageAndUpgrade` is true only when the solution is managed **and** already exists in the target — Upgrade requires a prior version to upgrade *from* and breaks on a fresh install with nothing to upgrade against (confirmed against the `pac solution import` CLI reference), so a first-time managed install stays a plain import. `ImportSolutionAsync` also now always passes `--activate-plugins` (without it, plugin steps and classic Dataverse workflows can import silently disabled — Microsoft's ALM "Performance recommendations" doc marks this as default behavior only for Power Platform Pipelines, not plain `pac`/Build Tools, and multiple GitHub issues on `microsoft/powerplatform-build-tools` confirm the real-world symptom), and conditionally passes `--publish-changes` for **unmanaged** deploys only:
+
+```csharp
+.Add("--activate-plugins")
+.AddIf(stageAndUpgrade, "--stage-and-upgrade")
+.AddIf(publishChanges, "--publish-changes")
+```
+
+`--publish-changes` is *not* solution-scoped — it runs `PublishAllXmlRequest`, which republishes every pending customization across the **entire target environment**, confirmed via three independent Microsoft sources: the ALM "Performance recommendations" doc ("doesn't apply only to the selected solution... publishes all pending changes across the entire environment," and explicitly recommends skipping it for managed since managed customizations always import already published); the `pac solution publish` CLI reference's one-line description, literally "Publishes all customizations"; and the `PublishAllXmlRequest` SDK message itself, which has no parameter to scope it to one solution (its sibling, `PublishXmlRequest`, does — via a `ParameterXml` with `<entities>`/`<optionsets>`/`<webresources>`/etc.). Given that environment-wide cost, `publishChanges = !sln.IncludeManaged` — skipped for managed (zero benefit there), accepted for unmanaged because Flowline's unmanaged targets are documented as single-environment/DEV-like, so in practice there's nothing else pending for that org-wide publish to sweep up.
+
+The printed NoDelete-report reason is now derived from facts rather than a caller-rendered string — `OrphanCleanupService.BuildNoDeleteHint(DeploySolutionInfo solution)` (`src/Flowline.Core/Services/OrphanCleanupService.cs:163`, unit-tested):
+
+```csharp
+internal static string BuildNoDeleteHint(DeploySolutionInfo solution) =>
+    !solution.IncludeManaged ? "(--no-delete active)"
+    : solution.ExistsInTarget ? "(managed — previewing what the upgrade import will remove)"
+    : "(managed — first install, cleanup runs on a later upgrade deploy)";
+```
+
+An earlier iteration handed `OrphanCleanupService` a pre-rendered hint string directly on `PostDeployContext` instead — flagged as backwards, since the caller shouldn't be pre-computing presentation text that belongs to the service printing the report. `DeploySolutionInfo` (`Name`, `EnvironmentUrl`, `IncludeManaged`, `ExistsInTarget`) is the new record on `PostDeployContext.Solution` that supplies the raw facts instead — see [post-deploy-service-di-fanout-protocol.md](post-deploy-service-di-fanout-protocol.md) for that shape change in full.
+
 ## Why This Matters
 
 **Without this pattern:**
@@ -368,7 +406,7 @@ Pre-import runs before Pack: if Dataverse connection or the orphan query fails, 
 
 Apply this pattern when all of the following are true:
 
-1. The target is an additive import platform — Dataverse unmanaged solution import never removes components.
+1. The target is an additive import platform for the solution type in play — Dataverse **unmanaged** solution import never removes components. A **managed** solution redeploy that Dataverse imports as an Upgrade does remove them, but via Dataverse's own Upgrade/uninstall mechanism, not this pattern's `Delete`/`RemoveSolutionComponent` calls (see the 2026-07-10 update above) — this pattern's mutating half only ever applies where the platform itself never cleans up.
 2. Components have a stable local manifest — `Solution.xml` `<RootComponents>` is the source of truth.
 3. Components have referential integrity — deletion must respect a dependency graph.
 4. Components may be shared across deployments — requiring membership checks before delete.
@@ -429,5 +467,5 @@ Deploy succeeded; manual cleanup required. CI can alert without treating this as
 - [post-deploy-service-di-fanout-protocol.md](post-deploy-service-di-fanout-protocol.md) — `OrphanCleanupService` is now the first implementer of `IPostDeployService`; the interface/DI shape wrapping this algorithm, and the deferred-state instance-field mechanism it relies on
 - [retrieve-multiple-async-silent-truncation-2026-05-29.md](../logic-errors/retrieve-multiple-async-silent-truncation-2026-05-29.md) — why `RetrieveAllAsync` is mandatory for solutioncomponent queries
 - [dtap-gate-enforcement-in-deploy-command-2026-06-07.md](dtap-gate-enforcement-in-deploy-command-2026-06-07.md) — other deploy pipeline guards; execution order now includes pre/post-import orphan cleanup phases
-- [managed-unmanaged-type-guard-in-deploy-command-2026-06-07.md](managed-unmanaged-type-guard-in-deploy-command-2026-06-07.md) — managed/unmanaged type guard in the same pipeline
+- [managed-unmanaged-type-guard-in-deploy-command-2026-06-07.md](managed-unmanaged-type-guard-in-deploy-command-2026-06-07.md) — managed/unmanaged type guard in the same pipeline; its existing-solution-in-target check is the same fact `useStageAndUpgrade` (2026-07-10 update above) now reuses to decide whether Upgrade applies
 - [ai-agent-consumable-cli-contract-2026-06-07.md](ai-agent-consumable-cli-contract-2026-06-07.md) — `ExitCode` enum as stable public API; `PartialSuccess = 18` added in this work

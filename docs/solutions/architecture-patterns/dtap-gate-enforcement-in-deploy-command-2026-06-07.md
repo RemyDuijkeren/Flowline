@@ -1,6 +1,7 @@
 ---
 title: DTAP gate enforcement in DeployCommand
 date: 2026-06-07
+last_updated: 2026-07-10
 category: docs/solutions/architecture-patterns
 module: DeployCommand
 problem_type: architecture_pattern
@@ -103,6 +104,8 @@ if (dtapDecision.Outcome == DtapGateOutcome.Check)
     }
 }
 ```
+
+**Update (2026-07-10):** the wiring above has drifted, though `ResolveDtapGate`/`ReadLocalSolutionVersion` and the outcomes/order they drive are unchanged. The gate is no longer inline in `ExecuteFlowlineAsync` — it's extracted into its own `ValidateDtapGateAsync(sln, slnFolder, targetUrl, settings, ct)` helper, called from `ExecuteFlowlineAsync` right after the managed/unmanaged type guard, exactly where the diagram above already says it runs. `Console.Error(...); return (int)ExitCode...;` has been replaced by `throw new FlowlineException(ExitCode.ValidationFailed, "...")` for every branch — same outcome, different mechanism, matching the same change already made to the managed/unmanaged type guard (see that doc's own 2026-07-10 update). The predecessor lookup also now passes `bypassCache: true` to `GetSolutionInfoAsync`, and the version-mismatch message reads "... in {label} environment is v..." (adds the word "environment") rather than "... in {label} is v...".
 
 ### `--skip-dtap-check` flag
 

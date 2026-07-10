@@ -1,6 +1,7 @@
 ---
 title: Typed post-deploy service protocol — IPostDeployService fan-out over IEnumerable<T>
 date: 2026-07-03
+last_updated: 2026-07-10
 category: docs/solutions/architecture-patterns
 module: DeployCommand
 problem_type: architecture_pattern
@@ -16,6 +17,7 @@ related_components:
   - OrphanCleanupService
   - DeployCommand
   - PostDeployContext
+  - DeploySolutionInfo
   - IGenerator
   - Program.cs
 tags:
@@ -73,6 +75,27 @@ Six design decisions drove the shape:
 
 6. **Aggregation logic extracted as a testable static helper.** `internal static bool ShouldReportPartialSuccess(int cleanupFailures) => cleanupFailures > 0;` in `DeployCommand.cs` follows the established `ResolveDtapGate` convention (see `tests/Flowline.Tests/DeployCommandDtapGateTests.cs`) — the only way to unit-test `DeployCommand` logic without constructing the whole command, since its constructor needs live `DataverseConnector`/PAC-CLI dependencies with no test doubles in this codebase.
 
+**Update (2026-07-10): `PostDeployContext`'s flat fields consolidated into a `DeploySolutionInfo` sub-record.** The shape shown in the Guidance code sample above (a flat `SolutionName: string`) is out of date — three `IPostDeployService` implementers exist now (`OrphanCleanupService`, `BackupService`, `SolutionCheckService`), and all three read solution name and environment URL. `DeploySolutionInfo(Name, EnvironmentUrl, IncludeManaged, ExistsInTarget)` replaces the flat `SolutionName`/`EnvironmentUrl` fields with one nested record, adding two new facts (`IncludeManaged`, `ExistsInTarget`) needed to decide managed-vs-unmanaged import behavior — see [orphan-cleanup-two-phase-deploy-pipeline.md](orphan-cleanup-two-phase-deploy-pipeline.md)'s 2026-07-10 update for the full context:
+
+```csharp
+public sealed record DeploySolutionInfo(
+    string Name,
+    string EnvironmentUrl,
+    bool IncludeManaged,
+    bool ExistsInTarget);
+
+public sealed record PostDeployContext(
+    IOrganizationServiceAsync2 Service,
+    DeploySolutionInfo Solution,
+    RunMode Mode,
+    string PackagePath,
+    string PackageSrcRoot);
+```
+
+This went through a wrong-first-draft before landing here, worth recording because it's a reusable lesson for this exact pattern: the first attempt added a pre-rendered `OrphanNoDeleteHint` string field directly to `PostDeployContext`, computed by `DeployCommand` and printed verbatim by `OrphanCleanupService`. Flagged as backwards against design decision 2 above: a shared context feeding multiple consumers should carry the raw facts a consumer needs to decide for itself, not a string one consumer already rendered on another's behalf. `DeploySolutionInfo` plus a new `OrphanCleanupService.BuildNoDeleteHint(DeploySolutionInfo)` pure function fixed it — the context stays a data carrier, and the consumer that owns the printed report decides what to render from it.
+
+Also note, independent of this update: `LocalComponents` (`IReadOnlyList<(Guid ObjectId, int ComponentType)>`) and `WebResourceRoot` (`string?`), both shown in this doc's original Guidance sample above, are gone from the current record — `WebResourceRoot`'s removal is documented in the two-phase doc's part-7 update; `LocalComponents`' removal isn't documented anywhere else, noted here for the record. `DeployCommand`'s fan-out loop (Examples section below) also now filters via `activeServices = postDeployServices.Where(s => !IsSkipped(s))` (skipping `SolutionCheckService`/`BackupService` per `--skip-solution-check`/`--no-backup`), rather than the plain unconditional `foreach` shown there — this and the `LocalComponents`/`WebResourceRoot` removal both predate this specific update and are flagged here for a future refresh pass rather than fixed inline.
+
 ## Why This Matters
 
 Without this pattern, each new post-deploy capability adds another bespoke pair of calls and another merge point directly inside `DeployCommand`, and the command accumulates knowledge of every capability's concrete type and return shape. With more implementers already anticipated (state restoration, backup, flow-callback repair), that would mean `DeployCommand` growing a third and fourth hand-written call pair, each slightly different, each requiring `DeployCommand` itself to change.
@@ -111,6 +134,27 @@ foreach (var service in postDeployServices)
     cleanupFailures += await service.RunPostImportAsync(context, ct);   // after ImportSolutionAsync
 ```
 
+**`DeployCommand` — current shape (2026-07-10, reflects the `DeploySolutionInfo` update above and two new real implementers, `BackupService`/`SolutionCheckService`):**
+
+```csharp
+var solutionInfo = new DeploySolutionInfo(sln.Name, targetEnv.EnvironmentUrl!, sln.IncludeManaged, existingSolutionInTarget);
+var postDeployContext = new PostDeployContext(service, solutionInfo, runMode, packagePath, packageSrcRoot);
+
+bool IsSkipped(IPostDeployService s) =>
+    settings.SkipSolutionCheck && s is SolutionCheckService ||
+    settings.NoBackup && s is BackupService;
+
+var activeServices = postDeployServices.Where(s => !IsSkipped(s)).ToList();
+
+foreach (var postDeployService in activeServices)
+    await postDeployService.RunPreImportAsync(postDeployContext, cancellationToken);
+// ... PackSolutionAsync, ImportSolutionAsync ...
+foreach (var postDeployService in activeServices)
+    cleanupFailures += await postDeployService.RunPostImportAsync(postDeployContext, cancellationToken);
+```
+
+The `IsSkipped` filter is new since the "after" example above — `--skip-solution-check`/`--no-backup` now opt specific implementers out of both loops. An earlier version applied the filter only to the pre-import loop, leaving post-import unfiltered — harmless in practice since `BackupService`/`SolutionCheckService`'s `RunPostImportAsync` are both no-ops, but fixed for consistency (`activeServices` now backs both loops) rather than left as a latent asymmetry. `LocalComponents`/`WebResourceRoot`, both present on the original `PostDeployContext` shown above, are gone — see the `DeploySolutionInfo` update earlier in this doc.
+
 **`Program.cs:63` — DI registration before/after:**
 
 ```csharp
@@ -125,6 +169,6 @@ If this line is ever dropped, `DeployCommand`'s constructor-injected `IEnumerabl
 
 ## Related
 
-- [orphan-cleanup-two-phase-deploy-pipeline.md](orphan-cleanup-two-phase-deploy-pipeline.md) — the two-phase orphan-diffing algorithm that `OrphanCleanupService` still implements unchanged; that doc predates this refactor and describes `RunPreImportAsync`/`RunPostImportAsync` as direct concrete-type calls rather than the current `IPostDeployService` fan-out — due for a small refresh.
+- [orphan-cleanup-two-phase-deploy-pipeline.md](orphan-cleanup-two-phase-deploy-pipeline.md) — the two-phase orphan-diffing algorithm `OrphanCleanupService` still implements; its own 2026-07-03 update covers the `IPostDeployService` fan-out transition described here, and its 2026-07-10 update covers the managed-solution handling that reuses this protocol's `PostDeployContext`.
 - [ai-agent-consumable-cli-contract-2026-06-07.md](ai-agent-consumable-cli-contract-2026-06-07.md) — `ExitCode.PartialSuccess = 18`, unchanged by this refactor; `DeployCommand` still returns it when the summed `cleanupFailures` across all `IPostDeployService` implementers is non-zero.
 - GitHub issue #1 ("Post-deploy: Auto-fix missing callback registrations for Dataverse-triggered flows") — a third real candidate `IPostDeployService` implementer (post-import-only), not yet built.

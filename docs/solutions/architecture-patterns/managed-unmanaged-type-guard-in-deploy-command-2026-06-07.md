@@ -1,6 +1,7 @@
 ---
 title: Managed/unmanaged type guard in DeployCommand
 date: 2026-06-07
+last_updated: 2026-07-10
 category: docs/solutions/architecture-patterns
 module: DeployCommand
 problem_type: architecture_pattern
@@ -85,6 +86,10 @@ if (existingSolution != null)
 
 **Neither check is bypassable.** No `--force`, no `--skip-type-check`, no override flag. The Dataverse constraint is absolute — a bypass flag would give false confidence while the operation either fails at the Dataverse layer or succeeds in corrupting the environment.
 
+**Update (2026-07-10):** Two things drifted from the code sample above since this was written. First, `settings.Managed` is now `sln.IncludeManaged` — the guard checks the *resolved* solution config (merging `--managed`/`--managed false` with whatever's already saved in `.flowline` via `Config!.GetOrUpdateSolution(...)`), not the raw CLI flag directly; checking `settings.Managed` alone would miss a persisted `--managed` default from a prior `flowline sync --managed` run. Second, `Console.Error(...); return (int)ExitCode.ValidationFailed;` has been replaced by `throw new FlowlineException(ExitCode.ValidationFailed, "...")` throughout `DeployCommand` — same outcome, different mechanism. The first error message also simplified, from "Remove the unmanaged solution first, or deploy unmanaged." to "Deploy solution as unmanaged." The guard's own logic — which branch blocks, when, and why — is unchanged.
+
+The guard itself also moved: it now lives inside a dedicated `ValidateTargetAsync(targetUrl, sln, settings, ct)` helper (`src/Flowline/Commands/DeployCommand.cs`) rather than inline in `ExecuteFlowlineAsync`, and that helper now returns a second value — whether the solution already existed in the target — reusing the exact "does a prior version exist" lookup this guard needed anyway. That second value now separately feeds whether a *managed* deploy's `pac solution import` gets Dataverse's Upgrade action (`--stage-and-upgrade`), a decision documented in [orphan-cleanup-two-phase-deploy-pipeline.md](orphan-cleanup-two-phase-deploy-pipeline.md)'s 2026-07-10 update. This guard's own type-mismatch check and that later reuse are independent concerns sharing one lookup, not a change to what this guard blocks.
+
 ## Why This Matters
 
 **Irreversibility separates this from other deploy failures.** Most deployment errors recover cleanly — wrong version, wrong environment, missing component — they fail, you fix, you redeploy. The managed-over-unmanaged case is different: Dataverse imports the managed package and reports success. The unmanaged solution is now gone. Customizations not in source control are permanently lost. Recovery requires deleting the solution from the environment and reimporting from scratch, losing all data associations and environment-specific configuration that pointed to it.
@@ -149,3 +154,4 @@ Done! Your solution is live.
 - `src/Flowline/Validation/FlowlineValidator.cs` — `GetSolutionInfoAsync`, note the `includeManaged` parameter and its effect on the cache key
 - `docs/solutions/best-practices/provision-safety-guard-unmanaged-solutions-2026-05-18.md` — same guard principle applied to `ProvisionCommand` (environment provisioning)
 - `docs/solutions/architecture-patterns/dtap-gate-enforcement-in-deploy-command-2026-06-07.md` — complementary guard in `DeployCommand` (version/tier promotion enforcement)
+- [orphan-cleanup-two-phase-deploy-pipeline.md](orphan-cleanup-two-phase-deploy-pipeline.md) — reuses this guard's "does the solution already exist in target" check to decide whether a managed deploy's import runs as a Dataverse Upgrade (2026-07-10 update)
