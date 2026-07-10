@@ -36,14 +36,8 @@ What sets Flowline apart:
 - **Attribute-driven plugin registration** — decorate your `IPlugin` classes with `[Step]`, `[Filter]`, `[CustomApi]`; Flowline reads the assembly and handles every Dataverse registration. No Plugin Registration Tool, no `spkl.json`, no boilerplate.
 - **Web resource dependencies auto-wired** — RESX files linked to parent JS by base name; `// flowline:depends` for JS-to-JS; registered on every `push`. No Maker Portal visits, no manual dependency trees.
 - **Orphan cleanup built in** — steps, step images, and web resources missing from source are deleted from Dataverse on every `push`. `deploy` cleans up removed solution components too. No stale registrations, no ghost records. Use `--no-delete` to opt out.
-- **AI-native schema context** — `sync` writes `DATAVERSE_CONTEXT.md` with your full schema (entities, attributes, option sets, forms, views, plugin steps); Claude Code, Copilot, and Codex load it automatically via `AGENTS.md`. Your AI assistant knows your field names without live queries.
-- **Human-readable sync summary** — `sync` translates the XML diff into plain language: what changed, what was added, what was removed — attribute-level detail included. You know exactly what happened before you commit.
-- **Scaffolded WebResources project** — `clone` creates a TypeScript + Rollup project wired to `push` from day one. No boilerplate, no manual configuration. Swap in any bundler you prefer.
 - **Dry-run before you touch anything** — `--dry-run` shows exactly what would change before a single Dataverse record is touched. Run it as a CI safety gate or any time you want confidence. No other Dataverse ALM tool offers this.
-- **Zero-friction auth** — reuses the PAC CLI profiles you already have. Switch environments by switching profiles. Works in CI with service principals out of the box.
-- **One-command environment provisioning** — `provision` copies PROD to a fresh DEV or TEST environment. No admin center clicks, no configuration drift.
-
-![flowline sync summary](docs/images/sync-summary.png)
+- **AI-native schema context** — `sync` writes `DATAVERSE_CONTEXT.md` with your full schema (entities, attributes, option sets, forms, views, plugin steps); Claude Code, Copilot, and Codex load it automatically via `AGENTS.md`. Your AI assistant knows your field names without live queries.
 
 > Pipelines are buried steel — permits, compressors, years to commission. A flowline goes where the pipeline can't.
 
