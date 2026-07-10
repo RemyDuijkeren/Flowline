@@ -12,7 +12,7 @@ using Flowline.Validation;
 
 namespace Flowline.Commands;
 
-public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConnector, PluginService pluginService, WebResourceService webResourceService, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture)
+public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConnector, PluginService pluginService, WebResourceService webResourceService, FormEventService formEventService, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture)
     : FlowlineCommand<PushCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture)
 {
     [Flags]
@@ -152,6 +152,9 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             pushedChanges |= await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder, solutionName, publishAfterSync: !settings.NoPublish, runMode: runMode, cancellationToken: cancellationToken).ConfigureAwait(false);
             if (settings.NoPublish)
                 Console.Skip("Publish — skipping (--no-publish active).");
+
+            // R10a: form event registration runs strictly after web resources are pushed, same scope gate.
+            pushedChanges |= await formEventService.SyncSolutionAsync(conn, webResourcesSyncFolder, solutionName, settings.Force, runMode, cancellationToken).ConfigureAwait(false);
         }
 
         Console.Done(runMode == RunMode.DryRun
