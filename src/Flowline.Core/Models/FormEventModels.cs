@@ -55,3 +55,17 @@ public static class FormEventDeterministicId
         return new Guid(SHA256.HashData(Encoding.UTF8.GetBytes(key))[..16]);
     }
 }
+
+public record FormEventFormPlan(
+    Guid FormId,
+    string EntityLogicalName,
+    string FormName,
+    FormEventType Event,
+    IReadOnlySet<FormHandler> DesiredHandlers,
+    IReadOnlySet<FormHandler> UnrecognizedHandlers,
+    IReadOnlySet<FormLibraryEntry> DesiredLibraries);
+
+public class FormEventSyncPlan
+{
+    public List<FormEventFormPlan> Forms { get; } = [];
+}
