@@ -196,4 +196,52 @@ public class GitUtilsTests : IDisposable
 
         branch.Should().Be("(detached)");
     }
+
+    [Fact]
+    public async Task GetLastCommitShaForPathAsync_WithCommittedFile_ShouldReturnHeadSha()
+    {
+        CreateAndCommitFile("src/form.xml");
+        var expectedSha = ReadGitOutput("rev-parse", "HEAD");
+
+        var sha = await GitUtils.GetLastCommitShaForPathAsync(
+            Path.Combine(_root, "src"), _root);
+
+        sha.Should().Be(expectedSha);
+    }
+
+    [Fact]
+    public async Task GetLastCommitShaForPathAsync_WithNoCommitsTouchingPath_ShouldReturnNull()
+    {
+        CreateAndCommitFile("Plugins/plugin.cs");
+
+        var sha = await GitUtils.GetLastCommitShaForPathAsync(
+            Path.Combine(_root, "src"), _root);
+
+        sha.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetLastCommitShaForPathAsync_WithTwoCommits_ShouldReturnNewestSha()
+    {
+        CreateAndCommitFile("src/first.xml");
+        var firstSha = ReadGitOutput("rev-parse", "HEAD");
+
+        CreateAndCommitFile("src/second.xml");
+        var secondSha = ReadGitOutput("rev-parse", "HEAD");
+
+        var sha = await GitUtils.GetLastCommitShaForPathAsync(
+            Path.Combine(_root, "src"), _root);
+
+        sha.Should().Be(secondSha);
+        sha.Should().NotBe(firstSha);
+    }
+
+    [Fact]
+    public async Task GetLastCommitShaForPathAsync_WithNonExistentPath_ShouldReturnNull()
+    {
+        var sha = await GitUtils.GetLastCommitShaForPathAsync(
+            Path.Combine(_root, "nonexistent"), _root);
+
+        sha.Should().BeNull();
+    }
 }

@@ -160,6 +160,26 @@ public static class GitUtils
                      .ToList();
     }
 
+    public static async Task<string?> GetLastCommitShaForPathAsync(string path, string? workingDirectory = null, SubprocessCapture? capture = null, CancellationToken cancellationToken = default)
+    {
+        var cmd = Cli.Wrap("git");
+        if (workingDirectory != null)
+            cmd = cmd.WithWorkingDirectory(workingDirectory);
+
+        var pathArg = workingDirectory != null && Path.IsPathRooted(path)
+            ? Path.GetRelativePath(workingDirectory, path)
+            : path;
+
+        var finalCmd = cmd.WithArguments(args => args.Add("log").Add("-1").Add("--format=%H").Add("--").Add(pathArg))
+                          .WithValidation(CommandResultValidation.None);
+        var result = await (capture?.Apply(finalCmd) ?? finalCmd)
+                           .ExecuteBufferedAsync(cancellationToken);
+
+        if (result.ExitCode != 0) return null;
+        var sha = result.StandardOutput.Trim();
+        return string.IsNullOrWhiteSpace(sha) ? null : sha;
+    }
+
     public static async Task CreateTagAsync(string tagName, string? workingDirectory, CancellationToken cancellationToken = default)
     {
         var cmd = Cli.Wrap("git");
