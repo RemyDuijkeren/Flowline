@@ -66,6 +66,17 @@ public class OrphanCleanupServiceTests : IDisposable
                 Directory.Delete(packageFolder, true);
     }
 
+    [Theory]
+    [InlineData(false, false, "(--no-delete active)")]
+    [InlineData(false, true, "(--no-delete active)")]
+    [InlineData(true, true, "(managed — previewing what the upgrade import will remove)")]
+    [InlineData(true, false, "(managed — first install, cleanup runs on a later upgrade deploy)")]
+    public void BuildNoDeleteHint_ReturnsExpected(bool includeManaged, bool existsInTarget, string expected)
+    {
+        var solution = new DeploySolutionInfo("MySolution", "https://example.crm.dynamics.com", includeManaged, existsInTarget);
+        Assert.Equal(expected, OrphanCleanupService.BuildNoDeleteHint(solution));
+    }
+
     // PostDeployContext no longer carries LocalComponents/EntityLogicalNames/NamedComponents (KTD12) —
     // OrphanCleanupService.CompareAsync parses PackageSrcRoot itself now. Ctx() keeps the same test-facing
     // shape every existing call site already uses by writing a synthetic Solution.xml fixture that
@@ -96,7 +107,8 @@ public class OrphanCleanupServiceTests : IDisposable
 
         WriteSolutionXmlFixture(srcRoot, localComponents, entityLogicalNames ?? [], namedComponents ?? []);
 
-        return new(_serviceMock, solutionName, mode, "solution.zip", "https://example.crm.dynamics.com", srcRoot);
+        var solution = new DeploySolutionInfo(solutionName, "https://example.crm.dynamics.com", IncludeManaged: false, ExistsInTarget: true);
+        return new(_serviceMock, solution, mode, "solution.zip", srcRoot);
     }
 
     static void WriteSolutionXmlFixture(

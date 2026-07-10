@@ -142,7 +142,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         _deferred = [];
         _postImportOnly = [];
 
-        var result = await CompareAsync(context, ct).ConfigureAwait(false);
+        var result = await CompareAsync(context, ct, BuildNoDeleteHint(context.Solution)).ConfigureAwait(false);
 
         if (context.Mode == RunMode.NoDelete)
             return;
@@ -154,8 +154,16 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         var preImportEntries = result.Entries.Where(e => e.Timing == OrphanTiming.PreImportEligible).ToList();
         _postImportOnly = result.Entries.Where(e => e.Timing == OrphanTiming.PostImportOnly).ToList();
 
-        _deferred = await ExecuteInOrderAsync(context.Service, context.SolutionName, preImportEntries, isPostImport: false, ct).ConfigureAwait(false);
+        _deferred = await ExecuteInOrderAsync(context.Service, context.Solution.Name, preImportEntries, isPostImport: false, ct).ConfigureAwait(false);
     }
+
+    // Derives the printed NoDelete-report reason from the raw facts on DeploySolutionInfo rather than
+    // being handed a pre-rendered string by the caller — DeployCommand knows IncludeManaged/ExistsInTarget,
+    // but presentation of what that means for this report belongs to the service that owns the report.
+    internal static string BuildNoDeleteHint(DeploySolutionInfo solution) =>
+        !solution.IncludeManaged ? "(--no-delete active)"
+        : solution.ExistsInTarget ? "(managed — previewing what the upgrade import will remove)"
+        : "(managed — first install, cleanup runs on a later upgrade deploy)";
 
     // Thin wrapper for RunPreImportAsync's caller (DeployCommand), which already has a PostDeployContext
     // built for the whole IPostDeployService fan-out (it also carries RunMode from --no-delete and a real
@@ -164,7 +172,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
     // pipeline type (it still carries PackagePath, which this comparison never reads), so the engine
     // itself shouldn't be coupled to its shape.
     public Task<CompareResult> CompareAsync(PostDeployContext context, CancellationToken ct, string? noDeleteHint = "(--no-delete active)") =>
-        CompareAsync(context.PackageSrcRoot, context.Service, context.SolutionName, context.EnvironmentUrl, context.Mode, ct, noDeleteHint);
+        CompareAsync(context.PackageSrcRoot, context.Service, context.Solution.Name, context.Solution.EnvironmentUrl, context.Mode, ct, noDeleteHint);
 
     // Convenience overload for callers with no packed/mutating context of their own (e.g. DriftCommand) —
     // takes a packageFolder (parent of src) rather than packageSrcRoot, matching ComponentClassifier.
@@ -435,7 +443,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
     public async Task<int> RunPostImportAsync(PostDeployContext context, CancellationToken ct)
     {
         var service      = context.Service;
-        var solutionName = context.SolutionName;
+        var solutionName = context.Solution.Name;
         var mode         = context.Mode;
 
         // U11 (R12): merges reactively-deferred entries (_deferred — attempted pre-import, faulted on a

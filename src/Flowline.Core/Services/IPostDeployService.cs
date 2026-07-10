@@ -2,16 +2,26 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 
 namespace Flowline.Core.Services;
 
+// ExistsInTarget is the solution's presence in the target environment as of the pre-deploy check —
+// true whenever the target already had a prior version installed, which is also exactly the condition
+// under which a managed deploy imports as a Dataverse Upgrade (see DeployCommand.useStageAndUpgrade).
+// Consumers derive their own presentation from IncludeManaged/ExistsInTarget rather than being handed a
+// pre-rendered message — see OrphanCleanupService.BuildNoDeleteHint.
+public sealed record DeploySolutionInfo(
+    string Name,
+    string EnvironmentUrl,
+    bool IncludeManaged,
+    bool ExistsInTarget);
+
 // PackageSrcRoot is the only source-of-truth for committed source — OrphanCleanupService parses it
 // itself (ComponentClassifier.ParseLocalSource) rather than receiving pre-parsed LocalComponents/
 // EntityLogicalNames/NamedComponents fields, since it's the only IPostDeployService implementer that
 // ever reads them.
 public sealed record PostDeployContext(
     IOrganizationServiceAsync2 Service,
-    string SolutionName,
+    DeploySolutionInfo Solution,
     RunMode Mode,
     string PackagePath,
-    string EnvironmentUrl,
     string PackageSrcRoot);
 
 public interface IPostDeployService

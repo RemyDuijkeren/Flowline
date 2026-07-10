@@ -96,7 +96,7 @@ For full setup, auth, and project workflow: **[Getting Started](https://github.c
 
 ## Plugin attributes
 
-Attribute-driven registration is core to Flowline. Add [Flowline.Attributes](src/Flowline.Attributes/README.md) to your plugin project and decorate `IPlugin` classes with `[Step]`, `[Filter]`, `[PreImage]`, `[PostImage]`, or `[CustomApi]`. `flowline push` reads the assembly and handles every registration — steps, images, and Custom APIs — no Plugin Registration Tool, no `spkl.json`.
+Add [Flowline.Attributes](src/Flowline.Attributes/README.md) to your plugin project and decorate `IPlugin` classes with `[Step]`, `[Filter]`, `[PreImage]`, `[PostImage]`, or `[CustomApi]`. `flowline push` reads the assembly and handles every registration — steps, images, and Custom APIs — no Plugin Registration Tool, no `spkl.json`.
 
 ```xml
 <PackageReference Include="Flowline.Attributes" Version="1.0.0" PrivateAssets="all" />
@@ -105,6 +105,20 @@ Attribute-driven registration is core to Flowline. Add [Flowline.Attributes](src
 Source-only package: the attributes compile straight into your plugin assembly, so nothing extra ships to the Dataverse sandbox.
 
 **[Flowline.Attributes reference](src/Flowline.Attributes/README.md)** · **[Plugin Registration wiki](https://github.com/RemyDuijkeren/Flowline/wiki/04-Plugin-Registration)**
+
+---
+
+## Web resources
+
+`clone`/`init` scaffold a TypeScript + Rollup `WebResources/` project wired to `push` from day one — RESX files are linked to their parent JS by base name, and `// flowline:depends` annotations wire JS-to-JS dependencies, both registered automatically on every `push`. No Maker Portal visits, no manual dependency trees.
+
+Already have your own build? Push standalone, no cloned project needed:
+
+```bash
+flowline push ContosoSales --webresources ./dist --dev https://contoso-dev.crm4.dynamics.com
+```
+
+**[WebResources Project wiki](https://github.com/RemyDuijkeren/Flowline/wiki/06-WebResources-Project)**
 
 ---
 

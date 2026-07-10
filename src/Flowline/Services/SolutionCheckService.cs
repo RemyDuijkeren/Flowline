@@ -13,7 +13,7 @@ public class SolutionCheckService(IAnsiConsole console, SubprocessCapture captur
         var outputDirectory = Path.Combine(
             Path.GetDirectoryName(context.PackagePath) ?? Path.GetTempPath(), "checker-output");
 
-        var result = await PacUtils.CheckSolutionAsync(context.PackagePath, context.EnvironmentUrl, outputDirectory, capture, ct);
+        var result = await PacUtils.CheckSolutionAsync(context.PackagePath, context.Solution.EnvironmentUrl, outputDirectory, capture, ct);
 
         if (ShouldAbort(result.CriticalCount))
             throw new FlowlineException(ExitCode.ValidationFailed,

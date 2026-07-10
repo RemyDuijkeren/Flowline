@@ -9,8 +9,8 @@ public class BackupService(IAnsiConsole console, SubprocessCapture capture) : IP
 {
     public async Task RunPreImportAsync(PostDeployContext context, CancellationToken ct)
     {
-        var label = PacUtils.BuildBackupLabel(context.SolutionName, DateTime.UtcNow);
-        await PacUtils.BackupEnvironmentAsync(context.EnvironmentUrl, label, capture, ct);
+        var label = PacUtils.BuildBackupLabel(context.Solution.Name, DateTime.UtcNow);
+        await PacUtils.BackupEnvironmentAsync(context.Solution.EnvironmentUrl, label, capture, ct);
         console.Ok($"Environment backed up ({label}).");
     }
 

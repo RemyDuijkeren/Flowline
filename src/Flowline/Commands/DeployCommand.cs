@@ -53,18 +53,31 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        var runMode = settings.NoDelete ? RunMode.NoDelete : RunMode.Normal;
         var targetUrl = ResolveTargetUrl(settings);
         var sln = Config!.GetOrUpdateSolution(settings.Solution, settings.Managed.IsSet ? settings.Managed.Value : (bool?)null, settings)
             ?? throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — use --solution <name>.");
         var slnFolder = Path.Combine(RootFolder, "solutions", sln.Name);
-        Logger.LogInformation("target={TargetUrl} solution={SolutionName} mode={RunMode} managed={Managed}", targetUrl, sln.Name, runMode, sln.IncludeManaged);
 
         await ValidateGitCleanAsync(sln.Name, slnFolder, cancellationToken);
 
-        var targetEnv = await ValidateTargetAsync(targetUrl, sln, settings, cancellationToken);
+        var (targetEnv, existingSolutionInTarget) = await ValidateTargetAsync(targetUrl, sln, settings, cancellationToken);
         await ValidateDtapGateAsync(sln, slnFolder, targetUrl, settings, cancellationToken);
         ValidateLocalState(slnFolder, settings, cancellationToken);
+
+        // Managed import only removes components no longer in the solution when Dataverse runs it as an
+        // Upgrade (pac's --stage-and-upgrade) — plain import ("Update" semantics) never deletes anything,
+        // managed or not. Upgrade also requires a prior version already installed, so it's only valid once
+        // this solution exists in the target — a first-time managed install stays a plain import, same as
+        // before. When Upgrade doesn't apply (unmanaged, or no prior version), orphan cleanup still runs to
+        // fill that gap, but forced into report-only mode for managed — OrphanCleanupService's Delete/
+        // RemoveSolutionComponent calls target components owned by the managed solution's own layer, which
+        // Dataverse rejects outside its own upgrade/uninstall path, so mutating there only produces failed-
+        // cleanup noise. The report itself stays valuable: a preview of what Upgrade will remove, or (when
+        // no prior version) a signal that cleanup still needs a later managed Upgrade deploy to catch up.
+        var useStageAndUpgrade = sln.IncludeManaged && existingSolutionInTarget;
+        var runMode = settings.NoDelete || sln.IncludeManaged ? RunMode.NoDelete : RunMode.Normal;
+        Logger.LogInformation("target={TargetUrl} solution={SolutionName} mode={RunMode} managed={Managed} stageAndUpgrade={StageAndUpgrade}",
+            targetUrl, sln.Name, runMode, sln.IncludeManaged, useStageAndUpgrade);
 
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, targetUrl, cancellationToken);
 
@@ -72,22 +85,23 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var packagePath = await PackSolutionAsync(sln, slnFolder, settings, cancellationToken);
 
         var packageSrcRoot = Path.Combine(PackageFolder(slnFolder), "src");
-        var postDeployContext = new PostDeployContext(service, sln.Name, runMode, packagePath, targetEnv.EnvironmentUrl!, packageSrcRoot);
+        var solutionInfo = new DeploySolutionInfo(sln.Name, targetEnv.EnvironmentUrl!, sln.IncludeManaged, existingSolutionInTarget);
+        var postDeployContext = new PostDeployContext(service, solutionInfo, runMode, packagePath, packageSrcRoot);
 
         bool IsSkipped(IPostDeployService s) =>
             settings.SkipSolutionCheck && s is SolutionCheckService ||
             settings.NoBackup && s is BackupService;
 
-        var preImportServices = postDeployServices.Where(s => !IsSkipped(s));
+        var activeServices = postDeployServices.Where(s => !IsSkipped(s)).ToList();
 
-        foreach (var postDeployService in preImportServices)
+        foreach (var postDeployService in activeServices)
             await postDeployService.RunPreImportAsync(postDeployContext, cancellationToken);
 
         Logger.LogInformation("Importing to: {TargetUrl}", targetUrl);
-        await ImportSolutionAsync(packagePath, targetEnv, sln.Name, cancellationToken);
+        await ImportSolutionAsync(packagePath, targetEnv, sln.Name, useStageAndUpgrade, cancellationToken);
 
         var cleanupFailures = 0;
-        foreach (var postDeployService in postDeployServices)
+        foreach (var postDeployService in activeServices)
             cleanupFailures += await postDeployService.RunPostImportAsync(postDeployContext, cancellationToken);
         Logger.LogInformation("Post-deploy cleanup: {Failures} failures", cleanupFailures);
 
@@ -119,7 +133,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         return url;
     }
 
-    private async Task<EnvironmentInfo> ValidateTargetAsync(
+    private async Task<(EnvironmentInfo TargetEnv, bool ExistingSolution)> ValidateTargetAsync(
         string targetUrl, ProjectSolution sln, Settings settings, CancellationToken ct)
     {
         var targetEnv = await Console.Status().FlowlineSpinner().StartAsync(
@@ -146,7 +160,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
                     $"'{sln.Name}' is managed in {targetEnv.DisplayName} — can't import unmanaged over managed. Deploy managed instead.");
         }
 
-        return targetEnv;
+        return (targetEnv, existingSolution != null);
     }
 
     private async Task ValidateDtapGateAsync(
@@ -247,7 +261,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         return packagePath;
     }
 
-    private async Task ImportSolutionAsync(string packagePath, EnvironmentInfo targetEnv, string slnName, CancellationToken ct)
+    private async Task ImportSolutionAsync(string packagePath, EnvironmentInfo targetEnv, string slnName, bool stageAndUpgrade, CancellationToken ct)
     {
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(ct);
         var result = await Console.Status().FlowlineSpinner().StartAsync(
@@ -258,7 +272,8 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
                         .Add("solution").Add("import")
                         .Add("--path").Add(packagePath)
                         .Add("--environment").Add(targetEnv.EnvironmentUrl!)
-                        .Add("--async"))
+                        .Add("--async")
+                        .AddIf(stageAndUpgrade, "--stage-and-upgrade"))
                     .WithValidation(CommandResultValidation.None)
                     .WithCapture(_capture)
                     .ExecuteAsync(ct)
