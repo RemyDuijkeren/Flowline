@@ -29,6 +29,8 @@ A professional Git-based workflow for plugin developers and solution architects,
 
 Where PAC CLI already handles it, Flowline wraps — it doesn't re-implement. Where PAC has no answer, Flowline fills the gap.
 
+> Pipelines are buried steel — permits, compressors, years to commission. A flowline goes where the pipeline can't.
+
 Familiar with [spkl](https://github.com/scottdurow/SparkleXrm/wiki/spkl)? Flowline is its actively maintained successor (last meaningful commit 2021).
 
 What sets Flowline apart:
@@ -38,8 +40,6 @@ What sets Flowline apart:
 - **Orphan cleanup built in** — steps, step images, and web resources missing from source are deleted from Dataverse on every `push`. `deploy` cleans up removed solution components too. No stale registrations, no ghost records. Use `--no-delete` to opt out.
 - **Dry-run before you touch anything** — `--dry-run` shows exactly what would change before a single Dataverse record is touched. Run it as a CI safety gate or any time you want confidence. No other Dataverse ALM tool offers this.
 - **AI-native schema context** — `sync` writes `DATAVERSE_CONTEXT.md` with your full schema (entities, attributes, option sets, forms, views, plugin steps); Claude Code, Copilot, and Codex load it automatically via `AGENTS.md`. Your AI assistant knows your field names without live queries.
-
-> Pipelines are buried steel — permits, compressors, years to commission. A flowline goes where the pipeline can't.
 
 ---
 
@@ -96,7 +96,7 @@ For full setup, auth, and project workflow: **[Getting Started](https://github.c
 
 ## Plugin attributes
 
-Attribute-driven registration is core to Flowline, not an add-on. Add [Flowline.Attributes](src/Flowline.Attributes/README.md) to your plugin project and decorate `IPlugin` classes with `[Step]`, `[Filter]`, `[PreImage]`, `[PostImage]`, or `[CustomApi]`. `flowline push` reads the assembly and handles every registration — steps, images, and Custom APIs — no Plugin Registration Tool, no `spkl.json`.
+Attribute-driven registration is core to Flowline. Add [Flowline.Attributes](src/Flowline.Attributes/README.md) to your plugin project and decorate `IPlugin` classes with `[Step]`, `[Filter]`, `[PreImage]`, `[PostImage]`, or `[CustomApi]`. `flowline push` reads the assembly and handles every registration — steps, images, and Custom APIs — no Plugin Registration Tool, no `spkl.json`.
 
 ```xml
 <PackageReference Include="Flowline.Attributes" Version="1.0.0" PrivateAssets="all" />
