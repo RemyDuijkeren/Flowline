@@ -244,4 +244,22 @@ public class GitUtilsTests : IDisposable
 
         sha.Should().BeNull();
     }
+
+    [Fact]
+    public async Task GetLastCommitShaForPathAsync_OutsideAnyGitRepo_ShouldReturnNull()
+    {
+        var nonRepoDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(nonRepoDir);
+        try
+        {
+            var sha = await GitUtils.GetLastCommitShaForPathAsync(
+                Path.Combine(nonRepoDir, "src"), nonRepoDir);
+
+            sha.Should().BeNull();
+        }
+        finally
+        {
+            Directory.Delete(nonRepoDir, recursive: true);
+        }
+    }
 }

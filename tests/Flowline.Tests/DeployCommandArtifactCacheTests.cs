@@ -15,7 +15,7 @@ public class DeployCommandArtifactCacheTests
     {
         var entry = new DeployCommand.ArtifactCacheEntry("1.0.0.1", true, Sha);
 
-        DeployCommand.ArtifactCacheHit(entry, Sha, wantManaged: true).Should().BeTrue();
+        DeployCommand.ArtifactCacheHit(entry, Sha, wantManaged: true, noCache: false).Should().BeTrue();
     }
 
     [Fact]
@@ -23,7 +23,7 @@ public class DeployCommandArtifactCacheTests
     {
         var entry = new DeployCommand.ArtifactCacheEntry("1.0.0.1", true, Sha);
 
-        DeployCommand.ArtifactCacheHit(entry, OtherSha, wantManaged: true).Should().BeFalse();
+        DeployCommand.ArtifactCacheHit(entry, OtherSha, wantManaged: true, noCache: false).Should().BeFalse();
     }
 
     [Fact]
@@ -31,13 +31,13 @@ public class DeployCommandArtifactCacheTests
     {
         var entry = new DeployCommand.ArtifactCacheEntry("1.0.0.1", false, Sha);
 
-        DeployCommand.ArtifactCacheHit(entry, Sha, wantManaged: true).Should().BeFalse();
+        DeployCommand.ArtifactCacheHit(entry, Sha, wantManaged: true, noCache: false).Should().BeFalse();
     }
 
     [Fact]
     public void ArtifactCacheHit_ReturnsFalse_WhenEntryIsNull()
     {
-        DeployCommand.ArtifactCacheHit(null, Sha, wantManaged: true).Should().BeFalse();
+        DeployCommand.ArtifactCacheHit(null, Sha, wantManaged: true, noCache: false).Should().BeFalse();
     }
 
     [Fact]
@@ -45,7 +45,15 @@ public class DeployCommandArtifactCacheTests
     {
         var entry = new DeployCommand.ArtifactCacheEntry("1.0.0.1", true, Sha);
 
-        DeployCommand.ArtifactCacheHit(entry, null, wantManaged: true).Should().BeFalse();
+        DeployCommand.ArtifactCacheHit(entry, null, wantManaged: true, noCache: false).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ArtifactCacheHit_ReturnsFalse_WhenNoCacheIsSet_EvenWithMatchingEntry()
+    {
+        var entry = new DeployCommand.ArtifactCacheEntry("1.0.0.1", true, Sha);
+
+        DeployCommand.ArtifactCacheHit(entry, Sha, wantManaged: true, noCache: true).Should().BeFalse();
     }
 
     // ── ReadCacheEntryIfExists ────────────────────────────────────────────────

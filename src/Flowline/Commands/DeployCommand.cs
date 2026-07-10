@@ -88,9 +88,9 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         else
         {
             currentCommitSha = await GitUtils.GetLastCommitShaForPathAsync(slnFolder, RootFolder, _capture, cancellationToken);
-            var cacheEntry = settings.NoCache ? null : ReadCacheEntryIfExists(CacheManifestPath(candidatePackagePath));
+            var cacheEntry = ReadCacheEntryIfExists(CacheManifestPath(candidatePackagePath));
 
-            if (ArtifactCacheHit(cacheEntry, currentCommitSha, sln.IncludeManaged) && File.Exists(candidatePackagePath))
+            if (ArtifactCacheHit(cacheEntry, currentCommitSha, sln.IncludeManaged, settings.NoCache) && File.Exists(candidatePackagePath))
             {
                 reusableCacheEntry = cacheEntry;
                 gateVersion = cacheEntry!.Version;
@@ -197,8 +197,17 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         }
         finally
         {
-            if (Directory.Exists(tmpUnpackDir))
-                Directory.Delete(tmpUnpackDir, recursive: true);
+            // Swallow cleanup failures here — a locked/in-use temp file must never mask whatever exception
+            // was already propagating from the try block above.
+            try
+            {
+                if (Directory.Exists(tmpUnpackDir))
+                    Directory.Delete(tmpUnpackDir, recursive: true);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Failed to clean up temp unpack directory {TmpUnpackDir}", tmpUnpackDir);
+            }
         }
     }
 
@@ -328,8 +337,8 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
     internal sealed record ArtifactCacheEntry(string Version, bool Managed, string CommitSha);
 
-    internal static bool ArtifactCacheHit(ArtifactCacheEntry? entry, string? currentCommitSha, bool wantManaged) =>
-        entry != null && currentCommitSha != null && entry.CommitSha == currentCommitSha && entry.Managed == wantManaged;
+    internal static bool ArtifactCacheHit(ArtifactCacheEntry? entry, string? currentCommitSha, bool wantManaged, bool noCache) =>
+        !noCache && entry != null && currentCommitSha != null && entry.CommitSha == currentCommitSha && entry.Managed == wantManaged;
 
     internal static ArtifactCacheEntry? ReadCacheEntryIfExists(string manifestPath)
     {
@@ -347,8 +356,19 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         }
     }
 
-    private static void WriteCacheEntry(string manifestPath, ArtifactCacheEntry entry) =>
-        File.WriteAllText(manifestPath, JsonSerializer.Serialize(entry));
+    private static void WriteCacheEntry(string manifestPath, ArtifactCacheEntry entry)
+    {
+        try
+        {
+            File.WriteAllText(manifestPath, JsonSerializer.Serialize(entry));
+        }
+        catch (Exception)
+        {
+            // A failed cache write shouldn't fail a deploy that already packed successfully — worst case,
+            // the next deploy just doesn't find this entry and repacks, matching ReadCacheEntryIfExists's
+            // own tolerance for a missing/corrupt sidecar.
+        }
+    }
 
     internal static void ValidateArtifactManagedFlag(bool artifactManaged, bool solutionIncludeManaged)
     {
@@ -507,22 +527,20 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         using (archive)
         {
+            var entry = archive.GetEntry("Other/Solution.xml")
+                ?? throw new FlowlineException(ExitCode.NotFound, $"No Other/Solution.xml entry found in artifact '{zipPath}' — is this a valid packed solution zip?");
+
             XDocument doc;
             try
             {
-                var entry = archive.GetEntry("Other/Solution.xml")
-                    ?? throw new FlowlineException(ExitCode.NotFound, $"No Other/Solution.xml entry found in artifact '{zipPath}' — is this a valid packed solution zip?");
-
                 using var stream = entry.Open();
                 doc = XDocument.Load(stream);
             }
-            catch (FlowlineException)
-            {
-                throw;
-            }
             catch (Exception)
             {
-                throw new FlowlineException(ExitCode.NotFound, $"No Other/Solution.xml entry found in artifact '{zipPath}' — is this a valid packed solution zip?");
+                // Entry exists but its content isn't well-formed XML — distinct from "entry missing" above,
+                // since this means the zip is packed but corrupted rather than not a solution zip at all.
+                throw new FlowlineException(ExitCode.ValidationFailed, $"'{zipPath}': Other/Solution.xml is not valid XML.");
             }
 
             return ParseSolutionManifest(doc);

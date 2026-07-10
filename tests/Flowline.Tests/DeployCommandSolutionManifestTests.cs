@@ -77,6 +77,22 @@ public class DeployCommandSolutionManifestTests
     }
 
     [Fact]
+    public void ReadArtifactSolutionManifest_Throws_WhenSolutionXmlEntryContentIsMalformed()
+    {
+        using var tmp = new TempArtifactZip(zip =>
+        {
+            var entry = zip.CreateEntry("Other/Solution.xml");
+            using var writer = new StreamWriter(entry.Open());
+            writer.Write("<not><valid</xml");
+        });
+
+        var act = () => DeployCommand.ReadArtifactSolutionManifest(tmp.ZipPath);
+
+        act.Should().Throw<FlowlineException>()
+            .Which.ExitCode.Should().Be(ExitCode.ValidationFailed);
+    }
+
+    [Fact]
     public void ReadArtifactSolutionManifest_Throws_WhenFileIsNotValidZip()
     {
         var dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());

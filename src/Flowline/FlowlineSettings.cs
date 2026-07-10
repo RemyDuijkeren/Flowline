@@ -14,6 +14,6 @@ public class FlowlineSettings : CommandSettings
     public bool Force { get; set; } = false;
 
     [CommandOption("--no-cache")]
-    [Description("Re-run all pre-flight checks instead of using cached results")]
+    [Description("Re-run all pre-flight checks instead of using cached results (on deploy, also forces a fresh pack instead of reusing a cached artifact)")]
     public bool NoCache { get; set; } = false;
 }
