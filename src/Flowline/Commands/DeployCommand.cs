@@ -158,35 +158,48 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
                 WriteCacheEntry(CacheManifestPath(packagePath), new ArtifactCacheEntry(gateVersion, sln.IncludeManaged, currentCommitSha));
         }
 
-        var packageSrcRoot = Path.Combine(PackageFolder(slnFolder), "src");
-        var solutionInfo = new DeploySolutionInfo(sln.Name, targetEnv.EnvironmentUrl!, sln.IncludeManaged, existingSolutionInTarget);
-        var postDeployContext = new PostDeployContext(service, solutionInfo, runMode, packagePath, packageSrcRoot);
-
-        bool IsSkipped(IPostDeployService s) =>
-            settings.SkipSolutionCheck && s is SolutionCheckService ||
-            settings.NoBackup && s is BackupService;
-
-        var activeServices = postDeployServices.Where(s => !IsSkipped(s)).ToList();
-
-        foreach (var postDeployService in activeServices)
-            await postDeployService.RunPreImportAsync(postDeployContext, cancellationToken);
-
-        Logger.LogInformation("Importing to: {TargetUrl}", targetUrl);
-        await ImportSolutionAsync(packagePath, targetEnv, sln.Name, useStageAndUpgrade, publishChanges, cancellationToken);
-
-        var cleanupFailures = 0;
-        foreach (var postDeployService in activeServices)
-            cleanupFailures += await postDeployService.RunPostImportAsync(postDeployContext, cancellationToken);
-        Logger.LogInformation("Post-deploy cleanup: {Failures} failures", cleanupFailures);
-
-        if (ShouldReportPartialSuccess(cleanupFailures))
+        // Always unpack the zip actually being imported — whether freshly packed, reused from cache, or
+        // supplied via --path — so post-deploy services evaluate real imported content, never an assumed
+        // local Package/src that may not match (e.g. a --path artifact built from a different commit).
+        var tmpUnpackDir = Path.Combine(Path.GetTempPath(), "flowline-deploy-" + Guid.NewGuid());
+        try
         {
-            Console.Warning($"{cleanupFailures} orphan {(cleanupFailures == 1 ? "component" : "components")} couldn't be cleaned up — see above, remove manually via maker portal.");
-            return (int)ExitCode.PartialSuccess;
-        }
+            await PacUtils.UnpackSolutionAsync(packagePath, tmpUnpackDir, _capture, cancellationToken);
 
-        Console.Done("Deployed! Your solution is live. (⌐■_■)");
-        return 0;
+            var solutionInfo = new DeploySolutionInfo(sln.Name, targetEnv.EnvironmentUrl!, sln.IncludeManaged, existingSolutionInTarget);
+            var postDeployContext = new PostDeployContext(service, solutionInfo, runMode, packagePath, tmpUnpackDir);
+
+            bool IsSkipped(IPostDeployService s) =>
+                settings.SkipSolutionCheck && s is SolutionCheckService ||
+                settings.NoBackup && s is BackupService;
+
+            var activeServices = postDeployServices.Where(s => !IsSkipped(s)).ToList();
+
+            foreach (var postDeployService in activeServices)
+                await postDeployService.RunPreImportAsync(postDeployContext, cancellationToken);
+
+            Logger.LogInformation("Importing to: {TargetUrl}", targetUrl);
+            await ImportSolutionAsync(packagePath, targetEnv, sln.Name, useStageAndUpgrade, publishChanges, cancellationToken);
+
+            var cleanupFailures = 0;
+            foreach (var postDeployService in activeServices)
+                cleanupFailures += await postDeployService.RunPostImportAsync(postDeployContext, cancellationToken);
+            Logger.LogInformation("Post-deploy cleanup: {Failures} failures", cleanupFailures);
+
+            if (ShouldReportPartialSuccess(cleanupFailures))
+            {
+                Console.Warning($"{cleanupFailures} orphan {(cleanupFailures == 1 ? "component" : "components")} couldn't be cleaned up — see above, remove manually via maker portal.");
+                return (int)ExitCode.PartialSuccess;
+            }
+
+            Console.Done("Deployed! Your solution is live. (⌐■_■)");
+            return 0;
+        }
+        finally
+        {
+            if (Directory.Exists(tmpUnpackDir))
+                Directory.Delete(tmpUnpackDir, recursive: true);
+        }
     }
 
     private string ResolveTargetUrl(Settings settings)

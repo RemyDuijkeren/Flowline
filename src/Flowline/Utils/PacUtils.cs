@@ -212,6 +212,26 @@ public static class PacUtils
         return 0;
     }
 
+    public static async Task UnpackSolutionAsync(string zipPath, string destinationFolder, SubprocessCapture capture, CancellationToken cancellationToken)
+    {
+        var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
+        var result = await capture.Apply(
+            Cli.Wrap(cmdName)
+            .WithArguments(args => args
+                .AddIfNotNull(prefixArgs)
+                .Add("solution")
+                .Add("unpack")
+                .Add("--zipfile").Add(zipPath)
+                .Add("--folder").Add(destinationFolder)
+                .Add("--allowWrite").Add("true")
+                .Add("--allowDelete").Add("true"))
+            .WithValidation(CommandResultValidation.None))
+            .ExecuteBufferedAsync(cancellationToken);
+
+        if (result.ExitCode != 0)
+            throw new FlowlineException(ExitCode.BuildFailed, $"Unpack failed for '{zipPath}' — is this a valid solution zip?");
+    }
+
     public static async Task<SolutionCheckResult> CheckSolutionAsync(string zipPath, string? environmentUrl, string outputDirectory, SubprocessCapture capture, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(outputDirectory);
