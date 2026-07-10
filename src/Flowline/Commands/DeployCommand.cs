@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.IO.Compression;
+using System.Text.Json;
 using System.Xml.Linq;
 using CliWrap;
 using Flowline.Config;
@@ -31,6 +32,10 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         [Description("Deploy the managed package (--managed false resets to default)")]
         public FlagValue<bool> Managed { get; set; } = null!;
 
+        [CommandOption("--path <zip>")]
+        [Description("Import this pre-built solution zip instead of packing from source")]
+        public string? Path { get; set; }
+
         [CommandOption("--skip-dtap-check")]
         [Description("Skip DTAP promotion checks")]
         [DefaultValue(false)]
@@ -58,12 +63,46 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var sln = Config!.GetOrUpdateSolution(settings.Solution, settings.Managed.IsSet ? settings.Managed.Value : (bool?)null, settings)
             ?? throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — use --solution <name>.");
         var slnFolder = Path.Combine(RootFolder, "solutions", sln.Name);
+        var usingExplicitArtifact = !string.IsNullOrWhiteSpace(settings.Path);
 
-        await ValidateGitCleanAsync(sln.Name, slnFolder, cancellationToken);
+        // --path supplies an artifact that wasn't necessarily packed from the current local tree, so neither
+        // check is meaningful there: git-clean and drift both assume packagePath is derived from Package/src.
+        if (!usingExplicitArtifact)
+            await ValidateGitCleanAsync(sln.Name, slnFolder, cancellationToken);
 
         var (targetEnv, existingSolutionInTarget) = await ValidateTargetAsync(targetUrl, sln, settings, cancellationToken);
-        await ValidateDtapGateAsync(sln, slnFolder, targetUrl, settings, cancellationToken);
-        ValidateLocalState(slnFolder, settings, cancellationToken);
+
+        // Resolve the DTAP gate's version cheaply (artifact manifest, cache entry, or local Solution.xml) so the
+        // gate keeps failing fast before any expensive work — packing itself is deferred past the gate below.
+        var candidatePackagePath = ResolveArtifactZipPath(slnFolder, sln.Name, sln.IncludeManaged);
+        string gateVersion;
+        ArtifactCacheEntry? reusableCacheEntry = null;
+        string? currentCommitSha = null;
+
+        if (usingExplicitArtifact)
+        {
+            var (artifactVersion, artifactManaged) = ReadArtifactSolutionManifest(settings.Path!);
+            ValidateArtifactManagedFlag(artifactManaged, sln.IncludeManaged);
+            gateVersion = artifactVersion;
+        }
+        else
+        {
+            currentCommitSha = await GitUtils.GetLastCommitShaForPathAsync(slnFolder, RootFolder, _capture, cancellationToken);
+            var cacheEntry = settings.NoCache ? null : ReadCacheEntryIfExists(CacheManifestPath(candidatePackagePath));
+
+            if (ArtifactCacheHit(cacheEntry, currentCommitSha, sln.IncludeManaged) && File.Exists(candidatePackagePath))
+            {
+                reusableCacheEntry = cacheEntry;
+                gateVersion = cacheEntry!.Version;
+            }
+            else
+            {
+                gateVersion = ReadLocalSolutionVersion(PackageFolder(slnFolder));
+            }
+        }
+
+        await ValidateDtapGateAsync(sln, gateVersion, targetUrl, settings, cancellationToken);
+        ValidateLocalState(slnFolder, settings, cancellationToken, checkDrift: !usingExplicitArtifact);
 
         // Managed import only removes components no longer in the solution when Dataverse runs it as an
         // Upgrade (pac's --stage-and-upgrade) — plain import ("Update" semantics) never deletes anything,
@@ -101,8 +140,23 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, targetUrl, cancellationToken);
 
-        Logger.LogInformation("Packing: {SolutionName}", sln.Name);
-        var packagePath = await PackSolutionAsync(sln, slnFolder, settings, cancellationToken);
+        string packagePath;
+        if (usingExplicitArtifact)
+        {
+            packagePath = settings.Path!;
+        }
+        else if (reusableCacheEntry != null)
+        {
+            packagePath = candidatePackagePath;
+            Console.Skip($"Reusing cached artifact for '{sln.Name}' — source unchanged since commit {reusableCacheEntry.CommitSha[..7]}.");
+        }
+        else
+        {
+            Logger.LogInformation("Packing: {SolutionName}", sln.Name);
+            packagePath = await PackSolutionAsync(sln, slnFolder, candidatePackagePath, settings, cancellationToken);
+            if (currentCommitSha != null)
+                WriteCacheEntry(CacheManifestPath(packagePath), new ArtifactCacheEntry(gateVersion, sln.IncludeManaged, currentCommitSha));
+        }
 
         var packageSrcRoot = Path.Combine(PackageFolder(slnFolder), "src");
         var solutionInfo = new DeploySolutionInfo(sln.Name, targetEnv.EnvironmentUrl!, sln.IncludeManaged, existingSolutionInTarget);
@@ -184,7 +238,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     }
 
     private async Task ValidateDtapGateAsync(
-        ProjectSolution sln, string slnFolder, string targetUrl, Settings settings, CancellationToken ct)
+        ProjectSolution sln, string localVersion, string targetUrl, Settings settings, CancellationToken ct)
     {
         var dtapDecision = ResolveDtapGate(Config!, targetUrl);
 
@@ -194,8 +248,6 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         if (dtapDecision.Outcome != DtapGateOutcome.Check)
             return;
-
-        var localVersion = ReadLocalSolutionVersion(PackageFolder(slnFolder));
 
         if (settings.SkipDtapCheck)
         {
@@ -228,12 +280,14 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             $"Uncommitted changes in 'solutions/{solutionName}/' — commit or stash changes first before deploying.");
     }
 
-    private void ValidateLocalState(string slnFolder, Settings settings, CancellationToken ct)
+    private void ValidateLocalState(string slnFolder, Settings settings, CancellationToken ct, bool checkDrift = true)
     {
         var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
         if (!File.Exists(cdsprojPath))
             throw new FlowlineException(ExitCode.NotFound,
                 $"No solution found at '{cdsprojPath}' — run 'clone' first.");
+
+        if (!checkDrift) return;
 
         var drift = PluginWebResourceDriftChecker.Check(slnFolder, PackageFolder(slnFolder), cancellationToken: ct)
             .Where(w => w.Category is DriftCategory.OnlyLocal or DriftCategory.PluginSizeMismatch)
@@ -251,14 +305,52 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
                 "Local changes not in Dataverse — deploy would revert them. Run 'sync' first, or use --force to skip.");
     }
 
-    private async Task<string> PackSolutionAsync(ProjectSolution sln, string slnFolder, Settings settings, CancellationToken ct)
+    private static string ResolveArtifactZipPath(string slnFolder, string slnName, bool includeManaged)
     {
-        var artifactsFolder = Path.Combine(slnFolder, "artifacts");
-        Directory.CreateDirectory(artifactsFolder);
+        var suffix = includeManaged ? "_managed" : "_unmanaged";
+        return Path.Combine(slnFolder, "artifacts", $"{slnName}{suffix}.zip");
+    }
 
-        var suffix      = sln.IncludeManaged ? "_managed" : "_unmanaged";
+    private static string CacheManifestPath(string packagePath) => packagePath + ".manifest.json";
+
+    internal sealed record ArtifactCacheEntry(string Version, bool Managed, string CommitSha);
+
+    internal static bool ArtifactCacheHit(ArtifactCacheEntry? entry, string? currentCommitSha, bool wantManaged) =>
+        entry != null && currentCommitSha != null && entry.CommitSha == currentCommitSha && entry.Managed == wantManaged;
+
+    internal static ArtifactCacheEntry? ReadCacheEntryIfExists(string manifestPath)
+    {
+        if (!File.Exists(manifestPath)) return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<ArtifactCacheEntry>(File.ReadAllText(manifestPath));
+        }
+        catch (Exception)
+        {
+            // Corrupt or partially-written sidecar (e.g. a prior process was killed mid-write) — the tool owns
+            // this file, not the user, so treat it the same as absent rather than crashing an ordinary deploy.
+            return null;
+        }
+    }
+
+    private static void WriteCacheEntry(string manifestPath, ArtifactCacheEntry entry) =>
+        File.WriteAllText(manifestPath, JsonSerializer.Serialize(entry));
+
+    internal static void ValidateArtifactManagedFlag(bool artifactManaged, bool solutionIncludeManaged)
+    {
+        if (artifactManaged == solutionIncludeManaged) return;
+
+        throw new FlowlineException(ExitCode.ValidationFailed,
+            $"Artifact is {(artifactManaged ? "managed" : "unmanaged")} but the solution is configured as " +
+            $"{(solutionIncludeManaged ? "managed" : "unmanaged")} — pass a matching artifact or update the solution's managed setting.");
+    }
+
+    private async Task<string> PackSolutionAsync(ProjectSolution sln, string slnFolder, string packagePath, Settings settings, CancellationToken ct)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(packagePath)!);
+
         var packageType = sln.IncludeManaged ? "Managed" : "Unmanaged";
-        var packagePath = Path.Combine(artifactsFolder, $"{sln.Name}{suffix}.zip");
 
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(ct);
         var result = await Console.Status().FlowlineSpinner().StartAsync(

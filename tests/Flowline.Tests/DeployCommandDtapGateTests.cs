@@ -234,6 +234,29 @@ public class DeployCommandDtapGateTests
         act.Should().Throw<FlowlineException>();
     }
 
+    // ── --path artifact managed-flag validation ──────────────────────────────
+
+    [Fact]
+    public void ValidateArtifactManagedFlag_DoesNotThrow_WhenFlagsMatch()
+    {
+        var act = () => DeployCommand.ValidateArtifactManagedFlag(artifactManaged: true, solutionIncludeManaged: true);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateArtifactManagedFlag_Throws_WhenArtifactManagedButSolutionUnmanaged()
+    {
+        var act = () => DeployCommand.ValidateArtifactManagedFlag(artifactManaged: true, solutionIncludeManaged: false);
+        act.Should().Throw<FlowlineException>();
+    }
+
+    [Fact]
+    public void ValidateArtifactManagedFlag_Throws_WhenArtifactUnmanagedButSolutionManaged()
+    {
+        var act = () => DeployCommand.ValidateArtifactManagedFlag(artifactManaged: false, solutionIncludeManaged: true);
+        act.Should().Throw<FlowlineException>();
+    }
+
     private sealed class TempPackageFolder : IDisposable
     {
         public string PackageFolderPath { get; }
