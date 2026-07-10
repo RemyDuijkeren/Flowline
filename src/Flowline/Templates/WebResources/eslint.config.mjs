@@ -3,7 +3,7 @@ import powerApps from '@microsoft/eslint-plugin-power-apps';
 
 export default [
     {
-        files: ['src/**/*.ts'],
+        files: ['src/**/*.{ts,js}'],
         languageOptions: { parser: tsParser },
         plugins: { '@microsoft/power-apps': powerApps },
         rules: {
