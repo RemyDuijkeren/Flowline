@@ -459,6 +459,21 @@ public class WebResourceServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SyncSolutionAsync_ContentAndDepsChanged_PlanReasonListsBoth()
+    {
+        var id = Guid.NewGuid();
+        // Remote: old content, no deps. Local: new content + annotation → both content and deps changed.
+        SetupWebResources(RemoteWebResourceWithDepXml(id, "my_MySolution/form.js", "old content", null));
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+            "// flowline:depends av_Sol/lib.js\nnew content");
+        SetupOwnership(id, ("MySolution", false));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false, runMode: RunMode.DryRun);
+
+        Assert.Contains("my_MySolution/form.js (content, dependencies)", _console.Output);
+    }
+
+    [Fact]
     public async Task SyncSolutionAsync_DepsAndContentUnchanged_NoUpdate()
     {
         var id = Guid.NewGuid();

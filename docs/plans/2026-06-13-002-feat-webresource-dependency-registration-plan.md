@@ -11,6 +11,8 @@ origin: docs/brainstorms/2026-06-12-webresource-dependencies-requirements.md
 
 `flowline push` will automatically register Dataverse web resource dependency relationships after every sync: RESX files linked to their parent JS by base-name matching, JS-to-JS libraries via `// flowline:depends` annotations. Dependency changes are diffed against the current `dependencyxml` field, written back, and published. Deploy-time orphan cleanup exempts annotation-referenced external files from deletion.
 
+> **Update (2026-07-10):** R4's "top of the file" restriction and the "stops at the first non-comment line" parsing behavior described below were removed — a bundler-injected banner (confirmed against the WebResources scaffold's own `rollup.config.mjs`, which prepends a `/** ... */` block comment to every build) is not a `//` line comment, so the original leading-block-only scan silently dropped every annotation in a built file regardless of where the developer placed it. `WebResourceAnnotationParser` now scans the whole file and also recognizes `//!`/`/*! ... */` (preserved by default when Terser/esbuild/SWC minify). See [`webresource-dependency-registration-patterns.md`](../solutions/design-patterns/webresource-dependency-registration-patterns.md) lesson 8 and `06-WebResources-Project.md` (wiki) for the current behavior.
+
 ---
 
 ## Problem Frame

@@ -48,7 +48,7 @@ public class WebResourceExecutor(IAnsiConsole console)
                     }
                     catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                 }, ctx.AddTask("Updating web resources", maxValue: plan.Updates.Count), cancellationToken)).ConfigureAwait(false);
-            foreach (var a in plan.Updates) console.Verbose($"Web resource '{a.Name}' updated");
+            foreach (var a in plan.Updates) console.Verbose($"Web resource '{a.Name}' updated ({a.Reason})");
             console.Ok($"{plan.Updates.Count} web resource(s) updated");
         }
 

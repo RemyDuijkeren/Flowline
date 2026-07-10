@@ -37,7 +37,8 @@ public class WebResourcePlanner(IAnsiConsole console)
                     existing.Entity["webresourcetype"] = new OptionSetValue((int)local.Type);
                     if (depsChangedGlobal)
                         existing.Entity["dependencyxml"] = DependencyXmlSerializer.Serialize(desiredDeps);
-                    plan.Updates.Add(new WebResourcePlanAction(name, WebResourceAction.Update, Entity: existing.Entity, Id: existing.Id));
+                    var reasonGlobal = DescribeChanges(existing.Content != local.Content, existing.DisplayName != local.DisplayName, depsChangedGlobal);
+                    plan.Updates.Add(new WebResourcePlanAction(name, WebResourceAction.Update, Entity: existing.Entity, Id: existing.Id, Reason: reasonGlobal));
                 }
                 plan.AddsToSolution.Add(new WebResourcePlanAction(name, WebResourceAction.AddToSolution, Id: existing.Id, SolutionName: targetSolutionName));
                 continue;
@@ -68,7 +69,9 @@ public class WebResourcePlanner(IAnsiConsole console)
             var desiredDeps = BuildDesiredSet(local.DependsOn, currentByName, snapshot);
             var depsChanged = DependenciesDiffer(desiredDeps, currentDeps);
 
-            if (remote.Content == local.Content && remote.DisplayName == local.DisplayName && !depsChanged)
+            var contentChanged = remote.Content != local.Content;
+            var displayNameChanged = remote.DisplayName != local.DisplayName;
+            if (!contentChanged && !displayNameChanged && !depsChanged)
                 continue;
 
             remote.Entity["content"] = local.Content;
@@ -84,7 +87,8 @@ public class WebResourcePlanner(IAnsiConsole console)
                 name,
                 WebResourceAction.Update,
                 Entity: remote.Entity,
-                Id: remote.Id));
+                Id: remote.Id,
+                Reason: DescribeChanges(contentChanged, displayNameChanged, depsChanged)));
         }
 
         // Exist in Dataverse, but not in local, delete or remove them
@@ -163,6 +167,15 @@ public class WebResourcePlanner(IAnsiConsole console)
             return remote.DisplayName;
         var lastSlash = logicalName.LastIndexOf('/');
         return lastSlash >= 0 ? logicalName[(lastSlash + 1)..] : logicalName;
+    }
+
+    static string DescribeChanges(bool contentChanged, bool displayNameChanged, bool depsChanged)
+    {
+        var parts = new List<string>();
+        if (contentChanged) parts.Add("content");
+        if (displayNameChanged) parts.Add("displayname");
+        if (depsChanged) parts.Add("dependencies");
+        return string.Join(", ", parts);
     }
 
     static bool DependenciesDiffer(IReadOnlySet<DependencyLibrary> desired, IReadOnlySet<DependencyLibrary> current)

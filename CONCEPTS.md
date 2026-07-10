@@ -81,3 +81,11 @@ The four-digit locale code embedded in RESX filenames (e.g., `.1033.resx` for En
 for Japanese). Dataverse loads the correct RESX variant at runtime based on the user's language
 setting. A bare RESX reference without an LCID suffix (e.g., `av_ext/strings.resx`) is a shorthand
 that Flowline expands to all matching LCID variants during dependency enrichment.
+
+### Dependency annotation
+A developer-authored declaration in a web resource's source that it depends on another web
+resource, read by `flowline push` to register the load-order dependency in Dataverse. Recognized
+anywhere in the file — not only before other code — because a build tool may inject unrelated
+content ahead of it. A RESX file sharing a base name with a script is linked automatically and
+needs no annotation; annotations are for everything else (shared libraries, cross-solution
+references, explicit overrides when auto-linking is ambiguous).

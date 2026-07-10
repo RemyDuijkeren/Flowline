@@ -9,9 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`//!`/`/*! ... */` form for `// flowline:depends` annotations**: survives default minifier settings (Terser/esbuild/SWC preserve `!`-prefixed comments) — recommended for WebResources projects with a minification step; prefer the block form `/*! ... */`, since some minifier configs only apply this preservation to block comments, not line comments. The plain `//` form still works.
+- **Web resource update reports now say why**: `push`/`sync` output lists the reason for each web resource update (`content`, `displayname`, `dependencies`, or a combination) instead of just the resource name.
+
 ### Changed
 
 ### Fixed
+
+- **`// flowline:depends` annotations recognized anywhere in the file**: previously the parser stopped scanning at the first non-`//`-comment line, so a bundler-injected banner (e.g. Rollup's `banner` option, used by the default WebResources scaffold) silently dropped every annotation in the built file. Annotations are now found regardless of position.
 
 ### Security
 

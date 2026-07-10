@@ -1,6 +1,7 @@
 ---
 title: "Web resource dependency registration — identity, GUID reuse, and matching semantics"
 date: 2026-06-14
+last_updated: 2026-07-10
 category: docs/solutions/design-patterns
 module: web-resources
 problem_type: design_pattern
@@ -12,12 +13,14 @@ applies_when:
   - Matching RESX files to their corresponding JS handler files across multi-solution repos
   - Expanding bare RESX references (no LCID suffix) to all matching LCID variants
   - Deduplicating dependency references within a single source file
+  - Parsing annotations out of a file that passes through a bundler, transpiler, or minifier before Flowline reads it
 symptoms:
   - GUID reuse failing silently when DependencyLibrary equality matches on all three fields
   - Cross-folder RESX matching causing false positives (av_ns1/MyForm.resx linked to av_ns2/MyForm.js)
   - Global orphan dependencyxml not preserved because ColumnSet omitted the field
   - Bare RESX references silently dropped when no LCID variants are found
   - Duplicate annotations in a single file processed multiple times downstream
+  - flowline:depends annotations silently dropped for every project built from the default WebResources scaffold, with no error or warning, because a bundler-injected banner comment precedes them
 tags:
   - dataverse
   - webresource
@@ -27,6 +30,9 @@ tags:
   - annotation-parsing
   - read-modify-write
   - deduplication
+  - bundler
+  - minification
+  - rollup
 ---
 
 # Web resource dependency registration — identity, GUID reuse, and matching semantics
@@ -111,10 +117,10 @@ orphan query, and any future per-resource refresh.
 
 ### 4. Deduplicate annotations before enrichment
 
-`WebResourceAnnotationParser.ParseAnnotations` reads `// flowline:depends` lines from the top of a
-JS file. Files may contain duplicate annotations. Without deduplication, the same dependency name
-enters enrichment and ultimately produces duplicate XML entries or `ArgumentException` in downstream
-`Dictionary` construction:
+`WebResourceAnnotationParser.ParseAnnotations` reads `// flowline:depends` lines (see lesson 8 for
+the full set of recognized forms). Files may contain duplicate annotations. Without deduplication,
+the same dependency name enters enrichment and ultimately produces duplicate XML entries or
+`ArgumentException` in downstream `Dictionary` construction:
 
 ```csharp
 // Deduplicate while preserving order (first occurrence wins)
@@ -122,19 +128,13 @@ List<string>? result = null;
 HashSet<string>? seen = null;
 foreach (var line in File.ReadLines(filePath))
 {
-    var trimmed = line.Trim();
-    if (string.IsNullOrEmpty(trimmed)) continue;
-    if (trimmed.StartsWith(DependsPrefix))
-    {
-        var name = trimmed[DependsPrefix.Length..].Trim();
-        if (!string.IsNullOrEmpty(name) &&
-            (seen ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase)).Add(name))
-            (result ??= []).Add(name);
-    }
-    else if (trimmed.StartsWith("//"))
-        continue;
-    else
-        break;
+    var match = AnnotationRegex.Match(line.Trim());
+    if (!match.Success) continue;
+
+    var name = match.Groups["name"].Value;
+    if (!string.IsNullOrEmpty(name) &&
+        (seen ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase)).Add(name))
+        (result ??= []).Add(name);
 }
 ```
 
@@ -203,6 +203,61 @@ var annotationRefs = WebResourceAnnotationParser.CollectAllReferences(webresourc
 `CollectAllReferences` scans all `*.js` files under the project root and returns the union set of
 all `// flowline:depends` names. Any name in this set is protected from orphan deletion.
 
+### 8. Scan the whole file for annotations — a bundler banner is not a `//` comment
+
+The original parser stopped at the first line that wasn't blank or a `//` line comment, on the
+assumption that annotations always sit at the very top of the file. This breaks for any project
+built with a bundler that injects a non-`//` banner ahead of user code — confirmed against the
+WebResources scaffold's own `rollup.config.mjs`, which prepends a `/** ... */` block-comment file
+header to every build:
+
+```javascript
+/**
+  * This code is generated using Rollup...
+  */
+(function () {
+// flowline:depends av_ext/lib.js   ← never reached: parser already broke on the "/**" line above
+...
+})();
+```
+
+`/**` matches neither the depends prefix nor `"//"`, so the loop's `else break;` fires on line 1 of
+every file the default template produces — the annotation is silently ignored regardless of where
+the developer puts it. The fix drops the "stop at first non-comment line" restriction entirely and
+matches a regex against every line in the file:
+
+```csharp
+static readonly Regex AnnotationRegex = new(
+    @"^(?://!?|/\*!)\s*flowline:depends\s+(?<name>.+?)\s*(?:\*/)?$",
+    RegexOptions.Compiled);
+```
+
+This also recognizes `//!` and `/*! ... */` as equivalent prefixes — the same "legal comment"
+marker Terser, esbuild, and SWC all preserve by default when minifying (anything starting with
+`//!`/`/*!`, or containing `@license`/`@preserve`/`@cc_on`, survives default minify settings; a
+bare `//` or `/**` comment does not). The scaffold ships with no minifier today, so this is
+forward-hardening rather than a fix for a second observed bug — but it means a project that later
+adds one doesn't silently lose dependency registration a second time.
+
+`/*! flowline:depends ... */` (block form) is the recommended form for minified builds — some
+minifier configurations only apply the "preserve" heuristic to block comments, not line comments,
+so `//! flowline:depends ...` can still be stripped in a few setups where `/*! ... */` survives.
+Plain `// flowline:depends ...` keeps working unchanged for builds without a minifier.
+
+**How this surfaced — and a dead end worth recording.** This bug was found while investigating an
+unrelated live report: a dependency added manually via the Maker Portal UI in one Dataverse
+environment wasn't visible when queried in another. That turned out to be a plain Dev/Prod
+environment mixup on the reporter's end, not a Flowline bug — the Maker Portal renders whatever raw
+`name`/`displayName` is stored in `dependencyxml` verbatim, with no resolution against real logical
+names, so a bare unqualified `name` (e.g. `"example1.js"` instead of `"av_ns/example1.js"`) displays
+just fine. An initial hypothesis chased exactly that "unqualified name" theory and produced a working
+but ultimately unnecessary fix before the environment mixup was confirmed via direct API queries
+(`pac env fetch --xml`) and a same-environment Maker Portal screenshot. Reading
+`WebResourceAnnotationParser`'s real source to design that fix — not the mixup itself — is what
+surfaced this separate, much higher-impact bug. Lesson: an "I don't see X in the Maker Portal" report
+can be a real sync bug or a wrong-environment report with an identical symptom; confirm which
+environment is actually being viewed before diagnosing a code-level root cause.
+
 ## Why This Matters
 
 **GUID stability prevents silent deploy regressions.** Regenerating GUIDs on every push causes
@@ -230,6 +285,7 @@ field in its ColumnSet.
 - Building file-matching logic across a project with multiple publisher-prefixed folders.
 - Implementing orphan cleanup for any resource that may be shared across solutions.
 - Using C# `record` types for domain entities where auto-generated equality doesn't match domain identity rules.
+- Parsing annotations out of any file that may pass through a bundler, transpiler, or minifier before Flowline reads it — check whether the tool can inject content ahead of the annotation, and whether the annotation's comment style survives that tool's default settings.
 
 ## Examples
 
@@ -259,14 +315,16 @@ Push 3: adds av_ns/util.js dependency → {abc-123} reused for lib.js, {def-456}
 
 ```javascript
 // flowline:depends av_ext/shared-library.js
-// flowline:depends av_ext/strings.resx  // bare RESX — expands to all LCID variants
-// flowline:depends av_ext/strings.resx  // duplicate — deduplicated silently
+/*! flowline:depends av_ext/strings.resx */   // block bang form — most reliable across minifiers
+//! flowline:depends av_ext/another-lib.js    // line bang form — works with most, not all, minifiers
 
 export function onLoad(executionContext) { ... }
 ```
 
-Annotations must appear at the top of the file, before any non-comment code. One dependency per
-line. Parser stops at the first non-comment, non-blank line.
+One dependency per line, anywhere in the file — not just the top. `//`, `//!`, and single-line
+`/*! ... */` are all recognized equivalently. For projects with a minification step, prefer
+`/*! ... */` — some minifier configs only preserve block comments matching the bang/`@license`
+convention, not line comments, so `//!` can still get stripped where `/*! ... */` survives.
 
 ## Related
 

@@ -1,12 +1,21 @@
+using System.Text.RegularExpressions;
+
 namespace Flowline.Core.Services;
 
 public static class WebResourceAnnotationParser
 {
-    const string DependsPrefix = "// flowline:depends ";
+    // Matches "// flowline:depends x", "//! flowline:depends x" (the "!" is the industry-standard
+    // "legal comment" marker Terser/esbuild/SWC preserve by default when minifying), and the
+    // single-line block form "/*! flowline:depends x */".
+    static readonly Regex AnnotationRegex = new(
+        @"^(?://!?|/\*!)\s*flowline:depends\s+(?<name>.+?)\s*(?:\*/)?$",
+        RegexOptions.Compiled);
 
     /// <summary>
-    /// Reads raw flowline:depends annotation lines from the top of a JS file.
-    /// Stops at the first non-comment, non-blank line.
+    /// Reads flowline:depends annotation lines from anywhere in a JS file — not just the leading
+    /// comment block, since a bundler-injected banner (e.g. Rollup's "banner" option, often a
+    /// "/**" block comment) can precede the annotation without being a "//" line comment itself,
+    /// which would otherwise stop a leading-block-only scan before it ever reaches the annotation.
     /// </summary>
     public static IReadOnlyList<string> ParseAnnotations(string filePath)
     {
@@ -14,19 +23,13 @@ public static class WebResourceAnnotationParser
         HashSet<string>? seen = null;
         foreach (var line in File.ReadLines(filePath))
         {
-            var trimmed = line.Trim();
-            if (string.IsNullOrEmpty(trimmed)) continue;
-            if (trimmed.StartsWith(DependsPrefix))
-            {
-                var name = trimmed[DependsPrefix.Length..].Trim();
-                if (!string.IsNullOrEmpty(name) &&
-                    (seen ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase)).Add(name))
-                    (result ??= []).Add(name);
-            }
-            else if (trimmed.StartsWith("//"))
-                continue;
-            else
-                break;
+            var match = AnnotationRegex.Match(line.Trim());
+            if (!match.Success) continue;
+
+            var name = match.Groups["name"].Value;
+            if (!string.IsNullOrEmpty(name) &&
+                (seen ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase)).Add(name))
+                (result ??= []).Add(name);
         }
         return result?.AsReadOnly() ?? (IReadOnlyList<string>)[];
     }

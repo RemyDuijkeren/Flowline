@@ -155,7 +155,7 @@ public class WebResourceService(IAnsiConsole console)
         line($"  Summary: {counts}");
 
         WriteSection(line, "Creates", plan.Creates);
-        WriteSection(line, "Updates", plan.Updates);
+        WriteSection(line, "Updates", plan.Updates, withReason: true);
         WriteSection(line, "Add to solution", plan.AddsToSolution);
         WriteSection(line, "Deletes", plan.Deletes);
         WriteSection(line, "Remove from solution", plan.RemovesFromSolution);
