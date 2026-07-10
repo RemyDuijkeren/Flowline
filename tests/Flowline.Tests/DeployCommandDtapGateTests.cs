@@ -234,6 +234,41 @@ public class DeployCommandDtapGateTests
         act.Should().Throw<FlowlineException>();
     }
 
+    // ── DtapVersionMatches ────────────────────────────────────────────────────
+
+    [Fact]
+    public void DtapVersionMatches_ReturnsTrue_WhenVersionsAreEqual()
+    {
+        DeployCommand.DtapVersionMatches("1.2.0.0", "1.2.0.0").Should().BeTrue();
+    }
+
+    [Fact]
+    public void DtapVersionMatches_ReturnsFalse_WhenGateVersionIsNewerThanPredecessor()
+    {
+        // Forward skip: promoting a version the predecessor tier hasn't seen yet.
+        DeployCommand.DtapVersionMatches("1.0.0.0", "2.0.0.0").Should().BeFalse();
+    }
+
+    [Fact]
+    public void DtapVersionMatches_ReturnsFalse_WhenGateVersionIsOlderThanPredecessor()
+    {
+        // Downgrade: the predecessor tier already verified a newer version than this one.
+        // Deliberate hotfix-style downgrades aren't a supported flow yet — --skip-dtap-check is the override.
+        DeployCommand.DtapVersionMatches("2.0.0.0", "1.0.0.0").Should().BeFalse();
+    }
+
+    [Fact]
+    public void DtapVersionMatches_ReturnsFalse_WhenPredecessorVersionIsNull()
+    {
+        DeployCommand.DtapVersionMatches(null, "1.0.0.0").Should().BeFalse();
+    }
+
+    [Fact]
+    public void DtapVersionMatches_ReturnsFalse_WhenPredecessorVersionIsUnparseable()
+    {
+        DeployCommand.DtapVersionMatches("not-a-version", "1.0.0.0").Should().BeFalse();
+    }
+
     // ── --path artifact managed-flag validation ──────────────────────────────
 
     [Fact]

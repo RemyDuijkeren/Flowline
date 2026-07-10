@@ -285,13 +285,20 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             throw new FlowlineException(ExitCode.ValidationFailed,
                 $"'{sln.Name}' hasn't been deployed to {dtapDecision.PredecessorLabel} yet — promote there first, or use --skip-dtap-check.");
 
-        if (predecessorInfo.VersionNumber == null
-            || !Version.TryParse(predecessorInfo.VersionNumber, out var predVer)
-            || !Version.TryParse(gateVersion, out var localVer)
-            || predVer < localVer)
+        if (!DtapVersionMatches(predecessorInfo.VersionNumber, gateVersion))
             throw new FlowlineException(ExitCode.ValidationFailed,
-                $"'{sln.Name}' in {dtapDecision.PredecessorLabel} environment is v{predecessorInfo.VersionNumber ?? "unknown"} — promote v{gateVersion} there first, or use --skip-dtap-check.");
+                $"'{sln.Name}' in {dtapDecision.PredecessorLabel} environment is v{predecessorInfo.VersionNumber ?? "unknown"} — v{gateVersion} hasn't been verified there. Promote v{gateVersion} through {dtapDecision.PredecessorLabel} first, or use --skip-dtap-check.");
     }
+
+    // Requires an exact version match, not just "predecessor is at least as new" — deliberately promoting an
+    // older version than what's already verified upstream (a hotfix-style downgrade) isn't a supported flow
+    // yet, so it's blocked here rather than silently allowed. --skip-dtap-check remains the manual override
+    // until that's built as its own feature.
+    internal static bool DtapVersionMatches(string? predecessorVersionNumber, string gateVersion) =>
+        predecessorVersionNumber != null
+        && Version.TryParse(predecessorVersionNumber, out var predVer)
+        && Version.TryParse(gateVersion, out var localVer)
+        && predVer == localVer;
 
     private async Task ValidateGitCleanAsync(string solutionName, string slnFolder, CancellationToken ct)
     {
