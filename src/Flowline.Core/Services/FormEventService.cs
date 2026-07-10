@@ -38,14 +38,12 @@ public class FormEventService(IAnsiConsole console)
             return false;
         }
 
-        var formCount = plan.Forms.Select(f => f.FormId).Distinct().Count();
-
         // Dry-run: web resources referenced by a new Library entry may not actually exist yet in this mode
         // (R10a), and the whole-push --dry-run contract must not write real form registrations either — so
         // report the plan's shape and return without calling the executor.
         if (runMode == RunMode.DryRun)
         {
-            console.Ok($"Dry run: {formCount} form(s) with pending handler/library changes. Run without --dry-run to apply.");
+            console.Ok($"Dry run: {plan.DistinctFormCount} form(s) with pending handler/library changes. Run without --dry-run to apply.");
             return true;
         }
 

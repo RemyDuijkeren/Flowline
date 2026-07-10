@@ -1,3 +1,4 @@
+using System.Security;
 using System.ServiceModel;
 using System.Xml.Linq;
 using Microsoft.PowerPlatform.Dataverse.Client;
@@ -34,11 +35,7 @@ public class FormEventExecutor(IAnsiConsole console)
         var removeUnrecognized = ResolveUnrecognizedHandling(plan, force);
 
         var failures = new List<(string Name, Exception Error)>();
-
-        // A form with both onLoad and onSave annotations produces two FormEventFormPlan entries sharing
-        // the same FormId (the planner groups by (entity, form, event)) — count distinct forms, not plan
-        // entries, for progress/reporting.
-        var formCount = plan.Forms.Select(f => f.FormId).Distinct().Count();
+        var formCount = plan.DistinctFormCount;
 
         await console.Progress().StartAsync(ctx =>
             ExecuteByEntityAsync(service, snapshot, plan, removeUnrecognized, failures,
@@ -74,32 +71,23 @@ public class FormEventExecutor(IAnsiConsole console)
         {
             var lines = unrecognized.Select(u =>
                 $"{u.Form.EntityLogicalName}/{u.Form.FormName}: {u.Handler.FunctionName} ({u.Handler.LibraryName})");
-            throw new InvalidOperationException(
+            throw new FlowlineException(ExitCode.ForceRequired,
                 "Unrecognized form event handler(s) found — confirmation required but not in interactive mode. Use --force to proceed.\n"
                 + string.Join("\n", lines));
         }
 
         console.Warning($"{unrecognized.Count} unrecognized handler(s) found on tracked forms:");
         foreach (var (form, handler) in unrecognized)
-            console.WriteLine($"  {form.EntityLogicalName}/{form.FormName}: {handler.FunctionName} ({handler.LibraryName})");
+            console.Info($"  {form.EntityLogicalName}/{form.FormName}: {handler.FunctionName} ({handler.LibraryName})");
 
         return console.Confirm("Remove unrecognized handler(s) from form(s)?", false);
     }
 
-    // Mirrors ConsoleHelper.IsInteractive's CI-detection logic (Flowline.Core can't reference the CLI
-    // project's ConsoleHelper/FlowlineSettings), but checks the injected console's own profile rather than
-    // the static AnsiConsole ambient instance — keeps this testable via a TestConsole without mutating
-    // global state.
-    bool IsInteractive()
-    {
-        if (Environment.GetEnvironmentVariable("CI") != null ||
-            Environment.GetEnvironmentVariable("TF_BUILD") != null ||
-            Environment.GetEnvironmentVariable("JENKINS_URL") != null ||
-            Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != null)
-            return false;
-
-        return console.Profile.Capabilities.Interactive;
-    }
+    // Shares CiEnvironment's CI-detection with ConsoleHelper.IsInteractive (Flowline.Core can't reference
+    // the CLI project's ConsoleHelper/FlowlineSettings), but checks the injected console's own profile
+    // rather than the static AnsiConsole ambient instance — keeps this testable via a TestConsole without
+    // mutating global state.
+    bool IsInteractive() => !CiEnvironment.IsCi() && console.Profile.Capabilities.Interactive;
 
     async Task ExecuteByEntityAsync(
         IOrganizationServiceAsync2 service,
@@ -192,7 +180,7 @@ public class FormEventExecutor(IAnsiConsole console)
     {
         var request = new OrganizationRequest("PublishXml")
         {
-            ["ParameterXml"] = $"<importexportxml><entities><entity>{entityLogicalName}</entity></entities></importexportxml>"
+            ["ParameterXml"] = $"<importexportxml><entities><entity>{SecurityElement.Escape(entityLogicalName)}</entity></entities></importexportxml>"
         };
         return service.ExecuteAsync(request, cancellationToken);
     }

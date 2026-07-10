@@ -19,10 +19,15 @@ public static class FormEventAnnotationParser
     /// being a "//" line comment itself, which would otherwise stop a leading-block-only scan before
     /// it ever reaches the annotation.
     /// </summary>
-    public static IReadOnlyList<FormEventAnnotation> ParseAnnotations(string filePath)
+    public static IReadOnlyList<FormEventAnnotation> ParseAnnotations(string filePath) =>
+        ParseAnnotations(File.ReadLines(filePath));
+
+    // Lines-based overload — lets a caller that already has the file's content in memory (e.g. the reader,
+    // which decodes it for ResolvedFormEventAnnotation.Content) scan it without a second disk read.
+    public static IReadOnlyList<FormEventAnnotation> ParseAnnotations(IEnumerable<string> lines)
     {
         List<FormEventAnnotation>? result = null;
-        foreach (var line in File.ReadLines(filePath))
+        foreach (var line in lines)
         {
             var match = AnnotationRegex.Match(line.Trim());
             if (!match.Success) continue;

@@ -1,4 +1,5 @@
 using System.Reflection;
+using Flowline.Core.Services;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 
@@ -27,19 +28,8 @@ public static class ConsoleHelper
         console.WriteLine();
     }
 
-    public static bool IsInteractive(FlowlineSettings? settings)
-    {
-        // CI Environment detection
-        if (Environment.GetEnvironmentVariable("CI") != null || // Most CI systems
-            Environment.GetEnvironmentVariable("TF_BUILD") != null || // Azure DevOps
-            Environment.GetEnvironmentVariable("JENKINS_URL") != null || // Jenkins
-            Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != null) // GitHub Actions
-        {
-            return false;
-        }
-
-        return AnsiConsole.Profile.Capabilities.Interactive;
-    }
+    public static bool IsInteractive(FlowlineSettings? settings) =>
+        !CiEnvironment.IsCi() && AnsiConsole.Profile.Capabilities.Interactive;
 
     internal static string? DetectCIPlatform()
     {

@@ -1,6 +1,5 @@
+using System.ServiceModel;
 using Microsoft.Xrm.Sdk;
-using Microsoft.Xrm.Sdk.Messages;
-using Microsoft.Xrm.Sdk.Metadata;
 using Microsoft.Xrm.Sdk.Query;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using NSubstitute;
@@ -29,7 +28,7 @@ public class FormEventReaderTests : IDisposable
         _serviceMock.ExecuteAsync(Arg.Any<OrganizationRequest>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new OrganizationResponse()));
 
-        SetupSolution("MySolution", "my");
+        _serviceMock.SetupSolution("MySolution", "my");
     }
 
     public void Dispose()
@@ -48,10 +47,10 @@ public class FormEventReaderTests : IDisposable
 
         var accountFormId = Guid.NewGuid();
         var contactFormId = Guid.NewGuid();
-        SetupEntityObjectTypeCode("account", 1);
-        SetupEntityObjectTypeCode("contact", 2);
-        SetupSystemForms(1, "Account Main", (accountFormId, "Account Main", "<form>account</form>"));
-        SetupSystemForms(2, "Contact Main", (contactFormId, "Contact Main", "<form>contact</form>"));
+        _serviceMock.SetupEntityObjectTypeCode("account", 1);
+        _serviceMock.SetupEntityObjectTypeCode("contact", 2);
+        _serviceMock.SetupSystemForms(1, "Account Main", (accountFormId, "Account Main", "<form>account</form>"));
+        _serviceMock.SetupSystemForms(2, "Contact Main", (contactFormId, "Contact Main", "<form>contact</form>"));
 
         var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
 
@@ -85,9 +84,9 @@ public class FormEventReaderTests : IDisposable
         File.WriteAllText(Path.Combine(_webresourceRoot, "form2.js"),
             "// flowline:onsave account \"Account Quick Create\" handlerB\nfunction handlerB() {}");
 
-        SetupEntityObjectTypeCode("account", 1);
-        SetupSystemForms(1, "Account Main", (Guid.NewGuid(), "Account Main", "<form>main</form>"));
-        SetupSystemForms(1, "Account Quick Create", (Guid.NewGuid(), "Account Quick Create", "<form>qc</form>"));
+        _serviceMock.SetupEntityObjectTypeCode("account", 1);
+        _serviceMock.SetupSystemForms(1, "Account Main", (Guid.NewGuid(), "Account Main", "<form>main</form>"));
+        _serviceMock.SetupSystemForms(1, "Account Quick Create", (Guid.NewGuid(), "Account Quick Create", "<form>qc</form>"));
 
         await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
 
@@ -104,9 +103,9 @@ public class FormEventReaderTests : IDisposable
         File.WriteAllText(Path.Combine(_webresourceRoot, "good.js"),
             "// flowline:onload account \"Account Main\" handler\nfunction handler() {}");
 
-        SetupEntityObjectTypeCode("badentity", null);
-        SetupEntityObjectTypeCode("account", 1);
-        SetupSystemForms(1, "Account Main", (Guid.NewGuid(), "Account Main", "<form>main</form>"));
+        _serviceMock.SetupEntityObjectTypeCode("badentity", null);
+        _serviceMock.SetupEntityObjectTypeCode("account", 1);
+        _serviceMock.SetupSystemForms(1, "Account Main", (Guid.NewGuid(), "Account Main", "<form>main</form>"));
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution"));
@@ -122,12 +121,43 @@ public class FormEventReaderTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadSnapshotAsync_EntityResolutionFaults_ShouldThrowButNotBlockOtherAnnotations()
+    {
+        // A genuinely nonexistent entity logical name faults rather than returning null metadata —
+        // this exercises FormEventReader.ResolveObjectTypeCodeAsync's FaultException catch, distinct from
+        // the null-metadata case covered by LoadSnapshotAsync_UnresolvableEntity_ShouldThrowButNotBlockOtherAnnotations.
+        File.WriteAllText(Path.Combine(_webresourceRoot, "bad.js"),
+            "// flowline:onload badentity \"Some Form\" handler\nfunction handler() {}");
+        File.WriteAllText(Path.Combine(_webresourceRoot, "good.js"),
+            "// flowline:onload account \"Account Main\" handler\nfunction handler() {}");
+
+        _serviceMock.ExecuteAsync(
+                Arg.Is<OrganizationRequest>(r => r.RequestName == "RetrieveEntity" && (string)r.Parameters["LogicalName"] == "badentity"),
+                Arg.Any<CancellationToken>())
+            .Returns<OrganizationResponse>(_ => throw new FaultException<OrganizationServiceFault>(new OrganizationServiceFault()));
+        _serviceMock.SetupEntityObjectTypeCode("account", 1);
+        _serviceMock.SetupSystemForms(1, "Account Main", (Guid.NewGuid(), "Account Main", "<form>main</form>"));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution"));
+
+        Assert.Contains("bad.js", ex.Message);
+        Assert.Contains("badentity", ex.Message);
+
+        // The good annotation still resolved its form despite the bad one faulting.
+        await _serviceMock.Received(1).RetrieveMultipleAsync(
+            Arg.Is<QueryExpression>(q => q.EntityName == "systemform" &&
+                q.Criteria.Conditions.Any(c => c.AttributeName == "name" && c.Values.Contains("Account Main"))),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task LoadSnapshotAsync_FormNotFound_ShouldThrowNamingFileAndForm()
     {
         File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
             "// flowline:onload account \"Missing Form\" handler\nfunction handler() {}");
 
-        SetupEntityObjectTypeCode("account", 1);
+        _serviceMock.SetupEntityObjectTypeCode("account", 1);
         // No SetupSystemForms override — default RetrieveMultipleAsync returns an empty collection.
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -143,8 +173,8 @@ public class FormEventReaderTests : IDisposable
         File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
             "// flowline:onload account \"Account Main\" handler\nfunction handler() {}");
 
-        SetupEntityObjectTypeCode("account", 1);
-        SetupSystemForms(1, "Account Main",
+        _serviceMock.SetupEntityObjectTypeCode("account", 1);
+        _serviceMock.SetupSystemForms(1, "Account Main",
             (Guid.NewGuid(), "Account Main", "<form>1</form>"),
             (Guid.NewGuid(), "Account Main", "<form>2</form>"));
 
@@ -168,54 +198,5 @@ public class FormEventReaderTests : IDisposable
         // WebResourceReader.LoadSnapshotAsync still ran (it resolves the solution regardless of annotations).
         await _serviceMock.Received(1).RetrieveMultipleAsync(
             Arg.Is<QueryExpression>(q => q.EntityName == "solution"), Arg.Any<CancellationToken>());
-    }
-
-    void SetupSolution(string solutionName, string prefix)
-    {
-        var solution = new Entity("solution", Guid.NewGuid())
-        {
-            ["uniquename"] = solutionName,
-            ["ismanaged"] = false,
-            ["publisher.customizationprefix"] = new AliasedValue("publisher", "customizationprefix", prefix)
-        };
-
-        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "solution"), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new EntityCollection([solution])));
-    }
-
-    void SetupEntityObjectTypeCode(string logicalName, int? objectTypeCode)
-    {
-        EntityMetadata? metadata = null;
-        if (objectTypeCode.HasValue)
-        {
-            metadata = new EntityMetadata { LogicalName = logicalName };
-            typeof(EntityMetadata).GetProperty("ObjectTypeCode")!.SetValue(metadata, objectTypeCode.Value);
-        }
-
-        var response = new RetrieveEntityResponse
-        {
-            Results = new ParameterCollection { ["EntityMetadata"] = metadata }
-        };
-
-        _serviceMock.ExecuteAsync(
-                Arg.Is<OrganizationRequest>(r => r.RequestName == "RetrieveEntity" && (string)r.Parameters["LogicalName"] == logicalName),
-                Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<OrganizationResponse>(response));
-    }
-
-    void SetupSystemForms(int objectTypeCode, string formName, params (Guid Id, string Name, string FormXml)[] forms)
-    {
-        var entities = forms.Select(f => new Entity("systemform", f.Id)
-        {
-            ["name"] = f.Name,
-            ["formxml"] = f.FormXml
-        }).ToList();
-
-        _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "systemform" &&
-                    q.Criteria.Conditions.Any(c => c.AttributeName == "objecttypecode" && c.Values.Contains(objectTypeCode)) &&
-                    q.Criteria.Conditions.Any(c => c.AttributeName == "name" && c.Values.Contains(formName))),
-                Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new EntityCollection(entities)));
     }
 }

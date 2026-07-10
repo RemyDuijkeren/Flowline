@@ -15,6 +15,9 @@ public class FormEventReader(IAnsiConsole console)
     // systemform.type raw optionset values: Main = 2, Quick Create Form = 7.
     static readonly object[] SupportedFormTypes = [2, 7];
 
+    // Mirrors GenerateReader/OrphanCleanupService's cap for concurrent Dataverse metadata/query fan-out.
+    const int MaxConcurrentRequests = 20;
+
     public async Task<FormEventSnapshot> LoadSnapshotAsync(
         IOrganizationServiceAsync2 service,
         string webresourceRoot,
@@ -32,41 +35,56 @@ public class FormEventReader(IAnsiConsole console)
         if (resolvedAnnotations.Count == 0)
             return new FormEventSnapshot([], new Dictionary<(string, string), DataverseForm>());
 
-        var objectTypeCodes = new Dictionary<string, int?>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entity in resolvedAnnotations.Select(a => a.Annotation.Entity).Distinct(StringComparer.OrdinalIgnoreCase))
-            objectTypeCodes[entity] = await ResolveObjectTypeCodeAsync(service, entity, cancellationToken).ConfigureAwait(false);
+        // Independent per-entity/per-form Dataverse lookups — run concurrently rather than one round-trip
+        // at a time, bounded so a project with many entities/forms doesn't fan out unbounded requests.
+        using var gate = new SemaphoreSlim(MaxConcurrentRequests, MaxConcurrentRequests);
+
+        var entities = resolvedAnnotations.Select(a => a.Annotation.Entity).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var objectTypeCodeResults = await Task.WhenAll(entities.Select(async entity =>
+        {
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try { return (Entity: entity, Code: await ResolveObjectTypeCodeAsync(service, entity, cancellationToken).ConfigureAwait(false)); }
+            finally { gate.Release(); }
+        })).ConfigureAwait(false);
+        var objectTypeCodes = objectTypeCodeResults.ToDictionary(r => r.Entity, r => r.Code, StringComparer.OrdinalIgnoreCase);
 
         var resolvedForms = new Dictionary<(string Entity, string Form), DataverseForm>();
         var formErrors = new Dictionary<(string Entity, string Form), string>();
 
         var pairs = resolvedAnnotations
             .Select(a => (a.Annotation.Entity, a.Annotation.Form))
-            .Distinct();
+            .Distinct()
+            .ToList();
 
-        foreach (var (entity, form) in pairs)
+        var formLookups = await Task.WhenAll(pairs.Select(async pair =>
         {
+            var (entity, form) = pair;
+
             // Entity failed to resolve — skip the form lookup, the per-annotation error is reported below.
             if (objectTypeCodes[entity] is not { } objectTypeCode)
-                continue;
+                return (Pair: pair, Form: (DataverseForm?)null, Error: (string?)null);
 
-            var matches = await QueryFormsAsync(service, objectTypeCode, form, cancellationToken).ConfigureAwait(false);
-            switch (matches.Count)
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            List<Entity> matches;
+            try { matches = await QueryFormsAsync(service, objectTypeCode, form, cancellationToken).ConfigureAwait(false); }
+            finally { gate.Release(); }
+
+            return matches.Count switch
             {
-                case 0:
-                    formErrors[(entity, form)] = $"form '{form}' not found for entity '{entity}' (Main or Quick Create form).";
-                    break;
-                case 1:
-                    var formEntity = matches[0];
-                    resolvedForms[(entity, form)] = new DataverseForm(
-                        formEntity.Id,
-                        formEntity.GetAttributeValue<string>("name"),
-                        entity,
-                        formEntity.GetAttributeValue<string>("formxml"));
-                    break;
-                default:
-                    formErrors[(entity, form)] = $"form '{form}' for entity '{entity}' is ambiguous — {matches.Count} systemform records matched.";
-                    break;
-            }
+                0 => (Pair: pair, Form: null, Error: $"form '{form}' not found for entity '{entity}' (Main or Quick Create form)."),
+                1 => (Pair: pair, Form: new DataverseForm(
+                    matches[0].Id,
+                    matches[0].GetAttributeValue<string>("name"),
+                    entity,
+                    matches[0].GetAttributeValue<string>("formxml")), Error: null),
+                _ => (Pair: pair, Form: null, Error: $"form '{form}' for entity '{entity}' is ambiguous — {matches.Count} systemform records matched.")
+            };
+        })).ConfigureAwait(false);
+
+        foreach (var (pair, form, error) in formLookups)
+        {
+            if (form is not null) resolvedForms[pair] = form;
+            else if (error is not null) formErrors[pair] = error;
         }
 
         var errors = new List<string>();
@@ -108,12 +126,14 @@ public class FormEventReader(IAnsiConsole console)
         {
             if (resource.Type != WebResourceType.Js) continue;
 
-            var annotations = FormEventAnnotationParser.ParseAnnotations(resource.Path);
-            if (annotations.Count == 0) continue;
-
+            // Content is already loaded in memory (base64) — decode once and scan that instead of a
+            // second disk read via the file-path overload.
             var content = string.IsNullOrEmpty(resource.Content)
                 ? string.Empty
                 : Encoding.UTF8.GetString(Convert.FromBase64String(resource.Content));
+
+            var annotations = FormEventAnnotationParser.ParseAnnotations(content.Split('\n'));
+            if (annotations.Count == 0) continue;
 
             foreach (var annotation in annotations)
                 result.Add(new ResolvedFormEventAnnotation(annotation, resource.Name, content, resource.RelativePath));

@@ -68,4 +68,8 @@ public record FormEventFormPlan(
 public class FormEventSyncPlan
 {
     public List<FormEventFormPlan> Forms { get; } = [];
+
+    // A form with both onLoad and onSave annotations produces two Forms entries sharing one FormId
+    // (grouped by (Entity, Form, Event) upstream) — count distinct forms, not plan entries.
+    public int DistinctFormCount => Forms.Select(f => f.FormId).Distinct().Count();
 }

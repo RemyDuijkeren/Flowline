@@ -7,6 +7,7 @@ using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Spectre.Console.Testing;
 using Xunit;
+using static Flowline.Core.Tests.FormEventTestHelpers;
 
 namespace Flowline.Core.Tests;
 
@@ -20,16 +21,6 @@ public class FormEventExecutorTests
     {
         _console.Profile.Width = 400; // avoid word-wrap splitting assertion substrings across lines
         _executor = new FormEventExecutor(_console);
-    }
-
-    static string BuildFormXml(FormEventType? evt = null, IReadOnlySet<FormHandler>? handlers = null, IReadOnlySet<FormLibraryEntry>? libraries = null)
-    {
-        var xdoc = new XDocument(new XElement("form"));
-        if (evt.HasValue)
-            FormXmlEventSerializer.SetHandlers(xdoc, evt.Value, handlers ?? new HashSet<FormHandler>());
-        if (libraries != null)
-            FormXmlEventSerializer.SetLibraries(xdoc, libraries);
-        return xdoc.ToString();
     }
 
     static FormEventSnapshot BuildSnapshot(params DataverseForm[] forms) =>
@@ -186,9 +177,10 @@ public class FormEventExecutorTests
         var plan = BuildPlan(formPlan);
 
         // _console defaults to non-interactive (TestConsole.Profile.Capabilities.Interactive == false).
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
             _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false));
 
+        Assert.Equal(ExitCode.ForceRequired, ex.ExitCode);
         Assert.Contains("account", ex.Message);
         Assert.Contains("Account Main", ex.Message);
         Assert.Contains("manualFn", ex.Message);

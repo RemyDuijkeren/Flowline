@@ -1,7 +1,7 @@
-using System.Xml.Linq;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Spectre.Console.Testing;
+using static Flowline.Core.Tests.FormEventTestHelpers;
 
 namespace Flowline.Core.Tests;
 
@@ -11,16 +11,6 @@ public class FormEventPlannerTests
     readonly FormEventPlanner _planner;
 
     public FormEventPlannerTests() => _planner = new FormEventPlanner(_console);
-
-    static string BuildFormXml(FormEventType? evt = null, IReadOnlySet<FormHandler>? handlers = null, IReadOnlySet<FormLibraryEntry>? libraries = null)
-    {
-        var xdoc = new XDocument(new XElement("form"));
-        if (evt.HasValue)
-            FormXmlEventSerializer.SetHandlers(xdoc, evt.Value, handlers ?? new HashSet<FormHandler>());
-        if (libraries != null)
-            FormXmlEventSerializer.SetLibraries(xdoc, libraries);
-        return xdoc.ToString();
-    }
 
     static FormEventSnapshot BuildSnapshot(
         IReadOnlyList<ResolvedFormEventAnnotation> annotations,

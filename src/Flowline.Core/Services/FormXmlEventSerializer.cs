@@ -55,12 +55,7 @@ public static class FormXmlEventSerializer
     {
         var root = form.Root ?? throw new InvalidOperationException("Form XML has no root element.");
 
-        var eventsElement = root.Element("events");
-        if (eventsElement is null)
-        {
-            eventsElement = new XElement("events");
-            root.Add(eventsElement);
-        }
+        var eventsElement = GetOrAdd(root, "events");
 
         var eventName = EventName(evt);
         var eventElement = eventsElement.Elements("event")
@@ -74,12 +69,7 @@ public static class FormXmlEventSerializer
             eventsElement.Add(eventElement);
         }
 
-        var handlersElement = eventElement.Element("Handlers");
-        if (handlersElement is null)
-        {
-            handlersElement = new XElement("Handlers");
-            eventElement.Add(handlersElement);
-        }
+        var handlersElement = GetOrAdd(eventElement, "Handlers");
 
         handlersElement.Elements("Handler").Remove();
         foreach (var handler in desired)
@@ -98,12 +88,7 @@ public static class FormXmlEventSerializer
     {
         var root = form.Root ?? throw new InvalidOperationException("Form XML has no root element.");
 
-        var formLibrariesElement = root.Element("formLibraries");
-        if (formLibrariesElement is null)
-        {
-            formLibrariesElement = new XElement("formLibraries");
-            root.Add(formLibrariesElement);
-        }
+        var formLibrariesElement = GetOrAdd(root, "formLibraries");
 
         formLibrariesElement.Elements("Library").Remove();
         foreach (var library in desired)
@@ -127,6 +112,17 @@ public static class FormXmlEventSerializer
             return (bareMatch.Groups["name"].Value, true);
 
         return (null, false);
+    }
+
+    static XElement GetOrAdd(XElement parent, string name)
+    {
+        var element = parent.Element(name);
+        if (element is not null)
+            return element;
+
+        element = new XElement(name);
+        parent.Add(element);
+        return element;
     }
 
     static XElement? FindEvent(XDocument form, FormEventType evt)
