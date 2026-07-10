@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.IO.Compression;
 using System.Xml.Linq;
 using CliWrap;
 using Flowline.Config;
@@ -364,14 +365,62 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             throw new FlowlineException(ExitCode.NotFound, $"Solution.xml not found at '{solutionXmlPath}' — run 'clone' first.");
 
         var doc = XDocument.Load(solutionXmlPath);
-        var version = doc.Root
-            ?.Element("SolutionManifest")
-            ?.Element("Version")
-            ?.Value;
+        return ParseSolutionManifest(doc).Version;
+    }
+
+    internal static (string Version, bool Managed) ParseSolutionManifest(XDocument doc)
+    {
+        var manifest = doc.Root?.Element("SolutionManifest");
+        var version = manifest?.Element("Version")?.Value;
 
         if (string.IsNullOrEmpty(version))
             throw new FlowlineException(ExitCode.ValidationFailed, "Solution version not set in Solution.xml — set a version before deploying.");
 
-        return version;
+        // Managed's presence isn't confirmed against real pac output (see plan's Assumptions section) — default to
+        // false rather than throw, since only Version has an established "must be present" contract today.
+        var managed = manifest?.Element("Managed")?.Value == "1";
+
+        return (version, managed);
+    }
+
+    internal static (string Version, bool Managed) ReadArtifactSolutionManifest(string zipPath)
+    {
+        if (!File.Exists(zipPath))
+            throw new FlowlineException(ExitCode.NotFound, $"Artifact not found at '{zipPath}'.");
+
+        ZipArchive archive;
+        try
+        {
+            archive = ZipFile.OpenRead(zipPath);
+        }
+        catch (Exception)
+        {
+            // Not a zip at all (e.g. InvalidDataException for a corrupt/non-zip file) — distinct from "valid zip,
+            // missing entry" below, since the former means the --path argument itself is bad input.
+            throw new FlowlineException(ExitCode.ValidationFailed, $"'{zipPath}' is not a valid solution zip.");
+        }
+
+        using (archive)
+        {
+            XDocument doc;
+            try
+            {
+                var entry = archive.GetEntry("Other/Solution.xml")
+                    ?? throw new FlowlineException(ExitCode.NotFound, $"No Other/Solution.xml entry found in artifact '{zipPath}' — is this a valid packed solution zip?");
+
+                using var stream = entry.Open();
+                doc = XDocument.Load(stream);
+            }
+            catch (FlowlineException)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                throw new FlowlineException(ExitCode.NotFound, $"No Other/Solution.xml entry found in artifact '{zipPath}' — is this a valid packed solution zip?");
+            }
+
+            return ParseSolutionManifest(doc);
+        }
     }
 }
