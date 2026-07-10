@@ -35,6 +35,12 @@ public record FormLibraryEntry(string Name, Guid LibraryUniqueId)
 
 public record DataverseForm(Guid Id, string Name, string EntityLogicalName, string FormXml);
 
+public record ResolvedFormEventAnnotation(FormEventAnnotation Annotation, string LibraryName, string Content, string SourceFile);
+
+public record FormEventSnapshot(
+    IReadOnlyList<ResolvedFormEventAnnotation> Annotations,
+    IReadOnlyDictionary<(string Entity, string Form), DataverseForm> Forms);
+
 public static class FormEventDeterministicId
 {
     public static Guid ForHandler(string entity, string form, FormEventType evt, string functionName, string libraryName) =>
