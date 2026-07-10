@@ -76,8 +76,27 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         // no prior version) a signal that cleanup still needs a later managed Upgrade deploy to catch up.
         var useStageAndUpgrade = sln.IncludeManaged && existingSolutionInTarget;
         var runMode = settings.NoDelete || sln.IncludeManaged ? RunMode.NoDelete : RunMode.Normal;
-        Logger.LogInformation("target={TargetUrl} solution={SolutionName} mode={RunMode} managed={Managed} stageAndUpgrade={StageAndUpgrade}",
-            targetUrl, sln.Name, runMode, sln.IncludeManaged, useStageAndUpgrade);
+
+        // pac's --publish-changes runs PublishAllXmlRequest, not the solution-scoped PublishXmlRequest —
+        // it republishes every pending customization in the ENTIRE target environment, not just this
+        // solution's components:
+        //   - https://learn.microsoft.com/power-platform/alm/performance-recommendations
+        //     ("doesn't apply only to the selected solution... publishes all pending changes across the
+        //     entire environment" — same doc says skip it for managed, since it "slows down the deployment")
+        //   - https://learn.microsoft.com/power-platform/developer/cli/reference/solution#pac-solution-publish
+        //     (`pac solution publish` itself is documented as "Publishes all customizations")
+        //   - https://learn.microsoft.com/dotnet/api/microsoft.crm.sdk.messages.publishallxmlrequest
+        //     (the underlying SDK message — "publish all changes to solution components", no
+        //     solution-scoping parameter exists on it at all)
+        // Managed solutions always import already published, so the flag would be pure overhead there —
+        // never pass it for managed. Unmanaged imports can leave UI-affecting components (forms, views,
+        // ribbons, sitemaps, web resources) in an unpublished state until something publishes them, so the
+        // flag is worth its (accepted) environment-wide cost there — Flowline's own unmanaged targets are
+        // documented as single-environment/DEV-like (see wiki "Managed vs unmanaged"), so in practice there's
+        // nothing else pending for that org-wide publish to sweep up anyway.
+        var publishChanges = !sln.IncludeManaged;
+        Logger.LogInformation("target={TargetUrl} solution={SolutionName} mode={RunMode} managed={Managed} stageAndUpgrade={StageAndUpgrade} publishChanges={PublishChanges}",
+            targetUrl, sln.Name, runMode, sln.IncludeManaged, useStageAndUpgrade, publishChanges);
 
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, targetUrl, cancellationToken);
 
@@ -98,7 +117,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             await postDeployService.RunPreImportAsync(postDeployContext, cancellationToken);
 
         Logger.LogInformation("Importing to: {TargetUrl}", targetUrl);
-        await ImportSolutionAsync(packagePath, targetEnv, sln.Name, useStageAndUpgrade, cancellationToken);
+        await ImportSolutionAsync(packagePath, targetEnv, sln.Name, useStageAndUpgrade, publishChanges, cancellationToken);
 
         var cleanupFailures = 0;
         foreach (var postDeployService in activeServices)
@@ -261,7 +280,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         return packagePath;
     }
 
-    private async Task ImportSolutionAsync(string packagePath, EnvironmentInfo targetEnv, string slnName, bool stageAndUpgrade, CancellationToken ct)
+    private async Task ImportSolutionAsync(string packagePath, EnvironmentInfo targetEnv, string slnName, bool stageAndUpgrade, bool publishChanges, CancellationToken ct)
     {
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(ct);
         var result = await Console.Status().FlowlineSpinner().StartAsync(
@@ -273,7 +292,9 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
                         .Add("--path").Add(packagePath)
                         .Add("--environment").Add(targetEnv.EnvironmentUrl!)
                         .Add("--async")
-                        .AddIf(stageAndUpgrade, "--stage-and-upgrade"))
+                        .Add("--activate-plugins")
+                        .AddIf(stageAndUpgrade, "--stage-and-upgrade")
+                        .AddIf(publishChanges, "--publish-changes"))
                     .WithValidation(CommandResultValidation.None)
                     .WithCapture(_capture)
                     .ExecuteAsync(ct)

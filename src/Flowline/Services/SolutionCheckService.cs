@@ -11,7 +11,7 @@ public class SolutionCheckService(IAnsiConsole console, SubprocessCapture captur
     public async Task RunPreImportAsync(PostDeployContext context, CancellationToken ct)
     {
         var outputDirectory = Path.Combine(
-            Path.GetDirectoryName(context.PackagePath) ?? Path.GetTempPath(), "checker-output");
+            Path.GetDirectoryName(context.PackagePath) ?? Path.GetTempPath(), "solution-check");
 
         var result = await PacUtils.CheckSolutionAsync(context.PackagePath, context.Solution.EnvironmentUrl, outputDirectory, capture, ct);
 
