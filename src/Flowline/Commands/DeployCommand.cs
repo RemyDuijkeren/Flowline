@@ -161,7 +161,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         // Always unpack the zip actually being imported — whether freshly packed, reused from cache, or
         // supplied via --path — so post-deploy services evaluate real imported content, never an assumed
         // local Package/src that may not match (e.g. a --path artifact built from a different commit).
-        var tmpUnpackDir = Path.Combine(Path.GetTempPath(), "flowline-deploy-" + Guid.NewGuid());
+        var tmpUnpackDir = Directory.CreateTempSubdirectory("flowline-deploy-").FullName;
         try
         {
             await PacUtils.UnpackSolutionAsync(packagePath, tmpUnpackDir, _capture, cancellationToken);
@@ -251,7 +251,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     }
 
     private async Task ValidateDtapGateAsync(
-        ProjectSolution sln, string localVersion, string targetUrl, Settings settings, CancellationToken ct)
+        ProjectSolution sln, string gateVersion, string targetUrl, Settings settings, CancellationToken ct)
     {
         var dtapDecision = ResolveDtapGate(Config!, targetUrl);
 
@@ -278,10 +278,10 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         if (predecessorInfo.VersionNumber == null
             || !Version.TryParse(predecessorInfo.VersionNumber, out var predVer)
-            || !Version.TryParse(localVersion, out var localVer)
+            || !Version.TryParse(gateVersion, out var localVer)
             || predVer < localVer)
             throw new FlowlineException(ExitCode.ValidationFailed,
-                $"'{sln.Name}' in {dtapDecision.PredecessorLabel} environment is v{predecessorInfo.VersionNumber ?? "unknown"} — promote v{localVersion} there first, or use --skip-dtap-check.");
+                $"'{sln.Name}' in {dtapDecision.PredecessorLabel} environment is v{predecessorInfo.VersionNumber ?? "unknown"} — promote v{gateVersion} there first, or use --skip-dtap-check.");
     }
 
     private async Task ValidateGitCleanAsync(string solutionName, string slnFolder, CancellationToken ct)

@@ -138,17 +138,24 @@ public static class GitUtils
         return (remoteName, remoteUrl);
     }
 
-    public static async Task<IReadOnlyList<string>> GetUncommittedChangesInPathAsync(string path, string? workingDirectory = null, SubprocessCapture? capture = null, CancellationToken cancellationToken = default)
+    // Relative paths are required for untracked file reporting on some platforms;
+    // absolute paths can silently omit untracked entries when the directory is new
+    private static (Command Cmd, string PathArg) BuildGitPathCommand(string path, string? workingDirectory)
     {
         var cmd = Cli.Wrap("git");
         if (workingDirectory != null)
             cmd = cmd.WithWorkingDirectory(workingDirectory);
 
-        // Relative paths are required for untracked file reporting on some platforms;
-        // absolute paths can silently omit untracked entries when the directory is new
         var pathArg = workingDirectory != null && Path.IsPathRooted(path)
             ? Path.GetRelativePath(workingDirectory, path)
             : path;
+
+        return (cmd, pathArg);
+    }
+
+    public static async Task<IReadOnlyList<string>> GetUncommittedChangesInPathAsync(string path, string? workingDirectory = null, SubprocessCapture? capture = null, CancellationToken cancellationToken = default)
+    {
+        var (cmd, pathArg) = BuildGitPathCommand(path, workingDirectory);
 
         var finalCmd = cmd.WithArguments(args => args.Add("status").Add("--porcelain").Add("--").Add(pathArg));
         var result = await (capture?.Apply(finalCmd) ?? finalCmd)
@@ -162,13 +169,7 @@ public static class GitUtils
 
     public static async Task<string?> GetLastCommitShaForPathAsync(string path, string? workingDirectory = null, SubprocessCapture? capture = null, CancellationToken cancellationToken = default)
     {
-        var cmd = Cli.Wrap("git");
-        if (workingDirectory != null)
-            cmd = cmd.WithWorkingDirectory(workingDirectory);
-
-        var pathArg = workingDirectory != null && Path.IsPathRooted(path)
-            ? Path.GetRelativePath(workingDirectory, path)
-            : path;
+        var (cmd, pathArg) = BuildGitPathCommand(path, workingDirectory);
 
         var finalCmd = cmd.WithArguments(args => args.Add("log").Add("-1").Add("--format=%H").Add("--").Add(pathArg))
                           .WithValidation(CommandResultValidation.None);
