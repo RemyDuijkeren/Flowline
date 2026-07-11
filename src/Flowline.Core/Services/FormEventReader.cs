@@ -22,10 +22,15 @@ public class FormEventReader(IAnsiConsole console)
     // Mirrors GenerateReader/OrphanCleanupService's cap for concurrent Dataverse metadata/query fan-out.
     const int MaxConcurrentRequests = 20;
 
+    // suppressWarnings: KTD12 runs this reader twice per push (cleanup pass, then registration pass) —
+    // both re-scan the same local JS files and would otherwise print the exact same warning twice. Only
+    // the registration (second, fuller) pass shows these, matching the existing "up to date"/dry-run-preview
+    // dedup convention in FormEventService.SyncAsync.
     public async Task<FormEventSnapshot> LoadSnapshotAsync(
         IOrganizationServiceAsync2 service,
         string webresourceRoot,
         string solutionName,
+        bool suppressWarnings = false,
         CancellationToken cancellationToken = default)
     {
         // Deliberate second call to the same reader WebResourceService already uses elsewhere in the
@@ -42,7 +47,7 @@ public class FormEventReader(IAnsiConsole console)
             .Select(r => r.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var resolvedAnnotations = CollectAnnotations(webResourceSnapshot.LocalResources.Values);
+        var resolvedAnnotations = CollectAnnotations(webResourceSnapshot.LocalResources.Values, suppressWarnings);
 
         // Independent per-entity/per-form Dataverse lookups — run concurrently rather than one round-trip
         // at a time, bounded so a project with many entities/forms doesn't fan out unbounded requests.
@@ -77,7 +82,8 @@ public class FormEventReader(IAnsiConsole console)
             var entityLogicalName = formEntity.GetAttributeValue<string>("objecttypecode");
             if (string.IsNullOrEmpty(entityLogicalName))
             {
-                console.Warning($"systemform '{formEntity.GetAttributeValue<string>("name")}' ({formEntity.Id}) has no objecttypecode — skipped from form-event resolution.");
+                if (!suppressWarnings)
+                    console.Warning($"systemform '{formEntity.GetAttributeValue<string>("name")}' ({formEntity.Id}) has no objecttypecode — skipped from form-event resolution.");
                 continue;
             }
 
@@ -173,7 +179,7 @@ public class FormEventReader(IAnsiConsole console)
         return new FormEventSnapshot(validAnnotations.AsReadOnly(), trackedLibraryNames, resolvedForms.AsReadOnly());
     }
 
-    List<ResolvedFormEventAnnotation> CollectAnnotations(IEnumerable<LocalWebResource> localResources)
+    List<ResolvedFormEventAnnotation> CollectAnnotations(IEnumerable<LocalWebResource> localResources, bool suppressWarnings)
     {
         var result = new List<ResolvedFormEventAnnotation>();
         foreach (var resource in localResources)
@@ -189,11 +195,13 @@ public class FormEventReader(IAnsiConsole console)
             var parsed = FormEventAnnotationParser.ParseAnnotations(content.Split('\n'));
 
             // A line that clearly intends to be a flowline:on... annotation but fails the strict grammar
-            // (e.g. a single-quoted form name — only double quotes are supported) would otherwise register
+            // (e.g. a form name missing entirely, or a multi-word form name with no quotes / mismatched
+            // quotes — R3 accepts single or double, but not unquoted or mixed) would otherwise register
             // nothing with no indication why. Surfaced here rather than an ordinary "not a match at all"
             // comment, which stays silently ignored.
-            foreach (var line in parsed.MalformedLines)
-                console.Warning($"{Markup.Escape(resource.RelativePath)}: malformed flowline annotation, ignored — form names with spaces must be double-quoted: {Markup.Escape(line)}");
+            if (!suppressWarnings)
+                foreach (var line in parsed.MalformedLines)
+                    console.Warning($"{Markup.Escape(resource.RelativePath)}: malformed flowline annotation, ignored — form names with spaces must be wrapped in matching double or single quotes: {Markup.Escape(line)}");
 
             if (parsed.Annotations.Count == 0) continue;
 

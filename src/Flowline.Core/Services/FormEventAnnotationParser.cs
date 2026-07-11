@@ -4,18 +4,19 @@ using Flowline.Core.Models;
 namespace Flowline.Core.Services;
 
 // The successfully parsed annotations, plus any line that clearly intends to be a flowline:on... comment
-// (matches AnnotationIntentRegex) but fails the strict grammar (e.g. a single-quoted form name — only
-// double quotes are supported) — surfaced so a caller can warn instead of silently registering nothing.
+// (matches AnnotationIntentRegex) but fails the strict grammar — surfaced so a caller can warn instead of
+// silently registering nothing.
 public record FormEventAnnotationParseResult(IReadOnlyList<FormEventAnnotation> Annotations, IReadOnlyList<string> MalformedLines);
 
 public static class FormEventAnnotationParser
 {
     // Matches "// flowline:onload/onsave <entity> <form> [Function[(params)]]", the "//!" legal-comment
     // variant, and the single-line block form "/*! ... */" — same three comment forms
-    // WebResourceAnnotationParser recognizes for "flowline:depends". <form> is either a bare token
-    // (no whitespace) or a double-quoted string (Dataverse form names routinely contain spaces).
+    // WebResourceAnnotationParser recognizes for "flowline:depends". <form> is a bare token (no whitespace),
+    // a double-quoted string, or a single-quoted string (R3: both quote styles are accepted — matches JS's
+    // own string-literal convention; Dataverse form names routinely contain spaces).
     static readonly Regex AnnotationRegex = new(
-        """^(?://!?|/\*!)\s*flowline:on(?<event>load|save)\s+(?<entity>\S+)\s+(?<form>"[^"]+"|\S+)(?:\s+(?<function>[A-Za-z_][\w.]*)(?:\((?<params>[^)]*)\))?)?\s*(?:\*/)?$""",
+        """^(?://!?|/\*!)\s*flowline:on(?<event>load|save)\s+(?<entity>\S+)\s+(?<form>"[^"]+"|'[^']+'|\S+)(?:\s+(?<function>[A-Za-z_][\w.]*)(?:\((?<params>[^)]*)\))?)?\s*(?:\*/)?$""",
         RegexOptions.Compiled);
 
     // Prefix-only check: "does this line even intend to be a flowline annotation" — used to distinguish a
@@ -49,7 +50,7 @@ public static class FormEventAnnotationParser
                     ? FormEventType.OnLoad
                     : FormEventType.OnSave;
                 var entity = match.Groups["entity"].Value;
-                var form = match.Groups["form"].Value.Trim('"');
+                var form = match.Groups["form"].Value.Trim('"', '\'');
                 var functionName = match.Groups["function"].Success ? match.Groups["function"].Value : null;
                 var parameters = match.Groups["params"].Success
                     ? string.Join(",", match.Groups["params"].Value.Split(',').Select(p => p.Trim()))

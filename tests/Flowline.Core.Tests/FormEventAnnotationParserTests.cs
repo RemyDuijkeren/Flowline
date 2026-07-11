@@ -148,25 +148,37 @@ public class FormEventAnnotationParserTests : IDisposable
     }
 
     [Fact]
-    public void ParseAnnotations_SingleQuotedFormNameWithSpaces_NotMatchedButFlaggedMalformed()
+    public void ParseAnnotations_SingleQuotedFormNameWithSpaces_Recognized()
     {
-        // Regression: a live push registered nothing for an annotation using single quotes around a
-        // multi-word form name ('Account Quick Create') — only double quotes are supported, so the strict
-        // grammar failed silently with no indication why. Must now be surfaced as malformed, not silently
-        // dropped like an ordinary non-matching comment.
+        // R3: single quotes are an accepted alternative to double quotes for a multi-word form name —
+        // matches JS's own string-literal convention (no grammar conflict, nothing else in the annotation
+        // syntax uses either quote character). Must parse successfully, not be flagged as malformed.
         var path = Write("form.js", "// flowline:onload account 'Account Quick Create'\ncode();");
         var result = FormEventAnnotationParser.ParseAnnotations(path);
 
+        var annotation = Assert.Single(result.Annotations);
+        Assert.Equal("Account Quick Create", annotation.Form);
+        Assert.Empty(result.MalformedLines);
+    }
+
+    [Fact]
+    public void ParseAnnotations_MismatchedQuoteCharacters_NotMatchedButFlaggedMalformed()
+    {
+        // A form name delimited by mismatched quote characters (opens single, closes double) is genuinely
+        // malformed — R3 accepts single or double, but not mixed — and must be surfaced, not silently
+        // dropped like an ordinary non-matching comment.
+        var path = Write("form.js", "// flowline:onload account 'Account Quick Create\"\ncode();");
+        var result = FormEventAnnotationParser.ParseAnnotations(path);
+
         Assert.Empty(result.Annotations);
-        var malformed = Assert.Single(result.MalformedLines);
-        Assert.Contains("Account Quick Create", malformed);
+        Assert.Single(result.MalformedLines);
     }
 
     [Fact]
     public void ParseAnnotations_MalformedAndValidLinesInSameFile_BothReportedIndependently()
     {
         var path = Write("form.js",
-            "//! flowline:onload account AutomateValue\n//! flowline:onload account 'Account Quick Create'\ncode();");
+            "//! flowline:onload account AutomateValue\n//! flowline:onload account\ncode();");
         var result = FormEventAnnotationParser.ParseAnnotations(path);
 
         var annotation = Assert.Single(result.Annotations);

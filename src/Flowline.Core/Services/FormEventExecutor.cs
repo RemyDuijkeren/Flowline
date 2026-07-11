@@ -45,8 +45,13 @@ public class FormEventExecutor(IAnsiConsole console)
         }
 
         // Same per-form/per-handler/per-library detail WebResourceService's WritePlanReport shows for web
-        // resources — printed under -v when actually applying (dry-run already showed it above).
-        WritePlanReport(snapshot, plan, PlanReportMode.Verbose);
+        // resources — printed under -v when actually applying (dry-run already showed it above). Only the
+        // registration (second, fuller) pass shows it: cleanup and registration largely compute the same
+        // "to add" content (additions haven't landed at either read point yet, only cleanup's own removals
+        // differ between the two), so showing it for cleanup too would mostly repeat itself — same dedup
+        // convention as the "up to date" skip message and dry-run preview.
+        if (!cleanupOnly)
+            WritePlanReport(snapshot, plan, PlanReportMode.Verbose);
 
         var removeUnrecognized = ResolveUnrecognizedHandling(plan, force);
 

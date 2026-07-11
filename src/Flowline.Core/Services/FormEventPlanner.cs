@@ -7,7 +7,10 @@ namespace Flowline.Core.Services;
 
 public class FormEventPlanner(IAnsiConsole console)
 {
-    public FormEventSyncPlan Plan(FormEventSnapshot snapshot)
+    // suppressWarnings: KTD12 runs Plan twice per push (cleanup pass, then registration pass) on an
+    // identical snapshot for warning purposes — only the registration (second, fuller) pass shows these,
+    // matching FormEventReader.LoadSnapshotAsync's same dedup convention.
+    public FormEventSyncPlan Plan(FormEventSnapshot snapshot, bool suppressWarnings = false)
     {
         var plan = new FormEventSyncPlan();
         var errors = new List<string>();
@@ -73,7 +76,8 @@ public class FormEventPlanner(IAnsiConsole console)
                     else
                     {
                         // R7a outcome 3: explicit but inconclusive — warn and register verbatim, don't fail.
-                        console.Warning($"{resolved.SourceFile}: function '{requestedFunctionName}' could not be confirmed in library '{resolved.LibraryName}' — registering as written.");
+                        if (!suppressWarnings)
+                            console.Warning($"{resolved.SourceFile}: function '{requestedFunctionName}' could not be confirmed in library '{resolved.LibraryName}' — registering as written.");
                         finalFunctionName = requestedFunctionName;
                     }
 

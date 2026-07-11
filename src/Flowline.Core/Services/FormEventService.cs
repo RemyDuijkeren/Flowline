@@ -57,12 +57,15 @@ public class FormEventService(IAnsiConsole console)
         if (string.IsNullOrWhiteSpace(solutionName))
             throw new ArgumentException("solutionName is required.", nameof(solutionName));
 
-        // Phase 1: Load snapshot (local annotations + current Dataverse form state)
+        // Phase 1: Load snapshot (local annotations + current Dataverse form state). Cleanup and
+        // registration both re-scan the same local JS files, so cleanup's pass stays silent — only the
+        // registration (second, fuller) pass surfaces reader/planner-level warnings, matching the "up to
+        // date"/dry-run-preview dedup below.
         var snapshot = await console.Status().FlowlineSpinner().StartAsync("Lookup form event annotations...", _ =>
-            _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, cancellationToken)).ConfigureAwait(false);
+            _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, suppressWarnings: cleanupOnly, cancellationToken)).ConfigureAwait(false);
 
         // Phase 2: Plan registration (pure, synchronous)
-        var plan = _planner.Plan(snapshot);
+        var plan = _planner.Plan(snapshot, suppressWarnings: cleanupOnly);
 
         if (plan.Forms.Count == 0)
         {

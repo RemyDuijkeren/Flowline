@@ -181,6 +181,25 @@ public class FormEventServiceTests : IDisposable
         Assert.Equal(1, occurrences);
     }
 
+    [Fact]
+    public async Task CleanupThenRegister_MalformedAnnotation_WarningPrintedExactlyOnceNotTwice()
+    {
+        // Direct regression test: reported live — a malformed-annotation warning (reader-level, unrelated
+        // to any pending handler/library change) printed once per phase since FormEventReader.LoadSnapshotAsync
+        // re-scans the same local JS files on both the cleanup and registration pass, with no dedup gate of
+        // its own (unlike the plan-level dry-run preview / "up to date" skip message).
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"), "// flowline:onload account\ncode();");
+
+        var cleanupResult = await _service.CleanupOrphanedAsync(_serviceMock, _webresourceRoot, "MySolution", force: false, dryRun: false);
+        var registerResult = await _service.RegisterAsync(_serviceMock, _webresourceRoot, "MySolution", force: false, dryRun: false);
+
+        Assert.False(cleanupResult);
+        Assert.False(registerResult);
+
+        var occurrences = _console.Output.Split("malformed flowline annotation").Length - 1;
+        Assert.Equal(1, occurrences);
+    }
+
     // KTD12's load-bearing regression test: proves the cleanup pass' write completes strictly before the
     // registration pass' write is issued, for the exact scenario the bug is about — a stale handler safe to
     // remove now, and a brand-new handler whose library isn't registered on the form until the registration

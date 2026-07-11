@@ -254,19 +254,48 @@ public class FormEventReaderTests : IDisposable
     }
 
     [Fact]
-    public async Task LoadSnapshotAsync_MalformedAnnotationSingleQuotedForm_WarnsAndRegistersNothingForThatLine()
+    public async Task LoadSnapshotAsync_MalformedAnnotationMissingForm_WarnsAndRegistersNothingForThatLine()
     {
-        // Regression: a live push registered nothing for a single-quoted multi-word form name annotation,
-        // with no error or warning at all — the malformed line vanished silently. Must now warn, naming the
-        // file, so a user isn't left wondering why nothing happened.
+        // Regression: a live push registered nothing for a malformed annotation line, with no error or
+        // warning at all — the line vanished silently. Must now warn, naming the file, so a user isn't left
+        // wondering why nothing happened.
         File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
-            "// flowline:onload account 'Account Quick Create'\nfunction onLoad() {}");
+            "// flowline:onload account\nfunction onLoad() {}");
 
         var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
 
         Assert.Empty(snapshot.Annotations);
         Assert.Contains("form.js", _console.Output);
         Assert.Contains("malformed", _console.Output, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("double-quoted", _console.Output);
+    }
+
+    [Fact]
+    public async Task LoadSnapshotAsync_SingleQuotedFormName_RecognizedNotFlaggedMalformed()
+    {
+        // R3: single quotes are an accepted alternative to double quotes for a multi-word form name.
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+            "// flowline:onload account 'Account Quick Create'\nfunction onLoad() {}");
+
+        _serviceMock.SetupEntityObjectTypeCode("account", 1);
+        _serviceMock.SetupSystemFormsInSolution((Guid.NewGuid(), "Account Quick Create", "<form>main</form>", "account"));
+
+        var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        Assert.Contains(snapshot.Annotations, a => a.Annotation.Form == "Account Quick Create");
+        Assert.DoesNotContain("malformed", _console.Output, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task LoadSnapshotAsync_SuppressWarnings_NoMalformedWarningPrinted()
+    {
+        // Cleanup and registration both re-scan the same local JS files (KTD12) — suppressWarnings lets
+        // the cleanup pass compute silently so the registration pass is the only one that warns.
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+            "// flowline:onload account\nfunction onLoad() {}");
+
+        var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution", suppressWarnings: true);
+
+        Assert.Empty(snapshot.Annotations);
+        Assert.DoesNotContain("malformed", _console.Output, StringComparison.OrdinalIgnoreCase);
     }
 }
