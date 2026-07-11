@@ -35,12 +35,18 @@ public class FormEventExecutor(IAnsiConsole console)
             return;
 
         // R18b: preview everything the confirmation gate below would ask about — computed, never applied.
-        // No UpdateAsync/PublishXml, no prompt, regardless of interactivity.
+        // No UpdateAsync/PublishXml, no prompt, regardless of interactivity. PrintDryRunPreview's own
+        // WritePlanReport(..., DryRun) call already shows this detail unconditionally (via console.Info),
+        // so the dry-run path skips the Verbose-mode report below entirely rather than printing it twice.
         if (dryRun)
         {
             PrintDryRunPreview(snapshot, plan);
             return;
         }
+
+        // Same per-form/per-handler/per-library detail WebResourceService's WritePlanReport shows for web
+        // resources — printed under -v when actually applying (dry-run already showed it above).
+        WritePlanReport(snapshot, plan, PlanReportMode.Verbose);
 
         var removeUnrecognized = ResolveUnrecognizedHandling(plan, force);
 
@@ -74,9 +80,8 @@ public class FormEventExecutor(IAnsiConsole console)
         $"{form.EntityLogicalName}/{form.FormName}: {unrecognized.Handler.FunctionName} ({unrecognized.Handler.LibraryName})"
         + $" — to keep this, add {unrecognized.ProposedAnnotation} to {unrecognized.Handler.LibraryName}.";
 
-    // R18b: same per-handler detail as ResolveUnrecognizedHandling's prompt, plus a summary of the
-    // handler-level additions/updates/removals the plan would apply — computed against the pristine
-    // current formxml, nothing written.
+    // R18b: same per-handler detail as ResolveUnrecognizedHandling's prompt, plus the full change report
+    // (WritePlanReport) — computed against the pristine current formxml, nothing written.
     void PrintDryRunPreview(FormEventSnapshot snapshot, FormEventSyncPlan plan)
     {
         var unrecognized = CollectUnrecognized(plan);
@@ -87,18 +92,33 @@ public class FormEventExecutor(IAnsiConsole console)
                 console.Info($"  {FormatUnrecognizedHandlerLine(u.Form, u.Unrecognized)}");
         }
 
-        var (added, updated, removed) = SummarizeHandlerChanges(snapshot, plan);
-        console.Ok($"Dry run: {plan.DistinctFormCount} form(s) with pending changes — "
-            + $"{added} handler(s) would be added, {updated} updated, {removed} removed. Run without --dry-run to apply.");
+        WritePlanReport(snapshot, plan, PlanReportMode.DryRun);
     }
 
-    // Uses FormHandlerDiffer (shared with FormEventPlanner.HandlerSetsFullyEqual) since FormHandler's
-    // identity-only equality can't tell a Parameters-only change apart from no change on its own.
-    // Groups by FormId first so a form with both onLoad and onSave changes parses its formxml once,
-    // not once per event (mirrors BuildFormXml's grouping, below).
-    static (int Added, int Updated, int Removed) SummarizeHandlerChanges(FormEventSnapshot snapshot, FormEventSyncPlan plan)
+    enum PlanReportMode { Verbose, DryRun }
+
+    // Mirrors WebResourceService.WritePlanReport's shape: a summary line plus one section per change kind,
+    // each listing the specific forms/handlers/libraries affected — not just aggregate counts. Verbose mode
+    // prints via console.Verbose (only visible under -v); DryRun mode always prints (via console.Info) and
+    // additionally emits the final "Dry run: ... Run without --dry-run to apply." line.
+    void WritePlanReport(FormEventSnapshot snapshot, FormEventSyncPlan plan, PlanReportMode mode)
     {
-        int added = 0, updated = 0, removed = 0;
+        // console.Verbose escapes markup internally (VerboseRenderable); console.Info does not — escaping
+        // here too would double-escape under Verbose but is required under DryRun, since form/function/
+        // library names come from Dataverse-controlled data and can contain markup-special characters.
+        Action<string> line = mode == PlanReportMode.Verbose
+            ? msg => console.Verbose(msg)
+            : msg => console.Info(Markup.Escape(msg));
+
+        var handlerAdded = new List<(string Entity, string Form, FormEventType Event, FormHandler Handler)>();
+        var handlerUpdated = new List<(string Entity, string Form, FormEventType Event, FormHandler Handler)>();
+        var handlerRemoved = new List<(string Entity, string Form, FormEventType Event, FormHandler Handler)>();
+        var libraryAdded = new List<(string Entity, string Form, FormLibraryEntry Library)>();
+        var libraryRemoved = new List<(string Entity, string Form, FormLibraryEntry Library)>();
+
+        // Groups by FormId so a form with both onLoad/onSave changes parses its formxml once, and so the
+        // form-wide library diff (identical across every plan entry for the same form, per the planner) is
+        // computed once rather than once per event — mirrors BuildFormXml's grouping.
         foreach (var formGroup in plan.Forms.GroupBy(f => f.FormId))
         {
             var first = formGroup.First();
@@ -108,13 +128,61 @@ public class FormEventExecutor(IAnsiConsole console)
             foreach (var formPlan in formGroup)
             {
                 var current = FormXmlEventSerializer.GetHandlers(xdoc, formPlan.Event);
-                var (a, u, r) = FormHandlerDiffer.Diff(formPlan.DesiredHandlers, current);
-                added += a;
-                updated += u;
-                removed += r;
+                var (added, updated, removed) = FormHandlerDiffer.DiffDetailed(formPlan.DesiredHandlers, current);
+                handlerAdded.AddRange(added.Select(h => (formPlan.EntityLogicalName, formPlan.FormName, formPlan.Event, h)));
+                handlerUpdated.AddRange(updated.Select(h => (formPlan.EntityLogicalName, formPlan.FormName, formPlan.Event, h)));
+                handlerRemoved.AddRange(removed.Select(h => (formPlan.EntityLogicalName, formPlan.FormName, formPlan.Event, h)));
             }
+
+            var currentLibraries = FormXmlEventSerializer.GetLibraries(xdoc);
+            var desiredLibraries = first.DesiredLibraries;
+            libraryAdded.AddRange(desiredLibraries.Where(l => !currentLibraries.Contains(l))
+                .Select(l => (first.EntityLogicalName, first.FormName, l)));
+            libraryRemoved.AddRange(currentLibraries.Where(l => !desiredLibraries.Contains(l))
+                .Select(l => (first.EntityLogicalName, first.FormName, l)));
         }
-        return (added, updated, removed);
+
+        var counts = JoinCounts(
+            (handlerAdded.Count, "handler(s) added"), (handlerUpdated.Count, "handler(s) updated"), (handlerRemoved.Count, "handler(s) removed"),
+            (libraryAdded.Count, "library(ies) added"), (libraryRemoved.Count, "library(ies) removed"));
+        line($"  Summary: {counts}");
+
+        WriteHandlerSection(line, "Handlers added", handlerAdded);
+        WriteHandlerSection(line, "Handlers updated", handlerUpdated);
+        WriteHandlerSection(line, "Handlers removed", handlerRemoved);
+        WriteLibrarySection(line, "Libraries added", libraryAdded);
+        WriteLibrarySection(line, "Libraries removed", libraryRemoved);
+
+        if (mode != PlanReportMode.DryRun)
+            return;
+
+        console.Ok($"Dry run: {plan.DistinctFormCount} form(s) with pending changes — {counts}. Run without --dry-run to apply.");
+    }
+
+    static string JoinCounts(params (int Count, string Label)[] parts)
+    {
+        var nonZero = parts.Where(p => p.Count > 0).Select(p => $"{p.Count} {p.Label}").ToList();
+        return nonZero.Count > 0 ? string.Join(", ", nonZero) : "no changes";
+    }
+
+    static void WriteHandlerSection(Action<string> line, string label, List<(string Entity, string Form, FormEventType Event, FormHandler Handler)> items)
+    {
+        if (items.Count == 0)
+            return;
+
+        line($"  {label} ({items.Count})");
+        foreach (var (entity, form, evt, handler) in items.OrderBy(i => i.Entity).ThenBy(i => i.Form, StringComparer.OrdinalIgnoreCase))
+            line($"    - {entity}/{form} ({evt}): {handler.FunctionName} ({handler.LibraryName})");
+    }
+
+    static void WriteLibrarySection(Action<string> line, string label, List<(string Entity, string Form, FormLibraryEntry Library)> items)
+    {
+        if (items.Count == 0)
+            return;
+
+        line($"  {label} ({items.Count})");
+        foreach (var (entity, form, library) in items.OrderBy(i => i.Entity).ThenBy(i => i.Form, StringComparer.OrdinalIgnoreCase))
+            line($"    - {entity}/{form}: {library.Name}");
     }
 
     // Single confirmation for the whole push (not one per handler, per KTD6) — the result gates whether

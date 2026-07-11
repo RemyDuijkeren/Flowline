@@ -109,7 +109,8 @@ public class FormEventServiceTests : IDisposable
 
         // R18b: the removed short-circuit means the executor's own rich per-handler preview is now
         // reachable — not just a bare "N form(s) pending" count.
-        Assert.Contains("handler(s) would be added", _console.Output);
+        Assert.Contains("1 handler(s) added", _console.Output);
+        Assert.Contains("Handlers added (1)", _console.Output);
         Assert.Contains("Run without --dry-run to apply", _console.Output);
     }
 
@@ -140,7 +141,7 @@ public class FormEventServiceTests : IDisposable
         await _serviceMock.DidNotReceive().ExecuteAsync(
             Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>());
         Assert.DoesNotContain("Run without --dry-run to apply", _console.Output);
-        Assert.DoesNotContain("would be added", _console.Output);
+        Assert.DoesNotContain("Summary:", _console.Output);
     }
 
     [Fact]
@@ -162,7 +163,7 @@ public class FormEventServiceTests : IDisposable
         // Direct regression test for the double-print bug: Reader+Planner compute the identical plan for
         // both phases (cleanupOnly only affects the executor's write, which dry-run never reaches), so
         // without the dedup in FormEventService, calling both phases in dry-run would render the same
-        // "N form(s)... handler(s) would be added" block twice.
+        // "Summary: ... Handlers added (...)" block twice.
         File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
             "// flowline:onload account \"Account Main\" onLoadHandler\nfunction onLoadHandler() {}");
 
@@ -176,7 +177,7 @@ public class FormEventServiceTests : IDisposable
         Assert.True(cleanupResult);
         Assert.True(registerResult);
 
-        var occurrences = _console.Output.Split("would be added").Length - 1;
+        var occurrences = _console.Output.Split("Handlers added").Length - 1;
         Assert.Equal(1, occurrences);
     }
 

@@ -10,18 +10,28 @@ static class FormHandlerDiffer
 {
     public static (int Added, int Updated, int Removed) Diff(IReadOnlySet<FormHandler> desired, IReadOnlySet<FormHandler> current)
     {
+        var (added, updated, removed) = DiffDetailed(desired, current);
+        return (added.Count, updated.Count, removed.Count);
+    }
+
+    // Item-level variant of Diff, for callers that need to report exactly which handlers changed (e.g. the
+    // executor's verbose/dry-run change report), not just counts.
+    public static (List<FormHandler> Added, List<FormHandler> Updated, List<FormHandler> Removed) DiffDetailed(
+        IReadOnlySet<FormHandler> desired, IReadOnlySet<FormHandler> current)
+    {
         var currentByIdentity = current.ToDictionary(h => h);
 
-        int added = 0, updated = 0;
+        var added = new List<FormHandler>();
+        var updated = new List<FormHandler>();
         foreach (var handler in desired)
         {
             if (!currentByIdentity.TryGetValue(handler, out var match))
-                added++;
+                added.Add(handler);
             else if (match.HandlerUniqueId != handler.HandlerUniqueId || match.Parameters != handler.Parameters)
-                updated++;
+                updated.Add(handler);
         }
 
-        var removed = current.Except(desired).Count();
+        var removed = current.Except(desired).ToList();
         return (added, updated, removed);
     }
 }

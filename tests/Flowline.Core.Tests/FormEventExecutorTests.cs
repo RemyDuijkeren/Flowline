@@ -411,9 +411,56 @@ public class FormEventExecutorTests
 
         await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: true, cleanupOnly: false);
 
-        Assert.Contains("0 handler(s) would be added", _console.Output);
-        Assert.Contains("1 updated", _console.Output);
-        Assert.Contains("0 removed", _console.Output);
+        Assert.Contains("1 handler(s) updated", _console.Output);
+        Assert.Contains("Handlers updated (1)", _console.Output);
+        Assert.Contains("onLoad", _console.Output);
+        Assert.Contains("av_/lib.js", _console.Output);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DryRunLibraryOnlyChange_PrintsLibraryDetailNotJustZeroHandlerCounts()
+    {
+        // Regression: a library-only change (no handler add/update/remove — e.g. an orphaned library with
+        // its last handler already gone) previously reported as "0 handler(s) would be added, 0 updated,
+        // 0 removed" with no indication anything was pending at all: the library change itself was
+        // invisible in --dry-run. Also covers the underlying complaint that --verbose showed no more detail
+        // than a bare form count, unlike WebResources/Plugins.
+        var formId = Guid.NewGuid();
+        var orphanLibrary = new FormLibraryEntry("av_/orphan.js", FormEventDeterministicId.ForLibrary("av_/orphan.js"));
+        var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
+            new HashSet<FormHandler>(), new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
+
+        var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account",
+            BuildFormXml(FormEventType.OnLoad, new HashSet<FormHandler>(), new HashSet<FormLibraryEntry> { orphanLibrary })));
+        var plan = BuildPlan(formPlan);
+
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: true, cleanupOnly: false);
+
+        Assert.Contains("1 library(ies) removed", _console.Output);
+        Assert.Contains("Libraries removed (1)", _console.Output);
+        Assert.Contains("account/Account Main: av_/orphan.js", _console.Output);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_NotDryRun_PrintsSamePerHandlerDetailAsDryRunBeforeApplying()
+    {
+        // The detail report isn't dry-run-only — a real (non-dry-run) push should show exactly what's
+        // about to be written before it writes it, same as WebResourceService's verbose plan report.
+        var formId = Guid.NewGuid();
+        var handler = new FormHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
+        var library = new FormLibraryEntry("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
+        var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
+            new HashSet<FormHandler> { handler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry> { library });
+
+        var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
+        var plan = BuildPlan(formPlan);
+        CaptureUpdatedFormXml();
+
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false);
+
+        Assert.Contains("Handlers added (1)", _console.Output);
+        Assert.Contains("account/Account Main (OnLoad): onLoad (av_/lib.js)", _console.Output);
+        Assert.Contains("Libraries added (1)", _console.Output);
     }
 
     [Fact]
