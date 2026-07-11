@@ -148,13 +148,21 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
 
         if (webResourcesSyncFolder != null)
         {
+            var dryRun = runMode == RunMode.DryRun;
+
+            // KTD12: cleanup runs before web resources are created/updated/deleted — removes stale/orphaned
+            // form event handlers (R14) so a pending web-resource delete never trips Dataverse's
+            // "referenced by N other components" dependency fault.
+            pushedChanges |= await formEventService.CleanupOrphanedAsync(conn, webResourcesSyncFolder, solutionName, settings.Force, dryRun, cancellationToken).ConfigureAwait(false);
+
             Logger.LogInformation("Pushing web resources: {Folder}", webResourcesSyncFolder);
             pushedChanges |= await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder, solutionName, publishAfterSync: !settings.NoPublish, runMode: runMode, cancellationToken: cancellationToken).ConfigureAwait(false);
             if (settings.NoPublish)
                 Console.Skip("Publish — skipping (--no-publish active).");
 
-            // R10a: form event registration runs strictly after web resources are pushed, same scope gate.
-            pushedChanges |= await formEventService.SyncSolutionAsync(conn, webResourcesSyncFolder, solutionName, settings.Force, runMode, cancellationToken).ConfigureAwait(false);
+            // R10a: registration runs strictly after web resources are pushed, same scope gate — new/updated
+            // handlers can only reference libraries that already exist in Dataverse.
+            pushedChanges |= await formEventService.RegisterAsync(conn, webResourcesSyncFolder, solutionName, settings.Force, dryRun, cancellationToken).ConfigureAwait(false);
         }
 
         Console.Done(runMode == RunMode.DryRun
