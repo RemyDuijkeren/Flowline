@@ -303,6 +303,31 @@ public class FormEventExecutorTests
         await _serviceMock.Received(1).UpdateAsync(Arg.Is<Entity>(e => e.Id == formIdOk), Arg.Any<CancellationToken>());
     }
 
+    // Regression: a live push crashed with "Could not find color or style 'Publish'" — the failure summary
+    // interpolated ex.Message straight into Spectre markup, and a Dataverse fault message containing
+    // "[Publish...]"-shaped text was parsed as a markup tag instead of printed literally.
+    [Fact]
+    public async Task ExecuteAsync_FailureMessageContainsBracketedText_ReportedLiterallyNotParsedAsMarkup()
+    {
+        var formId = Guid.NewGuid();
+        var handler = new FormHandler("onLoad", "av_/fails.js", FormEventDeterministicId.ForHandler("account", "Account Fails", FormEventType.OnLoad, "onLoad", "av_/fails.js"), "");
+        var formPlan = new FormEventFormPlan(formId, "account", "Account Fails", FormEventType.OnLoad,
+            new HashSet<FormHandler> { handler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
+
+        var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Fails", "account", BuildFormXml()));
+        var plan = BuildPlan(formPlan);
+
+        _serviceMock.UpdateAsync(Arg.Is<Entity>(e => e.Id == formId), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new FaultException<OrganizationServiceFault>(
+                new OrganizationServiceFault(), "operation [Publish] failed unexpectedly")));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false));
+
+        Assert.Contains("1 form event operation(s) failed", ex.Message);
+        Assert.Contains("operation [Publish] failed unexpectedly", _console.Output);
+    }
+
     [Fact]
     public async Task ExecuteAsync_PublishXmlFailureForOneEntity_SurfacedAsHardFailureOtherEntitiesStillAttempt()
     {

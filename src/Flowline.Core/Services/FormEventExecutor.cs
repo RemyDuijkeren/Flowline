@@ -54,7 +54,7 @@ public class FormEventExecutor(IAnsiConsole console)
         if (failures.Count > 0)
         {
             foreach (var (name, ex) in failures)
-                console.Error($"'{name}' — {ex.Message}");
+                console.Error($"'{name}' — {Markup.Escape(ex.Message)}");
             throw new InvalidOperationException($"{failures.Count} form event operation(s) failed.");
         }
 
