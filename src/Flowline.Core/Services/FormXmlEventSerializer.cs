@@ -87,6 +87,15 @@ public static class FormXmlEventSerializer
     {
         var root = form.Root ?? throw new InvalidOperationException("Form XML has no root element.");
 
+        // Confirmed live: Dataverse's formxml schema rejects an empty <formLibraries></formLibraries> —
+        // "has incomplete content, expected 'Library'" — the element requires at least one Library child
+        // whenever it's present at all. Remove it outright rather than leave an empty stub.
+        if (desired.Count == 0)
+        {
+            root.Element("formLibraries")?.Remove();
+            return;
+        }
+
         var formLibrariesElement = GetOrAdd(root, "formLibraries");
 
         formLibrariesElement.Elements("Library").Remove();

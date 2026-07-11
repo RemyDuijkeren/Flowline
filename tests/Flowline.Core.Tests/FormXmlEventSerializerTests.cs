@@ -290,14 +290,16 @@ public class FormXmlEventSerializerTests
     }
 
     [Fact]
-    public void SetLibraries_EmptyDesiredSet_LeavesEmptyFormLibrariesElement()
+    public void SetLibraries_EmptyDesiredSet_RemovesFormLibrariesElementEntirely()
     {
+        // Regression: a live push failed schema validation — "The element 'formLibraries' has incomplete
+        // content. List of possible elements expected: 'Library'." — an empty <formLibraries></formLibraries>
+        // (unlike an empty <Handlers />, which is valid) is rejected by Dataverse whenever the element is
+        // present at all, so it must be removed outright rather than left as an empty stub.
         var doc = XDocument.Parse(RealisticFormXml);
 
         FormXmlEventSerializer.SetLibraries(doc, new HashSet<FormLibraryEntry>());
 
-        var formLibrariesElement = doc.Root!.Element("formLibraries");
-        Assert.NotNull(formLibrariesElement);
-        Assert.Empty(formLibrariesElement!.Elements("Library"));
+        Assert.Null(doc.Root!.Element("formLibraries"));
     }
 }
