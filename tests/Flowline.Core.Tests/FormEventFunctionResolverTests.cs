@@ -87,16 +87,49 @@ public class FormEventFunctionResolverTests
     }
 
     [Fact]
-    public void Resolve_ExplicitDottedName_StructureConfirmsNestedPathExists_FoundConfidentNoWarning()
+    public void Resolve_ExplicitDottedName_PrefixMatchesThisFilesNamespace_FoundConfident()
     {
+        const string builtJs = "function OnLoad(executionContext) {} exports.OnLoad = OnLoad;";
+
+        var (functionName, found, confident) = FormEventFunctionResolver.Resolve(
+            builtJs, "Example1.OnLoad", "Example1", isExplicit: true);
+
+        Assert.True(found);
+        Assert.True(confident);
+        Assert.Equal("Example1.OnLoad", functionName);
+    }
+
+    [Fact]
+    public void Resolve_ExplicitDottedName_PrefixDoesNotMatchThisFilesNamespace_HardFailOutcome()
+    {
+        // A dotted prefix is not an arbitrary/organizational qualifier (e.g. "MyCompany.Example1") -
+        // it must match this file's own auto-derived namespace, since a Handler's libraryName is
+        // always the file the annotation lives in.
         const string builtJs = "function OnLoad(executionContext) {} exports.OnLoad = OnLoad;";
 
         var (functionName, found, confident) = FormEventFunctionResolver.Resolve(
             builtJs, "MyCompany.Example1.OnLoad", "Example1", isExplicit: true);
 
-        Assert.True(found);
+        Assert.False(found);
         Assert.True(confident);
-        Assert.Equal("MyCompany.Example1.OnLoad", functionName);
+        Assert.Null(functionName);
+    }
+
+    [Fact]
+    public void Resolve_ExplicitDottedName_PrefixReferencesDifferentFilesNamespace_HardFailInsteadOfCrossFileMatch()
+    {
+        // Regression: "Example1.onload1" written inside example2.js (auto-derived namespace
+        // "Example2") must not silently match this file's own same-named "onLoad1" export just
+        // because the tail happens to line up - a wrong/typo'd prefix always fails, even when a
+        // same-named export exists in this file.
+        const string builtJs = "function onLoad1(executionContext) {} exports.onLoad1 = onLoad1;";
+
+        var (functionName, found, confident) = FormEventFunctionResolver.Resolve(
+            builtJs, "Example1.onload1", "Example2", isExplicit: true);
+
+        Assert.False(found);
+        Assert.True(confident);
+        Assert.Null(functionName);
     }
 
     [Fact]
@@ -105,7 +138,7 @@ public class FormEventFunctionResolverTests
         const string builtJs = "function onLoad(executionContext) {} exports.onLoad = onLoad;";
 
         var (functionName, found, confident) = FormEventFunctionResolver.Resolve(
-            builtJs, "MyCompany.Example1.NonExistentFunction", "Example1", isExplicit: true);
+            builtJs, "Example1.NonExistentFunction", "Example1", isExplicit: true);
 
         Assert.False(found);
         Assert.True(confident);
@@ -130,13 +163,12 @@ public class FormEventFunctionResolverTests
     {
         const string builtJs =
             """
-            var MyCompany = MyCompany || {};
-            MyCompany.Example1 = MyCompany.Example1 || {};
-            MyCompany.Example1.OnLoad = function(executionContext) { };
+            var Example1 = Example1 || {};
+            Example1.OnLoad = function(executionContext) { };
             """;
 
         var (functionName, found, confident) = FormEventFunctionResolver.Resolve(
-            builtJs, "MyCompany.Example1.OnLoad", "Example1", isExplicit: true);
+            builtJs, "Example1.OnLoad", "Example1", isExplicit: true);
 
         Assert.False(found);
         Assert.False(confident);

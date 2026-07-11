@@ -9,21 +9,25 @@ namespace Flowline.Core.Services;
 // structural parse never tokenizes comment/string content as executable statements.
 public static class FormEventFunctionResolver
 {
-    // R6/R6a/R7/R7a: resolves a form event handler's function name against a built web resource's
-    // actual export surface.
+    // R7/R7a: resolves a form event handler's function name against a built web resource's actual
+    // export surface.
     //   isExplicit=false (R4 default, requestedFunctionName is the auto-derived onLoad/onSave guess):
     //     try "<autoNamespace>.<requestedFunctionName>" (Rollup-style exports.X= shape), then bare
     //     "<requestedFunctionName>" (verbatim shape). Found:false drives R7's hard fail; Confident is
     //     not meaningful for this branch.
-    //   isExplicit=true (R7a, the user wrote the name): a dotted name is already fully qualified, so
-    //     auto-namespace derivation is skipped entirely (R6a) and only the final segment is verified
-    //     against the parsed export surface; a bare name is matched the same namespaced-then-bare way
-    //     as the defaulted branch. Confident reports whether Acornima fully traced a *known* export
-    //     shape for this file (an "exports.X =" assignment anywhere in the tree, or a verbatim
-    //     top-level function/const-arrow declaration) - i.e. whether a reported absence is a positive
-    //     determination rather than a shape the walk couldn't fully enumerate (e.g. a namespace object
-    //     assembled across multiple statements). Found:true always implies Confident:true, since a match
-    //     can only come from one of those two known, fully-enumerated shapes.
+    //   isExplicit=true (R7a, the user wrote the name): a dotted name's prefix must match THIS file's
+    //     own auto-derived namespace - a Handler's libraryName is always the file the annotation lives
+    //     in, so a function it references can only ever live in that same file's own export surface,
+    //     never a different file's. A mismatched prefix (wrong namespace, typo, or a reference into an
+    //     unrelated file) is a hard fail even when the tail happens to match a same-named export in
+    //     this file. Once the prefix matches, only the final segment is verified against the parsed
+    //     export surface; a bare name is matched the same namespaced-then-bare way as the defaulted
+    //     branch. Confident reports whether Acornima fully traced a *known* export shape for this file
+    //     (an "exports.X =" assignment anywhere in the tree, or a verbatim top-level function/const-
+    //     arrow declaration) - i.e. whether a reported absence is a positive determination rather than
+    //     a shape the walk couldn't fully enumerate (e.g. a namespace object assembled across multiple
+    //     statements). Found:true always implies Confident:true, since a match can only come from one
+    //     of those two known, fully-enumerated shapes.
     public static (string? FunctionName, bool Found, bool Confident) Resolve(
         string builtJsContent, string requestedFunctionName, string autoNamespace, bool isExplicit)
     {
@@ -56,9 +60,13 @@ public static class FormEventFunctionResolver
             {
                 var namespacePrefix = requestedFunctionName[..dotIndex];
                 var tail = requestedFunctionName[(dotIndex + 1)..];
+
+                if (!string.Equals(namespacePrefix, autoNamespace, StringComparison.OrdinalIgnoreCase))
+                    return (null, false, confident);
+
                 if (exportAssignments.TryGetValue(tail, out var realTail) ||
                     topLevelDeclarations.TryGetValue(tail, out realTail))
-                    return ($"{namespacePrefix}.{realTail}", true, confident);
+                    return ($"{autoNamespace}.{realTail}", true, confident);
 
                 return (null, false, confident);
             }
