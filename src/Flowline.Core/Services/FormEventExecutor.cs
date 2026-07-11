@@ -52,6 +52,17 @@ public class FormEventExecutor(IAnsiConsole console)
 
         var removeUnrecognized = ResolveUnrecognizedHandling(plan, force);
 
+        // Single source of truth for both what gets written and what gets reported — computed once, up
+        // front. This lets a phase with nothing to actually do (most commonly cleanup, which is
+        // removals-only — a form can sit in plan.Forms purely for a registration-only change, e.g. a
+        // brand-new handler) skip the progress bar entirely, instead of rendering an empty 0->100% bar
+        // for zero real work (confirmed live).
+        var formBuilds = plan.Forms.GroupBy(f => f.FormId)
+            .ToDictionary(g => g.Key, g => BuildFormXml(snapshot, g, removeUnrecognized, cleanupOnly));
+
+        if (formBuilds.Values.All(b => b.HandlerChanges.Count == 0 && b.LibraryChanges.Count == 0))
+            return;
+
         var failures = new List<(string Name, Exception Error)>();
         var appliedHandlerChanges = new List<HandlerChange>();
         var appliedLibraryChanges = new List<LibraryChange>();
@@ -69,7 +80,7 @@ public class FormEventExecutor(IAnsiConsole console)
         // removals-only, registration is everything else.
         var progressLabel = cleanupOnly ? "Cleaning forms" : "Updating forms";
         await console.Progress().StartAsync(ctx =>
-            ExecuteByEntityAsync(service, snapshot, plan, removeUnrecognized, cleanupOnly, failures,
+            ExecuteByEntityAsync(service, plan, formBuilds, failures,
                 appliedHandlerChanges, appliedLibraryChanges, changesLock,
                 ctx.AddTask(progressLabel, maxValue: formCount + entityCount), cancellationToken)).ConfigureAwait(false);
 
@@ -79,13 +90,6 @@ public class FormEventExecutor(IAnsiConsole console)
                 console.Error($"'{name}' — {Markup.Escape(ex.Message)}");
             throw new InvalidOperationException($"{failures.Count} form event operation(s) failed.");
         }
-
-        // Reports exactly what got applied (not the pre-narrowing plan) — cleanup's narrowing (BuildFormXml)
-        // can leave nothing to write for a form (e.g. a brand-new handler deferred to registration), and
-        // cleanup is now removals-only besides, so this is often a strict subset of plan.Forms. Silent when
-        // nothing was actually written, matching the "up to date" convention elsewhere.
-        if (appliedHandlerChanges.Count == 0 && appliedLibraryChanges.Count == 0)
-            return;
 
         var counts = WriteChangeReport(appliedHandlerChanges, appliedLibraryChanges, PlanReportMode.Verbose);
         console.Ok(counts);
@@ -228,10 +232,8 @@ public class FormEventExecutor(IAnsiConsole console)
 
     async Task ExecuteByEntityAsync(
         IOrganizationServiceAsync2 service,
-        FormEventSnapshot snapshot,
         FormEventSyncPlan plan,
-        bool removeUnrecognized,
-        bool cleanupOnly,
+        Dictionary<Guid, (string FormXml, List<HandlerChange> HandlerChanges, List<LibraryChange> LibraryChanges)> formBuilds,
         List<(string Name, Exception Error)> failures,
         List<HandlerChange> appliedHandlerChanges,
         List<LibraryChange> appliedLibraryChanges,
@@ -266,11 +268,13 @@ public class FormEventExecutor(IAnsiConsole console)
                     {
                         try
                         {
-                            var (formXml, handlerChanges, libraryChanges) = BuildFormXml(snapshot, formGroup, removeUnrecognized, cleanupOnly);
-                            // cleanupOnly's narrowing (below) can leave nothing to write — e.g. a form whose
-                            // only pending change is a brand-new handler/library, deferred to registration.
-                            // Skipping the write here is what stops the cleanup pass from publishing that
-                            // entity for no reason (confirmed live: reported as an apparent double-publish).
+                            var (formXml, handlerChanges, libraryChanges) = formBuilds[formGroup.Key];
+                            // cleanupOnly's narrowing (BuildFormXml) can leave nothing to write for this
+                            // particular form even when the phase overall has work elsewhere — e.g. a form
+                            // whose only pending change is a brand-new handler/library, deferred to
+                            // registration. Skipping the write here is what stops the cleanup pass from
+                            // publishing that entity for no reason (confirmed live: reported as an
+                            // apparent double-publish).
                             if (handlerChanges.Count > 0 || libraryChanges.Count > 0)
                             {
                                 var entity = new Entity(SystemFormEntity, formGroup.Key) { ["formxml"] = formXml };

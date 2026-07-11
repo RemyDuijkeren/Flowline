@@ -586,9 +586,10 @@ public class FormEventExecutorTests
     {
         // Regression: reported live as an apparent double-publish — a form whose ONLY pending change is a
         // brand-new handler+library (nothing to clean up) still had UpdateAsync and PublishXml called
-        // during the cleanup pass, even though cleanupOnly's narrowing (below) excludes the whole change and
-        // writes back formxml identical to the current state. Confirmed via the progress bar hitting 100%
-        // twice for the same push. The cleanup pass must skip both entirely when nothing was actually written.
+        // during the cleanup pass, even though cleanupOnly's narrowing (BuildFormXml) excludes the whole
+        // change and writes back formxml identical to the current state. Confirmed via the progress bar
+        // hitting 100% twice for the same push. The cleanup pass must skip both entirely when nothing was
+        // actually written.
         var formId = Guid.NewGuid();
         var newHandler = new FormHandler("onLoad", "av_/new.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/new.js"), "");
         var newLibrary = new FormLibraryEntry("av_/new.js", FormEventDeterministicId.ForLibrary("av_/new.js"));
@@ -605,5 +606,9 @@ public class FormEventExecutorTests
         await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().ExecuteAsync(
             Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>());
+        // Regression: nothing to clean up must print nothing at all — no progress bar, no "no changes"
+        // summary line — rather than rendering a "Cleaning forms" bar that jumps straight to 100% for
+        // zero real work (confusing, reads as a hang or a no-op mistaken for done).
+        Assert.Equal("", _console.Output);
     }
 }
