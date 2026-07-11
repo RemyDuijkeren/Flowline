@@ -517,4 +517,30 @@ public class FormEventExecutorTests
         var writtenHandler = Assert.Single(written);
         Assert.Equal("newParams", writtenHandler.Parameters); // library already on the form — safe to apply now
     }
+
+    [Fact]
+    public async Task ExecuteAsync_CleanupOnlyPurelyAdditiveChange_SkipsUpdateAndPublishEntirely()
+    {
+        // Regression: reported live as an apparent double-publish — a form whose ONLY pending change is a
+        // brand-new handler+library (nothing to clean up) still had UpdateAsync and PublishXml called
+        // during the cleanup pass, even though cleanupOnly's narrowing (below) excludes the whole change and
+        // writes back formxml identical to the current state. Confirmed via the progress bar hitting 100%
+        // twice for the same push. The cleanup pass must skip both entirely when nothing was actually written.
+        var formId = Guid.NewGuid();
+        var newHandler = new FormHandler("onLoad", "av_/new.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/new.js"), "");
+        var newLibrary = new FormLibraryEntry("av_/new.js", FormEventDeterministicId.ForLibrary("av_/new.js"));
+
+        var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
+            new HashSet<FormHandler> { newHandler }, new HashSet<UnrecognizedHandler>(),
+            new HashSet<FormLibraryEntry> { newLibrary });
+
+        var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
+        var plan = BuildPlan(formPlan);
+
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: true);
+
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(
+            Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>());
+    }
 }

@@ -259,6 +259,7 @@ public class FormEventExecutor(IAnsiConsole console)
                 // both events are folded onto one parse of the current formxml and written with a single
                 // UpdateAsync — writing them separately would have each start from the pristine formxml
                 // and the second write would clobber the first (last write wins).
+                var anyFormChanged = false;
                 var updateTasks = entityGroup.GroupBy(f => f.FormId).Select(async formGroup =>
                 {
                     await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -266,9 +267,19 @@ public class FormEventExecutor(IAnsiConsole console)
                     {
                         try
                         {
-                            var formXml = BuildFormXml(snapshot, formGroup, removeUnrecognized, cleanupOnly);
-                            var entity = new Entity(SystemFormEntity, formGroup.Key) { ["formxml"] = formXml };
-                            await service.UpdateAsync(entity, cancellationToken).ConfigureAwait(false);
+                            var (formXml, changed) = BuildFormXml(snapshot, formGroup, removeUnrecognized, cleanupOnly);
+                            // cleanupOnly's narrowing (below) can leave nothing to write — e.g. a form whose
+                            // only pending change is a brand-new handler/library, deferred to registration.
+                            // Skipping the write here is what stops the cleanup pass from publishing that
+                            // entity for no reason (confirmed live: reported as an apparent double-publish).
+                            if (changed)
+                            {
+                                var entity = new Entity(SystemFormEntity, formGroup.Key) { ["formxml"] = formXml };
+                                await service.UpdateAsync(entity, cancellationToken).ConfigureAwait(false);
+                                // Plain bool write, no lock: only ever set to true, and Task.WhenAll below
+                                // establishes happens-before for every updateTasks write before it's read.
+                                anyFormChanged = true;
+                            }
                         }
                         catch (FaultException<OrganizationServiceFault> ex)
                         {
@@ -281,16 +292,19 @@ public class FormEventExecutor(IAnsiConsole console)
 
                 await Task.WhenAll(updateTasks).ConfigureAwait(false);
 
-                await publishGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-                try
+                if (anyFormChanged)
                 {
-                    await PublishAsync(service, entityGroup.Key, cancellationToken).ConfigureAwait(false);
+                    await publishGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        await PublishAsync(service, entityGroup.Key, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (FaultException<OrganizationServiceFault> ex)
+                    {
+                        lock (failures) failures.Add((entityGroup.Key, ex));
+                    }
+                    finally { publishGate.Release(); }
                 }
-                catch (FaultException<OrganizationServiceFault> ex)
-                {
-                    lock (failures) failures.Add((entityGroup.Key, ex));
-                }
-                finally { publishGate.Release(); }
                 progressTask.Increment(1);
             });
 
@@ -300,22 +314,19 @@ public class FormEventExecutor(IAnsiConsole console)
     // formGroup holds every FormEventFormPlan for one FormId (one entry per touched event) — each event's
     // desired handlers are applied to the same xdoc, and libraries are unioned across events and applied
     // once (SetLibraries replaces the full <formLibraries> section, so applying it per-plan in sequence
-    // would drop an earlier plan's libraries).
-    static string BuildFormXml(FormEventSnapshot snapshot, IGrouping<Guid, FormEventFormPlan> formGroup, bool removeUnrecognized, bool cleanupOnly)
+    // would drop an earlier plan's libraries). Changed reports whether the narrowed write actually differs
+    // from the form's pristine current state — false when cleanupOnly's narrowing excluded everything.
+    static (string FormXml, bool Changed) BuildFormXml(FormEventSnapshot snapshot, IGrouping<Guid, FormEventFormPlan> formGroup, bool removeUnrecognized, bool cleanupOnly)
     {
         var first = formGroup.First();
         var dataverseForm = snapshot.Forms[(first.EntityLogicalName, first.FormName)];
         var xdoc = XDocument.Parse(dataverseForm.FormXml);
 
-        // cleanupOnly (KTD12's phase-1 cleanup pass, U7): only write removals that are already safe — never
-        // a brand-new library reference, since at this point in the three-phase sequence the web resource
-        // it points at may not exist in Dataverse yet. Intersecting desired against the form's pristine
-        // (pre-mutation) current state achieves that with no extra Dataverse lookup: anything
-        // desired-but-not-current necessarily needs a library that isn't on the form yet, so it's excluded
-        // here and deferred to the later registration-phase call. Read once, before any SetHandlers call
-        // below mutates the doc.
-        var currentLibraries = cleanupOnly ? FormXmlEventSerializer.GetLibraries(xdoc) : null;
+        // Always read (not just cleanupOnly) — also needed post-narrowing to detect whether the library set
+        // actually changed.
+        var currentLibraries = FormXmlEventSerializer.GetLibraries(xdoc);
 
+        var changed = false;
         var unionLibraries = new HashSet<FormLibraryEntry>();
         foreach (var formPlan in formGroup)
         {
@@ -326,26 +337,36 @@ public class FormEventExecutor(IAnsiConsole console)
                 ? formPlan.DesiredHandlers.Where(h => !unrecognizedHandlers.Contains(h))
                 : formPlan.DesiredHandlers;
 
-            if (cleanupOnly)
-            {
-                // Read before this iteration's SetHandlers call below — each event's Handlers live in their
-                // own <event> element, so an earlier iteration in this loop (a different event) never
-                // touches this one.
-                var currentHandlers = FormXmlEventSerializer.GetHandlers(xdoc, formPlan.Event);
-                desired = desired.Where(currentHandlers.Contains);
-            }
+            // Read before this iteration's SetHandlers call below — each event's Handlers live in their own
+            // <event> element, so an earlier iteration in this loop (a different event) never touches this one.
+            var currentHandlers = FormXmlEventSerializer.GetHandlers(xdoc, formPlan.Event);
 
-            FormXmlEventSerializer.SetHandlers(xdoc, formPlan.Event, desired.ToHashSet());
+            // cleanupOnly (KTD12's phase-1 cleanup pass, U7): only write removals that are already safe —
+            // never a brand-new library reference, since at this point in the three-phase sequence the web
+            // resource it points at may not exist in Dataverse yet. Intersecting desired against the form's
+            // pristine (pre-mutation) current state achieves that with no extra Dataverse lookup: anything
+            // desired-but-not-current necessarily needs a library that isn't on the form yet, so it's
+            // excluded here and deferred to the later registration-phase call.
+            if (cleanupOnly)
+                desired = desired.Where(currentHandlers.Contains);
+
+            var desiredSet = desired.ToHashSet();
+            var (added, updated, removed) = FormHandlerDiffer.Diff(desiredSet, currentHandlers);
+            if (added > 0 || updated > 0 || removed > 0) changed = true;
+
+            FormXmlEventSerializer.SetHandlers(xdoc, formPlan.Event, desiredSet);
 
             var desiredLibraries = cleanupOnly
-                ? formPlan.DesiredLibraries.Where(currentLibraries!.Contains)
+                ? formPlan.DesiredLibraries.Where(currentLibraries.Contains)
                 : formPlan.DesiredLibraries;
             unionLibraries.UnionWith(desiredLibraries);
         }
 
+        if (!unionLibraries.SetEquals(currentLibraries)) changed = true;
+
         FormXmlEventSerializer.SetLibraries(xdoc, unionLibraries);
 
-        return xdoc.ToString();
+        return (xdoc.ToString(), changed);
     }
 
     static Task PublishAsync(IOrganizationServiceAsync2 service, string entityLogicalName, CancellationToken cancellationToken)
