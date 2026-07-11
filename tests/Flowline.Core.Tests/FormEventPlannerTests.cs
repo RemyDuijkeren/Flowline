@@ -195,6 +195,39 @@ public class FormEventPlannerTests
         var entry = Assert.Single(plan.Forms);
         Assert.Empty(entry.DesiredHandlers); // dropped — NOT carried through as foreign
         Assert.Empty(entry.UnrecognizedHandlers);
+        // Correctness-review regression: the <Library> entry itself must also leave DesiredLibraries once
+        // its last handler is cleanly auto-removed as stale — otherwise the web resource still looks
+        // referenced via <formLibraries>, and its delete still faults even though the <Handler> was cleaned.
+        Assert.Empty(entry.DesiredLibraries);
+    }
+
+    [Fact]
+    public void Plan_LibraryStillNeededByOtherEvent_NotRemovedEvenWhenThisEventsHandlerWasOrphaned()
+    {
+        // Libraries are form-level (<formLibraries> is shared by onLoad and onSave), not per-event — a
+        // library must NOT be dropped just because ONE event's handler on it was cleanly removed if the
+        // OTHER event still has a surviving handler referencing the same library.
+        var staleOnLoadId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/shared.js");
+        var currentOnLoad = new HashSet<FormHandler> { new("onLoad", "av_/shared.js", staleOnLoadId, "") };
+        var currentOnSave = new HashSet<FormHandler> { new("onSave", "av_/shared.js", Guid.NewGuid(), "") }; // kept via annotation below
+
+        var xdoc = System.Xml.Linq.XDocument.Parse(BuildFormXml(FormEventType.OnLoad, currentOnLoad));
+        FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnSave, currentOnSave);
+        FormXmlEventSerializer.SetLibraries(xdoc, new HashSet<FormLibraryEntry> { new("av_/shared.js", Guid.NewGuid()) });
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", xdoc.ToString());
+
+        // No annotation for onLoad (its handler is now orphaned and stale) — but a live annotation for
+        // onSave keeps that event's handler, and therefore the shared library, in place.
+        var onSaveAnnotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnSave, "onSave", null);
+        var onSaveResolved = new ResolvedFormEventAnnotation(onSaveAnnotation, "av_/shared.js", "function onSave() {}", "src/shared.ts");
+
+        var snapshot = BuildSnapshot([onSaveResolved], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var onLoadEntry = Assert.Single(plan.Forms, e => e.Event == FormEventType.OnLoad);
+        Assert.Empty(onLoadEntry.DesiredHandlers); // stale onLoad handler dropped
+        Assert.Contains(onLoadEntry.DesiredLibraries, l => l.Name == "av_/shared.js"); // library kept — onSave still needs it
     }
 
     [Fact]

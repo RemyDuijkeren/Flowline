@@ -32,6 +32,23 @@ public class FormEventPlanner(IAnsiConsole console)
                 ? list
                 : [];
 
+            // Libraries live at the form level, not per-event (<formLibraries> is one list shared by both
+            // onLoad and onSave) — so whether a library is still needed can only be decided once BOTH
+            // events' handler decisions are known. Compute each event's handler-level results first,
+            // without touching libraries yet, then decide library removal once across the whole form,
+            // then emit plan entries using that shared result (KTD12: a library whose last handler was
+            // just auto-removed as stale must actually leave <formLibraries>, or the web resource it
+            // points at still looks referenced and its delete still faults — fixing only the <Handler>
+            // side left this gap open).
+            var perEventResults = new List<(FormEventType Event, IReadOnlySet<FormHandler> DesiredHandlers, IReadOnlySet<UnrecognizedHandler> Unrecognized, IReadOnlySet<FormHandler> CurrentHandlers)>();
+
+            // Libraries whose only reference on this form was a Handler we just cleanly auto-removed as
+            // stale (Flowline-owned, no confirmation needed) — the only case safe to also drop the Library
+            // entry for. A library with no handler referencing it at all, ever, or one still carrying a
+            // foreign/unrecognized handler, is never touched here — this feature only retires a Library
+            // entry it can attribute to its own cleanup, never one it has no attributable reason to remove.
+            var staleRemovedLibraryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             foreach (var evt in Enum.GetValues<FormEventType>())
             {
                 // Desired handlers as derived purely from this push's annotations. Always computes a fresh
@@ -103,7 +120,13 @@ public class FormEventPlanner(IAnsiConsole console)
 
                     var expectedId = FormEventDeterministicId.ForHandler(entity, form, evt, current.FunctionName, current.LibraryName);
                     if (current.HandlerUniqueId == expectedId)
-                        continue; // stale, Flowline-owned — drop automatically, not added to desiredHandlers below
+                    {
+                        // stale, Flowline-owned — drop automatically, not added to desiredHandlers below.
+                        // Record its library as a removal CANDIDATE — only actually dropped after the form's
+                        // other event confirms nothing still needs it (see the form-wide library pass below).
+                        staleRemovedLibraryNames.Add(current.LibraryName);
+                        continue;
+                    }
 
                     if (!snapshot.TrackedLibraryNames.Contains(current.LibraryName))
                     {
@@ -119,21 +142,55 @@ public class FormEventPlanner(IAnsiConsole console)
                 foreach (var u in unrecognized)
                     desiredHandlers.Add(u.Handler);
 
-                // Libraries are add-only (never removed here) — start from everything currently on the form,
-                // then add any library a desired handler needs that isn't already present.
-                var desiredLibraries = new HashSet<FormLibraryEntry>(currentLibraries);
-                foreach (var libraryName in desiredHandlers.Select(h => h.LibraryName).Distinct(StringComparer.OrdinalIgnoreCase))
-                {
-                    if (desiredLibraries.Contains(new FormLibraryEntry(libraryName, Guid.Empty)))
-                        continue;
-                    desiredLibraries.Add(new FormLibraryEntry(libraryName, FormEventDeterministicId.ForLibrary(libraryName)));
-                }
+                perEventResults.Add((evt, desiredHandlers, unrecognized, currentHandlers));
+            }
 
+            // Form-wide library decision, using both events' desired-handler results together.
+            var neededLibraryNames = perEventResults
+                .SelectMany(r => r.DesiredHandlers.Select(h => h.LibraryName))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var desiredLibraries = new HashSet<FormLibraryEntry>(currentLibraries
+                .Where(l => neededLibraryNames.Contains(l.Name) || !staleRemovedLibraryNames.Contains(l.Name)));
+            foreach (var libraryName in neededLibraryNames)
+            {
+                if (desiredLibraries.Contains(new FormLibraryEntry(libraryName, Guid.Empty)))
+                    continue;
+                desiredLibraries.Add(new FormLibraryEntry(libraryName, FormEventDeterministicId.ForLibrary(libraryName)));
+            }
+
+            // desiredLibraries is now identical for every event of this form (computed once, above) — the
+            // executor unions DesiredLibraries across whichever plan entries exist for a FormId, so only
+            // ONE entry needs to carry it; an event with nothing of its own to do doesn't need its own
+            // entry just because a DIFFERENT event on the same form needed a new/retired library.
+            var librariesChangedForForm = !desiredLibraries.SetEquals(currentLibraries);
+            var anyEntryEmitted = false;
+
+            foreach (var (evt, desiredHandlers, unrecognized, currentHandlers) in perEventResults)
+            {
                 var handlersChanged = !HandlerSetsFullyEqual(desiredHandlers, currentHandlers);
-                var librariesChanged = !desiredLibraries.SetEquals(currentLibraries);
-                if (!handlersChanged && !librariesChanged && unrecognized.Count == 0)
+                if (!handlersChanged && unrecognized.Count == 0)
                     continue;
 
+                anyEntryEmitted = true;
+                plan.Forms.Add(new FormEventFormPlan(
+                    dataverseForm.Id,
+                    entity,
+                    form,
+                    evt,
+                    desiredHandlers,
+                    unrecognized,
+                    desiredLibraries));
+            }
+
+            // Narrow fallback: a form-wide library change with no individual event flagged (only reachable
+            // if a library's last reference was removed via a path that doesn't itself flip an event's
+            // handlersChanged — not expected given how staleRemovedLibraryNames is populated above, but
+            // kept so a library-only change is never silently dropped). Attach it to the first event so the
+            // executor's per-form library union still sees it.
+            if (!anyEntryEmitted && librariesChangedForForm)
+            {
+                var (evt, desiredHandlers, unrecognized, _) = perEventResults[0];
                 plan.Forms.Add(new FormEventFormPlan(
                     dataverseForm.Id,
                     entity,
