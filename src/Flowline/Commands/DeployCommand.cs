@@ -331,7 +331,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         if (!settings.Force)
             throw new FlowlineException(ExitCode.ValidationFailed,
-                "Local changes not in Dataverse — deploy would revert them. Run 'sync' first, or use --force to skip.");
+                "Local changes not in Dataverse — deploy would revert them. Run 'push' then 'sync' to capture them, or use --force to skip.");
     }
 
     private static string ResolveArtifactZipPath(string slnFolder, string slnName, bool includeManaged)

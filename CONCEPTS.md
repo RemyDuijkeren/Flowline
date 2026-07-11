@@ -42,6 +42,11 @@ The structured record of all Dataverse solution component changes detected betwe
 ### Sub-change
 A change *within* a component — for example, an attribute added to an entity, a column removed from a view, or an option label changed on an option set. Sub-changes are the child entries under their parent component in both the terminal tree and `CHANGES.md`. The terminal caps the number of named sub-changes shown per component; `CHANGES.md` always contains the full list.
 
+## CLI Force Flag
+
+### Force specifier
+The required value passed to `--force`/`-f` (e.g. `--force recreate-assembly`) naming exactly which destructive or overwrite hazard to approve on the invoked command. Each command exposes only the specifier values for the hazards it can hit; `all` approves every hazard the invoked command has, including the shared `config` value where present. Bare `--force` with no value is always a parse error — there is no blanket approval by omission.
+
 ## Auth
 
 ### UNIVERSAL profile

@@ -61,7 +61,7 @@ public class FormEventService(IAnsiConsole console)
         // registration both re-scan the same local JS files, so cleanup's pass stays silent — only the
         // registration (second, fuller) pass surfaces reader/planner-level warnings, matching the "up to
         // date"/dry-run-preview dedup below.
-        var snapshot = await console.Status().FlowlineSpinner().StartAsync("Lookup form event annotations...", _ =>
+        var snapshot = await console.Status().FlowlineSpinner().StartAsync("Lookup form events...", _ =>
             _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, suppressWarnings: cleanupOnly, cancellationToken)).ConfigureAwait(false);
 
         // Phase 2: Plan registration (pure, synchronous)
@@ -70,7 +70,7 @@ public class FormEventService(IAnsiConsole console)
         if (plan.Forms.Count == 0)
         {
             // Both phases share this exact check; only the registration pass reports it, so a fully clean
-            // push doesn't print the same "up to date" line twice (once per phase).
+            // push doesn't print the same "up-to-date" line twice (once per phase).
             if (!cleanupOnly)
                 console.Skip("Form event handlers already up to date — skipping");
             return false;
