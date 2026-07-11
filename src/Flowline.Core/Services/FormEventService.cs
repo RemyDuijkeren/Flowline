@@ -48,7 +48,9 @@ public class FormEventService(IAnsiConsole console)
         }
 
         // Phase 3: Execute the plan
-        await _executor.ExecuteAsync(service, snapshot, plan, force, cancellationToken).ConfigureAwait(false);
+        // dryRun/cleanupOnly wiring from RunMode/KTD12 phasing is U7's job — false/false here preserves
+        // today's behavior (the RunMode.DryRun branch above already short-circuits before reaching this call).
+        await _executor.ExecuteAsync(service, snapshot, plan, force, dryRun: false, cleanupOnly: false, cancellationToken).ConfigureAwait(false);
         return true;
     }
 }

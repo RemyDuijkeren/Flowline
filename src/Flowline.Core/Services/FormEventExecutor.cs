@@ -27,10 +27,20 @@ public class FormEventExecutor(IAnsiConsole console)
         FormEventSnapshot snapshot,
         FormEventSyncPlan plan,
         bool force,
+        bool dryRun,
+        bool cleanupOnly,
         CancellationToken cancellationToken = default)
     {
         if (plan.Forms.Count == 0)
             return;
+
+        // R18b: preview everything the confirmation gate below would ask about — computed, never applied.
+        // No UpdateAsync/PublishXml, no prompt, regardless of interactivity.
+        if (dryRun)
+        {
+            PrintDryRunPreview(snapshot, plan);
+            return;
+        }
 
         var removeUnrecognized = ResolveUnrecognizedHandling(plan, force);
 
@@ -38,7 +48,7 @@ public class FormEventExecutor(IAnsiConsole console)
         var formCount = plan.DistinctFormCount;
 
         await console.Progress().StartAsync(ctx =>
-            ExecuteByEntityAsync(service, snapshot, plan, removeUnrecognized, failures,
+            ExecuteByEntityAsync(service, snapshot, plan, removeUnrecognized, cleanupOnly, failures,
                 ctx.AddTask("Updating forms", maxValue: formCount), cancellationToken)).ConfigureAwait(false);
 
         console.Ok($"{formCount} form(s) updated");
@@ -51,15 +61,74 @@ public class FormEventExecutor(IAnsiConsole console)
         }
     }
 
+    // Shared by the confirmation gate (R18) and the dry-run preview (R18b) so both list exactly the same
+    // unrecognized handlers, in the same shape, and never drift apart.
+    static List<(FormEventFormPlan Form, UnrecognizedHandler Unrecognized)> CollectUnrecognized(FormEventSyncPlan plan) =>
+        plan.Forms.SelectMany(f => f.UnrecognizedHandlers.Select(u => (Form: f, Unrecognized: u))).ToList();
+
+    // R18a: every surfaced handler shows the annotation the user could add instead of removing it. No
+    // mention of "confirming below" here — this line also renders in the non-interactive throw message
+    // (nothing "below" it — it's failing, not prompting) and the dry-run preview (which never prompts at
+    // all); callers that DO follow with a confirm prompt add that context themselves.
+    static string FormatUnrecognizedHandlerLine(FormEventFormPlan form, UnrecognizedHandler unrecognized) =>
+        $"{form.EntityLogicalName}/{form.FormName}: {unrecognized.Handler.FunctionName} ({unrecognized.Handler.LibraryName})"
+        + $" — to keep this, add {unrecognized.ProposedAnnotation} to {unrecognized.Handler.LibraryName}.";
+
+    // R18b: same per-handler detail as ResolveUnrecognizedHandling's prompt, plus a summary of the
+    // handler-level additions/updates/removals the plan would apply — computed against the pristine
+    // current formxml, nothing written.
+    void PrintDryRunPreview(FormEventSnapshot snapshot, FormEventSyncPlan plan)
+    {
+        var unrecognized = CollectUnrecognized(plan);
+        if (unrecognized.Count > 0)
+        {
+            console.Warning($"{unrecognized.Count} unrecognized handler(s) found on tracked forms:");
+            foreach (var u in unrecognized)
+                console.Info($"  {FormatUnrecognizedHandlerLine(u.Form, u.Unrecognized)}");
+        }
+
+        var (added, updated, removed) = SummarizeHandlerChanges(snapshot, plan);
+        console.Ok($"Dry run: {plan.DistinctFormCount} form(s) with pending changes — "
+            + $"{added} handler(s) would be added, {updated} updated, {removed} removed. Run without --dry-run to apply.");
+    }
+
+    // FormHandler's Equals/GetHashCode are identity-only (FunctionName+LibraryName) so a Parameters-only
+    // change lands in both DesiredHandlers and current by identity — Except() alone would silently call
+    // that "no change". Split identity matches with a differing full record (HandlerUniqueId/Parameters)
+    // into "updated" instead of leaving them uncounted, mirroring FormEventPlanner.HandlerSetsFullyEqual.
+    static (int Added, int Updated, int Removed) SummarizeHandlerChanges(FormEventSnapshot snapshot, FormEventSyncPlan plan)
+    {
+        int added = 0, updated = 0, removed = 0;
+        foreach (var formPlan in plan.Forms)
+        {
+            var dataverseForm = snapshot.Forms[(formPlan.EntityLogicalName, formPlan.FormName)];
+            var current = FormXmlEventSerializer.GetHandlers(XDocument.Parse(dataverseForm.FormXml), formPlan.Event);
+            var currentByIdentity = current.ToDictionary(h => (h.FunctionName.ToLowerInvariant(), h.LibraryName.ToLowerInvariant()));
+
+            foreach (var desired in formPlan.DesiredHandlers)
+            {
+                var key = (desired.FunctionName.ToLowerInvariant(), desired.LibraryName.ToLowerInvariant());
+                if (!currentByIdentity.TryGetValue(key, out var match))
+                    added++;
+                // FormHandler's own Equals/!= is identity-only (overridden below the record default) — it
+                // can't tell a Parameters-only change apart from no change at all, so compare full state
+                // explicitly here instead.
+                else if (match.HandlerUniqueId != desired.HandlerUniqueId || match.Parameters != desired.Parameters)
+                    updated++;
+            }
+
+            removed += current.Except(formPlan.DesiredHandlers).Count();
+        }
+        return (added, updated, removed);
+    }
+
     // Single confirmation for the whole push (not one per handler, per KTD6) — the result gates whether
     // every unrecognized handler across every form is removed (confirmed/forced) or kept (declined/no
     // unrecognized handlers at all). Everything else in the plan (new handlers, recognized-handler
     // updates, library changes, other forms) is unaffected by this decision.
     bool ResolveUnrecognizedHandling(FormEventSyncPlan plan, bool force)
     {
-        var unrecognized = plan.Forms
-            .SelectMany(f => f.UnrecognizedHandlers.Select(u => (Form: f, Handler: u.Handler)))
-            .ToList();
+        var unrecognized = CollectUnrecognized(plan);
 
         if (unrecognized.Count == 0)
             return true; // nothing to remove either way — Except() against an empty set is a no-op
@@ -69,16 +138,15 @@ public class FormEventExecutor(IAnsiConsole console)
 
         if (!IsInteractive())
         {
-            var lines = unrecognized.Select(u =>
-                $"{u.Form.EntityLogicalName}/{u.Form.FormName}: {u.Handler.FunctionName} ({u.Handler.LibraryName})");
+            var lines = unrecognized.Select(u => FormatUnrecognizedHandlerLine(u.Form, u.Unrecognized));
             throw new FlowlineException(ExitCode.ForceRequired,
                 "Unrecognized form event handler(s) found — confirmation required but not in interactive mode. Use --force to proceed.\n"
                 + string.Join("\n", lines));
         }
 
-        console.Warning($"{unrecognized.Count} unrecognized handler(s) found on tracked forms:");
-        foreach (var (form, handler) in unrecognized)
-            console.Info($"  {form.EntityLogicalName}/{form.FormName}: {handler.FunctionName} ({handler.LibraryName})");
+        console.Warning($"{unrecognized.Count} unrecognized handler(s) found on tracked forms — confirming below removes them:");
+        foreach (var u in unrecognized)
+            console.Info($"  {FormatUnrecognizedHandlerLine(u.Form, u.Unrecognized)}");
 
         return console.Confirm("Remove unrecognized handler(s) from form(s)?", false);
     }
@@ -94,6 +162,7 @@ public class FormEventExecutor(IAnsiConsole console)
         FormEventSnapshot snapshot,
         FormEventSyncPlan plan,
         bool removeUnrecognized,
+        bool cleanupOnly,
         List<(string Name, Exception Error)> failures,
         ProgressTask progressTask,
         CancellationToken cancellationToken)
@@ -120,7 +189,7 @@ public class FormEventExecutor(IAnsiConsole console)
                     {
                         try
                         {
-                            var formXml = BuildFormXml(snapshot, formGroup, removeUnrecognized);
+                            var formXml = BuildFormXml(snapshot, formGroup, removeUnrecognized, cleanupOnly);
                             var entity = new Entity(SystemFormEntity, formGroup.Key) { ["formxml"] = formXml };
                             await service.UpdateAsync(entity, cancellationToken).ConfigureAwait(false);
                         }
@@ -152,11 +221,20 @@ public class FormEventExecutor(IAnsiConsole console)
     // desired handlers are applied to the same xdoc, and libraries are unioned across events and applied
     // once (SetLibraries replaces the full <formLibraries> section, so applying it per-plan in sequence
     // would drop an earlier plan's libraries).
-    static string BuildFormXml(FormEventSnapshot snapshot, IGrouping<Guid, FormEventFormPlan> formGroup, bool removeUnrecognized)
+    static string BuildFormXml(FormEventSnapshot snapshot, IGrouping<Guid, FormEventFormPlan> formGroup, bool removeUnrecognized, bool cleanupOnly)
     {
         var first = formGroup.First();
         var dataverseForm = snapshot.Forms[(first.EntityLogicalName, first.FormName)];
         var xdoc = XDocument.Parse(dataverseForm.FormXml);
+
+        // cleanupOnly (KTD12's phase-1 cleanup pass, U7): only write removals that are already safe — never
+        // a brand-new library reference, since at this point in the three-phase sequence the web resource
+        // it points at may not exist in Dataverse yet. Intersecting desired against the form's pristine
+        // (pre-mutation) current state achieves that with no extra Dataverse lookup: anything
+        // desired-but-not-current necessarily needs a library that isn't on the form yet, so it's excluded
+        // here and deferred to the later registration-phase call. Read once, before any SetHandlers call
+        // below mutates the doc.
+        var currentLibraries = cleanupOnly ? FormXmlEventSerializer.GetLibraries(xdoc) : null;
 
         var unionLibraries = new HashSet<FormLibraryEntry>();
         foreach (var formPlan in formGroup)
@@ -164,12 +242,25 @@ public class FormEventExecutor(IAnsiConsole console)
             // Planner already folded UnrecognizedHandlers into DesiredHandlers (kept by default, R18) —
             // removing them here is the only place that decision is undone, once confirmed.
             var unrecognizedHandlers = formPlan.UnrecognizedHandlers.Select(u => u.Handler).ToHashSet();
-            var desired = removeUnrecognized
-                ? (IReadOnlySet<FormHandler>)formPlan.DesiredHandlers.Where(h => !unrecognizedHandlers.Contains(h)).ToHashSet()
+            IEnumerable<FormHandler> desired = removeUnrecognized
+                ? formPlan.DesiredHandlers.Where(h => !unrecognizedHandlers.Contains(h))
                 : formPlan.DesiredHandlers;
 
-            FormXmlEventSerializer.SetHandlers(xdoc, formPlan.Event, desired);
-            unionLibraries.UnionWith(formPlan.DesiredLibraries);
+            if (cleanupOnly)
+            {
+                // Read before this iteration's SetHandlers call below — each event's Handlers live in their
+                // own <event> element, so an earlier iteration in this loop (a different event) never
+                // touches this one.
+                var currentHandlers = FormXmlEventSerializer.GetHandlers(xdoc, formPlan.Event);
+                desired = desired.Where(currentHandlers.Contains);
+            }
+
+            FormXmlEventSerializer.SetHandlers(xdoc, formPlan.Event, desired.ToHashSet());
+
+            var desiredLibraries = cleanupOnly
+                ? formPlan.DesiredLibraries.Where(currentLibraries!.Contains)
+                : formPlan.DesiredLibraries;
+            unionLibraries.UnionWith(desiredLibraries);
         }
 
         FormXmlEventSerializer.SetLibraries(xdoc, unionLibraries);

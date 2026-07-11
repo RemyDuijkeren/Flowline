@@ -62,7 +62,7 @@ public class FormEventExecutorTests
         var plan = BuildPlan(formPlan);
         var captured = CaptureUpdatedFormXml();
 
-        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false);
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false);
 
         await _serviceMock.Received(1).UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).ExecuteAsync(
@@ -93,7 +93,7 @@ public class FormEventExecutorTests
         var plan = BuildPlan(onLoadPlan, onSavePlan);
         var captured = CaptureUpdatedFormXml();
 
-        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false);
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false);
 
         await _serviceMock.Received(1).UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
         Assert.Contains(onLoadHandler, GetHandlersFromCapturedXml(captured, formId, FormEventType.OnLoad));
@@ -107,8 +107,9 @@ public class FormEventExecutorTests
         var formId = Guid.NewGuid();
         var recognized = new FormHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
         var unrecognized = new FormHandler("manualFn", "av_/manual.js", Guid.NewGuid(), "");
+        const string proposedAnnotation = "// flowline:onload account \"Account Main\" manualFn";
         var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { recognized, unrecognized }, new HashSet<UnrecognizedHandler> { new(unrecognized, "") },
+            new HashSet<FormHandler> { recognized, unrecognized }, new HashSet<UnrecognizedHandler> { new(unrecognized, proposedAnnotation) },
             new HashSet<FormLibraryEntry>());
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
@@ -118,11 +119,12 @@ public class FormEventExecutorTests
         _console.Interactive();
         _console.Input.PushTextWithEnter("y");
 
-        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false);
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false);
 
         var written = GetHandlersFromCapturedXml(captured, formId, FormEventType.OnLoad);
         Assert.Contains(recognized, written);
         Assert.DoesNotContain(unrecognized, written);
+        Assert.Contains(proposedAnnotation, _console.Output); // R18a: proposed annotation shown in the interactive prompt too
     }
 
     [Fact]
@@ -153,7 +155,7 @@ public class FormEventExecutorTests
         _console.Interactive();
         _console.Input.PushTextWithEnter("n");
 
-        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false);
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false);
 
         var writtenA = GetHandlersFromCapturedXml(captured, formIdA, FormEventType.OnLoad);
         Assert.Contains(existingRecognized, writtenA);
@@ -169,8 +171,9 @@ public class FormEventExecutorTests
     {
         var formId = Guid.NewGuid();
         var unrecognized = new FormHandler("manualFn", "av_/manual.js", Guid.NewGuid(), "");
+        const string proposedAnnotation = "// flowline:onload account \"Account Main\" manualFn";
         var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { unrecognized }, new HashSet<UnrecognizedHandler> { new(unrecognized, "") },
+            new HashSet<FormHandler> { unrecognized }, new HashSet<UnrecognizedHandler> { new(unrecognized, proposedAnnotation) },
             new HashSet<FormLibraryEntry>());
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
@@ -178,13 +181,14 @@ public class FormEventExecutorTests
 
         // _console defaults to non-interactive (TestConsole.Profile.Capabilities.Interactive == false).
         var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
-            _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false));
+            _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false));
 
         Assert.Equal(ExitCode.ForceRequired, ex.ExitCode);
         Assert.Contains("account", ex.Message);
         Assert.Contains("Account Main", ex.Message);
         Assert.Contains("manualFn", ex.Message);
         Assert.Contains("av_/manual.js", ex.Message);
+        Assert.Contains(proposedAnnotation, ex.Message); // R18a: proposed annotation shown alongside removal warning
 
         await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<OrganizationRequest>(), Arg.Any<CancellationToken>());
@@ -205,7 +209,7 @@ public class FormEventExecutorTests
         var captured = CaptureUpdatedFormXml();
 
         // _console stays non-interactive — force must skip the prompt entirely.
-        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: true);
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: true, dryRun: false, cleanupOnly: false);
 
         Assert.DoesNotContain("unrecognized", _console.Output, StringComparison.OrdinalIgnoreCase);
         var written = GetHandlersFromCapturedXml(captured, formId, FormEventType.OnLoad);
@@ -231,7 +235,7 @@ public class FormEventExecutorTests
         var plan = BuildPlan(formPlanA, formPlanB);
         CaptureUpdatedFormXml();
 
-        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false);
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false);
 
         await _serviceMock.Received(2).UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).ExecuteAsync(
@@ -257,7 +261,7 @@ public class FormEventExecutorTests
         var plan = BuildPlan(formPlanA, formPlanB);
         CaptureUpdatedFormXml();
 
-        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false);
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false);
 
         await _serviceMock.Received(1).ExecuteAsync(
             Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml" && ((string)r.Parameters["ParameterXml"]).Contains("<entity>account</entity>")),
@@ -290,7 +294,7 @@ public class FormEventExecutorTests
             .Returns(Task.CompletedTask);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false));
+            _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false));
 
         Assert.Contains("1 form event operation(s) failed", ex.Message);
         Assert.Contains("Account Fails", _console.Output);
@@ -323,7 +327,7 @@ public class FormEventExecutorTests
             .Returns<OrganizationResponse>(_ => throw new FaultException<OrganizationServiceFault>(new OrganizationServiceFault()));
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false));
+            _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false));
 
         Assert.Contains("1 form event operation(s) failed", ex.Message);
         Assert.Contains("account", _console.Output);
@@ -333,5 +337,112 @@ public class FormEventExecutorTests
             Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).UpdateAsync(Arg.Is<Entity>(e => e.Id == formIdA), Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).UpdateAsync(Arg.Is<Entity>(e => e.Id == formIdB), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DryRunWithUnrecognizedHandlers_PrintsDetailAndAnnotationsWritesNothingNoPrompt()
+    {
+        var formId = Guid.NewGuid();
+        var recognized = new FormHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
+        var unrecognized = new FormHandler("manualFn", "av_/manual.js", Guid.NewGuid(), "");
+        const string proposedAnnotation = "// flowline:onload account \"Account Main\" manualFn";
+        var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
+            new HashSet<FormHandler> { recognized, unrecognized }, new HashSet<UnrecognizedHandler> { new(unrecognized, proposedAnnotation) },
+            new HashSet<FormLibraryEntry>());
+
+        var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
+        var plan = BuildPlan(formPlan);
+
+        // Interactive with no input queued: if the confirmation prompt fired, TestConsole would throw
+        // reading unqueued input — the test failing that way is itself proof the prompt never ran.
+        _console.Interactive();
+
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: true, cleanupOnly: false);
+
+        Assert.Contains("manualFn", _console.Output);
+        Assert.Contains("av_/manual.js", _console.Output);
+        Assert.Contains(proposedAnnotation, _console.Output);
+
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<OrganizationRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DryRunWithParametersOnlyChange_ReportedAsUpdatedNotSilentlyDropped()
+    {
+        // FormHandler's identity equality ignores Parameters, so a Parameters-only change is present in
+        // both "desired" and "current" by identity — the summary must not let that fall through the
+        // added/removed counts as if nothing changed (R18b: the preview must be honest about updates too).
+        var formId = Guid.NewGuid();
+        var currentHandler = new FormHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "oldParams");
+        var desiredHandler = currentHandler with { Parameters = "newParams" };
+        var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
+            new HashSet<FormHandler> { desiredHandler }, new HashSet<UnrecognizedHandler>(),
+            new HashSet<FormLibraryEntry>());
+
+        var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account",
+            BuildFormXml(FormEventType.OnLoad, new HashSet<FormHandler> { currentHandler })));
+        var plan = BuildPlan(formPlan);
+
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: true, cleanupOnly: false);
+
+        Assert.Contains("0 handler(s) would be added", _console.Output);
+        Assert.Contains("1 updated", _console.Output);
+        Assert.Contains("0 removed", _console.Output);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_CleanupOnlyMixOfNewAndStaleHandler_OnlyStaleRemovalWrittenNewExcluded()
+    {
+        var formId = Guid.NewGuid();
+        var staleHandler = new FormHandler("legacyFn", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "legacyFn", "av_/lib.js"), "");
+        var newHandler = new FormHandler("onLoad", "av_/new.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/new.js"), "");
+        var newLibrary = new FormLibraryEntry("av_/new.js", FormEventDeterministicId.ForLibrary("av_/new.js"));
+        var currentLibrary = new FormLibraryEntry("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
+
+        // Planner already excludes a stale-but-deterministic-id handler from DesiredHandlers entirely (it's
+        // simply not re-added on write) — only the new handler is in Desired here. staleHandler exists only
+        // on the current form's formxml below.
+        var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
+            new HashSet<FormHandler> { newHandler }, new HashSet<UnrecognizedHandler>(),
+            new HashSet<FormLibraryEntry> { currentLibrary, newLibrary });
+
+        var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account",
+            BuildFormXml(FormEventType.OnLoad, new HashSet<FormHandler> { staleHandler }, new HashSet<FormLibraryEntry> { currentLibrary })));
+        var plan = BuildPlan(formPlan);
+        var captured = CaptureUpdatedFormXml();
+
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: true);
+
+        var written = GetHandlersFromCapturedXml(captured, formId, FormEventType.OnLoad);
+        Assert.DoesNotContain(staleHandler, written); // stale handler's removal is safe — written
+        Assert.DoesNotContain(newHandler, written); // new handler's library isn't on the form yet — deferred
+
+        var writtenLibraries = GetLibrariesFromCapturedXml(captured, formId);
+        Assert.DoesNotContain(newLibrary, writtenLibraries); // new library reference deferred too
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_CleanupOnlyDesiredHandlerAlreadyCurrentWithChangedParameters_UpdateIsWritten()
+    {
+        var formId = Guid.NewGuid();
+        var currentHandler = new FormHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "oldParams");
+        var desiredHandler = currentHandler with { Parameters = "newParams" };
+        var library = new FormLibraryEntry("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
+
+        var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
+            new HashSet<FormHandler> { desiredHandler }, new HashSet<UnrecognizedHandler>(),
+            new HashSet<FormLibraryEntry> { library });
+
+        var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account",
+            BuildFormXml(FormEventType.OnLoad, new HashSet<FormHandler> { currentHandler }, new HashSet<FormLibraryEntry> { library })));
+        var plan = BuildPlan(formPlan);
+        var captured = CaptureUpdatedFormXml();
+
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: true);
+
+        var written = GetHandlersFromCapturedXml(captured, formId, FormEventType.OnLoad);
+        var writtenHandler = Assert.Single(written);
+        Assert.Equal("newParams", writtenHandler.Parameters); // library already on the form — safe to apply now
     }
 }
