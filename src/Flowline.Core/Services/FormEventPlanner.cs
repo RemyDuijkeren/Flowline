@@ -42,13 +42,6 @@ public class FormEventPlanner(IAnsiConsole console)
             // side left this gap open).
             var perEventResults = new List<(FormEventType Event, IReadOnlySet<FormHandler> DesiredHandlers, IReadOnlySet<UnrecognizedHandler> Unrecognized, IReadOnlySet<FormHandler> CurrentHandlers, IReadOnlySet<string> ManagedLibraryNames)>();
 
-            // Libraries whose only reference on this form was a Handler we just cleanly auto-removed as
-            // stale (Flowline-owned, no confirmation needed) — the only case safe to also drop the Library
-            // entry for. A library with no handler referencing it at all, ever, or one still carrying a
-            // foreign/unrecognized handler, is never touched here — this feature only retires a Library
-            // entry it can attribute to its own cleanup, never one it has no attributable reason to remove.
-            var staleRemovedLibraryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
             foreach (var evt in Enum.GetValues<FormEventType>())
             {
                 // Desired handlers as derived purely from this push's annotations. Always computes a fresh
@@ -122,9 +115,8 @@ public class FormEventPlanner(IAnsiConsole console)
                     if (current.HandlerUniqueId == expectedId)
                     {
                         // stale, Flowline-owned — drop automatically, not added to desiredHandlers below.
-                        // Record its library as a removal CANDIDATE — only actually dropped after the form's
-                        // other event confirms nothing still needs it (see the form-wide library pass below).
-                        staleRemovedLibraryNames.Add(current.LibraryName);
+                        // Its library is dropped too, below, as long as nothing else on this form (either
+                        // event) still references it.
                         continue;
                     }
 
@@ -161,8 +153,21 @@ public class FormEventPlanner(IAnsiConsole console)
                 .SelectMany(r => r.ManagedLibraryNames)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+            // A currentLibrary is kept only if the FINAL desired handler set (either event, managed or
+            // foreign pass-through) still references it — anything else is a library with zero handlers
+            // pointing at it anymore and is dropped, regardless of whether Flowline ever owned the handler
+            // that used to reference it. A <formLibraries><Library> entry with no Handler using it does
+            // nothing functionally (Handlers are the only consumer of formLibraries — InternalHandlers load
+            // their scripts via <internaljscriptfile>/<clientresources>, not formLibraries), so this is safe
+            // even for a library whose last (foreign) handler was removed outside Flowline entirely.
+            var allReferencedLibraryNames = perEventResults
+                .SelectMany(r => r.DesiredHandlers.Select(h => h.LibraryName))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
             var desiredLibraries = new HashSet<FormLibraryEntry>(currentLibraries
-                .Where(l => neededLibraryNames.Contains(l.Name) || !staleRemovedLibraryNames.Contains(l.Name)));
+                .Where(l => allReferencedLibraryNames.Contains(l.Name)));
+            // Only libraries Flowline actually manages (annotationDesired + unrecognized) can be newly added
+            // — never fabricate a <Library> entry for a foreign handler's library (see managedLibraryNames).
             foreach (var libraryName in neededLibraryNames)
             {
                 if (desiredLibraries.Contains(new FormLibraryEntry(libraryName, Guid.Empty)))
@@ -194,11 +199,10 @@ public class FormEventPlanner(IAnsiConsole console)
                     desiredLibraries));
             }
 
-            // Narrow fallback: a form-wide library change with no individual event flagged (only reachable
-            // if a library's last reference was removed via a path that doesn't itself flip an event's
-            // handlersChanged — not expected given how staleRemovedLibraryNames is populated above, but
-            // kept so a library-only change is never silently dropped). Attach it to the first event so the
-            // executor's per-form library union still sees it.
+            // Narrow fallback: a form-wide library change with no individual event flagged — e.g. a library
+            // whose last handler was removed outside Flowline entirely (never appeared as a plan handler
+            // change on either event), so nothing above set handlersChanged, yet the library is still now
+            // orphaned. Attach it to the first event so the executor's per-form library union still sees it.
             if (!anyEntryEmitted && librariesChangedForForm)
             {
                 var (evt, desiredHandlers, unrecognized, _, _) = perEventResults[0];

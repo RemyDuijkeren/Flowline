@@ -453,8 +453,13 @@ public class FormEventPlannerTests
     }
 
     [Fact]
-    public void Plan_UnreferencedLibraryStaysInDesiredLibraries_AddOnlyNeverRemoved()
+    public void Plan_LibraryWithNoHandlerReferencingIt_RemovedRegardlessOfOwnership()
     {
+        // Regression: a live push left av_Cr07982/example1.js declared in <formLibraries> with zero
+        // handlers referencing it (its last handler — foreign, not Flowline-owned — had already been
+        // removed outside this feature entirely). A <formLibraries><Library> entry with no Handler using
+        // it does nothing functionally, so it's safe to drop regardless of who removed the last handler
+        // or when — Flowline doesn't need an attributable reason, only "is anything still using it".
         var orphanLibrary = new FormLibraryEntry("av_/orphan.js", FormEventDeterministicId.ForLibrary("av_/orphan.js"));
         var currentLibraries = new HashSet<FormLibraryEntry> { orphanLibrary };
         var formXml = BuildFormXml(libraries: currentLibraries);
@@ -468,9 +473,29 @@ public class FormEventPlannerTests
         var plan = _planner.Plan(snapshot);
 
         var entry = Assert.Single(plan.Forms);
-        Assert.Contains(entry.DesiredLibraries, l => l.Name == "av_/orphan.js");
+        Assert.DoesNotContain(entry.DesiredLibraries, l => l.Name == "av_/orphan.js");
         Assert.Contains(entry.DesiredLibraries, l => l.Name == "av_/newlib.js");
-        Assert.Equal(2, entry.DesiredLibraries.Count);
+        Assert.Single(entry.DesiredLibraries);
+    }
+
+    [Fact]
+    public void Plan_LibraryWithNoHandlerAndNoAnnotationChange_RemovedViaNarrowFallback()
+    {
+        // Same scenario, but with no annotation-driven change on the form at all — only reachable via the
+        // planner's narrow library-only fallback (no event's handlersChanged/unrecognized flips true).
+        var orphanLibrary = new FormLibraryEntry("av_/orphan.js", FormEventDeterministicId.ForLibrary("av_/orphan.js"));
+        var currentLibraries = new HashSet<FormLibraryEntry> { orphanLibrary };
+        var formXml = BuildFormXml(libraries: currentLibraries);
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var snapshot = BuildSnapshot([], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.Empty(entry.DesiredLibraries);
+        Assert.Empty(entry.DesiredHandlers);
+        Assert.Empty(entry.UnrecognizedHandlers);
     }
 
     [Fact]
