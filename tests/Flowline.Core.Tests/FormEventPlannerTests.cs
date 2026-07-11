@@ -17,7 +17,7 @@ public class FormEventPlannerTests
         params (string Entity, string Form, DataverseForm Form2)[] forms)
     {
         var dict = forms.ToDictionary(f => (f.Entity, f.Form), f => f.Form2);
-        return new FormEventSnapshot(annotations, dict);
+        return new FormEventSnapshot(annotations, new HashSet<string>(), dict);
     }
 
     [Fact]

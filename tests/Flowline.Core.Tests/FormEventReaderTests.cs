@@ -44,13 +44,16 @@ public class FormEventReaderTests : IDisposable
             "// flowline:onload account \"Account Main\" onLoadHandler\nfunction onLoadHandler() {}");
         File.WriteAllText(Path.Combine(_webresourceRoot, "form2.js"),
             "// flowline:onload contact \"Contact Main\" onLoadHandler\nfunction onLoadHandler() {}");
+        // R15/R14: a third file with no annotation at all still tracks as a library and doesn't affect forms.
+        File.WriteAllText(Path.Combine(_webresourceRoot, "untracked.js"), "console.log('no annotation here');");
 
         var accountFormId = Guid.NewGuid();
         var contactFormId = Guid.NewGuid();
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
         _serviceMock.SetupEntityObjectTypeCode("contact", 2);
-        _serviceMock.SetupSystemForms(1, "Account Main", (accountFormId, "Account Main", "<form>account</form>"));
-        _serviceMock.SetupSystemForms(2, "Contact Main", (contactFormId, "Contact Main", "<form>contact</form>"));
+        _serviceMock.SetupSystemFormsInSolution(
+            (accountFormId, "Account Main", "<form>account</form>", 1),
+            (contactFormId, "Contact Main", "<form>contact</form>", 2));
 
         var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
 
@@ -66,10 +69,14 @@ public class FormEventReaderTests : IDisposable
         Assert.Equal(contactFormId, contactForm.Id);
         Assert.Equal("<form>contact</form>", contactForm.FormXml);
 
-        // R9: only Main (2) and Quick Create (7) form types are queried.
+        // R15: TrackedLibraryNames covers every JS file, not just annotated ones.
+        Assert.Equal(3, snapshot.TrackedLibraryNames.Count);
+        Assert.Contains("my_MySolution/untracked.js", snapshot.TrackedLibraryNames);
+
+        // R9: only Main (2) and Quick Create (7) form types are queried (solution-scoped systemform query).
         await _serviceMock.Received(1).RetrieveMultipleAsync(
             Arg.Is<QueryExpression>(q => q.EntityName == "systemform" &&
-                q.Criteria.Conditions.Any(c => c.AttributeName == "name" && c.Values.Contains("Account Main")) &&
+                q.LinkEntities.Count > 0 &&
                 q.Criteria.Conditions.Any(c => c.AttributeName == "type" &&
                     c.Operator == ConditionOperator.In &&
                     c.Values.Contains(2) && c.Values.Contains(7))),
@@ -85,8 +92,9 @@ public class FormEventReaderTests : IDisposable
             "// flowline:onsave account \"Account Quick Create\" handlerB\nfunction handlerB() {}");
 
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
-        _serviceMock.SetupSystemForms(1, "Account Main", (Guid.NewGuid(), "Account Main", "<form>main</form>"));
-        _serviceMock.SetupSystemForms(1, "Account Quick Create", (Guid.NewGuid(), "Account Quick Create", "<form>qc</form>"));
+        _serviceMock.SetupSystemFormsInSolution(
+            (Guid.NewGuid(), "Account Main", "<form>main</form>", 1),
+            (Guid.NewGuid(), "Account Quick Create", "<form>qc</form>", 1));
 
         await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
 
@@ -105,7 +113,7 @@ public class FormEventReaderTests : IDisposable
 
         _serviceMock.SetupEntityObjectTypeCode("badentity", null);
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
-        _serviceMock.SetupSystemForms(1, "Account Main", (Guid.NewGuid(), "Account Main", "<form>main</form>"));
+        _serviceMock.SetupSystemFormsInSolution((Guid.NewGuid(), "Account Main", "<form>main</form>", 1));
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution"));
@@ -113,11 +121,8 @@ public class FormEventReaderTests : IDisposable
         Assert.Contains("bad.js", ex.Message);
         Assert.Contains("badentity", ex.Message);
 
-        // The good annotation still resolved its form despite the bad one failing.
-        await _serviceMock.Received(1).RetrieveMultipleAsync(
-            Arg.Is<QueryExpression>(q => q.EntityName == "systemform" &&
-                q.Criteria.Conditions.Any(c => c.AttributeName == "name" && c.Values.Contains("Account Main"))),
-            Arg.Any<CancellationToken>());
+        // The good annotation isn't part of the error list — it still resolved despite the bad one failing.
+        Assert.DoesNotContain("good.js", ex.Message);
     }
 
     [Fact]
@@ -136,7 +141,7 @@ public class FormEventReaderTests : IDisposable
                 Arg.Any<CancellationToken>())
             .Returns<OrganizationResponse>(_ => throw new FaultException<OrganizationServiceFault>(new OrganizationServiceFault()));
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
-        _serviceMock.SetupSystemForms(1, "Account Main", (Guid.NewGuid(), "Account Main", "<form>main</form>"));
+        _serviceMock.SetupSystemFormsInSolution((Guid.NewGuid(), "Account Main", "<form>main</form>", 1));
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution"));
@@ -144,11 +149,8 @@ public class FormEventReaderTests : IDisposable
         Assert.Contains("bad.js", ex.Message);
         Assert.Contains("badentity", ex.Message);
 
-        // The good annotation still resolved its form despite the bad one faulting.
-        await _serviceMock.Received(1).RetrieveMultipleAsync(
-            Arg.Is<QueryExpression>(q => q.EntityName == "systemform" &&
-                q.Criteria.Conditions.Any(c => c.AttributeName == "name" && c.Values.Contains("Account Main"))),
-            Arg.Any<CancellationToken>());
+        // The good annotation isn't part of the error list — it still resolved despite the bad one faulting.
+        Assert.DoesNotContain("good.js", ex.Message);
     }
 
     [Fact]
@@ -158,13 +160,36 @@ public class FormEventReaderTests : IDisposable
             "// flowline:onload account \"Missing Form\" handler\nfunction handler() {}");
 
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
-        // No SetupSystemForms override — default RetrieveMultipleAsync returns an empty collection.
+        // No solution-scoped or global systemform setup — both default to an empty EntityCollection, so
+        // the fallback global lookup finds nothing either: R8's "doesn't exist at all".
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution"));
 
         Assert.Contains("form.js", ex.Message);
         Assert.Contains("Missing Form", ex.Message);
+        Assert.Contains("not found for entity", ex.Message);
+    }
+
+    [Fact]
+    public async Task LoadSnapshotAsync_FormExistsGloballyButNotInSolution_ShouldThrowDistinctR8aMessage()
+    {
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+            "// flowline:onload account \"Account Main\" handler\nfunction handler() {}");
+
+        _serviceMock.SetupEntityObjectTypeCode("account", 1);
+        // The form exists in Dataverse generally (global/unscoped query)...
+        _serviceMock.SetupSystemForms(1, "Account Main", (Guid.NewGuid(), "Account Main", "<form>main</form>"));
+        // ...but the solution-scoped query (left at its default empty EntityCollection) has no such component.
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution"));
+
+        Assert.Contains("form.js", ex.Message);
+        Assert.Contains("Account Main", ex.Message);
+        Assert.Contains("not a component of solution", ex.Message);
+        // Distinct from R8's "doesn't exist at all" message.
+        Assert.DoesNotContain("not found for entity", ex.Message);
     }
 
     [Fact]
@@ -174,9 +199,9 @@ public class FormEventReaderTests : IDisposable
             "// flowline:onload account \"Account Main\" handler\nfunction handler() {}");
 
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
-        _serviceMock.SetupSystemForms(1, "Account Main",
-            (Guid.NewGuid(), "Account Main", "<form>1</form>"),
-            (Guid.NewGuid(), "Account Main", "<form>2</form>"));
+        _serviceMock.SetupSystemFormsInSolution(
+            (Guid.NewGuid(), "Account Main", "<form>1</form>", 1),
+            (Guid.NewGuid(), "Account Main", "<form>2</form>", 1));
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution"));
@@ -186,14 +211,42 @@ public class FormEventReaderTests : IDisposable
     }
 
     [Fact]
-    public async Task LoadSnapshotAsync_NoAnnotations_ShouldReturnEmptySnapshotWithoutThrowing()
+    public async Task LoadSnapshotAsync_VerbatimModeFile_ShouldResolveLibraryNameToVerbatimPath()
+    {
+        var verbatimDir = Path.Combine(_webresourceRoot, "my_ns");
+        Directory.CreateDirectory(verbatimDir);
+        File.WriteAllText(Path.Combine(verbatimDir, "form.js"),
+            "// flowline:onload account \"Account Main\" handler\nfunction handler() {}");
+
+        _serviceMock.SetupEntityObjectTypeCode("account", 1);
+        _serviceMock.SetupSystemFormsInSolution((Guid.NewGuid(), "Account Main", "<form>account</form>", 1));
+
+        var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        Assert.Contains(snapshot.Annotations, a => a.LibraryName == "my_ns/form.js");
+        Assert.Contains("my_ns/form.js", snapshot.TrackedLibraryNames);
+    }
+
+    [Fact]
+    public async Task LoadSnapshotAsync_NoAnnotations_ShouldStillResolveSolutionScopedFormsAndTrackedLibraries()
     {
         File.WriteAllText(Path.Combine(_webresourceRoot, "plain.js"), "console.log('no annotations');");
+
+        var orphanFormId = Guid.NewGuid();
+        // No annotation ever references "account" — its logical name is only resolvable via the reverse
+        // (ObjectTypeCode -> logical name) bulk lookup, KTD11 step 4a.
+        _serviceMock.SetupAllEntitiesMetadata(("account", 1));
+        _serviceMock.SetupSystemFormsInSolution((orphanFormId, "Account Main", "<form>orphan</form>", 1));
 
         var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
 
         Assert.Empty(snapshot.Annotations);
-        Assert.Empty(snapshot.Forms);
+        Assert.Contains("my_MySolution/plain.js", snapshot.TrackedLibraryNames);
+
+        var orphanForm = Assert.Single(snapshot.Forms).Value;
+        Assert.Equal(orphanFormId, orphanForm.Id);
+        Assert.Equal("account", orphanForm.EntityLogicalName);
+        Assert.Equal("<form>orphan</form>", orphanForm.FormXml);
 
         // WebResourceReader.LoadSnapshotAsync still ran (it resolves the solution regardless of annotations).
         await _serviceMock.Received(1).RetrieveMultipleAsync(

@@ -15,6 +15,10 @@ public class FormEventReader(IAnsiConsole console)
     // systemform.type raw optionset values: Main = 2, Quick Create Form = 7.
     static readonly object[] SupportedFormTypes = [2, 7];
 
+    // solutioncomponent.componenttype for System Form — mirrors OrphanCleanupService's
+    // NameResolvableTypes[60] = ("systemform", "formid", "name").
+    const int SystemFormComponentType = 60;
+
     // Mirrors GenerateReader/OrphanCleanupService's cap for concurrent Dataverse metadata/query fan-out.
     const int MaxConcurrentRequests = 20;
 
@@ -31,14 +35,20 @@ public class FormEventReader(IAnsiConsole console)
             .LoadSnapshotAsync(service, webresourceRoot, solutionName, cancellationToken)
             .ConfigureAwait(false);
 
+        // R15: every JS web resource tracked by this project, not just files that currently carry an
+        // annotation — this is what R15 enforcement (U5) filters Handler.libraryName ownership against.
+        var trackedLibraryNames = webResourceSnapshot.LocalResources.Values
+            .Where(r => r.Type == WebResourceType.Js)
+            .Select(r => r.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         var resolvedAnnotations = CollectAnnotations(webResourceSnapshot.LocalResources.Values);
-        if (resolvedAnnotations.Count == 0)
-            return new FormEventSnapshot([], new Dictionary<(string, string), DataverseForm>());
 
         // Independent per-entity/per-form Dataverse lookups — run concurrently rather than one round-trip
         // at a time, bounded so a project with many entities/forms doesn't fan out unbounded requests.
         using var gate = new SemaphoreSlim(MaxConcurrentRequests, MaxConcurrentRequests);
 
+        // Forward direction (KTD3): logical name -> ObjectTypeCode, for entities referenced by annotations.
         var entities = resolvedAnnotations.Select(a => a.Annotation.Entity).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var objectTypeCodeResults = await Task.WhenAll(entities.Select(async entity =>
         {
@@ -48,44 +58,104 @@ public class FormEventReader(IAnsiConsole console)
         })).ConfigureAwait(false);
         var objectTypeCodes = objectTypeCodeResults.ToDictionary(r => r.Entity, r => r.Code, StringComparer.OrdinalIgnoreCase);
 
-        var resolvedForms = new Dictionary<(string Entity, string Form), DataverseForm>();
-        var formErrors = new Dictionary<(string Entity, string Form), string>();
+        // Reverse cache (KTD11's load-bearing gap): ObjectTypeCode -> logical name, seeded from the
+        // forward direction above so an entity already resolved via an annotation never triggers a
+        // redundant RetrieveAllEntities round-trip.
+        var entityByCode = new Dictionary<int, string>();
+        foreach (var (entity, code) in objectTypeCodes)
+            if (code is int c) entityByCode.TryAdd(c, entity);
+
+        // R14: every systemform that's a component of this solution, not just forms named by a current
+        // annotation — mirrors OrphanCleanupService's solutioncomponent/solution join
+        // (OrphanCleanupService.cs:772/814/856), rooted at systemform since its own columns are needed.
+        var solutionFormEntities = await QuerySolutionScopedFormsAsync(service, solutionName, cancellationToken).ConfigureAwait(false);
+
+        var missingCodes = solutionFormEntities
+            .Select(e => e.GetAttributeValue<int>("objecttypecode"))
+            .Distinct()
+            .Where(code => !entityByCode.ContainsKey(code))
+            .ToList();
+
+        if (missingCodes.Count > 0)
+        {
+            var resolvedNames = await ResolveEntityLogicalNamesAsync(service, missingCodes, cancellationToken).ConfigureAwait(false);
+            foreach (var (code, name) in resolvedNames)
+                entityByCode[code] = name;
+        }
+
+        var solutionForms = new List<(Guid Id, string Name, string EntityLogicalName, string FormXml)>();
+        foreach (var formEntity in solutionFormEntities)
+        {
+            var code = formEntity.GetAttributeValue<int>("objecttypecode");
+            // A systemform's objecttypecode should always resolve to a real entity — skip defensively
+            // rather than throw, since a resolution gap here isn't something a bad annotation caused.
+            // Surfaced as a warning (not silent) because a silently skipped solution-component form is
+            // exactly the R14 orphan-detection gap this unit exists to close.
+            if (!entityByCode.TryGetValue(code, out var entityLogicalName))
+            {
+                console.Warning($"systemform '{formEntity.GetAttributeValue<string>("name")}' ({formEntity.Id}) has objecttypecode {code}, which did not resolve to an entity logical name — skipped from form-event resolution.");
+                continue;
+            }
+
+            solutionForms.Add((
+                formEntity.Id,
+                formEntity.GetAttributeValue<string>("name"),
+                entityLogicalName,
+                formEntity.GetAttributeValue<string>("formxml")));
+        }
+
+        var resolvedForms = new Dictionary<(string Entity, string Form), DataverseForm>(FormKeyComparer.Instance);
+        var ambiguousCounts = new Dictionary<(string Entity, string Form), int>(FormKeyComparer.Instance);
+
+        foreach (var group in solutionForms.GroupBy(f => (f.EntityLogicalName, f.Name), FormKeyComparer.Instance))
+        {
+            var matches = group.ToList();
+            if (matches.Count == 1)
+                resolvedForms[group.Key] = new DataverseForm(matches[0].Id, matches[0].Name, matches[0].EntityLogicalName, matches[0].FormXml);
+            else
+                // Ambiguous within this solution — can't be represented by the unique (Entity, Form) key.
+                // Only surfaced as an error below when an annotation actually targets it; an ambiguous
+                // orphan form with no annotation is simply absent from Forms (rare edge case).
+                ambiguousCounts[group.Key] = matches.Count;
+        }
+
+        var formErrors = new Dictionary<(string Entity, string Form), string>(FormKeyComparer.Instance);
 
         var pairs = resolvedAnnotations
             .Select(a => (a.Annotation.Entity, a.Annotation.Form))
             .Distinct()
             .ToList();
 
-        var formLookups = await Task.WhenAll(pairs.Select(async pair =>
+        var pairResults = await Task.WhenAll(pairs.Select(async pair =>
         {
             var (entity, form) = pair;
 
             // Entity failed to resolve — skip the form lookup, the per-annotation error is reported below.
             if (objectTypeCodes[entity] is not { } objectTypeCode)
-                return (Pair: pair, Form: (DataverseForm?)null, Error: (string?)null);
+                return (Pair: pair, Error: (string?)null);
 
+            if (resolvedForms.ContainsKey(pair))
+                return (Pair: pair, Error: (string?)null);
+
+            if (ambiguousCounts.TryGetValue(pair, out var count))
+                return (Pair: pair, Error: $"form '{form}' for entity '{entity}' is ambiguous — {count} systemform records matched.");
+
+            // Not found within the solution-scoped set — fall back to an unscoped lookup so R8 ("doesn't
+            // exist at all") and R8a ("exists, but isn't a component of this solution") get distinct messages.
             await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            List<Entity> matches;
-            try { matches = await QueryFormsAsync(service, objectTypeCode, form, cancellationToken).ConfigureAwait(false); }
+            List<Entity> globalMatches;
+            try { globalMatches = await QueryFormsAsync(service, objectTypeCode, form, cancellationToken).ConfigureAwait(false); }
             finally { gate.Release(); }
 
-            return matches.Count switch
+            return globalMatches.Count switch
             {
-                0 => (Pair: pair, Form: null, Error: $"form '{form}' not found for entity '{entity}' (Main or Quick Create form)."),
-                1 => (Pair: pair, Form: new DataverseForm(
-                    matches[0].Id,
-                    matches[0].GetAttributeValue<string>("name"),
-                    entity,
-                    matches[0].GetAttributeValue<string>("formxml")), Error: null),
-                _ => (Pair: pair, Form: null, Error: $"form '{form}' for entity '{entity}' is ambiguous — {matches.Count} systemform records matched.")
+                0 => (Pair: pair, Error: $"form '{form}' not found for entity '{entity}' (Main or Quick Create form)."),
+                _ => (Pair: pair, Error: $"form '{form}' for entity '{entity}' exists in Dataverse but is not a component of solution '{solutionName}'.")
             };
         })).ConfigureAwait(false);
 
-        foreach (var (pair, form, error) in formLookups)
-        {
-            if (form is not null) resolvedForms[pair] = form;
-            else if (error is not null) formErrors[pair] = error;
-        }
+        foreach (var (pair, error) in pairResults)
+            if (error is not null) formErrors[pair] = error;
 
         var errors = new List<string>();
         var validAnnotations = new List<ResolvedFormEventAnnotation>();
@@ -116,7 +186,7 @@ public class FormEventReader(IAnsiConsole console)
             throw new InvalidOperationException(
                 "Form event annotations failed to resolve:\n" + string.Join("\n", errors));
 
-        return new FormEventSnapshot(validAnnotations.AsReadOnly(), resolvedForms.AsReadOnly());
+        return new FormEventSnapshot(validAnnotations.AsReadOnly(), trackedLibraryNames, resolvedForms.AsReadOnly());
     }
 
     static List<ResolvedFormEventAnnotation> CollectAnnotations(IEnumerable<LocalWebResource> localResources)
@@ -182,5 +252,64 @@ public class FormEventReader(IAnsiConsole console)
         };
 
         return await service.RetrieveAllAsync(query, cancellationToken).ConfigureAwait(false);
+    }
+
+    // R14: rooted at systemform (not solutioncomponent, unlike OrphanCleanupService.QuerySolutionComponentsAsync)
+    // since name/formxml/objecttypecode are systemform's own columns — mirrors the same
+    // solutioncomponent -> solution join by uniquename (OrphanCleanupService.cs:772/814/856).
+    static async Task<List<Entity>> QuerySolutionScopedFormsAsync(
+        IOrganizationServiceAsync2 service, string solutionName, CancellationToken cancellationToken)
+    {
+        var query = new QueryExpression("systemform")
+        {
+            ColumnSet = new ColumnSet("name", "formxml", "objecttypecode"),
+            Criteria = { Conditions = { new ConditionExpression("type", ConditionOperator.In, SupportedFormTypes) } }
+        };
+
+        var componentLink = query.AddLink("solutioncomponent", "formid", "objectid", JoinOperator.Inner);
+        componentLink.LinkCriteria.AddCondition("componenttype", ConditionOperator.Equal, SystemFormComponentType);
+
+        var solutionLink = componentLink.AddLink("solution", "solutionid", "solutionid", JoinOperator.Inner);
+        solutionLink.LinkCriteria.AddCondition("uniquename", ConditionOperator.Equal, solutionName);
+
+        return await service.RetrieveAllAsync(query, cancellationToken).ConfigureAwait(false);
+    }
+
+    // KTD11's load-bearing gap: the reverse of ResolveObjectTypeCodeAsync. One bulk metadata request for
+    // every needed code rather than one RetrieveEntity per orphan form's entity.
+    static async Task<Dictionary<int, string>> ResolveEntityLogicalNamesAsync(
+        IOrganizationServiceAsync2 service, IReadOnlyCollection<int> objectTypeCodes, CancellationToken cancellationToken)
+    {
+        var request = new RetrieveAllEntitiesRequest
+        {
+            EntityFilters = EntityFilters.Entity,
+            RetrieveAsIfPublished = false
+        };
+        var response = (RetrieveAllEntitiesResponse)await service.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
+
+        var wanted = objectTypeCodes.ToHashSet();
+        var result = new Dictionary<int, string>();
+        foreach (var metadata in response.EntityMetadata ?? [])
+        {
+            if (metadata.ObjectTypeCode is { } code && wanted.Contains(code) && metadata.LogicalName is not null)
+                result[code] = metadata.LogicalName;
+        }
+        return result;
+    }
+
+    // Case-insensitive (Entity, Form) key comparer — DB-returned names and reverse-resolved logical
+    // names aren't guaranteed to share the annotation's exact casing.
+    sealed class FormKeyComparer : IEqualityComparer<(string Entity, string Form)>
+    {
+        public static readonly FormKeyComparer Instance = new();
+
+        public bool Equals((string Entity, string Form) x, (string Entity, string Form) y) =>
+            string.Equals(x.Entity, y.Entity, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(x.Form, y.Form, StringComparison.OrdinalIgnoreCase);
+
+        public int GetHashCode((string Entity, string Form) obj) =>
+            HashCode.Combine(
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Entity),
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Form));
     }
 }

@@ -39,6 +39,7 @@ public record ResolvedFormEventAnnotation(FormEventAnnotation Annotation, string
 
 public record FormEventSnapshot(
     IReadOnlyList<ResolvedFormEventAnnotation> Annotations,
+    IReadOnlySet<string> TrackedLibraryNames,
     IReadOnlyDictionary<(string Entity, string Form), DataverseForm> Forms);
 
 public static class FormEventDeterministicId

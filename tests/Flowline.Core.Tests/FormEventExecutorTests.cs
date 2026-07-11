@@ -24,7 +24,7 @@ public class FormEventExecutorTests
     }
 
     static FormEventSnapshot BuildSnapshot(params DataverseForm[] forms) =>
-        new([], forms.ToDictionary(f => (f.EntityLogicalName, f.Name), f => f));
+        new([], new HashSet<string>(), forms.ToDictionary(f => (f.EntityLogicalName, f.Name), f => f));
 
     static FormEventSyncPlan BuildPlan(params FormEventFormPlan[] forms)
     {

@@ -62,7 +62,7 @@ public class FormEventServiceTests : IDisposable
 
         var formId = Guid.NewGuid();
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
-        _serviceMock.SetupSystemForms(1, "Account Main", (formId, "Account Main", "<form></form>"));
+        _serviceMock.SetupSystemFormsInSolution((formId, "Account Main", "<form></form>", 1));
 
         var result = await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", force: false);
 
@@ -80,7 +80,7 @@ public class FormEventServiceTests : IDisposable
 
         var formId = Guid.NewGuid();
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
-        _serviceMock.SetupSystemForms(1, "Account Main", (formId, "Account Main", "<form></form>"));
+        _serviceMock.SetupSystemFormsInSolution((formId, "Account Main", "<form></form>", 1));
 
         var result = await _service.SyncSolutionAsync(
             _serviceMock, _webresourceRoot, "MySolution", force: false, runMode: RunMode.DryRun);
