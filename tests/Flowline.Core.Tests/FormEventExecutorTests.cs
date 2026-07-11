@@ -442,10 +442,12 @@ public class FormEventExecutorTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_NotDryRun_PrintsSamePerHandlerDetailAsDryRunBeforeApplying()
+    public async Task ExecuteAsync_NotDryRun_PrintsSamePerHandlerDetailAsDryRunAfterApplying()
     {
-        // The detail report isn't dry-run-only — a real (non-dry-run) push should show exactly what's
-        // about to be written before it writes it, same as WebResourceService's verbose plan report.
+        // The detail report isn't dry-run-only — a real (non-dry-run) push should show exactly what got
+        // applied, same as WebResourceService's verbose plan report. Reflects what was actually written
+        // (post-execution), not the pre-narrowing plan — the single source of truth is BuildFormXml's own
+        // change list, not a separate preview computation that could drift from it.
         var formId = Guid.NewGuid();
         var handler = new FormHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
         var library = new FormLibraryEntry("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
@@ -492,6 +494,39 @@ public class FormEventExecutorTests
 
         var writtenLibraries = GetLibrariesFromCapturedXml(captured, formId);
         Assert.DoesNotContain(newLibrary, writtenLibraries); // new library reference deferred too
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_CleanupOnlyRemovesStaleHandler_PrintsAlwaysVisibleSummaryAndVerboseDetail()
+    {
+        // User-requested: cleanup must show what it's deleting — at least an always-visible summary
+        // (console.Ok, not gated by -v), and the full per-item breakdown under --verbose. Previously
+        // cleanup's report was suppressed entirely (reasoning it would duplicate registration's report),
+        // which left a genuine removal completely silent — indistinguishable from an apparent no-op hang.
+        var formId = Guid.NewGuid();
+        var staleHandler = new FormHandler("legacyFn", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "legacyFn", "av_/lib.js"), "");
+        var staleLibrary = new FormLibraryEntry("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
+
+        var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
+            new HashSet<FormHandler>(), new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
+
+        var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account",
+            BuildFormXml(FormEventType.OnLoad, new HashSet<FormHandler> { staleHandler }, new HashSet<FormLibraryEntry> { staleLibrary })));
+        var plan = BuildPlan(formPlan);
+        CaptureUpdatedFormXml();
+
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: true);
+
+        // Always-visible summary (console.Ok) — not just verbose.
+        Assert.Contains("1 handler(s) removed", _console.Output);
+        Assert.Contains("1 library(ies) removed", _console.Output);
+        // Verbose per-item detail — TestConsole has no VerboseFilterHook attached, so console.Verbose
+        // output is captured unfiltered here (see FormEventReaderTests/SubprocessCaptureTests for the same
+        // pattern), letting this assert the detail exists at all rather than its terminal visibility.
+        Assert.Contains("Handlers removed (1)", _console.Output);
+        Assert.Contains("account/Account Main (OnLoad): legacyFn (av_/lib.js)", _console.Output);
+        Assert.Contains("Libraries removed (1)", _console.Output);
+        Assert.Contains("account/Account Main: av_/lib.js", _console.Output);
     }
 
     [Fact]
