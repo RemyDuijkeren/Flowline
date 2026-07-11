@@ -51,14 +51,14 @@ public class FormEventExecutor(IAnsiConsole console)
             ExecuteByEntityAsync(service, snapshot, plan, removeUnrecognized, cleanupOnly, failures,
                 ctx.AddTask("Updating forms", maxValue: formCount), cancellationToken)).ConfigureAwait(false);
 
-        console.Ok($"{formCount} form(s) updated");
-
         if (failures.Count > 0)
         {
             foreach (var (name, ex) in failures)
                 console.Error($"'{name}' — {ex.Message}");
             throw new InvalidOperationException($"{failures.Count} form event operation(s) failed.");
         }
+
+        console.Ok($"{formCount} form(s) updated");
     }
 
     // Shared by the confirmation gate (R18) and the dry-run preview (R18b) so both list exactly the same
