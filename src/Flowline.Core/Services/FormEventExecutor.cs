@@ -163,6 +163,10 @@ public class FormEventExecutor(IAnsiConsole console)
         CancellationToken cancellationToken)
     {
         using var gate = new SemaphoreSlim(MaxParallelism);
+        // Dataverse serializes PublishXml org-wide — a second concurrent publish fails with "Cannot start
+        // another [Publish] because there is a previous [Publish] running at this moment" (confirmed live).
+        // Updates stay parallel across entities (KTD9); only the publish call itself is serialized.
+        using var publishGate = new SemaphoreSlim(1);
 
         // One task per entity: update all of that entity's forms (bounded parallel, shared gate across
         // every entity), then publish that entity as soon as its own updates are done — not batched to the
@@ -199,6 +203,7 @@ public class FormEventExecutor(IAnsiConsole console)
 
                 await Task.WhenAll(updateTasks).ConfigureAwait(false);
 
+                await publishGate.WaitAsync(cancellationToken).ConfigureAwait(false);
                 try
                 {
                     await PublishAsync(service, entityGroup.Key, cancellationToken).ConfigureAwait(false);
@@ -207,6 +212,7 @@ public class FormEventExecutor(IAnsiConsole console)
                 {
                     lock (failures) failures.Add((entityGroup.Key, ex));
                 }
+                finally { publishGate.Release(); }
             });
 
         await Task.WhenAll(entityTasks).ConfigureAwait(false);
