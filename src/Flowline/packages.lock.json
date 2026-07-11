@@ -313,6 +313,7 @@
       "flowline.core": {
         "type": "Project",
         "dependencies": {
+          "Acornima": "[1.6.2, )",
           "Flowline.Attributes": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection": "[10.0.9, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )",
@@ -322,6 +323,12 @@
           "System.Reflection.MetadataLoadContext": "[10.0.9, )",
           "System.Security.Cryptography.Xml": "[10.0.9, )"
         }
+      },
+      "Acornima": {
+        "type": "CentralTransitive",
+        "requested": "[1.6.2, )",
+        "resolved": "1.6.2",
+        "contentHash": "laakpDHzMwHr5C8+q5RlRf0XJJshUvghNeo4xDerICrYR3iEuGvwfpauCmXuU3RE437XDaQO5ZxieWDpADuD+w=="
       },
       "Microsoft.Extensions.DependencyInjection": {
         "type": "CentralTransitive",
