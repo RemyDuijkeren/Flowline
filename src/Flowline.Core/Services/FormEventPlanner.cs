@@ -40,7 +40,7 @@ public class FormEventPlanner(IAnsiConsole console)
             // just auto-removed as stale must actually leave <formLibraries>, or the web resource it
             // points at still looks referenced and its delete still faults — fixing only the <Handler>
             // side left this gap open).
-            var perEventResults = new List<(FormEventType Event, IReadOnlySet<FormHandler> DesiredHandlers, IReadOnlySet<UnrecognizedHandler> Unrecognized, IReadOnlySet<FormHandler> CurrentHandlers)>();
+            var perEventResults = new List<(FormEventType Event, IReadOnlySet<FormHandler> DesiredHandlers, IReadOnlySet<UnrecognizedHandler> Unrecognized, IReadOnlySet<FormHandler> CurrentHandlers, IReadOnlySet<string> ManagedLibraryNames)>();
 
             // Libraries whose only reference on this form was a Handler we just cleanly auto-removed as
             // stale (Flowline-owned, no confirmation needed) — the only case safe to also drop the Library
@@ -142,12 +142,23 @@ public class FormEventPlanner(IAnsiConsole console)
                 foreach (var u in unrecognized)
                     desiredHandlers.Add(u.Handler);
 
-                perEventResults.Add((evt, desiredHandlers, unrecognized, currentHandlers));
+                // Library reconciliation only covers handlers Flowline actually manages (annotationDesired +
+                // unrecognized) — not foreignHandlers. A foreign handler can reference a library that was
+                // never declared in <formLibraries> to begin with (observed live: a Dataverse OOB Handler
+                // whose library is registered only via <internaljscriptfile>, not <formLibraries><Library>).
+                // Folding foreignHandlers' library names into neededLibraryNames would "fix" that as if it
+                // were Flowline's job, fabricating a Library entry on a form this project never touches —
+                // exactly what R15's "carried through untouched" is supposed to prevent.
+                var managedLibraryNames = annotationDesired.Select(h => h.LibraryName)
+                    .Concat(unrecognized.Select(u => u.Handler.LibraryName))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                perEventResults.Add((evt, desiredHandlers, unrecognized, currentHandlers, managedLibraryNames));
             }
 
             // Form-wide library decision, using both events' desired-handler results together.
             var neededLibraryNames = perEventResults
-                .SelectMany(r => r.DesiredHandlers.Select(h => h.LibraryName))
+                .SelectMany(r => r.ManagedLibraryNames)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             var desiredLibraries = new HashSet<FormLibraryEntry>(currentLibraries
@@ -166,7 +177,7 @@ public class FormEventPlanner(IAnsiConsole console)
             var librariesChangedForForm = !desiredLibraries.SetEquals(currentLibraries);
             var anyEntryEmitted = false;
 
-            foreach (var (evt, desiredHandlers, unrecognized, currentHandlers) in perEventResults)
+            foreach (var (evt, desiredHandlers, unrecognized, currentHandlers, _) in perEventResults)
             {
                 var handlersChanged = !HandlerSetsFullyEqual(desiredHandlers, currentHandlers);
                 if (!handlersChanged && unrecognized.Count == 0)
@@ -190,7 +201,7 @@ public class FormEventPlanner(IAnsiConsole console)
             // executor's per-form library union still sees it.
             if (!anyEntryEmitted && librariesChangedForForm)
             {
-                var (evt, desiredHandlers, unrecognized, _) = perEventResults[0];
+                var (evt, desiredHandlers, unrecognized, _, _) = perEventResults[0];
                 plan.Forms.Add(new FormEventFormPlan(
                     dataverseForm.Id,
                     entity,

@@ -169,6 +169,36 @@ public class FormEventPlannerTests
         var entry = Assert.Single(plan.Forms);
         Assert.Contains(entry.DesiredHandlers, h => h.FunctionName == "untrackedFn" && h.LibraryName == "av_/untracked.js");
         Assert.DoesNotContain(entry.UnrecognizedHandlers, u => u.Handler.FunctionName == "untrackedFn");
+        // The untracked/foreign handler's library was never declared in <formLibraries> on this form
+        // (BuildFormXml was called with no libraries) — reconciling it in would fabricate a Library entry
+        // for a handler Flowline doesn't manage.
+        Assert.DoesNotContain(entry.DesiredLibraries, l => l.Name == "av_/untracked.js");
+    }
+
+    [Fact]
+    public void Plan_ForeignHandlerLibraryUndeclaredInFormLibraries_NeverAddedNeverProducesPlanEntry()
+    {
+        // Regression: a live push crashed trying to publish "contact" even though no annotation ever
+        // referenced that entity. Root cause — a pre-existing Dataverse OOB Handler (e.g. a Sales module
+        // script) referenced a library that was never declared in <formLibraries> (registered some other
+        // way, e.g. <internaljscriptfile>). The old neededLibraryNames computation unioned ALL desired
+        // handlers' library names, including foreign pass-through ones, so it "fixed" the undeclared
+        // library by fabricating a new <Library> entry with a Flowline-derived id — flipping
+        // librariesChangedForForm to true and producing a spurious plan entry (via the narrow fallback)
+        // for a form/entity this project was never asked to touch at all.
+        var foreignHandler = new FormHandler("thirdParty.onLoad", "thirdparty/lib.js", Guid.NewGuid(), "");
+        var current = new HashSet<FormHandler> { foreignHandler };
+        // No libraries declared at all — foreignHandler's library is referenced by the handler but absent
+        // from <formLibraries>, mirroring the live Dataverse OOB form exactly.
+        var formXml = BuildFormXml(FormEventType.OnLoad, current, new HashSet<FormLibraryEntry>());
+        var form = new DataverseForm(Guid.NewGuid(), "Contact Main", "contact", formXml);
+
+        // No annotation ever targets this form/entity.
+        var snapshot = BuildSnapshotUntrackedLibrary([], "thirdparty/lib.js", ("contact", "Contact Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        Assert.Empty(plan.Forms);
     }
 
     [Fact]
