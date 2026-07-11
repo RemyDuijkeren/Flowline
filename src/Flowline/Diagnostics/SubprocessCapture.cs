@@ -46,7 +46,10 @@ public sealed class SubprocessCapture
                 if (string.IsNullOrWhiteSpace(line)) return;
 
                 var display = lineTransform != null ? lineTransform(line) : line;
-                _console.Verbose($"[dim]{Markup.Escape(prefix)}: {Markup.Escape(display)}[/]");
+                // console.Verbose(string) already wraps in [dim]...[/] and escapes internally
+                // (VerboseRenderable) — wrapping/escaping here too double-escapes the outer tags, leaving
+                // the literal "[dim]"/"[/]" text visible instead of being interpreted as markup.
+                _console.Verbose($"{prefix}: {display}");
             }))
             .WithStandardErrorPipe(PipeTarget.ToDelegate(line =>
             {

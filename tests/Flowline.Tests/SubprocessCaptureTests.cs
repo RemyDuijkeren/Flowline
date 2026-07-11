@@ -64,6 +64,22 @@ public class SubprocessCaptureTests
         _console.Output.Should().Contain("normal output");
     }
 
+    // Regression: SubprocessCapture used to wrap its message in a literal "[dim]...[/]" before passing to
+    // console.Verbose(string) — which already wraps and escapes internally (VerboseRenderable) — so the
+    // caller's own literal tags got escaped and shown as visible "[dim]"/"[/]" text instead of being
+    // interpreted as markup.
+    [Fact]
+    public async Task Apply_NonErrorStdout_Verbose_DoesNotLeakLiteralMarkupTags()
+    {
+        _options.IsVerbose = true;
+        var cmd = CreateCapture().Apply(BaseCmd());
+
+        await PumpStdoutAsync(cmd, "normal output");
+
+        _console.Output.Should().NotContain("[dim]");
+        _console.Output.Should().NotContain("[/]");
+    }
+
     // Test 3: error-matching stdout → always printed to terminal, regardless of verbosity
     [Fact]
     public async Task Apply_ErrorStdout_NotVerbose_PrintsToTerminal()
