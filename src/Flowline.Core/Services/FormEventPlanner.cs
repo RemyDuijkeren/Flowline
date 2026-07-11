@@ -12,56 +12,89 @@ public class FormEventPlanner(IAnsiConsole console)
         var plan = new FormEventSyncPlan();
         var errors = new List<string>();
 
-        // Group by (Entity, Form) first, not by (Entity, Form, Event) — a form with both onLoad and
-        // onSave annotations shares one formxml, so parse it once per form instead of once per event.
-        var formGroups = snapshot.Annotations
-            .GroupBy(a => (a.Annotation.Entity, a.Annotation.Form));
+        // Case-insensitive lookup from (Entity, Form) to its current annotations, keyed the same way
+        // snapshot.Forms itself is keyed — annotation casing isn't guaranteed to match the form's own
+        // EntityLogicalName/Name casing exactly.
+        var annotationsByForm = snapshot.Annotations
+            .GroupBy(a => (Entity: a.Annotation.Entity.ToLowerInvariant(), Form: a.Annotation.Form.ToLowerInvariant()))
+            .ToDictionary(g => g.Key, g => g.ToList());
 
-        foreach (var formGroup in formGroups)
+        // R14: iterate every solution-scoped form (not just annotation-referenced ones), so a form whose
+        // last annotation was removed is still evaluated and its now-orphaned Handler gets cleaned up.
+        foreach (var dataverseForm in snapshot.Forms.Values)
         {
-            var (entity, form) = formGroup.Key;
-            var dataverseForm = snapshot.Forms[(entity, form)];
+            var entity = dataverseForm.EntityLogicalName;
+            var form = dataverseForm.Name;
             var xdoc = XDocument.Parse(dataverseForm.FormXml);
             var currentLibraries = FormXmlEventSerializer.GetLibraries(xdoc);
 
-            foreach (var group in formGroup.GroupBy(a => a.Annotation.Event))
-            {
-                var evt = group.Key;
+            var lookupKey = (Entity: entity.ToLowerInvariant(), Form: form.ToLowerInvariant());
+            var formAnnotations = annotationsByForm.TryGetValue(lookupKey, out var list)
+                ? list
+                : [];
 
+            foreach (var evt in Enum.GetValues<FormEventType>())
+            {
                 // Desired handlers as derived purely from this push's annotations. Always computes a fresh
                 // deterministic HandlerUniqueId, so a matched-by-identity entry with changed Parameters
                 // naturally lands here with the new Parameters value (no separate "update" bucket needed).
                 var annotationDesired = new HashSet<FormHandler>();
-                foreach (var resolved in group)
+                foreach (var resolved in formAnnotations.Where(a => a.Annotation.Event == evt))
                 {
+                    var isExplicit = resolved.Annotation.FunctionName is not null;
                     var requestedFunctionName = resolved.Annotation.FunctionName
                         ?? (evt == FormEventType.OnLoad ? "onLoad" : "onSave");
                     var autoNamespace = DeriveAutoNamespace(resolved.LibraryName);
 
-                    var (resolvedFunctionName, found) = FormXmlEventSerializer.ResolveFunction(
-                        resolved.Content, requestedFunctionName, autoNamespace);
+                    var (resolvedFunctionName, found, confident) = FormEventFunctionResolver.Resolve(
+                        resolved.Content, requestedFunctionName, autoNamespace, isExplicit);
 
-                    if (!found)
+                    string finalFunctionName;
+                    if (found)
                     {
+                        finalFunctionName = resolvedFunctionName!;
+                    }
+                    else if (!isExplicit || confident)
+                    {
+                        // R7 (defaulted, always hard-fails) and R7a outcome 2 (explicit, confirmed absent)
+                        // share the same per-declaration hard-fail path — other declarations still apply.
                         errors.Add($"{resolved.SourceFile}: function '{requestedFunctionName}' not found in library '{resolved.LibraryName}'.");
                         continue;
                     }
+                    else
+                    {
+                        // R7a outcome 3: explicit but inconclusive — warn and register verbatim, don't fail.
+                        console.Warning($"{resolved.SourceFile}: function '{requestedFunctionName}' could not be confirmed in library '{resolved.LibraryName}' — registering as written.");
+                        finalFunctionName = requestedFunctionName;
+                    }
 
                     annotationDesired.Add(new FormHandler(
-                        resolvedFunctionName!,
+                        finalFunctionName,
                         resolved.LibraryName,
-                        FormEventDeterministicId.ForHandler(entity, form, evt, resolvedFunctionName!, resolved.LibraryName),
+                        FormEventDeterministicId.ForHandler(entity, form, evt, finalFunctionName, resolved.LibraryName),
                         resolved.Annotation.Parameters ?? ""));
                 }
 
                 var currentHandlers = FormXmlEventSerializer.GetHandlers(xdoc, evt);
 
-                // Current entries with no matching annotation: safe to drop if Flowline's own deterministic
-                // derivation still matches the stored id (nothing else could have produced that exact id),
-                // otherwise it's unrecognized — keep by default (R18), executor decides removal after confirmation.
-                var unrecognized = new HashSet<FormHandler>();
+                // R15: a Handler on a library this project doesn't track is never evaluated for staleness
+                // or unrecognized status — it's simply carried through untouched so the write-back doesn't
+                // drop it (SetHandlers replaces the whole event's Handlers set on write).
+                var foreignHandlers = new HashSet<FormHandler>();
+
+                // Current entries on a tracked library with no matching annotation: safe to drop if
+                // Flowline's own deterministic derivation still matches the stored id (nothing else could
+                // have produced that exact id), otherwise it's unrecognized (R18) — kept by default, with a
+                // proposed adoption annotation (R18a), until the executor confirms removal.
+                var unrecognized = new HashSet<UnrecognizedHandler>();
                 foreach (var current in currentHandlers)
                 {
+                    if (!snapshot.TrackedLibraryNames.Contains(current.LibraryName))
+                    {
+                        foreignHandlers.Add(current);
+                        continue;
+                    }
+
                     if (annotationDesired.Contains(current))
                         continue;
 
@@ -69,12 +102,13 @@ public class FormEventPlanner(IAnsiConsole console)
                     if (current.HandlerUniqueId == expectedId)
                         continue;
 
-                    unrecognized.Add(current);
+                    unrecognized.Add(new UnrecognizedHandler(current, BuildProposedAnnotation(entity, form, evt, current)));
                 }
 
                 var desiredHandlers = new HashSet<FormHandler>(annotationDesired);
+                desiredHandlers.UnionWith(foreignHandlers);
                 foreach (var u in unrecognized)
-                    desiredHandlers.Add(u);
+                    desiredHandlers.Add(u.Handler);
 
                 // Libraries are add-only (never removed here) — start from everything currently on the form,
                 // then add any library a desired handler needs that isn't already present.
@@ -94,7 +128,7 @@ public class FormEventPlanner(IAnsiConsole console)
                 plan.Forms.Add(new FormEventFormPlan(
                     dataverseForm.Id,
                     entity,
-                    dataverseForm.Name,
+                    form,
                     evt,
                     desiredHandlers,
                     unrecognized,
@@ -129,6 +163,17 @@ public class FormEventPlanner(IAnsiConsole console)
         }
 
         return true;
+    }
+
+    // R18a: proposed annotation text built from the unrecognized handler's own stored state, in the same
+    // `// flowline:onload/onsave <entity> "<form>" Function[(params)]` shape R1 defines. FunctionName is
+    // used verbatim — including a dotted namespace (R6a's escape hatch), since a dotted name round-trips
+    // through the annotation grammar without re-derivation.
+    static string BuildProposedAnnotation(string entity, string form, FormEventType evt, FormHandler handler)
+    {
+        var directive = evt == FormEventType.OnLoad ? "onload" : "onsave";
+        var parameters = string.IsNullOrEmpty(handler.Parameters) ? "" : $"({handler.Parameters})";
+        return $"// flowline:{directive} {entity} \"{form}\" {handler.FunctionName}{parameters}";
     }
 
     static string DeriveAutoNamespace(string libraryName)

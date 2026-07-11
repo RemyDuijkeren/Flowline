@@ -58,7 +58,7 @@ public class FormEventExecutor(IAnsiConsole console)
     bool ResolveUnrecognizedHandling(FormEventSyncPlan plan, bool force)
     {
         var unrecognized = plan.Forms
-            .SelectMany(f => f.UnrecognizedHandlers.Select(h => (Form: f, Handler: h)))
+            .SelectMany(f => f.UnrecognizedHandlers.Select(u => (Form: f, Handler: u.Handler)))
             .ToList();
 
         if (unrecognized.Count == 0)
@@ -163,8 +163,9 @@ public class FormEventExecutor(IAnsiConsole console)
         {
             // Planner already folded UnrecognizedHandlers into DesiredHandlers (kept by default, R18) —
             // removing them here is the only place that decision is undone, once confirmed.
+            var unrecognizedHandlers = formPlan.UnrecognizedHandlers.Select(u => u.Handler).ToHashSet();
             var desired = removeUnrecognized
-                ? (IReadOnlySet<FormHandler>)formPlan.DesiredHandlers.Where(h => !formPlan.UnrecognizedHandlers.Contains(h)).ToHashSet()
+                ? (IReadOnlySet<FormHandler>)formPlan.DesiredHandlers.Where(h => !unrecognizedHandlers.Contains(h)).ToHashSet()
                 : formPlan.DesiredHandlers;
 
             FormXmlEventSerializer.SetHandlers(xdoc, formPlan.Event, desired);

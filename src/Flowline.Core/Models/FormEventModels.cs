@@ -57,13 +57,18 @@ public static class FormEventDeterministicId
     }
 }
 
+// R18a: an unrecognized Handler (tracked library, ID doesn't match Flowline's deterministic derivation)
+// paired with the annotation text the user could add instead of removing it — built from the handler's
+// own stored FunctionName/LibraryName/Parameters, per FormEventPlanner.BuildProposedAnnotation.
+public record UnrecognizedHandler(FormHandler Handler, string ProposedAnnotation);
+
 public record FormEventFormPlan(
     Guid FormId,
     string EntityLogicalName,
     string FormName,
     FormEventType Event,
     IReadOnlySet<FormHandler> DesiredHandlers,
-    IReadOnlySet<FormHandler> UnrecognizedHandlers,
+    IReadOnlySet<UnrecognizedHandler> UnrecognizedHandlers,
     IReadOnlySet<FormLibraryEntry> DesiredLibraries);
 
 public class FormEventSyncPlan

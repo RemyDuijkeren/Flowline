@@ -56,7 +56,7 @@ public class FormEventExecutorTests
         var handler = new FormHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
         var library = new FormLibraryEntry("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
         var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { handler }, new HashSet<FormHandler>(), new HashSet<FormLibraryEntry> { library });
+            new HashSet<FormHandler> { handler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry> { library });
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
         var plan = BuildPlan(formPlan);
@@ -85,9 +85,9 @@ public class FormEventExecutorTests
         var library = new FormLibraryEntry("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
 
         var onLoadPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { onLoadHandler }, new HashSet<FormHandler>(), new HashSet<FormLibraryEntry> { library });
+            new HashSet<FormHandler> { onLoadHandler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry> { library });
         var onSavePlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnSave,
-            new HashSet<FormHandler> { onSaveHandler }, new HashSet<FormHandler>(), new HashSet<FormLibraryEntry> { library });
+            new HashSet<FormHandler> { onSaveHandler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry> { library });
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
         var plan = BuildPlan(onLoadPlan, onSavePlan);
@@ -108,7 +108,7 @@ public class FormEventExecutorTests
         var recognized = new FormHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
         var unrecognized = new FormHandler("manualFn", "av_/manual.js", Guid.NewGuid(), "");
         var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { recognized, unrecognized }, new HashSet<FormHandler> { unrecognized },
+            new HashSet<FormHandler> { recognized, unrecognized }, new HashSet<UnrecognizedHandler> { new(unrecognized, "") },
             new HashSet<FormLibraryEntry>());
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
@@ -134,7 +134,7 @@ public class FormEventExecutorTests
         var unrecognized = new FormHandler("manualFn", "av_/manual.js", Guid.NewGuid(), "");
         var formPlanA = new FormEventFormPlan(formIdA, "account", "Account Main", FormEventType.OnLoad,
             new HashSet<FormHandler> { existingRecognized, newRecognized, unrecognized },
-            new HashSet<FormHandler> { unrecognized },
+            new HashSet<UnrecognizedHandler> { new(unrecognized, "") },
             new HashSet<FormLibraryEntry>());
 
         // Second, unrelated form with no unrecognized handlers — must still be updated regardless of the
@@ -142,7 +142,7 @@ public class FormEventExecutorTests
         var formIdB = Guid.NewGuid();
         var contactHandler = new FormHandler("onLoad", "av_/contact.js", FormEventDeterministicId.ForHandler("contact", "Contact Main", FormEventType.OnLoad, "onLoad", "av_/contact.js"), "");
         var formPlanB = new FormEventFormPlan(formIdB, "contact", "Contact Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { contactHandler }, new HashSet<FormHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormHandler> { contactHandler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
 
         var snapshot = BuildSnapshot(
             new DataverseForm(formIdA, "Account Main", "account", BuildFormXml()),
@@ -170,7 +170,7 @@ public class FormEventExecutorTests
         var formId = Guid.NewGuid();
         var unrecognized = new FormHandler("manualFn", "av_/manual.js", Guid.NewGuid(), "");
         var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { unrecognized }, new HashSet<FormHandler> { unrecognized },
+            new HashSet<FormHandler> { unrecognized }, new HashSet<UnrecognizedHandler> { new(unrecognized, "") },
             new HashSet<FormLibraryEntry>());
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
@@ -197,7 +197,7 @@ public class FormEventExecutorTests
         var recognized = new FormHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
         var unrecognized = new FormHandler("manualFn", "av_/manual.js", Guid.NewGuid(), "");
         var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { recognized, unrecognized }, new HashSet<FormHandler> { unrecognized },
+            new HashSet<FormHandler> { recognized, unrecognized }, new HashSet<UnrecognizedHandler> { new(unrecognized, "") },
             new HashSet<FormLibraryEntry>());
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
@@ -221,9 +221,9 @@ public class FormEventExecutorTests
         var handlerA = new FormHandler("onLoad", "av_/a.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/a.js"), "");
         var handlerB = new FormHandler("onLoad", "av_/b.js", FormEventDeterministicId.ForHandler("account", "Account QuickCreate", FormEventType.OnLoad, "onLoad", "av_/b.js"), "");
         var formPlanA = new FormEventFormPlan(formIdA, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { handlerA }, new HashSet<FormHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormHandler> { handlerA }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
         var formPlanB = new FormEventFormPlan(formIdB, "account", "Account QuickCreate", FormEventType.OnLoad,
-            new HashSet<FormHandler> { handlerB }, new HashSet<FormHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormHandler> { handlerB }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
 
         var snapshot = BuildSnapshot(
             new DataverseForm(formIdA, "Account Main", "account", BuildFormXml()),
@@ -247,9 +247,9 @@ public class FormEventExecutorTests
         var handlerA = new FormHandler("onLoad", "av_/a.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/a.js"), "");
         var handlerB = new FormHandler("onLoad", "av_/b.js", FormEventDeterministicId.ForHandler("contact", "Contact Main", FormEventType.OnLoad, "onLoad", "av_/b.js"), "");
         var formPlanA = new FormEventFormPlan(formIdA, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { handlerA }, new HashSet<FormHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormHandler> { handlerA }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
         var formPlanB = new FormEventFormPlan(formIdB, "contact", "Contact Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { handlerB }, new HashSet<FormHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormHandler> { handlerB }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
 
         var snapshot = BuildSnapshot(
             new DataverseForm(formIdA, "Account Main", "account", BuildFormXml()),
@@ -275,9 +275,9 @@ public class FormEventExecutorTests
         var handlerFails = new FormHandler("onLoad", "av_/fails.js", FormEventDeterministicId.ForHandler("account", "Account Fails", FormEventType.OnLoad, "onLoad", "av_/fails.js"), "");
         var handlerOk = new FormHandler("onLoad", "av_/ok.js", FormEventDeterministicId.ForHandler("account", "Account Ok", FormEventType.OnLoad, "onLoad", "av_/ok.js"), "");
         var formPlanFails = new FormEventFormPlan(formIdFails, "account", "Account Fails", FormEventType.OnLoad,
-            new HashSet<FormHandler> { handlerFails }, new HashSet<FormHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormHandler> { handlerFails }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
         var formPlanOk = new FormEventFormPlan(formIdOk, "account", "Account Ok", FormEventType.OnLoad,
-            new HashSet<FormHandler> { handlerOk }, new HashSet<FormHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormHandler> { handlerOk }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
 
         var snapshot = BuildSnapshot(
             new DataverseForm(formIdFails, "Account Fails", "account", BuildFormXml()),
@@ -307,9 +307,9 @@ public class FormEventExecutorTests
         var handlerA = new FormHandler("onLoad", "av_/a.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/a.js"), "");
         var handlerB = new FormHandler("onLoad", "av_/b.js", FormEventDeterministicId.ForHandler("contact", "Contact Main", FormEventType.OnLoad, "onLoad", "av_/b.js"), "");
         var formPlanA = new FormEventFormPlan(formIdA, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { handlerA }, new HashSet<FormHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormHandler> { handlerA }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
         var formPlanB = new FormEventFormPlan(formIdB, "contact", "Contact Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { handlerB }, new HashSet<FormHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormHandler> { handlerB }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
 
         var snapshot = BuildSnapshot(
             new DataverseForm(formIdA, "Account Main", "account", BuildFormXml()),

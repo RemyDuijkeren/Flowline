@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Spectre.Console.Testing;
@@ -12,12 +13,44 @@ public class FormEventPlannerTests
 
     public FormEventPlannerTests() => _planner = new FormEventPlanner(_console);
 
+    // Tracked-library set (R15) is auto-inferred from every library referenced by an annotation or a
+    // current Handler/Library already on a passed-in form — matches the pre-U5-revision behavior where
+    // everything was implicitly "tracked" (no boundary existed), so existing scenarios need no changes.
+    // Use BuildSnapshotUntrackedLibrary for a test that specifically needs a library excluded.
     static FormEventSnapshot BuildSnapshot(
         IReadOnlyList<ResolvedFormEventAnnotation> annotations,
         params (string Entity, string Form, DataverseForm Form2)[] forms)
     {
         var dict = forms.ToDictionary(f => (f.Entity, f.Form), f => f.Form2);
-        return new FormEventSnapshot(annotations, new HashSet<string>(), dict);
+
+        var tracked = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var a in annotations)
+            tracked.Add(a.LibraryName);
+        foreach (var (_, _, dataverseForm) in forms)
+        {
+            var xdoc = XDocument.Parse(dataverseForm.FormXml);
+            foreach (var evt in Enum.GetValues<FormEventType>())
+                foreach (var h in FormXmlEventSerializer.GetHandlers(xdoc, evt))
+                    tracked.Add(h.LibraryName);
+            foreach (var l in FormXmlEventSerializer.GetLibraries(xdoc))
+                tracked.Add(l.Name);
+        }
+
+        return new FormEventSnapshot(annotations, tracked, dict);
+    }
+
+    // Same as BuildSnapshot, but explicitly excludes one library name from the auto-inferred tracked
+    // set — for R15 regression tests where a current Handler must land on a library this project does
+    // not track.
+    static FormEventSnapshot BuildSnapshotUntrackedLibrary(
+        IReadOnlyList<ResolvedFormEventAnnotation> annotations,
+        string untrackedLibraryName,
+        params (string Entity, string Form, DataverseForm Form2)[] forms)
+    {
+        var snapshot = BuildSnapshot(annotations, forms);
+        var tracked = new HashSet<string>(snapshot.TrackedLibraryNames, StringComparer.OrdinalIgnoreCase);
+        tracked.Remove(untrackedLibraryName);
+        return new FormEventSnapshot(snapshot.Annotations, tracked, snapshot.Forms);
     }
 
     [Fact]
@@ -106,14 +139,17 @@ public class FormEventPlannerTests
 
         var entry = Assert.Single(plan.Forms);
         Assert.Contains(entry.DesiredHandlers, h => h.FunctionName == "manualFn");
-        Assert.Contains(entry.UnrecognizedHandlers, h => h.FunctionName == "manualFn");
+        Assert.Contains(entry.UnrecognizedHandlers, u => u.Handler.FunctionName == "manualFn");
     }
 
     [Fact]
-    public void Plan_HandlerOnUnreferencedLibraryWithNonMatchingId_IsKeptAndFlaggedUnrecognized()
+    public void Plan_HandlerOnUntrackedLibrary_NeverTouchedNeverFlaggedUnrecognized()
     {
-        // Same treatment as a stale handler on a still-referenced library: unrecognized status is
-        // evaluated per-handler, independent of whether its library is tracked by this push at all.
+        // R15 regression (KTD11): a Handler whose library isn't tracked by this project is never
+        // evaluated at all — not eligible for stale auto-removal, never surfaced as unrecognized, passed
+        // through untouched so the write-back doesn't drop it. Replaces the old (incorrect) behavior
+        // this test used to document, where an untracked-library handler was flagged unrecognized just
+        // like a tracked one with a non-matching id.
         var keptId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/keep.js");
         var current = new HashSet<FormHandler>
         {
@@ -126,13 +162,148 @@ public class FormEventPlannerTests
         var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, null, null);
         var resolved = new ResolvedFormEventAnnotation(annotation, "av_/keep.js", "function onLoad() {}", "src/keep.ts");
 
-        var snapshot = BuildSnapshot([resolved], ("account", "Account Main", form));
+        var snapshot = BuildSnapshotUntrackedLibrary([resolved], "av_/untracked.js", ("account", "Account Main", form));
 
         var plan = _planner.Plan(snapshot);
 
         var entry = Assert.Single(plan.Forms);
         Assert.Contains(entry.DesiredHandlers, h => h.FunctionName == "untrackedFn" && h.LibraryName == "av_/untracked.js");
-        Assert.Contains(entry.UnrecognizedHandlers, h => h.FunctionName == "untrackedFn");
+        Assert.DoesNotContain(entry.UnrecognizedHandlers, u => u.Handler.FunctionName == "untrackedFn");
+    }
+
+    [Fact]
+    public void Plan_FormWithHandlerAndZeroAnnotationsAnywhere_StillEvaluatedOrphanHandlerRemoved()
+    {
+        // R14 regression (KTD11): no annotation anywhere references this form/event — only reachable by
+        // iterating snapshot.Forms (the full solution-scoped set), not by grouping snapshot.Annotations.
+        var handlerId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "legacyOnLoad", "av_/legacy.js");
+        var current = new HashSet<FormHandler> { new("legacyOnLoad", "av_/legacy.js", handlerId, "") };
+        var formXml = BuildFormXml(FormEventType.OnLoad, current);
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var snapshot = BuildSnapshot([], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.Empty(entry.DesiredHandlers);
+        Assert.Empty(entry.UnrecognizedHandlers);
+    }
+
+    [Fact]
+    public void Plan_UnrecognizedHandlerWithDottedFunctionName_ProposedAnnotationUsesDottedNameVerbatim()
+    {
+        var keptId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/keep.js");
+        var current = new HashSet<FormHandler>
+        {
+            new("onLoad", "av_/keep.js", keptId, ""),
+            new("MyCompany.Example1.OnLoad", "av_/legacy.js", Guid.NewGuid(), "")
+        };
+        var formXml = BuildFormXml(FormEventType.OnLoad, current);
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, null, null);
+        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/keep.js", "function onLoad() {}", "src/keep.ts");
+
+        var snapshot = BuildSnapshot([resolved], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        var unrecognized = Assert.Single(entry.UnrecognizedHandlers);
+        Assert.Equal("// flowline:onload account \"Account Main\" MyCompany.Example1.OnLoad", unrecognized.ProposedAnnotation);
+    }
+
+    [Fact]
+    public void Plan_UnrecognizedHandlerWithParameters_ProposedAnnotationIncludesParameterSuffix()
+    {
+        var keptId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/keep.js");
+        var current = new HashSet<FormHandler>
+        {
+            new("onLoad", "av_/keep.js", keptId, ""),
+            new("legacyFn", "av_/legacy.js", Guid.NewGuid(), "param1,param2")
+        };
+        var formXml = BuildFormXml(FormEventType.OnLoad, current);
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, null, null);
+        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/keep.js", "function onLoad() {}", "src/keep.ts");
+
+        var snapshot = BuildSnapshot([resolved], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        var unrecognized = Assert.Single(entry.UnrecognizedHandlers);
+        Assert.Equal("// flowline:onload account \"Account Main\" legacyFn(param1,param2)", unrecognized.ProposedAnnotation);
+    }
+
+    [Fact]
+    public void Plan_DefaultedFunctionNotFound_ThrowsRegardlessOfConfidence()
+    {
+        var formXml = BuildFormXml();
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        // Defaulted (FunctionName omitted) and content with no parseable exports/declarations at all
+        // (Confident: false) — R7 hard-fails on ANY non-resolution regardless of Confident.
+        var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, null, null);
+        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/empty.js", "// nothing here", "src/empty.ts");
+
+        var snapshot = BuildSnapshot([resolved], ("account", "Account Main", form));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => _planner.Plan(snapshot));
+
+        Assert.Contains("src/empty.ts", ex.Message);
+        Assert.Contains("onLoad", ex.Message);
+    }
+
+    [Fact]
+    public void Plan_ExplicitFunctionConfirmedAbsent_ThrowsButOtherAnnotationsStillApply()
+    {
+        // R7a outcome 2: explicit function name, confirmed absent from a fully-traced known export shape
+        // (Found:false, Confident:true) — hard-fails naming file+function; other valid registrations in
+        // the same push still apply (per-declaration failure, same isolation as R7).
+        var formXmlGood = BuildFormXml();
+        var formGood = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXmlGood);
+        var goodAnnotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, null, null);
+        var goodResolved = new ResolvedFormEventAnnotation(goodAnnotation, "av_/good.js", "function onLoad() {}", "src/good.ts");
+
+        var formXmlBad = BuildFormXml();
+        var formBad = new DataverseForm(Guid.NewGuid(), "Contact Main", "contact", formXmlBad);
+        var badAnnotation = new FormEventAnnotation("contact", "Contact Main", FormEventType.OnLoad, "MissingFn", null);
+        // Content has a real, fully-traceable top-level declaration (Confident: true) that just isn't
+        // the requested name — distinguishes "confirmed absent" from "inconclusive" (empty/comment-only).
+        var badResolved = new ResolvedFormEventAnnotation(badAnnotation, "av_/bad.js", "function otherFn() {}", "src/bad.ts");
+
+        var snapshot = BuildSnapshot(
+            [goodResolved, badResolved],
+            ("account", "Account Main", formGood),
+            ("contact", "Contact Main", formBad));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => _planner.Plan(snapshot));
+
+        Assert.Contains("src/bad.ts", ex.Message);
+        Assert.Contains("MissingFn", ex.Message);
+    }
+
+    [Fact]
+    public void Plan_ExplicitFunctionInconclusive_WarnsAndRegistersVerbatimNotHardFail()
+    {
+        // R7a outcome 3: explicit function name, genuinely unconfirmable (Found:false, Confident:false)
+        // — warns, does not hard-fail, registers the name verbatim as the user wrote it.
+        var formXml = BuildFormXml();
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "LegacyHandler", null);
+        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/legacy.js", "// nothing here", "src/legacy.ts");
+
+        var snapshot = BuildSnapshot([resolved], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.Single(entry.DesiredHandlers, h => h.FunctionName == "LegacyHandler" && h.LibraryName == "av_/legacy.js");
+        Assert.Contains("could not be confirmed", _console.Output, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -146,12 +317,14 @@ public class FormEventPlannerTests
         var formXmlBad1 = BuildFormXml();
         var formBad1 = new DataverseForm(Guid.NewGuid(), "Contact Main", "contact", formXmlBad1);
         var badAnnotation1 = new FormEventAnnotation("contact", "Contact Main", FormEventType.OnLoad, "missingFn1", null);
-        var badResolved1 = new ResolvedFormEventAnnotation(badAnnotation1, "av_/bad1.js", "// nothing here", "src/bad1.ts");
+        // Confident:true content (a real, unrelated top-level declaration) so this exercises R7a's
+        // confirmed-absent hard-fail path, not the inconclusive warn-and-register path.
+        var badResolved1 = new ResolvedFormEventAnnotation(badAnnotation1, "av_/bad1.js", "function otherFn1() {}", "src/bad1.ts");
 
         var formXmlBad2 = BuildFormXml();
         var formBad2 = new DataverseForm(Guid.NewGuid(), "Lead Main", "lead", formXmlBad2);
         var badAnnotation2 = new FormEventAnnotation("lead", "Lead Main", FormEventType.OnLoad, "missingFn2", null);
-        var badResolved2 = new ResolvedFormEventAnnotation(badAnnotation2, "av_/bad2.js", "// nothing here either", "src/bad2.ts");
+        var badResolved2 = new ResolvedFormEventAnnotation(badAnnotation2, "av_/bad2.js", "function otherFn2() {}", "src/bad2.ts");
 
         var snapshot = BuildSnapshot(
             [goodResolved, badResolved1, badResolved2],
