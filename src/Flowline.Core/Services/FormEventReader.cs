@@ -72,7 +72,7 @@ public class FormEventReader(IAnsiConsole console)
         var solutionFormEntities = await QuerySolutionScopedFormsAsync(service, webResourceSnapshot.Solution.Id, cancellationToken).ConfigureAwait(false);
 
         var missingCodes = solutionFormEntities
-            .Select(e => e.GetAttributeValue<int>("objecttypecode"))
+            .Select(GetObjectTypeCode)
             .Distinct()
             .Where(code => !entityByCode.ContainsKey(code))
             .ToList();
@@ -87,7 +87,7 @@ public class FormEventReader(IAnsiConsole console)
         var solutionForms = new List<(Guid Id, string Name, string EntityLogicalName, string FormXml)>();
         foreach (var formEntity in solutionFormEntities)
         {
-            var code = formEntity.GetAttributeValue<int>("objecttypecode");
+            var code = GetObjectTypeCode(formEntity);
             // A systemform's objecttypecode should always resolve to a real entity — skip defensively
             // rather than throw, since a resolution gap here isn't something a bad annotation caused.
             // Surfaced as a warning (not silent) because a silently skipped solution-component form is
@@ -274,6 +274,15 @@ public class FormEventReader(IAnsiConsole console)
 
         return await service.RetrieveAllAsync(query, cancellationToken).ConfigureAwait(false);
     }
+
+    // Confirmed live: querying systemform.objecttypecode through the solutioncomponent link (above)
+    // returns it as a System.String, not a boxed System.Int32 — GetAttributeValue<int> throws
+    // InvalidCastException. This contradicts KTD3's finding, which was about the numeric type QueryExpression
+    // condition VALUES must use for filtering, not the CLR type read back from a result row; the two are
+    // apparently independent. Convert.ToInt32 (already this codebase's coercion idiom, see
+    // PluginAssemblyReader.cs) handles both a boxed int and a numeric string uniformly.
+    static int GetObjectTypeCode(Entity systemForm) =>
+        Convert.ToInt32(systemForm.GetAttributeValue<object>("objecttypecode"));
 
     // KTD11's load-bearing gap: the reverse of ResolveObjectTypeCodeAsync. One bulk metadata request for
     // every needed code rather than one RetrieveEntity per orphan form's entity.

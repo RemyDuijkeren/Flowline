@@ -80,11 +80,14 @@ static class FormEventTestHelpers
     // presence of LinkEntities.
     public static void SetupSystemFormsInSolution(this IOrganizationServiceAsync2 service, params (Guid Id, string Name, string FormXml, int ObjectTypeCode)[] forms)
     {
+        // Confirmed live: querying systemform.objecttypecode through the solutioncomponent link returns it
+        // as a string, not a boxed int — mocking it as int here would hide the InvalidCastException a real
+        // push hit. Stored as a string to match actual SDK behavior for this specific query shape.
         var entities = forms.Select(f => new Entity("systemform", f.Id)
         {
             ["name"] = f.Name,
             ["formxml"] = f.FormXml,
-            ["objecttypecode"] = f.ObjectTypeCode
+            ["objecttypecode"] = f.ObjectTypeCode.ToString()
         }).ToList();
 
         service.RetrieveMultipleAsync(
