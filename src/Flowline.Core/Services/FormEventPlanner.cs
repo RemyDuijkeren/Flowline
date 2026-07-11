@@ -153,19 +153,18 @@ public class FormEventPlanner(IAnsiConsole console)
                 .SelectMany(r => r.ManagedLibraryNames)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            // A currentLibrary is kept only if the FINAL desired handler set (either event, managed or
-            // foreign pass-through) still references it — anything else is a library with zero handlers
-            // pointing at it anymore and is dropped, regardless of whether Flowline ever owned the handler
-            // that used to reference it. A <formLibraries><Library> entry with no Handler using it does
-            // nothing functionally (Handlers are the only consumer of formLibraries — InternalHandlers load
-            // their scripts via <internaljscriptfile>/<clientresources>, not formLibraries), so this is safe
-            // even for a library whose last (foreign) handler was removed outside Flowline entirely.
+            // A currentLibrary is kept if the FINAL desired handler set (either event, managed or foreign
+            // pass-through) still references it, OR it's outside this project's own tracked-library
+            // boundary (R15) — Flowline only ever cleans up a library entry that corresponds to one of ITS
+            // OWN local JS files. A Microsoft/foreign library with zero current handler references is left
+            // alone regardless: Flowline can't be certain nothing else on the platform depends on it, so it
+            // only takes responsibility for tidying up libraries it actually manages.
             var allReferencedLibraryNames = perEventResults
                 .SelectMany(r => r.DesiredHandlers.Select(h => h.LibraryName))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             var desiredLibraries = new HashSet<FormLibraryEntry>(currentLibraries
-                .Where(l => allReferencedLibraryNames.Contains(l.Name)));
+                .Where(l => allReferencedLibraryNames.Contains(l.Name) || !snapshot.TrackedLibraryNames.Contains(l.Name)));
             // Only libraries Flowline actually manages (annotationDesired + unrecognized) can be newly added
             // — never fabricate a <Library> entry for a foreign handler's library (see managedLibraryNames).
             foreach (var libraryName in neededLibraryNames)

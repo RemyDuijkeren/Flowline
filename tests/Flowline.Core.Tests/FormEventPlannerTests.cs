@@ -499,6 +499,28 @@ public class FormEventPlannerTests
     }
 
     [Fact]
+    public void Plan_UntrackedLibraryWithNoHandlerReferencingIt_NeverRemovedOutsideProjectBoundary()
+    {
+        // A Microsoft/foreign library (never one of this project's own local JS files) that happens to have
+        // zero current handlers referencing it — e.g. temporarily unwired for reasons outside Flowline's
+        // knowledge — must never be touched. Only libraries inside this project's own tracked-library
+        // boundary (R15) are eligible for cleanup; anything else is left alone regardless of reference
+        // count, since Flowline can't be certain nothing else on the platform depends on it.
+        var foreignLibrary = new FormLibraryEntry("msdyn_/Account/AssetCommon.Account.Library.js",
+            FormEventDeterministicId.ForLibrary("msdyn_/Account/AssetCommon.Account.Library.js"));
+        var currentLibraries = new HashSet<FormLibraryEntry> { foreignLibrary };
+        var formXml = BuildFormXml(libraries: currentLibraries);
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var snapshot = BuildSnapshotUntrackedLibrary([], "msdyn_/Account/AssetCommon.Account.Library.js", ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        // No annotation, no tracked-library orphan — nothing for Flowline to do at all.
+        Assert.Empty(plan.Forms);
+    }
+
+    [Fact]
     public void Plan_NamespacedExportWithMultiWordLibraryFileName_ResolvesPascalCaseNamespace()
     {
         // Drives ResolveFunction's namespaced branch, so DeriveAutoNamespace/ToPascalCase (mirroring
