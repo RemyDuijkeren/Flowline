@@ -52,8 +52,8 @@ public class FormEventReaderTests : IDisposable
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
         _serviceMock.SetupEntityObjectTypeCode("contact", 2);
         _serviceMock.SetupSystemFormsInSolution(
-            (accountFormId, "Account Main", "<form>account</form>", 1),
-            (contactFormId, "Contact Main", "<form>contact</form>", 2));
+            (accountFormId, "Account Main", "<form>account</form>", "account"),
+            (contactFormId, "Contact Main", "<form>contact</form>", "contact"));
 
         var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
 
@@ -93,8 +93,8 @@ public class FormEventReaderTests : IDisposable
 
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
         _serviceMock.SetupSystemFormsInSolution(
-            (Guid.NewGuid(), "Account Main", "<form>main</form>", 1),
-            (Guid.NewGuid(), "Account Quick Create", "<form>qc</form>", 1));
+            (Guid.NewGuid(), "Account Main", "<form>main</form>", "account"),
+            (Guid.NewGuid(), "Account Quick Create", "<form>qc</form>", "account"));
 
         await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
 
@@ -113,7 +113,7 @@ public class FormEventReaderTests : IDisposable
 
         _serviceMock.SetupEntityObjectTypeCode("badentity", null);
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
-        _serviceMock.SetupSystemFormsInSolution((Guid.NewGuid(), "Account Main", "<form>main</form>", 1));
+        _serviceMock.SetupSystemFormsInSolution((Guid.NewGuid(), "Account Main", "<form>main</form>", "account"));
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution"));
@@ -141,7 +141,7 @@ public class FormEventReaderTests : IDisposable
                 Arg.Any<CancellationToken>())
             .Returns<OrganizationResponse>(_ => throw new FaultException<OrganizationServiceFault>(new OrganizationServiceFault()));
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
-        _serviceMock.SetupSystemFormsInSolution((Guid.NewGuid(), "Account Main", "<form>main</form>", 1));
+        _serviceMock.SetupSystemFormsInSolution((Guid.NewGuid(), "Account Main", "<form>main</form>", "account"));
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution"));
@@ -200,8 +200,8 @@ public class FormEventReaderTests : IDisposable
 
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
         _serviceMock.SetupSystemFormsInSolution(
-            (Guid.NewGuid(), "Account Main", "<form>1</form>", 1),
-            (Guid.NewGuid(), "Account Main", "<form>2</form>", 1));
+            (Guid.NewGuid(), "Account Main", "<form>1</form>", "account"),
+            (Guid.NewGuid(), "Account Main", "<form>2</form>", "account"));
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution"));
@@ -219,7 +219,7 @@ public class FormEventReaderTests : IDisposable
             "// flowline:onload account \"Account Main\" handler\nfunction handler() {}");
 
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
-        _serviceMock.SetupSystemFormsInSolution((Guid.NewGuid(), "Account Main", "<form>account</form>", 1));
+        _serviceMock.SetupSystemFormsInSolution((Guid.NewGuid(), "Account Main", "<form>account</form>", "account"));
 
         var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
 
@@ -233,10 +233,10 @@ public class FormEventReaderTests : IDisposable
         File.WriteAllText(Path.Combine(_webresourceRoot, "plain.js"), "console.log('no annotations');");
 
         var orphanFormId = Guid.NewGuid();
-        // No annotation ever references "account" — its logical name is only resolvable via the reverse
-        // (ObjectTypeCode -> logical name) bulk lookup, KTD11 step 4a.
-        _serviceMock.SetupAllEntitiesMetadata(("account", 1));
-        _serviceMock.SetupSystemFormsInSolution((orphanFormId, "Account Main", "<form>orphan</form>", 1));
+        // No annotation ever references "account" — its logical name comes straight off the solution-scoped
+        // systemform row's objecttypecode (which Dataverse returns as the entity logical name), not via any
+        // annotation-driven resolution path.
+        _serviceMock.SetupSystemFormsInSolution((orphanFormId, "Account Main", "<form>orphan</form>", "account"));
 
         var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
 

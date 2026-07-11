@@ -78,43 +78,22 @@ static class FormEventTestHelpers
     // Mocks FormEventReader's solution-scoped systemform query (R14): systemform joined to
     // solutioncomponent joined to solution — distinguished from SetupSystemForms' unscoped query by the
     // presence of LinkEntities.
-    public static void SetupSystemFormsInSolution(this IOrganizationServiceAsync2 service, params (Guid Id, string Name, string FormXml, int ObjectTypeCode)[] forms)
+    //
+    // Confirmed live: querying systemform.objecttypecode through the solutioncomponent link returns the
+    // entity's LOGICAL NAME as a string (e.g. "contact"), not a numeric ObjectTypeCode — mocking it as a
+    // number here would hide the FormatException a real push hit.
+    public static void SetupSystemFormsInSolution(this IOrganizationServiceAsync2 service, params (Guid Id, string Name, string FormXml, string EntityLogicalName)[] forms)
     {
-        // Confirmed live: querying systemform.objecttypecode through the solutioncomponent link returns it
-        // as a string, not a boxed int — mocking it as int here would hide the InvalidCastException a real
-        // push hit. Stored as a string to match actual SDK behavior for this specific query shape.
         var entities = forms.Select(f => new Entity("systemform", f.Id)
         {
             ["name"] = f.Name,
             ["formxml"] = f.FormXml,
-            ["objecttypecode"] = f.ObjectTypeCode.ToString()
+            ["objecttypecode"] = f.EntityLogicalName
         }).ToList();
 
         service.RetrieveMultipleAsync(
                 Arg.Is<QueryExpression>(q => q.EntityName == "systemform" && q.LinkEntities.Count > 0),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(entities)));
-    }
-
-    // Mocks the bulk RetrieveAllEntities reverse lookup (KTD11 step 4a): ObjectTypeCode -> logical name,
-    // for entities discovered only through the solution-scoped form join (no annotation ever names them).
-    public static void SetupAllEntitiesMetadata(this IOrganizationServiceAsync2 service, params (string LogicalName, int ObjectTypeCode)[] entities)
-    {
-        var metadata = entities.Select(e =>
-        {
-            var em = new EntityMetadata { LogicalName = e.LogicalName };
-            typeof(EntityMetadata).GetProperty("ObjectTypeCode")!.SetValue(em, e.ObjectTypeCode);
-            return em;
-        }).ToArray();
-
-        var response = new RetrieveAllEntitiesResponse
-        {
-            Results = new ParameterCollection { ["EntityMetadata"] = metadata }
-        };
-
-        service.ExecuteAsync(
-                Arg.Is<OrganizationRequest>(r => r.RequestName == "RetrieveAllEntities"),
-                Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<OrganizationResponse>(response));
     }
 }

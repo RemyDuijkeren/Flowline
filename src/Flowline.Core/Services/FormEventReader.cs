@@ -58,43 +58,26 @@ public class FormEventReader(IAnsiConsole console)
         })).ConfigureAwait(false);
         var objectTypeCodes = objectTypeCodeResults.ToDictionary(r => r.Entity, r => r.Code, StringComparer.OrdinalIgnoreCase);
 
-        // Reverse cache (KTD11's load-bearing gap): ObjectTypeCode -> logical name, seeded from the
-        // forward direction above so an entity already resolved via an annotation never triggers a
-        // redundant RetrieveAllEntities round-trip.
-        var entityByCode = new Dictionary<int, string>();
-        foreach (var (entity, code) in objectTypeCodes)
-            if (code is int c) entityByCode.TryAdd(c, entity);
-
         // R14: every systemform that's a component of this solution, not just forms named by a current
         // annotation. Filters directly on solutioncomponent.solutionid using the id WebResourceReader
         // already resolved above — no second join to solution by uniquename needed (mirrors
         // WebResourceReader.GetWebResourcesForSolutionAsync's single-link shape).
         var solutionFormEntities = await QuerySolutionScopedFormsAsync(service, webResourceSnapshot.Solution.Id, cancellationToken).ConfigureAwait(false);
 
-        var missingCodes = solutionFormEntities
-            .Select(GetObjectTypeCode)
-            .Distinct()
-            .Where(code => !entityByCode.ContainsKey(code))
-            .ToList();
-
-        if (missingCodes.Count > 0)
-        {
-            var resolvedNames = await ResolveEntityLogicalNamesAsync(service, missingCodes, cancellationToken).ConfigureAwait(false);
-            foreach (var (code, name) in resolvedNames)
-                entityByCode[code] = name;
-        }
-
+        // Confirmed live: systemform.objecttypecode, read back from a result row, is the entity's LOGICAL
+        // NAME as a string (e.g. "contact") — not a numeric ObjectTypeCode at all. This contradicts KTD3's
+        // finding, which is about the numeric type QueryExpression FILTER values need for this attribute
+        // (still true, still used by ResolveObjectTypeCodeAsync's forward-direction lookup above), not the
+        // CLR type/value actually returned when reading a row. Dataverse's EntityName attribute type
+        // auto-resolves to the logical name for API consumers — no reverse ObjectTypeCode -> logical-name
+        // lookup needed at all.
         var solutionForms = new List<(Guid Id, string Name, string EntityLogicalName, string FormXml)>();
         foreach (var formEntity in solutionFormEntities)
         {
-            var code = GetObjectTypeCode(formEntity);
-            // A systemform's objecttypecode should always resolve to a real entity — skip defensively
-            // rather than throw, since a resolution gap here isn't something a bad annotation caused.
-            // Surfaced as a warning (not silent) because a silently skipped solution-component form is
-            // exactly the R14 orphan-detection gap this unit exists to close.
-            if (!entityByCode.TryGetValue(code, out var entityLogicalName))
+            var entityLogicalName = formEntity.GetAttributeValue<string>("objecttypecode");
+            if (string.IsNullOrEmpty(entityLogicalName))
             {
-                console.Warning($"systemform '{formEntity.GetAttributeValue<string>("name")}' ({formEntity.Id}) has objecttypecode {code}, which did not resolve to an entity logical name — skipped from form-event resolution.");
+                console.Warning($"systemform '{formEntity.GetAttributeValue<string>("name")}' ({formEntity.Id}) has no objecttypecode — skipped from form-event resolution.");
                 continue;
             }
 
@@ -273,37 +256,6 @@ public class FormEventReader(IAnsiConsole console)
         componentLink.LinkCriteria.AddCondition("componenttype", ConditionOperator.Equal, SystemFormComponentType);
 
         return await service.RetrieveAllAsync(query, cancellationToken).ConfigureAwait(false);
-    }
-
-    // Confirmed live: querying systemform.objecttypecode through the solutioncomponent link (above)
-    // returns it as a System.String, not a boxed System.Int32 — GetAttributeValue<int> throws
-    // InvalidCastException. This contradicts KTD3's finding, which was about the numeric type QueryExpression
-    // condition VALUES must use for filtering, not the CLR type read back from a result row; the two are
-    // apparently independent. Convert.ToInt32 (already this codebase's coercion idiom, see
-    // PluginAssemblyReader.cs) handles both a boxed int and a numeric string uniformly.
-    static int GetObjectTypeCode(Entity systemForm) =>
-        Convert.ToInt32(systemForm.GetAttributeValue<object>("objecttypecode"));
-
-    // KTD11's load-bearing gap: the reverse of ResolveObjectTypeCodeAsync. One bulk metadata request for
-    // every needed code rather than one RetrieveEntity per orphan form's entity.
-    static async Task<Dictionary<int, string>> ResolveEntityLogicalNamesAsync(
-        IOrganizationServiceAsync2 service, IReadOnlyCollection<int> objectTypeCodes, CancellationToken cancellationToken)
-    {
-        var request = new RetrieveAllEntitiesRequest
-        {
-            EntityFilters = EntityFilters.Entity,
-            RetrieveAsIfPublished = false
-        };
-        var response = (RetrieveAllEntitiesResponse)await service.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
-
-        var wanted = objectTypeCodes.ToHashSet();
-        var result = new Dictionary<int, string>();
-        foreach (var metadata in response.EntityMetadata ?? [])
-        {
-            if (metadata.ObjectTypeCode is { } code && wanted.Contains(code) && metadata.LogicalName is not null)
-                result[code] = metadata.LogicalName;
-        }
-        return result;
     }
 
     // Case-insensitive (Entity, Form) key comparer — DB-returned names and reverse-resolved logical

@@ -80,7 +80,7 @@ public class FormEventServiceTests : IDisposable
 
         var formId = Guid.NewGuid();
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
-        _serviceMock.SetupSystemFormsInSolution((formId, "Account Main", "<form></form>", 1));
+        _serviceMock.SetupSystemFormsInSolution((formId, "Account Main", "<form></form>", "account"));
 
         var result = await _service.RegisterAsync(_serviceMock, _webresourceRoot, "MySolution", force: false, dryRun: false);
 
@@ -98,7 +98,7 @@ public class FormEventServiceTests : IDisposable
 
         var formId = Guid.NewGuid();
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
-        _serviceMock.SetupSystemFormsInSolution((formId, "Account Main", "<form></form>", 1));
+        _serviceMock.SetupSystemFormsInSolution((formId, "Account Main", "<form></form>", "account"));
 
         var result = await _service.RegisterAsync(_serviceMock, _webresourceRoot, "MySolution", force: false, dryRun: true);
 
@@ -129,10 +129,9 @@ public class FormEventServiceTests : IDisposable
         var currentFormXml = BuildFormXml(FormEventType.OnLoad, new HashSet<FormHandler> { staleHandler }, new HashSet<FormLibraryEntry> { staleLibrary });
 
         // No annotation names "account" in this scenario (R14: the form is only discovered via the
-        // solution-scoped join), so the reader's forward objecttypecode lookup never runs — the reverse
-        // RetrieveAllEntities fallback (KTD11) is what resolves objecttypecode 1 back to "account".
-        _serviceMock.SetupAllEntitiesMetadata(("account", 1));
-        _serviceMock.SetupSystemFormsInSolution((formId, "Account Main", currentFormXml, 1));
+        // solution-scoped join) — its logical name comes straight off the solution-scoped systemform row's
+        // objecttypecode (which Dataverse returns as the entity logical name).
+        _serviceMock.SetupSystemFormsInSolution((formId, "Account Main", currentFormXml, "account"));
 
         var result = await _service.CleanupOrphanedAsync(_serviceMock, _webresourceRoot, "MySolution", force: false, dryRun: true);
 
@@ -169,7 +168,7 @@ public class FormEventServiceTests : IDisposable
 
         var formId = Guid.NewGuid();
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
-        _serviceMock.SetupSystemFormsInSolution((formId, "Account Main", "<form></form>", 1));
+        _serviceMock.SetupSystemFormsInSolution((formId, "Account Main", "<form></form>", "account"));
 
         var cleanupResult = await _service.CleanupOrphanedAsync(_serviceMock, _webresourceRoot, "MySolution", force: false, dryRun: true);
         var registerResult = await _service.RegisterAsync(_serviceMock, _webresourceRoot, "MySolution", force: false, dryRun: true);
@@ -202,10 +201,8 @@ public class FormEventServiceTests : IDisposable
             FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "legacyFn", "my_MySolution/stale.js"), "");
         var currentFormXml = BuildFormXml(FormEventType.OnLoad, new HashSet<FormHandler> { staleHandler }, new HashSet<FormLibraryEntry> { staleLibrary });
 
-        // form.js's annotation names "account", so the forward objecttypecode lookup covers this scenario's
-        // reverse-resolution need too (KTD11) — no separate RetrieveAllEntities setup required here.
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
-        _serviceMock.SetupSystemFormsInSolution((formId, "Account Main", currentFormXml, 1));
+        _serviceMock.SetupSystemFormsInSolution((formId, "Account Main", currentFormXml, "account"));
 
         var writtenFormXmlInCallOrder = new List<string>();
         _serviceMock.UpdateAsync(Arg.Do<Entity>(e => writtenFormXmlInCallOrder.Add((string)e["formxml"])), Arg.Any<CancellationToken>())
