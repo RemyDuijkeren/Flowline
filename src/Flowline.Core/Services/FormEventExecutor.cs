@@ -52,10 +52,15 @@ public class FormEventExecutor(IAnsiConsole console)
 
         var failures = new List<(string Name, Exception Error)>();
         var formCount = plan.DistinctFormCount;
+        // Progress previously only counted per-form UpdateAsync completions, so it sat frozen at 100% while
+        // the (serialized, sometimes multi-second) per-entity PublishXml calls still ran afterward —
+        // reported live as an apparent hang with no spinner. One extra unit per distinct entity accounts
+        // for that publish step too.
+        var entityCount = plan.Forms.Select(f => f.EntityLogicalName).Distinct(StringComparer.OrdinalIgnoreCase).Count();
 
         await console.Progress().StartAsync(ctx =>
             ExecuteByEntityAsync(service, snapshot, plan, removeUnrecognized, cleanupOnly, failures,
-                ctx.AddTask("Updating forms", maxValue: formCount), cancellationToken)).ConfigureAwait(false);
+                ctx.AddTask("Updating and publishing forms", maxValue: formCount + entityCount), cancellationToken)).ConfigureAwait(false);
 
         if (failures.Count > 0)
         {
@@ -281,6 +286,7 @@ public class FormEventExecutor(IAnsiConsole console)
                     lock (failures) failures.Add((entityGroup.Key, ex));
                 }
                 finally { publishGate.Release(); }
+                progressTask.Increment(1);
             });
 
         await Task.WhenAll(entityTasks).ConfigureAwait(false);
