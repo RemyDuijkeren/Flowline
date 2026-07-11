@@ -340,7 +340,7 @@ public class FormEventPlannerTests
 
         var snapshot = BuildSnapshot([resolved], ("account", "Account Main", form));
 
-        var ex = Assert.Throws<InvalidOperationException>(() => _planner.Plan(snapshot));
+        var ex = Assert.Throws<FlowlineException>(() => _planner.Plan(snapshot));
 
         Assert.Contains("src/empty.ts", ex.Message);
         Assert.Contains("onLoad", ex.Message);
@@ -369,7 +369,7 @@ public class FormEventPlannerTests
             ("account", "Account Main", formGood),
             ("contact", "Contact Main", formBad));
 
-        var ex = Assert.Throws<InvalidOperationException>(() => _planner.Plan(snapshot));
+        var ex = Assert.Throws<FlowlineException>(() => _planner.Plan(snapshot));
 
         Assert.Contains("src/bad.ts", ex.Message);
         Assert.Contains("MissingFn", ex.Message);
@@ -421,7 +421,7 @@ public class FormEventPlannerTests
             ("contact", "Contact Main", formBad1),
             ("lead", "Lead Main", formBad2));
 
-        var ex = Assert.Throws<InvalidOperationException>(() => _planner.Plan(snapshot));
+        var ex = Assert.Throws<FlowlineException>(() => _planner.Plan(snapshot));
 
         // Both failures are reported — proves processing of later groups isn't short-circuited by the first.
         Assert.Contains("src/bad1.ts", ex.Message);

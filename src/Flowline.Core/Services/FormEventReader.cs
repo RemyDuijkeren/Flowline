@@ -172,8 +172,11 @@ public class FormEventReader(IAnsiConsole console)
 
         // Failures are isolated per-annotation above — every annotation gets a chance to resolve before
         // this throws, so a single bad declaration never prevents the others from being attempted.
+        // FlowlineException, not a raw exception: an unresolvable entity/form is a user-actionable
+        // annotation problem, not an internal bug — Program.cs prints it as a clean "Error: ..." line
+        // instead of dumping a full stack trace for something the user needs to fix.
         if (errors.Count > 0)
-            throw new InvalidOperationException(
+            throw new FlowlineException(ExitCode.ValidationFailed,
                 "Form event annotations failed to resolve:\n" + string.Join("\n", errors));
 
         return new FormEventSnapshot(validAnnotations.AsReadOnly(), trackedLibraryNames, resolvedForms.AsReadOnly());

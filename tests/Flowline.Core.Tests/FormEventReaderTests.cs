@@ -115,7 +115,7 @@ public class FormEventReaderTests : IDisposable
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
         _serviceMock.SetupSystemFormsInSolution((Guid.NewGuid(), "Account Main", "<form>main</form>", "account"));
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
             _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution"));
 
         Assert.Contains("bad.js", ex.Message);
@@ -143,7 +143,7 @@ public class FormEventReaderTests : IDisposable
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
         _serviceMock.SetupSystemFormsInSolution((Guid.NewGuid(), "Account Main", "<form>main</form>", "account"));
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
             _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution"));
 
         Assert.Contains("bad.js", ex.Message);
@@ -163,7 +163,7 @@ public class FormEventReaderTests : IDisposable
         // No solution-scoped or global systemform setup — both default to an empty EntityCollection, so
         // the fallback global lookup finds nothing either: R8's "doesn't exist at all".
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
             _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution"));
 
         Assert.Contains("form.js", ex.Message);
@@ -182,7 +182,7 @@ public class FormEventReaderTests : IDisposable
         _serviceMock.SetupSystemForms(1, "Account Main", (Guid.NewGuid(), "Account Main", "<form>main</form>"));
         // ...but the solution-scoped query (left at its default empty EntityCollection) has no such component.
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
             _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution"));
 
         Assert.Contains("form.js", ex.Message);
@@ -203,7 +203,7 @@ public class FormEventReaderTests : IDisposable
             (Guid.NewGuid(), "Account Main", "<form>1</form>", "account"),
             (Guid.NewGuid(), "Account Main", "<form>2</form>", "account"));
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
             _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution"));
 
         Assert.Contains("form.js", ex.Message);

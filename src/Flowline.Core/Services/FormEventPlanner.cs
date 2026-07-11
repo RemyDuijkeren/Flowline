@@ -222,8 +222,11 @@ public class FormEventPlanner(IAnsiConsole console)
 
         // Failures are isolated per-annotation above — every annotation gets a chance to resolve before
         // this throws, so a single unresolvable function never prevents the others from being planned.
+        // FlowlineException, not a raw exception: this is a user-actionable annotation problem (a typo'd
+        // or genuinely missing function name), not an internal bug — Program.cs prints it as a clean
+        // "Error: ..." line instead of dumping a full stack trace for something the user needs to fix.
         if (errors.Count > 0)
-            throw new InvalidOperationException(
+            throw new FlowlineException(ExitCode.ValidationFailed,
                 "Form event annotations failed to resolve required functions:\n" + string.Join("\n", errors));
 
         return plan;
