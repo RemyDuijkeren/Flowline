@@ -64,10 +64,14 @@ public class FormEventExecutor(IAnsiConsole console)
         // for that publish step too.
         var entityCount = plan.Forms.Select(f => f.EntityLogicalName).Distinct(StringComparer.OrdinalIgnoreCase).Count();
 
+        // Phase-aware label, mirroring WebResourceExecutor's per-operation naming ("Creating web
+        // resources", "Deleting web resources", ...) rather than one generic combined label: cleanup is
+        // removals-only, registration is everything else.
+        var progressLabel = cleanupOnly ? "Cleaning forms" : "Updating forms";
         await console.Progress().StartAsync(ctx =>
             ExecuteByEntityAsync(service, snapshot, plan, removeUnrecognized, cleanupOnly, failures,
                 appliedHandlerChanges, appliedLibraryChanges, changesLock,
-                ctx.AddTask("Updating and publishing forms", maxValue: formCount + entityCount), cancellationToken)).ConfigureAwait(false);
+                ctx.AddTask(progressLabel, maxValue: formCount + entityCount), cancellationToken)).ConfigureAwait(false);
 
         if (failures.Count > 0)
         {
