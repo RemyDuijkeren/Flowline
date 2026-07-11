@@ -341,14 +341,19 @@ public class FormEventExecutor(IAnsiConsole console)
             // <event> element, so an earlier iteration in this loop (a different event) never touches this one.
             var currentHandlers = FormXmlEventSerializer.GetHandlers(xdoc, formPlan.Event);
 
-            // cleanupOnly (KTD12's phase-1 cleanup pass, U7): only write removals that are already safe —
-            // never a brand-new library reference, since at this point in the three-phase sequence the web
-            // resource it points at may not exist in Dataverse yet. Intersecting desired against the form's
-            // pristine (pre-mutation) current state achieves that with no extra Dataverse lookup: anything
-            // desired-but-not-current necessarily needs a library that isn't on the form yet, so it's
-            // excluded here and deferred to the later registration-phase call.
+            // cleanupOnly (KTD12's phase-1 cleanup pass, U7): removals only, never additions or in-place
+            // updates — a clean separation of concerns where cleanup only ever shrinks the current set, and
+            // registration is the only phase that adds or modifies (parameter-only changes included).
+            // Sourced from currentHandlers (not desired): a wanted-but-not-yet-updatable handler survives
+            // with its exact current value untouched, rather than being excluded — excluding it here would
+            // make SetHandlers (which replaces the whole set) drop it entirely instead of leaving it as-is.
+            // Only an identity genuinely absent from desired altogether (truly orphaned, or never wanted)
+            // is left out, which is what actually removes it.
             if (cleanupOnly)
-                desired = desired.Where(currentHandlers.Contains);
+            {
+                var desiredIdentities = desired.ToHashSet();
+                desired = currentHandlers.Where(desiredIdentities.Contains);
+            }
 
             var desiredSet = desired.ToHashSet();
             var (added, updated, removed) = FormHandlerDiffer.Diff(desiredSet, currentHandlers);

@@ -495,8 +495,36 @@ public class FormEventExecutorTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_CleanupOnlyDesiredHandlerAlreadyCurrentWithChangedParameters_UpdateIsWritten()
+    public async Task ExecuteAsync_CleanupOnlyDesiredHandlerAlreadyCurrentWithChangedParameters_UpdateDeferredNothingWritten()
     {
+        // Cleanup is removals-only (clean separation of concerns) — a parameter-only change is an update,
+        // not a removal, so it's deferred to registration even though the handler's library is already
+        // safely on the form and applying it now would have been technically safe.
+        var formId = Guid.NewGuid();
+        var currentHandler = new FormHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "oldParams");
+        var desiredHandler = currentHandler with { Parameters = "newParams" };
+        var library = new FormLibraryEntry("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
+
+        var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
+            new HashSet<FormHandler> { desiredHandler }, new HashSet<UnrecognizedHandler>(),
+            new HashSet<FormLibraryEntry> { library });
+
+        var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account",
+            BuildFormXml(FormEventType.OnLoad, new HashSet<FormHandler> { currentHandler }, new HashSet<FormLibraryEntry> { library })));
+        var plan = BuildPlan(formPlan);
+
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: true);
+
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(
+            Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_RegistrationDesiredHandlerAlreadyCurrentWithChangedParameters_UpdateIsWritten()
+    {
+        // Same scenario as the cleanup-deferral test above, but for the registration (cleanupOnly: false)
+        // pass — this is where a parameter-only update actually gets applied.
         var formId = Guid.NewGuid();
         var currentHandler = new FormHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "oldParams");
         var desiredHandler = currentHandler with { Parameters = "newParams" };
@@ -511,11 +539,11 @@ public class FormEventExecutorTests
         var plan = BuildPlan(formPlan);
         var captured = CaptureUpdatedFormXml();
 
-        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: true);
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false);
 
         var written = GetHandlersFromCapturedXml(captured, formId, FormEventType.OnLoad);
         var writtenHandler = Assert.Single(written);
-        Assert.Equal("newParams", writtenHandler.Parameters); // library already on the form — safe to apply now
+        Assert.Equal("newParams", writtenHandler.Parameters);
     }
 
     [Fact]
