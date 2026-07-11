@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Flowline.Core.Models;
 
@@ -97,21 +96,6 @@ public static class FormXmlEventSerializer
                 new XAttribute("name", library.Name),
                 new XAttribute("libraryUniqueId", $"{{{library.LibraryUniqueId}}}")));
         }
-    }
-
-    public static (string? FunctionName, bool Found) ResolveFunction(string builtJsContent, string requestedFunctionName, string autoNamespace)
-    {
-        var escaped = Regex.Escape(requestedFunctionName);
-
-        var namespacedMatch = Regex.Match(builtJsContent, $@"exports\.(?<name>{escaped})\s*=", RegexOptions.IgnoreCase);
-        if (namespacedMatch.Success)
-            return ($"{autoNamespace}.{namespacedMatch.Groups["name"].Value}", true);
-
-        var bareMatch = Regex.Match(builtJsContent, $@"function\s+(?<name>{escaped})\s*\(|const\s+(?<name>{escaped})\s*=", RegexOptions.IgnoreCase);
-        if (bareMatch.Success)
-            return (bareMatch.Groups["name"].Value, true);
-
-        return (null, false);
     }
 
     static XElement GetOrAdd(XElement parent, string name)

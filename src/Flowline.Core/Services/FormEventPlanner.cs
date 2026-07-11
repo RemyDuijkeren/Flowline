@@ -13,11 +13,11 @@ public class FormEventPlanner(IAnsiConsole console)
         var errors = new List<string>();
 
         // Case-insensitive lookup from (Entity, Form) to its current annotations, keyed the same way
-        // snapshot.Forms itself is keyed — annotation casing isn't guaranteed to match the form's own
-        // EntityLogicalName/Name casing exactly.
+        // snapshot.Forms itself is keyed (FormEventReader.FormKeyComparer) — annotation casing isn't
+        // guaranteed to match the form's own EntityLogicalName/Name casing exactly.
         var annotationsByForm = snapshot.Annotations
-            .GroupBy(a => (Entity: a.Annotation.Entity.ToLowerInvariant(), Form: a.Annotation.Form.ToLowerInvariant()))
-            .ToDictionary(g => g.Key, g => g.ToList());
+            .GroupBy(a => (a.Annotation.Entity, a.Annotation.Form), FormEventReader.FormKeyComparer.Instance)
+            .ToDictionary(g => g.Key, g => g.ToList(), FormEventReader.FormKeyComparer.Instance);
 
         // R14: iterate every solution-scoped form (not just annotation-referenced ones), so a form whose
         // last annotation was removed is still evaluated and its now-orphaned Handler gets cleaned up.
@@ -28,8 +28,7 @@ public class FormEventPlanner(IAnsiConsole console)
             var xdoc = XDocument.Parse(dataverseForm.FormXml);
             var currentLibraries = FormXmlEventSerializer.GetLibraries(xdoc);
 
-            var lookupKey = (Entity: entity.ToLowerInvariant(), Form: form.ToLowerInvariant());
-            var formAnnotations = annotationsByForm.TryGetValue(lookupKey, out var list)
+            var formAnnotations = annotationsByForm.TryGetValue((entity, form), out var list)
                 ? list
                 : [];
 
@@ -77,30 +76,40 @@ public class FormEventPlanner(IAnsiConsole console)
 
                 var currentHandlers = FormXmlEventSerializer.GetHandlers(xdoc, evt);
 
-                // R15: a Handler on a library this project doesn't track is never evaluated for staleness
-                // or unrecognized status — it's simply carried through untouched so the write-back doesn't
-                // drop it (SetHandlers replaces the whole event's Handlers set on write).
+                // R15: a Handler on a library this project doesn't track, and whose ID Flowline didn't
+                // derive, is never evaluated for staleness or unrecognized status — it's simply carried
+                // through untouched so the write-back doesn't drop it (SetHandlers replaces the whole
+                // event's Handlers set on write).
                 var foreignHandlers = new HashSet<FormHandler>();
 
-                // Current entries on a tracked library with no matching annotation: safe to drop if
-                // Flowline's own deterministic derivation still matches the stored id (nothing else could
-                // have produced that exact id), otherwise it's unrecognized (R18) — kept by default, with a
-                // proposed adoption annotation (R18a), until the executor confirms removal.
+                // Current entries with no matching annotation: safe to drop if Flowline's own deterministic
+                // derivation still matches the stored id (nothing else could have produced that exact id —
+                // the hash is derived from this handler's own libraryName, so a match is proof of Flowline
+                // ownership REGARDLESS of whether that library is still locally tracked right now), otherwise
+                // it's unrecognized (R18) — kept by default, with a proposed adoption annotation (R18a),
+                // until the executor confirms removal.
+                //
+                // R14: the ID check runs BEFORE the tracked-library gate, not after. A library this project
+                // created a handler for can legitimately fall out of TrackedLibraryNames (built from
+                // currently-existing local files) once its source file is deleted entirely — that's exactly
+                // the "delete the JS file entirely" case R14 exists to close. Gating ownership recognition
+                // behind current tracked-status would silently reclassify that handler as "foreign" and
+                // never clean it up, defeating R14/KTD12 for the one scenario they were built to fix.
                 var unrecognized = new HashSet<UnrecognizedHandler>();
                 foreach (var current in currentHandlers)
                 {
-                    if (!snapshot.TrackedLibraryNames.Contains(current.LibraryName))
-                    {
-                        foreignHandlers.Add(current);
-                        continue;
-                    }
-
                     if (annotationDesired.Contains(current))
                         continue;
 
                     var expectedId = FormEventDeterministicId.ForHandler(entity, form, evt, current.FunctionName, current.LibraryName);
                     if (current.HandlerUniqueId == expectedId)
+                        continue; // stale, Flowline-owned — drop automatically, not added to desiredHandlers below
+
+                    if (!snapshot.TrackedLibraryNames.Contains(current.LibraryName))
+                    {
+                        foreignHandlers.Add(current);
                         continue;
+                    }
 
                     unrecognized.Add(new UnrecognizedHandler(current, BuildProposedAnnotation(entity, form, evt, current)));
                 }
@@ -115,7 +124,7 @@ public class FormEventPlanner(IAnsiConsole console)
                 var desiredLibraries = new HashSet<FormLibraryEntry>(currentLibraries);
                 foreach (var libraryName in desiredHandlers.Select(h => h.LibraryName).Distinct(StringComparer.OrdinalIgnoreCase))
                 {
-                    if (desiredLibraries.Any(l => string.Equals(l.Name, libraryName, StringComparison.OrdinalIgnoreCase)))
+                    if (desiredLibraries.Contains(new FormLibraryEntry(libraryName, Guid.Empty)))
                         continue;
                     desiredLibraries.Add(new FormLibraryEntry(libraryName, FormEventDeterministicId.ForLibrary(libraryName)));
                 }
@@ -145,25 +154,10 @@ public class FormEventPlanner(IAnsiConsole console)
         return plan;
     }
 
-    // FormHandler's Equals/GetHashCode are identity-only (FunctionName+LibraryName, R12 dedup key) so
-    // HashSet.SetEquals can't detect a Parameters-only change — compare full record equality here instead.
-    static bool HandlerSetsFullyEqual(IReadOnlySet<FormHandler> a, IReadOnlySet<FormHandler> b)
-    {
-        if (a.Count != b.Count) return false;
-
-        var byIdentity = b.ToDictionary(h => (h.FunctionName.ToLowerInvariant(), h.LibraryName.ToLowerInvariant()));
-
-        foreach (var handler in a)
-        {
-            var key = (handler.FunctionName.ToLowerInvariant(), handler.LibraryName.ToLowerInvariant());
-            if (!byIdentity.TryGetValue(key, out var match))
-                return false;
-            if (match.HandlerUniqueId != handler.HandlerUniqueId || match.Parameters != handler.Parameters)
-                return false;
-        }
-
-        return true;
-    }
+    // HashSet.SetEquals can't detect a Parameters-only change (FormHandler's equality is identity-only) —
+    // FormHandlerDiffer compares full record state on identity-matched pairs instead.
+    static bool HandlerSetsFullyEqual(IReadOnlySet<FormHandler> a, IReadOnlySet<FormHandler> b) =>
+        FormHandlerDiffer.Diff(a, b) is (0, 0, 0);
 
     // R18a: proposed annotation text built from the unrecognized handler's own stored state, in the same
     // `// flowline:onload/onsave <entity> "<form>" Function[(params)]` shape R1 defines. FunctionName is
@@ -176,14 +170,8 @@ public class FormEventPlanner(IAnsiConsole console)
         return $"// flowline:{directive} {entity} \"{form}\" {handler.FunctionName}{parameters}";
     }
 
-    static string DeriveAutoNamespace(string libraryName)
-    {
-        var lastSlash = libraryName.LastIndexOf('/');
-        var fileName = lastSlash >= 0 ? libraryName[(lastSlash + 1)..] : libraryName;
-        var lastDot = fileName.LastIndexOf('.');
-        var baseName = lastDot >= 0 ? fileName[..lastDot] : fileName;
-        return ToPascalCase(baseName);
-    }
+    static string DeriveAutoNamespace(string libraryName) =>
+        ToPascalCase(Path.GetFileNameWithoutExtension(libraryName));
 
     // Mirrors src/Flowline/Templates/WebResources/rollup.config.mjs's toPascalCase so the auto-derived
     // function namespace matches what the Rollup-built bundle actually exports.

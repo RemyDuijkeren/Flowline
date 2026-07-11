@@ -92,32 +92,27 @@ public class FormEventExecutor(IAnsiConsole console)
             + $"{added} handler(s) would be added, {updated} updated, {removed} removed. Run without --dry-run to apply.");
     }
 
-    // FormHandler's Equals/GetHashCode are identity-only (FunctionName+LibraryName) so a Parameters-only
-    // change lands in both DesiredHandlers and current by identity — Except() alone would silently call
-    // that "no change". Split identity matches with a differing full record (HandlerUniqueId/Parameters)
-    // into "updated" instead of leaving them uncounted, mirroring FormEventPlanner.HandlerSetsFullyEqual.
+    // Uses FormHandlerDiffer (shared with FormEventPlanner.HandlerSetsFullyEqual) since FormHandler's
+    // identity-only equality can't tell a Parameters-only change apart from no change on its own.
+    // Groups by FormId first so a form with both onLoad and onSave changes parses its formxml once,
+    // not once per event (mirrors BuildFormXml's grouping, below).
     static (int Added, int Updated, int Removed) SummarizeHandlerChanges(FormEventSnapshot snapshot, FormEventSyncPlan plan)
     {
         int added = 0, updated = 0, removed = 0;
-        foreach (var formPlan in plan.Forms)
+        foreach (var formGroup in plan.Forms.GroupBy(f => f.FormId))
         {
-            var dataverseForm = snapshot.Forms[(formPlan.EntityLogicalName, formPlan.FormName)];
-            var current = FormXmlEventSerializer.GetHandlers(XDocument.Parse(dataverseForm.FormXml), formPlan.Event);
-            var currentByIdentity = current.ToDictionary(h => (h.FunctionName.ToLowerInvariant(), h.LibraryName.ToLowerInvariant()));
+            var first = formGroup.First();
+            var dataverseForm = snapshot.Forms[(first.EntityLogicalName, first.FormName)];
+            var xdoc = XDocument.Parse(dataverseForm.FormXml);
 
-            foreach (var desired in formPlan.DesiredHandlers)
+            foreach (var formPlan in formGroup)
             {
-                var key = (desired.FunctionName.ToLowerInvariant(), desired.LibraryName.ToLowerInvariant());
-                if (!currentByIdentity.TryGetValue(key, out var match))
-                    added++;
-                // FormHandler's own Equals/!= is identity-only (overridden below the record default) — it
-                // can't tell a Parameters-only change apart from no change at all, so compare full state
-                // explicitly here instead.
-                else if (match.HandlerUniqueId != desired.HandlerUniqueId || match.Parameters != desired.Parameters)
-                    updated++;
+                var current = FormXmlEventSerializer.GetHandlers(xdoc, formPlan.Event);
+                var (a, u, r) = FormHandlerDiffer.Diff(formPlan.DesiredHandlers, current);
+                added += a;
+                updated += u;
+                removed += r;
             }
-
-            removed += current.Except(formPlan.DesiredHandlers).Count();
         }
         return (added, updated, removed);
     }

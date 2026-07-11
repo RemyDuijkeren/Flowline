@@ -66,9 +66,10 @@ public class FormEventReader(IAnsiConsole console)
             if (code is int c) entityByCode.TryAdd(c, entity);
 
         // R14: every systemform that's a component of this solution, not just forms named by a current
-        // annotation — mirrors OrphanCleanupService's solutioncomponent/solution join
-        // (OrphanCleanupService.cs:772/814/856), rooted at systemform since its own columns are needed.
-        var solutionFormEntities = await QuerySolutionScopedFormsAsync(service, solutionName, cancellationToken).ConfigureAwait(false);
+        // annotation. Filters directly on solutioncomponent.solutionid using the id WebResourceReader
+        // already resolved above — no second join to solution by uniquename needed (mirrors
+        // WebResourceReader.GetWebResourcesForSolutionAsync's single-link shape).
+        var solutionFormEntities = await QuerySolutionScopedFormsAsync(service, webResourceSnapshot.Solution.Id, cancellationToken).ConfigureAwait(false);
 
         var missingCodes = solutionFormEntities
             .Select(e => e.GetAttributeValue<int>("objecttypecode"))
@@ -254,11 +255,12 @@ public class FormEventReader(IAnsiConsole console)
         return await service.RetrieveAllAsync(query, cancellationToken).ConfigureAwait(false);
     }
 
-    // R14: rooted at systemform (not solutioncomponent, unlike OrphanCleanupService.QuerySolutionComponentsAsync)
-    // since name/formxml/objecttypecode are systemform's own columns — mirrors the same
-    // solutioncomponent -> solution join by uniquename (OrphanCleanupService.cs:772/814/856).
+    // R14: rooted at systemform (not solutioncomponent) since name/formxml/objecttypecode are systemform's
+    // own columns. Single link to solutioncomponent filtered by solutionid — mirrors
+    // WebResourceReader.GetWebResourcesForSolutionAsync, which resolves the solution once and filters
+    // directly by its id rather than joining to solution by uniquename a second time.
     static async Task<List<Entity>> QuerySolutionScopedFormsAsync(
-        IOrganizationServiceAsync2 service, string solutionName, CancellationToken cancellationToken)
+        IOrganizationServiceAsync2 service, Guid solutionId, CancellationToken cancellationToken)
     {
         var query = new QueryExpression("systemform")
         {
@@ -267,10 +269,8 @@ public class FormEventReader(IAnsiConsole console)
         };
 
         var componentLink = query.AddLink("solutioncomponent", "formid", "objectid", JoinOperator.Inner);
+        componentLink.LinkCriteria.AddCondition("solutionid", ConditionOperator.Equal, solutionId);
         componentLink.LinkCriteria.AddCondition("componenttype", ConditionOperator.Equal, SystemFormComponentType);
-
-        var solutionLink = componentLink.AddLink("solution", "solutionid", "solutionid", JoinOperator.Inner);
-        solutionLink.LinkCriteria.AddCondition("uniquename", ConditionOperator.Equal, solutionName);
 
         return await service.RetrieveAllAsync(query, cancellationToken).ConfigureAwait(false);
     }
@@ -298,8 +298,10 @@ public class FormEventReader(IAnsiConsole console)
     }
 
     // Case-insensitive (Entity, Form) key comparer — DB-returned names and reverse-resolved logical
-    // names aren't guaranteed to share the annotation's exact casing.
-    sealed class FormKeyComparer : IEqualityComparer<(string Entity, string Form)>
+    // names aren't guaranteed to share the annotation's exact casing. Internal (not private) so
+    // FormEventPlanner can key its own annotation-lookup dictionary the same way instead of re-deriving
+    // the same case-insensitive rule via manual ToLowerInvariant() tuples.
+    internal sealed class FormKeyComparer : IEqualityComparer<(string Entity, string Form)>
     {
         public static readonly FormKeyComparer Instance = new();
 

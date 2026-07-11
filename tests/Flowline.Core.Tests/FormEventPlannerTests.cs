@@ -172,6 +172,32 @@ public class FormEventPlannerTests
     }
 
     [Fact]
+    public void Plan_FlowlineOwnedHandlerOnJustDeletedLibrary_StillRecognizedAndRemovedNotCarriedThroughAsForeign()
+    {
+        // R14 regression: deleting a JS file entirely removes it from TrackedLibraryNames (built from
+        // currently-existing local files, not history) — this must NOT reclassify a Flowline-created
+        // handler on that library as "foreign" and carry it through untouched, or the cleanup phase never
+        // clears the reference and the subsequent web resource DeleteAsync hits the exact Dataverse
+        // dependency-fault KTD12 exists to prevent. The deterministic ID match (proof of Flowline
+        // ownership, independent of current tracked-status) must be checked before the tracked-library
+        // gate, not after.
+        var handlerId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/deleted.js");
+        var current = new HashSet<FormHandler> { new("onLoad", "av_/deleted.js", handlerId, "") };
+        var formXml = BuildFormXml(FormEventType.OnLoad, current);
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        // No annotation anywhere for av_/deleted.js (its source file is gone) — and it's explicitly
+        // excluded from the tracked set, simulating "no longer present on local disk".
+        var snapshot = BuildSnapshotUntrackedLibrary([], "av_/deleted.js", ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.Empty(entry.DesiredHandlers); // dropped — NOT carried through as foreign
+        Assert.Empty(entry.UnrecognizedHandlers);
+    }
+
+    [Fact]
     public void Plan_FormWithHandlerAndZeroAnnotationsAnywhere_StillEvaluatedOrphanHandlerRemoved()
     {
         // R14 regression (KTD11): no annotation anywhere references this form/event — only reachable by

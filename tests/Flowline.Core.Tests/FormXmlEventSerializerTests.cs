@@ -237,52 +237,6 @@ public class FormXmlEventSerializerTests
         Assert.Equal(eventsBefore, doc.Root!.Element("events")!.ToString());
     }
 
-    // --- ResolveFunction ---
-
-    [Fact]
-    public void ResolveFunction_NamespacedRollupStyle_ReturnsNamespacedRealCasing()
-    {
-        const string builtJs = "function onLoad(executionContext) {} exports.onLoad = onLoad;";
-
-        var (functionName, found) = FormXmlEventSerializer.ResolveFunction(builtJs, "onload", "Example1");
-
-        Assert.True(found);
-        Assert.Equal("Example1.onLoad", functionName);
-    }
-
-    [Fact]
-    public void ResolveFunction_VerbatimBareFunctionDeclaration_ReturnsNoNamespace()
-    {
-        const string builtJs = "function onLoad(executionContext) { console.log('hi'); }";
-
-        var (functionName, found) = FormXmlEventSerializer.ResolveFunction(builtJs, "onLoad", "Example1");
-
-        Assert.True(found);
-        Assert.Equal("onLoad", functionName);
-    }
-
-    [Fact]
-    public void ResolveFunction_VerbatimArrowConstDeclaration_ReturnsFound()
-    {
-        const string builtJs = "const onLoad = (ctx) => { doStuff(ctx); };";
-
-        var (functionName, found) = FormXmlEventSerializer.ResolveFunction(builtJs, "onLoad", "Example1");
-
-        Assert.True(found);
-        Assert.Equal("onLoad", functionName);
-    }
-
-    [Fact]
-    public void ResolveFunction_NoMatch_ReturnsNotFound()
-    {
-        const string builtJs = "function somethingElse() {}";
-
-        var (functionName, found) = FormXmlEventSerializer.ResolveFunction(builtJs, "onLoad", "Example1");
-
-        Assert.False(found);
-        Assert.Null(functionName);
-    }
-
     // --- Round trip ---
 
     [Fact]
