@@ -28,7 +28,8 @@ public class FormEventAnnotationParserTests : IDisposable
         var path = Write("form.js", "// flowline:onload account \"Account\"\ncode();");
         var result = FormEventAnnotationParser.ParseAnnotations(path);
 
-        Assert.Equal([new FormEventAnnotation("account", "Account", FormEventType.OnLoad, null, null)], result);
+        Assert.Equal([new FormEventAnnotation("account", "Account", FormEventType.OnLoad, null, null)], result.Annotations);
+        Assert.Empty(result.MalformedLines);
     }
 
     [Fact]
@@ -37,7 +38,7 @@ public class FormEventAnnotationParserTests : IDisposable
         var path = Write("form.js", "// flowline:onload account Account CustomOnLoad\ncode();");
         var result = FormEventAnnotationParser.ParseAnnotations(path);
 
-        var annotation = Assert.Single(result);
+        var annotation = Assert.Single(result.Annotations);
         Assert.Equal("account", annotation.Entity);
         Assert.Equal("Account", annotation.Form);
         Assert.Equal(FormEventType.OnLoad, annotation.Event);
@@ -52,7 +53,7 @@ public class FormEventAnnotationParserTests : IDisposable
             "// flowline:onsave account \"Account form for Customer Card\" onSave(testParam1,testParam2)\ncode();");
         var result = FormEventAnnotationParser.ParseAnnotations(path);
 
-        var annotation = Assert.Single(result);
+        var annotation = Assert.Single(result.Annotations);
         Assert.Equal("account", annotation.Entity);
         Assert.Equal("Account form for Customer Card", annotation.Form);
         Assert.Equal(FormEventType.OnSave, annotation.Event);
@@ -66,7 +67,7 @@ public class FormEventAnnotationParserTests : IDisposable
         var path = Write("form.js", "// flowline:onsave account Account onSave(a, b, c)\ncode();");
         var result = FormEventAnnotationParser.ParseAnnotations(path);
 
-        var annotation = Assert.Single(result);
+        var annotation = Assert.Single(result.Annotations);
         Assert.Equal("a,b,c", annotation.Parameters);
     }
 
@@ -76,7 +77,7 @@ public class FormEventAnnotationParserTests : IDisposable
         var path = Write("form.js", "//! flowline:onload account Account\ncode();");
         var result = FormEventAnnotationParser.ParseAnnotations(path);
 
-        Assert.Equal([new FormEventAnnotation("account", "Account", FormEventType.OnLoad, null, null)], result);
+        Assert.Equal([new FormEventAnnotation("account", "Account", FormEventType.OnLoad, null, null)], result.Annotations);
     }
 
     [Fact]
@@ -85,7 +86,7 @@ public class FormEventAnnotationParserTests : IDisposable
         var path = Write("form.js", "/*! flowline:onload account Account */\ncode();");
         var result = FormEventAnnotationParser.ParseAnnotations(path);
 
-        Assert.Equal([new FormEventAnnotation("account", "Account", FormEventType.OnLoad, null, null)], result);
+        Assert.Equal([new FormEventAnnotation("account", "Account", FormEventType.OnLoad, null, null)], result.Annotations);
     }
 
     [Fact]
@@ -102,7 +103,7 @@ public class FormEventAnnotationParserTests : IDisposable
 
         var result = FormEventAnnotationParser.ParseAnnotations(path);
 
-        Assert.Equal([new FormEventAnnotation("account", "Account", FormEventType.OnLoad, null, null)], result);
+        Assert.Equal([new FormEventAnnotation("account", "Account", FormEventType.OnLoad, null, null)], result.Annotations);
     }
 
     [Fact]
@@ -111,7 +112,7 @@ public class FormEventAnnotationParserTests : IDisposable
         var path = Write("form.js", "// flowline:onload account Account\ncode();");
         var result = FormEventAnnotationParser.ParseAnnotations(path);
 
-        Assert.Equal([new FormEventAnnotation("account", "Account", FormEventType.OnLoad, null, null)], result);
+        Assert.Equal([new FormEventAnnotation("account", "Account", FormEventType.OnLoad, null, null)], result.Annotations);
     }
 
     [Fact]
@@ -121,18 +122,19 @@ public class FormEventAnnotationParserTests : IDisposable
             "// flowline:onload account Account\n// flowline:onsave account Account\ncode();");
         var result = FormEventAnnotationParser.ParseAnnotations(path);
 
-        Assert.Equal(2, result.Count);
-        Assert.Equal(FormEventType.OnLoad, result[0].Event);
-        Assert.Equal(FormEventType.OnSave, result[1].Event);
+        Assert.Equal(2, result.Annotations.Count);
+        Assert.Equal(FormEventType.OnLoad, result.Annotations[0].Event);
+        Assert.Equal(FormEventType.OnSave, result.Annotations[1].Event);
     }
 
     [Fact]
-    public void ParseAnnotations_MissingForm_NotMatched()
+    public void ParseAnnotations_MissingForm_NotMatchedButFlaggedMalformed()
     {
         var path = Write("form.js", "// flowline:onload account\ncode();");
         var result = FormEventAnnotationParser.ParseAnnotations(path);
 
-        Assert.Empty(result);
+        Assert.Empty(result.Annotations);
+        Assert.Single(result.MalformedLines);
     }
 
     [Fact]
@@ -141,6 +143,34 @@ public class FormEventAnnotationParserTests : IDisposable
         var path = Write("form.js", "// just a regular comment\ncode();");
         var result = FormEventAnnotationParser.ParseAnnotations(path);
 
-        Assert.Empty(result);
+        Assert.Empty(result.Annotations);
+        Assert.Empty(result.MalformedLines);
+    }
+
+    [Fact]
+    public void ParseAnnotations_SingleQuotedFormNameWithSpaces_NotMatchedButFlaggedMalformed()
+    {
+        // Regression: a live push registered nothing for an annotation using single quotes around a
+        // multi-word form name ('Account Quick Create') — only double quotes are supported, so the strict
+        // grammar failed silently with no indication why. Must now be surfaced as malformed, not silently
+        // dropped like an ordinary non-matching comment.
+        var path = Write("form.js", "// flowline:onload account 'Account Quick Create'\ncode();");
+        var result = FormEventAnnotationParser.ParseAnnotations(path);
+
+        Assert.Empty(result.Annotations);
+        var malformed = Assert.Single(result.MalformedLines);
+        Assert.Contains("Account Quick Create", malformed);
+    }
+
+    [Fact]
+    public void ParseAnnotations_MalformedAndValidLinesInSameFile_BothReportedIndependently()
+    {
+        var path = Write("form.js",
+            "//! flowline:onload account AutomateValue\n//! flowline:onload account 'Account Quick Create'\ncode();");
+        var result = FormEventAnnotationParser.ParseAnnotations(path);
+
+        var annotation = Assert.Single(result.Annotations);
+        Assert.Equal("AutomateValue", annotation.Form);
+        Assert.Single(result.MalformedLines);
     }
 }

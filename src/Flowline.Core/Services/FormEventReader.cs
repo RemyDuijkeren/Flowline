@@ -173,7 +173,7 @@ public class FormEventReader(IAnsiConsole console)
         return new FormEventSnapshot(validAnnotations.AsReadOnly(), trackedLibraryNames, resolvedForms.AsReadOnly());
     }
 
-    static List<ResolvedFormEventAnnotation> CollectAnnotations(IEnumerable<LocalWebResource> localResources)
+    List<ResolvedFormEventAnnotation> CollectAnnotations(IEnumerable<LocalWebResource> localResources)
     {
         var result = new List<ResolvedFormEventAnnotation>();
         foreach (var resource in localResources)
@@ -186,10 +186,18 @@ public class FormEventReader(IAnsiConsole console)
                 ? string.Empty
                 : Encoding.UTF8.GetString(Convert.FromBase64String(resource.Content));
 
-            var annotations = FormEventAnnotationParser.ParseAnnotations(content.Split('\n'));
-            if (annotations.Count == 0) continue;
+            var parsed = FormEventAnnotationParser.ParseAnnotations(content.Split('\n'));
 
-            foreach (var annotation in annotations)
+            // A line that clearly intends to be a flowline:on... annotation but fails the strict grammar
+            // (e.g. a single-quoted form name — only double quotes are supported) would otherwise register
+            // nothing with no indication why. Surfaced here rather than an ordinary "not a match at all"
+            // comment, which stays silently ignored.
+            foreach (var line in parsed.MalformedLines)
+                console.Warning($"{Markup.Escape(resource.RelativePath)}: malformed flowline annotation, ignored — form names with spaces must be double-quoted: {Markup.Escape(line)}");
+
+            if (parsed.Annotations.Count == 0) continue;
+
+            foreach (var annotation in parsed.Annotations)
                 result.Add(new ResolvedFormEventAnnotation(annotation, resource.Name, content, resource.RelativePath));
         }
         return result;

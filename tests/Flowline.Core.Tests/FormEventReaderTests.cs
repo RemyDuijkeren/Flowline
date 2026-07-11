@@ -252,4 +252,21 @@ public class FormEventReaderTests : IDisposable
         await _serviceMock.Received(1).RetrieveMultipleAsync(
             Arg.Is<QueryExpression>(q => q.EntityName == "solution"), Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task LoadSnapshotAsync_MalformedAnnotationSingleQuotedForm_WarnsAndRegistersNothingForThatLine()
+    {
+        // Regression: a live push registered nothing for a single-quoted multi-word form name annotation,
+        // with no error or warning at all — the malformed line vanished silently. Must now warn, naming the
+        // file, so a user isn't left wondering why nothing happened.
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+            "// flowline:onload account 'Account Quick Create'\nfunction onLoad() {}");
+
+        var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        Assert.Empty(snapshot.Annotations);
+        Assert.Contains("form.js", _console.Output);
+        Assert.Contains("malformed", _console.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("double-quoted", _console.Output);
+    }
 }
