@@ -100,7 +100,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     }
 
     internal static readonly string[] ValidSpecifiers =
-        ["delete-orphans", "recreate-assembly", "unrecognized-form-handlers", "config", "all"];
+        ["delete-orphans", "recreate-assembly", "delete-form-handlers", "config", "all"];
     protected override string[] ValidForceSpecifiers => ValidSpecifiers;
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
@@ -171,7 +171,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             // KTD12: cleanup runs before web resources are created/updated/deleted — removes stale/orphaned
             // form event handlers (R14) so a pending web-resource delete never trips Dataverse's
             // "referenced by N other components" dependency fault.
-            pushedChanges |= await formEventService.CleanupOrphanedAsync(conn, webResourcesSyncFolder, solutionName, settings.HasForce("unrecognized-form-handlers"), dryRun, publishAfterSync, formEventCachePath, cancellationToken).ConfigureAwait(false);
+            pushedChanges |= await formEventService.CleanupOrphanedAsync(conn, webResourcesSyncFolder, solutionName, settings.HasForce("delete-form-handlers"), dryRun, publishAfterSync, formEventCachePath, cancellationToken).ConfigureAwait(false);
 
             if (pushScope.HasFlag(PushScope.WebResources))
             {
@@ -184,7 +184,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
 
             // R10a: registration runs strictly after web resources are pushed, same scope gate — new/updated
             // handlers can only reference libraries that already exist in Dataverse.
-            pushedChanges |= await formEventService.RegisterAsync(conn, webResourcesSyncFolder, solutionName, settings.HasForce("unrecognized-form-handlers"), dryRun, publishAfterSync, formEventCachePath, cancellationToken).ConfigureAwait(false);
+            pushedChanges |= await formEventService.RegisterAsync(conn, webResourcesSyncFolder, solutionName, settings.HasForce("delete-form-handlers"), dryRun, publishAfterSync, formEventCachePath, cancellationToken).ConfigureAwait(false);
         }
 
         Console.Done(runMode == RunMode.DryRun

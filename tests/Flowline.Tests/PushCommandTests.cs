@@ -256,7 +256,7 @@ public class PushCommandTests : IDisposable
         act.Should().Throw<FlowlineException>()
             .Where(e => e.ExitCode == ExitCode.ValidationFailed
                 && e.Message.Contains("delete-orphans") && e.Message.Contains("recreate-assembly")
-                && e.Message.Contains("unrecognized-form-handlers") && e.Message.Contains("config") && e.Message.Contains("all"));
+                && e.Message.Contains("delete-form-handlers") && e.Message.Contains("config") && e.Message.Contains("all"));
     }
 
     [Fact]
@@ -298,7 +298,7 @@ public class PushCommandTests : IDisposable
 
         settings.HasForce("delete-orphans").Should().BeTrue();
         settings.HasForce("recreate-assembly").Should().BeFalse();
-        settings.HasForce("unrecognized-form-handlers").Should().BeFalse();
+        settings.HasForce("delete-form-handlers").Should().BeFalse();
     }
 
     [Fact]
@@ -308,7 +308,7 @@ public class PushCommandTests : IDisposable
 
         settings.HasForce("delete-orphans").Should().BeTrue();
         settings.HasForce("recreate-assembly").Should().BeTrue();
-        settings.HasForce("unrecognized-form-handlers").Should().BeTrue();
+        settings.HasForce("delete-form-handlers").Should().BeTrue();
         settings.HasForce("config").Should().BeTrue();
     }
 
@@ -320,7 +320,7 @@ public class PushCommandTests : IDisposable
         settings.HasForce("delete-orphans").Should().BeTrue();
         settings.HasForce("config").Should().BeTrue();
         settings.HasForce("recreate-assembly").Should().BeFalse();
-        settings.HasForce("unrecognized-form-handlers").Should().BeFalse();
+        settings.HasForce("delete-form-handlers").Should().BeFalse();
     }
 
     // -- CommandApp parse seam (R1/R2/R3, AE1) — exit-code-only per KTD3's test-seam split;

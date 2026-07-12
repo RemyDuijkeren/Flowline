@@ -11,6 +11,8 @@ execution: code
 
 # Mandatory --force Specifier - Plan
 
+> **Update (2026-07-12):** `push`'s `unrecognized-form-handlers` specifier was renamed to `delete-form-handlers` for brevity. References to `unrecognized-form-handlers` below reflect the vocabulary as originally planned and implemented; the reasoning for the `form` domain prefix still applies, the `unrecognized` qualifier does not carry over.
+
 ## Goal Capsule
 
 - **Objective:** Replace bare `-f`/`--force` with a mandatory `--force <specifier>` across the CLI, so every force-gated hazard is named explicitly and never blanket-approved by accident.
