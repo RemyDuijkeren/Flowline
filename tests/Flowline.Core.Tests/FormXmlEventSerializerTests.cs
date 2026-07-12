@@ -128,7 +128,7 @@ public class FormXmlEventSerializerTests
     {
         var doc = XDocument.Parse(NoEventsFormXml);
         var handlerId = Guid.Parse("55555555-5555-5555-5555-555555555555");
-        var desired = new HashSet<FormHandler> { new("Example1.onLoad", "av_ns/example1.js", handlerId, "") };
+        var desired = new HashSet<FormEventHandler> { new("Example1.onLoad", "av_ns/example1.js", handlerId, "") };
 
         FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnLoad, desired);
 
@@ -155,7 +155,7 @@ public class FormXmlEventSerializerTests
     {
         var doc = XDocument.Parse(InternalAndPublicHandlersFormXml);
         var originalInternalHandlers = doc.Root!.Element("events")!.Element("event")!.Element("InternalHandlers")!.ToString();
-        var desired = new HashSet<FormHandler> { new("New.onLoad", "av_ns/new.js", Guid.NewGuid(), "") };
+        var desired = new HashSet<FormEventHandler> { new("New.onLoad", "av_ns/new.js", Guid.NewGuid(), "") };
 
         FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnLoad, desired);
 
@@ -171,7 +171,7 @@ public class FormXmlEventSerializerTests
     public void SetHandlers_RemovesExistingHandlersBeforeAddingDesired()
     {
         var doc = XDocument.Parse(InternalAndPublicHandlersFormXml);
-        var desired = new HashSet<FormHandler>
+        var desired = new HashSet<FormEventHandler>
         {
             new("A.onLoad", "av_ns/a.js", Guid.NewGuid(), ""),
             new("B.onLoad", "av_ns/b.js", Guid.NewGuid(), "")
@@ -191,7 +191,7 @@ public class FormXmlEventSerializerTests
         var onSaveEventBefore = doc.Root!.Element("events")!.Elements("event")
             .First(e => e.Attribute("name")?.Value == "onsave").ToString();
         var tabsBefore = doc.Root!.Element("tabs")!.ToString();
-        var desired = new HashSet<FormHandler> { new("New.onLoad", "av_ns/new.js", Guid.NewGuid(), "") };
+        var desired = new HashSet<FormEventHandler> { new("New.onLoad", "av_ns/new.js", Guid.NewGuid(), "") };
 
         FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnLoad, desired);
 
@@ -209,7 +209,7 @@ public class FormXmlEventSerializerTests
     {
         var doc = XDocument.Parse(NoEventsFormXml);
         var libraryId = Guid.Parse("66666666-6666-6666-6666-666666666666");
-        var desired = new HashSet<FormLibraryEntry> { new("av_ns/example1.js", libraryId) };
+        var desired = new HashSet<FormLibrary> { new("av_ns/example1.js", libraryId) };
 
         FormXmlEventSerializer.SetLibraries(doc, desired);
 
@@ -226,7 +226,7 @@ public class FormXmlEventSerializerTests
         var doc = XDocument.Parse(RealisticFormXml);
         var tabsBefore = doc.Root!.Element("tabs")!.ToString();
         var eventsBefore = doc.Root!.Element("events")!.ToString();
-        var desired = new HashSet<FormLibraryEntry> { new("av_ns/new.js", Guid.NewGuid()) };
+        var desired = new HashSet<FormLibrary> { new("av_ns/new.js", Guid.NewGuid()) };
 
         FormXmlEventSerializer.SetLibraries(doc, desired);
 
@@ -247,9 +247,9 @@ public class FormXmlEventSerializerTests
         var libraryId = Guid.Parse("88888888-8888-8888-8888-888888888888");
 
         FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnLoad,
-            new HashSet<FormHandler> { new("Example1.onLoad", "av_ns/example1.js", handlerId, "") });
+            new HashSet<FormEventHandler> { new("Example1.onLoad", "av_ns/example1.js", handlerId, "") });
         FormXmlEventSerializer.SetLibraries(doc,
-            new HashSet<FormLibraryEntry> { new("av_ns/example1.js", libraryId) });
+            new HashSet<FormLibrary> { new("av_ns/example1.js", libraryId) });
 
         var handlerElement = doc.Root!.Element("events")!.Element("event")!.Element("Handlers")!.Element("Handler")!;
         Assert.Equal("Example1.onLoad", handlerElement.Attribute("functionName")?.Value);
@@ -282,7 +282,7 @@ public class FormXmlEventSerializerTests
     {
         var doc = XDocument.Parse(InternalAndPublicHandlersFormXml);
 
-        FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnLoad, new HashSet<FormHandler>());
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnLoad, new HashSet<FormEventHandler>());
 
         var handlersElement = doc.Root!.Element("events")!.Element("event")!.Element("Handlers");
         Assert.NotNull(handlersElement);
@@ -298,7 +298,7 @@ public class FormXmlEventSerializerTests
         // present at all, so it must be removed outright rather than left as an empty stub.
         var doc = XDocument.Parse(RealisticFormXml);
 
-        FormXmlEventSerializer.SetLibraries(doc, new HashSet<FormLibraryEntry>());
+        FormXmlEventSerializer.SetLibraries(doc, new HashSet<FormLibrary>());
 
         Assert.Null(doc.Root!.Element("formLibraries"));
     }

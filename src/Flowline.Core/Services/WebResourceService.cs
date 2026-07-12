@@ -137,8 +137,6 @@ public class WebResourceService(IAnsiConsole console)
         }
     }
 
-    enum PlanReportMode { Verbose, DryRun }
-
     void WritePlanReport(WebResourceSyncPlan plan, PlanReportMode mode, bool publishAfterSync = false)
     {
         Action<string> line = mode == PlanReportMode.Verbose
@@ -146,7 +144,7 @@ public class WebResourceService(IAnsiConsole console)
             : console.Info;
 
         var publishCount = publishAfterSync ? plan.PublishCount : 0;
-        var counts = JoinCounts(
+        var counts = PlanReportFormatting.JoinCounts(
             (plan.Deletes.Count, "delete(s)"), (plan.RemovesFromSolution.Count, "remove(s)"),
             (plan.Creates.Count, "create(s)"), (plan.Updates.Count, "update(s)"),
             (plan.AddsToSolution.Count, "add(s)"), (plan.Skips.Count, "skip(s)"),
@@ -168,12 +166,6 @@ public class WebResourceService(IAnsiConsole console)
             return;
 
         console.Ok($"Dry run: {counts}. Run without --dry-run to apply.");
-    }
-
-    static string JoinCounts(params (int Count, string Label)[] parts)
-    {
-        var nonZero = parts.Where(p => p.Count > 0).Select(p => $"{p.Count} {p.Label}").ToList();
-        return nonZero.Count > 0 ? string.Join(", ", nonZero) : "no changes";
     }
 
     static void WriteSection(Action<string> line, string label, List<WebResourcePlanAction> actions, bool withReason = false)

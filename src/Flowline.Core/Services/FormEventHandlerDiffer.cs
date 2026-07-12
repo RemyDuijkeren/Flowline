@@ -2,13 +2,13 @@ using Flowline.Core.Models;
 
 namespace Flowline.Core.Services;
 
-// FormHandler's Equals/GetHashCode are identity-only (FunctionName+LibraryName, R12 dedup key) so a
+// FormEventHandler's Equals/GetHashCode are identity-only (FunctionName+LibraryName, R12 dedup key) so a
 // Parameters-only change lands in both a desired and current set by identity — a plain set comparison
 // (Except/SetEquals) can't tell "updated" from "unchanged". Shared by FormEventPlanner (equality check)
 // and FormEventExecutor (dry-run added/updated/removed summary) so both compute this the same way.
-static class FormHandlerDiffer
+static class FormEventHandlerDiffer
 {
-    public static (int Added, int Updated, int Removed) Diff(IReadOnlySet<FormHandler> desired, IReadOnlySet<FormHandler> current)
+    public static (int Added, int Updated, int Removed) Diff(IReadOnlySet<FormEventHandler> desired, IReadOnlySet<FormEventHandler> current)
     {
         var (added, updated, removed) = DiffDetailed(desired, current);
         return (added.Count, updated.Count, removed.Count);
@@ -16,13 +16,13 @@ static class FormHandlerDiffer
 
     // Item-level variant of Diff, for callers that need to report exactly which handlers changed (e.g. the
     // executor's verbose/dry-run change report), not just counts.
-    public static (List<FormHandler> Added, List<FormHandler> Updated, List<FormHandler> Removed) DiffDetailed(
-        IReadOnlySet<FormHandler> desired, IReadOnlySet<FormHandler> current)
+    public static (List<FormEventHandler> Added, List<FormEventHandler> Updated, List<FormEventHandler> Removed) DiffDetailed(
+        IReadOnlySet<FormEventHandler> desired, IReadOnlySet<FormEventHandler> current)
     {
         var currentByIdentity = current.ToDictionary(h => h);
 
-        var added = new List<FormHandler>();
-        var updated = new List<FormHandler>();
+        var added = new List<FormEventHandler>();
+        var updated = new List<FormEventHandler>();
         foreach (var handler in desired)
         {
             if (!currentByIdentity.TryGetValue(handler, out var match))

@@ -91,6 +91,26 @@ public class FormEventServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RegisterAsync_PublishAfterSyncFalse_UpdatesButSkipsPublishXml()
+    {
+        // --no-publish threads through FormEventService the same way it already does for WebResourceService
+        // -- the handler write still happens, only PublishXml is skipped.
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+            "// flowline:onload account \"Account Main\" onLoadHandler\nfunction onLoadHandler() {}");
+
+        var formId = Guid.NewGuid();
+        _serviceMock.SetupEntityObjectTypeCode("account", 1);
+        _serviceMock.SetupSystemFormsInSolution((formId, "Account Main", "<form></form>", "account"));
+
+        var result = await _service.RegisterAsync(_serviceMock, _webresourceRoot, "MySolution", force: false, dryRun: false, publishAfterSync: false);
+
+        Assert.True(result);
+        await _serviceMock.Received(1).UpdateAsync(Arg.Is<Entity>(e => e.Id == formId), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(
+            Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task RegisterAsync_DryRunWithPendingChanges_ShouldNotWriteButShowRichPreviewReturnTrue()
     {
         File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
@@ -124,10 +144,10 @@ public class FormEventServiceTests : IDisposable
         File.WriteAllText(Path.Combine(_webresourceRoot, "stale.js"), "// no annotation here");
 
         var formId = Guid.NewGuid();
-        var staleLibrary = new FormLibraryEntry("my_MySolution/stale.js", FormEventDeterministicId.ForLibrary("my_MySolution/stale.js"));
-        var staleHandler = new FormHandler("legacyFn", "my_MySolution/stale.js",
+        var staleLibrary = new FormLibrary("my_MySolution/stale.js", FormEventDeterministicId.ForLibrary("my_MySolution/stale.js"));
+        var staleHandler = new FormEventHandler("legacyFn", "my_MySolution/stale.js",
             FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "legacyFn", "my_MySolution/stale.js"), "");
-        var currentFormXml = BuildFormXml(FormEventType.OnLoad, new HashSet<FormHandler> { staleHandler }, new HashSet<FormLibraryEntry> { staleLibrary });
+        var currentFormXml = BuildFormXml(FormEventType.OnLoad, new HashSet<FormEventHandler> { staleHandler }, new HashSet<FormLibrary> { staleLibrary });
 
         // No annotation names "account" in this scenario (R14: the form is only discovered via the
         // solution-scoped join) — its logical name comes straight off the solution-scoped systemform row's
@@ -216,10 +236,10 @@ public class FormEventServiceTests : IDisposable
             "// flowline:onload account \"Account Main\" onLoadHandler\nfunction onLoadHandler() {}");
 
         var formId = Guid.NewGuid();
-        var staleLibrary = new FormLibraryEntry("my_MySolution/stale.js", FormEventDeterministicId.ForLibrary("my_MySolution/stale.js"));
-        var staleHandler = new FormHandler("legacyFn", "my_MySolution/stale.js",
+        var staleLibrary = new FormLibrary("my_MySolution/stale.js", FormEventDeterministicId.ForLibrary("my_MySolution/stale.js"));
+        var staleHandler = new FormEventHandler("legacyFn", "my_MySolution/stale.js",
             FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "legacyFn", "my_MySolution/stale.js"), "");
-        var currentFormXml = BuildFormXml(FormEventType.OnLoad, new HashSet<FormHandler> { staleHandler }, new HashSet<FormLibraryEntry> { staleLibrary });
+        var currentFormXml = BuildFormXml(FormEventType.OnLoad, new HashSet<FormEventHandler> { staleHandler }, new HashSet<FormLibrary> { staleLibrary });
 
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
         _serviceMock.SetupSystemFormsInSolution((formId, "Account Main", currentFormXml, "account"));

@@ -19,6 +19,7 @@ public class FormEventReaderTests : IDisposable
     {
         _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
         _console = new TestConsole();
+        _console.Profile.Width = 400; // avoid word-wrap splitting assertion substrings across lines
         _reader = new FormEventReader(_console);
         _webresourceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(_webresourceRoot);
@@ -251,6 +252,74 @@ public class FormEventReaderTests : IDisposable
         // WebResourceReader.LoadSnapshotAsync still ran (it resolves the solution regardless of annotations).
         await _serviceMock.Received(1).RetrieveMultipleAsync(
             Arg.Is<QueryExpression>(q => q.EntityName == "solution"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task LoadSnapshotAsync_SolutionScopedForm_CarriesRowVersionIntoSnapshotForOptimisticConcurrency()
+    {
+        // RowVersion is a first-class SDK property (not a regular attribute), populated on every real
+        // Dataverse retrieve regardless of ColumnSet — confirmed live. FormEventExecutor's optimistic
+        // concurrency check depends on this actually reaching DataverseForm.RowVersion.
+        var formId = Guid.NewGuid();
+        var entities = new List<Entity>
+        {
+            new("systemform", formId)
+            {
+                ["name"] = "Account Main", ["formxml"] = "<form/>", ["objecttypecode"] = "account",
+                RowVersion = "12345"
+            }
+        };
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "systemform" && q.LinkEntities.Count > 0),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(entities)));
+
+        var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        var form = Assert.Single(snapshot.Forms).Value;
+        Assert.Equal("12345", form.RowVersion);
+    }
+
+    [Fact]
+    public async Task LoadSnapshotAsync_SolutionScopedFormMissingObjectTypeCode_WarnsAndSkipsForm()
+    {
+        // A systemform row can theoretically come back with no objecttypecode (defensive case — not
+        // reproduced live, but the reader guards it explicitly). Must warn (naming the form) and exclude
+        // it from snapshot.Forms entirely, rather than crash or silently include a form with no entity.
+        var brokenFormId = Guid.NewGuid();
+        var entities = new List<Entity>
+        {
+            new("systemform", brokenFormId) { ["name"] = "Broken Form", ["formxml"] = "<form/>", ["objecttypecode"] = null! }
+        };
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "systemform" && q.LinkEntities.Count > 0),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(entities)));
+
+        var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        Assert.Empty(snapshot.Forms);
+        Assert.Contains("Broken Form", _console.Output);
+        Assert.Contains("no objecttypecode", _console.Output, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task LoadSnapshotAsync_SolutionScopedFormMissingObjectTypeCode_SuppressWarningsSilencesIt()
+    {
+        var brokenFormId = Guid.NewGuid();
+        var entities = new List<Entity>
+        {
+            new("systemform", brokenFormId) { ["name"] = "Broken Form", ["formxml"] = "<form/>", ["objecttypecode"] = null! }
+        };
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "systemform" && q.LinkEntities.Count > 0),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(entities)));
+
+        var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution", suppressWarnings: true);
+
+        Assert.Empty(snapshot.Forms);
+        Assert.DoesNotContain("no objecttypecode", _console.Output, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

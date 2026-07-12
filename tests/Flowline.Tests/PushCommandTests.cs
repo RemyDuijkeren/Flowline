@@ -105,6 +105,34 @@ public class PushCommandTests : IDisposable
     }
 
     [Fact]
+    public void ResolveScope_WithFormEvents_ShouldReturnFormEvents()
+    {
+        var settings = new PushCommand.Settings { Scopes = [PushCommand.PushScope.FormEvents] };
+
+        PushCommand.ResolveScope(settings, standaloneMode: false).Should().Be(PushCommand.PushScope.FormEvents);
+    }
+
+    [Fact]
+    public void ResolveScope_StandaloneMode_WithFormEventsScopeButNoWebResourcesPath_ShouldThrow()
+    {
+        // FormEvents reads its annotations from the same --webresources folder web resource sync uses,
+        // so it needs that path even when requested on its own, without --scope webresources.
+        var settings = new PushCommand.Settings { Scopes = [PushCommand.PushScope.FormEvents] };
+
+        var act = () => PushCommand.ResolveScope(settings, standaloneMode: true);
+
+        act.Should().Throw<FlowlineException>();
+    }
+
+    [Fact]
+    public void ResolveScope_StandaloneMode_WithFormEventsScopeAndWebResourcesPath_ShouldReturnFormEvents()
+    {
+        var settings = new PushCommand.Settings { WebResources = "dist", Scopes = [PushCommand.PushScope.FormEvents] };
+
+        PushCommand.ResolveScope(settings, standaloneMode: true).Should().Be(PushCommand.PushScope.FormEvents);
+    }
+
+    [Fact]
     public void ValidateStandaloneMode_WithFlowlineFile_ShouldThrow()
     {
         File.WriteAllText(Path.Combine(_root, ".flowline"), "{}");

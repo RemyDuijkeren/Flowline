@@ -57,8 +57,8 @@ public class FormEventPlannerTests
     public void Plan_DesiredMatchesCurrentExactlyNoUnrecognized_ProducesNoPlanEntry()
     {
         var handlerId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js");
-        var current = new HashSet<FormHandler> { new("onLoad", "av_/lib.js", handlerId, "") };
-        var libraries = new HashSet<FormLibraryEntry> { new("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js")) };
+        var current = new HashSet<FormEventHandler> { new("onLoad", "av_/lib.js", handlerId, "") };
+        var libraries = new HashSet<FormLibrary> { new("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js")) };
         var formXml = BuildFormXml(FormEventType.OnLoad, current, libraries);
         var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
 
@@ -97,7 +97,7 @@ public class FormEventPlannerTests
     {
         var keptId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/keep.js");
         var orphanId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "orphanFn", "av_/orphan.js");
-        var current = new HashSet<FormHandler>
+        var current = new HashSet<FormEventHandler>
         {
             new("onLoad", "av_/keep.js", keptId, ""),
             new("orphanFn", "av_/orphan.js", orphanId, "")
@@ -122,7 +122,7 @@ public class FormEventPlannerTests
     public void Plan_OrphanedHandlerWithNonMatchingId_IsKeptAndFlaggedUnrecognized()
     {
         var keptId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/keep.js");
-        var current = new HashSet<FormHandler>
+        var current = new HashSet<FormEventHandler>
         {
             new("onLoad", "av_/keep.js", keptId, ""),
             new("manualFn", "av_/manual.js", Guid.NewGuid(), "")
@@ -151,7 +151,7 @@ public class FormEventPlannerTests
         // this test used to document, where an untracked-library handler was flagged unrecognized just
         // like a tracked one with a non-matching id.
         var keptId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/keep.js");
-        var current = new HashSet<FormHandler>
+        var current = new HashSet<FormEventHandler>
         {
             new("onLoad", "av_/keep.js", keptId, ""),
             new("untrackedFn", "av_/untracked.js", Guid.NewGuid(), "")
@@ -186,11 +186,11 @@ public class FormEventPlannerTests
         // library by fabricating a new <Library> entry with a Flowline-derived id — flipping
         // librariesChangedForForm to true and producing a spurious plan entry (via the narrow fallback)
         // for a form/entity this project was never asked to touch at all.
-        var foreignHandler = new FormHandler("thirdParty.onLoad", "thirdparty/lib.js", Guid.NewGuid(), "");
-        var current = new HashSet<FormHandler> { foreignHandler };
+        var foreignHandler = new FormEventHandler("thirdParty.onLoad", "thirdparty/lib.js", Guid.NewGuid(), "");
+        var current = new HashSet<FormEventHandler> { foreignHandler };
         // No libraries declared at all — foreignHandler's library is referenced by the handler but absent
         // from <formLibraries>, mirroring the live Dataverse OOB form exactly.
-        var formXml = BuildFormXml(FormEventType.OnLoad, current, new HashSet<FormLibraryEntry>());
+        var formXml = BuildFormXml(FormEventType.OnLoad, current, new HashSet<FormLibrary>());
         var form = new DataverseForm(Guid.NewGuid(), "Contact Main", "contact", formXml);
 
         // No annotation ever targets this form/entity.
@@ -212,7 +212,7 @@ public class FormEventPlannerTests
         // ownership, independent of current tracked-status) must be checked before the tracked-library
         // gate, not after.
         var handlerId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/deleted.js");
-        var current = new HashSet<FormHandler> { new("onLoad", "av_/deleted.js", handlerId, "") };
+        var current = new HashSet<FormEventHandler> { new("onLoad", "av_/deleted.js", handlerId, "") };
         var formXml = BuildFormXml(FormEventType.OnLoad, current);
         var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
 
@@ -238,12 +238,12 @@ public class FormEventPlannerTests
         // library must NOT be dropped just because ONE event's handler on it was cleanly removed if the
         // OTHER event still has a surviving handler referencing the same library.
         var staleOnLoadId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/shared.js");
-        var currentOnLoad = new HashSet<FormHandler> { new("onLoad", "av_/shared.js", staleOnLoadId, "") };
-        var currentOnSave = new HashSet<FormHandler> { new("onSave", "av_/shared.js", Guid.NewGuid(), "") }; // kept via annotation below
+        var currentOnLoad = new HashSet<FormEventHandler> { new("onLoad", "av_/shared.js", staleOnLoadId, "") };
+        var currentOnSave = new HashSet<FormEventHandler> { new("onSave", "av_/shared.js", Guid.NewGuid(), "") }; // kept via annotation below
 
         var xdoc = System.Xml.Linq.XDocument.Parse(BuildFormXml(FormEventType.OnLoad, currentOnLoad));
         FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnSave, currentOnSave);
-        FormXmlEventSerializer.SetLibraries(xdoc, new HashSet<FormLibraryEntry> { new("av_/shared.js", Guid.NewGuid()) });
+        FormXmlEventSerializer.SetLibraries(xdoc, new HashSet<FormLibrary> { new("av_/shared.js", Guid.NewGuid()) });
         var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", xdoc.ToString());
 
         // No annotation for onLoad (its handler is now orphaned and stale) — but a live annotation for
@@ -266,7 +266,7 @@ public class FormEventPlannerTests
         // R14 regression (KTD11): no annotation anywhere references this form/event — only reachable by
         // iterating snapshot.Forms (the full solution-scoped set), not by grouping snapshot.Annotations.
         var handlerId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "legacyOnLoad", "av_/legacy.js");
-        var current = new HashSet<FormHandler> { new("legacyOnLoad", "av_/legacy.js", handlerId, "") };
+        var current = new HashSet<FormEventHandler> { new("legacyOnLoad", "av_/legacy.js", handlerId, "") };
         var formXml = BuildFormXml(FormEventType.OnLoad, current);
         var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
 
@@ -283,7 +283,7 @@ public class FormEventPlannerTests
     public void Plan_UnrecognizedHandlerWithDottedFunctionName_ProposedAnnotationUsesDottedNameVerbatim()
     {
         var keptId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/keep.js");
-        var current = new HashSet<FormHandler>
+        var current = new HashSet<FormEventHandler>
         {
             new("onLoad", "av_/keep.js", keptId, ""),
             new("MyCompany.Example1.OnLoad", "av_/legacy.js", Guid.NewGuid(), "")
@@ -307,7 +307,7 @@ public class FormEventPlannerTests
     public void Plan_UnrecognizedHandlerWithParameters_ProposedAnnotationIncludesParameterSuffix()
     {
         var keptId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/keep.js");
-        var current = new HashSet<FormHandler>
+        var current = new HashSet<FormEventHandler>
         {
             new("onLoad", "av_/keep.js", keptId, ""),
             new("legacyFn", "av_/legacy.js", Guid.NewGuid(), "param1,param2")
@@ -434,8 +434,8 @@ public class FormEventPlannerTests
     public void Plan_ParametersChangedOnOtherwiseIdenticalHandler_ProducesPlanEntryWithNewParameters()
     {
         var handlerId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js");
-        var current = new HashSet<FormHandler> { new("onLoad", "av_/lib.js", handlerId, "oldParams") };
-        var libraries = new HashSet<FormLibraryEntry> { new("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js")) };
+        var current = new HashSet<FormEventHandler> { new("onLoad", "av_/lib.js", handlerId, "oldParams") };
+        var libraries = new HashSet<FormLibrary> { new("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js")) };
         var formXml = BuildFormXml(FormEventType.OnLoad, current, libraries);
         var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
 
@@ -460,8 +460,8 @@ public class FormEventPlannerTests
         // removed outside this feature entirely). A <formLibraries><Library> entry with no Handler using
         // it does nothing functionally, so it's safe to drop regardless of who removed the last handler
         // or when — Flowline doesn't need an attributable reason, only "is anything still using it".
-        var orphanLibrary = new FormLibraryEntry("av_/orphan.js", FormEventDeterministicId.ForLibrary("av_/orphan.js"));
-        var currentLibraries = new HashSet<FormLibraryEntry> { orphanLibrary };
+        var orphanLibrary = new FormLibrary("av_/orphan.js", FormEventDeterministicId.ForLibrary("av_/orphan.js"));
+        var currentLibraries = new HashSet<FormLibrary> { orphanLibrary };
         var formXml = BuildFormXml(libraries: currentLibraries);
         var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
 
@@ -483,8 +483,8 @@ public class FormEventPlannerTests
     {
         // Same scenario, but with no annotation-driven change on the form at all — only reachable via the
         // planner's narrow library-only fallback (no event's handlersChanged/unrecognized flips true).
-        var orphanLibrary = new FormLibraryEntry("av_/orphan.js", FormEventDeterministicId.ForLibrary("av_/orphan.js"));
-        var currentLibraries = new HashSet<FormLibraryEntry> { orphanLibrary };
+        var orphanLibrary = new FormLibrary("av_/orphan.js", FormEventDeterministicId.ForLibrary("av_/orphan.js"));
+        var currentLibraries = new HashSet<FormLibrary> { orphanLibrary };
         var formXml = BuildFormXml(libraries: currentLibraries);
         var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
 
@@ -506,9 +506,9 @@ public class FormEventPlannerTests
         // knowledge — must never be touched. Only libraries inside this project's own tracked-library
         // boundary (R15) are eligible for cleanup; anything else is left alone regardless of reference
         // count, since Flowline can't be certain nothing else on the platform depends on it.
-        var foreignLibrary = new FormLibraryEntry("msdyn_/Account/AssetCommon.Account.Library.js",
+        var foreignLibrary = new FormLibrary("msdyn_/Account/AssetCommon.Account.Library.js",
             FormEventDeterministicId.ForLibrary("msdyn_/Account/AssetCommon.Account.Library.js"));
-        var currentLibraries = new HashSet<FormLibraryEntry> { foreignLibrary };
+        var currentLibraries = new HashSet<FormLibrary> { foreignLibrary };
         var formXml = BuildFormXml(libraries: currentLibraries);
         var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
 

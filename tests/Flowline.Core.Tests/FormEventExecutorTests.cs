@@ -2,6 +2,7 @@ using System.ServiceModel;
 using System.Xml.Linq;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Messages;
 using NSubstitute;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
@@ -43,20 +44,20 @@ public class FormEventExecutorTests
         return captured;
     }
 
-    static IReadOnlySet<FormHandler> GetHandlersFromCapturedXml(Dictionary<Guid, string> captured, Guid formId, FormEventType evt) =>
+    static IReadOnlySet<FormEventHandler> GetHandlersFromCapturedXml(Dictionary<Guid, string> captured, Guid formId, FormEventType evt) =>
         FormXmlEventSerializer.GetHandlers(XDocument.Parse(captured[formId]), evt);
 
-    static IReadOnlySet<FormLibraryEntry> GetLibrariesFromCapturedXml(Dictionary<Guid, string> captured, Guid formId) =>
+    static IReadOnlySet<FormLibrary> GetLibrariesFromCapturedXml(Dictionary<Guid, string> captured, Guid formId) =>
         FormXmlEventSerializer.GetLibraries(XDocument.Parse(captured[formId]));
 
     [Fact]
     public async Task ExecuteAsync_NoUnrecognizedHandlers_NoConfirmationPromptUpdatesApplyDirectly()
     {
         var formId = Guid.NewGuid();
-        var handler = new FormHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
-        var library = new FormLibraryEntry("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
+        var handler = new FormEventHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
+        var library = new FormLibrary("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
         var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { handler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry> { library });
+            new HashSet<FormEventHandler> { handler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary> { library });
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
         var plan = BuildPlan(formPlan);
@@ -80,14 +81,14 @@ public class FormEventExecutorTests
         // one UpdateAsync call with both events' handlers intact, not two calls where the second
         // overwrites the first (last write wins against the same pristine formxml).
         var formId = Guid.NewGuid();
-        var onLoadHandler = new FormHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
-        var onSaveHandler = new FormHandler("onSave", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnSave, "onSave", "av_/lib.js"), "");
-        var library = new FormLibraryEntry("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
+        var onLoadHandler = new FormEventHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
+        var onSaveHandler = new FormEventHandler("onSave", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnSave, "onSave", "av_/lib.js"), "");
+        var library = new FormLibrary("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
 
         var onLoadPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { onLoadHandler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry> { library });
+            new HashSet<FormEventHandler> { onLoadHandler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary> { library });
         var onSavePlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnSave,
-            new HashSet<FormHandler> { onSaveHandler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry> { library });
+            new HashSet<FormEventHandler> { onSaveHandler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary> { library });
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
         var plan = BuildPlan(onLoadPlan, onSavePlan);
@@ -105,12 +106,12 @@ public class FormEventExecutorTests
     public async Task ExecuteAsync_UnrecognizedHandlersInteractiveConfirms_ProceedsHandlersRemoved()
     {
         var formId = Guid.NewGuid();
-        var recognized = new FormHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
-        var unrecognized = new FormHandler("manualFn", "av_/manual.js", Guid.NewGuid(), "");
+        var recognized = new FormEventHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
+        var unrecognized = new FormEventHandler("manualFn", "av_/manual.js", Guid.NewGuid(), "");
         const string proposedAnnotation = "// flowline:onload account \"Account Main\" manualFn";
         var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { recognized, unrecognized }, new HashSet<UnrecognizedHandler> { new(unrecognized, proposedAnnotation) },
-            new HashSet<FormLibraryEntry>());
+            new HashSet<FormEventHandler> { recognized, unrecognized }, new HashSet<UnrecognizedHandler> { new(unrecognized, proposedAnnotation) },
+            new HashSet<FormLibrary>());
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
         var plan = BuildPlan(formPlan);
@@ -131,20 +132,20 @@ public class FormEventExecutorTests
     public async Task ExecuteAsync_UnrecognizedHandlersInteractiveDeclines_OnlyThatRemovalExcludedOtherActionsApply()
     {
         var formIdA = Guid.NewGuid();
-        var existingRecognized = new FormHandler("onLoad", "av_/keep.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/keep.js"), "");
-        var newRecognized = new FormHandler("onSave", "av_/keep.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onSave", "av_/keep.js"), "");
-        var unrecognized = new FormHandler("manualFn", "av_/manual.js", Guid.NewGuid(), "");
+        var existingRecognized = new FormEventHandler("onLoad", "av_/keep.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/keep.js"), "");
+        var newRecognized = new FormEventHandler("onSave", "av_/keep.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onSave", "av_/keep.js"), "");
+        var unrecognized = new FormEventHandler("manualFn", "av_/manual.js", Guid.NewGuid(), "");
         var formPlanA = new FormEventFormPlan(formIdA, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { existingRecognized, newRecognized, unrecognized },
+            new HashSet<FormEventHandler> { existingRecognized, newRecognized, unrecognized },
             new HashSet<UnrecognizedHandler> { new(unrecognized, "") },
-            new HashSet<FormLibraryEntry>());
+            new HashSet<FormLibrary>());
 
         // Second, unrelated form with no unrecognized handlers — must still be updated regardless of the
         // decline decision on formPlanA.
         var formIdB = Guid.NewGuid();
-        var contactHandler = new FormHandler("onLoad", "av_/contact.js", FormEventDeterministicId.ForHandler("contact", "Contact Main", FormEventType.OnLoad, "onLoad", "av_/contact.js"), "");
+        var contactHandler = new FormEventHandler("onLoad", "av_/contact.js", FormEventDeterministicId.ForHandler("contact", "Contact Main", FormEventType.OnLoad, "onLoad", "av_/contact.js"), "");
         var formPlanB = new FormEventFormPlan(formIdB, "contact", "Contact Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { contactHandler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormEventHandler> { contactHandler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary>());
 
         var snapshot = BuildSnapshot(
             new DataverseForm(formIdA, "Account Main", "account", BuildFormXml()),
@@ -170,11 +171,11 @@ public class FormEventExecutorTests
     public async Task ExecuteAsync_UnrecognizedHandlersNonInteractiveNoForce_ThrowsBeforeApplyingAnythingNamesEveryHandler()
     {
         var formId = Guid.NewGuid();
-        var unrecognized = new FormHandler("manualFn", "av_/manual.js", Guid.NewGuid(), "");
+        var unrecognized = new FormEventHandler("manualFn", "av_/manual.js", Guid.NewGuid(), "");
         const string proposedAnnotation = "// flowline:onload account \"Account Main\" manualFn";
         var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { unrecognized }, new HashSet<UnrecognizedHandler> { new(unrecognized, proposedAnnotation) },
-            new HashSet<FormLibraryEntry>());
+            new HashSet<FormEventHandler> { unrecognized }, new HashSet<UnrecognizedHandler> { new(unrecognized, proposedAnnotation) },
+            new HashSet<FormLibrary>());
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
         var plan = BuildPlan(formPlan);
@@ -198,11 +199,11 @@ public class FormEventExecutorTests
     public async Task ExecuteAsync_UnrecognizedHandlersNonInteractiveForce_ProceedsWithoutPrompting()
     {
         var formId = Guid.NewGuid();
-        var recognized = new FormHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
-        var unrecognized = new FormHandler("manualFn", "av_/manual.js", Guid.NewGuid(), "");
+        var recognized = new FormEventHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
+        var unrecognized = new FormEventHandler("manualFn", "av_/manual.js", Guid.NewGuid(), "");
         var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { recognized, unrecognized }, new HashSet<UnrecognizedHandler> { new(unrecognized, "") },
-            new HashSet<FormLibraryEntry>());
+            new HashSet<FormEventHandler> { recognized, unrecognized }, new HashSet<UnrecognizedHandler> { new(unrecognized, "") },
+            new HashSet<FormLibrary>());
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
         var plan = BuildPlan(formPlan);
@@ -222,12 +223,12 @@ public class FormEventExecutorTests
     {
         var formIdA = Guid.NewGuid();
         var formIdB = Guid.NewGuid();
-        var handlerA = new FormHandler("onLoad", "av_/a.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/a.js"), "");
-        var handlerB = new FormHandler("onLoad", "av_/b.js", FormEventDeterministicId.ForHandler("account", "Account QuickCreate", FormEventType.OnLoad, "onLoad", "av_/b.js"), "");
+        var handlerA = new FormEventHandler("onLoad", "av_/a.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/a.js"), "");
+        var handlerB = new FormEventHandler("onLoad", "av_/b.js", FormEventDeterministicId.ForHandler("account", "Account QuickCreate", FormEventType.OnLoad, "onLoad", "av_/b.js"), "");
         var formPlanA = new FormEventFormPlan(formIdA, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { handlerA }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormEventHandler> { handlerA }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary>());
         var formPlanB = new FormEventFormPlan(formIdB, "account", "Account QuickCreate", FormEventType.OnLoad,
-            new HashSet<FormHandler> { handlerB }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormEventHandler> { handlerB }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary>());
 
         var snapshot = BuildSnapshot(
             new DataverseForm(formIdA, "Account Main", "account", BuildFormXml()),
@@ -244,16 +245,37 @@ public class FormEventExecutorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_PublishAfterSyncFalse_UpdatesStillWrittenButNoPublishXmlCall()
+    {
+        // --no-publish should extend to form-event handler changes too: the formxml write still happens
+        // (handlers are saved), only PublishXml is skipped -- the caller decides when it goes live.
+        var formId = Guid.NewGuid();
+        var handler = new FormEventHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
+        var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
+            new HashSet<FormEventHandler> { handler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary>());
+
+        var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
+        var plan = BuildPlan(formPlan);
+        var captured = CaptureUpdatedFormXml();
+
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false, publishAfterSync: false);
+
+        Assert.Contains(handler, GetHandlersFromCapturedXml(captured, formId, FormEventType.OnLoad));
+        await _serviceMock.DidNotReceive().ExecuteAsync(
+            Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ExecuteAsync_TwoDifferentEntities_TwoSeparatePublishXmlCalls()
     {
         var formIdA = Guid.NewGuid();
         var formIdB = Guid.NewGuid();
-        var handlerA = new FormHandler("onLoad", "av_/a.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/a.js"), "");
-        var handlerB = new FormHandler("onLoad", "av_/b.js", FormEventDeterministicId.ForHandler("contact", "Contact Main", FormEventType.OnLoad, "onLoad", "av_/b.js"), "");
+        var handlerA = new FormEventHandler("onLoad", "av_/a.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/a.js"), "");
+        var handlerB = new FormEventHandler("onLoad", "av_/b.js", FormEventDeterministicId.ForHandler("contact", "Contact Main", FormEventType.OnLoad, "onLoad", "av_/b.js"), "");
         var formPlanA = new FormEventFormPlan(formIdA, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { handlerA }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormEventHandler> { handlerA }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary>());
         var formPlanB = new FormEventFormPlan(formIdB, "contact", "Contact Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { handlerB }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormEventHandler> { handlerB }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary>());
 
         var snapshot = BuildSnapshot(
             new DataverseForm(formIdA, "Account Main", "account", BuildFormXml()),
@@ -276,12 +298,12 @@ public class FormEventExecutorTests
     {
         var formIdFails = Guid.NewGuid();
         var formIdOk = Guid.NewGuid();
-        var handlerFails = new FormHandler("onLoad", "av_/fails.js", FormEventDeterministicId.ForHandler("account", "Account Fails", FormEventType.OnLoad, "onLoad", "av_/fails.js"), "");
-        var handlerOk = new FormHandler("onLoad", "av_/ok.js", FormEventDeterministicId.ForHandler("account", "Account Ok", FormEventType.OnLoad, "onLoad", "av_/ok.js"), "");
+        var handlerFails = new FormEventHandler("onLoad", "av_/fails.js", FormEventDeterministicId.ForHandler("account", "Account Fails", FormEventType.OnLoad, "onLoad", "av_/fails.js"), "");
+        var handlerOk = new FormEventHandler("onLoad", "av_/ok.js", FormEventDeterministicId.ForHandler("account", "Account Ok", FormEventType.OnLoad, "onLoad", "av_/ok.js"), "");
         var formPlanFails = new FormEventFormPlan(formIdFails, "account", "Account Fails", FormEventType.OnLoad,
-            new HashSet<FormHandler> { handlerFails }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormEventHandler> { handlerFails }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary>());
         var formPlanOk = new FormEventFormPlan(formIdOk, "account", "Account Ok", FormEventType.OnLoad,
-            new HashSet<FormHandler> { handlerOk }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormEventHandler> { handlerOk }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary>());
 
         var snapshot = BuildSnapshot(
             new DataverseForm(formIdFails, "Account Fails", "account", BuildFormXml()),
@@ -310,9 +332,9 @@ public class FormEventExecutorTests
     public async Task ExecuteAsync_FailureMessageContainsBracketedText_ReportedLiterallyNotParsedAsMarkup()
     {
         var formId = Guid.NewGuid();
-        var handler = new FormHandler("onLoad", "av_/fails.js", FormEventDeterministicId.ForHandler("account", "Account Fails", FormEventType.OnLoad, "onLoad", "av_/fails.js"), "");
+        var handler = new FormEventHandler("onLoad", "av_/fails.js", FormEventDeterministicId.ForHandler("account", "Account Fails", FormEventType.OnLoad, "onLoad", "av_/fails.js"), "");
         var formPlan = new FormEventFormPlan(formId, "account", "Account Fails", FormEventType.OnLoad,
-            new HashSet<FormHandler> { handler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormEventHandler> { handler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary>());
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Fails", "account", BuildFormXml()));
         var plan = BuildPlan(formPlan);
@@ -333,12 +355,12 @@ public class FormEventExecutorTests
     {
         var formIdA = Guid.NewGuid();
         var formIdB = Guid.NewGuid();
-        var handlerA = new FormHandler("onLoad", "av_/a.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/a.js"), "");
-        var handlerB = new FormHandler("onLoad", "av_/b.js", FormEventDeterministicId.ForHandler("contact", "Contact Main", FormEventType.OnLoad, "onLoad", "av_/b.js"), "");
+        var handlerA = new FormEventHandler("onLoad", "av_/a.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/a.js"), "");
+        var handlerB = new FormEventHandler("onLoad", "av_/b.js", FormEventDeterministicId.ForHandler("contact", "Contact Main", FormEventType.OnLoad, "onLoad", "av_/b.js"), "");
         var formPlanA = new FormEventFormPlan(formIdA, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { handlerA }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormEventHandler> { handlerA }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary>());
         var formPlanB = new FormEventFormPlan(formIdB, "contact", "Contact Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { handlerB }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormEventHandler> { handlerB }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary>());
 
         var snapshot = BuildSnapshot(
             new DataverseForm(formIdA, "Account Main", "account", BuildFormXml()),
@@ -365,15 +387,88 @@ public class FormEventExecutorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_PublishXmlFails_MessageDistinguishesSavedFromPublished()
+    {
+        // The formxml write already succeeded when publish faults - the message must say so clearly
+        // (not just dump the raw fault), since Dataverse exposes no queryable "needs publish" signal
+        // for systemform to catch this on a later run.
+        var formId = Guid.NewGuid();
+        var handler = new FormEventHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
+        var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
+            new HashSet<FormEventHandler> { handler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary>());
+
+        var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
+        var plan = BuildPlan(formPlan);
+        CaptureUpdatedFormXml();
+
+        _serviceMock.ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>())
+            .Returns<OrganizationResponse>(_ => throw new FaultException<OrganizationServiceFault>(new OrganizationServiceFault(), "publish contention"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false));
+
+        Assert.Contains("saved, but the publish that makes them live failed", _console.Output);
+        Assert.Contains("not yet published", _console.Output);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_FormHasRowVersion_UpdatesWithOptimisticConcurrency()
+    {
+        // Confirmed live: systemform has IsOptimisticConcurrencyEnabled=true. When the snapshot carries
+        // a RowVersion (always true for a real Dataverse read), the write must use ConcurrencyBehavior
+        // .IfRowVersionMatches, not a plain unconditional UpdateAsync.
+        var formId = Guid.NewGuid();
+        var handler = new FormEventHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
+        var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
+            new HashSet<FormEventHandler> { handler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary>());
+
+        var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml(), RowVersion: "12345"));
+        var plan = BuildPlan(formPlan);
+
+        _serviceMock.ExecuteAsync(Arg.Is<UpdateRequest>(r => r.Target.Id == formId), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new UpdateResponse() as OrganizationResponse));
+
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false);
+
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is<UpdateRequest>(r => r.Target.Id == formId && r.Target.RowVersion == "12345" && r.ConcurrencyBehavior == ConcurrencyBehavior.IfRowVersionMatches),
+            Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ConcurrencyVersionMismatch_SurfacesActionableMessageNotRawFault()
+    {
+        var formId = Guid.NewGuid();
+        var handler = new FormEventHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
+        var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
+            new HashSet<FormEventHandler> { handler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary>());
+
+        var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml(), RowVersion: "12345"));
+        var plan = BuildPlan(formPlan);
+
+        _serviceMock.ExecuteAsync(Arg.Is<UpdateRequest>(r => r.Target.Id == formId), Arg.Any<CancellationToken>())
+            .Returns<OrganizationResponse>(_ => throw new FaultException<OrganizationServiceFault>(
+                new OrganizationServiceFault { ErrorCode = -2147088254 }, "The version of the existing record doesn't match the RowVersion property provided."));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false));
+
+        Assert.Contains("1 form event operation(s) failed", ex.Message);
+        Assert.Contains("modified since Flowline last read it", _console.Output);
+        Assert.Contains("re-run push", _console.Output);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_DryRunWithUnrecognizedHandlers_PrintsDetailAndAnnotationsWritesNothingNoPrompt()
     {
         var formId = Guid.NewGuid();
-        var recognized = new FormHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
-        var unrecognized = new FormHandler("manualFn", "av_/manual.js", Guid.NewGuid(), "");
+        var recognized = new FormEventHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
+        var unrecognized = new FormEventHandler("manualFn", "av_/manual.js", Guid.NewGuid(), "");
         const string proposedAnnotation = "// flowline:onload account \"Account Main\" manualFn";
         var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { recognized, unrecognized }, new HashSet<UnrecognizedHandler> { new(unrecognized, proposedAnnotation) },
-            new HashSet<FormLibraryEntry>());
+            new HashSet<FormEventHandler> { recognized, unrecognized }, new HashSet<UnrecognizedHandler> { new(unrecognized, proposedAnnotation) },
+            new HashSet<FormLibrary>());
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
         var plan = BuildPlan(formPlan);
@@ -393,20 +488,49 @@ public class FormEventExecutorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_DryRunWithForceAndUnrecognizedHandlers_ReportsRemovalMatchingRealForceRun()
+    {
+        // Regression: --dry-run --force previously always reported unrecognized handlers as kept
+        // (removeUnrecognized hardcoded to false in the preview), even though a real --force run
+        // would actually remove them — an automation script previewing an unattended force-push got
+        // an inaccurate, undercounted picture of what would change.
+        var formId = Guid.NewGuid();
+        var recognized = new FormEventHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
+        var unrecognized = new FormEventHandler("manualFn", "av_/manual.js", Guid.NewGuid(), "");
+        var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
+            new HashSet<FormEventHandler> { recognized, unrecognized }, new HashSet<UnrecognizedHandler> { new(unrecognized, "") },
+            new HashSet<FormLibrary>());
+
+        // Unrecognized handler is already present on the form's current formxml (the realistic R18
+        // shape: manually added, not Flowline-created) so excluding it from desired under force shows
+        // up as an actual removal, not merely "never added".
+        var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account",
+            BuildFormXml(FormEventType.OnLoad, new HashSet<FormEventHandler> { unrecognized })));
+        var plan = BuildPlan(formPlan);
+
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: true, dryRun: true, cleanupOnly: false);
+
+        Assert.Contains("1 handler(s) removed", _console.Output);
+        Assert.Contains("manualFn", _console.Output);
+
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ExecuteAsync_DryRunWithParametersOnlyChange_ReportedAsUpdatedNotSilentlyDropped()
     {
-        // FormHandler's identity equality ignores Parameters, so a Parameters-only change is present in
+        // FormEventHandler's identity equality ignores Parameters, so a Parameters-only change is present in
         // both "desired" and "current" by identity — the summary must not let that fall through the
         // added/removed counts as if nothing changed (R18b: the preview must be honest about updates too).
         var formId = Guid.NewGuid();
-        var currentHandler = new FormHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "oldParams");
+        var currentHandler = new FormEventHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "oldParams");
         var desiredHandler = currentHandler with { Parameters = "newParams" };
         var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { desiredHandler }, new HashSet<UnrecognizedHandler>(),
-            new HashSet<FormLibraryEntry>());
+            new HashSet<FormEventHandler> { desiredHandler }, new HashSet<UnrecognizedHandler>(),
+            new HashSet<FormLibrary>());
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account",
-            BuildFormXml(FormEventType.OnLoad, new HashSet<FormHandler> { currentHandler })));
+            BuildFormXml(FormEventType.OnLoad, new HashSet<FormEventHandler> { currentHandler })));
         var plan = BuildPlan(formPlan);
 
         await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: true, cleanupOnly: false);
@@ -426,12 +550,12 @@ public class FormEventExecutorTests
         // invisible in --dry-run. Also covers the underlying complaint that --verbose showed no more detail
         // than a bare form count, unlike WebResources/Plugins.
         var formId = Guid.NewGuid();
-        var orphanLibrary = new FormLibraryEntry("av_/orphan.js", FormEventDeterministicId.ForLibrary("av_/orphan.js"));
+        var orphanLibrary = new FormLibrary("av_/orphan.js", FormEventDeterministicId.ForLibrary("av_/orphan.js"));
         var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler>(), new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormEventHandler>(), new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary>());
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account",
-            BuildFormXml(FormEventType.OnLoad, new HashSet<FormHandler>(), new HashSet<FormLibraryEntry> { orphanLibrary })));
+            BuildFormXml(FormEventType.OnLoad, new HashSet<FormEventHandler>(), new HashSet<FormLibrary> { orphanLibrary })));
         var plan = BuildPlan(formPlan);
 
         await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: true, cleanupOnly: false);
@@ -449,10 +573,10 @@ public class FormEventExecutorTests
         // (post-execution), not the pre-narrowing plan — the single source of truth is BuildFormXml's own
         // change list, not a separate preview computation that could drift from it.
         var formId = Guid.NewGuid();
-        var handler = new FormHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
-        var library = new FormLibraryEntry("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
+        var handler = new FormEventHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
+        var library = new FormLibrary("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
         var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { handler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry> { library });
+            new HashSet<FormEventHandler> { handler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary> { library });
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
         var plan = BuildPlan(formPlan);
@@ -469,20 +593,20 @@ public class FormEventExecutorTests
     public async Task ExecuteAsync_CleanupOnlyMixOfNewAndStaleHandler_OnlyStaleRemovalWrittenNewExcluded()
     {
         var formId = Guid.NewGuid();
-        var staleHandler = new FormHandler("legacyFn", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "legacyFn", "av_/lib.js"), "");
-        var newHandler = new FormHandler("onLoad", "av_/new.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/new.js"), "");
-        var newLibrary = new FormLibraryEntry("av_/new.js", FormEventDeterministicId.ForLibrary("av_/new.js"));
-        var currentLibrary = new FormLibraryEntry("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
+        var staleHandler = new FormEventHandler("legacyFn", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "legacyFn", "av_/lib.js"), "");
+        var newHandler = new FormEventHandler("onLoad", "av_/new.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/new.js"), "");
+        var newLibrary = new FormLibrary("av_/new.js", FormEventDeterministicId.ForLibrary("av_/new.js"));
+        var currentLibrary = new FormLibrary("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
 
         // Planner already excludes a stale-but-deterministic-id handler from DesiredHandlers entirely (it's
         // simply not re-added on write) — only the new handler is in Desired here. staleHandler exists only
         // on the current form's formxml below.
         var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { newHandler }, new HashSet<UnrecognizedHandler>(),
-            new HashSet<FormLibraryEntry> { currentLibrary, newLibrary });
+            new HashSet<FormEventHandler> { newHandler }, new HashSet<UnrecognizedHandler>(),
+            new HashSet<FormLibrary> { currentLibrary, newLibrary });
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account",
-            BuildFormXml(FormEventType.OnLoad, new HashSet<FormHandler> { staleHandler }, new HashSet<FormLibraryEntry> { currentLibrary })));
+            BuildFormXml(FormEventType.OnLoad, new HashSet<FormEventHandler> { staleHandler }, new HashSet<FormLibrary> { currentLibrary })));
         var plan = BuildPlan(formPlan);
         var captured = CaptureUpdatedFormXml();
 
@@ -504,14 +628,14 @@ public class FormEventExecutorTests
         // cleanup's report was suppressed entirely (reasoning it would duplicate registration's report),
         // which left a genuine removal completely silent — indistinguishable from an apparent no-op hang.
         var formId = Guid.NewGuid();
-        var staleHandler = new FormHandler("legacyFn", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "legacyFn", "av_/lib.js"), "");
-        var staleLibrary = new FormLibraryEntry("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
+        var staleHandler = new FormEventHandler("legacyFn", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "legacyFn", "av_/lib.js"), "");
+        var staleLibrary = new FormLibrary("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
 
         var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler>(), new HashSet<UnrecognizedHandler>(), new HashSet<FormLibraryEntry>());
+            new HashSet<FormEventHandler>(), new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary>());
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account",
-            BuildFormXml(FormEventType.OnLoad, new HashSet<FormHandler> { staleHandler }, new HashSet<FormLibraryEntry> { staleLibrary })));
+            BuildFormXml(FormEventType.OnLoad, new HashSet<FormEventHandler> { staleHandler }, new HashSet<FormLibrary> { staleLibrary })));
         var plan = BuildPlan(formPlan);
         CaptureUpdatedFormXml();
 
@@ -536,16 +660,16 @@ public class FormEventExecutorTests
         // not a removal, so it's deferred to registration even though the handler's library is already
         // safely on the form and applying it now would have been technically safe.
         var formId = Guid.NewGuid();
-        var currentHandler = new FormHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "oldParams");
+        var currentHandler = new FormEventHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "oldParams");
         var desiredHandler = currentHandler with { Parameters = "newParams" };
-        var library = new FormLibraryEntry("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
+        var library = new FormLibrary("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
 
         var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { desiredHandler }, new HashSet<UnrecognizedHandler>(),
-            new HashSet<FormLibraryEntry> { library });
+            new HashSet<FormEventHandler> { desiredHandler }, new HashSet<UnrecognizedHandler>(),
+            new HashSet<FormLibrary> { library });
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account",
-            BuildFormXml(FormEventType.OnLoad, new HashSet<FormHandler> { currentHandler }, new HashSet<FormLibraryEntry> { library })));
+            BuildFormXml(FormEventType.OnLoad, new HashSet<FormEventHandler> { currentHandler }, new HashSet<FormLibrary> { library })));
         var plan = BuildPlan(formPlan);
 
         await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: true);
@@ -561,16 +685,16 @@ public class FormEventExecutorTests
         // Same scenario as the cleanup-deferral test above, but for the registration (cleanupOnly: false)
         // pass — this is where a parameter-only update actually gets applied.
         var formId = Guid.NewGuid();
-        var currentHandler = new FormHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "oldParams");
+        var currentHandler = new FormEventHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "oldParams");
         var desiredHandler = currentHandler with { Parameters = "newParams" };
-        var library = new FormLibraryEntry("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
+        var library = new FormLibrary("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
 
         var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { desiredHandler }, new HashSet<UnrecognizedHandler>(),
-            new HashSet<FormLibraryEntry> { library });
+            new HashSet<FormEventHandler> { desiredHandler }, new HashSet<UnrecognizedHandler>(),
+            new HashSet<FormLibrary> { library });
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account",
-            BuildFormXml(FormEventType.OnLoad, new HashSet<FormHandler> { currentHandler }, new HashSet<FormLibraryEntry> { library })));
+            BuildFormXml(FormEventType.OnLoad, new HashSet<FormEventHandler> { currentHandler }, new HashSet<FormLibrary> { library })));
         var plan = BuildPlan(formPlan);
         var captured = CaptureUpdatedFormXml();
 
@@ -591,12 +715,12 @@ public class FormEventExecutorTests
         // hitting 100% twice for the same push. The cleanup pass must skip both entirely when nothing was
         // actually written.
         var formId = Guid.NewGuid();
-        var newHandler = new FormHandler("onLoad", "av_/new.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/new.js"), "");
-        var newLibrary = new FormLibraryEntry("av_/new.js", FormEventDeterministicId.ForLibrary("av_/new.js"));
+        var newHandler = new FormEventHandler("onLoad", "av_/new.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/new.js"), "");
+        var newLibrary = new FormLibrary("av_/new.js", FormEventDeterministicId.ForLibrary("av_/new.js"));
 
         var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
-            new HashSet<FormHandler> { newHandler }, new HashSet<UnrecognizedHandler>(),
-            new HashSet<FormLibraryEntry> { newLibrary });
+            new HashSet<FormEventHandler> { newHandler }, new HashSet<UnrecognizedHandler>(),
+            new HashSet<FormLibrary> { newLibrary });
 
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
         var plan = BuildPlan(formPlan);

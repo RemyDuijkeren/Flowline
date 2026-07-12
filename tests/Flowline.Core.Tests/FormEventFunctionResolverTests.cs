@@ -40,6 +40,78 @@ public class FormEventFunctionResolverTests
     }
 
     [Fact]
+    public void Resolve_IifeNamespaceHasConfiguredPrefix_DefaultedGuess_UsesRealMultiSegmentNamespaceNotFilenameGuess()
+    {
+        // Live bug: Rollup's namespacePrefix setting (rollup.config.mjs) makes the built IIFE assign to
+        // a multi-segment global path (e.g. "this.Test.Example2 = ..."), but autoNamespace is always
+        // just ToPascalCase(filename) - a single segment ("Example2"), never "Test.Example2". Resolve
+        // must read the REAL namespace off the file's own IIFE invocation, not the filename guess, or
+        // every defaulted handler from this file gets registered under a global path that doesn't
+        // exist at runtime ("Example2.onLoad" instead of the real "Test.Example2.onLoad").
+        const string builtJs =
+            """
+            this.Test = this.Test || {};
+            (function (exports) {
+                'use strict';
+                function onLoad(executionContext) { }
+                exports.onLoad = onLoad;
+            })(this.Test.Example2 = this.Test.Example2 || {});
+            """;
+
+        var (functionName, found, confident) = FormEventFunctionResolver.Resolve(builtJs, "onLoad", "Example2", isExplicit: false);
+
+        Assert.True(found);
+        Assert.True(confident);
+        Assert.Equal("Test.Example2.onLoad", functionName);
+    }
+
+    [Fact]
+    public void Resolve_ExplicitDottedName_MatchesRealMultiSegmentIifeNamespace_FoundConfident()
+    {
+        const string builtJs =
+            """
+            this.Test = this.Test || {};
+            (function (exports) {
+                'use strict';
+                function onLoad(executionContext) { }
+                exports.onLoad = onLoad;
+            })(this.Test.Example2 = this.Test.Example2 || {});
+            """;
+
+        var (functionName, found, confident) = FormEventFunctionResolver.Resolve(
+            builtJs, "Test.Example2.onLoad", "Example2", isExplicit: true);
+
+        Assert.True(found);
+        Assert.True(confident);
+        Assert.Equal("Test.Example2.onLoad", functionName);
+    }
+
+    [Fact]
+    public void Resolve_ExplicitDottedName_FilenameGuessAloneNoLongerMatchesConfiguredPrefixNamespace_HardFails()
+    {
+        // Guards against overcorrecting: once the real namespace is "Test.Example2", the bare filename
+        // guess "Example2.onLoad" (missing the "Test." prefix a configured namespacePrefix adds) must
+        // fail just as surely as an unrelated wrong prefix does - the real IIFE namespace is now the
+        // sole source of truth, not a partial/fallback match against autoNamespace.
+        const string builtJs =
+            """
+            this.Test = this.Test || {};
+            (function (exports) {
+                'use strict';
+                function onLoad(executionContext) { }
+                exports.onLoad = onLoad;
+            })(this.Test.Example2 = this.Test.Example2 || {});
+            """;
+
+        var (functionName, found, confident) = FormEventFunctionResolver.Resolve(
+            builtJs, "Example2.onLoad", "Example2", isExplicit: true);
+
+        Assert.False(found);
+        Assert.True(confident);
+        Assert.Null(functionName);
+    }
+
+    [Fact]
     public void Resolve_PascalCaseExports_DefaultedLowercaseGuess_FoundWithRealCasingFromFile()
     {
         const string builtJs = "function OnLoad(executionContext) {} exports.OnLoad = OnLoad;";
@@ -126,6 +198,25 @@ public class FormEventFunctionResolverTests
 
         var (functionName, found, confident) = FormEventFunctionResolver.Resolve(
             builtJs, "Example1.onload1", "Example2", isExplicit: true);
+
+        Assert.False(found);
+        Assert.True(confident);
+        Assert.Null(functionName);
+    }
+
+    [Fact]
+    public void Resolve_ExplicitDottedName_PrefixMismatchOnUntraceableFile_AlwaysConfidentNeverInconclusive()
+    {
+        // Regression: a namespace-prefix mismatch is a positive, parser-independent determination
+        // (pure string comparison) - it must always be confidently confirmed absent, even when the
+        // rest of the file's export shape can't be traced (neither exports.X= nor a bare top-level
+        // function/const - e.g. this verbatim IIFE with no known shape at all). Otherwise a mismatch
+        // on an untraceable file gets misclassified as R7a's "inconclusive" outcome, which warns and
+        // silently registers the wrong/typo'd dotted name instead of hard-failing.
+        const string builtJs = "(function () { window.SomethingElse = {}; })();";
+
+        var (functionName, found, confident) = FormEventFunctionResolver.Resolve(
+            builtJs, "Example1.onLoad", "Example2", isExplicit: true);
 
         Assert.False(found);
         Assert.True(confident);

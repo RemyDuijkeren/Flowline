@@ -14,11 +14,11 @@ namespace Flowline.Core.Tests;
 // FormEventPlannerTests — mocking shape and formxml-building are identical across all four.
 static class FormEventTestHelpers
 {
-    public static string BuildFormXml(FormEventType? evt = null, IReadOnlySet<FormHandler>? handlers = null, IReadOnlySet<FormLibraryEntry>? libraries = null)
+    public static string BuildFormXml(FormEventType? evt = null, IReadOnlySet<FormEventHandler>? handlers = null, IReadOnlySet<FormLibrary>? libraries = null)
     {
         var xdoc = new XDocument(new XElement("form"));
         if (evt.HasValue)
-            FormXmlEventSerializer.SetHandlers(xdoc, evt.Value, handlers ?? new HashSet<FormHandler>());
+            FormXmlEventSerializer.SetHandlers(xdoc, evt.Value, handlers ?? new HashSet<FormEventHandler>());
         if (libraries != null)
             FormXmlEventSerializer.SetLibraries(xdoc, libraries);
         return xdoc.ToString();

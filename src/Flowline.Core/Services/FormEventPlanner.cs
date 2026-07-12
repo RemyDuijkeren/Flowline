@@ -43,14 +43,14 @@ public class FormEventPlanner(IAnsiConsole console)
             // just auto-removed as stale must actually leave <formLibraries>, or the web resource it
             // points at still looks referenced and its delete still faults — fixing only the <Handler>
             // side left this gap open).
-            var perEventResults = new List<(FormEventType Event, IReadOnlySet<FormHandler> DesiredHandlers, IReadOnlySet<UnrecognizedHandler> Unrecognized, IReadOnlySet<FormHandler> CurrentHandlers, IReadOnlySet<string> ManagedLibraryNames)>();
+            var perEventResults = new List<(FormEventType Event, IReadOnlySet<FormEventHandler> DesiredHandlers, IReadOnlySet<UnrecognizedHandler> Unrecognized, IReadOnlySet<FormEventHandler> CurrentHandlers, IReadOnlySet<string> ManagedLibraryNames)>();
 
             foreach (var evt in Enum.GetValues<FormEventType>())
             {
                 // Desired handlers as derived purely from this push's annotations. Always computes a fresh
                 // deterministic HandlerUniqueId, so a matched-by-identity entry with changed Parameters
                 // naturally lands here with the new Parameters value (no separate "update" bucket needed).
-                var annotationDesired = new HashSet<FormHandler>();
+                var annotationDesired = new HashSet<FormEventHandler>();
                 foreach (var resolved in formAnnotations.Where(a => a.Annotation.Event == evt))
                 {
                     var isExplicit = resolved.Annotation.FunctionName is not null;
@@ -81,7 +81,7 @@ public class FormEventPlanner(IAnsiConsole console)
                         finalFunctionName = requestedFunctionName;
                     }
 
-                    annotationDesired.Add(new FormHandler(
+                    annotationDesired.Add(new FormEventHandler(
                         finalFunctionName,
                         resolved.LibraryName,
                         FormEventDeterministicId.ForHandler(entity, form, evt, finalFunctionName, resolved.LibraryName),
@@ -94,7 +94,7 @@ public class FormEventPlanner(IAnsiConsole console)
                 // derive, is never evaluated for staleness or unrecognized status — it's simply carried
                 // through untouched so the write-back doesn't drop it (SetHandlers replaces the whole
                 // event's Handlers set on write).
-                var foreignHandlers = new HashSet<FormHandler>();
+                var foreignHandlers = new HashSet<FormEventHandler>();
 
                 // Current entries with no matching annotation: safe to drop if Flowline's own deterministic
                 // derivation still matches the stored id (nothing else could have produced that exact id —
@@ -133,7 +133,7 @@ public class FormEventPlanner(IAnsiConsole console)
                     unrecognized.Add(new UnrecognizedHandler(current, BuildProposedAnnotation(entity, form, evt, current)));
                 }
 
-                var desiredHandlers = new HashSet<FormHandler>(annotationDesired);
+                var desiredHandlers = new HashSet<FormEventHandler>(annotationDesired);
                 desiredHandlers.UnionWith(foreignHandlers);
                 foreach (var u in unrecognized)
                     desiredHandlers.Add(u.Handler);
@@ -167,15 +167,15 @@ public class FormEventPlanner(IAnsiConsole console)
                 .SelectMany(r => r.DesiredHandlers.Select(h => h.LibraryName))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            var desiredLibraries = new HashSet<FormLibraryEntry>(currentLibraries
+            var desiredLibraries = new HashSet<FormLibrary>(currentLibraries
                 .Where(l => allReferencedLibraryNames.Contains(l.Name) || !snapshot.TrackedLibraryNames.Contains(l.Name)));
             // Only libraries Flowline actually manages (annotationDesired + unrecognized) can be newly added
             // — never fabricate a <Library> entry for a foreign handler's library (see managedLibraryNames).
             foreach (var libraryName in neededLibraryNames)
             {
-                if (desiredLibraries.Contains(new FormLibraryEntry(libraryName, Guid.Empty)))
+                if (desiredLibraries.Contains(new FormLibrary(libraryName, Guid.Empty)))
                     continue;
-                desiredLibraries.Add(new FormLibraryEntry(libraryName, FormEventDeterministicId.ForLibrary(libraryName)));
+                desiredLibraries.Add(new FormLibrary(libraryName, FormEventDeterministicId.ForLibrary(libraryName)));
             }
 
             // desiredLibraries is now identical for every event of this form (computed once, above) — the
@@ -232,16 +232,16 @@ public class FormEventPlanner(IAnsiConsole console)
         return plan;
     }
 
-    // HashSet.SetEquals can't detect a Parameters-only change (FormHandler's equality is identity-only) —
-    // FormHandlerDiffer compares full record state on identity-matched pairs instead.
-    static bool HandlerSetsFullyEqual(IReadOnlySet<FormHandler> a, IReadOnlySet<FormHandler> b) =>
-        FormHandlerDiffer.Diff(a, b) is (0, 0, 0);
+    // HashSet.SetEquals can't detect a Parameters-only change (FormEventHandler's equality is identity-only) —
+    // FormEventHandlerDiffer compares full record state on identity-matched pairs instead.
+    static bool HandlerSetsFullyEqual(IReadOnlySet<FormEventHandler> a, IReadOnlySet<FormEventHandler> b) =>
+        FormEventHandlerDiffer.Diff(a, b) is (0, 0, 0);
 
     // R18a: proposed annotation text built from the unrecognized handler's own stored state, in the same
     // `// flowline:onload/onsave <entity> "<form>" Function[(params)]` shape R1 defines. FunctionName is
     // used verbatim — including a dotted namespace (R6a's escape hatch), since a dotted name round-trips
     // through the annotation grammar without re-derivation.
-    static string BuildProposedAnnotation(string entity, string form, FormEventType evt, FormHandler handler)
+    static string BuildProposedAnnotation(string entity, string form, FormEventType evt, FormEventHandler handler)
     {
         var directive = evt == FormEventType.OnLoad ? "onload" : "onsave";
         var parameters = string.IsNullOrEmpty(handler.Parameters) ? "" : $"({handler.Parameters})";

@@ -22,6 +22,11 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         AssemblyOnly = 1,
         Plugins = 2,
         WebResources = 4,
+        // Additive, not a replacement for WebResources' existing bundling: WebResources alone still runs
+        // both web resource sync and form event registration, unchanged. FormEvents lets that registration
+        // step run on its own — reconciling // flowline:onload/onsave annotations against an already-built
+        // dist/ folder without also syncing web resource content — e.g. after editing only an annotation.
+        FormEvents = 8,
         All = WebResources | Plugins
     }
 
@@ -32,7 +37,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         public string? Solution { get; set; }
 
         [CommandOption("-s|--scope <SCOPE>")]
-        [Description("Limit the push scope: all, webresources, plugins, or assemblyonly. Can be used more than once.")]
+        [Description("Limit the push scope: all, webresources, formevents, plugins, or assemblyonly. Can be used more than once.")]
         public PushScope[] Scopes { get; set; } = [];
 
         [CommandOption("-p|--pluginFile <PATH>")]
@@ -58,7 +63,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         public bool NoBuild { get; set; } = false;
 
         [CommandOption("--no-publish")]
-        [Description("Skip publishing web resources after sync")]
+        [Description("Skip publishing web resources and form event handlers after sync")]
         [DefaultValue(false)]
         public bool NoPublish { get; set; } = false;
 
@@ -121,7 +126,11 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         var pluginsDll = (pushAssemblyOnly || pushScope.HasFlag(PushScope.Plugins))
             ? await PreparePluginsForPushAsync(standaloneMode, settings, solutionName, standaloneParams, cancellationToken)
             : null;
-        var webResourcesSyncFolder = pushScope.HasFlag(PushScope.WebResources)
+        // FormEvents reads its annotations from the same built dist/ folder web resource sync uses, so
+        // either scope alone needs it prepared — WebResources still implies FormEvents (unchanged default
+        // bundling); FormEvents lets the registration step run on its own, against an already-pushed dist/.
+        var runFormEvents = pushScope.HasFlag(PushScope.WebResources) || pushScope.HasFlag(PushScope.FormEvents);
+        var webResourcesSyncFolder = runFormEvents
             ? await PrepareWebResourcesForPushAsync(standaloneMode, settings, solutionName, standaloneParams, cancellationToken)
             : null;
 
@@ -143,26 +152,31 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             }
         }
 
-        if (settings.NoPublish && !pushScope.HasFlag(PushScope.WebResources))
-            Console.Warning("--no-publish has no effect: web resources not in scope.");
+        if (settings.NoPublish && !runFormEvents)
+            Console.Warning("--no-publish has no effect: web resources/form events not in scope.");
 
         if (webResourcesSyncFolder != null)
         {
             var dryRun = runMode == RunMode.DryRun;
+            var publishAfterSync = !settings.NoPublish;
 
             // KTD12: cleanup runs before web resources are created/updated/deleted — removes stale/orphaned
             // form event handlers (R14) so a pending web-resource delete never trips Dataverse's
             // "referenced by N other components" dependency fault.
-            pushedChanges |= await formEventService.CleanupOrphanedAsync(conn, webResourcesSyncFolder, solutionName, settings.Force, dryRun, cancellationToken).ConfigureAwait(false);
+            pushedChanges |= await formEventService.CleanupOrphanedAsync(conn, webResourcesSyncFolder, solutionName, settings.Force, dryRun, publishAfterSync, cancellationToken).ConfigureAwait(false);
 
-            Logger.LogInformation("Pushing web resources: {Folder}", webResourcesSyncFolder);
-            pushedChanges |= await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder, solutionName, publishAfterSync: !settings.NoPublish, runMode: runMode, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (pushScope.HasFlag(PushScope.WebResources))
+            {
+                Logger.LogInformation("Pushing web resources: {Folder}", webResourcesSyncFolder);
+                pushedChanges |= await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder, solutionName, publishAfterSync: publishAfterSync, runMode: runMode, cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+
             if (settings.NoPublish)
                 Console.Skip("Publish — skipping (--no-publish active).");
 
             // R10a: registration runs strictly after web resources are pushed, same scope gate — new/updated
             // handlers can only reference libraries that already exist in Dataverse.
-            pushedChanges |= await formEventService.RegisterAsync(conn, webResourcesSyncFolder, solutionName, settings.Force, dryRun, cancellationToken).ConfigureAwait(false);
+            pushedChanges |= await formEventService.RegisterAsync(conn, webResourcesSyncFolder, solutionName, settings.Force, dryRun, publishAfterSync, cancellationToken).ConfigureAwait(false);
         }
 
         Console.Done(runMode == RunMode.DryRun
@@ -328,8 +342,8 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         {
             if ((scope.HasFlag(PushScope.Plugins) || scope.HasFlag(PushScope.AssemblyOnly)) && string.IsNullOrWhiteSpace(settings.PluginFile))
                 throw new FlowlineException(ExitCode.ValidationFailed, "--scope plugins/assemblyonly requires --pluginFile.");
-            if (scope.HasFlag(PushScope.WebResources) && string.IsNullOrWhiteSpace(settings.WebResources))
-                throw new FlowlineException(ExitCode.ValidationFailed, "--scope webresources requires --webresources.");
+            if ((scope.HasFlag(PushScope.WebResources) || scope.HasFlag(PushScope.FormEvents)) && string.IsNullOrWhiteSpace(settings.WebResources))
+                throw new FlowlineException(ExitCode.ValidationFailed, "--scope webresources/formevents requires --webresources.");
         }
 
         return scope;

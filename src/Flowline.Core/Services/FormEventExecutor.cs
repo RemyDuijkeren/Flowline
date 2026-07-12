@@ -21,11 +21,13 @@ public class FormEventExecutor(IAnsiConsole console)
 {
     const int MaxParallelism = 8;
     const string SystemFormEntity = "systemform";
+    // OrganizationServiceFault.ErrorCode for a RowVersion mismatch under ConcurrencyBehavior.IfRowVersionMatches.
+    const int ConcurrencyVersionMismatchErrorCode = -2147088254;
 
     enum ChangeKind { Added, Updated, Removed }
 
-    readonly record struct HandlerChange(string Entity, string Form, FormEventType Event, ChangeKind Kind, FormHandler Handler);
-    readonly record struct LibraryChange(string Entity, string Form, ChangeKind Kind, FormLibraryEntry Library);
+    readonly record struct HandlerChange(string Entity, string Form, FormEventType Event, ChangeKind Kind, FormEventHandler Handler);
+    readonly record struct LibraryChange(string Entity, string Form, ChangeKind Kind, FormLibrary Library);
 
     public async Task ExecuteAsync(
         IOrganizationServiceAsync2 service,
@@ -34,6 +36,7 @@ public class FormEventExecutor(IAnsiConsole console)
         bool force,
         bool dryRun,
         bool cleanupOnly,
+        bool publishAfterSync = true,
         CancellationToken cancellationToken = default)
     {
         if (plan.Forms.Count == 0)
@@ -46,7 +49,7 @@ public class FormEventExecutor(IAnsiConsole console)
         // reflecting the eventual full outcome rather than a phase-specific slice.
         if (dryRun)
         {
-            PrintDryRunPreview(snapshot, plan);
+            PrintDryRunPreview(snapshot, plan, force);
             return;
         }
 
@@ -80,7 +83,7 @@ public class FormEventExecutor(IAnsiConsole console)
         // removals-only, registration is everything else.
         var progressLabel = cleanupOnly ? "Cleaning forms" : "Updating forms";
         await console.Progress().StartAsync(ctx =>
-            ExecuteByEntityAsync(service, plan, formBuilds, failures,
+            ExecuteByEntityAsync(service, plan, formBuilds, publishAfterSync, failures,
                 appliedHandlerChanges, appliedLibraryChanges, changesLock,
                 ctx.AddTask(progressLabel, maxValue: formCount + entityCount), cancellationToken)).ConfigureAwait(false);
 
@@ -111,7 +114,7 @@ public class FormEventExecutor(IAnsiConsole console)
     // R18b: same per-handler detail as ResolveUnrecognizedHandling's prompt, plus the full change report —
     // computed against the pristine current formxml via the same BuildFormXml the real write uses, so the
     // preview can never drift from what applying it would actually do. Nothing written.
-    void PrintDryRunPreview(FormEventSnapshot snapshot, FormEventSyncPlan plan)
+    void PrintDryRunPreview(FormEventSnapshot snapshot, FormEventSyncPlan plan, bool force)
     {
         var unrecognized = CollectUnrecognized(plan);
         if (unrecognized.Count > 0)
@@ -121,11 +124,15 @@ public class FormEventExecutor(IAnsiConsole console)
                 console.Info($"  {FormatUnrecognizedHandlerLine(u.Form, u.Unrecognized)}");
         }
 
+        // Mirrors ResolveUnrecognizedHandling: --force always removes them (no prompt), so the preview
+        // must reflect that deterministically. Without --force, a real interactive run's outcome depends
+        // on the user's live answer, which dry-run can't know in advance — showing them as kept is the
+        // same conservative default the non-force case already used.
         var handlerChanges = new List<HandlerChange>();
         var libraryChanges = new List<LibraryChange>();
         foreach (var formGroup in plan.Forms.GroupBy(f => f.FormId))
         {
-            var (_, hc, lc) = BuildFormXml(snapshot, formGroup, removeUnrecognized: false, cleanupOnly: false);
+            var (_, _, hc, lc) = BuildFormXml(snapshot, formGroup, removeUnrecognized: force, cleanupOnly: false);
             handlerChanges.AddRange(hc);
             libraryChanges.AddRange(lc);
         }
@@ -133,8 +140,6 @@ public class FormEventExecutor(IAnsiConsole console)
         var counts = WriteChangeReport(handlerChanges, libraryChanges, PlanReportMode.DryRun);
         console.Ok($"Dry run: {plan.DistinctFormCount} form(s) with pending changes — {counts}. Run without --dry-run to apply.");
     }
-
-    enum PlanReportMode { Verbose, DryRun }
 
     // Mirrors WebResourceService.WritePlanReport's shape: a summary line plus one section per change kind,
     // each listing the specific forms/handlers/libraries affected — not just aggregate counts. Verbose mode
@@ -155,7 +160,7 @@ public class FormEventExecutor(IAnsiConsole console)
         var libraryAdded = libraryChanges.Where(c => c.Kind == ChangeKind.Added).ToList();
         var libraryRemoved = libraryChanges.Where(c => c.Kind == ChangeKind.Removed).ToList();
 
-        var counts = JoinCounts(
+        var counts = PlanReportFormatting.JoinCounts(
             (handlerAdded.Count, "handler(s) added"), (handlerUpdated.Count, "handler(s) updated"), (handlerRemoved.Count, "handler(s) removed"),
             (libraryAdded.Count, "library(ies) added"), (libraryRemoved.Count, "library(ies) removed"));
         line($"  Summary: {counts}");
@@ -167,12 +172,6 @@ public class FormEventExecutor(IAnsiConsole console)
         WriteLibrarySection(line, "Libraries removed", libraryRemoved);
 
         return counts;
-    }
-
-    static string JoinCounts(params (int Count, string Label)[] parts)
-    {
-        var nonZero = parts.Where(p => p.Count > 0).Select(p => $"{p.Count} {p.Label}").ToList();
-        return nonZero.Count > 0 ? string.Join(", ", nonZero) : "no changes";
     }
 
     static void WriteHandlerSection(Action<string> line, string label, List<HandlerChange> items)
@@ -233,7 +232,8 @@ public class FormEventExecutor(IAnsiConsole console)
     async Task ExecuteByEntityAsync(
         IOrganizationServiceAsync2 service,
         FormEventSyncPlan plan,
-        Dictionary<Guid, (string FormXml, List<HandlerChange> HandlerChanges, List<LibraryChange> LibraryChanges)> formBuilds,
+        Dictionary<Guid, (string FormXml, string? RowVersion, List<HandlerChange> HandlerChanges, List<LibraryChange> LibraryChanges)> formBuilds,
+        bool publishAfterSync,
         List<(string Name, Exception Error)> failures,
         List<HandlerChange> appliedHandlerChanges,
         List<LibraryChange> appliedLibraryChanges,
@@ -268,7 +268,7 @@ public class FormEventExecutor(IAnsiConsole console)
                     {
                         try
                         {
-                            var (formXml, handlerChanges, libraryChanges) = formBuilds[formGroup.Key];
+                            var (formXml, rowVersion, handlerChanges, libraryChanges) = formBuilds[formGroup.Key];
                             // cleanupOnly's narrowing (BuildFormXml) can leave nothing to write for this
                             // particular form even when the phase overall has work elsewhere — e.g. a form
                             // whose only pending change is a brand-new handler/library, deferred to
@@ -278,7 +278,23 @@ public class FormEventExecutor(IAnsiConsole console)
                             if (handlerChanges.Count > 0 || libraryChanges.Count > 0)
                             {
                                 var entity = new Entity(SystemFormEntity, formGroup.Key) { ["formxml"] = formXml };
-                                await service.UpdateAsync(entity, cancellationToken).ConfigureAwait(false);
+                                // Optimistic concurrency (confirmed live: systemform has
+                                // IsOptimisticConcurrencyEnabled=true) - catches a concurrent second push,
+                                // or a maker hand-editing the form in the classic designer, racing this
+                                // read-modify-write. RowVersion is only absent for test-built snapshots;
+                                // the platform always returns it on a real retrieve, so this is a genuine
+                                // fallback, not the common path.
+                                if (rowVersion is not null)
+                                {
+                                    entity.RowVersion = rowVersion;
+                                    await service.ExecuteAsync(
+                                        new UpdateRequest { Target = entity, ConcurrencyBehavior = ConcurrencyBehavior.IfRowVersionMatches },
+                                        cancellationToken).ConfigureAwait(false);
+                                }
+                                else
+                                {
+                                    await service.UpdateAsync(entity, cancellationToken).ConfigureAwait(false);
+                                }
                                 // Plain bool write, no lock: only ever set to true, and Task.WhenAll below
                                 // establishes happens-before for every updateTasks write before it's read.
                                 anyFormChanged = true;
@@ -288,6 +304,11 @@ public class FormEventExecutor(IAnsiConsole console)
                                     appliedLibraryChanges.AddRange(libraryChanges);
                                 }
                             }
+                        }
+                        catch (FaultException<OrganizationServiceFault> ex) when (ex.Detail.ErrorCode == ConcurrencyVersionMismatchErrorCode)
+                        {
+                            lock (failures) failures.Add((formGroup.First().FormName, new InvalidOperationException(
+                                "form was modified since Flowline last read it (a concurrent push, or a manual edit in the maker portal) — re-run push to apply your changes against the latest state.", ex)));
                         }
                         catch (FaultException<OrganizationServiceFault> ex)
                         {
@@ -300,7 +321,7 @@ public class FormEventExecutor(IAnsiConsole console)
 
                 await Task.WhenAll(updateTasks).ConfigureAwait(false);
 
-                if (anyFormChanged)
+                if (anyFormChanged && publishAfterSync)
                 {
                     await publishGate.WaitAsync(cancellationToken).ConfigureAwait(false);
                     try
@@ -309,7 +330,14 @@ public class FormEventExecutor(IAnsiConsole console)
                     }
                     catch (FaultException<OrganizationServiceFault> ex)
                     {
-                        lock (failures) failures.Add((entityGroup.Key, ex));
+                        // Distinct from an update failure: the formxml write already succeeded and is
+                        // saved, only the publish that makes it live failed - the form is not in an error
+                        // state, just not yet reflecting the saved change for end users. Dataverse exposes
+                        // no queryable "needs publish" signal for systemform (no modifiedon column to
+                        // compare against publishedon - confirmed live), so this in-run warning is the
+                        // only point this can be surfaced; a later push with no further diff won't retry it.
+                        lock (failures) failures.Add((entityGroup.Key, new InvalidOperationException(
+                            $"form(s) were updated and saved, but the publish that makes them live failed - changes are saved, not yet published: {ex.Message}", ex)));
                     }
                     finally { publishGate.Release(); }
                 }
@@ -326,7 +354,7 @@ public class FormEventExecutor(IAnsiConsole console)
     // both what gets written (empty means nothing changed) and what gets reported (verbose detail, dry-run
     // preview, and the always-visible summary) — computing them once here means the report can never drift
     // from what applying it actually does.
-    static (string FormXml, List<HandlerChange> HandlerChanges, List<LibraryChange> LibraryChanges) BuildFormXml(
+    static (string FormXml, string? RowVersion, List<HandlerChange> HandlerChanges, List<LibraryChange> LibraryChanges) BuildFormXml(
         FormEventSnapshot snapshot, IGrouping<Guid, FormEventFormPlan> formGroup, bool removeUnrecognized, bool cleanupOnly)
     {
         var first = formGroup.First();
@@ -336,13 +364,13 @@ public class FormEventExecutor(IAnsiConsole console)
         var currentLibraries = FormXmlEventSerializer.GetLibraries(xdoc);
 
         var handlerChanges = new List<HandlerChange>();
-        var unionLibraries = new HashSet<FormLibraryEntry>();
+        var unionLibraries = new HashSet<FormLibrary>();
         foreach (var formPlan in formGroup)
         {
             // Planner already folded UnrecognizedHandlers into DesiredHandlers (kept by default, R18) —
             // removing them here is the only place that decision is undone, once confirmed.
             var unrecognizedHandlers = formPlan.UnrecognizedHandlers.Select(u => u.Handler).ToHashSet();
-            IEnumerable<FormHandler> desired = removeUnrecognized
+            IEnumerable<FormEventHandler> desired = removeUnrecognized
                 ? formPlan.DesiredHandlers.Where(h => !unrecognizedHandlers.Contains(h))
                 : formPlan.DesiredHandlers;
 
@@ -365,7 +393,7 @@ public class FormEventExecutor(IAnsiConsole console)
             }
 
             var desiredSet = desired.ToHashSet();
-            var (added, updated, removed) = FormHandlerDiffer.DiffDetailed(desiredSet, currentHandlers);
+            var (added, updated, removed) = FormEventHandlerDiffer.DiffDetailed(desiredSet, currentHandlers);
             handlerChanges.AddRange(added.Select(h => new HandlerChange(formPlan.EntityLogicalName, formPlan.FormName, formPlan.Event, ChangeKind.Added, h)));
             handlerChanges.AddRange(updated.Select(h => new HandlerChange(formPlan.EntityLogicalName, formPlan.FormName, formPlan.Event, ChangeKind.Updated, h)));
             handlerChanges.AddRange(removed.Select(h => new HandlerChange(formPlan.EntityLogicalName, formPlan.FormName, formPlan.Event, ChangeKind.Removed, h)));
@@ -386,7 +414,7 @@ public class FormEventExecutor(IAnsiConsole console)
 
         FormXmlEventSerializer.SetLibraries(xdoc, unionLibraries);
 
-        return (xdoc.ToString(), handlerChanges, libraryChanges);
+        return (xdoc.ToString(), dataverseForm.RowVersion, handlerChanges, libraryChanges);
     }
 
     static Task PublishAsync(IOrganizationServiceAsync2 service, string entityLogicalName, CancellationToken cancellationToken)

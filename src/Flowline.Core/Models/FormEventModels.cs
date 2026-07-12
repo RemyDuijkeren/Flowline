@@ -11,9 +11,9 @@ public enum FormEventType
 
 public record FormEventAnnotation(string Entity, string Form, FormEventType Event, string? FunctionName, string? Parameters);
 
-public record FormHandler(string FunctionName, string LibraryName, Guid HandlerUniqueId, string Parameters)
+public record FormEventHandler(string FunctionName, string LibraryName, Guid HandlerUniqueId, string Parameters)
 {
-    public virtual bool Equals(FormHandler? other) =>
+    public virtual bool Equals(FormEventHandler? other) =>
         other is not null
         && string.Equals(FunctionName, other.FunctionName, StringComparison.OrdinalIgnoreCase)
         && string.Equals(LibraryName, other.LibraryName, StringComparison.OrdinalIgnoreCase);
@@ -24,16 +24,20 @@ public record FormHandler(string FunctionName, string LibraryName, Guid HandlerU
             StringComparer.OrdinalIgnoreCase.GetHashCode(LibraryName));
 }
 
-public record FormLibraryEntry(string Name, Guid LibraryUniqueId)
+public record FormLibrary(string Name, Guid LibraryUniqueId)
 {
-    public virtual bool Equals(FormLibraryEntry? other) =>
+    public virtual bool Equals(FormLibrary? other) =>
         other is not null && string.Equals(Name, other.Name, StringComparison.OrdinalIgnoreCase);
 
     public override int GetHashCode() =>
         StringComparer.OrdinalIgnoreCase.GetHashCode(Name);
 }
 
-public record DataverseForm(Guid Id, string Name, string EntityLogicalName, string FormXml);
+// RowVersion (Dataverse's optimistic-concurrency token, aka @odata.etag) is always returned by the
+// platform regardless of the requested ColumnSet — it's a first-class SDK/protocol property, not a
+// regular attribute, so no explicit column selection is needed to populate it. Nullable because
+// test-built snapshots and any row where the platform genuinely omits it must stay representable.
+public record DataverseForm(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion = null);
 
 public record ResolvedFormEventAnnotation(FormEventAnnotation Annotation, string LibraryName, string Content, string SourceFile);
 
@@ -60,16 +64,16 @@ public static class FormEventDeterministicId
 // R18a: an unrecognized Handler (tracked library, ID doesn't match Flowline's deterministic derivation)
 // paired with the annotation text the user could add instead of removing it — built from the handler's
 // own stored FunctionName/LibraryName/Parameters, per FormEventPlanner.BuildProposedAnnotation.
-public record UnrecognizedHandler(FormHandler Handler, string ProposedAnnotation);
+public record UnrecognizedHandler(FormEventHandler Handler, string ProposedAnnotation);
 
 public record FormEventFormPlan(
     Guid FormId,
     string EntityLogicalName,
     string FormName,
     FormEventType Event,
-    IReadOnlySet<FormHandler> DesiredHandlers,
+    IReadOnlySet<FormEventHandler> DesiredHandlers,
     IReadOnlySet<UnrecognizedHandler> UnrecognizedHandlers,
-    IReadOnlySet<FormLibraryEntry> DesiredLibraries);
+    IReadOnlySet<FormLibrary> DesiredLibraries);
 
 public class FormEventSyncPlan
 {

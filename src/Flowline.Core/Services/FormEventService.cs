@@ -29,8 +29,9 @@ public class FormEventService(IAnsiConsole console)
         string solutionName,
         bool force,
         bool dryRun,
+        bool publishAfterSync = true,
         CancellationToken cancellationToken = default) =>
-        SyncAsync(service, webresourceRoot, solutionName, force, dryRun, cleanupOnly: true, cancellationToken);
+        SyncAsync(service, webresourceRoot, solutionName, force, dryRun, cleanupOnly: true, publishAfterSync, cancellationToken);
 
     // R10a: registration pass — runs strictly after web resources are pushed, so new/updated handlers can
     // only ever reference libraries that already exist in Dataverse.
@@ -40,8 +41,9 @@ public class FormEventService(IAnsiConsole console)
         string solutionName,
         bool force,
         bool dryRun,
+        bool publishAfterSync = true,
         CancellationToken cancellationToken = default) =>
-        SyncAsync(service, webresourceRoot, solutionName, force, dryRun, cleanupOnly: false, cancellationToken);
+        SyncAsync(service, webresourceRoot, solutionName, force, dryRun, cleanupOnly: false, publishAfterSync, cancellationToken);
 
     async Task<bool> SyncAsync(
         IOrganizationServiceAsync2 service,
@@ -50,6 +52,7 @@ public class FormEventService(IAnsiConsole console)
         bool force,
         bool dryRun,
         bool cleanupOnly,
+        bool publishAfterSync,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(webresourceRoot))
@@ -84,7 +87,7 @@ public class FormEventService(IAnsiConsole console)
             return true;
 
         // Phase 3: Execute the plan.
-        await _executor.ExecuteAsync(service, snapshot, plan, force, dryRun, cleanupOnly, cancellationToken).ConfigureAwait(false);
+        await _executor.ExecuteAsync(service, snapshot, plan, force, dryRun, cleanupOnly, publishAfterSync, cancellationToken).ConfigureAwait(false);
         return true;
     }
 }

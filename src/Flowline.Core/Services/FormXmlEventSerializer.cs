@@ -8,9 +8,9 @@ namespace Flowline.Core.Services;
 // matches if that ever changed.
 public static class FormXmlEventSerializer
 {
-    public static IReadOnlySet<FormHandler> GetHandlers(XDocument form, FormEventType evt)
+    public static IReadOnlySet<FormEventHandler> GetHandlers(XDocument form, FormEventType evt)
     {
-        var result = new HashSet<FormHandler>();
+        var result = new HashSet<FormEventHandler>();
 
         var handlersElement = FindEvent(form, evt)?.Element("Handlers");
         if (handlersElement is null)
@@ -24,15 +24,15 @@ public static class FormXmlEventSerializer
             if (!Guid.TryParse(rawGuid, out var guid))
                 guid = Guid.Empty;
             var parameters = handler.Attribute("parameters")?.Value ?? "";
-            result.Add(new FormHandler(functionName, libraryName, guid, parameters));
+            result.Add(new FormEventHandler(functionName, libraryName, guid, parameters));
         }
 
         return result;
     }
 
-    public static IReadOnlySet<FormLibraryEntry> GetLibraries(XDocument form)
+    public static IReadOnlySet<FormLibrary> GetLibraries(XDocument form)
     {
-        var result = new HashSet<FormLibraryEntry>();
+        var result = new HashSet<FormLibrary>();
 
         var formLibrariesElement = form.Root?.Element("formLibraries");
         if (formLibrariesElement is null)
@@ -44,13 +44,13 @@ public static class FormXmlEventSerializer
             var rawGuid = library.Attribute("libraryUniqueId")?.Value ?? "";
             if (!Guid.TryParse(rawGuid, out var guid))
                 guid = Guid.Empty;
-            result.Add(new FormLibraryEntry(name, guid));
+            result.Add(new FormLibrary(name, guid));
         }
 
         return result;
     }
 
-    public static void SetHandlers(XDocument form, FormEventType evt, IReadOnlySet<FormHandler> desired)
+    public static void SetHandlers(XDocument form, FormEventType evt, IReadOnlySet<FormEventHandler> desired)
     {
         var root = form.Root ?? throw new InvalidOperationException("Form XML has no root element.");
 
@@ -83,7 +83,7 @@ public static class FormXmlEventSerializer
         }
     }
 
-    public static void SetLibraries(XDocument form, IReadOnlySet<FormLibraryEntry> desired)
+    public static void SetLibraries(XDocument form, IReadOnlySet<FormLibrary> desired)
     {
         var root = form.Root ?? throw new InvalidOperationException("Form XML has no root element.");
 

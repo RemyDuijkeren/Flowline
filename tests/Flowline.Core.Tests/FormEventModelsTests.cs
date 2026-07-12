@@ -75,33 +75,33 @@ public class FormEventModelsTests
         Assert.Equal(fromAccountMain, fromContactOther);
     }
 
-    // --- FormHandler equality / hashing ---
+    // --- FormEventHandler equality / hashing ---
 
     [Fact]
-    public void FormHandler_SameIdentityKey_TreatedAsEqualInHashSet()
+    public void FormEventHandler_SameIdentityKey_TreatedAsEqualInHashSet()
     {
-        var set = new HashSet<FormHandler>
+        var set = new HashSet<FormEventHandler>
         {
             new("onLoad", "av_/lib.js", Guid.NewGuid(), "context")
         };
 
-        var added = set.Add(new FormHandler("ONLOAD", "AV_/LIB.JS", Guid.NewGuid(), "differentParams"));
+        var added = set.Add(new FormEventHandler("ONLOAD", "AV_/LIB.JS", Guid.NewGuid(), "differentParams"));
 
         Assert.False(added);
         Assert.Single(set);
     }
 
-    // --- FormLibraryEntry equality / hashing ---
+    // --- FormLibrary equality / hashing ---
 
     [Fact]
-    public void FormLibraryEntry_SameIdentityKey_TreatedAsEqualInHashSet()
+    public void FormLibrary_SameIdentityKey_TreatedAsEqualInHashSet()
     {
-        var set = new HashSet<FormLibraryEntry>
+        var set = new HashSet<FormLibrary>
         {
             new("av_/lib.js", Guid.NewGuid())
         };
 
-        var added = set.Add(new FormLibraryEntry("AV_/LIB.JS", Guid.NewGuid()));
+        var added = set.Add(new FormLibrary("AV_/LIB.JS", Guid.NewGuid()));
 
         Assert.False(added);
         Assert.Single(set);

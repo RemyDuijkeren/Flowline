@@ -76,7 +76,7 @@ public class FormEventReader(IAnsiConsole console)
         // CLR type/value actually returned when reading a row. Dataverse's EntityName attribute type
         // auto-resolves to the logical name for API consumers — no reverse ObjectTypeCode -> logical-name
         // lookup needed at all.
-        var solutionForms = new List<(Guid Id, string Name, string EntityLogicalName, string FormXml)>();
+        var solutionForms = new List<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)>();
         foreach (var formEntity in solutionFormEntities)
         {
             var entityLogicalName = formEntity.GetAttributeValue<string>("objecttypecode");
@@ -87,11 +87,15 @@ public class FormEventReader(IAnsiConsole console)
                 continue;
             }
 
+            // RowVersion is a first-class SDK property (Dataverse's optimistic-concurrency token, aka
+            // @odata.etag) always populated on retrieve regardless of ColumnSet - no explicit column
+            // selection needed.
             solutionForms.Add((
                 formEntity.Id,
                 formEntity.GetAttributeValue<string>("name"),
                 entityLogicalName,
-                formEntity.GetAttributeValue<string>("formxml")));
+                formEntity.GetAttributeValue<string>("formxml"),
+                formEntity.RowVersion));
         }
 
         var resolvedForms = new Dictionary<(string Entity, string Form), DataverseForm>(FormKeyComparer.Instance);
@@ -101,7 +105,7 @@ public class FormEventReader(IAnsiConsole console)
         {
             var matches = group.ToList();
             if (matches.Count == 1)
-                resolvedForms[group.Key] = new DataverseForm(matches[0].Id, matches[0].Name, matches[0].EntityLogicalName, matches[0].FormXml);
+                resolvedForms[group.Key] = new DataverseForm(matches[0].Id, matches[0].Name, matches[0].EntityLogicalName, matches[0].FormXml, matches[0].RowVersion);
             else
                 // Ambiguous within this solution — can't be represented by the unique (Entity, Form) key.
                 // Only surfaced as an error below when an annotation actually targets it; an ambiguous
