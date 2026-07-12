@@ -45,9 +45,9 @@ public class FormEventRenameAdvisorTests : IDisposable
 
         var resolved = Annotation(entity, oldName, library, "function onLoad() {}");
 
-        var solutionForms = new List<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)>
+        var solutionForms = new List<DataverseForm>
         {
-            (Guid.NewGuid(), newName, entity, formXml, null)
+            new(Guid.NewGuid(), newName, entity, formXml, null)
         };
 
         var suggestion = FormEventRenameAdvisor.Suggest(entity, oldName, [resolved], solutionForms, NewCache());
@@ -71,9 +71,9 @@ public class FormEventRenameAdvisorTests : IDisposable
         var formXml = BuildFormXml(FormEventType.OnLoad, new HashSet<FormEventHandler> { new("someOtherFn", "unrelated.js", Guid.NewGuid(), "") });
         var resolved = Annotation(entity, oldName, "av_/lib.js", "function unrelated() {}");
 
-        var solutionForms = new List<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)>
+        var solutionForms = new List<DataverseForm>
         {
-            (formId, newName, entity, formXml, null)
+            new(formId, newName, entity, formXml, null)
         };
 
         var cache = NewCache();
@@ -96,9 +96,9 @@ public class FormEventRenameAdvisorTests : IDisposable
         var formXml = BuildFormXml(FormEventType.OnLoad, new HashSet<FormEventHandler> { new("someOtherFn", "unrelated.js", Guid.NewGuid(), "") });
         var resolved = Annotation(entity, oldName, "av_/lib.js", "function unrelated() {}");
 
-        var solutionForms = new List<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)>
+        var solutionForms = new List<DataverseForm>
         {
-            (Guid.NewGuid(), onlyLiveName, entity, formXml, null)
+            new(Guid.NewGuid(), onlyLiveName, entity, formXml, null)
         };
 
         var suggestion = FormEventRenameAdvisor.Suggest(entity, oldName, [resolved], solutionForms, NewCache());
@@ -122,9 +122,9 @@ public class FormEventRenameAdvisorTests : IDisposable
         var formXml = BuildFormXml(FormEventType.OnLoad, new HashSet<FormEventHandler> { new("onLoad", library, expectedId, "") });
         var resolved = Annotation(entity, oldName, library, "function onLoad() {}");
 
-        var solutionForms = new List<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)>
+        var solutionForms = new List<DataverseForm>
         {
-            (formId, newName, entity, formXml, null)
+            new(formId, newName, entity, formXml, null)
         };
 
         var cache = NewCache();
@@ -153,10 +153,10 @@ public class FormEventRenameAdvisorTests : IDisposable
         var resolved = Annotation(entity, oldName, library, "function onLoad() {}");
 
         var cacheFormId = Guid.NewGuid();
-        var solutionForms = new List<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)>
+        var solutionForms = new List<DataverseForm>
         {
-            (Guid.NewGuid(), selfTagName, entity, selfTagFormXml, null),
-            (cacheFormId, cacheOnlyName, entity, cacheFormXml, null)
+            new(Guid.NewGuid(), selfTagName, entity, selfTagFormXml, null),
+            new(cacheFormId, cacheOnlyName, entity, cacheFormXml, null)
         };
 
         var cache = NewCache();
@@ -179,10 +179,10 @@ public class FormEventRenameAdvisorTests : IDisposable
 
         var resolved = Annotation(entity, oldName, "av_/lib.js", "function unrelated() {}");
 
-        var solutionForms = new List<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)>
+        var solutionForms = new List<DataverseForm>
         {
-            (Guid.NewGuid(), "Account Main", entity, mainFormXml, null),
-            (Guid.NewGuid(), "Account Quick Create", entity, quickCreateFormXml, null)
+            new(Guid.NewGuid(), "Account Main", entity, mainFormXml, null),
+            new(Guid.NewGuid(), "Account Quick Create", entity, quickCreateFormXml, null)
         };
 
         // Two candidates on the entity — sole-survivor must not fire; no self-tag or cache evidence either.
@@ -199,7 +199,7 @@ public class FormEventRenameAdvisorTests : IDisposable
 
         var resolved = Annotation(entity, oldName, "av_/lib.js", "function unrelated() {}");
 
-        var solutionForms = new List<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)>();
+        var solutionForms = new List<DataverseForm>();
 
         var cache = NewCache();
         cache.Set(entity, oldName, Guid.NewGuid()); // stale — that formId no longer exists anywhere
@@ -218,10 +218,10 @@ public class FormEventRenameAdvisorTests : IDisposable
         var formXml = BuildFormXml(FormEventType.OnLoad, new HashSet<FormEventHandler> { new("other", "other.js", Guid.NewGuid(), "") });
         var resolved = Annotation(entity, oldName, "av_/lib.js", "function unrelated() {}");
 
-        var solutionForms = new List<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)>
+        var solutionForms = new List<DataverseForm>
         {
-            (Guid.NewGuid(), "Some Other Form A", entity, formXml, null),
-            (Guid.NewGuid(), "Some Other Form B", entity, formXml, null)
+            new(Guid.NewGuid(), "Some Other Form A", entity, formXml, null),
+            new(Guid.NewGuid(), "Some Other Form B", entity, formXml, null)
         };
 
         var suggestion = FormEventRenameAdvisor.Suggest(entity, oldName, [resolved], solutionForms, NewCache());
@@ -241,10 +241,10 @@ public class FormEventRenameAdvisorTests : IDisposable
         var validFormXml = BuildFormXml(FormEventType.OnLoad, new HashSet<FormEventHandler> { new("onLoad", library, expectedId, "") });
         var resolved = Annotation(entity, oldName, library, "function onLoad() {}");
 
-        var solutionForms = new List<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)>
+        var solutionForms = new List<DataverseForm>
         {
-            (Guid.NewGuid(), "Unparsable Candidate", entity, "not valid xml <<<", null),
-            (Guid.NewGuid(), newName, entity, validFormXml, null)
+            new(Guid.NewGuid(), "Unparsable Candidate", entity, "not valid xml <<<", null),
+            new(Guid.NewGuid(), newName, entity, validFormXml, null)
         };
 
         var suggestion = FormEventRenameAdvisor.Suggest(entity, oldName, [resolved], solutionForms, NewCache());
@@ -268,9 +268,9 @@ public class FormEventRenameAdvisorTests : IDisposable
         var onLoadAnnotation = Annotation(entity, oldName, library, "function onLoad() {} function onSave() {}");
         var onSaveAnnotation = Annotation(entity, oldName, library, "function onLoad() {} function onSave() {}", FormEventType.OnSave);
 
-        var solutionForms = new List<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)>
+        var solutionForms = new List<DataverseForm>
         {
-            (Guid.NewGuid(), newName, entity, formXml, null)
+            new(Guid.NewGuid(), newName, entity, formXml, null)
         };
 
         var suggestion = FormEventRenameAdvisor.Suggest(entity, oldName, [onLoadAnnotation, onSaveAnnotation], solutionForms, NewCache());

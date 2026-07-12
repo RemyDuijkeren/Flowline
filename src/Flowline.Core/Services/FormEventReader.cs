@@ -218,7 +218,13 @@ public class FormEventReader(IAnsiConsole console)
             .Where(a => FormKeyComparer.Instance.Equals((a.Annotation.Entity, a.Annotation.Form), (entity, form)))
             .ToList();
 
-        var suggestion = FormEventRenameAdvisor.Suggest(entity, form, sharingAnnotations, solutionForms, cache);
+        // Retyped to the named DataverseForm record at this cross-class boundary (rather than passing the
+        // raw positional tuple further) so Name/EntityLogicalName can't get silently transposed by a future edit.
+        var candidateForms = solutionForms
+            .Select(f => new DataverseForm(f.Id, f.Name, f.EntityLogicalName, f.FormXml, f.RowVersion))
+            .ToList();
+
+        var suggestion = FormEventRenameAdvisor.Suggest(entity, form, sharingAnnotations, candidateForms, cache);
         return suggestion is null ? baseMessage : baseMessage + suggestion;
     }
 

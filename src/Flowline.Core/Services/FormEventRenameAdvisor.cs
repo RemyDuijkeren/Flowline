@@ -16,7 +16,7 @@ public static class FormEventRenameAdvisor
         string entity,
         string requestedName,
         IReadOnlyList<ResolvedFormEventAnnotation> sharingAnnotations,
-        IReadOnlyList<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)> solutionForms,
+        IReadOnlyList<DataverseForm> solutionForms,
         FormEventIdentityCache? cache)
     {
         var candidatesForEntity = solutionForms
@@ -52,7 +52,7 @@ public static class FormEventRenameAdvisor
     static string? FindSelfTagMatch(
         string entity, string requestedName,
         IReadOnlyList<ResolvedFormEventAnnotation> sharingAnnotations,
-        List<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)> candidatesForEntity)
+        List<DataverseForm> candidatesForEntity)
     {
         foreach (var resolved in sharingAnnotations)
         {
