@@ -21,8 +21,16 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILog
     {
     }
 
+    internal static void ValidateForce(Settings settings)
+    {
+        if (settings.Force.Length > 0)
+            throw new FlowlineException(ExitCode.ValidationFailed, "'status' has no force-gated behavior — remove --force.");
+    }
+
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
+        ValidateForce(settings);
+
         if (ConsoleHelper.IsInteractive(settings))
             ConsoleHelper.WelcomeScreen(Console);
 
