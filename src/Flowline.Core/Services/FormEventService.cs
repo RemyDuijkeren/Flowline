@@ -30,8 +30,9 @@ public class FormEventService(IAnsiConsole console)
         bool force,
         bool dryRun,
         bool publishAfterSync = true,
+        string? formEventCachePath = null,
         CancellationToken cancellationToken = default) =>
-        SyncAsync(service, webresourceRoot, solutionName, force, dryRun, cleanupOnly: true, publishAfterSync, cancellationToken);
+        SyncAsync(service, webresourceRoot, solutionName, force, dryRun, cleanupOnly: true, publishAfterSync, formEventCachePath, cancellationToken);
 
     // R10a: registration pass — runs strictly after web resources are pushed, so new/updated handlers can
     // only ever reference libraries that already exist in Dataverse.
@@ -42,8 +43,9 @@ public class FormEventService(IAnsiConsole console)
         bool force,
         bool dryRun,
         bool publishAfterSync = true,
+        string? formEventCachePath = null,
         CancellationToken cancellationToken = default) =>
-        SyncAsync(service, webresourceRoot, solutionName, force, dryRun, cleanupOnly: false, publishAfterSync, cancellationToken);
+        SyncAsync(service, webresourceRoot, solutionName, force, dryRun, cleanupOnly: false, publishAfterSync, formEventCachePath, cancellationToken);
 
     async Task<bool> SyncAsync(
         IOrganizationServiceAsync2 service,
@@ -53,6 +55,7 @@ public class FormEventService(IAnsiConsole console)
         bool dryRun,
         bool cleanupOnly,
         bool publishAfterSync,
+        string? formEventCachePath,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(webresourceRoot))
@@ -65,7 +68,7 @@ public class FormEventService(IAnsiConsole console)
         // registration (second, fuller) pass surfaces reader/planner-level warnings, matching the "up to
         // date"/dry-run-preview dedup below.
         var snapshot = await console.Status().FlowlineSpinner().StartAsync("Lookup form events...", _ =>
-            _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, suppressWarnings: cleanupOnly, cancellationToken)).ConfigureAwait(false);
+            _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, formEventCachePath, suppressWarnings: cleanupOnly, cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         // Phase 2: Plan registration (pure, synchronous)
         var plan = _planner.Plan(snapshot, suppressWarnings: cleanupOnly);

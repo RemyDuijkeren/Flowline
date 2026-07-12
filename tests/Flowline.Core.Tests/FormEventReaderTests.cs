@@ -1,4 +1,5 @@
 using System.ServiceModel;
+using System.Text.Json;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using Microsoft.PowerPlatform.Dataverse.Client;
@@ -366,5 +367,92 @@ public class FormEventReaderTests : IDisposable
 
         Assert.Empty(snapshot.Annotations);
         Assert.DoesNotContain("malformed", _console.Output, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // U2: FormEventReader wires FormEventIdentityCache into the solution-scoped happy path so a later
+    // rename-detection unit (U3) has data on every successful resolution to suggest from.
+    [Fact]
+    public async Task LoadSnapshotAsync_FormResolves_WritesCacheEntry()
+    {
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+            "// flowline:onload account \"Account Main\" onLoadHandler\nfunction onLoadHandler() {}");
+
+        var formId = Guid.NewGuid();
+        _serviceMock.SetupEntityObjectTypeCode("account", 1);
+        _serviceMock.SetupSystemFormsInSolution((formId, "Account Main", "<form>account</form>", "account"));
+
+        var cachePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.json");
+        try
+        {
+            await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution", cachePath);
+
+            var cache = new FormEventIdentityCache(cachePath);
+            Assert.Equal(formId, cache.TryGet("account", "Account Main"));
+        }
+        finally
+        {
+            if (File.Exists(cachePath)) File.Delete(cachePath);
+        }
+    }
+
+    [Fact]
+    public async Task LoadSnapshotAsync_SameFormResolvedByTwoAnnotations_WritesOneCacheEntry()
+    {
+        // onLoad and onSave annotations on different files sharing the same form — resolvedForms is keyed
+        // by (Entity, Form), so this must write exactly one cache entry, not a conflicting pair.
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form1.js"),
+            "// flowline:onload account \"Account Main\" onLoadHandler\nfunction onLoadHandler() {}");
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form2.js"),
+            "// flowline:onsave account \"Account Main\" onSaveHandler\nfunction onSaveHandler() {}");
+
+        var formId = Guid.NewGuid();
+        _serviceMock.SetupEntityObjectTypeCode("account", 1);
+        _serviceMock.SetupSystemFormsInSolution((formId, "Account Main", "<form>account</form>", "account"));
+
+        var cachePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.json");
+        try
+        {
+            await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution", cachePath);
+
+            var cache = new FormEventIdentityCache(cachePath);
+            Assert.Equal(formId, cache.TryGet("account", "Account Main"));
+
+            var entries = JsonSerializer.Deserialize<FormEventIdentityCache.Entry[]>(File.ReadAllText(cachePath));
+            Assert.Single(entries!);
+        }
+        finally
+        {
+            if (File.Exists(cachePath)) File.Delete(cachePath);
+        }
+    }
+
+    [Fact]
+    public async Task LoadSnapshotAsync_CalledTwiceWithSameCachePath_SecondRunOverwritesWithoutError()
+    {
+        // Mirrors FormEventService.SyncAsync's two-phase design (KTD12: cleanup pass, then registration
+        // pass) — both phases re-read the snapshot and reuse the same cache path within one push.
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+            "// flowline:onload account \"Account Main\" onLoadHandler\nfunction onLoadHandler() {}");
+
+        var formId = Guid.NewGuid();
+        _serviceMock.SetupEntityObjectTypeCode("account", 1);
+        _serviceMock.SetupSystemFormsInSolution((formId, "Account Main", "<form>account</form>", "account"));
+
+        var cachePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.json");
+        try
+        {
+            await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution", cachePath, suppressWarnings: true);
+            await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution", cachePath);
+
+            var cache = new FormEventIdentityCache(cachePath);
+            Assert.Equal(formId, cache.TryGet("account", "Account Main"));
+
+            var entries = JsonSerializer.Deserialize<FormEventIdentityCache.Entry[]>(File.ReadAllText(cachePath));
+            Assert.Single(entries!);
+        }
+        finally
+        {
+            if (File.Exists(cachePath)) File.Delete(cachePath);
+        }
     }
 }

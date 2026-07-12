@@ -30,9 +30,17 @@ public class FormEventReader(IAnsiConsole console)
         IOrganizationServiceAsync2 service,
         string webresourceRoot,
         string solutionName,
+        string? formEventCachePath = null,
         bool suppressWarnings = false,
         CancellationToken cancellationToken = default)
     {
+        // formEventCachePath is caller-resolved (Flowline.Core has no reference to the Flowline CLI
+        // project's FlowlineStoragePaths — see FormEventIdentityCache's own doc comment). A fixed shared
+        // fallback filename would risk mixing different orgs' form data if a future caller forgot to pass
+        // the org-scoped path — a fresh, never-reused path per call degrades to an inert no-op cache
+        // instead, so tests and standalone callers don't all need one without that cross-org risk.
+        var cache = new FormEventIdentityCache(formEventCachePath ?? Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".json"));
+
         // Deliberate second call to the same reader WebResourceService already uses elsewhere in the
         // same push — cheap, and keeps this reader independent of a shared snapshot being threaded in.
         var webResourceReader = new WebResourceReader(console);
@@ -105,7 +113,12 @@ public class FormEventReader(IAnsiConsole console)
         {
             var matches = group.ToList();
             if (matches.Count == 1)
+            {
                 resolvedForms[group.Key] = new DataverseForm(matches[0].Id, matches[0].Name, matches[0].EntityLogicalName, matches[0].FormXml, matches[0].RowVersion);
+                // U2: every successful resolution recorded, not just ones a current annotation references —
+                // gives a later rename-detection unit (U3) data for a form that was renamed away from too.
+                cache.Set(matches[0].EntityLogicalName, matches[0].Name, matches[0].Id);
+            }
             else
                 // Ambiguous within this solution — can't be represented by the unique (Entity, Form) key.
                 // Only surfaced as an error below when an annotation actually targets it; an ambiguous

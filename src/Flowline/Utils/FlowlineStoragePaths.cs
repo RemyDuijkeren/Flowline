@@ -24,4 +24,30 @@ static class FlowlineStoragePaths
         var suffix = string.IsNullOrWhiteSpace(command) ? "" : $"-{command}";
         return Path.Combine(GetStorageRoot(), "logs", $"{runTime.UtcDateTime:yyyy-MM-ddTHHmmss}Z{suffix}.log");
     }
+
+    // U2: one form-event identity cache file per environment, so a rename lookup on one environment never
+    // suggests a formId that only exists on another. Sanitized so the environment URL is filesystem-safe
+    // on every platform (Path.GetInvalidFileNameChars() alone still leaves '.' and '/' in an http(s) URL).
+    public static string GetFormEventCachePath(string environmentUrl)
+    {
+        var sanitized = SanitizeForFileName(environmentUrl);
+        return Path.Combine(GetStorageRoot(), "form-events", $"{sanitized}.json");
+    }
+
+    static string SanitizeForFileName(string value)
+    {
+        var withoutScheme = value
+            .Replace("https://", "", StringComparison.OrdinalIgnoreCase)
+            .Replace("http://", "", StringComparison.OrdinalIgnoreCase);
+
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var chars = new char[withoutScheme.Length];
+        for (var i = 0; i < withoutScheme.Length; i++)
+        {
+            var c = withoutScheme[i];
+            chars[i] = c is '.' or ':' or '/' || Array.IndexOf(invalidChars, c) >= 0 ? '_' : c;
+        }
+
+        return new string(chars);
+    }
 }

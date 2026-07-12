@@ -110,6 +110,34 @@ public class FormEventServiceTests : IDisposable
             Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>());
     }
 
+    // U2: proves FormEventService actually threads formEventCachePath through to FormEventReader (not just
+    // compiling), and that R2's "including --dry-run runs" clause holds — the cache write happens in Phase 1
+    // (LoadSnapshotAsync), strictly before both the cleanup-phase and executor-level dry-run short-circuits.
+    [Fact]
+    public async Task RegisterAsync_DryRun_StillWritesCacheEntryAtSuppliedPath()
+    {
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+            "// flowline:onload account \"Account Main\" onLoadHandler\nfunction onLoadHandler() {}");
+
+        var formId = Guid.NewGuid();
+        _serviceMock.SetupEntityObjectTypeCode("account", 1);
+        _serviceMock.SetupSystemFormsInSolution((formId, "Account Main", "<form></form>", "account"));
+
+        var cachePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.json");
+        try
+        {
+            var result = await _service.RegisterAsync(_serviceMock, _webresourceRoot, "MySolution", force: false, dryRun: true, formEventCachePath: cachePath);
+
+            Assert.True(result);
+            var cache = new FormEventIdentityCache(cachePath);
+            Assert.Equal(formId, cache.TryGet("account", "Account Main"));
+        }
+        finally
+        {
+            if (File.Exists(cachePath)) File.Delete(cachePath);
+        }
+    }
+
     [Fact]
     public async Task RegisterAsync_DryRunWithPendingChanges_ShouldNotWriteButShowRichPreviewReturnTrue()
     {
