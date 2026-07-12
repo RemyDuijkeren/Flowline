@@ -6,9 +6,49 @@ namespace Flowline.Tests;
 public class SyncCommandTests
 {
     [Fact]
-    public void Settings_Force_ShouldDefaultToFalse()
+    public void Settings_Force_ShouldDefaultToEmpty()
     {
-        new SyncCommand.Settings().Force.Should().BeFalse();
+        new SyncCommand.Settings().Force.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ValidateForce_UnrecognizedValue_ThrowsNamingValidValues()
+    {
+        var settings = new SyncCommand.Settings { Force = ["delete-orphans"] };
+
+        var act = () => FlowlineSettings.ValidateForce(settings.Force, SyncCommand.ValidSpecifiers, "sync");
+
+        act.Should().Throw<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed
+                && e.Message.Contains("dirty") && e.Message.Contains("config") && e.Message.Contains("all"));
+    }
+
+    [Fact]
+    public void ValidateForce_ValidValues_DoesNotThrow()
+    {
+        var settings = new SyncCommand.Settings { Force = ["dirty"] };
+
+        var act = () => FlowlineSettings.ValidateForce(settings.Force, SyncCommand.ValidSpecifiers, "sync");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void HasForce_All_ApprovesDirtyAndConfigTogether()
+    {
+        var settings = new SyncCommand.Settings { Force = ["all"] };
+
+        settings.HasForce("dirty").Should().BeTrue();
+        settings.HasForce("config").Should().BeTrue();
+    }
+
+    [Fact]
+    public void HasForce_ConfigOnly_DoesNotApproveDirty()
+    {
+        var settings = new SyncCommand.Settings { Force = ["config"] };
+
+        settings.HasForce("config").Should().BeTrue();
+        settings.HasForce("dirty").Should().BeFalse();
     }
 
     [Fact]

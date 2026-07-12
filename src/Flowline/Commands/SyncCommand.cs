@@ -41,8 +41,12 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         public bool NoBuild { get; set; } = false;
     }
 
+    internal static readonly string[] ValidSpecifiers = ["dirty", "config", "all"];
+
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
+        FlowlineSettings.ValidateForce(settings.Force, ValidSpecifiers, "sync");
+
         // Dev URL is required
         var devEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, settings.DevUrl, settings, cancellationToken);
 
@@ -65,7 +69,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         Logger.LogInformation("Diff: {TotalFiles} files changed", preSyncSummary.TotalFiles);
         if (preSyncSummary.TotalFiles > 0)
         {
-            if (settings.Force)
+            if (settings.HasForce("dirty"))
             {
                 Console.Warning($"Uncommitted changes in '{projectSln.Name}/{PackageName}/src/' — overwriting.");
                 preSyncSummary.WriteFlat(Console, RuntimeOptions, "[dim]  ");
@@ -74,7 +78,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             {
                 Console.Warning($"Found uncommitted changes in '{projectSln.Name}/{PackageName}/src/'.");
                 preSyncSummary.WriteFlat(Console, RuntimeOptions, "[dim]  ");
-                throw new FlowlineException(ExitCode.DirtyWorkingDirectory, $"Uncommitted changes in '{projectSln.Name}/{PackageName}/src/' — Commit or stash changes first, or re-run with --force.");
+                throw new FlowlineException(ExitCode.DirtyWorkingDirectory, $"Uncommitted changes in '{projectSln.Name}/{PackageName}/src/' — Commit or stash changes first, or re-run with --force dirty.");
             }
         }
 
