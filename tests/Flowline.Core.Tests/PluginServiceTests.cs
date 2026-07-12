@@ -535,6 +535,25 @@ public class PluginServiceTests
         await _serviceMock.Received(1).DeleteAsync("sdkmessageprocessingstep", orphanStepId, Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task SyncSolutionAsync_ForceRecreateAssemblyOnly_DoesNotDeleteOrphanStep()
+    {
+        // Proves the two hazards are independently gated: approving recreate-assembly must not
+        // also silently approve delete-orphans for an unrelated orphan step in the same run.
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(assemblyId, pkt: "aabbccdd11223344"));
+        SetupPluginTypes();
+        SetupIdentityChangeExecuteAsync();
+
+        var orphanStepId = Guid.NewGuid();
+        SetupOrphanStepFromForeignAssembly(orphanStepId, "Extensions.MyFirst2PostUpdatePlugin: Update of account", "Extensions");
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(pkt: "1122334455667788"), "MySolution", RunMode.Normal, forceDeleteOrphans: false, forceRecreateAssembly: true);
+
+        await _serviceMock.Received().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().DeleteAsync("sdkmessageprocessingstep", orphanStepId, Arg.Any<CancellationToken>());
+    }
+
     // -- Deletion of obsolete types --
 
     [Fact]

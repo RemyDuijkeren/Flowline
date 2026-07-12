@@ -105,8 +105,6 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        ValidateForce(context, settings);
-
         var standaloneMode = IsStandaloneMode(settings);
 
         if (standaloneMode) ValidateStandaloneMode(settings, RootFolder);

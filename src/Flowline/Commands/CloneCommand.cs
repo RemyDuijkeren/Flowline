@@ -46,8 +46,6 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        ValidateForce(context, settings);
-
         // Save all provided URLs to config first (no API calls, just config update + prompt on conflict)
         Config!.GetOrUpdateProdUrl(settings.ProdUrl, settings);
         Config!.GetOrUpdateUatUrl(settings.UatUrl, settings);
@@ -206,10 +204,10 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             | 11 | Config invalid | Check .flowline exists and is valid |
             | 12 | Dirty working directory | Commit or stash changes first |
             | 13 | Build failed | Fix `dotnet build` errors in Plugins/ |
-            | 14 | Version conflict | Add --force to overwrite older version |
-            | 15 | Validation failed | Check error output for drift or missing dependencies |
+            | 14 | Version conflict | Add the --force <specifier> the error names to overwrite |
+            | 15 | Validation failed | Check error output for drift, an invalid --force value, or missing dependencies |
             | 16 | Timeout | PAC CLI 60-min limit hit — retry or check environment health |
-            | 17 | Force required | Add --force flag |
+            | 17 | Force required | Add the --force <specifier> the message names |
             | 130 | Cancelled | Ctrl+C pressed |
 
             ## Environments

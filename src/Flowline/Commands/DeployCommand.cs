@@ -64,8 +64,6 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        ValidateForce(context, settings);
-
         var targetUrl = ResolveTargetUrl(settings);
         var sln = Config!.GetOrUpdateSolution(settings.Solution, settings.Managed.IsSet ? settings.Managed.Value : (bool?)null, settings)
             ?? throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — use --solution <name>.");

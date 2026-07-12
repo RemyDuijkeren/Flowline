@@ -109,8 +109,8 @@ agents can extract it without a lookup table:
 |------|--------------------------|
 | 4 (NotAuthenticated) | `run: pac auth create --environment <url>` |
 | 12 (DirtyWorkingDirectory) | `Commit or stash changes first` |
-| 14 (VersionConflict) | `Add --force to overwrite` |
-| 17 (ForceRequired) | `Use --force to proceed` |
+| 14 (VersionConflict) | `Add --force <specifier> to overwrite` — `--force` requires a value naming the exact hazard (e.g. `--force dirty`); a bare or unrecognized value fails listing the valid ones for that command. See `docs/plans/2026-07-11-001-refactor-force-specifier-plan.md`. |
+| 17 (ForceRequired) | `Use --force <specifier> to proceed` — same per-command specifier requirement as above |
 
 All other error messages must at minimum state what failed and what to check. No message should
 say only "failed" or "error" — agents receiving the message must know which resource failed and

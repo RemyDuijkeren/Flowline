@@ -96,6 +96,8 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
 
         InvocationLogger.Log(Logger, RuntimeOptions, Config, RootFolder, activity);
 
+        ValidateForce(context, settings);
+
         var exitCode = await ExecuteFlowlineAsync(context, settings, cancellationToken);
         Logger.LogInformation("Completed: {Command} exit={ExitCode} duration={Duration}", context.Name, exitCode, FormatDuration(sw.Elapsed));
         return exitCode;

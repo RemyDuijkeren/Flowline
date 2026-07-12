@@ -41,7 +41,7 @@ public static class ConsoleHelper
     }
 
     /// <summary>
-    /// Prompts the user with a confirmation, or automatically accepts if in non-interactive mode and --force is specified.
+    /// Prompts the user with a confirmation, or automatically accepts if in non-interactive mode and --force config (or --force all) is specified.
     /// </summary>
     public static bool Confirm(string prompt, bool defaultValue, FlowlineSettings? settings)
     {

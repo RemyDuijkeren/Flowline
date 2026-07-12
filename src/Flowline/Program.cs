@@ -119,6 +119,17 @@ app.Configure(config =>
             case OperationCanceledException:
                 serilogLogger?.Information("Command cancelled by user");
                 return (int)ExitCode.Cancelled;
+            // Covers CommandParseException (e.g. "--force" with no value swallowed the next
+            // token) and other CommandRuntimeException shapes (e.g. a required positional like
+            // deploy's <target> going missing because --force consumed it instead) — both are
+            // malformed CLI invocations, not application bugs, so they get the same clean
+            // treatment as a FlowlineException rather than a raw internal stack trace.
+            case CommandRuntimeException cre:
+                serilogLogger?.Error(ex, "Command failed");
+                AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(cre.Message)}");
+                WriteExceptionContext(cre, serilogLogger);
+                AnsiConsole.MarkupLine(logLink);
+                return (int)ExitCode.ValidationFailed;
             default:
                 serilogLogger?.Error(ex, "Unhandled exception");
                 AnsiConsole.WriteException(ex, ExceptionFormats.ShortenPaths);

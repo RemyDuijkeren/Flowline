@@ -94,8 +94,6 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        ValidateForce(context, settings);
-
         var standaloneMode = IsStandaloneMode();
 
         // --- Resolve inputs ---

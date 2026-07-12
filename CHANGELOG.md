@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`--force`/`-f` now requires a value naming the specific hazard being approved** (e.g. `--force delete-orphans`, `--force dirty`, `--force config`, or `--force all`) instead of a bare boolean flag — breaking change, no deprecation window. Bare `--force` is now a parse error on every command. Each command accepts only the specifiers it actually gates; an unrecognized value fails listing the valid ones. See `flowline <command> --help` or the Command Reference wiki for each command's vocabulary.
+
 ## [0.10.0] - 2026-07-12
 
 ### Added
