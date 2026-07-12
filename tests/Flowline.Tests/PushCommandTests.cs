@@ -1,5 +1,6 @@
 using Flowline.Commands;
 using FluentAssertions;
+using Spectre.Console.Cli;
 
 namespace Flowline.Tests;
 
@@ -241,5 +242,158 @@ public class PushCommandTests : IDisposable
         var act = () => PushCommand.EnsureBuiltWebResources(dist);
 
         act.Should().Throw<FlowlineException>();
+    }
+
+    // -- ValidateForce (R5, R11, AE1a) --
+
+    [Fact]
+    public void ValidateForce_UnrecognizedValue_ThrowsNamingValidValues()
+    {
+        var settings = new PushCommand.Settings { Force = ["banana"] };
+
+        var act = () => FlowlineSettings.ValidateForce(settings.Force, PushCommand.ValidSpecifiers, "push");
+
+        act.Should().Throw<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed
+                && e.Message.Contains("delete-orphans") && e.Message.Contains("recreate-assembly")
+                && e.Message.Contains("unrecognized-form-handlers") && e.Message.Contains("config") && e.Message.Contains("all"));
+    }
+
+    [Fact]
+    public void ValidateForce_SyncOnlyValue_ThrowsNamingPushValidValues()
+    {
+        var settings = new PushCommand.Settings { Force = ["dirty"] };
+
+        var act = () => FlowlineSettings.ValidateForce(settings.Force, PushCommand.ValidSpecifiers, "push");
+
+        act.Should().Throw<FlowlineException>().Where(e => e.Message.Contains("dirty") && e.Message.Contains("push"));
+    }
+
+    [Fact]
+    public void ValidateForce_ValidValues_DoesNotThrow()
+    {
+        var settings = new PushCommand.Settings { Force = ["delete-orphans", "config"] };
+
+        var act = () => FlowlineSettings.ValidateForce(settings.Force, PushCommand.ValidSpecifiers, "push");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateForce_All_DoesNotThrow()
+    {
+        var settings = new PushCommand.Settings { Force = ["all"] };
+
+        var act = () => FlowlineSettings.ValidateForce(settings.Force, PushCommand.ValidSpecifiers, "push");
+
+        act.Should().NotThrow();
+    }
+
+    // -- HasForce wiring (R6) --
+
+    [Fact]
+    public void HasForce_DeleteOrphansOnly_DoesNotApproveRecreateAssembly()
+    {
+        var settings = new PushCommand.Settings { Force = ["delete-orphans"] };
+
+        settings.HasForce("delete-orphans").Should().BeTrue();
+        settings.HasForce("recreate-assembly").Should().BeFalse();
+        settings.HasForce("unrecognized-form-handlers").Should().BeFalse();
+    }
+
+    [Fact]
+    public void HasForce_All_ApprovesEveryPushHazard()
+    {
+        var settings = new PushCommand.Settings { Force = ["all"] };
+
+        settings.HasForce("delete-orphans").Should().BeTrue();
+        settings.HasForce("recreate-assembly").Should().BeTrue();
+        settings.HasForce("unrecognized-form-handlers").Should().BeTrue();
+        settings.HasForce("config").Should().BeTrue();
+    }
+
+    [Fact]
+    public void HasForce_RepeatedFlag_ApprovesExactlyThoseTwo()
+    {
+        var settings = new PushCommand.Settings { Force = ["delete-orphans", "config"] };
+
+        settings.HasForce("delete-orphans").Should().BeTrue();
+        settings.HasForce("config").Should().BeTrue();
+        settings.HasForce("recreate-assembly").Should().BeFalse();
+        settings.HasForce("unrecognized-form-handlers").Should().BeFalse();
+    }
+
+    // -- CommandApp parse seam (R1/R2/R3, AE1) — exit-code-only per KTD3's test-seam split;
+    // Spectre renders parse errors via AnsiConsole, not Console.Out, so message content isn't
+    // capturable via simple redirection (confirmed during planning). A no-op wrapper command
+    // drives Spectre's real parser against the real PushCommand.Settings shape without needing
+    // PushCommand's full DI graph, which parsing itself never touches.
+
+    sealed class NoOpPushSettingsCommand : Command<PushCommand.Settings>
+    {
+        protected override int Execute(CommandContext context, PushCommand.Settings settings, CancellationToken cancellationToken) => 0;
+    }
+
+    static CommandApp BuildPushParseProbe()
+    {
+        var app = new CommandApp();
+        app.Configure(c => c.AddCommand<NoOpPushSettingsCommand>("push"));
+        return app;
+    }
+
+    [Fact]
+    public void CommandApp_BareForce_NoValue_FailsToParse()
+    {
+        var exitCode = BuildPushParseProbe().Run(["push", "--force"]);
+
+        exitCode.Should().NotBe(0);
+    }
+
+    [Fact]
+    public void CommandApp_ForceWithValue_ParsesSuccessfully()
+    {
+        var exitCode = BuildPushParseProbe().Run(["push", "--force", "delete-orphans"]);
+
+        exitCode.Should().Be(0);
+    }
+
+    [Fact]
+    public void CommandApp_ForceRepeated_CollectsBothValues()
+    {
+        var exitCode = BuildPushParseProbe().Run(["push", "--force", "delete-orphans", "--force", "config"]);
+
+        exitCode.Should().Be(0);
+    }
+
+    // -- Positional-argument interaction (behavior-change note) --
+
+    [Fact]
+    public void CommandApp_ForceImmediatelyFollowedByPositional_BindsPositionalAsForceValue()
+    {
+        // "--force MySolution" with the [solution] argument otherwise omitted binds "MySolution"
+        // as --force's value and leaves the positional unset — not a silent misfire, since a
+        // real invocation would still fail ValidateForce naming push's valid values.
+        PushCommand.Settings? captured = null;
+        var app = new CommandApp();
+        app.Configure(c => c.AddCommand<CapturingPushSettingsCommand>("push"));
+        CapturingPushSettingsCommand.OnExecute = s => captured = s;
+
+        var exitCode = app.Run(["push", "--force", "MySolution"]);
+
+        exitCode.Should().Be(0);
+        captured.Should().NotBeNull();
+        captured!.Force.Should().BeEquivalentTo(["MySolution"]);
+        captured.Solution.Should().BeNull();
+    }
+
+    sealed class CapturingPushSettingsCommand : Command<PushCommand.Settings>
+    {
+        public static Action<PushCommand.Settings>? OnExecute;
+
+        protected override int Execute(CommandContext context, PushCommand.Settings settings, CancellationToken cancellationToken)
+        {
+            OnExecute?.Invoke(settings);
+            return 0;
+        }
     }
 }

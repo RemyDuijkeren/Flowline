@@ -213,7 +213,7 @@ public class FormEventExecutor(IAnsiConsole console)
         {
             var lines = unrecognized.Select(u => FormatUnrecognizedHandlerLine(u.Form, u.Unrecognized));
             throw new FlowlineException(ExitCode.ForceRequired,
-                "Unrecognized form event handler(s) found — confirmation required but not in interactive mode. Use --force to proceed.\n"
+                "Unrecognized form event handler(s) found — confirmation required but not in interactive mode. Use --force unrecognized-form-handlers to proceed.\n"
                 + string.Join("\n", lines));
         }
 
