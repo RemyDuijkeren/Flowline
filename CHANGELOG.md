@@ -7,18 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-07-12
+
 ### Added
 
+- **Automatic form event registration**: `// flowline:onload`/`// flowline:onsave` annotations in a web resource bind one of its exported functions to a form's OnLoad/OnSave event. `push` registers and keeps in sync the resulting Form Library and Form Event Handler entries in the form's XML — no more manual wiring through the Maker Portal's Configure Event dialog. Function names are matched case-insensitively against the built file's real exports, so a typo or missing function fails the push with a clear error instead of registering a broken reference. Entries `push` created are cleaned up automatically once their annotation or source file is removed; handlers and libraries belonging to other solutions or ISVs are always left untouched, and anything that looks stale but wasn't clearly created by Flowline needs interactive confirmation or `--force` before removal.
+- **`push --scope formevents`**: runs form event registration on its own against an already-built `dist/`, without also syncing web resource content. `--dry-run` and `--no-publish` apply to it the same as web resources.
+- **`flowline drift` command**: compares committed source against an arbitrary environment (`prod`, `uat`, `test`, `dev`, or a raw URL) and reports components present there but not declared locally. Read-only — never deletes or modifies anything; always bypasses the solution-info cache so a deleted or renamed target solution can't read as "no drift."
+- **Bot and Connection Reference orphan detection**: orphaned Bots and Connection References are now identified via entity-side queries and surfaced in the orphan-cleanup report as manual-removal candidates.
+- **Role orphans reported by name**: a Role removed from source now resolves to its display name in the orphan-cleanup report instead of falling through to a generic, verbose-only "unrecognized type" line.
+- **Orphan risk tiers in the cleanup report**: automated findings are now grouped by priority — blocks deployment, still running deleted logic, safe to clean up — so the report distinguishes dangerous orphans from hygiene.
+- **Verbose preview of unsupported orphan types**: `--verbose` now logs orphan candidates of types Flowline doesn't yet act on, with their resolved type and instance name where possible.
+- **`deploy --path <zip>`**: import a pre-built solution artifact directly instead of packing from source. Skips the git-clean and drift checks (they assume the package came from the checked-out `Package/src`), validates the artifact's managed/unmanaged flag against the solution's configured setting, and unpacks the actual imported artifact for post-deploy checks.
+- **`deploy` reuses a cached build artifact by default**: a repeat deploy of the same solution skips `pac solution pack` and reuses the last artifact packed for the current source commit (keyed on commit SHA + managed flag). `--no-cache` forces a fresh pack.
+- **Unmanaged deploys auto-publish pending changes**: `deploy` now passes `--publish-changes` to `pac solution import` for unmanaged solutions.
+- **`deploy` activates plugins and workflows on import**: `pac solution import` now always runs with `--activate-plugins`.
 - **`//!`/`/*! ... */` form for `// flowline:depends` annotations**: survives default minifier settings (Terser/esbuild/SWC preserve `!`-prefixed comments) — recommended for WebResources projects with a minification step; prefer the block form `/*! ... */`, since some minifier configs only apply this preservation to block comments, not line comments. The plain `//` form still works.
 - **Web resource update reports now say why**: `push`/`sync` output lists the reason for each web resource update (`content`, `displayname`, `dependencies`, or a combination) instead of just the resource name.
 
 ### Changed
 
+- **Plugin step/image matching keyed by identity, not name**: `push` now matches an existing step to its assembly-side declaration solely by `(message, table filter, stage, mode)`, and an image solely by `(step, image type)` — `name` is now write-only. Renaming a step (e.g. a multi-`[Handles]` class whose generated name changes) updates in place instead of risking a mismatch. Trade-off: changing a step's **message, table filter, stage, or mode** now always deletes and recreates the step rather than updating it, since those fields are the identity key and can no longer be edited on an existing row.
+- **Web resource plan/summary lines now show counts**: "Web resources found (N Dataverse, M local)" and "Web resource plan ready: N creates, M updates, K deletes" replace the previous name-only lines.
+
 ### Fixed
 
 - **`// flowline:depends` annotations recognized anywhere in the file**: previously the parser stopped scanning at the first non-`//`-comment line, so a bundler-injected banner (e.g. Rollup's `banner` option, used by the default WebResources scaffold) silently dropped every annotation in the built file. Annotations are now found regardless of position.
+- **`// flowline:depends` bare filenames now resolve to the Maker Portal's fully-qualified name**: a dependency written as `lib.js` used to be stored as the literal bare filename, which didn't match how the Maker Portal's own dependency editor writes `Library@name`. Flowline now qualifies the bare name against the sibling web resource it matches, warning and leaving it unqualified if the match is ambiguous.
+- **Orphan cleanup no longer aborts a deploy on a transient Dataverse fault**: a single failed live query used to abort orphan detection before other component types were even checked, discarding all already-computed findings. Each handler now catches and degrades to its existing "record not found" fallback instead of crashing.
+- **`deploy`'s DTAP gate closes a downgrade gap**: it previously only blocked promoting a version the predecessor tier hadn't verified yet; deploying an *older* version than what the predecessor had already verified passed silently. The gate now requires an exact version match between the predecessor tier and the version being promoted.
+- **`sync` reports when there's nothing to deploy**: when a sync produces no component changes, the completion message says so directly instead of prompting to commit and tag a no-op.
+- **Managed deploy's no-delete report no longer says `(--no-delete active)`**: that text was always shown for managed solutions' preview-only orphan report even though nothing set `--no-delete`. It now distinguishes a first install from a preview of what an upgrade import will remove.
+- **Verbose-only detail no longer missing from the invocation log**: snapshot trees and plugin identity-change diagnostics used to be skipped entirely from the structured log file when `--verbose` wasn't passed; they're now always logged, with `--verbose` only controlling terminal display.
+- Subprocess output in verbose mode no longer shows literal `[dim]...[/]` markup instead of dim-colored text.
+- WebResources scaffold: the generated ESLint config only linted `.ts` files — `.js` files are now linted too.
 
 ### Security
+
+- **Log-file redaction hardened**: email addresses in the per-invocation log are now redacted (new), and email/URL redaction switched from an unsalted hash to a per-install, randomly generated salt (HMAC) — output is no longer correlatable across installs or crackable via a precomputed table.
 
 ## [0.9.0] - 2026-07-05
 
@@ -235,7 +261,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions CI and release workflows.
 
 
-[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.9.0...HEAD
+[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.10.0...HEAD
+[0.10.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.9.0...0.10.0
 [0.9.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.8.0...0.9.0
 [0.8.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.7.0...0.8.0
 [0.7.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.6.0...0.7.0
