@@ -124,4 +124,19 @@ form's `formxml`. Shape: `// flowline:onload <entity> <form> [Function[(params,.
 `flowline:onsave`), same comment styles and whole-file scanning as the dependency annotation.
 Function name is optional (defaults to `onLoad`/`onSave`) and matched case-insensitively against the
 file's real exports. Flowline only ever manages a [[Form Event Handler]] pointing at its own tracked
-[[Form Library]] — handlers added by other solutions or ISVs are left untouched.
+[[Form Library]] — handlers added by other solutions or ISVs are left untouched. The form name is
+matched literally; if the form is later renamed, see [[Rename-resilience signal]] for what happens to
+the annotation's binding.
+
+### Rename-resilience signal
+A confidence-tiered advisory clue offered when an [[Event annotation]]'s form name no longer resolves
+to any live form, appended to the push failure message. None of these signals let the push succeed —
+a name-lookup miss always fails, so the annotation still must be corrected by hand; the signal only
+makes the failure actionable instead of a bare "not found." Three tiers are tried in order of
+confidence, strongest first: a **self-tag** match (the annotation's own handler fingerprint, computed
+the same way it originally was, is still present on some other live form — proof that form used to be
+this one, regardless of its current name), a **rename cache** hit (a prior push's remembered identity
+for this exact entity-and-name pair still exists live, just possibly renamed since), and a **sole
+survivor** hedge (exactly one form remains on the entity, offered only as a weak "is this what you
+meant?" guess). The first tier to produce a candidate wins; lower tiers are never consulted once a
+higher one fires.
