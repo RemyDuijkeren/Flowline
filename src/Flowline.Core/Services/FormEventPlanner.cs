@@ -248,12 +248,14 @@ public class FormEventPlanner(IAnsiConsole console)
         return $"// flowline:{directive} {entity} \"{form}\" {handler.FunctionName}{parameters}";
     }
 
-    static string DeriveAutoNamespace(string libraryName) =>
+    // Internal (not private): FormEventRenameAdvisor (U3) needs to derive the same auto-namespace when
+    // recomputing a self-tag candidate's deterministic handler id — shares this rather than duplicating it.
+    internal static string DeriveAutoNamespace(string libraryName) =>
         ToPascalCase(Path.GetFileNameWithoutExtension(libraryName));
 
     // Mirrors src/Flowline/Templates/WebResources/rollup.config.mjs's toPascalCase so the auto-derived
     // function namespace matches what the Rollup-built bundle actually exports.
-    static string ToPascalCase(string name) =>
+    internal static string ToPascalCase(string name) =>
         string.Concat(Regex.Split(name, "[^a-zA-Z0-9]+")
             .Where(w => w.Length > 0)
             .Select(w => char.ToUpperInvariant(w[0]) + w[1..]));

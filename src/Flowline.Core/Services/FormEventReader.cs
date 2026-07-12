@@ -156,7 +156,7 @@ public class FormEventReader(IAnsiConsole console)
 
             return globalMatches.Count switch
             {
-                0 => (Pair: pair, Error: $"form '{form}' not found for entity '{entity}' (Main or Quick Create form)."),
+                0 => (Pair: pair, Error: BuildFormNotFoundMessage(entity, form, resolvedAnnotations, solutionForms, cache)),
                 _ => (Pair: pair, Error: $"form '{form}' for entity '{entity}' exists in Dataverse but is not a component of solution '{solutionName}'.")
             };
         })).ConfigureAwait(false);
@@ -197,6 +197,25 @@ public class FormEventReader(IAnsiConsole console)
                 "Form event annotations failed to resolve:\n" + string.Join("\n", errors));
 
         return new FormEventSnapshot(validAnnotations.AsReadOnly(), trackedLibraryNames, resolvedForms.AsReadOnly());
+    }
+
+    // U3: R6 — on a name-lookup miss, ask FormEventRenameAdvisor for an evidence-gated suggestion and
+    // append it (never replace, never resolve) to today's plain "not found" message. When the advisor
+    // finds nothing, this returns byte-for-byte the original message (R6's negative case).
+    static string BuildFormNotFoundMessage(
+        string entity, string form,
+        List<ResolvedFormEventAnnotation> resolvedAnnotations,
+        List<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)> solutionForms,
+        FormEventIdentityCache cache)
+    {
+        var baseMessage = $"form '{form}' not found for entity '{entity}' (Main or Quick Create form).";
+
+        var sharingAnnotations = resolvedAnnotations
+            .Where(a => FormKeyComparer.Instance.Equals((a.Annotation.Entity, a.Annotation.Form), (entity, form)))
+            .ToList();
+
+        var suggestion = FormEventRenameAdvisor.Suggest(entity, form, sharingAnnotations, solutionForms, cache);
+        return suggestion is null ? baseMessage : baseMessage + suggestion;
     }
 
     List<ResolvedFormEventAnnotation> CollectAnnotations(IEnumerable<LocalWebResource> localResources, bool suppressWarnings)

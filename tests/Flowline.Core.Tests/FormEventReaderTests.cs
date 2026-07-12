@@ -4,6 +4,7 @@ using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using NSubstitute;
+using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Spectre.Console.Testing;
 
@@ -424,6 +425,86 @@ public class FormEventReaderTests : IDisposable
         {
             if (File.Exists(cachePath)) File.Delete(cachePath);
         }
+    }
+
+    // U3/R6: no advisory signal identifies a candidate here (no systemform at all is set up for "account")
+    // — the thrown message must be byte-for-byte identical to today's original literal, proving the
+    // advisor's "nothing found" path never mutates the existing failure text.
+    [Fact]
+    public async Task LoadSnapshotAsync_FormNotFound_NoAdvisorySignal_ErrorMessageByteForByteUnchanged()
+    {
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+            "// flowline:onload account \"Missing Form\" handler\nfunction handler() {}");
+
+        _serviceMock.SetupEntityObjectTypeCode("account", 1);
+        // No solution-scoped or global systemform setup at all — zero candidates for "account", so none
+        // of the self-tag/cache/sole-survivor signals can fire.
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
+            _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution"));
+
+        Assert.Equal(
+            "Form event annotations failed to resolve:\n"
+            + "form.js: form 'Missing Form' not found for entity 'account' (Main or Quick Create form).",
+            ex.Message);
+    }
+
+    // U3: integration through the real LoadSnapshotAsync pipeline — a live form still carries the
+    // deterministic handler id that "Old Main" would have produced, even though it's now named "New Main".
+    // Asserts the exact enriched FlowlineException.Message text for a self-tag-match rename.
+    [Fact]
+    public async Task LoadSnapshotAsync_FormRenamedSelfTagMatch_EnrichesNotFoundMessageWithSuggestion()
+    {
+        const string library = "my_MySolution/form.js";
+        var expectedId = FormEventDeterministicId.ForHandler("account", "Old Main", FormEventType.OnLoad, "onLoad", library);
+        var formXmlWithHandler = FormEventTestHelpers.BuildFormXml(FormEventType.OnLoad,
+            new HashSet<FormEventHandler> { new("onLoad", library, expectedId, "") });
+
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+            "// flowline:onload account \"Old Main\"\nfunction onLoad() {}");
+
+        _serviceMock.SetupEntityObjectTypeCode("account", 1);
+        _serviceMock.SetupSystemFormsInSolution((Guid.NewGuid(), "New Main", formXmlWithHandler, "account"));
+        // Global fallback lookup for "Old Main" also finds nothing (not configured) — R8's "doesn't exist
+        // at all", the same branch the enrichment attaches to.
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
+            _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution"));
+
+        Assert.Equal(
+            "Form event annotations failed to resolve:\n"
+            + "form.js: form 'Old Main' not found for entity 'account' (Main or Quick Create form)."
+            + $"{Environment.NewLine}      — this form was renamed to 'New Main' — same handler signature"
+            + $"{Environment.NewLine}      — update your annotation to:"
+            + $"{Environment.NewLine}        // flowline:onload account \"New Main\"",
+            ex.Message);
+    }
+
+    // R5 — the single most safety-critical requirement: a name-lookup miss ALWAYS fails the push, even
+    // when the rename advisor found a strong (self-tag) candidate. No signal, alone or combined, may let
+    // registration proceed or succeed silently.
+    [Fact]
+    public async Task LoadSnapshotAsync_RenameCandidateFound_StillThrowsFlowlineException_R5Regression()
+    {
+        const string library = "my_MySolution/form.js";
+        var expectedId = FormEventDeterministicId.ForHandler("account", "Old Main", FormEventType.OnLoad, "onLoad", library);
+        var formXmlWithHandler = FormEventTestHelpers.BuildFormXml(FormEventType.OnLoad,
+            new HashSet<FormEventHandler> { new("onLoad", library, expectedId, "") });
+
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+            "// flowline:onload account \"Old Main\"\nfunction onLoad() {}");
+
+        _serviceMock.SetupEntityObjectTypeCode("account", 1);
+        _serviceMock.SetupSystemFormsInSolution((Guid.NewGuid(), "New Main", formXmlWithHandler, "account"));
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
+            _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution"));
+
+        Assert.Equal(ExitCode.ValidationFailed, ex.ExitCode);
+        // A confident candidate was found and named in the message...
+        Assert.Contains("New Main", ex.Message);
+        // ...but nothing resolved: the annotation for "Old Main" never made it into a valid snapshot —
+        // the exception above is what proves the push failed regardless of the suggestion's existence.
     }
 
     [Fact]
