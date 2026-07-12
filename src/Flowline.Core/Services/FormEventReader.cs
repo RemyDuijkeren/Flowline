@@ -108,6 +108,11 @@ public class FormEventReader(IAnsiConsole console)
 
         var resolvedForms = new Dictionary<(string Entity, string Form), DataverseForm>(FormKeyComparer.Instance);
         var ambiguousCounts = new Dictionary<(string Entity, string Form), int>(FormKeyComparer.Instance);
+        // U2: every successful resolution recorded, not just ones a current annotation references — gives
+        // a later rename-detection unit (U3) data for a form that was renamed away from too. Batched into
+        // one cache write below rather than one per form, so a large solution's cache file isn't
+        // read-modified-written once per resolved form.
+        var cacheResolutions = new List<(string Entity, string Name, Guid FormId)>();
 
         foreach (var group in solutionForms.GroupBy(f => (f.EntityLogicalName, f.Name), FormKeyComparer.Instance))
         {
@@ -115,9 +120,7 @@ public class FormEventReader(IAnsiConsole console)
             if (matches.Count == 1)
             {
                 resolvedForms[group.Key] = new DataverseForm(matches[0].Id, matches[0].Name, matches[0].EntityLogicalName, matches[0].FormXml, matches[0].RowVersion);
-                // U2: every successful resolution recorded, not just ones a current annotation references —
-                // gives a later rename-detection unit (U3) data for a form that was renamed away from too.
-                cache.Set(matches[0].EntityLogicalName, matches[0].Name, matches[0].Id);
+                cacheResolutions.Add((matches[0].EntityLogicalName, matches[0].Name, matches[0].Id));
             }
             else
                 // Ambiguous within this solution — can't be represented by the unique (Entity, Form) key.
@@ -125,6 +128,8 @@ public class FormEventReader(IAnsiConsole console)
                 // orphan form with no annotation is simply absent from Forms (rare edge case).
                 ambiguousCounts[group.Key] = matches.Count;
         }
+
+        cache.SetMany(cacheResolutions);
 
         var formErrors = new Dictionary<(string Entity, string Form), string>(FormKeyComparer.Instance);
 

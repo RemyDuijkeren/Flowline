@@ -57,10 +57,7 @@ public static class FormEventRenameAdvisor
         foreach (var resolved in sharingAnnotations)
         {
             var evt = resolved.Annotation.Event;
-            var isExplicit = resolved.Annotation.FunctionName is not null;
-            var requestedFunctionName = resolved.Annotation.FunctionName
-                ?? (evt == FormEventType.OnLoad ? "onLoad" : "onSave");
-            var autoNamespace = FormEventPlanner.DeriveAutoNamespace(resolved.LibraryName);
+            var (requestedFunctionName, autoNamespace, isExplicit) = FormEventPlanner.DeriveHandlerResolutionInputs(resolved, evt);
 
             var (finalFunctionName, found, _) = FormEventFunctionResolver.Resolve(
                 resolved.Content, requestedFunctionName, autoNamespace, isExplicit);
@@ -73,7 +70,15 @@ public static class FormEventRenameAdvisor
 
             foreach (var candidate in candidatesForEntity)
             {
-                var xdoc = XDocument.Parse(candidate.FormXml);
+                // Unlike FormEventPlanner's XDocument.Parse (only ever run on cleanly, uniquely resolved
+                // forms), this runs over every live candidate on the entity — including ones this feature
+                // never validated formxml for. A malformed/empty formxml here must degrade this candidate
+                // out of self-tag consideration, not crash the whole advisory pass (R5: never worsen the
+                // outcome of an already-failing push).
+                XDocument xdoc;
+                try { xdoc = XDocument.Parse(candidate.FormXml); }
+                catch (Exception) { continue; }
+
                 if (FormXmlEventSerializer.GetHandlers(xdoc, evt).Any(h => h.HandlerUniqueId == expectedId))
                     return candidate.Name;
             }

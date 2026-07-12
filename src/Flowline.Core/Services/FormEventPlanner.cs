@@ -53,10 +53,7 @@ public class FormEventPlanner(IAnsiConsole console)
                 var annotationDesired = new HashSet<FormEventHandler>();
                 foreach (var resolved in formAnnotations.Where(a => a.Annotation.Event == evt))
                 {
-                    var isExplicit = resolved.Annotation.FunctionName is not null;
-                    var requestedFunctionName = resolved.Annotation.FunctionName
-                        ?? (evt == FormEventType.OnLoad ? "onLoad" : "onSave");
-                    var autoNamespace = DeriveAutoNamespace(resolved.LibraryName);
+                    var (requestedFunctionName, autoNamespace, isExplicit) = DeriveHandlerResolutionInputs(resolved, evt);
 
                     var (resolvedFunctionName, found, confident) = FormEventFunctionResolver.Resolve(
                         resolved.Content, requestedFunctionName, autoNamespace, isExplicit);
@@ -246,6 +243,19 @@ public class FormEventPlanner(IAnsiConsole console)
         var directive = evt == FormEventType.OnLoad ? "onload" : "onsave";
         var parameters = string.IsNullOrEmpty(handler.Parameters) ? "" : $"({handler.Parameters})";
         return $"// flowline:{directive} {entity} \"{form}\" {handler.FunctionName}{parameters}";
+    }
+
+    // Shared with FormEventRenameAdvisor (U3), which needs the same inputs to recompute a self-tag
+    // candidate's deterministic handler id. Only the resolution *inputs* are shared — each caller still
+    // calls FormEventFunctionResolver.Resolve and FormEventDeterministicId.ForHandler itself, since what
+    // they do with the result (and which form name they derive the id against) differs per caller.
+    internal static (string RequestedFunctionName, string AutoNamespace, bool IsExplicit) DeriveHandlerResolutionInputs(
+        ResolvedFormEventAnnotation resolved, FormEventType evt)
+    {
+        var isExplicit = resolved.Annotation.FunctionName is not null;
+        var requestedFunctionName = resolved.Annotation.FunctionName
+            ?? (evt == FormEventType.OnLoad ? "onLoad" : "onSave");
+        return (requestedFunctionName, DeriveAutoNamespace(resolved.LibraryName), isExplicit);
     }
 
     // Internal (not private): FormEventRenameAdvisor (U3) needs to derive the same auto-namespace when

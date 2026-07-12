@@ -32,7 +32,12 @@ public sealed class FormEventIdentityCache(string path)
         }
     }
 
-    public void Set(string entity, string name, Guid formId)
+    public void Set(string entity, string name, Guid formId) => SetMany([(entity, name, formId)]);
+
+    // Batches multiple resolutions into a single read-modify-write instead of one per entry — a caller
+    // resolving many forms in one pass (e.g. FormEventReader's snapshot load) would otherwise re-read and
+    // re-write the whole growing file once per form.
+    public void SetMany(IEnumerable<(string Entity, string Name, Guid FormId)> resolutions)
     {
         try
         {
@@ -50,18 +55,21 @@ public sealed class FormEventIdentityCache(string path)
                 }
             }
 
-            entries.RemoveAll(e =>
-                string.Equals(e.Entity, entity, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase));
-            entries.Add(new Entry(entity, name, formId, DateTime.UtcNow));
+            foreach (var (entity, name, formId) in resolutions)
+            {
+                entries.RemoveAll(e =>
+                    string.Equals(e.Entity, entity, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase));
+                entries.Add(new Entry(entity, name, formId, DateTime.UtcNow));
+            }
 
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             File.WriteAllText(path, JsonSerializer.Serialize(entries));
         }
         catch (Exception)
         {
-            // A failed cache write shouldn't fail a push that already resolved the form successfully —
-            // worst case, the next push just doesn't find this entry and re-resolves by name.
+            // A failed cache write shouldn't fail a push that already resolved forms successfully —
+            // worst case, the next push just doesn't find these entries and re-resolves by name.
         }
     }
 }
