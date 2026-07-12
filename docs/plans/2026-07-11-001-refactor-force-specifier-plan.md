@@ -34,7 +34,7 @@ One boolean `--force` currently gates every force-issue on a command indiscrimin
 - **`config` is the one specifier shared across commands**, because the hazard it names — overwriting an already-set value in `.flowline` — is genuinely cross-cutting infrastructure (`FlowlineCommand.cs:144-148,195` calling into `ProjectConfig.cs`), not a command-specific operation like the others.
 - **`all` always means "every specifier this command has,"** including `config` when present. It is the one universal escape hatch, but a conscious one — typing the word `all` is a deliberate choice, unlike today's silent-by-omission blanket approval.
 - **push's two orphan-deletion hazards (assembly, step) are merged into one `delete-orphans` value** rather than split by blast radius, keeping the vocabulary small — a handful of fixed, known categories — rather than fragmenting by internal implementation detail.
-- **Specifier names follow a verb-object shape** (`delete-orphans`, `recreate-assembly`) naming the actual Dataverse operation, matching Flowline's own internal vocabulary (e.g. `PluginService.cs` logs `"...Deleting."` for the orphan case). `form-handlers`, `dirty`, `config`, and `drift` stay single-concept nouns — there's no competing meaning elsewhere in Flowline for those, so no verb is needed to disambiguate.
+- **Specifier names take the shape each hazard actually needs, not one uniform template.** `delete-orphans` and `recreate-assembly` are verb-first, matching Flowline's own internal vocabulary (e.g. `PluginService.cs` logs `"...Deleting."` for the orphan case) — the bare noun alone would either collide with Flowline's separate multi-action orphan-cleanup concept (`CONCEPTS.md`'s Orphan handler/Orphan priority) or be meaningless standalone (`recreate` *what*?). `dirty`, `drift`, and `config` stay bare nouns — only one action is ever taken on each of those states, so no verb is needed. `unrecognized-form-handlers` needs both a qualifier (`unrecognized` — distinguishes it from the code's separate `foreign` and `stale` handler categories, which are never force-gated; verified against `FormEventPlanner.cs:91-134`) and a domain prefix (`form` — disambiguates from `push`'s plugin/assembly hazards, which are also a kind of Dataverse event handling).
 - **Error messages name the exact required specifier(s)**, replacing today's generic `"...Use --force to allow"` text, so the CLI is self-documenting at the point of failure.
 
 ### Requirements
@@ -42,7 +42,7 @@ One boolean `--force` currently gates every force-issue on a command indiscrimin
 **Force specifier surface**
 - R1. `--force`/`-f` takes a required value; invoking it with no value is a parse error on every command, with no fallback interpretation.
 - R2. `--force <value>` is repeatable (`--force x --force y`), matching the existing `--scope` option shape (`PushCommand.cs:34-36`), not a comma-separated list.
-- R3. `-f` keeps working as a short alias and also requires a value (`-f orphans`).
+- R3. `-f` keeps working as a short alias and also requires a value (`-f delete-orphans`).
 - R4. `--force all` is accepted on every command that has at least one specifier value, and resolves to every hazard that command gates, including `config` where present.
 - R5. Passing a specifier value not valid for the current command is a validation error naming the values that are valid for that command.
 
@@ -50,7 +50,7 @@ One boolean `--force` currently gates every force-issue on a command indiscrimin
 
 | R-ID | Command | Specifier values | Hazard(s) covered |
 |---|---|---|---|
-| R6 | `push` | `delete-orphans`, `recreate-assembly`, `form-handlers`, `config`, `all` | Delete orphaned plugin assembly/step with no local source (`PluginService.cs:277,363`); assembly identity changed or downgraded → delete & recreate, losing step/image GUIDs (`PluginService.cs:453`); remove unrecognized form event handler(s) (`FormEventExecutor.cs:124`); config overwrite |
+| R6 | `push` | `delete-orphans`, `recreate-assembly`, `unrecognized-form-handlers`, `config`, `all` | Delete orphaned plugin assembly/step with no local source (`PluginService.cs:277,363`); assembly identity changed or downgraded → delete & recreate, losing step/image GUIDs (`PluginService.cs:453`); remove an unrecognized Event Handler (`CONCEPTS.md`) on a form — ambiguous provenance, distinct from the auto-dropped stale case and the untouched foreign case (`FormEventExecutor.cs:124`, `FormEventPlanner.cs:91-134`); config overwrite |
 | R7 | `sync` | `dirty`, `config`, `all` | Overwrite uncommitted local package changes (`SyncCommand.cs:68`); config overwrite |
 | R8 | `deploy` | `drift`, `config`, `all` | Skip drift validation for local-only or plugin-size-mismatch changes (`DeployCommand.cs:332`); config overwrite |
 | R9 | `clone`, `generate`, `provision`, `drift` | `config`, `all` | Config overwrite only |
@@ -62,7 +62,7 @@ One boolean `--force` currently gates every force-issue on a command indiscrimin
 
 ### Acceptance Examples
 
-- AE1. **Covers R1, R6.** Given `push` invoked non-interactively, when `--force` is passed with no value, then the command fails with a parse error listing `push`'s valid values: `delete-orphans`, `recreate-assembly`, `form-handlers`, `config`, `all`.
+- AE1. **Covers R1, R6.** Given `push` invoked non-interactively, when `--force` is passed with no value, then the command fails with a parse error listing `push`'s valid values: `delete-orphans`, `recreate-assembly`, `unrecognized-form-handlers`, `config`, `all`.
 - AE2. **Covers R4, R7.** Given `sync` hits both the `dirty` and `config` hazards in one run, when invoked with `--force all`, then both hazards are approved without a further prompt.
 - AE3. **Covers R5, R8.** Given `deploy` invoked with `--force dirty`, when `dirty` is not one of `deploy`'s valid values, then the command fails with a validation error naming `deploy`'s actual valid values: `drift`, `config`, `all`.
 
@@ -81,9 +81,11 @@ One boolean `--force` currently gates every force-issue on a command indiscrimin
 - `FlowlineSettings.cs:12-14` — current `-f|--force` boolean definition, shared base for every command.
 - `ConsoleHelper.cs:43-59` — `Confirm()`, the shared gate that reads `settings.Force` for non-interactive auto-accept.
 - `PluginService.cs:277,363,453` — orphan assembly/step deletion and assembly recreate hazards.
-- `FormEventExecutor.cs:124-147` — unrecognized form event handler removal, gated once per push (fires during both the cleanup and registration passes).
+- `FormEventExecutor.cs:124-147` — unrecognized Event Handler removal, gated once per push (fires during both the cleanup and registration passes).
+- `FormEventPlanner.cs:91-134` — distinguishes unrecognized (ambiguous provenance, force-gated) from stale (auto-dropped, no confirmation) and foreign (untracked library, never touched) handlers.
 - `SyncCommand.cs:68-78` — uncommitted local change overwrite.
 - `DeployCommand.cs:312-334` — drift validation skip.
 - `ProjectConfig.cs:48,83,118,153,224` and `FlowlineCommand.cs:144-148,195` — cross-cutting config-overwrite hazard.
 - `docs/tone-of-voice.md` — error message conventions.
 - `CONCEPTS.md` (Orphan handler / Orphan priority) and `STRATEGY.md` (Drift detection track, `--no-delete` milestone) — established Flowline vocabulary that motivated disambiguating `delete-orphans` from the product's separate multi-action orphan-cleanup concept.
+- `CONCEPTS.md` (Form Library / Event Handler / Event annotation) — canonical Dataverse Maker Portal-aligned terms that motivated `unrecognized-form-handlers` over the earlier, vaguer `form-handlers`.
