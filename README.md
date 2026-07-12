@@ -37,8 +37,7 @@ Familiar with [spkl](https://github.com/scottdurow/SparkleXrm/wiki/spkl)? Flowli
 What sets Flowline apart:
 
 - **Attribute-driven plugin registration** — decorate your `IPlugin` classes with `[Step]`, `[Filter]`, `[CustomApi]`; Flowline reads the assembly and handles every Dataverse registration. No Plugin Registration Tool, no `spkl.json`, no boilerplate.
-- **Web resource dependencies auto-wired** — RESX files linked to parent JS by base name; `// flowline:depends` for JS-to-JS; registered on every `push`. No Maker Portal visits, no manual dependency trees.
-- **Form event handlers wired from source** — `// flowline:onload`/`// flowline:onsave` binds a function to a form's event; Flowline registers the Form Event Handler and Form Library on every `push` and keeps them in sync as your annotations change. No Maker Portal visits, no manual Configure Event dialogs.
+- **Form events and web resource dependencies auto-wired from source** — `// flowline:onload`/`// flowline:onsave` binds a function straight to a form's event, closing the last manual step in the JS dev loop; `// flowline:depends` links JS-to-JS and RESX dependencies the same way. Both are registered and kept in sync on every `push`. No Maker Portal visits, no manual Configure Event dialogs, or dependency trees.
 - **Orphan cleanup built in** — steps, step images, and web resources missing from source are deleted from Dataverse on every `push`. `deploy` cleans up removed solution components too. No stale registrations, no ghost records. Use `--no-delete` to opt out.
 - **Dry-run before you touch anything** — `--dry-run` shows exactly what would change before a single Dataverse record is touched. Run it as a CI safety gate or any time you want confidence. No other Dataverse ALM tool offers this.
 - **AI-native schema context** — `sync` writes `DATAVERSE_CONTEXT.md` with your full schema (entities, attributes, option sets, forms, views, plugin steps); Claude Code, Copilot, and Codex load it automatically via `AGENTS.md`. Your AI assistant knows your field names without live queries.
@@ -61,7 +60,7 @@ pac auth create --environment https://your-org.crm4.dynamics.com
 
 ---
 
-## Quick start
+## Quick start (project mode)
 
 ```bash
 # Bootstrap an existing solution into the repo
@@ -81,6 +80,68 @@ For full setup, auth, and project workflow: **[Getting Started](https://github.c
 
 ---
 
+## Plugin registration
+
+`flowline push` inspects your compiled plugin assembly and registers every step, image, and Custom API in Dataverse — no Plugin Registration Tool, no Maker Portal.
+
+Decorate your `IPlugin` classes with `[Step]`, `[Filter]`, `[PreImage]`, `[PostImage]`, or `[CustomApi]` from the source-only [Flowline.Attributes](src/Flowline.Attributes/README.md) package:
+
+```xml
+<PackageReference Include="Flowline.Attributes" Version="1.0.0" PrivateAssets="all" />
+```
+
+Then you can do:
+
+```csharp
+[Step("account")]
+[Filter("creditlimit")]
+public class CreditLimitValidationUpdatePlugin : IPlugin
+{
+    public void Execute(IServiceProvider sp)
+    {
+        var ctx    = (IPluginExecutionContext)sp.GetService(typeof(IPluginExecutionContext));
+        var target = (Entity)ctx.InputParameters["Target"];
+
+        if (target.GetAttributeValue<Money>("creditlimit")?.Value > 100_000)
+            throw new InvalidPluginExecutionException("Credit limit cannot exceed 100,000.");
+    }
+}
+```
+
+Already have a built assembly? Push it standalone, no cloned project needed:
+
+```bash
+flowline push ContosoSales --pluginFile ./bin/Release/Plugins.dll --dev https://contoso-dev.crm4.dynamics.com
+```
+
+**[Flowline.Attributes reference](src/Flowline.Attributes/README.md)** · **[Plugin Registration wiki](https://github.com/RemyDuijkeren/Flowline/wiki/04-Plugin-Registration)**
+
+---
+
+## Web resources
+
+`flowline push` syncs your local web resource files straight to Dataverse — no Maker Portal upload, no manually created web resource records.
+
+Point it at a build output folder, and it creates, updates, and removes web resources to match, standalone, no cloned project needed:
+
+```bash
+flowline push ContosoSales --webresources ./dist --dev https://contoso-dev.crm4.dynamics.com
+```
+
+Beyond the sync itself, Flowline reads `// flowline:...` comment annotations straight out of your built files and uses them to auto-wire Dataverse metadata that would otherwise mean a Maker Portal visit:
+
+- `// flowline:onload`/`// flowline:onsave` binds a function to a form's event — Flowline registers (and keeps in sync) the Form Event Handler and its Form Library entry, closing the last manual step in the JS dev loop.
+- `// flowline:depends` links JS-to-JS and RESX dependencies, registered automatically on every `push`.
+
+```javascript
+// flowline:onload account "Account Main"
+export function onLoad(executionContext) { ... }
+```
+
+**[WebResources Project wiki](https://github.com/RemyDuijkeren/Flowline/wiki/06-WebResources-Project)**
+
+---
+
 ## Commands
 
 | Command                                                                                                       | What it does                                                                                 |
@@ -93,34 +154,6 @@ For full setup, auth, and project workflow: **[Getting Started](https://github.c
 | [`generate [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/05-Generate-Early-Bound-Types)         | Generate early-bound C# types into `Plugins/Models/` (configurable with `--output`)          |
 | [`status`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#status)                        | Show environment info, Flowline version, and PAC CLI status                                  |
 | [`drift <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#drift)                 | Compare committed source against a live environment; read-only, never deletes or modifies    |
-
----
-
-## Plugin attributes
-
-Add [Flowline.Attributes](src/Flowline.Attributes/README.md) to your plugin project and decorate `IPlugin` classes with `[Step]`, `[Filter]`, `[PreImage]`, `[PostImage]`, or `[CustomApi]`.
-
-```xml
-<PackageReference Include="Flowline.Attributes" Version="1.0.0" PrivateAssets="all" />
-```
-
-`flowline push` reads the assembly and handles every registration — steps, images, and Custom APIs — no Plugin Registration Tool needed.
-
-**[Flowline.Attributes reference](src/Flowline.Attributes/README.md)** · **[Plugin Registration wiki](https://github.com/RemyDuijkeren/Flowline/wiki/04-Plugin-Registration)**
-
----
-
-## Web resources
-
-`clone`/`init` scaffold a TypeScript + Rollup `WebResources/` project wired to `push` from day one — RESX files are linked to their parent JS by base name, and `// flowline:depends` annotations wire JS-to-JS dependencies, both registered automatically on every `push`. No Maker Portal visits, no manual dependency trees.
-
-Already have your own build? Push standalone, no cloned project needed:
-
-```bash
-flowline push ContosoSales --webresources ./dist --dev https://contoso-dev.crm4.dynamics.com
-```
-
-**[WebResources Project wiki](https://github.com/RemyDuijkeren/Flowline/wiki/06-WebResources-Project)**
 
 ---
 
