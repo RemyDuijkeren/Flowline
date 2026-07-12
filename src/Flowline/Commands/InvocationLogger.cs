@@ -40,7 +40,7 @@ internal static class InvocationLogger
         logger.LogInformation(
             "Invocation: os={Os} arch={OsArch} ci={Ci} ci.platform={CiPlatform} verbose={Verbose} force={Force}",
             RuntimeInformation.OSDescription, RuntimeInformation.OSArchitecture, ci, ciPlatform,
-            runtimeOptions.IsVerbose, runtimeOptions.Force);
+            runtimeOptions.IsVerbose, string.Join(",", runtimeOptions.Force));
         logger.LogInformation(
             "Invocation: root={ProjectRoot} solutions={ProjectSolutions} env.configured={EnvConfigured} env.hashes={EnvHashes}",
             rootFolder, solutionNames, envConfigured, envHashStr);
@@ -57,7 +57,7 @@ internal static class InvocationLogger
         activity.SetTag("ci", ci);
         activity.SetTag("ci.platform", ciPlatform);
         activity.SetTag("verbose", runtimeOptions.IsVerbose);
-        activity.SetTag("force", runtimeOptions.Force);
+        activity.SetTag("force", string.Join(",", runtimeOptions.Force));
         activity.SetTag("project.root", rootFolder);
         activity.SetTag("project.solutions", solutionNames);
         activity.SetTag("env.configured", envConfigured);

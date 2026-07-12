@@ -7,6 +7,47 @@ namespace Flowline.Tests;
 public class ConsoleHelperTests
 {
     [Fact]
+    public void Confirm_NonInteractive_ForceContainsConfig_ReturnsTrueWithoutPrompting()
+    {
+        var saved = SaveAndClearCiVars();
+        Environment.SetEnvironmentVariable("CI", "true");
+        try
+        {
+            var settings = new FlowlineSettings { Force = ["config"] };
+            ConsoleHelper.Confirm("Overwrite it?", false, settings).Should().BeTrue();
+        }
+        finally { RestoreCiVars(saved); }
+    }
+
+    [Fact]
+    public void Confirm_NonInteractive_ForceContainsAll_ReturnsTrueWithoutPrompting()
+    {
+        var saved = SaveAndClearCiVars();
+        Environment.SetEnvironmentVariable("CI", "true");
+        try
+        {
+            var settings = new FlowlineSettings { Force = ["all"] };
+            ConsoleHelper.Confirm("Overwrite it?", false, settings).Should().BeTrue();
+        }
+        finally { RestoreCiVars(saved); }
+    }
+
+    [Fact]
+    public void Confirm_NonInteractive_ForceEmpty_ThrowsForceRequiredNamingConfig()
+    {
+        var saved = SaveAndClearCiVars();
+        Environment.SetEnvironmentVariable("CI", "true");
+        try
+        {
+            var settings = new FlowlineSettings { Force = [] };
+            var act = () => ConsoleHelper.Confirm("Overwrite it?", false, settings);
+            act.Should().Throw<FlowlineException>()
+                .Where(e => e.ExitCode == ExitCode.ForceRequired && e.Message.Contains("--force config"));
+        }
+        finally { RestoreCiVars(saved); }
+    }
+
+    [Fact]
     public void IsInteractive_ShouldReturnFalse_WhenCiEnvVarIsSet()
     {
         // Arrange

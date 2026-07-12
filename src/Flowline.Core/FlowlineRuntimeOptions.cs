@@ -12,7 +12,7 @@ public sealed record FlowlineToolVersions(
 public sealed class FlowlineRuntimeOptions
 {
     public bool IsVerbose { get; set; }
-    public bool Force { get; set; }
+    public string[] Force { get; set; } = [];
     public string? CommandName { get; set; }
     public string? ArgsRedacted { get; set; }
     public FlowlineToolVersions? ToolVersions { get; set; }

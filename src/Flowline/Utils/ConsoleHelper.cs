@@ -47,12 +47,12 @@ public static class ConsoleHelper
     {
         if (!IsInteractive(settings))
         {
-            if (settings?.Force == true)
+            if (settings?.HasForce("config") == true)
             {
                 return true;
             }
 
-            throw new FlowlineException(ExitCode.ForceRequired, "Confirmation required but not in interactive mode. Use --force to proceed.");
+            throw new FlowlineException(ExitCode.ForceRequired, "Confirmation required but not in interactive mode. Use --force config to proceed.");
         }
 
         return AnsiConsole.Confirm(prompt, defaultValue);
