@@ -108,9 +108,9 @@ public class FormEventExecutor(IAnsiConsole console)
     // (nothing "below" it — it's failing, not prompting) and the dry-run preview (which never prompts at
     // all); callers that DO follow with a confirm prompt add that context themselves.
     static string FormatUnrecognizedHandlerLine(FormEventFormPlan form, UnrecognizedHandler unrecognized) =>
-        $"form '{form.FormName}' on {form.EntityLogicalName}: {unrecognized.Handler.FunctionName} ({unrecognized.Handler.LibraryName})"
-        + $"{Environment.NewLine}  — to keep this, add to {unrecognized.Handler.LibraryName} "
-        + $"{Environment.NewLine}    {unrecognized.ProposedAnnotation}";
+        $"'{form.FormName}' ({form.EntityLogicalName}): {unrecognized.Handler.FunctionName} ({unrecognized.Handler.LibraryName})"
+        + $"{Environment.NewLine}      — to keep this, add to the file:"
+        + $"{Environment.NewLine}        {unrecognized.ProposedAnnotation}";
 
     // R18b: same per-handler detail as ResolveUnrecognizedHandling's prompt, plus the full change report —
     // computed against the pristine current formxml via the same BuildFormXml the real write uses, so the
