@@ -32,12 +32,13 @@ Where PAC CLI already handles it, Flowline wraps — it doesn't re-implement. Wh
 
 > Pipelines are buried steel — permits, compressors, years to commission. A flowline goes where the pipeline can't.
 
-Familiar with [spkl](https://github.com/scottdurow/SparkleXrm/wiki/spkl)? Flowline is its actively maintained successor (last meaningful commit 2021).
+Familiar with [spkl](https://github.com/scottdurow/SparkleXrm/wiki/spkl)? Flowline is an actively maintained successor inspired by spkl, whose last meaningful updates date back to 2021.
 
 What sets Flowline apart:
 
 - **Attribute-driven plugin registration** — decorate your `IPlugin` classes with `[Step]`, `[Filter]`, `[CustomApi]`; Flowline reads the assembly and handles every Dataverse registration. No Plugin Registration Tool, no `spkl.json`, no boilerplate.
-- **Form events and web resource dependencies auto-wired from source** — `// flowline:onload`/`// flowline:onsave` binds a function straight to a form's event, closing the last manual step in the JS dev loop; `// flowline:depends` links JS-to-JS and RESX dependencies the same way. Both are registered and kept in sync on every `push`. No Maker Portal visits, no manual Configure Event dialogs, or dependency trees.
+- **Form events and web resource dependencies auto-wired from source** —
+  `// flowline:onload` or `// flowline:onsave` binds a function straight to a form's event, closing the last manual step in the JS dev loop; `// flowline:depends` links JS-to-JS and RESX dependencies the same way. Both are registered and kept in sync on every `push`. No Maker Portal visits, no manual Configure Event dialogs, or dependency trees.
 - **Orphan cleanup built in** — steps, step images, and web resources missing from source are deleted from Dataverse on every `push`. `deploy` cleans up removed solution components too. No stale registrations, no ghost records. Use `--no-delete` to opt out.
 - **Dry-run before you touch anything** — `--dry-run` shows exactly what would change before a single Dataverse record is touched. Run it as a CI safety gate or any time you want confidence. No other Dataverse ALM tool offers this.
 - **AI-native schema context** — `sync` writes `DATAVERSE_CONTEXT.md` with your full schema (entities, attributes, option sets, forms, views, plugin steps); Claude Code, Copilot, and Codex load it automatically via `AGENTS.md`. Your AI assistant knows your field names without live queries.
@@ -130,7 +131,7 @@ flowline push ContosoSales --webresources ./dist --dev https://contoso-dev.crm4.
 
 Beyond the sync itself, Flowline reads `// flowline:...` comment annotations straight out of your built files and uses them to auto-wire Dataverse metadata that would otherwise mean a Maker Portal visit:
 
-- `// flowline:onload`/`// flowline:onsave` binds a function to a form's event — Flowline registers (and keeps in sync) the Form Event Handler and its Form Library entry, closing the last manual step in the JS dev loop.
+- `// flowline:onload` or `// flowline:onsave` binds a function to a form's event — Flowline registers (and keeps in sync) the Form Event Handler and its Form Library entry, closing the last manual step in the JS dev loop.
 - `// flowline:depends` links JS-to-JS and RESX dependencies, registered automatically on every `push`.
 
 ```javascript
