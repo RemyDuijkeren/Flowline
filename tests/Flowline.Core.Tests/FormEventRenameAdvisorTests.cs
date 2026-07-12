@@ -228,4 +228,55 @@ public class FormEventRenameAdvisorTests : IDisposable
 
         suggestion.Should().BeNull();
     }
+
+    [Fact]
+    public void Suggest_OneCandidateHasMalformedFormXml_SkipsItAndStillFindsTheValidSelfTagMatch()
+    {
+        const string entity = "account";
+        const string oldName = "Old Main";
+        const string newName = "New Main";
+        const string library = "av_/lib.js";
+
+        var expectedId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.OnLoad, "onLoad", library);
+        var validFormXml = BuildFormXml(FormEventType.OnLoad, new HashSet<FormEventHandler> { new("onLoad", library, expectedId, "") });
+        var resolved = Annotation(entity, oldName, library, "function onLoad() {}");
+
+        var solutionForms = new List<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)>
+        {
+            (Guid.NewGuid(), "Unparsable Candidate", entity, "not valid xml <<<", null),
+            (Guid.NewGuid(), newName, entity, validFormXml, null)
+        };
+
+        var suggestion = FormEventRenameAdvisor.Suggest(entity, oldName, [resolved], solutionForms, NewCache());
+
+        suggestion.Should().NotBeNull();
+        suggestion.Should().Contain(newName);
+        suggestion.Should().NotContain("Unparsable Candidate");
+    }
+
+    [Fact]
+    public void Suggest_TwoSharingAnnotationsOnLoadAndOnSave_SuggestionListsBothAsSeparateLines()
+    {
+        const string entity = "account";
+        const string oldName = "Old Main";
+        const string newName = "New Main";
+        const string library = "av_/lib.js";
+
+        var onLoadId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.OnLoad, "onLoad", library);
+        var formXml = BuildFormXml(FormEventType.OnLoad, new HashSet<FormEventHandler> { new("onLoad", library, onLoadId, "") });
+
+        var onLoadAnnotation = Annotation(entity, oldName, library, "function onLoad() {} function onSave() {}");
+        var onSaveAnnotation = Annotation(entity, oldName, library, "function onLoad() {} function onSave() {}", FormEventType.OnSave);
+
+        var solutionForms = new List<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)>
+        {
+            (Guid.NewGuid(), newName, entity, formXml, null)
+        };
+
+        var suggestion = FormEventRenameAdvisor.Suggest(entity, oldName, [onLoadAnnotation, onSaveAnnotation], solutionForms, NewCache());
+
+        suggestion.Should().NotBeNull();
+        suggestion.Should().Contain($"// flowline:onload {entity} \"{newName}\"");
+        suggestion.Should().Contain($"// flowline:onsave {entity} \"{newName}\"");
+    }
 }

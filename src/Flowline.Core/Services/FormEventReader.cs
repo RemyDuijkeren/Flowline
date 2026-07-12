@@ -35,11 +35,10 @@ public class FormEventReader(IAnsiConsole console)
         CancellationToken cancellationToken = default)
     {
         // formEventCachePath is caller-resolved (Flowline.Core has no reference to the Flowline CLI
-        // project's FlowlineStoragePaths — see FormEventIdentityCache's own doc comment). A fixed shared
-        // fallback filename would risk mixing different orgs' form data if a future caller forgot to pass
-        // the org-scoped path — a fresh, never-reused path per call degrades to an inert no-op cache
-        // instead, so tests and standalone callers don't all need one without that cross-org risk.
-        var cache = new FormEventIdentityCache(formEventCachePath ?? Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".json"));
+        // project's FlowlineStoragePaths — see FormEventIdentityCache's own doc comment). No path means
+        // no cache: skip it entirely rather than writing to a disposable random file, which would leave a
+        // stray temp JSON per call for no benefit (nothing ever reads it back).
+        var cache = formEventCachePath is null ? null : new FormEventIdentityCache(formEventCachePath);
 
         // Deliberate second call to the same reader WebResourceService already uses elsewhere in the
         // same push — cheap, and keeps this reader independent of a shared snapshot being threaded in.
@@ -129,7 +128,7 @@ public class FormEventReader(IAnsiConsole console)
                 ambiguousCounts[group.Key] = matches.Count;
         }
 
-        cache.SetMany(cacheResolutions);
+        cache?.SetMany(cacheResolutions);
 
         var formErrors = new Dictionary<(string Entity, string Form), string>(FormKeyComparer.Instance);
 
@@ -211,7 +210,7 @@ public class FormEventReader(IAnsiConsole console)
         string entity, string form,
         List<ResolvedFormEventAnnotation> resolvedAnnotations,
         List<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)> solutionForms,
-        FormEventIdentityCache cache)
+        FormEventIdentityCache? cache)
     {
         var baseMessage = $"form '{form}' not found for entity '{entity}' (Main or Quick Create form).";
 

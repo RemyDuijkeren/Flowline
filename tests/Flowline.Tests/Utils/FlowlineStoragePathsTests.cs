@@ -49,8 +49,17 @@ public class FlowlineStoragePathsTests
     [Fact]
     public void GetFormEventCachePath_SanitizesSchemeAndUnsafeChars()
     {
-        var path = FlowlineStoragePaths.GetFormEventCachePath("https://contoso.crm.dynamics.com:443/");
+        var path = FlowlineStoragePaths.GetFormEventCachePath("https://contoso.crm.dynamics.com:443");
 
-        Path.GetFileNameWithoutExtension(path).Should().Be("contoso_crm_dynamics_com_443_");
+        Path.GetFileNameWithoutExtension(path).Should().Be("contoso_crm_dynamics_com_443");
+    }
+
+    [Fact]
+    public void GetFormEventCachePath_TrailingSlashOrCasingDifference_ReturnsSamePath()
+    {
+        var withSlash = FlowlineStoragePaths.GetFormEventCachePath("https://Contoso.crm.dynamics.com/");
+        var withoutSlash = FlowlineStoragePaths.GetFormEventCachePath("https://contoso.crm.dynamics.com");
+
+        withSlash.Should().Be(withoutSlash);
     }
 }

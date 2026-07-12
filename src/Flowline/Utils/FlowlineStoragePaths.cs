@@ -36,9 +36,12 @@ static class FlowlineStoragePaths
 
     static string SanitizeForFileName(string value)
     {
-        var withoutScheme = value
-            .Replace("https://", "", StringComparison.OrdinalIgnoreCase)
-            .Replace("http://", "", StringComparison.OrdinalIgnoreCase);
+        // Canonicalize before sanitizing: a trailing slash or casing difference (e.g. a `--dev` flag vs.
+        // a CI script's URL) must map to the same cache file, not silently fragment the rename cache.
+        var canonical = value.TrimEnd('/').ToLowerInvariant();
+        var withoutScheme = canonical
+            .Replace("https://", "")
+            .Replace("http://", "");
 
         var invalidChars = Path.GetInvalidFileNameChars();
         var chars = new char[withoutScheme.Length];

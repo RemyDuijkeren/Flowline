@@ -17,7 +17,7 @@ public static class FormEventRenameAdvisor
         string requestedName,
         IReadOnlyList<ResolvedFormEventAnnotation> sharingAnnotations,
         IReadOnlyList<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)> solutionForms,
-        FormEventIdentityCache cache)
+        FormEventIdentityCache? cache)
     {
         var candidatesForEntity = solutionForms
             .Where(f => string.Equals(f.EntityLogicalName, entity, StringComparison.OrdinalIgnoreCase))
@@ -33,7 +33,7 @@ public static class FormEventRenameAdvisor
 
         // 2. Rename cache: a previous push resolved (entity, requestedName) to a formId that still
         // exists live (in this solution), just possibly under a different name now.
-        var cachedFormId = cache.TryGet(entity, requestedName);
+        var cachedFormId = cache?.TryGet(entity, requestedName);
         if (cachedFormId is { } formId)
         {
             var cacheMatches = solutionForms.Where(f => f.Id == formId).ToList();
