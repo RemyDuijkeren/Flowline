@@ -7,9 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
 ### Changed
-
-- **`--force`/`-f` now requires a value naming the specific hazard being approved** (e.g. `--force delete-orphans`, `--force dirty`, `--force config`, or `--force all`) instead of a bare boolean flag — breaking change, no deprecation window. Bare `--force` is now a parse error on every command. Each command accepts only the specifiers it actually gates; an unrecognized value fails listing the valid ones. See `flowline <command> --help` or the Command Reference wiki for each command's vocabulary.
+### Fixed
+### Security
 
 ## [0.10.0] - 2026-07-12
 
@@ -34,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Plugin step/image matching keyed by identity, not name**: `push` now matches an existing step to its assembly-side declaration solely by `(message, table filter, stage, mode)`, and an image solely by `(step, image type)` — `name` is now write-only. Renaming a step (e.g. a multi-`[Handles]` class whose generated name changes) updates in place instead of risking a mismatch. Trade-off: changing a step's **message, table filter, stage, or mode** now always deletes and recreates the step rather than updating it, since those fields are the identity key and can no longer be edited on an existing row.
 - **Web resource plan/summary lines now show counts**: "Web resources found (N Dataverse, M local)" and "Web resource plan ready: N creates, M updates, K deletes" replace the previous name-only lines.
+- **`--force`/`-f` now requires a value naming the specific hazard being approved** (e.g. `--force delete-orphans`, `--force dirty`, `--force config`, or `--force all`) instead of a bare boolean flag — breaking change, no deprecation window. Bare `--force` is now a parse error on every command. Each command accepts only the specifiers it actually gates; an unrecognized value fails listing the valid ones. See `flowline <command> --help` or the Command Reference wiki for each command's vocabulary.
 
 ### Fixed
 
