@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Flowline.Commands;
 using Flowline.Config;
 using FluentAssertions;
 
@@ -384,5 +385,29 @@ public class GenerateConfigJsonTests
         var config = act();
         config!.Namespace.Should().Be("A.Models");
         config.Generator.Should().Be(GeneratorType.XrmContext3);
+    }
+}
+
+public class GenerateCommandForceTests
+{
+    [Fact]
+    public void ValidateForce_UnrecognizedValue_ThrowsNamingConfigAndAll()
+    {
+        var settings = new GenerateCommand.Settings { Force = ["dirty"] };
+
+        var act = () => FlowlineSettings.ValidateForce(settings.Force, FlowlineSettings.ConfigOnlyValidSpecifiers, "generate");
+
+        act.Should().Throw<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed && e.Message.Contains("config") && e.Message.Contains("all"));
+    }
+
+    [Fact]
+    public void ValidateForce_Config_DoesNotThrow()
+    {
+        var settings = new GenerateCommand.Settings { Force = ["config"] };
+
+        var act = () => FlowlineSettings.ValidateForce(settings.Force, FlowlineSettings.ConfigOnlyValidSpecifiers, "generate");
+
+        act.Should().NotThrow();
     }
 }

@@ -92,6 +92,8 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
+        FlowlineSettings.ValidateForce(settings.Force, FlowlineSettings.ConfigOnlyValidSpecifiers, "generate");
+
         var standaloneMode = IsStandaloneMode();
 
         // --- Resolve inputs ---

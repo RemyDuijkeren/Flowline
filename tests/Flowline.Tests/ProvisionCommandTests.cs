@@ -80,4 +80,25 @@ public class ProvisionCommandTests
 
         ProvisionCommand.FindProblematicSolutions(target, prod).Should().BeEmpty();
     }
+
+    [Fact]
+    public void ValidateForce_UnrecognizedValue_ThrowsNamingConfigAndAll()
+    {
+        var settings = new ProvisionCommand.Settings { Force = ["dirty"] };
+
+        var act = () => FlowlineSettings.ValidateForce(settings.Force, FlowlineSettings.ConfigOnlyValidSpecifiers, "provision");
+
+        act.Should().Throw<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed && e.Message.Contains("config") && e.Message.Contains("all"));
+    }
+
+    [Fact]
+    public void ValidateForce_Config_DoesNotThrow()
+    {
+        var settings = new ProvisionCommand.Settings { Force = ["config"] };
+
+        var act = () => FlowlineSettings.ValidateForce(settings.Force, FlowlineSettings.ConfigOnlyValidSpecifiers, "provision");
+
+        act.Should().NotThrow();
+    }
 }

@@ -63,4 +63,25 @@ public class DriftCommandTests
 
         DriftCommand.SelectExitCode(result).Should().Be((int)ExitCode.Inconclusive);
     }
+
+    [Fact]
+    public void ValidateForce_UnrecognizedValue_ThrowsNamingConfigAndAll()
+    {
+        var settings = new DriftCommand.Settings { Force = ["drift"] };
+
+        var act = () => FlowlineSettings.ValidateForce(settings.Force, FlowlineSettings.ConfigOnlyValidSpecifiers, "drift");
+
+        act.Should().Throw<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed && e.Message.Contains("config") && e.Message.Contains("all"));
+    }
+
+    [Fact]
+    public void ValidateForce_Config_DoesNotThrow()
+    {
+        var settings = new DriftCommand.Settings { Force = ["config"] };
+
+        var act = () => FlowlineSettings.ValidateForce(settings.Force, FlowlineSettings.ConfigOnlyValidSpecifiers, "drift");
+
+        act.Should().NotThrow();
+    }
 }

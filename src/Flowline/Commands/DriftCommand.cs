@@ -26,6 +26,8 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
+        FlowlineSettings.ValidateForce(settings.Force, FlowlineSettings.ConfigOnlyValidSpecifiers, "drift");
+
         var env = await ResolveEnvironmentAsync(settings.Target, settings, cancellationToken);
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, env.EnvironmentUrl!, cancellationToken);
         // bypassCache: true — drift is a health-check signal with no downstream step (unlike deploy's

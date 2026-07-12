@@ -45,6 +45,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
+        FlowlineSettings.ValidateForce(settings.Force, FlowlineSettings.ConfigOnlyValidSpecifiers, "clone");
+
         // Save all provided URLs to config first (no API calls, just config update + prompt on conflict)
         Config!.GetOrUpdateProdUrl(settings.ProdUrl, settings);
         Config!.GetOrUpdateUatUrl(settings.UatUrl, settings);
