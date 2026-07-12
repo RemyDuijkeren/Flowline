@@ -530,7 +530,7 @@ public class PluginServiceTests
         var orphanStepId = Guid.NewGuid();
         SetupOrphanStepFromForeignAssembly(orphanStepId, "Extensions.MyFirst2PostUpdatePlugin: Update of account", "Extensions");
 
-        await _service.SyncSolutionAsync(_serviceMock, Metadata(), "MySolution", RunMode.Normal, force: true);
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(), "MySolution", RunMode.Normal, forceDeleteOrphans: true, forceRecreateAssembly: false);
 
         await _serviceMock.Received(1).DeleteAsync("sdkmessageprocessingstep", orphanStepId, Arg.Any<CancellationToken>());
     }
@@ -888,7 +888,7 @@ public class PluginServiceTests
         SetupPluginTypes();
         SetupIdentityChangeExecuteAsync();
 
-        await _service.SyncSolutionAsync(_serviceMock, Metadata(pkt: "a4d07ffa42de325f"), "MySolution", force: true);
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(pkt: "a4d07ffa42de325f"), "MySolution", forceRecreateAssembly: true);
 
         // The mock returns the existing assembly for ALL pluginassembly queries (including the orphan check),
         // so DeleteAsync may be called more than once — verify at least the identity-change delete happened
@@ -905,7 +905,7 @@ public class PluginServiceTests
         SetupPluginTypes();
         SetupIdentityChangeExecuteAsync();
 
-        await _service.SyncSolutionAsync(_serviceMock, Metadata(culture: "en"), "MySolution", force: true);
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(culture: "en"), "MySolution", forceRecreateAssembly: true);
 
         await _serviceMock.Received().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), Arg.Any<CancellationToken>());
@@ -919,7 +919,7 @@ public class PluginServiceTests
         SetupPluginTypes();
         SetupIdentityChangeExecuteAsync();
 
-        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "2.0.0.0"), "MySolution", force: true);
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "2.0.0.0"), "MySolution", forceRecreateAssembly: true);
 
         await _serviceMock.Received().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), Arg.Any<CancellationToken>());
@@ -933,7 +933,7 @@ public class PluginServiceTests
         SetupPluginTypes();
         SetupIdentityChangeExecuteAsync();
 
-        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "1.1.0.0"), "MySolution", force: true);
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "1.1.0.0"), "MySolution", forceRecreateAssembly: true);
 
         await _serviceMock.Received().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), Arg.Any<CancellationToken>());
@@ -1001,7 +1001,7 @@ public class PluginServiceTests
         SetupPluginTypes();
         SetupIdentityChangeExecuteAsync();
 
-        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "2.0.0.0", pkt: "1122334455667788"), "MySolution", force: true);
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "2.0.0.0", pkt: "1122334455667788"), "MySolution", forceRecreateAssembly: true);
 
         Assert.Contains("public key token", _console.Output);
         Assert.Contains("major/minor version", _console.Output);
@@ -1050,7 +1050,7 @@ public class PluginServiceTests
         SetupPluginTypes();
         SetupIdentityChangeExecuteAsync();
 
-        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "1.0.0.0"), "MySolution", RunMode.Normal, force: true);
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "1.0.0.0"), "MySolution", RunMode.Normal, forceRecreateAssembly: true);
 
         // The mock returns the existing assembly for ALL pluginassembly queries (including the orphan check),
         // so DeleteAsync may be called more than once — verify at least the identity-change delete happened
@@ -1096,7 +1096,7 @@ public class PluginServiceTests
         SetupPluginTypes();
         SetupIdentityChangeExecuteAsync();
 
-        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "3.4.0.0"), "MySolution", RunMode.Normal, force: true);
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(version: "3.4.0.0"), "MySolution", RunMode.Normal, forceRecreateAssembly: true);
 
         await _serviceMock.Received().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
     }
@@ -1150,7 +1150,7 @@ public class PluginServiceTests
         });
         SetupIdentityChangeExecuteAsync();
 
-        await _service.SyncSolutionAsync(_serviceMock, Metadata(pkt: "1122334455667788"), "MySolution", RunMode.Normal, force: true);
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(pkt: "1122334455667788"), "MySolution", RunMode.Normal, forceRecreateAssembly: true);
 
         Assert.Contains("cascade delete", _console.Output);
         Assert.Contains("MyPlugin.Handler", _console.Output);

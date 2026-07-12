@@ -96,14 +96,15 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         string dllPath,
         string solutionName,
         RunMode runMode = RunMode.Normal,
-        bool force = false,
+        bool forceDeleteOrphans = false,
+        bool forceRecreateAssembly = false,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(dllPath))
             throw new ArgumentException("dllPath is required and cannot be empty.", nameof(dllPath));
 
         var metadata = console.Status().FlowlineSpinner().Start("Analyzing plugin assembly...", ctx => _assemblyReader.Analyze(dllPath));
-        return await SyncSolutionAsync(service, metadata, solutionName, runMode, force, cancellationToken).ConfigureAwait(false);
+        return await SyncSolutionAsync(service, metadata, solutionName, runMode, forceDeleteOrphans, forceRecreateAssembly, cancellationToken).ConfigureAwait(false);
     }
 
     internal async Task<bool> SyncSolutionAsync(
@@ -111,7 +112,8 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         PluginAssemblyMetadata metadata,
         string solutionName,
         RunMode runMode = RunMode.Normal,
-        bool force = false,
+        bool forceDeleteOrphans = false,
+        bool forceRecreateAssembly = false,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(solutionName))
@@ -126,14 +128,14 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
 
         // Phase 1: Get or register assembly
         var (assembly, needsUpdate, cascadeDeleteCount) = await console.Status().FlowlineSpinner()
-            .StartAsync("Lookup or add assembly", _ => GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, force, cancellationToken))
+            .StartAsync("Lookup or add assembly", _ => GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, forceRecreateAssembly, cancellationToken))
             .ConfigureAwait(false);
         console.Info(needsUpdate
             ? $"Assembly [bold]{metadata.Name}[/] ({metadata.Version}) found but needs content update"
             : $"Assembly [bold]{metadata.Name}[/] ({metadata.Version}) found");
 
-        await WarnOrphanAssembliesAsync(service, metadata.Name, solutionName, force, runMode, cancellationToken).ConfigureAwait(false);
-        await WarnOrphanStepsAsync(service, metadata.Name, solutionName, force, runMode, cancellationToken).ConfigureAwait(false);
+        await WarnOrphanAssembliesAsync(service, metadata.Name, solutionName, forceDeleteOrphans, runMode, cancellationToken).ConfigureAwait(false);
+        await WarnOrphanStepsAsync(service, metadata.Name, solutionName, forceDeleteOrphans, runMode, cancellationToken).ConfigureAwait(false);
 
         // Phase 2: Load snapshot (all Dataverse state in parallel)
         var snapshot = await console.Status().FlowlineSpinner()
@@ -255,7 +257,7 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         IOrganizationServiceAsync2 service,
         string managedAssemblyName,
         string solutionName,
-        bool force,
+        bool forceDeleteOrphans,
         RunMode runMode,
         CancellationToken cancellationToken)
     {
@@ -274,12 +276,12 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         {
             var name = entity.GetAttributeValue<string>("name");
 
-            var willDelete = force && runMode == RunMode.Normal;
-            var showCascade = force || runMode == RunMode.DryRun;
+            var willDelete = forceDeleteOrphans && runMode == RunMode.Normal;
+            var showCascade = forceDeleteOrphans || runMode == RunMode.DryRun;
 
             console.Warning(willDelete
                 ? $"[bold]{Safe(name)}.dll[/] in environment — no local source. Deleting."
-                : $"[bold]{Safe(name)}.dll[/] in environment — no local source. Use --force to delete.");
+                : $"[bold]{Safe(name)}.dll[/] in environment — no local source. Use --force delete-orphans to delete.");
 
             // Load snapshot for cascade display and/or explicit child deletion
             RegistrationSnapshot? orphanSnapshot = null;
@@ -337,7 +339,7 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         IOrganizationServiceAsync2 service,
         string managedAssemblyName,
         string solutionName,
-        bool force,
+        bool forceDeleteOrphans,
         RunMode runMode,
         CancellationToken cancellationToken)
     {
@@ -360,7 +362,7 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
         if (result.Entities.Count == 0) return;
 
-        var willDelete = force && runMode == RunMode.Normal;
+        var willDelete = forceDeleteOrphans && runMode == RunMode.Normal;
 
         var imagesByStep = new Dictionary<Guid, List<Entity>>();
         if (willDelete)
@@ -389,7 +391,7 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
 
             console.Warning(willDelete
                 ? $"Step '{Safe(stepName)}' registered under '{Safe(asmName)}.dll' (not the pushed assembly) — orphaned. Deleting."
-                : $"Step '{Safe(stepName)}' registered under '{Safe(asmName)}.dll' (not the pushed assembly) — orphaned. Use --force to delete.");
+                : $"Step '{Safe(stepName)}' registered under '{Safe(asmName)}.dll' (not the pushed assembly) — orphaned. Use --force delete-orphans to delete.");
 
             if (!willDelete) continue;
 
@@ -402,7 +404,7 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
     }
 
     async Task<(Entity entity, bool needsUpdate, int cascadeDeleteCount)> GetOrRegisterAssemblyAsync(
-        IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName, RunMode runMode, bool force = false, CancellationToken cancellationToken = default)
+        IOrganizationServiceAsync2 service, PluginAssemblyMetadata metadata, string solutionName, RunMode runMode, bool forceRecreateAssembly = false, CancellationToken cancellationToken = default)
     {
         var query = new QueryExpression("pluginassembly")
         {
@@ -450,11 +452,11 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
             var reason = string.Join(", ", identityChanges);
             var isDowngrade = IsVersionDowngrade(existing, metadata);
 
-            if (!force && runMode == RunMode.Normal)
+            if (!forceRecreateAssembly && runMode == RunMode.Normal)
             {
                 var reasonText = isDowngrade ? $"version downgraded ({reason})" : $"identity changed ({reason})";
-                console.Error($"Assembly [bold]{metadata.Name}[/] {reasonText} — Dataverse needs a delete and recreate. Use --force to allow.");
-                throw new FlowlineException(ExitCode.ForceRequired, $"Assembly [bold]{metadata.Name}[/] {reasonText}. Use --force to allow.");
+                console.Error($"Assembly [bold]{metadata.Name}[/] {reasonText} — Dataverse needs a delete and recreate. Use --force recreate-assembly to allow.");
+                throw new FlowlineException(ExitCode.ForceRequired, $"Assembly [bold]{metadata.Name}[/] {reasonText}. Use --force recreate-assembly to allow.");
             }
 
             // Load existing registrations before deletion to show what cascades
@@ -464,7 +466,7 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
             switch (runMode)
             {
                 case RunMode.DryRun:
-                    var blockNote = !force ? " — would be blocked without --force" : "";
+                    var blockNote = !forceRecreateAssembly ? " — would be blocked without --force recreate-assembly" : "";
                     console.Warning($"Assembly [bold]{metadata.Name}[/] identity changed ({reason}){blockNote} — would delete and recreate");
                     WriteCascadePreview(oldSnapshot);
                     return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false, cascadeDeleteCount);
@@ -472,7 +474,7 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
                     console.Error($"Assembly [bold]{metadata.Name}[/] identity changed ({reason}) — Dataverse needs a delete and recreate. Re-run without --no-delete to apply, or use --dry-run to preview.");
                     throw new InvalidOperationException($"Assembly [bold]{metadata.Name}[/] identity changed ({reason}). Cannot continue in no-delete mode — re-run without --no-delete to apply, or use --dry-run to preview.");
                 case RunMode.Normal:
-                    var forceNote = isDowngrade ? " (version downgrade, --force)" : " (--force)";
+                    var forceNote = isDowngrade ? " (version downgrade, --force recreate-assembly)" : " (--force recreate-assembly)";
                     console.Warning($"Assembly [bold]{metadata.Name}[/] identity changed ({reason}){forceNote} — deleting and recreating all registrations");
                     WriteCascadeNormal(oldSnapshot);
                     await service.DeleteAsync("pluginassembly", existing.Id, cancellationToken).ConfigureAwait(false);
