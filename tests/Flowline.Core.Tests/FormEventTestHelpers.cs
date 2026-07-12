@@ -96,4 +96,22 @@ static class FormEventTestHelpers
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(entities)));
     }
+
+    static readonly string[] CiVars = ["GITHUB_ACTIONS", "TF_BUILD", "JENKINS_URL", "CI"];
+
+    // CiEnvironment.IsCi() (shared by FormEventExecutor.IsInteractive) reads these real process env vars
+    // directly, which are actually set on GitHub Actions runners — a test exercising the interactive path
+    // must clear them, or it passes locally and fails in CI regardless of the TestConsole's own
+    // Interactive() setting. Mirrors ConsoleHelperTests' identical save/clear/restore pattern.
+    public static Dictionary<string, string?> SaveAndClearCiVars()
+    {
+        var saved = CiVars.ToDictionary(v => v, Environment.GetEnvironmentVariable);
+        foreach (var v in CiVars) Environment.SetEnvironmentVariable(v, null);
+        return saved;
+    }
+
+    public static void RestoreCiVars(Dictionary<string, string?> saved)
+    {
+        foreach (var (k, v) in saved) Environment.SetEnvironmentVariable(k, v);
+    }
 }

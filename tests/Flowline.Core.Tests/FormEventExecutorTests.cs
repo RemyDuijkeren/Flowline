@@ -120,7 +120,12 @@ public class FormEventExecutorTests
         _console.Interactive();
         _console.Input.PushTextWithEnter("y");
 
-        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false);
+        var savedCiVars = SaveAndClearCiVars();
+        try
+        {
+            await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false);
+        }
+        finally { RestoreCiVars(savedCiVars); }
 
         var written = GetHandlersFromCapturedXml(captured, formId, FormEventType.OnLoad);
         Assert.Contains(recognized, written);
@@ -156,7 +161,12 @@ public class FormEventExecutorTests
         _console.Interactive();
         _console.Input.PushTextWithEnter("n");
 
-        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false);
+        var savedCiVars = SaveAndClearCiVars();
+        try
+        {
+            await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false);
+        }
+        finally { RestoreCiVars(savedCiVars); }
 
         var writtenA = GetHandlersFromCapturedXml(captured, formIdA, FormEventType.OnLoad);
         Assert.Contains(existingRecognized, writtenA);
