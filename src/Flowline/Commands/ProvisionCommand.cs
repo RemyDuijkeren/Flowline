@@ -42,9 +42,11 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
         public bool AllowOverwrite { get; set; } = false;
     }
 
+    protected override string[] ValidForceSpecifiers => FlowlineSettings.ConfigOnlyValidSpecifiers;
+
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        FlowlineSettings.ValidateForce(settings.Force, FlowlineSettings.ConfigOnlyValidSpecifiers, "provision");
+        ValidateForce(context, settings);
 
         // Production URL is required
         var prodEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Prod, settings.ProdUrl, settings, cancellationToken);

@@ -60,10 +60,11 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     // "drift" is this command's local force hazard (skip drift validation) — distinct from the
     // unrelated `flowline drift` CLI command, which reports drift for any environment read-only.
     internal static readonly string[] ValidSpecifiers = ["drift", "config", "all"];
+    protected override string[] ValidForceSpecifiers => ValidSpecifiers;
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        FlowlineSettings.ValidateForce(settings.Force, ValidSpecifiers, "deploy");
+        ValidateForce(context, settings);
 
         var targetUrl = ResolveTargetUrl(settings);
         var sln = Config!.GetOrUpdateSolution(settings.Solution, settings.Managed.IsSet ? settings.Managed.Value : (bool?)null, settings)

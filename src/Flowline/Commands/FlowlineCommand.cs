@@ -48,6 +48,15 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         RuntimeOptions.Force = settings.Force;
     }
 
+    // Empty by default — commands with a force-gated hazard override this with their own vocabulary.
+    protected virtual string[] ValidForceSpecifiers => [];
+
+    // Ties validation to the real Spectre command name (context.Name) instead of each command
+    // re-typing its own name as a literal string, which could silently desync from Program.cs's
+    // actual AddCommand<T>("name") registration.
+    protected void ValidateForce(CommandContext context, TSettings settings) =>
+        FlowlineSettings.ValidateForce(settings.Force, ValidForceSpecifiers, context.Name);
+
     internal static string? FindProjectRoot(string startDir)
     {
         var dir = startDir;

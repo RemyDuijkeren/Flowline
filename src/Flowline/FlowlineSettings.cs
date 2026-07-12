@@ -26,9 +26,9 @@ public class FlowlineSettings : CommandSettings
 
     internal static void ValidateForce(string[] force, string[] validSpecifiers, string commandName)
     {
-        var invalid = force.Where(v => !validSpecifiers.Contains(v, StringComparer.OrdinalIgnoreCase)).ToArray();
-        if (invalid.Length > 0)
+        var invalid = force.FirstOrDefault(v => !validSpecifiers.Contains(v, StringComparer.OrdinalIgnoreCase));
+        if (invalid != null)
             throw new FlowlineException(ExitCode.ValidationFailed,
-                $"'{invalid[0]}' isn't a valid --force value for '{commandName}'. Use one of: {string.Join(", ", validSpecifiers)}.");
+                $"'{invalid}' isn't a valid --force value for '{commandName}'. Use one of: {string.Join(", ", validSpecifiers)}.");
     }
 }

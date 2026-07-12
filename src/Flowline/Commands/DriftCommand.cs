@@ -24,9 +24,11 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
         public string? Solution { get; set; }
     }
 
+    protected override string[] ValidForceSpecifiers => FlowlineSettings.ConfigOnlyValidSpecifiers;
+
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        FlowlineSettings.ValidateForce(settings.Force, FlowlineSettings.ConfigOnlyValidSpecifiers, "drift");
+        ValidateForce(context, settings);
 
         var env = await ResolveEnvironmentAsync(settings.Target, settings, cancellationToken);
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, env.EnvironmentUrl!, cancellationToken);

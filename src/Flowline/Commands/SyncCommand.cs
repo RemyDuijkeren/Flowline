@@ -42,10 +42,11 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     }
 
     internal static readonly string[] ValidSpecifiers = ["dirty", "config", "all"];
+    protected override string[] ValidForceSpecifiers => ValidSpecifiers;
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        FlowlineSettings.ValidateForce(settings.Force, ValidSpecifiers, "sync");
+        ValidateForce(context, settings);
 
         // Dev URL is required
         var devEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, settings.DevUrl, settings, cancellationToken);

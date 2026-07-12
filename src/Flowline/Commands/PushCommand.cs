@@ -101,10 +101,11 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
 
     internal static readonly string[] ValidSpecifiers =
         ["delete-orphans", "recreate-assembly", "unrecognized-form-handlers", "config", "all"];
+    protected override string[] ValidForceSpecifiers => ValidSpecifiers;
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        FlowlineSettings.ValidateForce(settings.Force, ValidSpecifiers, "push");
+        ValidateForce(context, settings);
 
         var standaloneMode = IsStandaloneMode(settings);
 
