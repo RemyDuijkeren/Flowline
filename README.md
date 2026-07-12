@@ -64,12 +64,12 @@ pac auth create --environment https://your-org.crm4.dynamics.com
 ## Quick start (project mode)
 
 ```bash
-# Bootstrap an existing solution into the repo
+# One-time: bootstrap an existing solution into the Git repo
 flowline clone ContosoSales --prod https://contoso.crm4.dynamics.com
 
 # Daily dev loop
-flowline push
-flowline sync
+flowline push          # push code assets to DEV
+flowline sync          # pull Dataverse changes back to source
 git commit -m "feat: add validation"
 
 # Promote
