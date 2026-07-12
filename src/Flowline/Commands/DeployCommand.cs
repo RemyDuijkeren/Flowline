@@ -57,8 +57,14 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         public bool NoDelete { get; set; } = false;
     }
 
+    // "drift" is this command's local force hazard (skip drift validation) — distinct from the
+    // unrelated `flowline drift` CLI command, which reports drift for any environment read-only.
+    internal static readonly string[] ValidSpecifiers = ["drift", "config", "all"];
+
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
+        FlowlineSettings.ValidateForce(settings.Force, ValidSpecifiers, "deploy");
+
         var targetUrl = ResolveTargetUrl(settings);
         var sln = Config!.GetOrUpdateSolution(settings.Solution, settings.Managed.IsSet ? settings.Managed.Value : (bool?)null, settings)
             ?? throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — use --solution <name>.");
@@ -329,9 +335,9 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
                 ? $"Only local: {w.RelativePath}"
                 : $"Plugin size mismatch: {w.RelativePath}");
 
-        if (!settings.Force)
+        if (!settings.HasForce("drift"))
             throw new FlowlineException(ExitCode.ValidationFailed,
-                "Local changes not in Dataverse — deploy would revert them. Run 'push' then 'sync' to capture them, or use --force to skip.");
+                "Local changes not in Dataverse — deploy would revert them. Run 'push' then 'sync' to capture them, or use --force drift to skip.");
     }
 
     private static string ResolveArtifactZipPath(string slnFolder, string slnName, bool includeManaged)

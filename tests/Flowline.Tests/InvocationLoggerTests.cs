@@ -44,7 +44,7 @@ public class InvocationLoggerTests
                 GitVersion: "2.44.0",
                 GitBranch: "feat/wave2"),
             IsVerbose = true,
-            Force = false
+            Force = []
         };
 
         using var activity = FlowlineActivitySource.Source.StartActivity("test-log");
@@ -57,7 +57,7 @@ public class InvocationLoggerTests
         activity.GetTagItem("pac.version").Should().Be("1.32.0");
         activity.GetTagItem("git.branch").Should().Be("feat/wave2");
         activity.GetTagItem("verbose").Should().Be(true);
-        activity.GetTagItem("force").Should().Be(false);
+        activity.GetTagItem("force").Should().Be("");
         activity.GetTagItem("project.root").Should().Be("C:\\project");
     }
 
