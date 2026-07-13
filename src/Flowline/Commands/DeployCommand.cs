@@ -146,8 +146,8 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         // documented as single-environment/DEV-like (see wiki "Managed vs unmanaged"), so in practice there's
         // nothing else pending for that org-wide publish to sweep up anyway.
         var publishChanges = !sln.IncludeManaged;
-        Logger.LogInformation("target={TargetUrl} solution={SolutionName} mode={RunMode} managed={Managed} stageAndUpgrade={StageAndUpgrade} publishChanges={PublishChanges}",
-            targetUrl, sln.Name, runMode, sln.IncludeManaged, useStageAndUpgrade, publishChanges);
+        Logger.LogInformation("target={TargetUrl} solution={SolutionName} mode={RunMode} managed={Managed} stageAndUpgrade={StageAndUpgrade} publishChanges={PublishChanges} cacheOutcome={CacheOutcome}",
+            targetUrl, sln.Name, runMode, sln.IncludeManaged, useStageAndUpgrade, publishChanges, usingExplicitArtifact ? (CacheOutcome?)null : cacheOutcome);
 
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, targetUrl, cancellationToken);
 
@@ -397,9 +397,11 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     }
 
     // KTD4/KTD5: pure so the outcome/CI/Test-UAT branching is unit-testable without a live PAC CLI or
-    // Dataverse connection. The pipeline-style framing only appears when hasTestOrUat and never on CI
-    // (a CI runner gets no benefit from the local cache even when Test/UAT is configured); the CI note
-    // is appended to whatever outcome actually resolved to, never a replacement for it.
+    // Dataverse connection. The pipeline-style framing only appears when hasTestOrUat and never on CI —
+    // most CI runners are ephemeral per stage, so the "reused across every promotion stage" framing
+    // wouldn't hold even when this particular run genuinely hit the cache (a self-hosted or
+    // persisted-workspace runner can); the CI note is appended to whatever outcome actually resolved
+    // to, never a replacement for it.
     internal static string BuildCacheStatusMessage(CacheOutcome outcome, string solutionName, string? cachedCommitSha,
         string? currentCommitSha, bool cachedManaged, bool wantManaged, bool isCi, bool hasTestOrUat)
     {

@@ -27,8 +27,36 @@ public class DeployCommandCacheMessagingTests
             cachedManaged: true, wantManaged: true, isCi: false, hasTestOrUat: true);
 
         message.Should().Contain("Reusing cached artifact for 'Contoso'");
-        message.Should().Contain("promotion stage");
+        message.Should().Contain("Built once, reused across every promotion stage until source changes.");
     }
+
+    private static void AssertWillBeReusedFraming(DeployCommand.CacheOutcome outcome)
+    {
+        var message = DeployCommand.BuildCacheStatusMessage(outcome, "Contoso", OldSha, NewSha,
+            cachedManaged: true, wantManaged: true, isCi: false, hasTestOrUat: true);
+
+        message.Should().Contain("This build will be reused across later promotion stages unless source changes.");
+    }
+
+    [Fact]
+    public void CommitChanged_NotCi_HasTestOrUat_AppendsWillBeReusedFraming() =>
+        AssertWillBeReusedFraming(DeployCommand.CacheOutcome.CommitChanged);
+
+    [Fact]
+    public void ManagedMismatch_NotCi_HasTestOrUat_AppendsWillBeReusedFraming() =>
+        AssertWillBeReusedFraming(DeployCommand.CacheOutcome.ManagedMismatch);
+
+    [Fact]
+    public void NoCacheFlag_NotCi_HasTestOrUat_AppendsWillBeReusedFraming() =>
+        AssertWillBeReusedFraming(DeployCommand.CacheOutcome.NoCacheFlag);
+
+    [Fact]
+    public void ArtifactFileMissing_NotCi_HasTestOrUat_AppendsWillBeReusedFraming() =>
+        AssertWillBeReusedFraming(DeployCommand.CacheOutcome.ArtifactFileMissing);
+
+    [Fact]
+    public void NoCurrentCommit_NotCi_HasTestOrUat_AppendsWillBeReusedFraming() =>
+        AssertWillBeReusedFraming(DeployCommand.CacheOutcome.NoCurrentCommit);
 
     [Fact]
     public void NoEntry_NotCi_HasTestOrUat_ReturnsPackMessageWithWillBeReusedFraming()
