@@ -7,13 +7,23 @@ public class DeployCommandCiArtifactTests
 {
     private const string PackagePath = "solutions/Contoso/artifacts/Contoso_unmanaged.zip";
     private const string SolutionName = "Contoso";
+    private const string Version = "1.2.3.45";
 
     [Fact]
     public void BuildAzureDevOpsArtifactUploadLine_ReturnsExpectedVsoFormat()
     {
-        var line = DeployCommand.BuildAzureDevOpsArtifactUploadLine(PackagePath, SolutionName);
+        var line = DeployCommand.BuildAzureDevOpsArtifactUploadLine(PackagePath, SolutionName, Version);
 
-        line.Should().Be($"##vso[artifact.upload artifactname={SolutionName}]{PackagePath}");
+        line.Should().Be($"##vso[artifact.upload artifactname={SolutionName}-{Version}]{PackagePath}");
+    }
+
+    [Fact]
+    public void BuildAzureDevOpsArtifactUploadLine_QualifiesArtifactNameByVersion_WithoutTouchingTheFilePath()
+    {
+        var line = DeployCommand.BuildAzureDevOpsArtifactUploadLine(PackagePath, SolutionName, Version);
+
+        line.Should().Contain($"artifactname={SolutionName}-{Version}]");
+        line.Should().EndWith(PackagePath);
     }
 
     [Fact]

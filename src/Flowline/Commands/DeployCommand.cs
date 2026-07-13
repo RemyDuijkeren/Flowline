@@ -182,7 +182,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         // R5: fires regardless of whether the subsequent import succeeds — the packed zip is already
         // valid and potentially useful (manual retry, inspection) once it's resolved, independent of
         // origin (fresh pack, cache reuse, or --path) or import outcome.
-        PublishArtifactForCi(packagePath, sln.Name);
+        PublishArtifactForCi(packagePath, sln.Name, gateVersion);
 
         // Always unpack the zip actually being imported — whether freshly packed, reused from cache, or
         // supplied via --path — so post-deploy services evaluate real imported content, never an assumed
@@ -447,8 +447,11 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     }
 
     // KTD3: Azure Pipelines' documented stdout logging-command protocol for any process — no SDK, no opt-in flag.
-    internal static string BuildAzureDevOpsArtifactUploadLine(string packagePath, string solutionName) =>
-        $"##vso[artifact.upload artifactname={solutionName}]{packagePath}";
+    // The artifact name (not the underlying file) carries the version, so it's visible at a glance in the
+    // pipeline's Artifacts tab without making the on-disk zip's filename — load-bearing for the artifact-reuse
+    // cache and --path — version-dependent.
+    internal static string BuildAzureDevOpsArtifactUploadLine(string packagePath, string solutionName, string version) =>
+        $"##vso[artifact.upload artifactname={solutionName}-{version}]{packagePath}";
 
     // KTD4/KTD6: qualified by solution name so looping deploy over sibling solutions in one workflow step
     // doesn't have each write silently clobber the previous solution's $GITHUB_OUTPUT key.
@@ -457,7 +460,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
     // KTD2: called once packagePath is finalized, regardless of origin (fresh pack, cache reuse, --path)
     // or subsequent import outcome (R5). KTD5/R4: never lets a CI-integration side effect fail the deploy.
-    private void PublishArtifactForCi(string packagePath, string solutionName)
+    private void PublishArtifactForCi(string packagePath, string solutionName, string version)
     {
         try
         {
@@ -474,7 +477,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
                     // and even a plain IAnsiConsole write can word-wrap this line (it contains a space)
                     // across physical lines once redirected stdout falls back to an 80-column profile width
                     // on a real agent, which silently breaks the agent's single-line ##vso parse.
-                    System.Console.WriteLine(BuildAzureDevOpsArtifactUploadLine(fullPackagePath, solutionName));
+                    System.Console.WriteLine(BuildAzureDevOpsArtifactUploadLine(fullPackagePath, solutionName, version));
                     break;
                 case "github":
                     var githubOutputPath = Environment.GetEnvironmentVariable("GITHUB_OUTPUT");
