@@ -1247,6 +1247,7 @@ public class PluginPlannerTests
         var action = Assert.Single(plan.CustomApis.Upserts);
         Assert.True(action.IsCreate);
         Assert.Equal("dev1_MyApi", action.Entity.GetAttributeValue<string>("uniquename"));
+        Assert.Contains("redundant", _console.Output, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
