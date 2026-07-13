@@ -77,7 +77,6 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         // gate keeps failing fast before any expensive work — packing itself is deferred past the gate below.
         var candidatePackagePath = ResolveArtifactZipPath(slnFolder, sln.Name, sln.IncludeManaged);
         string gateVersion;
-        ArtifactCacheEntry? reusableCacheEntry = null;
         ArtifactCacheEntry? cacheEntry = null;
         string? currentCommitSha = null;
         var cacheOutcome = CacheOutcome.NoEntry;
@@ -94,15 +93,9 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             cacheEntry = ReadCacheEntryIfExists(CacheManifestPath(candidatePackagePath));
             cacheOutcome = ResolveCacheOutcome(cacheEntry, currentCommitSha, sln.IncludeManaged, settings.NoCache, File.Exists(candidatePackagePath));
 
-            if (cacheOutcome == CacheOutcome.Hit)
-            {
-                reusableCacheEntry = cacheEntry;
-                gateVersion = cacheEntry!.Version;
-            }
-            else
-            {
-                gateVersion = ReadLocalSolutionVersion(PackageFolder(slnFolder));
-            }
+            gateVersion = cacheOutcome == CacheOutcome.Hit
+                ? cacheEntry!.Version
+                : ReadLocalSolutionVersion(PackageFolder(slnFolder));
         }
 
         await ValidateDtapGateAsync(sln, gateVersion, targetUrl, settings, cancellationToken);
@@ -173,7 +166,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             else
                 Console.Info(cacheMessage);
 
-            if (reusableCacheEntry != null)
+            if (cacheOutcome == CacheOutcome.Hit)
             {
                 packagePath = candidatePackagePath;
             }
