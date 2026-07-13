@@ -31,11 +31,16 @@ or assembly they belong to. An override that happens to match an unrelated, alre
 would be planned as a create and surface only as an opaque Dataverse uniqueness-constraint rejection
 at push time.
 
-This is exactly the scope boundary the approved plan states explicitly (Scope Boundaries, line 58):
-"Cross-assembly duplicate detection. R6's duplicate check is scoped to one assembly (one
-`flowline push`); two different plugin assemblies targeting the same solution with colliding unique
-names are not locally detectable and would surface as a Dataverse-level rejection at push time
-instead." Not a defect in this diff — a deliberate, pre-accepted trade-off.
+Accepted as residual, not fixed, for three combined reasons: (1) the cross-assembly subset of this
+is the scope boundary the approved plan states explicitly (Scope Boundaries, line 58 — "two different
+plugin assemblies targeting the same solution with colliding unique names are not locally detectable
+and would surface as a Dataverse-level rejection at push time instead"); (2) the remaining subset — a
+collision with a manually-created or otherwise-unrelated live record within a single push — is a
+narrower case the reviewer itself rated `advisory`/`owner: human`, not must-fix; (3) the failure mode
+is a loud Dataverse create-rejection at push time, not silent data loss — the silent-data-loss risk
+(wrongful delete of an adopted live record) is the one this feature explicitly guards against and is
+covered by the `Plan_CustomApiUniqueNameOverride_MatchesExistingLiveRecord_UpdatesInPlace_NoDelete`
+regression test.
 
 **Case-sensitive prefix/duplicate comparison (adversarial P2/conf 50)**
 
