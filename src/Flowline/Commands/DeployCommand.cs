@@ -461,6 +461,11 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     {
         try
         {
+            // Resolved once, absolute for both platforms — packagePath can be relative (a --path deploy
+            // takes settings.Path verbatim), and neither CI consumer should have to guess it's relative
+            // to whatever directory the agent happened to run the command from.
+            var fullPackagePath = Path.GetFullPath(packagePath);
+
             switch (ConsoleHelper.DetectCIPlatform())
             {
                 case "azuredevops":
@@ -469,12 +474,12 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
                     // and even a plain IAnsiConsole write can word-wrap this line (it contains a space)
                     // across physical lines once redirected stdout falls back to an 80-column profile width
                     // on a real agent, which silently breaks the agent's single-line ##vso parse.
-                    System.Console.WriteLine(BuildAzureDevOpsArtifactUploadLine(Path.GetFullPath(packagePath), solutionName));
+                    System.Console.WriteLine(BuildAzureDevOpsArtifactUploadLine(fullPackagePath, solutionName));
                     break;
                 case "github":
                     var githubOutputPath = Environment.GetEnvironmentVariable("GITHUB_OUTPUT");
                     if (!string.IsNullOrEmpty(githubOutputPath))
-                        File.AppendAllText(githubOutputPath, BuildGitHubActionsOutputLine(packagePath, solutionName) + Environment.NewLine);
+                        File.AppendAllText(githubOutputPath, BuildGitHubActionsOutputLine(fullPackagePath, solutionName) + Environment.NewLine);
                     break;
             }
         }
