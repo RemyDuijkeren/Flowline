@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`deploy` confirms before a solution's first import to a target**: the first time a solution is imported to an environment that doesn't have it yet, `deploy` asks for confirmation — worded per managed/unmanaged mode, since Flowline can't switch a target's mode back once set. Skippable non-interactively via `--force first-import`. Doesn't fire for `dev` (already rejected by the DTAP gate) or when the solution already exists in the target (the existing, non-bypassable managed/unmanaged mismatch guard covers that case).
+- **`deploy` confirms before a solution's first import to a target**: the first time a solution is imported to an environment that doesn't have it yet, `deploy` asks for confirmation — worded per managed/unmanaged mode, since Flowline can't switch a target's mode back once set. Doesn't fire for `dev` (already rejected by the DTAP gate) or when the solution already exists in the target (the existing, non-bypassable managed/unmanaged mismatch guard covers that case). **Breaking for CI**: a pipeline doing a first-time deploy of a solution to a target now exits `17` unless it already passes `--force first-import` (or `--force all`) — add it to existing non-interactive first-deploy scripts.
 
 ### Changed
 
