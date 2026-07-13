@@ -179,6 +179,11 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             }
         }
 
+        // R5: fires regardless of whether the subsequent import succeeds — the packed zip is already
+        // valid and potentially useful (manual retry, inspection) once it's resolved, independent of
+        // origin (fresh pack, cache reuse, or --path) or import outcome.
+        PublishArtifactForCi(packagePath, sln.Name);
+
         // Always unpack the zip actually being imported — whether freshly packed, reused from cache, or
         // supplied via --path — so post-deploy services evaluate real imported content, never an assumed
         // local Package/src that may not match (e.g. a --path artifact built from a different commit).
@@ -439,6 +444,41 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             message += " On CI, when each DTAP stage runs on its own ephemeral runner, this cache can't carry a build between stages — use --path to reuse one build across them instead.";
 
         return message;
+    }
+
+    // KTD3: Azure Pipelines' documented stdout logging-command protocol for any process — no SDK, no opt-in flag.
+    internal static string BuildAzureDevOpsArtifactUploadLine(string packagePath, string solutionName) =>
+        $"##vso[artifact.upload artifactname={solutionName}]{packagePath}";
+
+    // KTD4/KTD6: qualified by solution name so looping deploy over sibling solutions in one workflow step
+    // doesn't have each write silently clobber the previous solution's $GITHUB_OUTPUT key.
+    internal static string BuildGitHubActionsOutputLine(string packagePath, string solutionName) =>
+        $"artifact-path-{solutionName}={packagePath}";
+
+    // KTD2: called once packagePath is finalized, regardless of origin (fresh pack, cache reuse, --path)
+    // or subsequent import outcome (R5). KTD5/R4: never lets a CI-integration side effect fail the deploy.
+    private void PublishArtifactForCi(string packagePath, string solutionName)
+    {
+        try
+        {
+            switch (ConsoleHelper.DetectCIPlatform())
+            {
+                case "azuredevops":
+                    // KTD3: plain write, never Console.MarkupLine — the vso line's literal "[artifact.upload ...]"
+                    // would otherwise be parsed as a Spectre style tag and throw.
+                    Console.WriteLine(BuildAzureDevOpsArtifactUploadLine(packagePath, solutionName));
+                    break;
+                case "github":
+                    var githubOutputPath = Environment.GetEnvironmentVariable("GITHUB_OUTPUT");
+                    if (!string.IsNullOrEmpty(githubOutputPath))
+                        File.AppendAllText(githubOutputPath, BuildGitHubActionsOutputLine(packagePath, solutionName) + Environment.NewLine);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to publish CI artifact signal for {SolutionName}", solutionName);
+        }
     }
 
     internal static ArtifactCacheEntry? ReadCacheEntryIfExists(string manifestPath)
