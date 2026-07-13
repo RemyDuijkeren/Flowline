@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **`deploy` no longer accepts `--managed`** (breaking change, no deprecation window): managed/unmanaged mode was already a single project-wide setting read from `.flowline`, decided at `clone`/`sync` time — `deploy --managed` only ever mutated `.flowline` via a confirm prompt, it was never a genuine per-run override. Configure managed/unmanaged exclusively via `clone --managed`/`sync --managed`. `config` is also dropped from `deploy`'s valid `--force` specifiers, since it has no remaining config-write hazard.
+- **`deploy`'s artifact-reuse cache now reports its outcome on every run, not just on a hit**: a fresh pack used to print nothing, so a cache miss was indistinguishable from a broken feature. Every non-`--path` deploy now prints the real outcome, naming the reason on a miss (no cached build yet, source changed, unresolvable commit, `--no-cache`, managed-flag mismatch, or a missing artifact file). Projects with Test and/or UAT configured also get a longer "build once, reused across every stage" explanation; on CI the line still reports the real outcome (a self-hosted or persisted-workspace runner can genuinely hit) with a note appended pointing at `--path` for reusing one build across ephemeral per-stage jobs. Cache mechanics are unchanged — this is messaging-only.
 
 ### Fixed
 ### Security
