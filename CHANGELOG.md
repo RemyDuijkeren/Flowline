@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`deploy` confirms before a solution's first import to a target**: the first time a solution is imported to an environment that doesn't have it yet, `deploy` asks for confirmation — worded per managed/unmanaged mode, since Flowline can't switch a target's mode back once set. Doesn't fire for `dev` (already rejected by the DTAP gate) or when the solution already exists in the target (the existing, non-bypassable managed/unmanaged mismatch guard covers that case). **Breaking for CI**: a pipeline doing a first-time deploy of a solution to a target now exits `17` unless it already passes `--force first-import` (or `--force all`) — add it to existing non-interactive first-deploy scripts.
+- **`deploy` publishes the packed solution zip to CI natively**: on Azure Pipelines, the zip is attached as a build artifact automatically; on GitHub Actions, its resolved path is written to the step output `artifact-path-<SolutionName>` for the workflow's own `actions/upload-artifact` step to reference. No new flag, fires regardless of the subsequent import's outcome, and a failure to emit either signal is a warning, never a deploy-blocking error.
 
 ### Changed
 
