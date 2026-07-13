@@ -8,7 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+- **`deploy` confirms before a solution's first import to a target**: the first time a solution is imported to an environment that doesn't have it yet, `deploy` asks for confirmation — worded per managed/unmanaged mode, since Flowline can't switch a target's mode back once set. Skippable non-interactively via `--force first-import`. Doesn't fire for `dev` (already rejected by the DTAP gate) or when the solution already exists in the target (the existing, non-bypassable managed/unmanaged mismatch guard covers that case).
+
 ### Changed
+
+- **`deploy` no longer accepts `--managed`** (breaking change, no deprecation window): managed/unmanaged mode was already a single project-wide setting read from `.flowline`, decided at `clone`/`sync` time — `deploy --managed` only ever mutated `.flowline` via a confirm prompt, it was never a genuine per-run override. Configure managed/unmanaged exclusively via `clone --managed`/`sync --managed`. `config` is also dropped from `deploy`'s valid `--force` specifiers, since it has no remaining config-write hazard.
+
 ### Fixed
 ### Security
 
