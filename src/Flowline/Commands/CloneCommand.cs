@@ -174,7 +174,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             - `flowline deploy` requires no uncommitted changes under the target solution's folder (exit code 12 if dirty).
             - DEV is the source of truth. Sync captures its state; never hand-edit unpacked XML.
             - `clone`, `push`, and `sync` require an unmanaged solution in DEV — they fail on managed environments.
-            - To deploy a managed package, use `--managed` on `deploy`. Requires the solution to have been cloned or synced with `--managed` first.
+            - Managed/unmanaged mode is set once via `clone --managed`/`sync --managed`; `deploy` always uses the solution's configured mode.
             - In repos with multiple solutions, pass the solution name as the first argument: `flowline push {{solutionName}}`, `flowline sync {{solutionName}}`, etc.
 
             ## Project structure
