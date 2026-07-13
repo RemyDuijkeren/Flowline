@@ -1328,6 +1328,37 @@ public class PluginPlannerTests
         Assert.Contains("dev1_MyApi", ex.Message);
     }
 
+    [Fact]
+    public void Plan_TwoCustomApisSameDerivedName_NoOverrideOnEither_Throws()
+    {
+        // Both classes omit UniqueNameOverride entirely -- the collision comes purely from the
+        // derived "{prefix}_{BaseName}" formula, not from any override. R6 must catch this case too,
+        // since duplicate detection can no longer rely on the compiler enforcing unique class names.
+        var typeId1 = Guid.NewGuid();
+        var typeId2 = Guid.NewGuid();
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.FirstApiPlugin"]  = new Entity("plugintype", typeId1) { ["typename"] = "MyNamespace.FirstApiPlugin" },
+                ["MyNamespace.SecondApiPlugin"] = new Entity("plugintype", typeId2) { ["typename"] = "MyNamespace.SecondApiPlugin" }
+            },
+            prefix: "dev1");
+
+        var firstApi  = new CustomApiMetadata("Shared", "Shared", "desc", 0, null, false, false, 0, null, "MyNamespace.FirstApiPlugin", [], []);
+        var secondApi = new CustomApiMetadata("Shared", "Shared", "desc", 0, null, false, false, 0, null, "MyNamespace.SecondApiPlugin", [], []);
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            _planner.Plan(snapshot,
+                Metadata(
+                    new PluginTypeMetadata("FirstApiPlugin", "MyNamespace.FirstApiPlugin", [], [firstApi], false, IsCustomApi: true),
+                    new PluginTypeMetadata("SecondApiPlugin", "MyNamespace.SecondApiPlugin", [], [secondApi], false, IsCustomApi: true)),
+                _assembly, "MySolution"));
+
+        Assert.Contains("dev1_Shared", ex.Message);
+        Assert.Contains("MyNamespace.FirstApiPlugin", ex.Message);
+        Assert.Contains("MyNamespace.SecondApiPlugin", ex.Message);
+    }
+
     // -- Tuple identity match (R1/R2) --
 
     [Fact]
