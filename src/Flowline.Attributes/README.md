@@ -396,6 +396,19 @@ Flowline strips the `Api`, `CustomApi`, or `Plugin` suffix and prefixes the resu
 
 The publisher prefix is read from the solution automatically.
 
+**Migrating an existing class from another tool?** Use `UniqueName` to pin the exact live Custom API name instead:
+
+```csharp
+// spkl: [CrmPluginRegistration("dev1_ApproveOrder")]
+// Flowline: keep the class as-is, adopt the same live Custom API in place
+[CustomApi(UniqueName = "dev1_ApproveOrder")]
+public class LegacyOrderApprovalPlugin : IPlugin { ... }
+```
+
+`UniqueName` must be the **complete** Dataverse unique name, publisher prefix included — Flowline validates it starts with the solution's actual prefix and throws if it doesn't; it never prepends the prefix on your behalf when `UniqueName` is set. Two Custom APIs resolving to the same final name — whether derived or explicit — fail the push.
+
+> **This does not preserve identity across a C# class rename.** Plugin type identity follows the class's fully-qualified name; renaming the class always produces a new plugin type, regardless of `UniqueName`. Use `UniqueName` only when the class itself is unchanged.
+
 ### `[CustomApi]` — required
 
 Without arguments, registers a **global API** — not tied to any table:
@@ -436,6 +449,7 @@ Optional named properties:
 | `DisplayName` | `string?` | class name split | Shown in solution explorer. |
 | `Description` | `string?` | `null` | Shown in solution explorer. |
 | `ExecutePrivilege` | `string?` | `null` | Privilege required to call this API. Omit to allow any authenticated user. |
+| `UniqueName` | `string?` | class name derived | Overrides the unique name. **Complete** name, publisher prefix included (e.g. `"dev1_MyCustomApi"`). See [Class naming](#class-naming). |
 
 ### `[Input]` and `[Output]`
 
