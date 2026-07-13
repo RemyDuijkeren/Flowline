@@ -163,17 +163,27 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         {
             packagePath = settings.Path!;
         }
-        else if (reusableCacheEntry != null)
-        {
-            packagePath = candidatePackagePath;
-            Console.Skip($"Reusing cached artifact for '{sln.Name}' — source unchanged since commit {reusableCacheEntry.CommitSha[..7]}.");
-        }
         else
         {
-            Logger.LogInformation("Packing: {SolutionName}", sln.Name);
-            packagePath = await PackSolutionAsync(sln, slnFolder, candidatePackagePath, settings, cancellationToken);
-            if (currentCommitSha != null)
-                WriteCacheEntry(CacheManifestPath(packagePath), new ArtifactCacheEntry(gateVersion, sln.IncludeManaged, currentCommitSha));
+            var hasTestOrUat = !string.IsNullOrEmpty(Config!.TestUrl) || !string.IsNullOrEmpty(Config.UatUrl);
+            var cacheMessage = BuildCacheStatusMessage(cacheOutcome, sln.Name, cacheEntry?.CommitSha, currentCommitSha,
+                cacheEntry?.Managed ?? false, sln.IncludeManaged, CiEnvironment.IsCi(), hasTestOrUat);
+            if (cacheOutcome == CacheOutcome.Hit)
+                Console.Skip(cacheMessage);
+            else
+                Console.Info(cacheMessage);
+
+            if (reusableCacheEntry != null)
+            {
+                packagePath = candidatePackagePath;
+            }
+            else
+            {
+                Logger.LogInformation("Packing: {SolutionName}", sln.Name);
+                packagePath = await PackSolutionAsync(sln, slnFolder, candidatePackagePath, settings, cancellationToken);
+                if (currentCommitSha != null)
+                    WriteCacheEntry(CacheManifestPath(packagePath), new ArtifactCacheEntry(gateVersion, sln.IncludeManaged, currentCommitSha));
+            }
         }
 
         // Always unpack the zip actually being imported — whether freshly packed, reused from cache, or
@@ -391,6 +401,49 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         if (entry.Managed != wantManaged) return CacheOutcome.ManagedMismatch;
         if (!artifactFileExists) return CacheOutcome.ArtifactFileMissing;
         return CacheOutcome.Hit;
+    }
+
+    // KTD4/KTD5: pure so the outcome/CI/Test-UAT branching is unit-testable without a live PAC CLI or
+    // Dataverse connection. The pipeline-style framing only appears when hasTestOrUat and never on CI
+    // (a CI runner gets no benefit from the local cache even when Test/UAT is configured); the CI note
+    // is appended to whatever outcome actually resolved to, never a replacement for it.
+    internal static string BuildCacheStatusMessage(CacheOutcome outcome, string solutionName, string? cachedCommitSha,
+        string? currentCommitSha, bool cachedManaged, bool wantManaged, bool isCi, bool hasTestOrUat)
+    {
+        var showPipelineFraming = hasTestOrUat && !isCi;
+        const string reusedAcrossStages = " Built once, reused across every promotion stage until source changes.";
+        const string willBeReused = " This build will be reused across later promotion stages unless source changes.";
+
+        var message = outcome switch
+        {
+            CacheOutcome.Hit =>
+                $"Reusing cached artifact for '{solutionName}' — source unchanged since commit {cachedCommitSha![..7]}."
+                + (showPipelineFraming ? reusedAcrossStages : ""),
+            CacheOutcome.NoEntry =>
+                $"No cached build yet for '{solutionName}' — packing now."
+                + (showPipelineFraming ? willBeReused : ""),
+            CacheOutcome.CommitChanged =>
+                $"Packing '{solutionName}' — source changed since the cached build (commit {cachedCommitSha![..7]} -> {currentCommitSha![..7]})."
+                + (showPipelineFraming ? willBeReused : ""),
+            CacheOutcome.ManagedMismatch =>
+                $"Packing '{solutionName}' — cached build was {(cachedManaged ? "managed" : "unmanaged")}, this deploy wants {(wantManaged ? "managed" : "unmanaged")}."
+                + (showPipelineFraming ? willBeReused : ""),
+            CacheOutcome.NoCacheFlag =>
+                $"Packing '{solutionName}' — --no-cache forced a fresh pack."
+                + (showPipelineFraming ? willBeReused : ""),
+            CacheOutcome.ArtifactFileMissing =>
+                $"Packing '{solutionName}' — the cached manifest exists but the artifact file is missing."
+                + (showPipelineFraming ? willBeReused : ""),
+            CacheOutcome.NoCurrentCommit =>
+                $"Packing '{solutionName}' — couldn't resolve the current commit."
+                + (showPipelineFraming ? willBeReused : ""),
+            _ => throw new ArgumentOutOfRangeException(nameof(outcome))
+        };
+
+        if (isCi)
+            message += " On CI, use --path to reuse one build across DTAP stages instead — each job here starts from a clean checkout, so this cache can never carry over.";
+
+        return message;
     }
 
     internal static ArtifactCacheEntry? ReadCacheEntryIfExists(string manifestPath)
