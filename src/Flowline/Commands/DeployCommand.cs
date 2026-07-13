@@ -464,9 +464,12 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             switch (ConsoleHelper.DetectCIPlatform())
             {
                 case "azuredevops":
-                    // KTD3: plain write, never Console.MarkupLine — the vso line's literal "[artifact.upload ...]"
-                    // would otherwise be parsed as a Spectre style tag and throw.
-                    Console.WriteLine(BuildAzureDevOpsArtifactUploadLine(packagePath, solutionName));
+                    // KTD3: raw System.Console, never the injected IAnsiConsole — Console.MarkupLine would
+                    // parse the vso line's literal "[artifact.upload ...]" as a Spectre style tag and throw,
+                    // and even a plain IAnsiConsole write can word-wrap this line (it contains a space)
+                    // across physical lines once redirected stdout falls back to an 80-column profile width
+                    // on a real agent, which silently breaks the agent's single-line ##vso parse.
+                    System.Console.WriteLine(BuildAzureDevOpsArtifactUploadLine(Path.GetFullPath(packagePath), solutionName));
                     break;
                 case "github":
                     var githubOutputPath = Environment.GetEnvironmentVariable("GITHUB_OUTPUT");
