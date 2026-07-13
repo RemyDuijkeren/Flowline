@@ -55,7 +55,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
     // "drift" is this command's local force hazard (skip drift validation) — distinct from the
     // unrelated `flowline drift` CLI command, which reports drift for any environment read-only.
-    internal static readonly string[] ValidSpecifiers = ["drift", "config", "all"];
+    internal static readonly string[] ValidSpecifiers = ["drift", "first-import", "all"];
     protected override string[] ValidForceSpecifiers => ValidSpecifiers;
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
@@ -103,6 +103,20 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         }
 
         await ValidateDtapGateAsync(sln, gateVersion, targetUrl, settings, cancellationToken);
+
+        // R8: placed after the DTAP gate, not right after ValidateTargetAsync — a `dev` target is already
+        // rejected by the gate's DevBlock outcome above, so a first-import confirmation would otherwise fire
+        // on a deploy that's about to be blocked moments later anyway.
+        if (!existingSolutionInTarget)
+        {
+            var prompt = BuildFirstImportPrompt(sln.Name, targetEnv.DisplayName!, sln.IncludeManaged);
+            if (!ConsoleHelper.Confirm(prompt, false, settings, "first-import"))
+            {
+                Console.Skip("Deploy cancelled.");
+                return (int)ExitCode.Cancelled;
+            }
+        }
+
         ValidateLocalState(slnFolder, settings, cancellationToken, checkDrift: !usingExplicitArtifact);
 
         // Managed import only removes components no longer in the solution when Dataverse runs it as an
@@ -259,6 +273,13 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         return (targetEnv, existingSolution != null);
     }
+
+    // R5/KTD6: pure so the mode-specific wording is unit-testable without a live PAC CLI or Dataverse
+    // connection, mirroring the established pattern in provision-safety-guard-unmanaged-solutions-2026-05-18.md.
+    internal static string BuildFirstImportPrompt(string solutionName, string targetDisplayName, bool includeManaged) =>
+        includeManaged
+            ? $"[yellow]First managed deploy of '{solutionName}' to {targetDisplayName} — this environment's mode can't be changed later without uninstalling the solution first. Continue?[/]"
+            : $"[yellow]First deploy of '{solutionName}' to {targetDisplayName} as unmanaged — switching to managed here later needs the solution removed manually first. Continue?[/]";
 
     private async Task ValidateDtapGateAsync(
         ProjectSolution sln, string gateVersion, string targetUrl, Settings settings, CancellationToken ct)

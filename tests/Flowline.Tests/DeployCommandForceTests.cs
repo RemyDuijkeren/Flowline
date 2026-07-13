@@ -14,7 +14,7 @@ public class DeployCommandForceTests
 
         act.Should().Throw<FlowlineException>()
             .Where(e => e.ExitCode == ExitCode.ValidationFailed
-                && e.Message.Contains("drift") && e.Message.Contains("config") && e.Message.Contains("all"));
+                && e.Message.Contains("drift") && e.Message.Contains("first-import") && e.Message.Contains("all"));
     }
 
     [Fact]
@@ -28,20 +28,31 @@ public class DeployCommandForceTests
     }
 
     [Fact]
-    public void HasForce_All_ApprovesDriftAndConfigTogether()
+    public void ValidateForce_Config_ThrowsAsUnrecognized()
+    {
+        var settings = new DeployCommand.Settings { Force = ["config"] };
+
+        var act = () => FlowlineSettings.ValidateForce(settings.Force, DeployCommand.ValidSpecifiers, "deploy");
+
+        act.Should().Throw<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed && e.Message.Contains("first-import"));
+    }
+
+    [Fact]
+    public void HasForce_All_ApprovesDriftAndFirstImportTogether()
     {
         var settings = new DeployCommand.Settings { Force = ["all"] };
 
         settings.HasForce("drift").Should().BeTrue();
-        settings.HasForce("config").Should().BeTrue();
+        settings.HasForce("first-import").Should().BeTrue();
     }
 
     [Fact]
-    public void HasForce_DriftOnly_DoesNotApproveConfig()
+    public void HasForce_DriftOnly_DoesNotApproveFirstImport()
     {
         var settings = new DeployCommand.Settings { Force = ["drift"] };
 
         settings.HasForce("drift").Should().BeTrue();
-        settings.HasForce("config").Should().BeFalse();
+        settings.HasForce("first-import").Should().BeFalse();
     }
 }
