@@ -14,7 +14,7 @@ public class ConsoleHelperTests
         try
         {
             var settings = new FlowlineSettings { Force = ["config"] };
-            ConsoleHelper.Confirm("Overwrite it?", false, settings).Should().BeTrue();
+            ConsoleHelper.Confirm("Overwrite it?", false, settings, "config").Should().BeTrue();
         }
         finally { RestoreCiVars(saved); }
     }
@@ -27,7 +27,7 @@ public class ConsoleHelperTests
         try
         {
             var settings = new FlowlineSettings { Force = ["all"] };
-            ConsoleHelper.Confirm("Overwrite it?", false, settings).Should().BeTrue();
+            ConsoleHelper.Confirm("Overwrite it?", false, settings, "config").Should().BeTrue();
         }
         finally { RestoreCiVars(saved); }
     }
@@ -40,9 +40,37 @@ public class ConsoleHelperTests
         try
         {
             var settings = new FlowlineSettings { Force = [] };
-            var act = () => ConsoleHelper.Confirm("Overwrite it?", false, settings);
+            var act = () => ConsoleHelper.Confirm("Overwrite it?", false, settings, "config");
             act.Should().Throw<FlowlineException>()
                 .Where(e => e.ExitCode == ExitCode.ForceRequired && e.Message.Contains("--force config"));
+        }
+        finally { RestoreCiVars(saved); }
+    }
+
+    [Fact]
+    public void Confirm_NonInteractive_ForceContainsMatchingSpecifier_ReturnsTrueWithoutPrompting()
+    {
+        var saved = SaveAndClearCiVars();
+        Environment.SetEnvironmentVariable("CI", "true");
+        try
+        {
+            var settings = new FlowlineSettings { Force = ["first-import"] };
+            ConsoleHelper.Confirm("Continue?", false, settings, "first-import").Should().BeTrue();
+        }
+        finally { RestoreCiVars(saved); }
+    }
+
+    [Fact]
+    public void Confirm_NonInteractive_ForceContainsDifferentSpecifier_ThrowsNamingRequestedSpecifier()
+    {
+        var saved = SaveAndClearCiVars();
+        Environment.SetEnvironmentVariable("CI", "true");
+        try
+        {
+            var settings = new FlowlineSettings { Force = ["config"] };
+            var act = () => ConsoleHelper.Confirm("Continue?", false, settings, "first-import");
+            act.Should().Throw<FlowlineException>()
+                .Where(e => e.ExitCode == ExitCode.ForceRequired && e.Message.Contains("--force first-import"));
         }
         finally { RestoreCiVars(saved); }
     }

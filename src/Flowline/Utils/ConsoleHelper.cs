@@ -41,18 +41,18 @@ public static class ConsoleHelper
     }
 
     /// <summary>
-    /// Prompts the user with a confirmation, or automatically accepts if in non-interactive mode and --force config (or --force all) is specified.
+    /// Prompts the user with a confirmation, or automatically accepts if in non-interactive mode and --force &lt;specifier&gt; (or --force all) is specified.
     /// </summary>
-    public static bool Confirm(string prompt, bool defaultValue, FlowlineSettings? settings)
+    public static bool Confirm(string prompt, bool defaultValue, FlowlineSettings? settings, string specifier)
     {
         if (!IsInteractive(settings))
         {
-            if (settings?.HasForce("config") == true)
+            if (settings?.HasForce(specifier) == true)
             {
                 return true;
             }
 
-            throw new FlowlineException(ExitCode.ForceRequired, "Confirmation required but not in interactive mode. Use --force config to proceed.");
+            throw new FlowlineException(ExitCode.ForceRequired, $"Confirmation required but not in interactive mode. Use --force {specifier} to proceed.");
         }
 
         return AnsiConsole.Confirm(prompt, defaultValue);

@@ -45,7 +45,7 @@ public class ProjectConfig
         if (UatUrl != inputUatUrl)
         {
             AnsiConsole.MarkupLine($"[yellow]UAT is already set: [bold]{UatUrl}[/][/]");
-            if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings))
+            if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings, "config"))
             {
                 AnsiConsole.MarkupLine($"[dim]Keeping UAT as-is: [link]{UatUrl}[/][/]");
                 return UatUrl;
@@ -80,7 +80,7 @@ public class ProjectConfig
         if (TestUrl != inputTestUrl)
         {
             AnsiConsole.MarkupLine($"[yellow]Test is already set: [bold]{TestUrl}[/][/]");
-            if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings))
+            if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings, "config"))
             {
                 AnsiConsole.MarkupLine($"[dim]Keeping test as-is: [link]{TestUrl}[/][/]");
                 return TestUrl;
@@ -115,7 +115,7 @@ public class ProjectConfig
         if (DevUrl != inputDevUrl)
         {
             AnsiConsole.MarkupLine($"[yellow]Dev is already set: [bold]{DevUrl}[/][/]");
-            if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings))
+            if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings, "config"))
             {
                 AnsiConsole.MarkupLine($"[dim]Keeping dev as-is: [link]{DevUrl}[/][/]");
                 return DevUrl;
@@ -150,7 +150,7 @@ public class ProjectConfig
         if (ProdUrl != inputProdUrl)
         {
             AnsiConsole.MarkupLine($"[yellow]Prod is already set: [bold]{ProdUrl}[/][/]");
-            if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings))
+            if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings, "config"))
             {
                 AnsiConsole.MarkupLine($"[dim]Keeping prod as-is: [link]{ProdUrl}[/][/]");
                 return ProdUrl;
@@ -221,7 +221,7 @@ public class ProjectConfig
         {
             AnsiConsole.MarkupLine($"[yellow]{sln.Name} is already set to managed: {sln.IncludeManaged}[/]");
 
-            if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings))
+            if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings, "config"))
             {
                 AnsiConsole.MarkupLine("[dim]Keeping solution config as-is[/]");
                 return sln;

@@ -28,10 +28,6 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         [Description("Solution to deploy (optional in project mode)")]
         public string? Solution { get; set; }
 
-        [CommandOption("--managed")]
-        [Description("Deploy the managed package (--managed false resets to default)")]
-        public FlagValue<bool> Managed { get; set; } = null!;
-
         [CommandOption("--path <zip>")]
         [Description("Import this pre-built solution zip instead of packing from source")]
         public string? Path { get; set; }
@@ -65,7 +61,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         var targetUrl = ResolveTargetUrl(settings);
-        var sln = Config!.GetOrUpdateSolution(settings.Solution, settings.Managed.IsSet ? settings.Managed.Value : (bool?)null, settings)
+        var sln = Config!.GetOrUpdateSolution(settings.Solution, settings: settings)
             ?? throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — use --solution <name>.");
         var slnFolder = Path.Combine(RootFolder, "solutions", sln.Name);
         var usingExplicitArtifact = !string.IsNullOrWhiteSpace(settings.Path);
