@@ -225,6 +225,106 @@ public class PluginAssemblyReaderTests
     }
 
     [Fact]
+    public void Analyze_CustomApiWithoutUniqueName_DerivesBaseNameFromClassName()
+    {
+        var api = GetPlugin(Analyze(), nameof(MockGetAccountRiskApi)).CustomApis.Single();
+
+        Assert.Equal("MockGetAccountRisk", api.BaseName);
+        Assert.Null(api.UniqueNameOverride);
+    }
+
+    [Fact]
+    public void Analyze_CustomApiWithUniqueName_UsesOverrideVerbatim()
+    {
+        var api = GetPlugin(Analyze(), nameof(MockApproveOrderCustomApiPlugin)).CustomApis.Single();
+
+        Assert.Equal("dev1_LegacyOrderApproval", api.UniqueNameOverride);
+    }
+
+    [Fact]
+    public void Analyze_CustomApiWithUniqueNameNoDisplayName_DefaultsFromSegmentAfterFirstUnderscore()
+    {
+        var api = GetPlugin(Analyze(), nameof(MockUniqueNameDisplayDefaultApi)).CustomApis.Single();
+
+        Assert.Equal("My Custom Api", api.DisplayName);
+    }
+
+    [Fact]
+    public void Analyze_CustomApiWithUniqueNameAndExplicitDisplayName_ExplicitWins()
+    {
+        var api = GetPlugin(Analyze(), nameof(MockUniqueNameExplicitDisplayApi)).CustomApis.Single();
+
+        Assert.Equal("Explicit Label", api.DisplayName);
+    }
+
+    [Fact]
+    public void Analyze_CustomApiWithUniqueName_RequestParametersStillKeyOffBaseName()
+    {
+        var api = GetPlugin(Analyze(), nameof(MockUniqueNameWithParamsApi)).CustomApis.Single();
+
+        Assert.Equal("MockUniqueNameWithParams", api.BaseName);
+        var param = Assert.Single(api.RequestParameters);
+        // ReadClassLevelParameters composes the composite label into DisplayName's positional slot
+        // (a pre-existing quirk, not something this feature changes) — assert there, not on Name.
+        Assert.Contains("MockUniqueNameWithParams.accountId", param.DisplayName);
+    }
+
+    [Fact]
+    public void ValidateCustomApiUniqueNameFormat_Null_DoesNotThrow()
+    {
+        PluginAssemblyReader.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", null);
+    }
+
+    [Fact]
+    public void ValidateCustomApiUniqueNameFormat_Empty_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            PluginAssemblyReader.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", ""));
+        Assert.Contains("UniqueName", ex.Message);
+        Assert.Contains("empty", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateCustomApiUniqueNameFormat_Whitespace_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            PluginAssemblyReader.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", "   "));
+        Assert.Contains("UniqueName", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateCustomApiUniqueNameFormat_LeadingDigit_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            PluginAssemblyReader.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", "123Bad_Name"));
+        Assert.Contains("invalid", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateCustomApiUniqueNameFormat_EmbeddedSpace_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            PluginAssemblyReader.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", "Bad Name_Here"));
+        Assert.Contains("invalid", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateCustomApiUniqueNameFormat_NoUnderscore_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            PluginAssemblyReader.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", "NoUnderscoreAtAll"));
+        Assert.Contains("publisher prefix", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateCustomApiUniqueNameFormat_EmptyAfterPrefix_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            PluginAssemblyReader.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", "dev1_"));
+        Assert.Contains("nothing after", ex.Message);
+    }
+
+    [Fact]
     public void ValidateSecondaryTable_OnNonAssociateMessage_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
@@ -1055,6 +1155,38 @@ public class MockMultiHandlesPostImagePlugin : IPlugin
 [Handles(Message.Update, Stage.PostOperation)]
 [Handles(Message.Update, Stage.PostOperationAsync)]
 public class MockMultiHandlesUpdateSyncAndAsyncPlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+[CustomApi]
+public class MockGetAccountRiskApi : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+[CustomApi(UniqueName = "dev1_LegacyOrderApproval")]
+public class MockApproveOrderCustomApiPlugin : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+[CustomApi(UniqueName = "dev1_MyCustomApi")]
+public class MockUniqueNameDisplayDefaultApi : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+[CustomApi(UniqueName = "dev1_MyCustomApi", DisplayName = "Explicit Label")]
+public class MockUniqueNameExplicitDisplayApi : IPlugin
+{
+    public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
+}
+
+[CustomApi(UniqueName = "dev1_BulkApprove")]
+[Input("accountId", FieldType.EntityReference, Table = "account")]
+[Output("riskScore", FieldType.Integer)]
+public class MockUniqueNameWithParamsApi : IPlugin
 {
     public void Execute(IServiceProvider serviceProvider) => throw new NotImplementedException();
 }

@@ -1166,6 +1166,167 @@ public class PluginPlannerTests
         Assert.Empty(plan.ResponseProps.AddSolutionComponents);
     }
 
+    // -- CustomApi UniqueName override (U4) --
+
+    [Fact]
+    public void Plan_CustomApiUniqueNameOverride_NoLiveRecord_CreatesUsingOverrideVerbatim()
+    {
+        var typeId = Guid.NewGuid();
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.LegacyOrderApprovalPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.LegacyOrderApprovalPlugin" }
+            },
+            prefix: "dev1");
+
+        var customApi = new CustomApiMetadata(
+            "LegacyOrderApproval", "Legacy Order Approval", "desc", 0, null, false, false, 0, null,
+            "MyNamespace.LegacyOrderApprovalPlugin", [], [], UniqueNameOverride: "dev1_ApproveOrder");
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("LegacyOrderApprovalPlugin", "MyNamespace.LegacyOrderApprovalPlugin", [], [customApi], false, IsCustomApi: true)), _assembly, "MySolution");
+
+        var action = Assert.Single(plan.CustomApis.Upserts);
+        Assert.True(action.IsCreate);
+        Assert.Equal("dev1_ApproveOrder", action.Entity.GetAttributeValue<string>("uniquename"));
+    }
+
+    [Fact]
+    public void Plan_CustomApiUniqueNameOverride_MatchesExistingLiveRecord_UpdatesInPlace_NoDelete()
+    {
+        // Core migration scenario: class unchanged, live API's name doesn't match the derived formula.
+        var typeId = Guid.NewGuid();
+        var apiId  = Guid.NewGuid();
+
+        var liveApi = new Entity("customapi", apiId)
+        {
+            ["uniquename"]                      = "dev1_ApproveOrder",
+            ["displayname"]                     = "Approve Order",
+            ["description"]                     = "desc",
+            ["bindingtype"]                     = new OptionSetValue(0),
+            ["isfunction"]                       = false,
+            ["isprivate"]                       = false,
+            ["allowedcustomprocessingsteptype"] = new OptionSetValue(0),
+            ["plugintypeid"]                    = new EntityReference("plugintype", typeId)
+        };
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.LegacyOrderApprovalPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.LegacyOrderApprovalPlugin" }
+            },
+            customApis: [liveApi],
+            prefix: "dev1",
+            componentTypeById: new Dictionary<Guid, int> { [apiId] = 400 });
+
+        var customApi = new CustomApiMetadata(
+            "LegacyOrderApproval", "Approve Order", "desc", 0, null, false, false, 0, null,
+            "MyNamespace.LegacyOrderApprovalPlugin", [], [], UniqueNameOverride: "dev1_ApproveOrder");
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("LegacyOrderApprovalPlugin", "MyNamespace.LegacyOrderApprovalPlugin", [], [customApi], false, IsCustomApi: true)), _assembly, "MySolution");
+
+        // Adopted in place — no create (already exists), and critically no delete of the live record.
+        Assert.Empty(plan.CustomApis.Deletes);
+        Assert.DoesNotContain(plan.CustomApis.Upserts, a => a.IsCreate);
+    }
+
+    [Fact]
+    public void Plan_CustomApiUniqueNameOverride_Redundant_WarnsButProceeds()
+    {
+        var typeId = Guid.NewGuid();
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyApiPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyApiPlugin" }
+            },
+            prefix: "dev1");
+
+        // Class name "MyApiPlugin" strips (via "Plugin" suffix) to "MyApi" — override matches exactly.
+        var customApi = new CustomApiMetadata(
+            "MyApi", "My Api", "desc", 0, null, false, false, 0, null,
+            "MyNamespace.MyApiPlugin", [], [], UniqueNameOverride: "dev1_MyApi");
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyApiPlugin", "MyNamespace.MyApiPlugin", [], [customApi], false, IsCustomApi: true)), _assembly, "MySolution");
+
+        var action = Assert.Single(plan.CustomApis.Upserts);
+        Assert.True(action.IsCreate);
+        Assert.Equal("dev1_MyApi", action.Entity.GetAttributeValue<string>("uniquename"));
+    }
+
+    [Fact]
+    public void Plan_CustomApiUniqueNameOverride_WrongPrefix_Throws()
+    {
+        var typeId = Guid.NewGuid();
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyApiPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyApiPlugin" }
+            },
+            prefix: "dev1");
+
+        var customApi = new CustomApiMetadata(
+            "MyApi", "My Api", "desc", 0, null, false, false, 0, null,
+            "MyNamespace.MyApiPlugin", [], [], UniqueNameOverride: "wrong_MyApi");
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyApiPlugin", "MyNamespace.MyApiPlugin", [], [customApi], false, IsCustomApi: true)), _assembly, "MySolution"));
+
+        Assert.Contains("wrong_MyApi", ex.Message);
+        Assert.Contains("dev1_", ex.Message);
+    }
+
+    [Fact]
+    public void Plan_TwoCustomApisSameUniqueNameOverride_Throws()
+    {
+        var typeId1 = Guid.NewGuid();
+        var typeId2 = Guid.NewGuid();
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.FirstApiPlugin"]  = new Entity("plugintype", typeId1) { ["typename"] = "MyNamespace.FirstApiPlugin" },
+                ["MyNamespace.SecondApiPlugin"] = new Entity("plugintype", typeId2) { ["typename"] = "MyNamespace.SecondApiPlugin" }
+            },
+            prefix: "dev1");
+
+        var firstApi  = new CustomApiMetadata("First", "First", "desc", 0, null, false, false, 0, null, "MyNamespace.FirstApiPlugin", [], [], UniqueNameOverride: "dev1_Shared");
+        var secondApi = new CustomApiMetadata("Second", "Second", "desc", 0, null, false, false, 0, null, "MyNamespace.SecondApiPlugin", [], [], UniqueNameOverride: "dev1_Shared");
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            _planner.Plan(snapshot,
+                Metadata(
+                    new PluginTypeMetadata("FirstApiPlugin", "MyNamespace.FirstApiPlugin", [], [firstApi], false, IsCustomApi: true),
+                    new PluginTypeMetadata("SecondApiPlugin", "MyNamespace.SecondApiPlugin", [], [secondApi], false, IsCustomApi: true)),
+                _assembly, "MySolution"));
+
+        Assert.Contains("dev1_Shared", ex.Message);
+        Assert.Contains("MyNamespace.FirstApiPlugin", ex.Message);
+        Assert.Contains("MyNamespace.SecondApiPlugin", ex.Message);
+    }
+
+    [Fact]
+    public void Plan_DerivedNameCollidesWithUniqueNameOverride_Throws()
+    {
+        var typeId1 = Guid.NewGuid();
+        var typeId2 = Guid.NewGuid();
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyApiPlugin"]     = new Entity("plugintype", typeId1) { ["typename"] = "MyNamespace.MyApiPlugin" },
+                ["MyNamespace.OtherApiPlugin"] = new Entity("plugintype", typeId2) { ["typename"] = "MyNamespace.OtherApiPlugin" }
+            },
+            prefix: "dev1");
+
+        // "MyApiPlugin" derives (via "Plugin" suffix) to "MyApi" -> "dev1_MyApi"; the second class
+        // explicitly overrides to the same final value.
+        var derivedApi  = new CustomApiMetadata("MyApi", "My Api", "desc", 0, null, false, false, 0, null, "MyNamespace.MyApiPlugin", [], []);
+        var overrideApi = new CustomApiMetadata("Other", "Other", "desc", 0, null, false, false, 0, null, "MyNamespace.OtherApiPlugin", [], [], UniqueNameOverride: "dev1_MyApi");
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            _planner.Plan(snapshot,
+                Metadata(
+                    new PluginTypeMetadata("MyApiPlugin", "MyNamespace.MyApiPlugin", [], [derivedApi], false, IsCustomApi: true),
+                    new PluginTypeMetadata("OtherApiPlugin", "MyNamespace.OtherApiPlugin", [], [overrideApi], false, IsCustomApi: true)),
+                _assembly, "MySolution"));
+
+        Assert.Contains("dev1_MyApi", ex.Message);
+    }
+
     // -- Tuple identity match (R1/R2) --
 
     [Fact]

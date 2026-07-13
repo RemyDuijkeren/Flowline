@@ -198,6 +198,7 @@ public class PluginAssemblyReader(IAnsiConsole console)
         string? displayName = null;
         string? description = null;
         string? executePrivilege = null;
+        string? uniqueNameOverride = null;
 
         foreach (var arg in customApiAttr.NamedArguments)
         {
@@ -210,8 +211,11 @@ public class PluginAssemblyReader(IAnsiConsole console)
                 case "DisplayName":      displayName = arg.TypedValue.Value as string; break;
                 case "Description":      description = arg.TypedValue.Value as string; break;
                 case "ExecutePrivilege": executePrivilege = arg.TypedValue.Value as string; break;
+                case "UniqueName":       uniqueNameOverride = arg.TypedValue.Value as string; break;
             }
         }
+
+        ValidateCustomApiUniqueNameFormat(type.Name, uniqueNameOverride);
 
         int bindingType;
         string? boundEntityLogicalName;
@@ -220,7 +224,11 @@ public class PluginAssemblyReader(IAnsiConsole console)
         else                            { bindingType = 0; boundEntityLogicalName = null; }
 
         var baseName = StripCustomApiSuffix(type.Name);
-        displayName ??= SplitPascalCase(baseName);
+
+        if (uniqueNameOverride != null)
+            displayName ??= SplitPascalCase(uniqueNameOverride[(uniqueNameOverride.IndexOf('_') + 1)..]);
+        else
+            displayName ??= SplitPascalCase(baseName);
         description ??= displayName;
 
         var (requestParams, responseProps) = ReadClassLevelParameters(type, baseName);
@@ -230,7 +238,36 @@ public class PluginAssemblyReader(IAnsiConsole console)
             bindingType, boundEntityLogicalName,
             isFunction, isPrivate, allowedStepType, executePrivilege,
             type.FullName!,
-            requestParams, responseProps);
+            requestParams, responseProps,
+            uniqueNameOverride);
+    }
+
+    // Format-only check: no live publisher prefix is available yet at read time (PluginPlanner
+    // resolves it later and validates the prefix itself matches — see PlanCustomApi).
+    internal static void ValidateCustomApiUniqueNameFormat(string className, string? uniqueName)
+    {
+        if (uniqueName is null) return;
+
+        if (string.IsNullOrWhiteSpace(uniqueName))
+            throw new InvalidOperationException(
+                $"{className}: [CustomApi] UniqueName cannot be an empty string — omit UniqueName to derive it from the class name, " +
+                $"or specify the complete unique name including the publisher prefix, e.g. [CustomApi(UniqueName = \"dev1_MyCustomApi\")].");
+
+        var underscoreIndex = uniqueName.IndexOf('_');
+        if (underscoreIndex < 0)
+            throw new InvalidOperationException(
+                $"{className}: [CustomApi] UniqueName '{uniqueName}' must be the complete Dataverse unique name including the " +
+                $"publisher prefix, e.g. \"dev1_MyCustomApi\" — not just the base name.");
+
+        if (underscoreIndex == uniqueName.Length - 1)
+            throw new InvalidOperationException(
+                $"{className}: [CustomApi] UniqueName '{uniqueName}' has nothing after the publisher prefix — " +
+                $"specify the full name, e.g. \"dev1_MyCustomApi\".");
+
+        if (!char.IsLetter(uniqueName[0]) || uniqueName.Any(c => !char.IsLetterOrDigit(c) && c != '_'))
+            throw new InvalidOperationException(
+                $"{className}: [CustomApi] UniqueName '{uniqueName}' is invalid — it may contain only letters, digits, and underscores, " +
+                $"and must start with a letter.");
     }
 
     private static (List<RequestParameterMetadata>, List<ResponsePropertyMetadata>)

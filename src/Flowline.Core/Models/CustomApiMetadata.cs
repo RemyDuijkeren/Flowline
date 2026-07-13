@@ -1,7 +1,7 @@
 namespace Flowline.Core.Models;
 
 public record CustomApiMetadata(
-    string UniqueName,              // PascalCase, without publisher prefix — e.g. "GetAccountRisk"
+    string BaseName,                // PascalCase, without publisher prefix — e.g. "GetAccountRisk"
     string? DisplayName,
     string? Description,
     int BindingType,                // 0=Global, 1=Entity, 2=EntityCollection
@@ -12,4 +12,5 @@ public record CustomApiMetadata(
     string? ExecutePrivilege,
     string PluginTypeFullName,
     List<RequestParameterMetadata> RequestParameters,
-    List<ResponsePropertyMetadata> ResponseProperties);
+    List<ResponsePropertyMetadata> ResponseProperties,
+    string? UniqueNameOverride = null); // Full Dataverse uniquename incl. prefix, from [CustomApi(UniqueName = "...")]

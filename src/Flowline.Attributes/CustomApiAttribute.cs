@@ -13,7 +13,8 @@ namespace Flowline.Attributes
     /// <para>
     /// Flowline uses this attribute to register the Custom API record in Dataverse when you run
     /// <c>flowline push</c>. The class name (minus the <c>Api</c>, <c>CustomApi</c>, or <c>Plugin</c>
-    /// suffix) becomes the unique name, prefixed with the solution's publisher prefix.
+    /// suffix) becomes the unique name, prefixed with the solution's publisher prefix. Set
+    /// <see cref="UniqueName"/> to override this — see below.
     /// </para>
     /// <para>
     /// <b>Action vs. Function:</b> an Action performs an operation and is called via HTTP POST. A
@@ -81,6 +82,34 @@ namespace Flowline.Attributes
         /// a single record. Dataverse provides a <c>Target</c> EntityCollection parameter.
         /// </summary>
         public string TableCollection { get; set; }
+
+        /// <summary>
+        /// Overrides the Custom API's unique name. Must be the <b>complete</b> Dataverse unique name,
+        /// publisher prefix included (e.g. <c>"dev1_MyCustomApi"</c>) — not just the class-derived base
+        /// name. Flowline validates that the value starts with the solution's actual publisher prefix
+        /// and throws if it doesn't; omit this property to derive the unique name from the class name
+        /// as usual.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <b>Use this when migrating an existing, unrenamed class</b> from another registration tool
+        /// (spkl, Daxif) whose live Custom API's unique name doesn't follow Flowline's suffix-stripping
+        /// convention. Copy the exact value the source tool's own linking attribute already used —
+        /// migration becomes a literal paste, not a mental "strip the prefix" exercise.
+        /// </para>
+        /// <code>
+        /// // spkl: [CrmPluginRegistration("dev1_ApproveOrder")]
+        /// // Flowline: keep the class as-is, pin the same live unique name
+        /// [CustomApi(UniqueName = "dev1_ApproveOrder")]
+        /// public partial class LegacyOrderApprovalPlugin : IPlugin { ... }
+        /// </code>
+        /// <para>
+        /// <b>This does not preserve identity across a C# class rename.</b> Plugin type identity is the
+        /// class's fully-qualified name — renaming the class always produces a new plugin type,
+        /// regardless of <see cref="UniqueName"/>. Use this only when the class itself is unchanged.
+        /// </para>
+        /// </remarks>
+        public string UniqueName { get; set; }
 
         /// <summary>
         /// When <c>true</c>, this API is a Function: it must return a value and has no side effects.

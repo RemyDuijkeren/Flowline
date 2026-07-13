@@ -28,6 +28,7 @@ public class PluginPlanner(IAnsiConsole console)
     public RegistrationPlan Plan(RegistrationSnapshot snapshot, PluginAssemblyMetadata metadata, Entity assembly, string solutionName)
     {
         var plan = new RegistrationPlan();
+        var resolvedCustomApiNames = ResolveCustomApiNames(snapshot, metadata);
 
         foreach (var asmPluginType in metadata.Plugins)
         {
@@ -58,7 +59,7 @@ public class PluginPlanner(IAnsiConsole console)
 
             if (asmPluginType.IsCustomApi)
             {
-                var (customApiPlan, requestParamPlan, responsePropPlan, groups) = PlanCustomApi(snapshot, dvPluginType, asmPluginType.CustomApis, solutionName, asmPluginType.Name);
+                var (customApiPlan, requestParamPlan, responsePropPlan, groups) = PlanCustomApi(snapshot, dvPluginType, asmPluginType.CustomApis, solutionName, resolvedCustomApiNames, asmPluginType.Name);
                 plan.CustomApis.Add(customApiPlan);
                 plan.RequestParams.Add(requestParamPlan);
                 plan.ResponseProps.Add(responsePropPlan);
@@ -83,7 +84,7 @@ public class PluginPlanner(IAnsiConsole console)
 
             // Try both paths — only the one with registered items will produce actions
             var typeShortName = obsoletePluginType.Key[(obsoletePluginType.Key.LastIndexOf('.') + 1)..];
-            var (customApiPlan, requestParamPlan, responsePropPlan, apiGroups) = PlanCustomApi(snapshot, obsoletePluginType.Value, [], solutionName, typeShortName);
+            var (customApiPlan, requestParamPlan, responsePropPlan, apiGroups) = PlanCustomApi(snapshot, obsoletePluginType.Value, [], solutionName, resolvedCustomApiNames, typeShortName);
             plan.CustomApis.Add(customApiPlan);
             plan.RequestParams.Add(requestParamPlan);
             plan.ResponseProps.Add(responsePropPlan);
@@ -428,8 +429,66 @@ public class PluginPlanner(IAnsiConsole console)
         return plan;
     }
 
+    // Resolves every Custom API in the assembly to its final Dataverse uniquename before any planning
+    // work runs — validates [CustomApi(UniqueName = "...")] overrides against the live publisher prefix
+    // (throws on mismatch), warns on a redundant override, and throws on any two Custom APIs (derived or
+    // explicit) resolving to the same final name. Keyed by plugin type FullName, since each plugin type
+    // has at most one CustomApiMetadata.
+    Dictionary<string, string> ResolveCustomApiNames(RegistrationSnapshot snapshot, PluginAssemblyMetadata metadata)
+    {
+        var prefix = snapshot.PublisherPrefix;
+        var expectedPrefix = $"{prefix}_";
+        var resolved = new Dictionary<string, string>();
+
+        foreach (var pluginType in metadata.Plugins)
+        {
+            foreach (var asmApi in pluginType.CustomApis)
+            {
+                string fullApiName;
+                if (asmApi.UniqueNameOverride != null)
+                {
+                    if (!asmApi.UniqueNameOverride.StartsWith(expectedPrefix, StringComparison.Ordinal))
+                        throw new InvalidOperationException(
+                            $"{pluginType.FullName}: [CustomApi] UniqueName '{asmApi.UniqueNameOverride}' does not start with this " +
+                            $"solution's publisher prefix '{expectedPrefix}' — Dataverse requires it. Set UniqueName to the complete " +
+                            $"name, e.g. \"{expectedPrefix}{asmApi.BaseName}\".");
+
+                    fullApiName = asmApi.UniqueNameOverride;
+
+                    var derivedName = $"{prefix}_{asmApi.BaseName}";
+                    if (fullApiName == derivedName)
+                        console.Warning(
+                            $"{pluginType.FullName}: [[CustomApi]] UniqueName is redundant — it matches what Flowline would have " +
+                            $"derived automatically. Remove UniqueName and rely on the class-name convention.");
+                }
+                else
+                {
+                    fullApiName = $"{prefix}_{asmApi.BaseName}";
+                }
+
+                resolved[pluginType.FullName] = fullApiName;
+            }
+        }
+
+        var duplicates = resolved
+            .GroupBy(kv => kv.Value, kv => kv.Key)
+            .Where(g => g.Count() > 1)
+            .ToList();
+
+        if (duplicates.Count > 0)
+        {
+            var details = string.Join("; ", duplicates.Select(g => $"'{g.Key}' used by {string.Join(", ", g)}"));
+            throw new InvalidOperationException(
+                $"Multiple Custom APIs resolve to the same unique name — Dataverse requires names to be unique: {details}. " +
+                $"Rename the class or set a distinct [CustomApi(UniqueName = \"...\")] to disambiguate.");
+        }
+
+        return resolved;
+    }
+
     (ActionPlan customApiPlan, ActionPlan requestParamPlan, ActionPlan responsePropPlan, List<CustomApiGroup> groups) PlanCustomApi(
-        RegistrationSnapshot snapshot, Entity typeEntity, List<CustomApiMetadata> asmCustomApis, string solutionName, string? pluginTypeName = null)
+        RegistrationSnapshot snapshot, Entity typeEntity, List<CustomApiMetadata> asmCustomApis, string solutionName,
+        Dictionary<string, string> resolvedCustomApiNames, string? pluginTypeName = null)
     {
         ActionPlan apiPlan = new();
         ActionPlan paramPlan = new();
@@ -444,14 +503,14 @@ public class PluginPlanner(IAnsiConsole console)
 
         foreach (var asmApi in asmCustomApis)
         {
-            var fullApiName = $"{prefix}_{asmApi.UniqueName}";
+            var fullApiName = resolvedCustomApiNames[asmApi.PluginTypeFullName];
 
             if (!dvApis.TryGetValue(fullApiName, out var dvApi))
             {
                 var newApi = NewCustomApiEntity(fullApiName, asmApi, typeEntity);
-                var upsert = new UpsertAction(asmApi.UniqueName, newApi, IsCreate: true, SolutionName: solutionName);
-                var pParam = PlanRequestParameters(snapshot, prefix, newApi.Id, asmApi.UniqueName, asmApi.RequestParameters, solutionName);
-                var pProp  = PlanResponseProperties(snapshot, prefix, newApi.Id, asmApi.UniqueName, asmApi.ResponseProperties, solutionName);
+                var upsert = new UpsertAction(asmApi.BaseName, newApi, IsCreate: true, SolutionName: solutionName);
+                var pParam = PlanRequestParameters(snapshot, prefix, newApi.Id, asmApi.BaseName, asmApi.RequestParameters, solutionName);
+                var pProp  = PlanResponseProperties(snapshot, prefix, newApi.Id, asmApi.BaseName, asmApi.ResponseProperties, solutionName);
                 apiPlan.Upserts.Add(upsert);
                 paramPlan.Add(pParam);
                 propPlan.Add(pProp);
@@ -470,11 +529,11 @@ public class PluginPlanner(IAnsiConsole console)
             {
                 console.Warning($"Custom API '{fullApiName}' has immutable field changes — deleting and recreating.");
 
-                var del = new DeleteAction(asmApi.UniqueName, "customapi", dvApi.Id);
+                var del = new DeleteAction(asmApi.BaseName, "customapi", dvApi.Id);
                 var pParamDel = PlanRequestParameters(snapshot, prefix, dvApi.Id, fullApiName, [], solutionName);
                 var pPropDel  = PlanResponseProperties(snapshot, prefix, dvApi.Id, fullApiName, [], solutionName);
                 var newApi = NewCustomApiEntity(fullApiName, asmApi, typeEntity);
-                var upsert = new UpsertAction(asmApi.UniqueName, newApi, IsCreate: true, SolutionName: solutionName);
+                var upsert = new UpsertAction(asmApi.BaseName, newApi, IsCreate: true, SolutionName: solutionName);
                 var pParamNew = PlanRequestParameters(snapshot, prefix, newApi.Id, fullApiName, asmApi.RequestParameters, solutionName);
                 var pPropNew  = PlanResponseProperties(snapshot, prefix, newApi.Id, fullApiName, asmApi.ResponseProperties, solutionName);
                 apiPlan.Deletes.Add(del);
@@ -514,7 +573,7 @@ public class PluginPlanner(IAnsiConsole console)
                 dvApi["description"]          = asmApi.Description;
                 dvApi["isprivate"]            = asmApi.IsPrivate;
                 dvApi["executeprivilegename"] = asmApi.ExecutePrivilege;
-                var upsert = new UpsertAction(asmApi.UniqueName, dvApi, IsCreate: false);
+                var upsert = new UpsertAction(asmApi.BaseName, dvApi, IsCreate: false);
                 apiPlan.Upserts.Add(upsert);
                 singleApiPlan.Upserts.Add(upsert);
             }
@@ -527,8 +586,12 @@ public class PluginPlanner(IAnsiConsole console)
             }
         }
 
-        // Fix: compare with prefix-qualified name so only truly absent APIs are treated as obsolete
-        foreach (var obsoleteApi in dvApis.Where(a => asmCustomApis.All(c => $"{prefix}_{c.UniqueName}" != a.Key)))
+        // Compare against each declaration's *resolved* name (derived formula or validated UniqueName
+        // override), not a re-derived formula — a class adopting an existing live record via UniqueName
+        // has a resolved name that deliberately does NOT match "{prefix}_{BaseName}"; re-deriving here
+        // would wrongly treat that live record as absent and delete the exact record this feature exists
+        // to adopt.
+        foreach (var obsoleteApi in dvApis.Where(a => asmCustomApis.All(c => resolvedCustomApiNames[c.PluginTypeFullName] != a.Key)))
         {
             var del    = new DeleteAction(obsoleteApi.Key, "customapi", obsoleteApi.Value.Id);
             var pParam = PlanRequestParameters(snapshot, prefix, obsoleteApi.Value.Id, obsoleteApi.Key, [], solutionName);
