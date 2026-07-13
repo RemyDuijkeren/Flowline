@@ -7,7 +7,7 @@ public class DeployCommandCacheMessagingTests
 {
     private const string OldSha = "abc123def456";
     private const string NewSha = "999999999999";
-    private const string CiNoteSnippet = "On CI, use --path";
+    private const string CiNoteSnippet = "use --path to reuse one build across them";
 
     [Fact]
     public void Hit_NotCi_NoTestOrUat_ReturnsTerseReuseMessage()
@@ -94,6 +94,9 @@ public class DeployCommandCacheMessagingTests
 
         message.Should().Contain("Reusing cached artifact for 'Contoso'");
         message.Should().Contain(CiNoteSnippet);
+        // The CI note must never contradict a real hit — a self-hosted/persisted-workspace runner
+        // can genuinely reuse the cache, so an absolute "this can never happen" claim would be false here.
+        message.Should().NotContain("never carry over").And.NotContain("can never");
     }
 
     [Fact]

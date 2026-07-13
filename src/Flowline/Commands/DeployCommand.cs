@@ -441,7 +441,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         };
 
         if (isCi)
-            message += " On CI, use --path to reuse one build across DTAP stages instead — each job here starts from a clean checkout, so this cache can never carry over.";
+            message += " On CI, when each DTAP stage runs on its own ephemeral runner, this cache can't carry a build between stages — use --path to reuse one build across them instead.";
 
         return message;
     }
