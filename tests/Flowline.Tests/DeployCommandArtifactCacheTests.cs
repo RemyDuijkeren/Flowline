@@ -8,52 +8,75 @@ public class DeployCommandArtifactCacheTests
     private const string Sha = "abc123def456";
     private const string OtherSha = "999999999999";
 
-    // ── ArtifactCacheHit ──────────────────────────────────────────────────────
+    // ── ResolveCacheOutcome ───────────────────────────────────────────────────
 
     [Fact]
-    public void ArtifactCacheHit_ReturnsTrue_WhenShaAndManagedMatch()
+    public void ResolveCacheOutcome_ReturnsHit_WhenShaAndManagedMatchAndFileExists()
     {
         var entry = new DeployCommand.ArtifactCacheEntry("1.0.0.1", true, Sha);
 
-        DeployCommand.ArtifactCacheHit(entry, Sha, wantManaged: true, noCache: false).Should().BeTrue();
+        DeployCommand.ResolveCacheOutcome(entry, Sha, wantManaged: true, noCache: false, artifactFileExists: true)
+            .Should().Be(DeployCommand.CacheOutcome.Hit);
     }
 
     [Fact]
-    public void ArtifactCacheHit_ReturnsFalse_WhenShaDiffers()
+    public void ResolveCacheOutcome_ReturnsNoEntry_WhenEntryIsNull()
+    {
+        DeployCommand.ResolveCacheOutcome(null, Sha, wantManaged: true, noCache: false, artifactFileExists: true)
+            .Should().Be(DeployCommand.CacheOutcome.NoEntry);
+    }
+
+    [Fact]
+    public void ResolveCacheOutcome_ReturnsCommitChanged_WhenShaDiffers()
     {
         var entry = new DeployCommand.ArtifactCacheEntry("1.0.0.1", true, Sha);
 
-        DeployCommand.ArtifactCacheHit(entry, OtherSha, wantManaged: true, noCache: false).Should().BeFalse();
+        DeployCommand.ResolveCacheOutcome(entry, OtherSha, wantManaged: true, noCache: false, artifactFileExists: true)
+            .Should().Be(DeployCommand.CacheOutcome.CommitChanged);
     }
 
     [Fact]
-    public void ArtifactCacheHit_ReturnsFalse_WhenManagedFlagDiffers()
+    public void ResolveCacheOutcome_ReturnsManagedMismatch_WhenManagedFlagDiffers()
     {
         var entry = new DeployCommand.ArtifactCacheEntry("1.0.0.1", false, Sha);
 
-        DeployCommand.ArtifactCacheHit(entry, Sha, wantManaged: true, noCache: false).Should().BeFalse();
+        DeployCommand.ResolveCacheOutcome(entry, Sha, wantManaged: true, noCache: false, artifactFileExists: true)
+            .Should().Be(DeployCommand.CacheOutcome.ManagedMismatch);
     }
 
     [Fact]
-    public void ArtifactCacheHit_ReturnsFalse_WhenEntryIsNull()
-    {
-        DeployCommand.ArtifactCacheHit(null, Sha, wantManaged: true, noCache: false).Should().BeFalse();
-    }
-
-    [Fact]
-    public void ArtifactCacheHit_ReturnsFalse_WhenCurrentCommitShaIsNull()
+    public void ResolveCacheOutcome_ReturnsArtifactFileMissing_WhenShaAndManagedMatchButFileGone()
     {
         var entry = new DeployCommand.ArtifactCacheEntry("1.0.0.1", true, Sha);
 
-        DeployCommand.ArtifactCacheHit(entry, null, wantManaged: true, noCache: false).Should().BeFalse();
+        DeployCommand.ResolveCacheOutcome(entry, Sha, wantManaged: true, noCache: false, artifactFileExists: false)
+            .Should().Be(DeployCommand.CacheOutcome.ArtifactFileMissing);
     }
 
     [Fact]
-    public void ArtifactCacheHit_ReturnsFalse_WhenNoCacheIsSet_EvenWithMatchingEntry()
+    public void ResolveCacheOutcome_ReturnsNoCacheFlag_WhenNoCacheIsSet_EvenWithMatchingEntry()
     {
         var entry = new DeployCommand.ArtifactCacheEntry("1.0.0.1", true, Sha);
 
-        DeployCommand.ArtifactCacheHit(entry, Sha, wantManaged: true, noCache: true).Should().BeFalse();
+        DeployCommand.ResolveCacheOutcome(entry, Sha, wantManaged: true, noCache: true, artifactFileExists: true)
+            .Should().Be(DeployCommand.CacheOutcome.NoCacheFlag);
+    }
+
+    [Fact]
+    public void ResolveCacheOutcome_ReturnsNoCurrentCommit_WhenCurrentCommitShaIsNull()
+    {
+        var entry = new DeployCommand.ArtifactCacheEntry("1.0.0.1", true, Sha);
+
+        DeployCommand.ResolveCacheOutcome(entry, null, wantManaged: true, noCache: false, artifactFileExists: true)
+            .Should().Be(DeployCommand.CacheOutcome.NoCurrentCommit);
+    }
+
+    [Fact]
+    public void ResolveCacheOutcome_ReturnsNoCacheFlag_TakesPrecedenceOverNoCurrentCommit()
+    {
+        // KTD6 precedence: --no-cache is checked first, before any other miss reason.
+        DeployCommand.ResolveCacheOutcome(null, null, wantManaged: true, noCache: true, artifactFileExists: true)
+            .Should().Be(DeployCommand.CacheOutcome.NoCacheFlag);
     }
 
     // ── ReadCacheEntryIfExists ────────────────────────────────────────────────

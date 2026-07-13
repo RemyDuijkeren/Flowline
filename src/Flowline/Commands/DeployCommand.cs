@@ -78,7 +78,9 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var candidatePackagePath = ResolveArtifactZipPath(slnFolder, sln.Name, sln.IncludeManaged);
         string gateVersion;
         ArtifactCacheEntry? reusableCacheEntry = null;
+        ArtifactCacheEntry? cacheEntry = null;
         string? currentCommitSha = null;
+        var cacheOutcome = CacheOutcome.NoEntry;
 
         if (usingExplicitArtifact)
         {
@@ -89,9 +91,10 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         else
         {
             currentCommitSha = await GitUtils.GetLastCommitShaForPathAsync(slnFolder, RootFolder, _capture, cancellationToken);
-            var cacheEntry = ReadCacheEntryIfExists(CacheManifestPath(candidatePackagePath));
+            cacheEntry = ReadCacheEntryIfExists(CacheManifestPath(candidatePackagePath));
+            cacheOutcome = ResolveCacheOutcome(cacheEntry, currentCommitSha, sln.IncludeManaged, settings.NoCache, File.Exists(candidatePackagePath));
 
-            if (ArtifactCacheHit(cacheEntry, currentCommitSha, sln.IncludeManaged, settings.NoCache) && File.Exists(candidatePackagePath))
+            if (cacheOutcome == CacheOutcome.Hit)
             {
                 reusableCacheEntry = cacheEntry;
                 gateVersion = cacheEntry!.Version;
@@ -366,8 +369,29 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
     internal sealed record ArtifactCacheEntry(string Version, bool Managed, string CommitSha);
 
-    internal static bool ArtifactCacheHit(ArtifactCacheEntry? entry, string? currentCommitSha, bool wantManaged, bool noCache) =>
-        !noCache && entry != null && currentCommitSha != null && entry.CommitSha == currentCommitSha && entry.Managed == wantManaged;
+    internal enum CacheOutcome
+    {
+        Hit,
+        NoEntry,
+        CommitChanged,
+        NoCurrentCommit,
+        ManagedMismatch,
+        NoCacheFlag,
+        ArtifactFileMissing
+    }
+
+    // KTD6: precedence mirrors the old ArtifactCacheHit short-circuit order — the first condition that
+    // applies names the reason; this never reports more than one.
+    internal static CacheOutcome ResolveCacheOutcome(ArtifactCacheEntry? entry, string? currentCommitSha, bool wantManaged, bool noCache, bool artifactFileExists)
+    {
+        if (noCache) return CacheOutcome.NoCacheFlag;
+        if (entry == null) return CacheOutcome.NoEntry;
+        if (currentCommitSha == null) return CacheOutcome.NoCurrentCommit;
+        if (entry.CommitSha != currentCommitSha) return CacheOutcome.CommitChanged;
+        if (entry.Managed != wantManaged) return CacheOutcome.ManagedMismatch;
+        if (!artifactFileExists) return CacheOutcome.ArtifactFileMissing;
+        return CacheOutcome.Hit;
+    }
 
     internal static ArtifactCacheEntry? ReadCacheEntryIfExists(string manifestPath)
     {
