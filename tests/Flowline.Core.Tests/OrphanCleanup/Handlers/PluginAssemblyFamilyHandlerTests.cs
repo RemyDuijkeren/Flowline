@@ -290,7 +290,7 @@ public class PluginAssemblyFamilyHandlerTests
     public async Task DetectAsync_OrphanedPluginAssemblyWithPackageId_RedirectsToPluginPackageFinding()
     {
         var assemblyId = Guid.NewGuid();
-        var packageId  = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
         SetupPackageIds((assemblyId, packageId));
 
         var findings = (await _handler.DetectAsync(Ctx(), [(assemblyId, 91)], default)).Findings;
@@ -307,7 +307,7 @@ public class PluginAssemblyFamilyHandlerTests
     {
         var assemblyId1 = Guid.NewGuid();
         var assemblyId2 = Guid.NewGuid();
-        var packageId   = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
         SetupPackageIds((assemblyId1, packageId), (assemblyId2, packageId));
 
         var findings = (await _handler.DetectAsync(Ctx(), [(assemblyId1, 91), (assemblyId2, 91)], default)).Findings;
@@ -324,9 +324,9 @@ public class PluginAssemblyFamilyHandlerTests
         // existing Prio2 classification (unchanged), and the family's existing SequenceHint ordering
         // still places it (Step=1) before the redirected package-delete finding (PluginAssembly slot=3).
         var assemblyId = Guid.NewGuid();
-        var packageId  = Guid.NewGuid();
-        var typeId     = Guid.NewGuid();
-        var stepId     = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        var typeId = Guid.NewGuid();
+        var stepId = Guid.NewGuid();
         SetupPackageIds((assemblyId, packageId));
         SetupStepStates((stepId, typeId, true));
 

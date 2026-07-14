@@ -1,10 +1,10 @@
 using System.Security.Cryptography;
+using Flowline.Core.Models;
+using Microsoft.Extensions.Logging;
+using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Query;
-using Microsoft.Extensions.Logging;
-using Microsoft.PowerPlatform.Dataverse.Client;
-using Flowline.Core.Models;
 using Spectre.Console;
 
 namespace Flowline.Core.Services;
@@ -515,10 +515,10 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
             // it at create time); version comes from the nupkg's own nuspec version (KTD4 — create-time only).
             var entity = new Entity("pluginpackage")
             {
-                ["name"]       = packageUniqueName,
+                ["name"] = packageUniqueName,
                 ["uniquename"] = packageUniqueName,
-                ["version"]    = primary.Version,
-                ["content"]    = Convert.ToBase64String(nupkgContent)
+                ["version"] = primary.Version,
+                ["content"] = Convert.ToBase64String(nupkgContent)
             };
 
             var response = (CreateResponse)await service.ExecuteAsync(
@@ -553,7 +553,7 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
     {
         var entity = new Entity("pluginassembly", primaryAssembly.Id)
         {
-            ["version"]     = primaryAssembly.GetAttributeValue<string>("version"),
+            ["version"] = primaryAssembly.GetAttributeValue<string>("version"),
             ["description"] = $"{FlowlineMarker} sha256={nupkgHash}"
         };
 

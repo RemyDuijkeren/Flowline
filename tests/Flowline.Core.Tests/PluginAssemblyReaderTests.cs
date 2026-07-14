@@ -2,10 +2,10 @@ using System.IO.Compression;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.InteropServices;
-using Microsoft.Xrm.Sdk;
 using Flowline.Attributes;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
+using Microsoft.Xrm.Sdk;
 using Spectre.Console.Testing;
 
 namespace Flowline.Core.Tests;

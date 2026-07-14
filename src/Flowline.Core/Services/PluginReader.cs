@@ -62,9 +62,9 @@ public class PluginReader
 
         // Round 1: all independent queries in parallel (prefix already resolved for the whole package)
         var pluginTypesTask = GetRegisteredPluginTypesAsync(service, assembly.Id, cancellationToken);
-        var stepsTask       = GetRegisteredStepsAsync(service, assembly.Id, cancellationToken);
-        var imagesTask      = GetRegisteredImagesAsync(service, assembly.Id, cancellationToken);
-        var messageIdsTask  = LookupAllSdkMessageIdsAsync(service, metadata, cancellationToken);
+        var stepsTask = GetRegisteredStepsAsync(service, assembly.Id, cancellationToken);
+        var imagesTask = GetRegisteredImagesAsync(service, assembly.Id, cancellationToken);
+        var messageIdsTask = LookupAllSdkMessageIdsAsync(service, metadata, cancellationToken);
 
         var snapshot = await BuildSnapshotAsync(
             service, assembly.Id, metadata, prefix,

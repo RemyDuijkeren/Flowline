@@ -99,7 +99,7 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
                 ? OrphanPriority.Prio2 : OrphanPriority.Prio3,
             90 => typeHasEnabledStep.Contains(candidate.ObjectId)
                 ? OrphanPriority.Prio2 : OrphanPriority.Prio3,
-            _  => OrphanPriority.Prio3,
+            _ => OrphanPriority.Prio3,
         };
 
         var findings = BuildAllFindings(claimed, names, packageIds, PriorityFor);
@@ -169,7 +169,7 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         var query = new QueryExpression("pluginassembly")
         {
             ColumnSet = new ColumnSet("packageid"),
-            Criteria  = { Conditions = { new ConditionExpression("pluginassemblyid", ConditionOperator.In, assemblyIds.Select(id => (object)id).ToArray()) } }
+            Criteria = { Conditions = { new ConditionExpression("pluginassemblyid", ConditionOperator.In, assemblyIds.Select(id => (object)id).ToArray()) } }
         };
 
         List<Entity> entities;

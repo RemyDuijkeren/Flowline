@@ -1,14 +1,14 @@
 using System.Security.Cryptography;
+using Flowline;
+using Flowline.Core;
+using Flowline.Core.Models;
+using Flowline.Core.Services;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Query;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.PowerPlatform.Dataverse.Client;
 using NSubstitute;
-using Flowline;
-using Flowline.Core.Services;
-using Flowline.Core.Models;
-using Flowline.Core;
 using Spectre.Console.Testing;
 
 namespace Flowline.Core.Tests;

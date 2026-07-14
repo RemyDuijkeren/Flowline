@@ -1,9 +1,9 @@
+using Flowline.Core.Models;
+using Flowline.Core.Services;
+using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
-using Microsoft.PowerPlatform.Dataverse.Client;
 using NSubstitute;
-using Flowline.Core.Services;
-using Flowline.Core.Models;
 
 namespace Flowline.Core.Tests;
 
