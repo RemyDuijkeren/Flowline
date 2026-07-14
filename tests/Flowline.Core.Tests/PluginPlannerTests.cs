@@ -1725,4 +1725,113 @@ public class PluginPlannerTests
         Assert.Equal(newStepName, upsert.Name);
         Assert.True(upsert.IsCreate);
     }
+
+    // -- Multi-assembly package planning (U5) --
+    //
+    // U5 does not modify Plan's signature or diff logic (docs/plans/2026-07-14-001-feat-pluginpackage-nuget-support-plan.md
+    // lines 441-466, KTD15). U4's PluginReader.LoadPackageSnapshotsAsync produces one independently-scoped
+    // RegistrationSnapshot per assembly — these tests confirm Plan, called once per (snapshot, metadata,
+    // assembly) tuple from that output, stays correctly isolated per assembly with no cross-assembly leakage.
+
+    [Fact]
+    public void Plan_TwoAssembliesSamePackage_EachIndependentlyDiffed_NoCrossAssemblyLeakage()
+    {
+        var assemblyA = new Entity("pluginassembly", Guid.NewGuid()) { ["name"] = "AssemblyA" };
+        var assemblyB = new Entity("pluginassembly", Guid.NewGuid()) { ["name"] = "AssemblyB" };
+
+        // Neither assembly's snapshot has ever seen the other's types — this is what U4's
+        // LoadPackageSnapshotsAsync actually produces (one query scoped to one assembly.Id each).
+        var snapshotA = Snapshot();
+        var snapshotB = Snapshot();
+
+        var metadataA = new PluginAssemblyMetadata("AssemblyA", "AssemblyA, Version=1.0.0.0", [1], "hashA", "1.0.0.0", null, "neutral",
+            [new PluginTypeMetadata("NewTypeA", "NamespaceA.NewTypeA", [], [], false)]);
+        var metadataB = new PluginAssemblyMetadata("AssemblyB", "AssemblyB, Version=1.0.0.0", [1], "hashB", "1.0.0.0", null, "neutral",
+            [new PluginTypeMetadata("NewTypeB", "NamespaceB.NewTypeB", [], [], false)]);
+
+        var planA = _planner.Plan(snapshotA, metadataA, assemblyA, "MySolution");
+        var planB = _planner.Plan(snapshotB, metadataB, assemblyB, "MySolution");
+
+        var upsertA = Assert.Single(planA.PluginTypes.Upserts);
+        Assert.Equal("NamespaceA.NewTypeA", upsertA.Entity.GetAttributeValue<string>("typename"));
+        Assert.DoesNotContain(planA.PluginTypes.Upserts, u => u.Entity.GetAttributeValue<string>("typename") == "NamespaceB.NewTypeB");
+
+        var upsertB = Assert.Single(planB.PluginTypes.Upserts);
+        Assert.Equal("NamespaceB.NewTypeB", upsertB.Entity.GetAttributeValue<string>("typename"));
+        Assert.DoesNotContain(planB.PluginTypes.Upserts, u => u.Entity.GetAttributeValue<string>("typename") == "NamespaceA.NewTypeA");
+    }
+
+    [Fact]
+    public void Plan_ClassRemovedFromOneAssemblyOnly_OnlyThatAssemblysPlanHasDeletes()
+    {
+        var typeIdA = Guid.NewGuid();
+        var typeIdB = Guid.NewGuid();
+        var assemblyA = new Entity("pluginassembly", Guid.NewGuid()) { ["name"] = "AssemblyA" };
+        var assemblyB = new Entity("pluginassembly", Guid.NewGuid()) { ["name"] = "AssemblyB" };
+
+        var snapshotA = Snapshot(pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["NamespaceA.RemovedType"] = new Entity("plugintype", typeIdA) { ["typename"] = "NamespaceA.RemovedType", ["isworkflowactivity"] = false }
+        });
+        var snapshotB = Snapshot(pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["NamespaceB.StillThereType"] = new Entity("plugintype", typeIdB) { ["typename"] = "NamespaceB.StillThereType", ["isworkflowactivity"] = false }
+        });
+
+        // Assembly A's class was deleted locally — its reflected metadata no longer declares the type.
+        var metadataA = new PluginAssemblyMetadata("AssemblyA", "AssemblyA, Version=1.0.0.0", [1], "hashA", "1.0.0.0", null, "neutral", []);
+        // Assembly B is unchanged — its type is still declared.
+        var metadataB = new PluginAssemblyMetadata("AssemblyB", "AssemblyB, Version=1.0.0.0", [1], "hashB", "1.0.0.0", null, "neutral",
+            [new PluginTypeMetadata("StillThereType", "NamespaceB.StillThereType", [], [], false)]);
+
+        var planA = _planner.Plan(snapshotA, metadataA, assemblyA, "MySolution");
+        var planB = _planner.Plan(snapshotB, metadataB, assemblyB, "MySolution");
+
+        var deleteA = Assert.Single(planA.PluginTypes.Deletes);
+        Assert.Equal("NamespaceA.RemovedType", deleteA.Name);
+        Assert.Equal(typeIdA, deleteA.Id);
+
+        Assert.Empty(planB.PluginTypes.Deletes);
+        Assert.Equal(0, planB.TotalChanges);
+    }
+
+    [Fact]
+    public void Plan_UnchangedTwoAssemblyPackage_PerAssemblyScopedSnapshotProducesEmptyPlan_KTD15Regression()
+    {
+        var typeIdA = Guid.NewGuid();
+        var typeIdB = Guid.NewGuid();
+        var assemblyA = new Entity("pluginassembly", Guid.NewGuid()) { ["name"] = "AssemblyA" };
+
+        var pluginTypeA = new Entity("plugintype", typeIdA) { ["typename"] = "NamespaceA.TypeA", ["isworkflowactivity"] = false };
+        var pluginTypeB = new Entity("plugintype", typeIdB) { ["typename"] = "NamespaceB.TypeB", ["isworkflowactivity"] = false };
+
+        // KTD15: this is exactly what LoadPackageSnapshotsAsync produces for assembly A — a snapshot
+        // scoped only to A's own auto-created plugintype records. Assembly B's live plugintype (TypeB)
+        // is deliberately NOT included here — it was never fetched by A's scoped query in the first
+        // place, unlike a hypothetical merged/shared snapshot which would contain both. If Plan were
+        // ever called with such a merged snapshot instead, TypeB would look "no longer present locally"
+        // from assembly A's single-assembly metadata below, and the assertions below would fail because
+        // PluginTypes.Deletes would then contain TypeB (see Plan_ObsoletePluginType_CreatesDelete for
+        // proof that any entry present in snapshot.PluginTypes but absent from local metadata is deleted).
+        var snapshotAScoped = Snapshot(pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["NamespaceA.TypeA"] = pluginTypeA
+        });
+
+        // Neither assembly changed locally: A's metadata still declares exactly TypeA.
+        var metadataA = new PluginAssemblyMetadata("AssemblyA", "AssemblyA, Version=1.0.0.0", [1], "hashA", "1.0.0.0", null, "neutral",
+            [new PluginTypeMetadata("TypeA", "NamespaceA.TypeA", [], [], false)]);
+
+        var planA = _planner.Plan(snapshotAScoped, metadataA, assemblyA, "MySolution");
+
+        Assert.Equal(0, planA.TotalChanges);
+        Assert.Empty(planA.PluginTypes.Deletes);
+        Assert.Empty(planA.PluginTypes.Upserts);
+        Assert.DoesNotContain(planA.PluginTypes.Deletes, d => d.Name == "NamespaceB.TypeB");
+        Assert.DoesNotContain(planA.PluginTypes.Deletes, d => d.Id == typeIdB);
+
+        // Sanity check on the scoping itself: assembly B's type is genuinely absent from A's snapshot,
+        // not merely "correctly attributed" within a shared dictionary — there is no merged dictionary here.
+        Assert.DoesNotContain("NamespaceB.TypeB", snapshotAScoped.PluginTypes.Keys);
+    }
 }
