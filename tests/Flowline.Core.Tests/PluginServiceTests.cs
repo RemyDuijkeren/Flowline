@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Query;
@@ -1400,5 +1401,197 @@ public class PluginServiceTests
             Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstepimage"), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().RetrieveMultipleAsync(
             Arg.Is<QueryExpression>(q => q.EntityName == "customapi"), Arg.Any<CancellationToken>());
+    }
+
+    // -- SyncSolutionFromPackageAsync (pluginpackage / NuGet path) --
+
+    private static readonly byte[] NupkgBytes = [1, 2, 3, 4, 5];
+    private static string NupkgHash => Convert.ToHexString(SHA256.HashData(NupkgBytes));
+
+    private static List<PluginAssemblyMetadata> PackageAssemblies(string name = "MyPlugin", string version = "1.0.0.0") =>
+        [new(name, $"{name}, Version={version}", new byte[] { 9, 9, 9 }, "dll-hash-unused", version, null, "neutral", [])];
+
+    private static Entity PackageOwnedAssembly(Guid id, string? hash = null, string version = "1.0.0.0")
+    {
+        var e = new Entity("pluginassembly", id);
+        e["name"] = "MyPlugin";
+        e["version"] = version;
+        e["packageid"] = new EntityReference("pluginpackage", Guid.NewGuid());
+        if (hash != null)
+            e["description"] = $"[flowline] sha256={hash}";
+        return e;
+    }
+
+    private static Entity ClassicAssemblyNoPackage(Guid id)
+    {
+        var e = new Entity("pluginassembly", id);
+        e["name"] = "MyPlugin";
+        e["version"] = "1.0.0.0";
+        return e;
+    }
+
+    private static Entity ExistingPluginPackage(Guid id, string uniqueName = "abc_MyPlugin", string version = "1.0.0.0")
+    {
+        var e = new Entity("pluginpackage", id);
+        e["name"] = uniqueName;
+        e["uniquename"] = uniqueName;
+        e["version"] = version;
+        return e;
+    }
+
+    private void SetupPluginPackage(Entity? existing = null)
+    {
+        var col = existing == null ? new EntityCollection() : new EntityCollection(new List<Entity> { existing });
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "pluginpackage"))
+            .Returns(Task.FromResult(col));
+        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "pluginpackage"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(col));
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_NoExistingPackage_CreatesWithPrefixedNameAndNuspecVersion()
+    {
+        SetupAssembly(); // no existing pluginassembly -> no classic conflict; also wires the CreateResponse mock
+        SetupPluginPackage(); // no existing package
+
+        var result = await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, PackageAssemblies(version: "2.3.1.0"), NupkgBytes, "C:/pkg/MyPlugin.nupkg", "MyPlugin", "MySolution");
+
+        Assert.True(result);
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r =>
+            r.Target.LogicalName == "pluginpackage" &&
+            r.Target.GetAttributeValue<string>("name") == "abc_MyPlugin" &&
+            r.Target.GetAttributeValue<string>("uniquename") == "abc_MyPlugin" &&
+            r.Target.GetAttributeValue<string>("version") == "2.3.1.0" &&
+            r.Target.Contains("content") &&
+            r["SolutionUniqueName"].ToString() == "MySolution"
+        ), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_DryRun_NewPackage_DoesNotCreate()
+    {
+        SetupAssembly();
+        SetupPluginPackage();
+
+        var result = await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, PackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution", RunMode.DryRun);
+
+        Assert.True(result);
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>());
+        Assert.Contains("would create", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_DryRun_ExistingPackageChanged_DoesNotUpdate()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId, hash: "stalehash"));
+        SetupPluginPackage(ExistingPluginPackage(Guid.NewGuid()));
+
+        var result = await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, PackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution", RunMode.DryRun);
+
+        Assert.True(result);
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        Assert.Contains("would update content", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_ExistingPackageStaleHash_UpdatesContentOnlyOmitsVersion()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId, hash: "stalehash"));
+        var packageId = Guid.NewGuid();
+        SetupPluginPackage(ExistingPluginPackage(packageId));
+
+        var result = await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, PackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
+
+        Assert.True(result);
+        await _serviceMock.Received(1).UpdateAsync(Arg.Is<Entity>(e =>
+            e.LogicalName == "pluginpackage" &&
+            e.Id == packageId &&
+            e.Contains("content") &&
+            !e.Contains("version")
+        ), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_ExistingPackageMatchingHash_SkipsUpdateEntirely()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId, hash: NupkgHash));
+        SetupPluginPackage(ExistingPluginPackage(Guid.NewGuid()));
+
+        var result = await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, PackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
+
+        Assert.False(result);
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_ExistingClassicAssembly_ThrowsBeforeAnyDataverseWrite()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(ClassicAssemblyNoPackage(assemblyId));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.SyncSolutionFromPackageAsync(_serviceMock, PackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution"));
+
+        Assert.Contains("MyPlugin", ex.Message);
+        Assert.Contains("classic", ex.Message, StringComparison.OrdinalIgnoreCase);
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<OrganizationRequest>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_ExistingPackageOwnedAssembly_IsNotAConflict_ProceedsAsUpdate()
+    {
+        // packageid populated -> already package-owned from a prior push, not a classic conflict (R9 edge case)
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId, hash: "oldhash"));
+        var packageId = Guid.NewGuid();
+        SetupPluginPackage(ExistingPluginPackage(packageId));
+
+        var result = await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, PackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
+
+        Assert.True(result);
+        await _serviceMock.Received(1).UpdateAsync(
+            Arg.Is<Entity>(e => e.LogicalName == "pluginpackage" && e.Id == packageId), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_NoPluginBearingAssemblies_ThrowsBeforeAnyDataverseCall()
+    {
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.SyncSolutionFromPackageAsync(_serviceMock, new List<PluginAssemblyMetadata>(), NupkgBytes, "empty.nupkg", "MyPlugin", "MySolution"));
+
+        Assert.Contains("empty.nupkg", ex.Message);
+        await _serviceMock.DidNotReceive().RetrieveMultipleAsync(Arg.Any<QueryExpression>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<OrganizationRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    // -- WritePackageAssemblyMarkerAsync (standalone marker write, part of R6) --
+
+    [Fact]
+    public async Task WritePackageAssemblyMarkerAsync_UpdatesDescriptionAndIncludesVersionInSameCall()
+    {
+        var assemblyId = Guid.NewGuid();
+        var assembly = new Entity("pluginassembly", assemblyId) { ["version"] = "1.2.3.4" };
+
+        await _service.WritePackageAssemblyMarkerAsync(_serviceMock, assembly, "newhash123");
+
+        await _serviceMock.Received(1).UpdateAsync(Arg.Is<Entity>(e =>
+            e.LogicalName == "pluginassembly" &&
+            e.Id == assemblyId &&
+            e.GetAttributeValue<string>("description") == "[flowline] sha256=newhash123" &&
+            e.GetAttributeValue<string>("version") == "1.2.3.4" &&
+            !e.Contains("content")
+        ), Arg.Any<CancellationToken>());
     }
 }

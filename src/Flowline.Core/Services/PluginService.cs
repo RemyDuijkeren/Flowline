@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Query;
@@ -251,6 +252,163 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         }
 
         return true;
+    }
+
+    // -- Plugin package (NuGet .nupkg) sync --
+    //
+    // Covers R3a (zero-DLL rejection), R9 (detect-and-block on a genuinely classic assembly),
+    // R5/R5a (pluginpackage create/update), and R4 (whole-nupkg hash change detection). Multi-assembly
+    // snapshot loading (plugin types/steps/images/custom APIs per DLL) and the marker-write ordering
+    // are U4/U5/U6 territory — this method only owns the package record and the classic-conflict guard.
+
+    public async Task<bool> SyncSolutionFromPackageAsync(
+        IOrganizationServiceAsync2 service,
+        string nupkgPath,
+        string projectAssemblyName,
+        string solutionName,
+        RunMode runMode = RunMode.Normal,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(nupkgPath))
+            throw new ArgumentException("nupkgPath is required and cannot be empty.", nameof(nupkgPath));
+
+        var assemblies = console.Status().FlowlineSpinner().Start("Analyzing plugin package...", _ => _assemblyReader.AnalyzePackage(nupkgPath));
+        var nupkgContent = await File.ReadAllBytesAsync(nupkgPath, cancellationToken).ConfigureAwait(false);
+        return await SyncSolutionFromPackageAsync(service, assemblies, nupkgContent, nupkgPath, projectAssemblyName, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task<bool> SyncSolutionFromPackageAsync(
+        IOrganizationServiceAsync2 service,
+        List<PluginAssemblyMetadata> assemblies,
+        byte[] nupkgContent,
+        string nupkgPath,
+        string projectAssemblyName,
+        string solutionName,
+        RunMode runMode = RunMode.Normal,
+        CancellationToken cancellationToken = default)
+    {
+        // R3a: zero-DLL rejection — first check, ahead of detect-and-block and change detection,
+        // since neither has anything to operate against without at least one reflected assembly.
+        if (assemblies.Count == 0)
+            throw new InvalidOperationException(
+                $"No DLL implementing IPlugin was found in lib/<tfm>/ of package '{nupkgPath}' — the plugin package cannot be deployed empty.");
+
+        if (string.IsNullOrWhiteSpace(solutionName))
+            throw new ArgumentException("solutionName is required and cannot be empty.", nameof(solutionName));
+
+        var primary = assemblies.FirstOrDefault(a => string.Equals(a.Name, projectAssemblyName, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException(
+                $"No reflected assembly in '{nupkgPath}' matches the project's own build output assembly name '{projectAssemblyName}'.");
+
+        // R9: detect-and-block — reuses the classic-path lookup pattern (GetOrRegisterAssemblyAsync),
+        // extended with packageid so an empty packageid means a genuinely classic (non-package) assembly.
+        // When packageid IS populated, this same record is the package's primary assembly (KTD2) —
+        // reused below for change detection instead of a second query.
+        var assemblyQuery = new QueryExpression("pluginassembly")
+        {
+            TopCount = 1,
+            ColumnSet = new ColumnSet("pluginassemblyid", "name", "version", "publickeytoken", "culture", "description", "packageid"),
+            Criteria = { Conditions = { new ConditionExpression("name", ConditionOperator.Equal, projectAssemblyName) } }
+        };
+        var assemblyResult = await service.RetrieveMultipleAsync(assemblyQuery, cancellationToken).ConfigureAwait(false);
+        var existingAssembly = assemblyResult.Entities.FirstOrDefault();
+
+        if (existingAssembly != null && existingAssembly.GetAttributeValue<EntityReference>("packageid") == null)
+            throw new InvalidOperationException(
+                $"Assembly '{projectAssemblyName}' is already registered in Dataverse as a classic (non-package) assembly — " +
+                $"remove it manually before pushing this project as a plugin package. Automated migration is not supported.");
+
+        // Phase 0: solution existence/support check + live publisher prefix (KTD11) — same resolution
+        // the classic path already uses, just captured here instead of discarded.
+        var solutionInfo = await console.Status().FlowlineSpinner()
+            .StartAsync($"Looking up solution [bold]{solutionName}[/]...",
+                _ => _solutionReader.GetSupportedSolutionInfoAsync(service, solutionName, cancellationToken))
+            .ConfigureAwait(false);
+        console.Info("Solution found");
+        var prefix = solutionInfo.PublisherPrefix;
+
+        var packageUniqueName = $"{prefix}_{projectAssemblyName}";
+
+        var packageQuery = new QueryExpression("pluginpackage")
+        {
+            TopCount = 1,
+            ColumnSet = new ColumnSet("pluginpackageid", "name", "uniquename", "version"),
+            Criteria = { Conditions = { new ConditionExpression("uniquename", ConditionOperator.Equal, packageUniqueName) } }
+        };
+        var packageResult = await service.RetrieveMultipleAsync(packageQuery, cancellationToken).ConfigureAwait(false);
+        var existingPackage = packageResult.Entities.FirstOrDefault();
+
+        // R4: hash the whole local .nupkg file's bytes (not one DLL) — catches dependency-only changes
+        // a per-DLL hash would miss. Compared against the marker on the primary assembly's description.
+        var hash = Convert.ToHexString(SHA256.HashData(nupkgContent));
+        var storedHash = existingAssembly != null ? ParseStoredHash(existingAssembly.GetAttributeValue<string>("description")) : null;
+
+        if (existingPackage != null && storedHash == hash)
+        {
+            console.Skip("Plugin package already up to date — skipping");
+            return false;
+        }
+
+        if (runMode == RunMode.DryRun)
+        {
+            console.Info(existingPackage == null
+                ? $"  [green]+[/] Package [bold]{packageUniqueName}[/] ({primary.Version}) — would create"
+                : $"  [yellow]~[/] Package [bold]{packageUniqueName}[/] — would update content");
+            console.Ok("Dry run: 1 update. Run without --dry-run to apply.");
+            return true;
+        }
+
+        if (existingPackage == null)
+        {
+            // R5: name and uniquename both carry the publisher prefix (Dataverse validates name against
+            // it at create time); version comes from the nupkg's own nuspec version (KTD4 — create-time only).
+            var entity = new Entity("pluginpackage")
+            {
+                ["name"]       = packageUniqueName,
+                ["uniquename"] = packageUniqueName,
+                ["version"]    = primary.Version,
+                ["content"]    = Convert.ToBase64String(nupkgContent)
+            };
+
+            await service.ExecuteAsync(
+                new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName }, cancellationToken).ConfigureAwait(false);
+
+            console.Ok($"Package [bold]{packageUniqueName}[/] ({primary.Version}) added");
+        }
+        else
+        {
+            // R5a/KTD4: only content is mutable in place — version is create-time-only and Dataverse
+            // rejects an Update that changes it.
+            var updateEntity = new Entity("pluginpackage", existingPackage.Id)
+            {
+                ["content"] = Convert.ToBase64String(nupkgContent)
+            };
+
+            await service.UpdateAsync(updateEntity, cancellationToken).ConfigureAwait(false);
+            console.Ok($"Package [bold]{packageUniqueName}[/] updated");
+        }
+
+        return true;
+    }
+
+    // Marker write (part of R6) — standalone for now. U6's orchestration times this call to run once
+    // the primary assembly is confirmed present (U4/U5's multi-assembly snapshot loading); this method
+    // just performs the write once told to. KTD3: version must be included in the same Update call as
+    // description, re-read unchanged from the passed entity, or Dataverse throws an internal
+    // NullReferenceException. No content — a package-owned assembly's own content is always empty (KTD2).
+    internal async Task WritePackageAssemblyMarkerAsync(
+        IOrganizationServiceAsync2 service,
+        Entity primaryAssembly,
+        string nupkgHash,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = new Entity("pluginassembly", primaryAssembly.Id)
+        {
+            ["version"]     = primaryAssembly.GetAttributeValue<string>("version"),
+            ["description"] = $"{FlowlineMarker} sha256={nupkgHash}"
+        };
+
+        await service.UpdateAsync(entity, cancellationToken).ConfigureAwait(false);
     }
 
     async Task WarnOrphanAssembliesAsync(
