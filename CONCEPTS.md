@@ -107,26 +107,29 @@ element inside a form's `<formLibraries>` section. Flowline derives a Form Libra
 prior writes without a separate tracking file.
 
 ### Form Event Handler
-A function bound to one of a form's `onLoad`/`onSave` events, registered as a
+A function bound to one of a form's `onLoad`/`onSave`/`onChange` events, registered as a
 `<Handler functionName=... libraryName=... handlerUniqueId=.../>` element inside the form's
 `<events>` section. Named "Form Event Handler" rather than the Maker Portal's own shorter "Event
 Handler" label (the "Handlers" list and "+ Event Handler" button under each event in the Configure
 Event dialog) because outside that dialog's own form-scoped context, "Event Handler" alone doesn't
-convey it's a form-level concept. Every Form Event Handler references exactly one [[Form Library]]
-by name — Flowline only ever manages a Form Event Handler pointing at its own tracked Form Library;
-handlers pointing elsewhere (added by other solutions or ISVs) are left untouched. See [[Event
-annotation]] for how a developer declares one from source.
+convey it's a form-level concept. `onChange` handlers additionally scope to one table attribute (the
+`<event name="onchange" attribute="...">` element's `attribute` value) — a single entry covers every
+control on the form bound to that attribute, regardless of layout. Every Form Event Handler
+references exactly one [[Form Library]] by name — Flowline only ever manages a Form Event Handler
+pointing at its own tracked Form Library; handlers pointing elsewhere (added by other solutions or
+ISVs) are left untouched. See [[Event annotation]] for how a developer declares one from source.
 
 ### Event annotation
 A developer-authored declaration in a web resource's source binding one of its functions to a form's
-`onLoad`/`onSave` event, read by `flowline push` to register the [[Form Event Handler]] in the
-form's `formxml`. Shape: `// flowline:onload <entity> <form> [Function[(params,...)]]` (and
-`flowline:onsave`), same comment styles and whole-file scanning as the dependency annotation.
-Function name is optional (defaults to `onLoad`/`onSave`) and matched case-insensitively against the
-file's real exports. Flowline only ever manages a [[Form Event Handler]] pointing at its own tracked
-[[Form Library]] — handlers added by other solutions or ISVs are left untouched. The form name is
-matched literally; if the form is later renamed, see [[Rename-resilience signal]] for what happens to
-the annotation's binding.
+`onLoad`/`onSave`/`onChange` event, read by `flowline push` to register the [[Form Event Handler]] in
+the form's `formxml`. Shape: `// flowline:onload <entity> <form> [Function[(params,...)]]` (and
+`flowline:onsave`), or, for attribute-level binding, `// flowline:onchange <entity> <form> <attribute>
+[Function[(params,...)]]` — same comment styles and whole-file scanning as the dependency annotation.
+Function name is optional (defaults to `onLoad`/`onSave`, or `on<Attribute>Change` for `onchange`) and
+matched case-insensitively against the file's real exports. Flowline only ever manages a [[Form Event
+Handler]] pointing at its own tracked [[Form Library]] — handlers added by other solutions or ISVs are
+left untouched. The form name is matched literally; if the form is later renamed, see [[Rename-resilience
+signal]] for what happens to the annotation's binding.
 
 ### Rename-resilience signal
 A confidence-tiered advisory clue offered when an [[Event annotation]]'s form name no longer resolves

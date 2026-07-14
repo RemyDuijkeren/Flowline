@@ -119,13 +119,7 @@ public static class FormEventRenameAdvisor
     // originally written (FunctionName/Parameters may be null/defaulted) rather than a resolved Handler.
     static string BuildSuggestedAnnotation(string entity, string candidateName, ResolvedFormEventAnnotation resolved)
     {
-        var directive = resolved.Annotation.Event switch
-        {
-            FormEventType.OnLoad => "onload",
-            FormEventType.OnSave => "onsave",
-            FormEventType.OnChange => "onchange",
-            _ => throw new ArgumentOutOfRangeException(nameof(resolved))
-        };
+        var directive = resolved.Annotation.Event.ToString().ToLowerInvariant();
         var attribute = resolved.Annotation.Event == FormEventType.OnChange ? $" {resolved.Annotation.Attribute}" : "";
         var function = resolved.Annotation.FunctionName is null ? "" : $" {resolved.Annotation.FunctionName}";
         var parameters = string.IsNullOrEmpty(resolved.Annotation.Parameters) ? "" : $"({resolved.Annotation.Parameters})";

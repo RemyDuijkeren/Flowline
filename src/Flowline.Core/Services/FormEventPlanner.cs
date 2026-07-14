@@ -259,14 +259,10 @@ public class FormEventPlanner(IAnsiConsole console)
     // name round-trips through the annotation grammar without re-derivation.
     static string BuildProposedAnnotation(string entity, string form, FormEventType evt, FormEventHandler handler, string? attribute)
     {
+        var directive = evt.ToString().ToLowerInvariant();
+        var attributeToken = evt == FormEventType.OnChange ? $" {attribute}" : "";
         var parameters = string.IsNullOrEmpty(handler.Parameters) ? "" : $"({handler.Parameters})";
-        return evt switch
-        {
-            FormEventType.OnLoad => $"// flowline:onload {entity} \"{form}\" {handler.FunctionName}{parameters}",
-            FormEventType.OnSave => $"// flowline:onsave {entity} \"{form}\" {handler.FunctionName}{parameters}",
-            FormEventType.OnChange => $"// flowline:onchange {entity} \"{form}\" {attribute} {handler.FunctionName}{parameters}",
-            _ => throw new ArgumentOutOfRangeException(nameof(evt))
-        };
+        return $"// flowline:{directive} {entity} \"{form}\"{attributeToken} {handler.FunctionName}{parameters}";
     }
 
     // Shared with FormEventRenameAdvisor (U3), which needs the same inputs to recompute a self-tag

@@ -244,13 +244,13 @@ public class FormEventReader(IAnsiConsole console)
             var parsed = FormEventAnnotationParser.ParseAnnotations(content.Split('\n'));
 
             // A line that clearly intends to be a flowline:on... annotation but fails the strict grammar
-            // (e.g. a form name missing entirely, or a multi-word form name with no quotes / mismatched
-            // quotes — R3 accepts single or double, but not unquoted or mixed) would otherwise register
-            // nothing with no indication why. Surfaced here rather than an ordinary "not a match at all"
-            // comment, which stays silently ignored.
+            // (e.g. a form name missing entirely, a multi-word form name with no quotes / mismatched quotes
+            // — R3 accepts single or double, but not unquoted or mixed — or, for onchange, a missing
+            // attribute token) would otherwise register nothing with no indication why. Surfaced here rather
+            // than an ordinary "not a match at all" comment, which stays silently ignored.
             if (!suppressWarnings)
                 foreach (var line in parsed.MalformedLines)
-                    console.Warning($"{Markup.Escape(resource.RelativePath)}: malformed flowline annotation, ignored — form names with spaces must be wrapped in matching double or single quotes: {Markup.Escape(line)}");
+                    console.Warning($"{Markup.Escape(resource.RelativePath)}: malformed flowline annotation, ignored — check quoting on multi-word form names, and that onchange includes an attribute: {Markup.Escape(line)}");
 
             if (parsed.Annotations.Count == 0) continue;
 

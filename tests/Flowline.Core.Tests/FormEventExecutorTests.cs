@@ -133,6 +133,33 @@ public class FormEventExecutorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_DryRunTwoOnChangeAttributesSharingFunctionAndLibrary_ChangeReportDistinguishesByAttribute()
+    {
+        // Code-review regression: HandlerChange previously carried no Attribute dimension, so two onchange
+        // attributes sharing a FunctionName+LibraryName (a real scenario — the same handler can wire to
+        // multiple fields) rendered as indistinguishable lines in the verbose/dry-run change report, even
+        // though the actual formxml write was always correctly attribute-scoped.
+        var formId = Guid.NewGuid();
+        var creditLimitHandler = new FormEventHandler("sharedHandler", "av_/lib.js",
+            FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnChange, "sharedHandler", "av_/lib.js", "creditlimit"), "");
+        var revenueHandler = new FormEventHandler("sharedHandler", "av_/lib.js",
+            FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnChange, "sharedHandler", "av_/lib.js", "revenue"), "");
+
+        var creditLimitPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnChange,
+            new HashSet<FormEventHandler> { creditLimitHandler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary>(), "creditlimit");
+        var revenuePlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnChange,
+            new HashSet<FormEventHandler> { revenueHandler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary>(), "revenue");
+
+        var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
+        var plan = BuildPlan(creditLimitPlan, revenuePlan);
+
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: true, cleanupOnly: false);
+
+        Assert.Contains("OnChange:creditlimit", _console.Output);
+        Assert.Contains("OnChange:revenue", _console.Output);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_UnrecognizedHandlersInteractiveConfirms_ProceedsHandlersRemoved()
     {
         var formId = Guid.NewGuid();

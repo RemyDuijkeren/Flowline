@@ -26,7 +26,9 @@ public class FormEventExecutor(IAnsiConsole console)
 
     enum ChangeKind { Added, Updated, Removed }
 
-    readonly record struct HandlerChange(string Entity, string Form, FormEventType Event, ChangeKind Kind, FormEventHandler Handler);
+    // Attribute is non-null only for OnChange — carried through so the change report can distinguish two
+    // onchange attributes that happen to share a FunctionName+LibraryName (FormEventHandler's identity key).
+    readonly record struct HandlerChange(string Entity, string Form, FormEventType Event, string? Attribute, ChangeKind Kind, FormEventHandler Handler);
     readonly record struct LibraryChange(string Entity, string Form, ChangeKind Kind, FormLibrary Library);
 
     public async Task ExecuteAsync(
@@ -182,7 +184,10 @@ public class FormEventExecutor(IAnsiConsole console)
 
         line($"  {label} ({items.Count})");
         foreach (var c in items.OrderBy(i => i.Entity).ThenBy(i => i.Form, StringComparer.OrdinalIgnoreCase))
-            line($"    - {c.Entity}/{c.Form} ({c.Event}): {c.Handler.FunctionName} ({c.Handler.LibraryName})");
+        {
+            var eventLabel = c.Attribute is null ? c.Event.ToString() : $"{c.Event}:{c.Attribute}";
+            line($"    - {c.Entity}/{c.Form} ({eventLabel}): {c.Handler.FunctionName} ({c.Handler.LibraryName})");
+        }
     }
 
     static void WriteLibrarySection(Action<string> line, string label, List<LibraryChange> items)
@@ -397,9 +402,9 @@ public class FormEventExecutor(IAnsiConsole console)
 
             var desiredSet = desired.ToHashSet();
             var (added, updated, removed) = FormEventHandlerDiffer.DiffDetailed(desiredSet, currentHandlers);
-            handlerChanges.AddRange(added.Select(h => new HandlerChange(formPlan.EntityLogicalName, formPlan.FormName, formPlan.Event, ChangeKind.Added, h)));
-            handlerChanges.AddRange(updated.Select(h => new HandlerChange(formPlan.EntityLogicalName, formPlan.FormName, formPlan.Event, ChangeKind.Updated, h)));
-            handlerChanges.AddRange(removed.Select(h => new HandlerChange(formPlan.EntityLogicalName, formPlan.FormName, formPlan.Event, ChangeKind.Removed, h)));
+            handlerChanges.AddRange(added.Select(h => new HandlerChange(formPlan.EntityLogicalName, formPlan.FormName, formPlan.Event, formPlan.Attribute, ChangeKind.Added, h)));
+            handlerChanges.AddRange(updated.Select(h => new HandlerChange(formPlan.EntityLogicalName, formPlan.FormName, formPlan.Event, formPlan.Attribute, ChangeKind.Updated, h)));
+            handlerChanges.AddRange(removed.Select(h => new HandlerChange(formPlan.EntityLogicalName, formPlan.FormName, formPlan.Event, formPlan.Attribute, ChangeKind.Removed, h)));
 
             FormXmlEventSerializer.SetHandlers(xdoc, formPlan.Event, desiredSet, formPlan.Attribute);
 
