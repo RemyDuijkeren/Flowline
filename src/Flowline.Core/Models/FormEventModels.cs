@@ -6,10 +6,12 @@ namespace Flowline.Core.Models;
 public enum FormEventType
 {
     OnLoad,
-    OnSave
+    OnSave,
+    OnChange
 }
 
-public record FormEventAnnotation(string Entity, string Form, FormEventType Event, string? FunctionName, string? Parameters);
+// Attribute is null for OnLoad/OnSave, always non-null for OnChange (enforced by the parser).
+public record FormEventAnnotation(string Entity, string Form, FormEventType Event, string? FunctionName, string? Parameters, string? Attribute = null);
 
 public record FormEventHandler(string FunctionName, string LibraryName, Guid HandlerUniqueId, string Parameters)
 {
@@ -48,8 +50,13 @@ public record FormEventSnapshot(
 
 public static class FormEventDeterministicId
 {
-    public static Guid ForHandler(string entity, string form, FormEventType evt, string functionName, string libraryName) =>
-        Derive(entity, form, evt.ToString(), functionName, libraryName);
+    // attribute is non-null only for OnChange — injected between the event name and functionName so the
+    // key space stays distinct per (event, attribute) while onload/onsave callers (attribute: null) are
+    // byte-for-byte unaffected.
+    public static Guid ForHandler(string entity, string form, FormEventType evt, string functionName, string libraryName, string? attribute = null) =>
+        attribute is null
+            ? Derive(entity, form, evt.ToString(), functionName, libraryName)
+            : Derive(entity, form, evt.ToString(), attribute, functionName, libraryName);
 
     public static Guid ForLibrary(string libraryName) =>
         Derive(libraryName);
@@ -66,6 +73,9 @@ public static class FormEventDeterministicId
 // own stored FunctionName/LibraryName/Parameters, per FormEventPlanner.BuildProposedAnnotation.
 public record UnrecognizedHandler(FormEventHandler Handler, string ProposedAnnotation);
 
+// Attribute is null for OnLoad/OnSave, non-null for OnChange — carries the attribute dimension from
+// planner to executor so GetHandlers/SetHandlers can locate the right <event name="onchange" attribute="...">
+// element (there is no other channel between the two).
 public record FormEventFormPlan(
     Guid FormId,
     string EntityLogicalName,
@@ -73,7 +83,8 @@ public record FormEventFormPlan(
     FormEventType Event,
     IReadOnlySet<FormEventHandler> DesiredHandlers,
     IReadOnlySet<UnrecognizedHandler> UnrecognizedHandlers,
-    IReadOnlySet<FormLibrary> DesiredLibraries);
+    IReadOnlySet<FormLibrary> DesiredLibraries,
+    string? Attribute = null);
 
 public class FormEventSyncPlan
 {

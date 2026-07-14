@@ -45,6 +45,42 @@ public class FormEventModelsTests
         Assert.NotEqual(first, second);
     }
 
+    [Fact]
+    public void ForHandler_OnChangeWithAttribute_ReturnsDifferentGuidThanOnLoad()
+    {
+        var onLoad = FormEventDeterministicId.ForHandler("account", "main", FormEventType.OnLoad, "onLoad", "av_/lib.js");
+        var onChange = FormEventDeterministicId.ForHandler("account", "main", FormEventType.OnChange, "onLoad", "av_/lib.js", "creditlimit");
+
+        Assert.NotEqual(onLoad, onChange);
+    }
+
+    [Fact]
+    public void ForHandler_OnChangeDifferentAttribute_ReturnsDifferentGuid()
+    {
+        var creditLimit = FormEventDeterministicId.ForHandler("account", "main", FormEventType.OnChange, "onChange", "av_/lib.js", "creditlimit");
+        var revenue = FormEventDeterministicId.ForHandler("account", "main", FormEventType.OnChange, "onChange", "av_/lib.js", "revenue");
+
+        Assert.NotEqual(creditLimit, revenue);
+    }
+
+    [Fact]
+    public void ForHandler_OnChangeAttributeCaseDifference_ReturnsSameGuid()
+    {
+        var lower = FormEventDeterministicId.ForHandler("account", "main", FormEventType.OnChange, "onChange", "av_/lib.js", "creditlimit");
+        var upper = FormEventDeterministicId.ForHandler("account", "main", FormEventType.OnChange, "onChange", "av_/lib.js", "Creditlimit");
+
+        Assert.Equal(lower, upper);
+    }
+
+    [Fact]
+    public void ForHandler_OnLoadWithNullAttribute_MatchesPreChangeOutput()
+    {
+        var withNullAttribute = FormEventDeterministicId.ForHandler("account", "main", FormEventType.OnLoad, "onLoad", "av_/lib.js", attribute: null);
+        var withoutAttributeParam = FormEventDeterministicId.ForHandler("account", "main", FormEventType.OnLoad, "onLoad", "av_/lib.js");
+
+        Assert.Equal(withoutAttributeParam, withNullAttribute);
+    }
+
     // --- FormEventDeterministicId.ForLibrary ---
 
     [Fact]
