@@ -173,7 +173,7 @@ Verified live against the AutomateValue Dev environment by registering onchange 
 
 **Files:**
 - `src/Flowline.Core/Models/FormEventModels.cs`
-- `tests/Flowline.Core.Tests/FormEventDeterministicIdTests.cs` (new, or extend existing)
+- `tests/Flowline.Core.Tests/FormEventDeterministicIdTests.cs` (extend existing)
 
 **Approach:**
 - Add `OnChange` to `FormEventType` after `OnSave`.
