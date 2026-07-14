@@ -8,6 +8,7 @@ public class ProjectSolution
 
     public string Name { get; init; } = null!;
     public bool IncludeManaged { get; set; } = false;
+    public bool ForceClassicPluginAssembly { get; set; } = false;
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public GenerateConfig? Generate { get; set; }

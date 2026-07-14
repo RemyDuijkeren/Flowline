@@ -138,6 +138,29 @@ public class ProjectConfigTests
     }
 
     [Fact]
+    public void ForceClassicPluginAssembly_True_RoundTripsViaJson()
+    {
+        var config = new ProjectConfig();
+        var sln = config.AddOrUpdateSolution("MySolution");
+        sln.ForceClassicPluginAssembly = true;
+
+        var json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
+        var restored = JsonSerializer.Deserialize<ProjectConfig>(json)!;
+
+        restored.Solutions.Single().ForceClassicPluginAssembly.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ForceClassicPluginAssembly_MissingFromJson_DefaultsToFalse()
+    {
+        var json = """{"Solutions":[{"Name":"MySolution"}]}""";
+
+        var config = JsonSerializer.Deserialize<ProjectConfig>(json)!;
+
+        config.Solutions.Single().ForceClassicPluginAssembly.Should().BeFalse();
+    }
+
+    [Fact]
     public void AddOrUpdateSolution_PreservesGenerate_WhenUpdatingIncludeManaged()
     {
         var config = new ProjectConfig();
@@ -147,6 +170,34 @@ public class ProjectConfigTests
         config.AddOrUpdateSolution(new ProjectSolution { Name = "MySolution", IncludeManaged = true, Generate = sln.Generate });
 
         config.Solutions.Single().Generate?.Namespace.Should().Be("A.Models");
+    }
+
+    [Fact]
+    public void AddOrUpdateSolution_PreservesForceClassicPluginAssembly_WhenCallerThreadsItThrough()
+    {
+        // Regression guard: AddOrUpdateSolution's normalizedSolution construction must copy every
+        // ProjectSolution field, not just Name/IncludeManaged/Generate — otherwise even a caller that
+        // explicitly threads the prior value through (the same pattern the existing Generate test
+        // above uses) would still lose it.
+        var config = new ProjectConfig();
+        var sln = config.AddOrUpdateSolution(new ProjectSolution { Name = "MySolution", IncludeManaged = false, ForceClassicPluginAssembly = true });
+
+        config.AddOrUpdateSolution(new ProjectSolution { Name = "MySolution", IncludeManaged = true, ForceClassicPluginAssembly = sln.ForceClassicPluginAssembly });
+
+        config.Solutions.Single().ForceClassicPluginAssembly.Should().BeTrue();
+    }
+
+    [Fact]
+    public void AddOrUpdateSolution_StringOverload_PreservesForceClassicPluginAssembly()
+    {
+        var config = new ProjectConfig();
+        config.AddOrUpdateSolution(new ProjectSolution { Name = "MySolution", ForceClassicPluginAssembly = true });
+
+        // The (string, bool) overload re-adds by name only — it must still preserve the existing
+        // solution's ForceClassicPluginAssembly rather than defaulting it to false.
+        config.AddOrUpdateSolution("MySolution", includeManaged: true);
+
+        config.Solutions.Single().ForceClassicPluginAssembly.Should().BeTrue();
     }
 
     [Fact]

@@ -176,6 +176,7 @@ public class ProjectConfig
             Name = solution.Name.Trim(),
             IncludeManaged = solution.IncludeManaged,
             Generate = solution.Generate,
+            ForceClassicPluginAssembly = solution.ForceClassicPluginAssembly,
         };
 
         _solutions.Remove(normalizedSolution);
@@ -187,7 +188,13 @@ public class ProjectConfig
     public ProjectSolution AddOrUpdateSolution(string name, bool includeManaged = false)
     {
         var existing = _solutions.FirstOrDefault(s => StringComparer.OrdinalIgnoreCase.Equals(s.Name, name));
-        return AddOrUpdateSolution(new ProjectSolution { Name = name, IncludeManaged = includeManaged, Generate = existing?.Generate });
+        return AddOrUpdateSolution(new ProjectSolution
+        {
+            Name = name,
+            IncludeManaged = includeManaged,
+            Generate = existing?.Generate,
+            ForceClassicPluginAssembly = existing?.ForceClassicPluginAssembly ?? false,
+        });
     }
 
     public ProjectSolution? GetOrUpdateSolution(string? name, bool? includeManaged = null, FlowlineSettings? settings = null)
@@ -227,7 +234,13 @@ public class ProjectConfig
                 return sln;
             }
             AnsiConsole.MarkupLine("[green]Solution config updated[/]");
-            return AddOrUpdateSolution(new ProjectSolution { Name = name, IncludeManaged = includeManaged.Value, Generate = sln.Generate });
+            return AddOrUpdateSolution(new ProjectSolution
+            {
+                Name = name,
+                IncludeManaged = includeManaged.Value,
+                Generate = sln.Generate,
+                ForceClassicPluginAssembly = sln.ForceClassicPluginAssembly,
+            });
         }
 
         return sln;
