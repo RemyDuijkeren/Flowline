@@ -72,6 +72,18 @@ public class PluginAssemblyFamilyHandlerTests
             .Returns(Task.FromResult(new EntityCollection(entities)));
     }
 
+    // Id-only lookups (ColumnSet(false)) used by ResolvePackageChildCleanupFindingsAsync — matched by
+    // entity + filter attribute rather than by a resolved column, since none is requested.
+    void SetupChildIds(string entityLogicalName, string filterAttribute, params Guid[] ids)
+    {
+        var entities = ids.Select(id => new Entity(entityLogicalName, id)).ToList();
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == entityLogicalName
+                    && q.Criteria.Conditions.Any(c => c.AttributeName == filterAttribute)),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(entities)));
+    }
+
     [Fact]
     public async Task DetectAsync_OrphanedPluginAssembly_ReturnsDeleteWithResolvedName()
     {
@@ -385,4 +397,107 @@ public class PluginAssemblyFamilyHandlerTests
     }
 
     const int SequenceHints91 = 3; // PluginAssembly's SequenceHint slot — the redirected package finding keeps it.
+
+    // -- Gap fix: CustomApi (and its own children) bound to a redirected assembly's plugin types must be
+    // pulled into this family's own ordering, ahead of the package delete — see
+    // ResolvePackageChildCleanupFindingsAsync's class-level comment. --
+
+    [Fact]
+    public async Task DetectAsync_PackageOwnedAssemblyPluginTypeHasBoundCustomApi_CustomApiFindingOrderedBeforePackage()
+    {
+        var assemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        var typeId = Guid.NewGuid();
+        var apiId = Guid.NewGuid();
+        const int customApiComponentType = 10101; // env-specific — arbitrary stand-in, value itself is never inspected
+
+        SetupPackageIds((assemblyId, packageId));
+        SetupChildIds("plugintype", "pluginassemblyid", typeId);
+        SetupChildIds("customapi", "plugintypeid", apiId);
+
+        var findings = (await _handler.DetectAsync(
+            Ctx(),
+            [(assemblyId, 91), (apiId, customApiComponentType)],
+            default)).Findings;
+
+        var apiFinding = Assert.Single(findings, f => f.EntityName == "customapi");
+        Assert.Equal(apiId, apiFinding.ObjectId);
+        Assert.Equal(customApiComponentType, apiFinding.ComponentType);
+        Assert.Equal(OrphanAction.Delete, apiFinding.Action);
+        Assert.Equal(OrphanPriority.Prio2, apiFinding.Priority);
+
+        var packageFinding = Assert.Single(findings, f => f.EntityName == "pluginpackage");
+        Assert.True(apiFinding.SequenceHint < packageFinding.SequenceHint);
+    }
+
+    [Fact]
+    public async Task DetectAsync_BoundCustomApiHasRequestParamAndResponseProp_ChildrenOrderedBeforeCustomApi()
+    {
+        var assemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        var typeId = Guid.NewGuid();
+        var apiId = Guid.NewGuid();
+        var paramId = Guid.NewGuid();
+        var propId = Guid.NewGuid();
+
+        SetupPackageIds((assemblyId, packageId));
+        SetupChildIds("plugintype", "pluginassemblyid", typeId);
+        SetupChildIds("customapi", "plugintypeid", apiId);
+        SetupChildIds("customapirequestparameter", "customapiid", paramId);
+        SetupChildIds("customapiresponseproperty", "customapiid", propId);
+
+        var findings = (await _handler.DetectAsync(
+            Ctx(),
+            [(assemblyId, 91), (apiId, 10101), (paramId, 10102), (propId, 10103)],
+            default)).Findings;
+
+        var apiFinding = Assert.Single(findings, f => f.EntityName == "customapi");
+        var paramFinding = Assert.Single(findings, f => f.EntityName == "customapirequestparameter");
+        var propFinding = Assert.Single(findings, f => f.EntityName == "customapiresponseproperty");
+
+        Assert.True(paramFinding.SequenceHint < apiFinding.SequenceHint);
+        Assert.True(propFinding.SequenceHint < apiFinding.SequenceHint);
+    }
+
+    [Fact]
+    public async Task DetectAsync_BoundCustomApiNotInCandidateBatch_LeftAloneNotDeleted()
+    {
+        // The live lookup resolves a CustomApi for the redirected assembly's plugin type, but that
+        // CustomApi id was never handed in as an orphan candidate this run — it's still validly declared
+        // locally, so this handler must not propose deleting it.
+        var assemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        var typeId = Guid.NewGuid();
+        var apiId = Guid.NewGuid();
+
+        SetupPackageIds((assemblyId, packageId));
+        SetupChildIds("plugintype", "pluginassemblyid", typeId);
+        SetupChildIds("customapi", "plugintypeid", apiId);
+
+        var result = await _handler.DetectAsync(Ctx(), [(assemblyId, 91)], default);
+
+        Assert.DoesNotContain(result.Findings, f => f.EntityName == "customapi");
+        Assert.DoesNotContain(apiId, result.ClaimedIds);
+    }
+
+    [Fact]
+    public async Task DetectAsync_NoDeleteModeActive_CustomApiCleanupReportsPrio1()
+    {
+        var assemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        var typeId = Guid.NewGuid();
+        var apiId = Guid.NewGuid();
+
+        SetupPackageIds((assemblyId, packageId));
+        SetupChildIds("plugintype", "pluginassemblyid", typeId);
+        SetupChildIds("customapi", "plugintypeid", apiId);
+
+        var findings = (await _handler.DetectAsync(
+            Ctx(RunMode.NoDelete),
+            [(assemblyId, 91), (apiId, 10101)],
+            default)).Findings;
+
+        var apiFinding = Assert.Single(findings, f => f.EntityName == "customapi");
+        Assert.Equal(OrphanPriority.Prio1, apiFinding.Priority);
+    }
 }

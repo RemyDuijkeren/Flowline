@@ -52,6 +52,18 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         [93] = "SdkMessageProcessingStepImage",
     };
 
+    // Live-verified gap fix: the redirected pluginpackage-delete finding stays in this handler's own
+    // family (SequenceHints[91] = 3), but a CustomApi bound to one of the redirected assembly's plugin
+    // types is normally detected by the separate CustomApiFamilyHandler, whose whole family runs later
+    // in FamilyOrder — so it would always execute AFTER the package delete, not before. Dataverse
+    // rejects a pluginpackage delete while a CustomApi still references it ("referenced by N other
+    // components"), the same way it rejects a plugintype delete/update with active steps (KD4) — these
+    // hints pull the CustomApi cleanup into this family's own ordering instead, both below the package's
+    // slot 3. Values only need to stay < 3; ties with Step(1)/PluginType(2) are harmless since neither
+    // family has an ordering dependency on the other.
+    const int CustomApiChildSequenceHint = 1; // CustomApiRequestParameter / CustomApiResponseProperty
+    const int CustomApiParentSequenceHint = 2; // CustomApi itself
+
     public async Task<HandlerDetectionResult> DetectAsync(
         DetectionContext context,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates,
@@ -76,12 +88,21 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
             ? await ResolvePackageIdsAsync(context.Service, assemblyIds, console, ct).ConfigureAwait(false)
             : new Dictionary<Guid, EntityReference>();
 
+        // Only candidates already present in this run's `candidates` batch are touched inside this
+        // call — a CustomApi/param/prop this live query finds but which ISN'T already an orphan
+        // candidate is still validly declared locally and must be left alone.
+        var childCleanupFindings = packageIds.Count > 0
+            ? await ResolvePackageChildCleanupFindingsAsync(context.Service, packageIds.Keys, candidates, claimedIds, console, ct).ConfigureAwait(false)
+            : [];
+
         // KTD8 Prio1: RunMode.NoDelete is the only signal knowable at classify time — see the plan's
         // Timing note on why the reactively-deferred/still-blocking-at-post-import case is out of
         // scope this round (this handler does not implement it).
         if (context.Mode == RunMode.NoDelete)
             return new HandlerDetectionResult(
-                BuildAllFindings(claimed, names, packageIds, _ => OrphanPriority.Prio1),
+                BuildAllFindings(claimed, names, packageIds, _ => OrphanPriority.Prio1)
+                    .Concat(childCleanupFindings.Select(f => f with { Priority = OrphanPriority.Prio1 }))
+                    .ToList(),
                 claimedIds);
 
         // KTD8 Prio2 names exactly PluginType and Step ("the live PluginType/Step is Enabled") —
@@ -102,7 +123,9 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
             _ => OrphanPriority.Prio3,
         };
 
-        var findings = BuildAllFindings(claimed, names, packageIds, PriorityFor);
+        var findings = BuildAllFindings(claimed, names, packageIds, PriorityFor)
+            .Concat(childCleanupFindings)
+            .ToList();
 
         return new HandlerDetectionResult(findings, claimedIds);
     }
@@ -196,6 +219,105 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         }
 
         return result;
+    }
+
+    // Live-verified gap fix (see class-level comment on CustomApiChildSequenceHint): pulls any CustomApi
+    // — and its own RequestParameter/ResponseProperty children — bound to a redirected assembly's plugin
+    // types into this family's own findings, ordered ahead of the package-delete slot, instead of leaving
+    // them to CustomApiFamilyHandler's separate, later-executing family pass. Degrades to "find nothing"
+    // on any query fault, same fault-tolerant shape as ResolvePackageIdsAsync/ResolveNamesAsync — a
+    // transient failure here just means this run doesn't proactively clean these up, not that the whole
+    // family aborts.
+    static async Task<List<HandlerFinding>> ResolvePackageChildCleanupFindingsAsync(
+        IOrganizationServiceAsync2 service,
+        IReadOnlyCollection<Guid> redirectedAssemblyIds,
+        IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates,
+        HashSet<Guid> claimedIds,
+        IAnsiConsole console,
+        CancellationToken ct)
+    {
+        async Task<HashSet<Guid>> QueryChildIdsAsync(string entityLogicalName, string filterAttribute, IReadOnlyCollection<Guid> parentIds)
+        {
+            if (parentIds.Count == 0) return [];
+
+            var query = new QueryExpression(entityLogicalName)
+            {
+                ColumnSet = new ColumnSet(false),
+                Criteria = { Conditions = { new ConditionExpression(filterAttribute, ConditionOperator.In, parentIds.Select(id => (object)id).ToArray()) } }
+            };
+
+            try
+            {
+                var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
+                return entities.Select(e => e.Id).ToHashSet();
+            }
+            catch (FaultException<OrganizationServiceFault>)
+            {
+                return [];
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                console.Warning($"{entityLogicalName} lookup for package-delete cleanup failed ({Markup.Escape(ex.Message)}) — left for a future run.");
+                return [];
+            }
+        }
+
+        var pluginTypeIds = await QueryChildIdsAsync("plugintype", "pluginassemblyid", redirectedAssemblyIds).ConfigureAwait(false);
+        if (pluginTypeIds.Count == 0) return [];
+
+        var customApiIds = await QueryChildIdsAsync("customapi", "plugintypeid", pluginTypeIds).ConfigureAwait(false);
+        if (customApiIds.Count == 0) return [];
+
+        var requestParamIds = await QueryChildIdsAsync("customapirequestparameter", "customapiid", customApiIds).ConfigureAwait(false);
+        var responsePropIds = await QueryChildIdsAsync("customapiresponseproperty", "customapiid", customApiIds).ConfigureAwait(false);
+
+        var names = new Dictionary<Guid, string>();
+        foreach (var (entityLogicalName, idAttribute, ids) in new[]
+                 {
+                     ("customapi", "customapiid", (IReadOnlyCollection<Guid>)customApiIds),
+                     ("customapirequestparameter", "customapirequestparameterid", requestParamIds),
+                     ("customapiresponseproperty", "customapiresponsepropertyid", responsePropIds),
+                 })
+        {
+            try
+            {
+                foreach (var (id, name) in await EntityNameLookup.GetEntityNamesAsync(service, entityLogicalName, idAttribute, "name", ids, ct).ConfigureAwait(false))
+                    names[id] = name;
+            }
+            catch (FaultException<OrganizationServiceFault>)
+            {
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                console.Warning($"{entityLogicalName} name resolution failed ({Markup.Escape(ex.Message)}) — display falls back to bare id this run.");
+            }
+        }
+
+        var candidateComponentTypes = candidates.ToDictionary(c => c.ObjectId, c => c.ComponentType);
+        var findings = new List<HandlerFinding>();
+
+        void AddIfOrphaned(IEnumerable<Guid> ids, string entityLogicalName, string displayLabel, int sequenceHint)
+        {
+            foreach (var id in ids)
+            {
+                // Only an id already present in this run's orphan candidates gets touched — otherwise
+                // it's still validly declared locally and this handler must leave it alone.
+                if (!candidateComponentTypes.TryGetValue(id, out var componentType)) continue;
+                if (!claimedIds.Add(id)) continue; // already claimed by something else this run
+
+                var name = names.TryGetValue(id, out var n) ? n : null;
+                findings.Add(new HandlerFinding(
+                    id, componentType,
+                    name != null ? $"{displayLabel} '{name}' ({id})" : $"{displayLabel} {id}",
+                    OrphanAction.Delete, OrphanPriority.Prio2, sequenceHint, OrphanTiming.PreImportEligible, entityLogicalName));
+            }
+        }
+
+        AddIfOrphaned(requestParamIds, "customapirequestparameter", "CustomApiRequestParameter", CustomApiChildSequenceHint);
+        AddIfOrphaned(responsePropIds, "customapiresponseproperty", "CustomApiResponseProperty", CustomApiChildSequenceHint);
+        AddIfOrphaned(customApiIds, "customapi", "CustomApi", CustomApiParentSequenceHint);
+
+        return findings;
     }
 
     // Same display format as OrphanCleanupService's old TypeName helper produced for this family
