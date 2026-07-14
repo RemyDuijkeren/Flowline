@@ -99,7 +99,20 @@ public class PluginAssemblyReader(IAnsiConsole console)
                 // BuildResolverPaths already searches the whole directory containing dllPath — since
                 // every DLL from lib/<tfm>/ is extracted into that same directory, cross-DLL type
                 // references within the package resolve without any extra widening (KD5).
-                var resolver = new PathAssemblyResolver(BuildResolverPaths(dllPath).Concat(siblingDlls).Distinct());
+                //
+                // A packing tool can bundle a PrivateAssets="All" dependency (e.g. Flowline.Attributes)
+                // into the .nupkg's own lib/<tfm>/ content anyway — PrivateAssets governs NuGet dependency
+                // metadata, not which files a custom pack target physically copies into lib/. When that
+                // happens, the same assembly identity is registered twice: once from tempDir (the
+                // package's own extracted copy) and once from siblingDlls (the copy-local build-output
+                // copy) — MetadataLoadContext throws "already been loaded" on the second load, since
+                // Distinct() only dedupes by exact path string, not by filename/identity. Dedup the
+                // combined list by filename, keeping tempDir's entry (GroupBy preserves Concat's order,
+                // so a name collision resolves to what the package itself actually carries).
+                var resolver = new PathAssemblyResolver(
+                    BuildResolverPaths(dllPath).Concat(siblingDlls)
+                        .GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+                        .Select(g => g.First()));
                 using var mlc = new MetadataLoadContext(resolver);
                 var assembly = mlc.LoadFromAssemblyPath(dllPath);
                 var pluginTypes = ScanPluginTypes(assembly);
