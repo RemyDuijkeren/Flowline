@@ -1,3 +1,4 @@
+using System.ServiceModel;
 using Flowline.Core.Services;
 using Flowline.Core.Services.OrphanCleanup;
 using Flowline.Core.Services.OrphanCleanup.Handlers;
@@ -42,6 +43,19 @@ public class PluginAssemblyFamilyHandlerTests
                 Arg.Is<QueryExpression>(q => q.EntityName == entityLogicalName && q.ColumnSet.Columns.Contains(nameAttribute)),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([entity])));
+    }
+
+    void SetupPackageIds(params (Guid AssemblyId, Guid PackageId)[] assemblies)
+    {
+        var entities = assemblies.Select(a => new Entity("pluginassembly", a.AssemblyId)
+        {
+            ["packageid"] = new EntityReference("pluginpackage", a.PackageId),
+        }).ToList();
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly" && q.ColumnSet.Columns.Contains("packageid")),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(entities)));
     }
 
     void SetupStepStates(params (Guid StepId, Guid PluginTypeId, bool Enabled)[] steps)
@@ -253,4 +267,122 @@ public class PluginAssemblyFamilyHandlerTests
         Assert.Contains(assemblyId, result.ClaimedIds);
         Assert.DoesNotContain(webResourceId, result.ClaimedIds);
     }
+
+    // -- R10/KD3/KTD10: package-owned assembly redirects to a pluginpackage-delete finding --
+
+    [Fact]
+    public async Task DetectAsync_OrphanedPluginAssemblyWithNoPackageId_BehavesUnchanged()
+    {
+        // Regression guard: no packageid resolved (default RetrieveMultipleAsync stub returns empty) —
+        // the finding still targets the assembly itself, exactly as before this fix.
+        var id = Guid.NewGuid();
+        SetupName("pluginassembly", "name", id, "MyPlugins.dll");
+
+        var findings = (await _handler.DetectAsync(Ctx(), [(id, 91)], default)).Findings;
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(id, finding.ObjectId);
+        Assert.Null(finding.EntityName);
+        Assert.Equal($"PluginAssembly 'MyPlugins.dll' ({id})", finding.DisplayName);
+    }
+
+    [Fact]
+    public async Task DetectAsync_OrphanedPluginAssemblyWithPackageId_RedirectsToPluginPackageFinding()
+    {
+        var assemblyId = Guid.NewGuid();
+        var packageId  = Guid.NewGuid();
+        SetupPackageIds((assemblyId, packageId));
+
+        var findings = (await _handler.DetectAsync(Ctx(), [(assemblyId, 91)], default)).Findings;
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(packageId, finding.ObjectId);
+        Assert.Equal("pluginpackage", finding.EntityName);
+        Assert.Equal(OrphanAction.Delete, finding.Action);
+        Assert.Equal(SequenceHints91, finding.SequenceHint);
+    }
+
+    [Fact]
+    public async Task DetectAsync_TwoOrphanedAssembliesSamePackage_EmitsOnlyOnePackageFinding()
+    {
+        var assemblyId1 = Guid.NewGuid();
+        var assemblyId2 = Guid.NewGuid();
+        var packageId   = Guid.NewGuid();
+        SetupPackageIds((assemblyId1, packageId), (assemblyId2, packageId));
+
+        var findings = (await _handler.DetectAsync(Ctx(), [(assemblyId1, 91), (assemblyId2, 91)], default)).Findings;
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(packageId, finding.ObjectId);
+        Assert.Equal("pluginpackage", finding.EntityName);
+    }
+
+    [Fact]
+    public async Task DetectAsync_PackageOwnedAssemblyPluginTypeHasEnabledStep_StepStillPrio2AndOrderedBeforePackageFinding()
+    {
+        // A package-owned assembly's plugin type still has a live, enabled step: the step keeps its
+        // existing Prio2 classification (unchanged), and the family's existing SequenceHint ordering
+        // still places it (Step=1) before the redirected package-delete finding (PluginAssembly slot=3).
+        var assemblyId = Guid.NewGuid();
+        var packageId  = Guid.NewGuid();
+        var typeId     = Guid.NewGuid();
+        var stepId     = Guid.NewGuid();
+        SetupPackageIds((assemblyId, packageId));
+        SetupStepStates((stepId, typeId, true));
+
+        var findings = (await _handler.DetectAsync(
+            Ctx(),
+            [(assemblyId, 91), (typeId, 90), (stepId, 92)],
+            default)).Findings;
+
+        Assert.Equal(3, findings.Count);
+
+        var stepFinding = Assert.Single(findings, f => f.ComponentType == 92);
+        Assert.Equal(OrphanPriority.Prio2, stepFinding.Priority);
+
+        var packageFinding = Assert.Single(findings, f => f.EntityName == "pluginpackage");
+        Assert.Equal(packageId, packageFinding.ObjectId);
+        Assert.True(stepFinding.SequenceHint < packageFinding.SequenceHint);
+    }
+
+    [Fact]
+    public async Task DetectAsync_PackageIdLookupFaultException_DegradesToUnredirectedAssemblyFinding()
+    {
+        // A transient live-query fault degrades to today's un-redirected assembly-delete finding for
+        // that candidate, rather than aborting detection for the whole family.
+        var assemblyId = Guid.NewGuid();
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly" && q.ColumnSet.Columns.Contains("packageid")),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<EntityCollection>(new FaultException<OrganizationServiceFault>(new OrganizationServiceFault())));
+
+        var findings = (await _handler.DetectAsync(Ctx(), [(assemblyId, 91)], default)).Findings;
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(assemblyId, finding.ObjectId);
+        Assert.Null(finding.EntityName);
+        Assert.DoesNotContain("Warning", _console.Output);
+    }
+
+    [Fact]
+    public async Task DetectAsync_PackageIdLookupInfrastructureException_WarnsAndDegradesToUnredirectedFinding()
+    {
+        var assemblyId = Guid.NewGuid();
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly" && q.ColumnSet.Columns.Contains("packageid")),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("network timeout")));
+
+        var findings = (await _handler.DetectAsync(Ctx(), [(assemblyId, 91)], default)).Findings;
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(assemblyId, finding.ObjectId);
+        Assert.Null(finding.EntityName);
+        Assert.Contains("network timeout", _console.Output);
+        Assert.Contains("Warning", _console.Output);
+    }
+
+    const int SequenceHints91 = 3; // PluginAssembly's SequenceHint slot — the redirected package finding keeps it.
 }

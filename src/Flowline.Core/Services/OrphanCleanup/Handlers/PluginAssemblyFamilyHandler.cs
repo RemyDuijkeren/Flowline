@@ -67,11 +67,22 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
 
         var names = await ResolveNamesAsync(context.Service, claimed, console, ct).ConfigureAwait(false);
 
+        // R10/KD3/KTD10: a pluginassembly owned by a pluginpackage can't be deleted directly
+        // ("Unable to delete plug-in assembly as it is part of plugin package") — live-check each
+        // PluginAssembly candidate's packageid so BuildAllFindings can redirect it to a
+        // pluginpackage-delete finding instead of one that fails at execute time.
+        var assemblyIds = claimed.Where(c => c.ComponentType == 91).Select(c => c.ObjectId).ToList();
+        var packageIds = assemblyIds.Count > 0
+            ? await ResolvePackageIdsAsync(context.Service, assemblyIds, console, ct).ConfigureAwait(false)
+            : new Dictionary<Guid, EntityReference>();
+
         // KTD8 Prio1: RunMode.NoDelete is the only signal knowable at classify time — see the plan's
         // Timing note on why the reactively-deferred/still-blocking-at-post-import case is out of
         // scope this round (this handler does not implement it).
         if (context.Mode == RunMode.NoDelete)
-            return new HandlerDetectionResult(claimed.Select(c => BuildFinding(c, names, OrphanPriority.Prio1)).ToList(), claimedIds);
+            return new HandlerDetectionResult(
+                BuildAllFindings(claimed, names, packageIds, _ => OrphanPriority.Prio1),
+                claimedIds);
 
         // KTD8 Prio2 names exactly PluginType and Step ("the live PluginType/Step is Enabled") —
         // StepImage and PluginAssembly have no Enabled concept of their own and default to Prio3.
@@ -82,22 +93,60 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
             ? await QueryEnabledStateAsync(context.Service, stepIds, typeIds, console, ct).ConfigureAwait(false)
             : (new Dictionary<Guid, bool>(), new HashSet<Guid>());
 
+        OrphanPriority PriorityFor((Guid ObjectId, int ComponentType) candidate) => candidate.ComponentType switch
+        {
+            92 => stepEnabled.TryGetValue(candidate.ObjectId, out var enabled) && enabled
+                ? OrphanPriority.Prio2 : OrphanPriority.Prio3,
+            90 => typeHasEnabledStep.Contains(candidate.ObjectId)
+                ? OrphanPriority.Prio2 : OrphanPriority.Prio3,
+            _  => OrphanPriority.Prio3,
+        };
+
+        var findings = BuildAllFindings(claimed, names, packageIds, PriorityFor);
+
+        return new HandlerDetectionResult(findings, claimedIds);
+    }
+
+    // Builds one HandlerFinding per candidate, redirecting any PluginAssembly (91) candidate whose
+    // packageid resolved to a finding against the parent pluginpackage instead (R10/KD3/KTD10).
+    // Candidates with no resolved packageid (not package-owned, or the live lookup degraded) keep
+    // today's exact unchanged assembly-delete finding via BuildFinding.
+    static List<HandlerFinding> BuildAllFindings(
+        List<(Guid ObjectId, int ComponentType)> claimed,
+        Dictionary<Guid, string> names,
+        Dictionary<Guid, EntityReference> packageIds,
+        Func<(Guid ObjectId, int ComponentType), OrphanPriority> priorityFor)
+    {
         var findings = new List<HandlerFinding>(claimed.Count);
+        var emittedPackageIds = new HashSet<Guid>();
+
         foreach (var candidate in claimed)
         {
-            var priority = candidate.ComponentType switch
+            var priority = priorityFor(candidate);
+
+            if (candidate.ComponentType == 91 && packageIds.TryGetValue(candidate.ObjectId, out var packageRef))
             {
-                92 => stepEnabled.TryGetValue(candidate.ObjectId, out var enabled) && enabled
-                    ? OrphanPriority.Prio2 : OrphanPriority.Prio3,
-                90 => typeHasEnabledStep.Contains(candidate.ObjectId)
-                    ? OrphanPriority.Prio2 : OrphanPriority.Prio3,
-                _  => OrphanPriority.Prio3,
-            };
+                // KD5: multiple orphaned assemblies sharing the same parent package collapse to one
+                // package-delete finding, not one per assembly.
+                if (!emittedPackageIds.Add(packageRef.Id)) continue;
+
+                var assemblyDisplay = TypeName(candidate.ComponentType, candidate.ObjectId, names.TryGetValue(candidate.ObjectId, out var name) ? name : null);
+                findings.Add(new HandlerFinding(
+                    packageRef.Id,
+                    candidate.ComponentType,
+                    $"PluginPackage {packageRef.Id} (owns {assemblyDisplay})",
+                    OrphanAction.Delete,
+                    priority,
+                    SequenceHints[candidate.ComponentType],
+                    OrphanTiming.PreImportEligible,
+                    "pluginpackage"));
+                continue;
+            }
 
             findings.Add(BuildFinding(candidate, names, priority));
         }
 
-        return new HandlerDetectionResult(findings, claimedIds);
+        return findings;
     }
 
     static HandlerFinding BuildFinding((Guid ObjectId, int ComponentType) candidate, Dictionary<Guid, string> names, OrphanPriority priority)
@@ -105,6 +154,48 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         var detail = names.TryGetValue(candidate.ObjectId, out var name) ? name : null;
         var displayName = TypeName(candidate.ComponentType, candidate.ObjectId, detail);
         return new HandlerFinding(candidate.ObjectId, candidate.ComponentType, displayName, OrphanAction.Delete, priority, SequenceHints[candidate.ComponentType], OrphanTiming.PreImportEligible);
+    }
+
+    // R10/KD3/KTD10: batched live check of packageid on each PluginAssembly candidate, following the
+    // same fault-tolerant shape as ResolveNamesAsync/QueryEnabledStateAsync — a transient query failure
+    // degrades every candidate in this batch back to today's un-redirected assembly-delete finding
+    // rather than aborting detection for the whole family.
+    static async Task<Dictionary<Guid, EntityReference>> ResolvePackageIdsAsync(
+        IOrganizationServiceAsync2 service,
+        IReadOnlyList<Guid> assemblyIds,
+        IAnsiConsole console,
+        CancellationToken ct)
+    {
+        var query = new QueryExpression("pluginassembly")
+        {
+            ColumnSet = new ColumnSet("packageid"),
+            Criteria  = { Conditions = { new ConditionExpression("pluginassemblyid", ConditionOperator.In, assemblyIds.Select(id => (object)id).ToArray()) } }
+        };
+
+        List<Entity> entities;
+        try
+        {
+            entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
+        }
+        catch (FaultException<OrganizationServiceFault>)
+        {
+            return new Dictionary<Guid, EntityReference>();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            console.Warning($"pluginassembly packageid lookup failed ({Markup.Escape(ex.Message)}) — degrading to un-redirected assembly-delete finding this run.");
+            return new Dictionary<Guid, EntityReference>();
+        }
+
+        var result = new Dictionary<Guid, EntityReference>();
+        foreach (var entity in entities)
+        {
+            var packageRef = entity.GetAttributeValue<EntityReference>("packageid");
+            if (packageRef != null)
+                result[entity.Id] = packageRef;
+        }
+
+        return result;
     }
 
     // Same display format as OrphanCleanupService's old TypeName helper produced for this family
