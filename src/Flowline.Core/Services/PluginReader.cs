@@ -21,7 +21,95 @@ public class PluginReader
         var imagesTask      = GetRegisteredImagesAsync(service, assemblyId, cancellationToken);
         var messageIdsTask  = LookupAllSdkMessageIdsAsync(service, metadata, cancellationToken);
 
-        var prefix     = await prefixTask.ConfigureAwait(false);
+        var prefix = await prefixTask.ConfigureAwait(false);
+
+        return await BuildSnapshotAsync(
+            service, assemblyId, metadata, prefix,
+            pluginTypesTask, stepsTask, imagesTask, messageIdsTask,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    // U4: N independently-scoped snapshots for a package's plugin-bearing assemblies (KD5, KTD15) —
+    // never a merged/shared snapshot. PublisherPrefix is the only state legitimately shared across all
+    // N assemblies (package/solution-wide, not per-assembly), so it is resolved once here and reused;
+    // everything else (in particular PluginTypes) is resolved per assembly and never merged with
+    // another assembly's data — each returned snapshot is shaped identically to the classic path's.
+    public async Task<IReadOnlyList<(PluginAssemblyMetadata Metadata, Entity? Assembly, RegistrationSnapshot? Snapshot)>> LoadPackageSnapshotsAsync(
+        IOrganizationServiceAsync2 service,
+        Guid packageId,
+        IReadOnlyList<PluginAssemblyMetadata> reflectedAssemblies,
+        string solutionName,
+        CancellationToken cancellationToken = default)
+    {
+        var prefix = await GetPublisherPrefixAsync(service, solutionName, cancellationToken).ConfigureAwait(false);
+
+        var tasks = reflectedAssemblies.Select(metadata =>
+            LoadPackageAssemblySnapshotAsync(service, packageId, metadata, prefix, cancellationToken));
+
+        return await Task.WhenAll(tasks).ConfigureAwait(false);
+    }
+
+    async Task<(PluginAssemblyMetadata Metadata, Entity? Assembly, RegistrationSnapshot? Snapshot)> LoadPackageAssemblySnapshotAsync(
+        IOrganizationServiceAsync2 service,
+        Guid packageId,
+        PluginAssemblyMetadata metadata,
+        string prefix,
+        CancellationToken cancellationToken)
+    {
+        var assembly = await FindPackageAssemblyAsync(service, packageId, metadata.Name, cancellationToken).ConfigureAwait(false);
+        if (assembly == null)
+            return (metadata, null, null); // not yet present — mid-poll, before the caller's existence check completes
+
+        // Round 1: all independent queries in parallel (prefix already resolved for the whole package)
+        var pluginTypesTask = GetRegisteredPluginTypesAsync(service, assembly.Id, cancellationToken);
+        var stepsTask       = GetRegisteredStepsAsync(service, assembly.Id, cancellationToken);
+        var imagesTask      = GetRegisteredImagesAsync(service, assembly.Id, cancellationToken);
+        var messageIdsTask  = LookupAllSdkMessageIdsAsync(service, metadata, cancellationToken);
+
+        var snapshot = await BuildSnapshotAsync(
+            service, assembly.Id, metadata, prefix,
+            pluginTypesTask, stepsTask, imagesTask, messageIdsTask,
+            cancellationToken).ConfigureAwait(false);
+
+        return (metadata, assembly, snapshot);
+    }
+
+    async Task<Entity?> FindPackageAssemblyAsync(
+        IOrganizationServiceAsync2 service, Guid packageId, string assemblyName, CancellationToken cancellationToken)
+    {
+        var query = new QueryExpression("pluginassembly")
+        {
+            TopCount = 1,
+            ColumnSet = new ColumnSet("pluginassemblyid", "name", "version", "publickeytoken", "culture", "description"),
+            Criteria =
+            {
+                Conditions =
+                {
+                    new ConditionExpression("packageid", ConditionOperator.Equal, packageId),
+                    new ConditionExpression("name", ConditionOperator.Equal, assemblyName)
+                }
+            }
+        };
+
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
+        return result.Entities.FirstOrDefault();
+    }
+
+    // Shared tail of LoadSnapshotAsync (round 2 + round 3) — extracted so the package path (U4) can
+    // reuse a pre-resolved publisher prefix instead of re-querying it per assembly. Round 1's tasks are
+    // passed in already-started so the classic single-assembly path's original concurrency (prefix
+    // resolution racing the assembly-scoped queries) is unchanged.
+    async Task<RegistrationSnapshot> BuildSnapshotAsync(
+        IOrganizationServiceAsync2 service,
+        Guid assemblyId,
+        PluginAssemblyMetadata metadata,
+        string prefix,
+        Task<IReadOnlyDictionary<string, Entity>> pluginTypesTask,
+        Task<IReadOnlyList<Entity>> stepsTask,
+        Task<IReadOnlyList<Entity>> imagesTask,
+        Task<IReadOnlyDictionary<string, Guid>> messageIdsTask,
+        CancellationToken cancellationToken)
+    {
         var messageIds = await messageIdsTask.ConfigureAwait(false);
 
         // Round 2: queries dependent on round 1 results
