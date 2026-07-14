@@ -1,5 +1,9 @@
+using System.IO.Compression;
+using System.Reflection;
+using System.Reflection.Emit;
 using Flowline.Commands;
 using FluentAssertions;
+using Microsoft.Xrm.Sdk;
 using Spectre.Console.Cli;
 
 namespace Flowline.Tests;
@@ -177,16 +181,192 @@ public class PushCommandTests : IDisposable
     }
 
     [Fact]
-    public void ResolveStandalonePluginFilePath_WithNupkg_ShouldThrow()
+    public void ResolveStandalonePluginFilePath_WithNupkg_ShouldReturnFullPath()
     {
+        // R2a/KD6: .nupkg is now accepted, routing to the same package entry point as project mode,
+        // rather than the old "NuGet packages not yet supported" rejection.
         var file = Path.Combine(_root, "plugins.nupkg");
         File.WriteAllText(file, "");
         var settings = new PushCommand.Settings { PluginFile = file };
 
-        var act = () => PushCommand.ResolveStandalonePluginFilePath(settings);
-
-        act.Should().Throw<FlowlineException>().WithMessage("*NuGet*");
+        PushCommand.ResolveStandalonePluginFilePath(settings).Should().Be(Path.GetFullPath(file));
     }
+
+    // -- ResolvePluginPushPath (R1, KD1) --
+    // Layout mirrors a real `dotnet build --configuration Release` of a `pac plugin init`-scaffolded
+    // project (verified locally): the .dll lands at <buildOutputRoot>/net462/publish/Plugins.dll, while
+    // `dotnet pack`'s .nupkg lands directly at <buildOutputRoot>/Plugins.1.0.0.nupkg — a sibling of
+    // net462/, not alongside the .dll itself. ResolvePluginPushPath must search the whole root.
+
+    [Fact]
+    public void ResolvePluginPushPath_DllAndNupkgNoForce_ShouldReturnNupkg()
+    {
+        var buildOutputRoot = Path.Combine(_root, "bin", "Release");
+        var publishDir = Path.Combine(buildOutputRoot, "net462", "publish");
+        Directory.CreateDirectory(publishDir);
+        var dll = Path.Combine(publishDir, "Plugins.dll");
+        var nupkg = Path.Combine(buildOutputRoot, "Plugins.1.0.0.nupkg");
+        File.WriteAllText(dll, "");
+        File.WriteAllText(nupkg, "");
+
+        PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, forceClassicPluginAssembly: false).Should().Be(nupkg);
+    }
+
+    [Fact]
+    public void ResolvePluginPushPath_DllAndNupkgWithForceClassic_ShouldReturnDll()
+    {
+        var buildOutputRoot = Path.Combine(_root, "bin", "Release");
+        var publishDir = Path.Combine(buildOutputRoot, "net462", "publish");
+        Directory.CreateDirectory(publishDir);
+        var dll = Path.Combine(publishDir, "Plugins.dll");
+        var nupkg = Path.Combine(buildOutputRoot, "Plugins.1.0.0.nupkg");
+        File.WriteAllText(dll, "");
+        File.WriteAllText(nupkg, "");
+
+        PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, forceClassicPluginAssembly: true).Should().Be(dll);
+    }
+
+    [Fact]
+    public void ResolvePluginPushPath_DllOnly_ShouldReturnDll()
+    {
+        // Regression guard: most existing plugin projects don't produce a .nupkg yet.
+        var buildOutputRoot = Path.Combine(_root, "bin", "Release");
+        var publishDir = Path.Combine(buildOutputRoot, "net462", "publish");
+        Directory.CreateDirectory(publishDir);
+        var dll = Path.Combine(publishDir, "Plugins.dll");
+        File.WriteAllText(dll, "");
+
+        PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, forceClassicPluginAssembly: false).Should().Be(dll);
+    }
+
+    [Fact]
+    public void ResolvePluginPushPath_MissingBuildOutputRoot_ShouldReturnDll()
+    {
+        // --no-build with a stale/missing bin folder shouldn't throw here — the earlier File.Exists(dll)
+        // check in PreparePluginsForPushAsync already guards the real "nothing built" case.
+        var buildOutputRoot = Path.Combine(_root, "bin", "Release");
+        var dll = Path.Combine(_root, "Plugins.dll");
+        File.WriteAllText(dll, "");
+
+        PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, forceClassicPluginAssembly: false).Should().Be(dll);
+    }
+
+    // -- IsPackagePush (KD6 — shared routing decision for project mode and standalone) --
+
+    [Fact]
+    public void IsPackagePush_WithNupkgPath_ShouldReturnTrue()
+    {
+        PushCommand.IsPackagePush(Path.Combine(_root, "Plugins.nupkg")).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsPackagePush_WithDllPath_ShouldReturnFalse()
+    {
+        PushCommand.IsPackagePush(Path.Combine(_root, "Plugins.dll")).Should().BeFalse();
+    }
+
+    // -- ResolveStandalonePackageAssemblyName (R2a — standalone mode has no project context) --
+    // A real .nupkg filename typically embeds its NuGet version (e.g. "MyPlugins.1.0.0.nupkg"), which
+    // does not match the reflected assembly name inside it ("MyPlugins") — Path.GetFileNameWithoutExtension
+    // would return "MyPlugins.1.0.0", not the real assembly name SyncSolutionFromPackageAsync needs to
+    // match its primary assembly. These tests build a real minimal plugin DLL and pack it under a
+    // deliberately version-suffixed nupkg filename to prove the fix resolves the real name instead.
+
+    [Fact]
+    public void ResolveStandalonePackageAssemblyName_VersionedNupkgFilename_ReturnsRealAssemblyNameNotFilename()
+    {
+        CopyXrmSdkDllNextTo(_root);
+        var dllPath = BuildPluginDll(_root, "MyPlugins", "MyPlugins.SomePlugin");
+        var nupkgPath = Path.Combine(_root, "MyPlugins.1.0.0.nupkg"); // filename != assembly name
+        BuildNupkg(nupkgPath, dllPath);
+
+        var name = PushCommand.ResolveStandalonePackageAssemblyName(nupkgPath, new Spectre.Console.Testing.TestConsole());
+
+        name.Should().Be("MyPlugins");
+        name.Should().NotBe("MyPlugins.1.0.0");
+    }
+
+    [Fact]
+    public void ResolveStandalonePackageAssemblyName_MultiplePluginBearingAssemblies_ThrowsActionableError()
+    {
+        CopyXrmSdkDllNextTo(_root);
+        var dllA = BuildPluginDll(_root, "AssemblyA", "AssemblyA.PluginA");
+        var dllB = BuildPluginDll(_root, "AssemblyB", "AssemblyB.PluginB");
+        var nupkgPath = Path.Combine(_root, "Multi.1.0.0.nupkg");
+        BuildNupkg(nupkgPath, dllA, dllB);
+
+        var act = () => PushCommand.ResolveStandalonePackageAssemblyName(nupkgPath, new Spectre.Console.Testing.TestConsole());
+
+        act.Should().Throw<Flowline.FlowlineException>()
+            .WithMessage("*AssemblyA*AssemblyB*");
+    }
+
+    [Fact]
+    public void ResolveStandalonePackageAssemblyName_NoPluginBearingAssemblies_FallsBackToFilename()
+    {
+        // R3a fires inside SyncSolutionFromPackageAsync regardless of what name is returned here — this
+        // fallback is never actually consumed to resolve a "primary" assembly in that case.
+        var dependencyDll = BuildDependencyDll(_root, "JustADependency", "SomeNamespace.SomeType");
+        var nupkgPath = Path.Combine(_root, "Empty.1.0.0.nupkg");
+        BuildNupkg(nupkgPath, dependencyDll);
+
+        var name = PushCommand.ResolveStandalonePackageAssemblyName(nupkgPath, new Spectre.Console.Testing.TestConsole());
+
+        name.Should().Be("Empty.1.0.0");
+    }
+
+    // Builds a minimal real assembly on disk with one public class implementing IPlugin — mirrors
+    // PluginAssemblyReaderTests' BuildPluginDll (Flowline.Core.Tests), duplicated here since test
+    // projects don't share fixture code across assemblies.
+    private static string BuildPluginDll(string dir, string assemblyName, string pluginTypeName)
+    {
+        var ab = new PersistedAssemblyBuilder(new AssemblyName(assemblyName), typeof(object).Assembly);
+        var mb = ab.DefineDynamicModule("MainModule");
+
+        var pluginTb = mb.DefineType(pluginTypeName, TypeAttributes.Public | TypeAttributes.Class, typeof(object), [typeof(IPlugin)]);
+        var executeMethod = typeof(IPlugin).GetMethod(nameof(IPlugin.Execute))!;
+        var methodBuilder = pluginTb.DefineMethod(nameof(IPlugin.Execute),
+            MethodAttributes.Public | MethodAttributes.Virtual, typeof(void), [typeof(IServiceProvider)]);
+        methodBuilder.GetILGenerator().Emit(OpCodes.Ret);
+        pluginTb.DefineMethodOverride(methodBuilder, executeMethod);
+        pluginTb.CreateType();
+
+        var path = Path.Combine(dir, $"{assemblyName}.dll");
+        ab.Save(path);
+        return path;
+    }
+
+    // Builds a minimal real assembly with one public class that does NOT implement IPlugin — a
+    // stand-in for a pure-dependency DLL.
+    private static string BuildDependencyDll(string dir, string assemblyName, string typeName)
+    {
+        var ab = new PersistedAssemblyBuilder(new AssemblyName(assemblyName), typeof(object).Assembly);
+        var mb = ab.DefineDynamicModule("MainModule");
+        mb.DefineType(typeName, TypeAttributes.Public | TypeAttributes.Class, typeof(object)).CreateType();
+
+        var path = Path.Combine(dir, $"{assemblyName}.dll");
+        ab.Save(path);
+        return path;
+    }
+
+    // Zips the given DLLs into a .nupkg under lib/net462/ at the given path (caller picks the filename
+    // deliberately, to test version-suffixed-filename-vs-assembly-name mismatches).
+    private static void BuildNupkg(string nupkgPath, params string[] dllPaths)
+    {
+        using var archive = ZipFile.Open(nupkgPath, ZipArchiveMode.Create);
+        foreach (var dllPath in dllPaths)
+            archive.CreateEntryFromFile(dllPath, $"lib/net462/{Path.GetFileName(dllPath)}");
+    }
+
+    // Copies Microsoft.Xrm.Sdk.dll next to the .nupkg (not inside its lib/ folder) — mirrors a real
+    // pac-plugin-init package, where the SDK assembly is copy-local to the build output but excluded
+    // from the packed nupkg content (PrivateAssets="All"). AnalyzePackage's resolver widening to the
+    // nupkg's own directory is what makes a real IPlugin-referencing test DLL resolvable without this.
+    private static void CopyXrmSdkDllNextTo(string dir) =>
+        File.Copy(
+            Path.Combine(Path.GetDirectoryName(typeof(PushCommandTests).Assembly.Location)!, "Microsoft.Xrm.Sdk.dll"),
+            Path.Combine(dir, "Microsoft.Xrm.Sdk.dll"),
+            overwrite: true);
 
     [Fact]
     public void ResolveStandaloneWebResourcesPath_WithExistingFolder_ShouldReturnFullPath()
