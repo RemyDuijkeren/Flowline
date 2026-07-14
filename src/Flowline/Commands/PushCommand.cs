@@ -433,8 +433,20 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (forceClassicPluginAssembly || !Directory.Exists(buildOutputRoot))
             return dllPath;
 
-        var nupkgPath = Directory.GetFiles(buildOutputRoot, "*.nupkg", SearchOption.AllDirectories).FirstOrDefault();
-        return nupkgPath ?? dllPath;
+        var nupkgPaths = Directory.GetFiles(buildOutputRoot, "*.nupkg", SearchOption.AllDirectories);
+        if (nupkgPaths.Length == 0)
+            return dllPath;
+
+        // dotnet pack's filename embeds the NuGet version (e.g. "MyPlugins.1.0.0.nupkg") and neither
+        // build nor pack cleans a previously-produced .nupkg with a different version out of bin/Release
+        // first — a version bump without a clean build leaves both old and new side by side. Picking
+        // FirstOrDefault (enumeration order is unspecified) risked silently pushing stale package content.
+        if (nupkgPaths.Length > 1)
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"Found {nupkgPaths.Length} .nupkg files under the build output — {string.Join(", ", nupkgPaths.Select(Path.GetFileName))}. " +
+                "Run a clean build (delete bin/Release or drop --no-build) so only the current version's package remains.");
+
+        return nupkgPaths[0];
     }
 
     // KD6: the single decision point shared by both project-mode auto-detection and standalone

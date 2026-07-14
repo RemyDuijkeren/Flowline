@@ -251,6 +251,26 @@ public class PushCommandTests : IDisposable
         PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, forceClassicPluginAssembly: false).Should().Be(dll);
     }
 
+    [Fact]
+    public void ResolvePluginPushPath_TwoNupkgVersionsPresent_ThrowsInsteadOfPickingArbitrarily()
+    {
+        // Regression guard: a version bump without a clean build leaves the old versioned .nupkg
+        // sitting alongside the new one — directory enumeration order is unspecified, so silently
+        // picking one (the prior FirstOrDefault() behavior) could push stale content.
+        var buildOutputRoot = Path.Combine(_root, "bin", "Release");
+        var publishDir = Path.Combine(buildOutputRoot, "net462", "publish");
+        Directory.CreateDirectory(publishDir);
+        var dll = Path.Combine(publishDir, "Plugins.dll");
+        File.WriteAllText(dll, "");
+        File.WriteAllText(Path.Combine(buildOutputRoot, "Plugins.1.0.0.nupkg"), "");
+        File.WriteAllText(Path.Combine(buildOutputRoot, "Plugins.1.0.1.nupkg"), "");
+
+        var act = () => PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, forceClassicPluginAssembly: false);
+
+        act.Should().Throw<Flowline.FlowlineException>()
+            .WithMessage("*Plugins.1.0.0.nupkg*Plugins.1.0.1.nupkg*");
+    }
+
     // -- IsPackagePush (KD6 — shared routing decision for project mode and standalone) --
 
     [Fact]
