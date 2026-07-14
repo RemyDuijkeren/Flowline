@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Services;
@@ -127,9 +128,9 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         var pushAssemblyOnly = pushScope.HasFlag(PushScope.AssemblyOnly);
         Logger.LogInformation("scope={Scope} mode={RunMode} standalone={Standalone}", pushScope, runMode, standaloneMode);
 
-        var (pluginsPushPath, pluginAssemblyName) = (pushAssemblyOnly || pushScope.HasFlag(PushScope.Plugins))
+        var (pluginsPushPath, pluginAssemblyName, reflectedPackageAssemblies) = (pushAssemblyOnly || pushScope.HasFlag(PushScope.Plugins))
             ? await PreparePluginsForPushAsync(standaloneMode, settings, solutionName, forceClassicPluginAssembly, standaloneParams, cancellationToken)
-            : (null, null);
+            : (null, null, null);
         // FormEvents reads its annotations from the same built dist/ folder web resource sync uses, so
         // either scope alone needs it prepared — WebResources still implies FormEvents (unchanged default
         // bundling); FormEvents lets the registration step run on its own, against an already-pushed dist/.
@@ -150,7 +151,13 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             if (IsPackagePush(pluginsPushPath))
             {
                 Logger.LogInformation("Pushing plugin package: {Nupkg}", pluginsPushPath);
-                pushedChanges |= await pluginService.SyncSolutionFromPackageAsync(conn, pluginsPushPath, pluginAssemblyName!, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+                // Standalone mode already reflected this .nupkg to resolve pluginAssemblyName (R2a) — reuse
+                // that list instead of paying for a second AnalyzePackage pass over the same file.
+                pushedChanges |= reflectedPackageAssemblies != null
+                    ? await pluginService.SyncSolutionFromPackageAsync(conn, reflectedPackageAssemblies,
+                        await File.ReadAllBytesAsync(pluginsPushPath, cancellationToken).ConfigureAwait(false),
+                        pluginsPushPath, pluginAssemblyName!, solutionName, runMode, cancellationToken).ConfigureAwait(false)
+                    : await pluginService.SyncSolutionFromPackageAsync(conn, pluginsPushPath, pluginAssemblyName!, solutionName, runMode, cancellationToken).ConfigureAwait(false);
             }
             else if (pushAssemblyOnly)
             {
@@ -255,7 +262,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         return (devEnv, solutionName, forceClassicPluginAssembly);
     }
 
-    private async Task<(string? PushPath, string? AssemblyName)> PreparePluginsForPushAsync(
+    private async Task<(string? PushPath, string? AssemblyName, List<PluginAssemblyMetadata>? ReflectedAssemblies)> PreparePluginsForPushAsync(
         bool standaloneMode,
         Settings settings,
         string solutionName,
@@ -295,15 +302,19 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         // no such project context — for a .nupkg, the file itself typically embeds its NuGet version
         // (e.g. "MyPlugins.1.0.0.nupkg"), so the filename minus extension does NOT match the actual
         // reflected assembly name inside the package (R2a) and SyncSolutionFromPackageAsync's primary-
-        // assembly match would fail. Reflect the package here to resolve the real name instead of guessing.
-        var assemblyName = standaloneMode && IsPackagePush(pluginsPushPath)
-            ? ResolveStandalonePackageAssemblyName(pluginsPushPath, Console)
-            : standaloneMode ? Path.GetFileNameWithoutExtension(pluginsDll) : PluginsName;
+        // assembly match would fail. Reflect the package here to resolve the real name instead of guessing;
+        // the reflected list is carried back so the caller can skip re-analyzing the same .nupkg.
+        string assemblyName;
+        List<PluginAssemblyMetadata>? reflectedAssemblies = null;
+        if (standaloneMode && IsPackagePush(pluginsPushPath))
+            (assemblyName, reflectedAssemblies) = ResolveStandalonePackageAssemblyName(pluginsPushPath, Console);
+        else
+            assemblyName = standaloneMode ? Path.GetFileNameWithoutExtension(pluginsDll) : PluginsName;
 
         Console.Verbose($"Found {pluginsPushPath}");
         Console.Info($"[bold]{ConsolePath.FormatRelativePath(pluginsPushPath)}[/] found");
 
-        return (pluginsPushPath, assemblyName);
+        return (pluginsPushPath, assemblyName, reflectedAssemblies);
     }
 
     private async Task<string?> PrepareWebResourcesForPushAsync(
@@ -434,18 +445,20 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     // R2a: standalone mode has no project context to anchor a deterministic assembly name to (unlike
     // project mode's PluginsName constant) — the .nupkg's own filename typically embeds its NuGet
     // version and does not match the reflected assembly name inside it. Reflect the package once here
-    // to resolve the real name rather than guessing from the filename.
-    internal static string ResolveStandalonePackageAssemblyName(string nupkgPath, IAnsiConsole console)
+    // to resolve the real name rather than guessing from the filename — the reflected list is also
+    // returned so the caller can pass it straight into SyncSolutionFromPackageAsync's pre-reflected
+    // overload instead of reflecting the same .nupkg a second time.
+    internal static (string AssemblyName, List<PluginAssemblyMetadata> Assemblies) ResolveStandalonePackageAssemblyName(string nupkgPath, IAnsiConsole console)
     {
         var assemblies = new PluginAssemblyReader(console).AnalyzePackage(nupkgPath);
 
         if (assemblies.Count == 1)
-            return assemblies[0].Name;
+            return (assemblies[0].Name, assemblies);
 
         if (assemblies.Count == 0)
             // R3a fires inside SyncSolutionFromPackageAsync regardless of what name is passed here —
             // any placeholder is fine, it never gets used to resolve a "primary" assembly.
-            return Path.GetFileNameWithoutExtension(nupkgPath);
+            return (Path.GetFileNameWithoutExtension(nupkgPath), assemblies);
 
         throw new FlowlineException(ExitCode.ValidationFailed,
             $"--pluginFile package contains {assemblies.Count} plugin-bearing assemblies " +

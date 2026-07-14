@@ -280,10 +280,11 @@ public class PushCommandTests : IDisposable
         var nupkgPath = Path.Combine(_root, "MyPlugins.1.0.0.nupkg"); // filename != assembly name
         BuildNupkg(nupkgPath, dllPath);
 
-        var name = PushCommand.ResolveStandalonePackageAssemblyName(nupkgPath, new Spectre.Console.Testing.TestConsole());
+        var (name, assemblies) = PushCommand.ResolveStandalonePackageAssemblyName(nupkgPath, new Spectre.Console.Testing.TestConsole());
 
         name.Should().Be("MyPlugins");
         name.Should().NotBe("MyPlugins.1.0.0");
+        assemblies.Should().ContainSingle(a => a.Name == "MyPlugins");
     }
 
     [Fact]
@@ -310,9 +311,10 @@ public class PushCommandTests : IDisposable
         var nupkgPath = Path.Combine(_root, "Empty.1.0.0.nupkg");
         BuildNupkg(nupkgPath, dependencyDll);
 
-        var name = PushCommand.ResolveStandalonePackageAssemblyName(nupkgPath, new Spectre.Console.Testing.TestConsole());
+        var (name, assemblies) = PushCommand.ResolveStandalonePackageAssemblyName(nupkgPath, new Spectre.Console.Testing.TestConsole());
 
         name.Should().Be("Empty.1.0.0");
+        assemblies.Should().BeEmpty();
     }
 
     // Builds a minimal real assembly on disk with one public class implementing IPlugin — mirrors

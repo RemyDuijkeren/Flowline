@@ -288,7 +288,10 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         return await SyncSolutionFromPackageAsync(service, assemblies, nupkgContent, nupkgPath, projectAssemblyName, solutionName, runMode, cancellationToken).ConfigureAwait(false);
     }
 
-    internal async Task<bool> SyncSolutionFromPackageAsync(
+    // Public so callers that must reflect the package themselves before this call (e.g. standalone push
+    // resolving the primary assembly name — R2a) can pass the already-reflected metadata through instead
+    // of paying for a second AnalyzePackage pass over the same .nupkg.
+    public async Task<bool> SyncSolutionFromPackageAsync(
         IOrganizationServiceAsync2 service,
         List<PluginAssemblyMetadata> assemblies,
         byte[] nupkgContent,
