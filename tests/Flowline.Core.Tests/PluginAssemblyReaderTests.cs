@@ -145,6 +145,26 @@ public class PluginAssemblyReaderTests
             Path.Combine(dir, "Microsoft.Xrm.Sdk.dll"),
             overwrite: true);
 
+    // Copies Microsoft.Xrm.Sdk.dll into a "net462"-style subfolder of dir, not flat alongside the
+    // .nupkg — mirroring a real `dotnet build` of a pac-plugin-init-shaped project, where the .nupkg
+    // lands directly in bin/Release/ while copy-local dependencies land one level down in
+    // bin/Release/net462/ (and again in its own net462/publish/ sub-copy). AnalyzePackage's
+    // nupkg-sibling-directory widening must recurse to find this, not just scan dir's top level.
+    private static void CopyXrmSdkDllOneLevelDeeper(string dir)
+    {
+        var tfmDir = Directory.CreateDirectory(Path.Combine(dir, "net462")).FullName;
+        File.Copy(
+            Path.Combine(Path.GetDirectoryName(DllPath)!, "Microsoft.Xrm.Sdk.dll"),
+            Path.Combine(tfmDir, "Microsoft.Xrm.Sdk.dll"),
+            overwrite: true);
+
+        var publishDir = Directory.CreateDirectory(Path.Combine(tfmDir, "publish")).FullName;
+        File.Copy(
+            Path.Combine(Path.GetDirectoryName(DllPath)!, "Microsoft.Xrm.Sdk.dll"),
+            Path.Combine(publishDir, "Microsoft.Xrm.Sdk.dll"),
+            overwrite: true);
+    }
+
     [Fact]
     public void Analyze_ReturnsAssemblyMetadata()
     {
@@ -1061,6 +1081,27 @@ public class PluginAssemblyReaderTests
 
             var meta = Assert.Single(result);
             Assert.Contains(meta.Plugins, p => p.Name == "OnlyPackagePlugin");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AnalyzePackage_XrmSdkOneLevelBelowNupkgDir_StillResolves()
+    {
+        var dir = Directory.CreateTempSubdirectory("flowline-reader-test-").FullName;
+        try
+        {
+            var pluginDll = BuildPluginDll(dir, "NestedSdkPlugin", "NestedSdkPackagePlugin");
+            var nupkg = BuildNupkg(dir, pluginDll);
+            CopyXrmSdkDllOneLevelDeeper(dir);
+
+            var result = AnalyzePackage(nupkg);
+
+            var meta = Assert.Single(result);
+            Assert.Contains(meta.Plugins, p => p.Name == "NestedSdkPackagePlugin");
         }
         finally
         {

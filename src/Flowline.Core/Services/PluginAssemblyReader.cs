@@ -74,13 +74,20 @@ public class PluginAssemblyReader(IAnsiConsole console)
 
             // The plugins project's SDK reference (Microsoft.Xrm.Sdk et al) is typically excluded from
             // the .nupkg's own lib/<tfm>/ content (PrivateAssets="All" — that's what keeps a redundant
-            // SDK copy out of the package) but is still copy-local next to the .nupkg on disk, since
-            // that exclusion only affects packaging, not the local build output. Widening the resolver
-            // to that sibling directory lets MetadataLoadContext resolve those types without needing
-            // them bundled inside the package.
+            // SDK copy out of the package) but is still copy-local in the build output, since that
+            // exclusion only affects packaging, not the local build output. A real `dotnet pack` build
+            // drops the .nupkg directly in bin/Release/ while the copy-local DLLs live one level down
+            // (e.g. bin/Release/net462/, plus its own net462/publish/ sub-copy) — never flat alongside
+            // the .nupkg itself — so the search must recurse under the .nupkg's directory, not just
+            // scan it. Recursing can surface the same assembly under both net462/ and net462/publish/,
+            // which would make PathAssemblyResolver throw on a duplicate simple name — dedup by filename
+            // first. Widening the resolver this way lets MetadataLoadContext resolve those types without
+            // needing them bundled inside the package.
             var nupkgDir = Path.GetDirectoryName(Path.GetFullPath(nupkgPath));
             var siblingDlls = nupkgDir != null && Directory.Exists(nupkgDir)
-                ? Directory.GetFiles(nupkgDir, "*.dll")
+                ? Directory.EnumerateFiles(nupkgDir, "*.dll", SearchOption.AllDirectories)
+                    .GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+                    .Select(g => g.First())
                 : [];
 
             var results = new List<PluginAssemblyMetadata>();
