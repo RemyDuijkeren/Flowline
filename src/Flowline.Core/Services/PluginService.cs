@@ -256,10 +256,21 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
 
     // -- Plugin package (NuGet .nupkg) sync --
     //
-    // Covers R3a (zero-DLL rejection), R9 (detect-and-block on a genuinely classic assembly),
-    // R5/R5a (pluginpackage create/update), and R4 (whole-nupkg hash change detection). Multi-assembly
-    // snapshot loading (plugin types/steps/images/custom APIs per DLL) and the marker-write ordering
-    // are U4/U5/U6 territory — this method only owns the package record and the classic-conflict guard.
+    // Full orchestration (U6): reflect -> R3a zero-DLL rejection -> R9 detect-and-block -> R4 hash
+    // compare -> if unchanged, sync each assembly's own steps directly with no package write at all
+    // (SyncPackageStepsOnlyAsync) -> if changed, delete any to-be-removed plugin type's steps/custom
+    // APIs *before* the package content update (KD4/KTD13, ExecuteDeletesAsync with PluginTypes.Deletes
+    // left empty since Dataverse's package sync removes the now-empty type automatically) -> write
+    // package content (create or update, R5/R5a) -> confirm the auto-created records per assembly with
+    // a bounded retry (R6/KTD14) -> write the hash marker -> re-plan per assembly against the
+    // post-update snapshot and run the remaining upserts/adds (R7, KD5, KTD15 — N independently-scoped
+    // snapshots/plans, never merged). WarnOrphanAssembliesAsync/WarnOrphanStepsAsync are intentionally
+    // never called on this path — a multi-assembly package's own other assemblies would misclassify as
+    // orphans under the classic path's single-assembly check (R11/KTD16); package-owned orphan cleanup
+    // is covered separately by U8's pipeline redirect.
+
+    const int PackageAssemblyCheckMaxAttempts = 5;
+    static readonly TimeSpan PackageAssemblyCheckDelay = TimeSpan.FromSeconds(1);
 
     public async Task<bool> SyncSolutionFromPackageAsync(
         IOrganizationServiceAsync2 service,
@@ -345,8 +356,16 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
 
         if (existingPackage != null && storedHash == hash)
         {
-            console.Skip("Plugin package already up to date — skipping");
-            return false;
+            if (runMode == RunMode.DryRun)
+            {
+                console.Skip("Plugin package already up to date — skipping");
+                return false;
+            }
+
+            // R4/R11 (item 8): package content unchanged — no package write at all, but each assembly's
+            // steps are still diffed and synced directly against its own scoped snapshot (drift
+            // correction). Never touches WarnOrphanAssembliesAsync/WarnOrphanStepsAsync (R11/KTD16).
+            return await SyncPackageStepsOnlyAsync(service, assemblies, existingPackage.Id, solutionName, runMode, cancellationToken).ConfigureAwait(false);
         }
 
         if (runMode == RunMode.DryRun)
@@ -358,6 +377,138 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
             return true;
         }
 
+        // KD4/KTD13: for an existing package, any assembly whose class was removed must have its
+        // steps/custom APIs deleted *before* the content update — Dataverse rejects the update
+        // otherwise. A brand-new package (existingPackage == null) has no prior assemblies yet, so
+        // there is nothing of theirs to delete.
+        if (existingPackage != null)
+        {
+            var preSnapshots = await _reader.LoadPackageSnapshotsAsync(service, existingPackage.Id, assemblies, solutionName, cancellationToken).ConfigureAwait(false);
+            foreach (var (metadata, assemblyEntity, snapshot) in preSnapshots)
+            {
+                if (assemblyEntity == null || snapshot == null) continue; // not yet present — nothing of this assembly's to delete
+
+                var plan = _planner.Plan(snapshot, metadata, assemblyEntity, solutionName);
+                if (plan.PluginTypes.Deletes.Count == 0) continue; // no class was removed for this assembly
+
+                var preUpdateDeletes = new RegistrationPlan();
+                preUpdateDeletes.Steps.Deletes.AddRange(plan.Steps.Deletes);
+                preUpdateDeletes.CustomApis.Deletes.AddRange(plan.CustomApis.Deletes);
+                preUpdateDeletes.Images.Deletes.AddRange(plan.Images.Deletes);
+                preUpdateDeletes.RequestParams.Deletes.AddRange(plan.RequestParams.Deletes);
+                preUpdateDeletes.ResponseProps.Deletes.AddRange(plan.ResponseProps.Deletes);
+                // PluginTypes.Deletes intentionally left empty — Dataverse's package sync removes the
+                // now-empty plugin type automatically; Flowline must never call DeleteAsync("plugintype", ...).
+
+                await _executor.ExecuteDeletesAsync(service, preUpdateDeletes, solutionName, false, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        var packageId = await WritePackageContentAsync(service, existingPackage, packageUniqueName, primary, nupkgContent, solutionName, cancellationToken).ConfigureAwait(false);
+
+        // R6/KTD14: confirm the auto-created pluginassembly/plugintype records per DLL, bounded retry.
+        var postSnapshots = await LoadPackageSnapshotsWithRetryAsync(service, packageId, assemblies, solutionName, cancellationToken).ConfigureAwait(false);
+
+        var primaryPost = postSnapshots.FirstOrDefault(t => string.Equals(t.Metadata.Name, projectAssemblyName, StringComparison.OrdinalIgnoreCase));
+        if (primaryPost.Assembly == null)
+            throw new InvalidOperationException($"Primary assembly '{projectAssemblyName}' was not found under package '{packageUniqueName}' after the content update.");
+
+        await WritePackageAssemblyMarkerAsync(service, primaryPost.Assembly, hash, cancellationToken).ConfigureAwait(false);
+
+        // Re-plan per assembly against the post-update snapshot (types have changed for any assembly
+        // with removed classes) and run the remaining upserts/adds — deletes already ran above, and
+        // Flowline never calls DeleteAsync("plugintype", ...) on this path (KD2/KD4/KTD13), so this
+        // second pass intentionally never calls ExecuteDeletesAsync again.
+        foreach (var (metadata, assemblyEntity, snapshot) in postSnapshots)
+        {
+            if (assemblyEntity == null || snapshot == null)
+                throw new InvalidOperationException($"Assembly '{metadata.Name}' was not found under package '{packageUniqueName}' after the content update.");
+
+            var plan = _planner.Plan(snapshot, metadata, assemblyEntity, solutionName);
+            await _executor.ExecuteUpsertsAsync(service, plan, solutionName, cancellationToken).ConfigureAwait(false);
+            await _executor.ExecuteAddToSolutionAsync(service, plan, cancellationToken).ConfigureAwait(false);
+        }
+
+        return true;
+    }
+
+    // R4/R11 no-op path (item 8, U6): package content is unchanged, so nothing could have removed a
+    // plugin type — Plan()'s obsolete-sweep is driven by local metadata, which is byte-identical to the
+    // last push. Still diffs and syncs each assembly's own steps directly (drift correction), without
+    // ever calling WarnOrphanAssembliesAsync/WarnOrphanStepsAsync (R11/KTD16).
+    async Task<bool> SyncPackageStepsOnlyAsync(
+        IOrganizationServiceAsync2 service,
+        List<PluginAssemblyMetadata> assemblies,
+        Guid packageId,
+        string solutionName,
+        RunMode runMode,
+        CancellationToken cancellationToken)
+    {
+        var snapshots = await _reader.LoadPackageSnapshotsAsync(service, packageId, assemblies, solutionName, cancellationToken).ConfigureAwait(false);
+
+        var anyChanges = false;
+        foreach (var (metadata, assemblyEntity, snapshot) in snapshots)
+        {
+            if (assemblyEntity == null || snapshot == null) continue;
+
+            var plan = _planner.Plan(snapshot, metadata, assemblyEntity, solutionName);
+            if (plan.TotalChanges == 0) continue;
+
+            anyChanges = true;
+            await _executor.ExecuteDeletesAsync(service, plan, solutionName, runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
+            await _executor.ExecuteUpsertsAsync(service, plan, solutionName, cancellationToken).ConfigureAwait(false);
+            await _executor.ExecuteAddToSolutionAsync(service, plan, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (anyChanges)
+            console.Ok("Plugin package content unchanged — synced drifted step registration(s)");
+        else
+            console.Skip("Plugin package already up to date — skipping");
+
+        return anyChanges;
+    }
+
+    // R6/KTD14: a handful of short, bounded 1-second polls — defense-in-depth for the untested case of
+    // larger packages/slower environments, not a hedge against real observed latency (verified
+    // synchronous in practice). Throws naming the still-missing assemblies if the budget is exceeded.
+    async Task<IReadOnlyList<(PluginAssemblyMetadata Metadata, Entity? Assembly, RegistrationSnapshot? Snapshot)>> LoadPackageSnapshotsWithRetryAsync(
+        IOrganizationServiceAsync2 service,
+        Guid packageId,
+        List<PluginAssemblyMetadata> assemblies,
+        string solutionName,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; attempt <= PackageAssemblyCheckMaxAttempts; attempt++)
+        {
+            var snapshots = await _reader.LoadPackageSnapshotsAsync(service, packageId, assemblies, solutionName, cancellationToken).ConfigureAwait(false);
+            if (snapshots.All(s => s.Assembly != null))
+                return snapshots;
+
+            if (attempt == PackageAssemblyCheckMaxAttempts)
+            {
+                var missing = string.Join(", ", snapshots.Where(s => s.Assembly == null).Select(s => s.Metadata.Name));
+                throw new InvalidOperationException(
+                    $"Timed out waiting for Dataverse to auto-create plugin assembly record(s) for: {missing}.");
+            }
+
+            await Task.Delay(PackageAssemblyCheckDelay, cancellationToken).ConfigureAwait(false);
+        }
+
+        throw new InvalidOperationException("Unreachable.");
+    }
+
+    // Extracted from the create/update branches so the U6 orchestrator can call it at the specific
+    // point KD4 requires (after any pre-update deletes) without duplicating the Dataverse create/update
+    // calls themselves.
+    async Task<Guid> WritePackageContentAsync(
+        IOrganizationServiceAsync2 service,
+        Entity? existingPackage,
+        string packageUniqueName,
+        PluginAssemblyMetadata primary,
+        byte[] nupkgContent,
+        string solutionName,
+        CancellationToken cancellationToken)
+    {
         if (existingPackage == null)
         {
             // R5: name and uniquename both carry the publisher prefix (Dataverse validates name against
@@ -370,25 +521,23 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
                 ["content"]    = Convert.ToBase64String(nupkgContent)
             };
 
-            await service.ExecuteAsync(
+            var response = (CreateResponse)await service.ExecuteAsync(
                 new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName }, cancellationToken).ConfigureAwait(false);
 
             console.Ok($"Package [bold]{packageUniqueName}[/] ({primary.Version}) added");
+            return response.id;
         }
-        else
+
+        // R5a/KTD4: only content is mutable in place — version is create-time-only and Dataverse
+        // rejects an Update that changes it.
+        var updateEntity = new Entity("pluginpackage", existingPackage.Id)
         {
-            // R5a/KTD4: only content is mutable in place — version is create-time-only and Dataverse
-            // rejects an Update that changes it.
-            var updateEntity = new Entity("pluginpackage", existingPackage.Id)
-            {
-                ["content"] = Convert.ToBase64String(nupkgContent)
-            };
+            ["content"] = Convert.ToBase64String(nupkgContent)
+        };
 
-            await service.UpdateAsync(updateEntity, cancellationToken).ConfigureAwait(false);
-            console.Ok($"Package [bold]{packageUniqueName}[/] updated");
-        }
-
-        return true;
+        await service.UpdateAsync(updateEntity, cancellationToken).ConfigureAwait(false);
+        console.Ok($"Package [bold]{packageUniqueName}[/] updated");
+        return existingPackage.Id;
     }
 
     // Marker write (part of R6) — standalone for now. U6's orchestration times this call to run once
