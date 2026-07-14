@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -50,8 +51,102 @@ public class PluginAssemblyReader(IAnsiConsole console)
         using var mlc = new MetadataLoadContext(resolver);
 
         var assembly = mlc.LoadFromAssemblyPath(dllPath);
-        var assemblyName = assembly.GetName();
         var content = File.ReadAllBytes(dllPath);
+        var metadata = BuildAssemblyMetadata(assembly, content, ScanPluginTypes(assembly));
+
+        console.Info($"Assembly [bold]{metadata.Name}[/] ({metadata.Version}) analyzed");
+
+        return metadata;
+    }
+
+    // Reflects every DLL in a .nupkg's lib/<tfm>/ folder (a .nupkg is a standard OPC zip package),
+    // returning one PluginAssemblyMetadata per DLL that contains at least one class implementing
+    // IPlugin — mirroring the exact filter Dataverse itself applies when auto-creating pluginassembly
+    // records (KD5, KTD8). DLLs with no IPlugin-derived type (pure dependencies, e.g. Newtonsoft.Json)
+    // are skipped entirely — no separate classifier needed. Zero plugin-bearing DLLs is not rejected
+    // here (R3a) — that's the caller's responsibility.
+    public List<PluginAssemblyMetadata> AnalyzePackage(string nupkgPath)
+    {
+        var tempDir = Directory.CreateTempSubdirectory("flowline-nupkg-").FullName;
+        try
+        {
+            ExtractLibDlls(nupkgPath, tempDir);
+
+            // The plugins project's SDK reference (Microsoft.Xrm.Sdk et al) is typically excluded from
+            // the .nupkg's own lib/<tfm>/ content (PrivateAssets="All" — that's what keeps a redundant
+            // SDK copy out of the package) but is still copy-local next to the .nupkg on disk, since
+            // that exclusion only affects packaging, not the local build output. Widening the resolver
+            // to that sibling directory lets MetadataLoadContext resolve those types without needing
+            // them bundled inside the package.
+            var nupkgDir = Path.GetDirectoryName(Path.GetFullPath(nupkgPath));
+            var siblingDlls = nupkgDir != null && Directory.Exists(nupkgDir)
+                ? Directory.GetFiles(nupkgDir, "*.dll")
+                : [];
+
+            var results = new List<PluginAssemblyMetadata>();
+            var codeActivityFindings = new List<string>();
+
+            foreach (var dllPath in Directory.EnumerateFiles(tempDir, "*.dll", SearchOption.AllDirectories)
+                         .OrderBy(p => p, StringComparer.Ordinal))
+            {
+                // BuildResolverPaths already searches the whole directory containing dllPath — since
+                // every DLL from lib/<tfm>/ is extracted into that same directory, cross-DLL type
+                // references within the package resolve without any extra widening (KD5).
+                var resolver = new PathAssemblyResolver(BuildResolverPaths(dllPath).Concat(siblingDlls).Distinct());
+                using var mlc = new MetadataLoadContext(resolver);
+                var assembly = mlc.LoadFromAssemblyPath(dllPath);
+                var pluginTypes = ScanPluginTypes(assembly);
+
+                // Skip DLLs with no class implementing IPlugin — this is what filters out pure-dependency
+                // DLLs without any new classifier logic (KD5, KTD8). ScanPluginTypes only ever adds an
+                // entry for a type that is IPlugin-derived or CodeActivity-derived (or both would be
+                // impossible per its own guard), so "any non-workflow entry" means "any real IPlugin type".
+                if (!pluginTypes.Any(p => !p.IsWorkflow)) continue;
+
+                var content = File.ReadAllBytes(dllPath);
+                var metadata = BuildAssemblyMetadata(assembly, content, pluginTypes);
+
+                console.Info($"Assembly [bold]{metadata.Name}[/] ({metadata.Version}) analyzed");
+
+                foreach (var workflowType in pluginTypes.Where(p => p.IsWorkflow))
+                    codeActivityFindings.Add($"{workflowType.FullName} (in {Path.GetFileName(dllPath)})");
+
+                results.Add(metadata);
+            }
+
+            if (codeActivityFindings.Count > 0)
+                throw new InvalidOperationException(
+                    $"Plugin package contains workflow activity type(s), which are not supported for pluginpackage " +
+                    $"deployment — move them to a separate project for classic DLL deployment: {string.Join(", ", codeActivityFindings)}.");
+
+            return results;
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    // Extracts every *.dll under lib/ from a .nupkg (OPC zip) into destinationDir, preserving the
+    // lib/<tfm>/ subfolder structure so DLLs from the same tfm land in the same directory.
+    private static void ExtractLibDlls(string nupkgPath, string destinationDir)
+    {
+        using var archive = ZipFile.OpenRead(nupkgPath);
+        foreach (var entry in archive.Entries)
+        {
+            if (!entry.FullName.StartsWith("lib/", StringComparison.OrdinalIgnoreCase) ||
+                !entry.FullName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var destPath = Path.Combine(destinationDir, entry.FullName.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+            entry.ExtractToFile(destPath, overwrite: true);
+        }
+    }
+
+    private static PluginAssemblyMetadata BuildAssemblyMetadata(Assembly assembly, byte[] content, List<PluginTypeMetadata> pluginTypes)
+    {
+        var assemblyName = assembly.GetName();
         var hash = Convert.ToHexString(SHA256.HashData(content));
 
         var pktBytes = assemblyName.GetPublicKeyToken();
@@ -59,8 +154,6 @@ public class PluginAssemblyReader(IAnsiConsole console)
             ? Convert.ToHexString(pktBytes).ToLowerInvariant()
             : null;
         var culture = string.IsNullOrEmpty(assemblyName.CultureName) ? "neutral" : assemblyName.CultureName;
-
-        console.Info($"Assembly [bold]{assemblyName.Name}[/] ({assemblyName.Version!.ToString()}) analyzed");
 
         return new PluginAssemblyMetadata(
             assemblyName.Name!,
@@ -70,7 +163,7 @@ public class PluginAssemblyReader(IAnsiConsole console)
             assemblyName.Version!.ToString(),
             publicKeyToken,
             culture,
-            ScanPluginTypes(assembly));
+            pluginTypes);
     }
 
     private static List<string> BuildResolverPaths(string dllPath)

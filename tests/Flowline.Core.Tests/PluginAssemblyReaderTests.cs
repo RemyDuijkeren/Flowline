@@ -1,3 +1,6 @@
+using System.IO.Compression;
+using System.Reflection;
+using System.Reflection.Emit;
 using System.Runtime.InteropServices;
 using Microsoft.Xrm.Sdk;
 using Flowline.Attributes;
@@ -16,6 +19,131 @@ public class PluginAssemblyReaderTests
 
     private static PluginTypeMetadata GetPlugin(PluginAssemblyMetadata meta, string name) =>
         meta.Plugins.Single(p => p.Name == name);
+
+    // ---- AnalyzePackage fixtures ----
+    // AnalyzePackage reflects real DLLs extracted from a .nupkg's lib/<tfm>/ folder, so these tests
+    // need genuine separate assemblies on disk (not just in-memory mock classes like the Analyze()
+    // fixtures above). PersistedAssemblyBuilder (System.Reflection.Emit, no new package) builds tiny
+    // real DLLs at test time, each referencing nothing but corelib and Microsoft.Xrm.Sdk (for the real
+    // IPlugin interface) — deliberately minimal so resolving them doesn't require a wide dependency
+    // closure. Microsoft.Xrm.Sdk.dll itself is never placed inside a fixture .nupkg's lib/ folder: a
+    // real pac-plugin-init package excludes it there too (PrivateAssets="All" — the very mechanism KD5
+    // describes), so it's instead copied next to the .nupkg on disk, mirroring the real "copy-local but
+    // not packaged" layout that AnalyzePackage's nupkg-sibling-directory resolver widening depends on.
+
+    private static List<PluginAssemblyMetadata> AnalyzePackage(string nupkgPath) =>
+        new PluginAssemblyReader(new TestConsole()).AnalyzePackage(nupkgPath);
+
+    // Builds a minimal real assembly on disk with one public class implementing IPlugin, and optionally
+    // a second class deriving from a fake System.Activities.CodeActivity (workflowTypeName) — used to
+    // test AnalyzePackage's CodeActivity rejection. IsDerivedFrom matches by FullName string, so a
+    // same-named local type (defined in the same dynamic module) is sufficient without a real
+    // System.Activities package reference.
+    private static string BuildPluginDll(string dir, string assemblyName, string pluginTypeName, string? workflowTypeName = null)
+    {
+        var ab = new PersistedAssemblyBuilder(new AssemblyName(assemblyName), typeof(object).Assembly);
+        var mb = ab.DefineDynamicModule("MainModule");
+
+        var pluginTb = mb.DefineType(pluginTypeName, TypeAttributes.Public | TypeAttributes.Class, typeof(object), [typeof(IPlugin)]);
+        var executeMethod = typeof(IPlugin).GetMethod(nameof(IPlugin.Execute))!;
+        var methodBuilder = pluginTb.DefineMethod(nameof(IPlugin.Execute),
+            MethodAttributes.Public | MethodAttributes.Virtual, typeof(void), [typeof(IServiceProvider)]);
+        methodBuilder.GetILGenerator().Emit(OpCodes.Ret);
+        pluginTb.DefineMethodOverride(methodBuilder, executeMethod);
+        pluginTb.CreateType();
+
+        if (workflowTypeName != null)
+        {
+            var codeActivityType = mb.DefineType("System.Activities.CodeActivity", TypeAttributes.Public | TypeAttributes.Class, typeof(object)).CreateType();
+            mb.DefineType(workflowTypeName, TypeAttributes.Public | TypeAttributes.Class, codeActivityType).CreateType();
+        }
+
+        var path = Path.Combine(dir, $"{assemblyName}.dll");
+        ab.Save(path);
+        return path;
+    }
+
+    // Builds a minimal real assembly on disk with one public class that does NOT implement IPlugin —
+    // a stand-in for a pure-dependency DLL (e.g. Newtonsoft.Json) that AnalyzePackage must skip. When
+    // referencedFrom is given, that assembly's type becomes the base type of typeName, exercising
+    // cross-DLL type resolution (KD5's integration scenario) — since both live in the same nupkg lib/
+    // folder once extracted, BuildResolverPaths' same-directory scan resolves the reference.
+    private static string BuildDependencyDll(string dir, string assemblyName, string typeName)
+    {
+        var ab = new PersistedAssemblyBuilder(new AssemblyName(assemblyName), typeof(object).Assembly);
+        var mb = ab.DefineDynamicModule("MainModule");
+        mb.DefineType(typeName, TypeAttributes.Public | TypeAttributes.Class, typeof(object)).CreateType();
+
+        var path = Path.Combine(dir, $"{assemblyName}.dll");
+        ab.Save(path);
+        return path;
+    }
+
+    // Builds a plugin DLL whose IPlugin-implementing type derives from a class defined in a SEPARATE,
+    // already-built dependency DLL — a genuine cross-assembly reference, not a same-module one. Loads
+    // the dependency into a collectible ALC just long enough to get a real Type for the base-type
+    // argument, then unloads it and polls (via WeakReference) until unload completes, so the dependency
+    // DLL's file handle is released before the caller's temp directory cleanup runs.
+    private static string BuildCrossRefPluginDll(string dir, string assemblyName, string typeName, string dependencyDllPath, string dependencyTypeName)
+    {
+        var loadContextRef = LoadAndBuildCrossRefPlugin(dir, assemblyName, typeName, dependencyDllPath, dependencyTypeName, out var path);
+
+        for (var i = 0; i < 10 && loadContextRef.IsAlive; i++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+        }
+
+        return path;
+    }
+
+    // Isolated into its own non-inlined method so the collectible ALC and every local referencing it
+    // (loadContext, baseType, ab, mb, tb) are provably out of scope once this method returns — inlining
+    // it into the caller could keep those locals rooted for the rest of the caller's stack frame,
+    // preventing the ALC from ever becoming collectible.
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static WeakReference LoadAndBuildCrossRefPlugin(string dir, string assemblyName, string typeName, string dependencyDllPath, string dependencyTypeName, out string path)
+    {
+        var loadContext = new System.Runtime.Loader.AssemblyLoadContext($"{assemblyName}Load", isCollectible: true);
+        var baseType = loadContext.LoadFromAssemblyPath(dependencyDllPath).GetType(dependencyTypeName)!;
+
+        var ab = new PersistedAssemblyBuilder(new AssemblyName(assemblyName), typeof(object).Assembly);
+        var mb = ab.DefineDynamicModule("MainModule");
+        var tb = mb.DefineType(typeName, TypeAttributes.Public | TypeAttributes.Class, baseType, [typeof(IPlugin)]);
+
+        var executeMethod = typeof(IPlugin).GetMethod(nameof(IPlugin.Execute))!;
+        var methodBuilder = tb.DefineMethod(nameof(IPlugin.Execute),
+            MethodAttributes.Public | MethodAttributes.Virtual, typeof(void), [typeof(IServiceProvider)]);
+        methodBuilder.GetILGenerator().Emit(OpCodes.Ret);
+        tb.DefineMethodOverride(methodBuilder, executeMethod);
+        tb.CreateType();
+
+        path = Path.Combine(dir, $"{assemblyName}.dll");
+        ab.Save(path);
+
+        loadContext.Unload();
+        return new WeakReference(loadContext);
+    }
+
+    // Zips the given DLLs into a .nupkg under lib/<tfm>/, mirroring the real OPC package layout.
+    private static string BuildNupkg(string dir, params string[] dllPaths)
+    {
+        var nupkgPath = Path.Combine(dir, $"{Guid.NewGuid():N}.nupkg");
+        using var archive = ZipFile.Open(nupkgPath, ZipArchiveMode.Create);
+        foreach (var dllPath in dllPaths)
+            archive.CreateEntryFromFile(dllPath, $"lib/net10.0/{Path.GetFileName(dllPath)}");
+        return nupkgPath;
+    }
+
+    // Copies Microsoft.Xrm.Sdk.dll next to the .nupkg (NOT inside its lib/ folder) — mirroring a real
+    // pac-plugin-init package, where the SDK assembly is copy-local to the build output but excluded
+    // from the packed nupkg content (PrivateAssets="All"). AnalyzePackage's resolver widening to the
+    // nupkg's own directory is what makes this resolvable without bundling it into the package.
+    private static void CopyXrmSdkDllNextTo(string dir) =>
+        File.Copy(
+            Path.Combine(Path.GetDirectoryName(DllPath)!, "Microsoft.Xrm.Sdk.dll"),
+            Path.Combine(dir, "Microsoft.Xrm.Sdk.dll"),
+            overwrite: true);
 
     [Fact]
     public void Analyze_ReturnsAssemblyMetadata()
@@ -914,6 +1042,121 @@ public class PluginAssemblyReaderTests
         var ex = Assert.Throws<InvalidOperationException>(() =>
             PluginAssemblyReader.TryBuildSteps(typeof(MockErrMultiHandlesDuplicatePlugin)).ToList());
         Assert.Contains("same step name", ex.Message);
+    }
+
+    // ---- AnalyzePackage tests ----
+
+    [Fact]
+    public void AnalyzePackage_OnePluginDllAndOneDependencyDll_ReturnsOnlyPluginBearing()
+    {
+        var dir = Directory.CreateTempSubdirectory("flowline-reader-test-").FullName;
+        try
+        {
+            var pluginDll = BuildPluginDll(dir, "OnlyPlugin", "OnlyPackagePlugin");
+            var dependencyDll = BuildDependencyDll(dir, "PureDependency", "SomeHelper");
+            var nupkg = BuildNupkg(dir, pluginDll, dependencyDll);
+            CopyXrmSdkDllNextTo(dir);
+
+            var result = AnalyzePackage(nupkg);
+
+            var meta = Assert.Single(result);
+            Assert.Contains(meta.Plugins, p => p.Name == "OnlyPackagePlugin");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AnalyzePackage_TwoIndependentPluginDlls_ReturnsTwoScopedToOwnTypes()
+    {
+        var dir = Directory.CreateTempSubdirectory("flowline-reader-test-").FullName;
+        try
+        {
+            var firstPluginDll = BuildPluginDll(dir, "FirstPlugin", "FirstPackagePlugin");
+            var secondPluginDll = BuildPluginDll(dir, "SecondPlugin", "SecondPackagePlugin");
+            var dependencyDll = BuildDependencyDll(dir, "PureDependency", "SomeHelper");
+            var nupkg = BuildNupkg(dir, firstPluginDll, secondPluginDll, dependencyDll);
+            CopyXrmSdkDllNextTo(dir);
+
+            var result = AnalyzePackage(nupkg);
+
+            Assert.Equal(2, result.Count);
+
+            var withFirst = result.Single(m => m.Plugins.Any(p => p.Name == "FirstPackagePlugin"));
+            var withSecond = result.Single(m => m.Plugins.Any(p => p.Name == "SecondPackagePlugin"));
+
+            Assert.DoesNotContain(withFirst.Plugins, p => p.Name == "SecondPackagePlugin");
+            Assert.DoesNotContain(withSecond.Plugins, p => p.Name == "FirstPackagePlugin");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AnalyzePackage_NoPluginBearingDlls_ReturnsEmptyCollection()
+    {
+        var dir = Directory.CreateTempSubdirectory("flowline-reader-test-").FullName;
+        try
+        {
+            var dependencyDll = BuildDependencyDll(dir, "PureDependency", "SomeHelper");
+            var nupkg = BuildNupkg(dir, dependencyDll);
+
+            var result = AnalyzePackage(nupkg);
+
+            Assert.Empty(result);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AnalyzePackage_CodeActivityInOneOfSeveralDlls_ThrowsNamingTypeAndDll()
+    {
+        var dir = Directory.CreateTempSubdirectory("flowline-reader-test-").FullName;
+        try
+        {
+            var workflowPluginDll = BuildPluginDll(dir, "WorkflowPlugin", "PackagePlugin", workflowTypeName: "PackageWorkflowActivity");
+            var secondPluginDll = BuildPluginDll(dir, "SecondPlugin", "SecondPackagePlugin");
+            var nupkg = BuildNupkg(dir, workflowPluginDll, secondPluginDll);
+            CopyXrmSdkDllNextTo(dir);
+
+            var ex = Assert.Throws<InvalidOperationException>(() => AnalyzePackage(nupkg));
+
+            Assert.Contains("PackageWorkflowActivity", ex.Message);
+            Assert.Contains(Path.GetFileName(workflowPluginDll), ex.Message);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AnalyzePackage_PluginReferencingDependencyDllType_ResolvesAcrossDlls()
+    {
+        var dir = Directory.CreateTempSubdirectory("flowline-reader-test-").FullName;
+        try
+        {
+            var dependencyDll = BuildDependencyDll(dir, "SharedDependency", "SharedBase");
+            var crossRefPluginDll = BuildCrossRefPluginDll(dir, "CrossRefPlugin", "CrossRefPlugin", dependencyDll, "SharedBase");
+            var nupkg = BuildNupkg(dir, crossRefPluginDll, dependencyDll);
+            CopyXrmSdkDllNextTo(dir);
+
+            var result = AnalyzePackage(nupkg);
+
+            var meta = Assert.Single(result);
+            Assert.Contains(meta.Plugins, p => p.Name == "CrossRefPlugin");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
     }
 
 }
