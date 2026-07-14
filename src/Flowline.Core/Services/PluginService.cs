@@ -309,6 +309,12 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
             throw new InvalidOperationException(
                 $"No DLL implementing IPlugin was found in lib/<tfm>/ of package '{nupkgPath}' — the plugin package cannot be deployed empty.");
 
+        // KD5 framing note: a project normally packs to one plugin-bearing DLL — a second one only
+        // shows up via a deliberate ProjectReference into another plugin project, so it's worth
+        // flagging in case that reference was accidental.
+        if (assemblies.Count > 1)
+            console.Info($"Package contains {assemblies.Count} plugin-bearing assemblies: {string.Join(", ", assemblies.Select(a => $"[bold]{a.Name}[/]"))}");
+
         if (string.IsNullOrWhiteSpace(solutionName))
             throw new ArgumentException("solutionName is required and cannot be empty.", nameof(solutionName));
 
