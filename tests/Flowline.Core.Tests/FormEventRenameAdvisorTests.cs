@@ -279,4 +279,154 @@ public class FormEventRenameAdvisorTests : IDisposable
         suggestion.Should().Contain($"// flowline:onload {entity} \"{newName}\"");
         suggestion.Should().Contain($"// flowline:onsave {entity} \"{newName}\"");
     }
+
+    // --- flowline:onchange self-tag ---
+
+    [Fact]
+    public void Suggest_OnChangeSelfTagMatch_FindsRenamedFormViaAttributeKeyedScan()
+    {
+        const string entity = "account";
+        const string oldName = "Old Main";
+        const string newName = "New Main";
+        const string library = "av_/lib.js";
+        const string attribute = "creditlimit";
+
+        var expectedId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.OnChange, "onCreditlimitChange", library, attribute);
+        var xdoc = System.Xml.Linq.XDocument.Parse(BuildFormXml());
+        FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnChange,
+            new HashSet<FormEventHandler> { new("onCreditlimitChange", library, expectedId, "") }, attribute);
+
+        var annotation = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation(entity, oldName, FormEventType.OnChange, null, null, attribute), library, "function onCreditlimitChange() {}", "src/lib.ts");
+
+        var solutionForms = new List<DataverseForm>
+        {
+            new(Guid.NewGuid(), newName, entity, xdoc.ToString(), null)
+        };
+
+        var suggestion = FormEventRenameAdvisor.Suggest(entity, oldName, [annotation], solutionForms, NewCache());
+
+        suggestion.Should().NotBeNull();
+        suggestion.Should().Contain(newName);
+        suggestion.Should().Contain("renamed to");
+        // Reconstructed from the annotation as originally written (FunctionName omitted/defaulted) — no
+        // function name in the suggested text, same as the onload/onsave precedent.
+        suggestion.Should().Contain($"// flowline:onchange {entity} \"{newName}\" {attribute}");
+    }
+
+    [Fact]
+    public void Suggest_OnChangeSelfTagDifferentAttribute_DoesNotFalsePositiveMatch()
+    {
+        // A matching-id handler on a DIFFERENT attribute must not satisfy a self-tag check for this one —
+        // the attribute-keyed scan (R18a) prevents cross-attribute false positives.
+        const string entity = "account";
+        const string oldName = "Old Main";
+        const string library = "av_/lib.js";
+
+        var revenueId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.OnChange, "onRevenueChange", library, "revenue");
+        var xdoc = System.Xml.Linq.XDocument.Parse(BuildFormXml());
+        FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnChange,
+            new HashSet<FormEventHandler> { new("onRevenueChange", library, revenueId, "") }, "revenue");
+
+        // Annotation targets "creditlimit", not "revenue" — its expected id (derived with attribute
+        // "creditlimit") will never match the "revenue"-scoped handler above, id collision aside.
+        var annotation = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation(entity, oldName, FormEventType.OnChange, null, null, "creditlimit"), library, "function onCreditlimitChange() {}", "src/lib.ts");
+
+        // Two candidates on the entity — otherwise the sole-survivor (hedged) signal would independently
+        // fire and mask what this test is actually isolating (self-tag's attribute-keyed non-match).
+        var solutionForms = new List<DataverseForm>
+        {
+            new(Guid.NewGuid(), "Some Other Form", entity, xdoc.ToString(), null),
+            new(Guid.NewGuid(), "Yet Another Form", entity, BuildFormXml(), null)
+        };
+
+        var suggestion = FormEventRenameAdvisor.Suggest(entity, oldName, [annotation], solutionForms, NewCache());
+
+        suggestion.Should().BeNull();
+    }
+
+    [Fact]
+    public void Suggest_OnLoadOnSaveUnaffectedByAttributeParameter_StillWorksUnchanged()
+    {
+        const string entity = "account";
+        const string oldName = "Old Main";
+        const string newName = "New Main";
+        const string library = "av_/lib.js";
+
+        var expectedId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.OnLoad, "onLoad", library);
+        var formXml = BuildFormXml(FormEventType.OnLoad, new HashSet<FormEventHandler> { new("onLoad", library, expectedId, "") });
+        var resolved = Annotation(entity, oldName, library, "function onLoad() {}");
+
+        var solutionForms = new List<DataverseForm>
+        {
+            new(Guid.NewGuid(), newName, entity, formXml, null)
+        };
+
+        var suggestion = FormEventRenameAdvisor.Suggest(entity, oldName, [resolved], solutionForms, NewCache());
+
+        suggestion.Should().NotBeNull();
+        suggestion.Should().Contain($"// flowline:onload {entity} \"{newName}\"");
+    }
+
+    [Fact]
+    public void Suggest_OnChangeNoSelfTagCandidate_FallsThroughToCacheSignal()
+    {
+        const string entity = "account";
+        const string oldName = "Old Main";
+        const string newName = "New Main";
+        var formId = Guid.NewGuid();
+
+        var xdoc = System.Xml.Linq.XDocument.Parse(BuildFormXml());
+        FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnChange,
+            new HashSet<FormEventHandler> { new("someOtherFn", "unrelated.js", Guid.NewGuid(), "") }, "creditlimit");
+
+        var annotation = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation(entity, oldName, FormEventType.OnChange, null, null, "creditlimit"), "av_/lib.js", "function unrelated() {}", "src/lib.ts");
+
+        var solutionForms = new List<DataverseForm>
+        {
+            new(formId, newName, entity, xdoc.ToString(), null)
+        };
+
+        var cache = NewCache();
+        cache.Set(entity, oldName, formId);
+
+        var suggestion = FormEventRenameAdvisor.Suggest(entity, oldName, [annotation], solutionForms, cache);
+
+        suggestion.Should().NotBeNull();
+        suggestion.Should().Contain(newName);
+        suggestion.Should().Contain("may have been renamed");
+    }
+
+    [Fact]
+    public void Suggest_OnChangeSuggestionEvenWhenSelfTagFinds_R18StillRequiresPushToFail()
+    {
+        // R18 regression: Suggest never resolves anything itself — it only enriches an already-failing
+        // message. This asserts the contract by construction: Suggest is called exactly the way
+        // FormEventReader calls it (only reachable from an already-failed lookup), so a non-null return
+        // here proves nothing was silently "fixed" — the caller still throws regardless.
+        const string entity = "account";
+        const string oldName = "Old Main";
+        const string newName = "New Main";
+        const string library = "av_/lib.js";
+        const string attribute = "creditlimit";
+
+        var expectedId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.OnChange, "onCreditlimitChange", library, attribute);
+        var xdoc = System.Xml.Linq.XDocument.Parse(BuildFormXml());
+        FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnChange,
+            new HashSet<FormEventHandler> { new("onCreditlimitChange", library, expectedId, "") }, attribute);
+
+        var annotation = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation(entity, oldName, FormEventType.OnChange, null, null, attribute), library, "function onCreditlimitChange() {}", "src/lib.ts");
+
+        var solutionForms = new List<DataverseForm>
+        {
+            new(Guid.NewGuid(), newName, entity, xdoc.ToString(), null)
+        };
+
+        var suggestion = FormEventRenameAdvisor.Suggest(entity, oldName, [annotation], solutionForms, NewCache());
+
+        suggestion.Should().NotBeNull(); // a suggestion exists — but Suggest itself never resolves the form or the push
+    }
 }

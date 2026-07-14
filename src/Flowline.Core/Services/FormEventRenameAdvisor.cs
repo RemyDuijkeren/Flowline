@@ -66,7 +66,10 @@ public static class FormEventRenameAdvisor
 
             // Recomputed with requestedName (the annotation's still-unrenamed target) — that's what was
             // true when the handler was originally registered, not any candidate's current live name.
-            var expectedId = FormEventDeterministicId.ForHandler(entity, requestedName, evt, finalFunctionName!, resolved.LibraryName);
+            // attribute is non-null only for OnChange — no new cache dimension needed (R18), but the
+            // deterministic id and the XML scan both still need it to target the right event element.
+            var attribute = resolved.Annotation.Attribute;
+            var expectedId = FormEventDeterministicId.ForHandler(entity, requestedName, evt, finalFunctionName!, resolved.LibraryName, attribute);
 
             foreach (var candidate in candidatesForEntity)
             {
@@ -79,7 +82,7 @@ public static class FormEventRenameAdvisor
                 try { xdoc = XDocument.Parse(candidate.FormXml); }
                 catch (Exception) { continue; }
 
-                if (FormXmlEventSerializer.GetHandlers(xdoc, evt).Any(h => h.HandlerUniqueId == expectedId))
+                if (FormXmlEventSerializer.GetHandlers(xdoc, evt, attribute).Any(h => h.HandlerUniqueId == expectedId))
                     return candidate.Name;
             }
         }
@@ -116,9 +119,16 @@ public static class FormEventRenameAdvisor
     // originally written (FunctionName/Parameters may be null/defaulted) rather than a resolved Handler.
     static string BuildSuggestedAnnotation(string entity, string candidateName, ResolvedFormEventAnnotation resolved)
     {
-        var directive = resolved.Annotation.Event == FormEventType.OnLoad ? "onload" : "onsave";
+        var directive = resolved.Annotation.Event switch
+        {
+            FormEventType.OnLoad => "onload",
+            FormEventType.OnSave => "onsave",
+            FormEventType.OnChange => "onchange",
+            _ => throw new ArgumentOutOfRangeException(nameof(resolved))
+        };
+        var attribute = resolved.Annotation.Event == FormEventType.OnChange ? $" {resolved.Annotation.Attribute}" : "";
         var function = resolved.Annotation.FunctionName is null ? "" : $" {resolved.Annotation.FunctionName}";
         var parameters = string.IsNullOrEmpty(resolved.Annotation.Parameters) ? "" : $"({resolved.Annotation.Parameters})";
-        return $"// flowline:{directive} {entity} \"{candidateName}\"{function}{parameters}";
+        return $"// flowline:{directive} {entity} \"{candidateName}\"{attribute}{function}{parameters}";
     }
 }
