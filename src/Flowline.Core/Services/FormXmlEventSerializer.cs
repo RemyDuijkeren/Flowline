@@ -8,11 +8,13 @@ namespace Flowline.Core.Services;
 // matches if that ever changed.
 public static class FormXmlEventSerializer
 {
-    public static IReadOnlySet<FormEventHandler> GetHandlers(XDocument form, FormEventType evt)
+    // attribute is non-null only for OnChange — selects the specific <event name="onchange" attribute="...">
+    // element among possibly several on the same form.
+    public static IReadOnlySet<FormEventHandler> GetHandlers(XDocument form, FormEventType evt, string? attribute = null)
     {
         var result = new HashSet<FormEventHandler>();
 
-        var handlersElement = FindEvent(form, evt)?.Element("Handlers");
+        var handlersElement = FindEvent(form, evt, attribute)?.Element("Handlers");
         if (handlersElement is null)
             return result;
 
@@ -28,6 +30,24 @@ public static class FormXmlEventSerializer
         }
 
         return result;
+    }
+
+    // Enumerates every attribute currently wired to an onchange event, regardless of whether a current
+    // annotation still targets it — needed by the planner for orphan detection (KTD4), since onchange's
+    // "current" set can't be derived from a fixed enum the way onload/onsave's can.
+    public static IReadOnlySet<string> GetOnChangeAttributes(XDocument form)
+    {
+        var eventName = EventName(FormEventType.OnChange);
+        var eventsElement = form.Root?.Element("events");
+        if (eventsElement is null)
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        return eventsElement.Elements("event")
+            .Where(e => string.Equals(e.Attribute("name")?.Value, eventName, StringComparison.OrdinalIgnoreCase))
+            .Select(e => e.Attribute("attribute")?.Value)
+            .OfType<string>()
+            .Where(a => a.Length > 0)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     public static IReadOnlySet<FormLibrary> GetLibraries(XDocument form)
@@ -50,21 +70,28 @@ public static class FormXmlEventSerializer
         return result;
     }
 
-    public static void SetHandlers(XDocument form, FormEventType evt, IReadOnlySet<FormEventHandler> desired)
+    // attribute is non-null only for OnChange — see GetHandlers.
+    public static void SetHandlers(XDocument form, FormEventType evt, IReadOnlySet<FormEventHandler> desired, string? attribute = null)
     {
         var root = form.Root ?? throw new InvalidOperationException("Form XML has no root element.");
 
         var eventsElement = GetOrAdd(root, "events");
 
-        var eventName = EventName(evt);
-        var eventElement = eventsElement.Elements("event")
-            .FirstOrDefault(e => string.Equals(e.Attribute("name")?.Value, eventName, StringComparison.OrdinalIgnoreCase));
+        var eventElement = FindEvent(form, evt, attribute);
         if (eventElement is null)
         {
-            eventElement = new XElement("event",
-                new XAttribute("name", eventName),
-                new XAttribute("application", "true"),
-                new XAttribute("active", "true"));
+            // Empirically verified defaults: onload/onsave use application="true" active="true", onchange
+            // uses application="false" active="false" plus the attribute="<logicalname>" it's scoped to.
+            eventElement = attribute is null
+                ? new XElement("event",
+                    new XAttribute("name", EventName(evt)),
+                    new XAttribute("application", "true"),
+                    new XAttribute("active", "true"))
+                : new XElement("event",
+                    new XAttribute("name", EventName(evt)),
+                    new XAttribute("application", "false"),
+                    new XAttribute("active", "false"),
+                    new XAttribute("attribute", attribute));
             eventsElement.Add(eventElement);
         }
 
@@ -118,13 +145,18 @@ public static class FormXmlEventSerializer
         return element;
     }
 
-    static XElement? FindEvent(XDocument form, FormEventType evt)
+    // attribute is non-null only for OnChange — additionally matches the "attribute" XML attribute
+    // (<event name="onchange" attribute="creditlimit">), since a form can carry multiple onchange event
+    // elements, one per attribute. Null (onload/onsave) preserves the original name-only match.
+    static XElement? FindEvent(XDocument form, FormEventType evt, string? attribute = null)
     {
         var eventName = EventName(evt);
         return form.Root?
             .Element("events")?
             .Elements("event")
-            .FirstOrDefault(e => string.Equals(e.Attribute("name")?.Value, eventName, StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(e =>
+                string.Equals(e.Attribute("name")?.Value, eventName, StringComparison.OrdinalIgnoreCase)
+                && (attribute is null || string.Equals(e.Attribute("attribute")?.Value, attribute, StringComparison.OrdinalIgnoreCase)));
     }
 
     static string EventName(FormEventType evt) => evt.ToString().ToLowerInvariant();

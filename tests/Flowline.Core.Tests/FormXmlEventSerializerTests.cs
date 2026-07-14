@@ -302,4 +302,168 @@ public class FormXmlEventSerializerTests
 
         Assert.Null(doc.Root!.Element("formLibraries"));
     }
+
+    // --- onchange ---
+
+    const string TwoOnChangeAttributesFormXml =
+        """
+        <form>
+          <events>
+            <event name="onchange" application="false" active="false" attribute="creditlimit">
+              <Handlers>
+                <Handler functionName="Example1.onCreditLimitChange" libraryName="av_ns/example1.js" handlerUniqueId="{99999999-9999-9999-9999-999999999999}" enabled="true" parameters="" passExecutionContext="true"/>
+              </Handlers>
+            </event>
+            <event name="onchange" application="false" active="false" attribute="revenue">
+              <Handlers>
+                <Handler functionName="Example1.onRevenueChange" libraryName="av_ns/example1.js" handlerUniqueId="{aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa}" enabled="true" parameters="" passExecutionContext="true"/>
+              </Handlers>
+            </event>
+          </events>
+        </form>
+        """;
+
+    [Fact]
+    public void GetHandlers_OnChangeNoEventsElement_ReturnsEmptySet()
+    {
+        var doc = XDocument.Parse(NoEventsFormXml);
+
+        var result = FormXmlEventSerializer.GetHandlers(doc, FormEventType.OnChange, "creditlimit");
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetHandlers_OnChangeMatchingAttribute_ReturnsHandlerSet()
+    {
+        var doc = XDocument.Parse(TwoOnChangeAttributesFormXml);
+
+        var result = FormXmlEventSerializer.GetHandlers(doc, FormEventType.OnChange, "creditlimit");
+
+        var handler = Assert.Single(result);
+        Assert.Equal("Example1.onCreditLimitChange", handler.FunctionName);
+    }
+
+    [Fact]
+    public void GetHandlers_OnChangeDifferentAttribute_DoesNotReturnOtherAttributesHandlers()
+    {
+        var doc = XDocument.Parse(TwoOnChangeAttributesFormXml);
+
+        var result = FormXmlEventSerializer.GetHandlers(doc, FormEventType.OnChange, "revenue");
+
+        var handler = Assert.Single(result);
+        Assert.Equal("Example1.onRevenueChange", handler.FunctionName);
+    }
+
+    [Fact]
+    public void GetHandlers_OnLoadWithoutAttributeParameter_StillWorksUnchanged()
+    {
+        var doc = XDocument.Parse(InternalAndPublicHandlersFormXml);
+
+        var result = FormXmlEventSerializer.GetHandlers(doc, FormEventType.OnLoad);
+
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public void SetHandlers_OnChangeNoEventsElement_CreatesEventWithFalseDefaultsAndAttribute()
+    {
+        var doc = XDocument.Parse(NoEventsFormXml);
+        var handlerId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        var desired = new HashSet<FormEventHandler> { new("Example1.onCreditLimitChange", "av_ns/example1.js", handlerId, "") };
+
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnChange, desired, "creditlimit");
+
+        var eventElement = doc.Root!.Element("events")!.Element("event")!;
+        Assert.Equal("onchange", eventElement.Attribute("name")?.Value);
+        Assert.Equal("false", eventElement.Attribute("application")?.Value);
+        Assert.Equal("false", eventElement.Attribute("active")?.Value);
+        Assert.Equal("creditlimit", eventElement.Attribute("attribute")?.Value);
+        var handlerElement = Assert.Single(eventElement.Element("Handlers")!.Elements("Handler"));
+        Assert.Equal("Example1.onCreditLimitChange", handlerElement.Attribute("functionName")?.Value);
+    }
+
+    [Fact]
+    public void SetHandlers_OnChangeExistingOtherAttributeEvent_OnlyModifiesTargetedAttributeEvent()
+    {
+        var doc = XDocument.Parse(TwoOnChangeAttributesFormXml);
+        var revenueEventBefore = doc.Root!.Element("events")!.Elements("event")
+            .First(e => e.Attribute("attribute")?.Value == "revenue").ToString();
+        var desired = new HashSet<FormEventHandler> { new("Example1.onCreditLimitChangeV2", "av_ns/example1.js", Guid.NewGuid(), "") };
+
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnChange, desired, "creditlimit");
+
+        var revenueEventAfter = doc.Root!.Element("events")!.Elements("event")
+            .First(e => e.Attribute("attribute")?.Value == "revenue").ToString();
+        Assert.Equal(revenueEventBefore, revenueEventAfter);
+
+        var creditLimitEvent = doc.Root!.Element("events")!.Elements("event")
+            .First(e => e.Attribute("attribute")?.Value == "creditlimit");
+        var handlerElement = Assert.Single(creditLimitEvent.Element("Handlers")!.Elements("Handler"));
+        Assert.Equal("Example1.onCreditLimitChangeV2", handlerElement.Attribute("functionName")?.Value);
+    }
+
+    [Fact]
+    public void SetHandlers_OnLoadUnaffectedByAttributeParameter_DefaultsStayTrueTrue()
+    {
+        var doc = XDocument.Parse(NoEventsFormXml);
+        var desired = new HashSet<FormEventHandler> { new("Example1.onLoad", "av_ns/example1.js", Guid.NewGuid(), "") };
+
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnLoad, desired);
+
+        var eventElement = doc.Root!.Element("events")!.Element("event")!;
+        Assert.Equal("true", eventElement.Attribute("application")?.Value);
+        Assert.Equal("true", eventElement.Attribute("active")?.Value);
+        Assert.Null(eventElement.Attribute("attribute"));
+    }
+
+    [Fact]
+    public void GetOnChangeAttributes_TwoOnChangeEventElements_ReturnsBothAttributeNames()
+    {
+        var doc = XDocument.Parse(TwoOnChangeAttributesFormXml);
+
+        var result = FormXmlEventSerializer.GetOnChangeAttributes(doc);
+
+        Assert.True(result.SetEquals(new[] { "creditlimit", "revenue" }));
+    }
+
+    [Fact]
+    public void GetOnChangeAttributes_NoOnChangeEvents_ReturnsEmptySet()
+    {
+        var doc = XDocument.Parse(RealisticFormXml);
+
+        var result = FormXmlEventSerializer.GetOnChangeAttributes(doc);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void RoundTrip_SetHandlersOnChangeThenGetHandlers_ReturnsOriginalDesiredSet()
+    {
+        var doc = XDocument.Parse(NoEventsFormXml);
+        var desired = new HashSet<FormEventHandler>
+        {
+            new("Example1.onCreditLimitChange", "av_ns/example1.js", Guid.NewGuid(), "")
+        };
+
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnChange, desired, "creditlimit");
+        var result = FormXmlEventSerializer.GetHandlers(doc, FormEventType.OnChange, "creditlimit");
+
+        Assert.Equal(desired, result);
+    }
+
+    [Fact]
+    public void SetHandlers_OnChange_HandlerAttributeOrderMatchesEmpiricalShape()
+    {
+        var doc = XDocument.Parse(NoEventsFormXml);
+        var handlerId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var desired = new HashSet<FormEventHandler> { new("Example1.onCreditLimitChange", "av_ns/example1.js", handlerId, "") };
+
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnChange, desired, "creditlimit");
+
+        var handlerElement = doc.Root!.Element("events")!.Element("event")!.Element("Handlers")!.Element("Handler")!;
+        Assert.Equal(
+            """<Handler functionName="Example1.onCreditLimitChange" libraryName="av_ns/example1.js" handlerUniqueId="{cccccccc-cccc-cccc-cccc-cccccccccccc}" enabled="true" parameters="" passExecutionContext="true" />""",
+            handlerElement.ToString(SaveOptions.DisableFormatting));
+    }
 }
