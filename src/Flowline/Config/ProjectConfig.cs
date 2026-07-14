@@ -176,7 +176,7 @@ public class ProjectConfig
             Name = solution.Name.Trim(),
             IncludeManaged = solution.IncludeManaged,
             Generate = solution.Generate,
-            ForceClassicPluginAssembly = solution.ForceClassicPluginAssembly,
+            PluginPackageMode = solution.PluginPackageMode,
         };
 
         _solutions.Remove(normalizedSolution);
@@ -193,7 +193,7 @@ public class ProjectConfig
             Name = name,
             IncludeManaged = includeManaged,
             Generate = existing?.Generate,
-            ForceClassicPluginAssembly = existing?.ForceClassicPluginAssembly ?? false,
+            PluginPackageMode = existing?.PluginPackageMode ?? PluginPackageMode.Auto,
         });
     }
 
@@ -239,7 +239,7 @@ public class ProjectConfig
                 Name = name,
                 IncludeManaged = includeManaged.Value,
                 Generate = sln.Generate,
-                ForceClassicPluginAssembly = sln.ForceClassicPluginAssembly,
+                PluginPackageMode = sln.PluginPackageMode,
             });
         }
 

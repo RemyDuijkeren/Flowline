@@ -48,6 +48,8 @@ NuGet package deployment has been the platform default for new Dataverse plugin 
 
 - **KD5 — A `.nupkg` can contain multiple plugin-bearing DLLs; reflection and type lookup must be per-assembly, not per-package.** A `.nupkg`'s `lib/<tfm>/` folder holds one primary DLL plus any dependency DLLs not marked `PrivateAssets="All"` (the mechanism that makes Dependent Assemblies work at all) — and there is nothing stopping a project from producing, or a package from bundling, more than one DLL that itself contains plugin classes (e.g. a `ProjectReference` to another plugin-bearing project). Live verification injected a second, independent DLL with its own `IPlugin` class into an existing package's `lib/net462/` folder and confirmed Dataverse creates **one `pluginassembly` record per DLL that contains plugin types**, correctly skipping the pure-dependency DLL (Newtonsoft.Json.dll) entirely — 2 assemblies were created, not 3, each scoped to only its own plugin types. Flowline's existing single-DLL `PluginAssemblyReader.Analyze(string dllPath)` (`PluginAssemblyReader.cs:47`) cannot be reused as-is for the NuGet path: it must be extended to enumerate every DLL inside the package's `lib/<tfm>/` folder, reflect each one, and skip any DLL containing no class implementing `IPlugin` — mirroring the exact filter Dataverse itself applies. Step/custom API registration (R7) must then resolve each attribute-decorated type back to the correct `plugintype`, which is scoped under the correct `pluginassembly` (matched by assembly name) — a package with N plugin-bearing DLLs has N independent assembly/type-record sets, not one.
 
+  Framing note: multiple plugin-bearing DLLs in one `.nupkg` is the genuine edge case here, not the mainline. A `dotnet` project normally produces one NuGet package each, so a second plugin-bearing DLL only shows up via a deliberate `ProjectReference` chain into another plugin project — not something that happens by accident the way a single extra dependency DLL does. The whole reason to prefer the NuGet/Dependent-Assemblies path over the classic `.dll` path is to avoid ILMerge/ILRepack for genuinely non-plugin dependency DLLs (Newtonsoft.Json and the like — see the Problem Frame above), not to bundle multiple independent plugin projects into one package. KD5/KTD15/KTD16 and U1/U4/U5's per-assembly scoping still have to be correct regardless — a rare configuration that silently corrupts a sibling assembly's registrations (the P0 fixed post-implementation, see Implementation Units) is exactly as bad as a common one — but this is why the plan does not invest further in N>2-assembly ergonomics, performance, or UX: real-world packages are expected to carry at most one or two plugin-bearing DLLs.
+
 - **KD6 — The NuGet path must work identically through `flowline push`'s auto-detected build output and the existing standalone `--pluginFile` flag.** Flowline already has a `-p|--pluginFile <PATH>` standalone mode (`PushCommand.cs:43`) that explicitly rejects `.nupkg` today: `ResolveStandalonePluginFilePath` throws "NuGet packages not yet supported — use a .dll file." (`PushCommand.cs:391-395`). The package-reflection-and-upload logic this plan adds must be a single shared code path taking a `.nupkg` file path, invoked identically whether that path came from auto-detecting the plugins project's build output (project mode) or from an explicit `--pluginFile some.nupkg` (standalone mode) — not something wired only into the auto-detect flow.
 
 ### Requirements
@@ -55,7 +57,7 @@ NuGet package deployment has been the platform default for new Dataverse plugin 
 **Detection and configuration**
 
 - R1. When the plugins project build output contains a `.nupkg`, Flowline selects the NuGet package deployment path automatically.
-- R2. A `.flowline` config key forces the classic DLL path even when a `.nupkg` is present in the build output. The key lives per-solution (KTD12), not at the config root.
+- R2. A `.flowline` config key (`PluginPackageMode`: `Auto` | `Nupkg` | `Dll`, default `Auto`) controls the deployment path. `Auto` keeps R1's zero-config auto-detect (nupkg if the build produced one, else the classic DLL); `Dll` forces the classic path even when a `.nupkg` is present; `Nupkg` requires a `.nupkg` and fails loudly instead of silently falling back to the classic DLL when the build didn't produce one. The key lives per-solution (KTD12), not at the config root. (Superseded during implementation: originally scoped as a `ForceClassicPluginAssembly` boolean — widened to a 3-state enum so a team can also assert "must be nupkg" rather than only "must be classic".)
 - R2a. The existing standalone `-p|--pluginFile <PATH>` flag accepts a `.nupkg` path in addition to `.dll` (`ResolveStandalonePluginFilePath`, `PushCommand.cs:386-401`, currently throws "NuGet packages not yet supported" for `.nupkg` at line 391-392). The reflection/upload logic is shared between this path and the auto-detected project-mode path (KD6) — no separate implementation for standalone mode.
 
 **Pre-flight validation**
@@ -256,7 +258,7 @@ Live-verified 2026-07-14 against the AutomateValue Dev Dataverse environment (`h
 
 - **KTD11 — Publisher prefix is resolved live, not read from `.flowline` config.** `RegistrationSnapshot.PublisherPrefix` (`RegistrationSnapshot.cs:15`) is already populated by `PluginReader.GetPublisherPrefixAsync` (`PluginReader.cs:319`) / `SolutionReader` by querying the target solution's linked publisher (`customizationprefix`) at push time — the same value the classic path already uses for web resources and Custom APIs (`WebResourceService.cs:77`, `PluginPlanner.cs:439,498`). This corrects an assumption in the original requirements doc ("Publisher prefix ... available in `.flowline` config") — no new config key is needed; R5 reuses this existing resolution path.
 
-- **KTD12 — The force-classic-DLL config key lives on `ProjectSolution`, per-solution.** `ProjectConfig` (`src/Flowline/Config/ProjectConfig.cs`) holds only environment URLs at the root; per-solution settings (`IncludeManaged`, `Generate`) live on `ProjectSolution` (`src/Flowline/Config/ProjectSolution.cs`). R2's new boolean key follows that existing precedent rather than introducing a root-level flag.
+- **KTD12 — The `PluginPackageMode` config key lives on `ProjectSolution`, per-solution.** `ProjectConfig` (`src/Flowline/Config/ProjectConfig.cs`) holds only environment URLs at the root; per-solution settings (`IncludeManaged`, `Generate`) live on `ProjectSolution` (`src/Flowline/Config/ProjectSolution.cs`). R2's new key follows that existing precedent rather than introducing a root-level flag. Serializes as a string (`[JsonConverter(typeof(JsonStringEnumConverter))]`, matching `GeneratorType`'s existing precedent), not the underlying int, so `.flowline` stays human-readable/-editable.
 
 - **KTD13 — Extends existing services directly; no new parallel pipeline.** `PluginReader`/`PluginPlanner`/`PluginExecutor`/`PluginService` are extended in place for the NuGet path — no new `PluginPackageService`-style class. In particular, `PluginExecutor`'s existing Level-ordered `RunUpsertsAsync`/`RunDeletesAsync`/`RunAddSolutionComponentsAsync` (`PluginExecutor.cs:24-178`) already delete leaf-first (images/props/params → steps/customapis → plugintypes) and upsert types-first — exactly the ordering KD4 needs. The NuGet path reuses these methods unchanged; the only new orchestration is *when* they run: the Steps/CustomApis-delete portion must execute before the `pluginpackage` content update, not after, since Flowline never calls `DeleteAsync("plugintype", ...)` itself on this path (Dataverse's package sync removes the now-empty type automatically, KD2). This is a sequencing change in the caller (`PluginService`), not a new execution primitive.
 
@@ -347,9 +349,9 @@ flowchart TB
 
 ---
 
-### U2. `.flowline` config — force-classic-DLL key
+### U2. `.flowline` config — `PluginPackageMode` key
 
-**Goal:** Add the per-solution config key that lets a project force the classic DLL path even when a `.nupkg` is present (R2).
+**Goal:** Add the per-solution `PluginPackageMode` config key (`Auto` | `Nupkg` | `Dll`) that lets a project force the classic DLL path, require the NuGet package path, or keep today's zero-config auto-detect (R2).
 
 **Requirements:** R2
 
@@ -359,13 +361,13 @@ flowchart TB
 - `src/Flowline/Config/ProjectSolution.cs`
 - Corresponding `ProjectConfig`/`ProjectSolution` test file (locate existing coverage, e.g. `tests/Flowline.Tests/Config/`)
 
-**Approach:** Add a new boolean property to `ProjectSolution` (`src/Flowline/Config/ProjectSolution.cs`) following the exact shape of the existing `IncludeManaged` property (`ProjectSolution.cs:9`: `public bool IncludeManaged { get; set; } = false;`) — same visibility, same default-false convention, serialized the same way (no `[JsonIgnore]` needed since it's a plain bool, unlike the nullable `Generate` object). Name it to read clearly at the call site in `PushCommand` (e.g. something conveying "always use the classic DLL path for this solution").
+**Approach:** Add a `PluginPackageMode` enum (`Auto`, `Nupkg`, `Dll`) and a matching property to `ProjectSolution` (`src/Flowline/Config/ProjectSolution.cs`), defaulting to `Auto`. Decorate the enum with `[JsonConverter(typeof(JsonStringEnumConverter))]`, matching `GeneratorType`'s existing precedent (`src/Flowline/Config/GeneratorType.cs`), so `.flowline` serializes the mode as a readable string rather than the underlying int. (Superseded during implementation — see R2's note: the original single boolean, modeled on `IncludeManaged`'s shape, was widened to a 3-state enum so a project can also assert "must be nupkg, fail if the build didn't produce one," not only "must be classic.")
 
-**Patterns to follow:** `IncludeManaged`'s property declaration and its round-trip through `ProjectConfig.Load`/`Save` (`ProjectConfig.cs:236-273`, unchanged — `JsonSerializer` picks up the new property automatically).
+**Patterns to follow:** `GeneratorType`'s enum + `JsonStringEnumConverter` pattern for the type itself; `IncludeManaged`'s property declaration and its round-trip through `ProjectConfig.Load`/`Save` (`ProjectConfig.cs:236-273`, unchanged — `JsonSerializer` picks up the new property automatically) for how it plugs into `ProjectSolution`.
 
 **Test scenarios:**
-- Happy path: a `.flowline` file with the new key set to `true` round-trips through `ProjectConfig.Load`/`Save` correctly.
-- Happy path: a `.flowline` file without the key at all deserializes with the property defaulted to `false` (backward compatible with existing config files).
+- Happy path: a `.flowline` file with the key set to `"Dll"` (or `"Nupkg"`) round-trips through `ProjectConfig.Load`/`Save` correctly, serialized as a string.
+- Happy path: a `.flowline` file without the key at all deserializes with the property defaulted to `Auto` (backward compatible with existing config files).
 
 **Verification:** `dotnet test tests/Flowline.Tests/Flowline.Tests.csproj` — config round-trip scenarios pass.
 
@@ -509,14 +511,15 @@ Marker write (part of R6): `Update` the primary assembly with `description` set 
 - `src/Flowline/Commands/PushCommand.cs`
 - `tests/Flowline.Tests/PushCommandTests.cs` (or equivalent existing coverage)
 
-**Approach:** In project mode, after the existing build-output detection logic locates the plugins project's output, check for a `.nupkg` alongside the `.dll`; if present and the new `ProjectSolution` force-dll key (U2) is not set, call the new package entry point (U6) instead of today's DLL-based `SyncSolutionAsync`. In standalone mode, `ResolveStandalonePluginFilePath` (`PushCommand.cs:386-401`) currently throws for `.nupkg` at line 391-392 — replace that branch with acceptance of the `.nupkg` extension, routing to the exact same U6 entry point used by project mode (KD6) rather than a separate code path.
+**Approach:** In project mode, after the existing build-output detection logic locates the plugins project's output, check for a `.nupkg` alongside the `.dll`; under `PluginPackageMode.Auto` or `Nupkg` (U2), call the new package entry point (U6) instead of today's DLL-based `SyncSolutionAsync`; under `Dll`, always use the classic path. `Nupkg` additionally fails loudly (`FlowlineException`) if no `.nupkg` was found, instead of `Auto`'s silent fallback to the classic DLL. In standalone mode, `ResolveStandalonePluginFilePath` (`PushCommand.cs:386-401`) currently throws for `.nupkg` at line 391-392 — replace that branch with acceptance of the `.nupkg` extension, routing to the exact same U6 entry point used by project mode (KD6) rather than a separate code path.
 
 **Patterns to follow:** the existing `.dll`/build-output detection branch this new check sits alongside; `ResolveStandalonePluginFilePath`'s existing extension-check structure (just flipping the `.nupkg` branch from reject to accept-and-route).
 
 **Test scenarios:**
-- Happy path: build output has both `.dll` and `.nupkg`, no force-dll config — routes to the package path.
-- Happy path: build output has both, force-dll config set on the `ProjectSolution` — routes to the classic DLL path, `.nupkg` ignored.
-- Happy path: build output has only `.dll` (no `.nupkg`) — routes to the classic DLL path unchanged (regression guard — most existing plugin projects don't produce a `.nupkg` yet).
+- Happy path: build output has both `.dll` and `.nupkg`, `PluginPackageMode.Auto` — routes to the package path.
+- Happy path: build output has both, `PluginPackageMode.Dll` — routes to the classic DLL path, `.nupkg` ignored.
+- Happy path: build output has only `.dll` (no `.nupkg`), `PluginPackageMode.Auto` — routes to the classic DLL path unchanged (regression guard — most existing plugin projects don't produce a `.nupkg` yet).
+- Error path: build output has only `.dll` (no `.nupkg`), `PluginPackageMode.Nupkg` — fails loudly instead of silently falling back to the classic DLL.
 - Happy path: standalone `--pluginFile ./x.nupkg` — routes to the same package entry point as project mode, rather than the old rejection.
 - Regression: standalone `--pluginFile ./x.dll` — unchanged classic-path behavior.
 
@@ -568,7 +571,7 @@ No `release:validate` or CI/CD-specific gate applies beyond the existing `dotnet
 ## Definition of Done
 
 - U1-U8 implemented; all listed test scenarios pass.
-- `flowline push` auto-detects a `.nupkg` in build output and uses the package path, unless the new force-dll config key is set (R1, R2).
+- `flowline push` auto-detects a `.nupkg` in build output and uses the package path under `PluginPackageMode.Auto` (default), unless the solution's `PluginPackageMode` is set to `Dll` (R1, R2).
 - Standalone `flowline push <solution> --pluginFile ./x.nupkg` deploys via the same package path as project mode, replacing today's "NuGet packages not yet supported" rejection (R2a).
 - A `.nupkg` with zero plugin-bearing DLLs is rejected with an actionable error before any Dataverse write (R3a).
 - A `.nupkg` containing multiple plugin-bearing DLLs registers steps correctly against each DLL's own auto-created plugin types, using an independently-scoped snapshot per assembly rather than a merged one (R3, R7, KD5, KTD15).

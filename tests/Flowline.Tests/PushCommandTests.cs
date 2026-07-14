@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Reflection;
 using System.Reflection.Emit;
 using Flowline.Commands;
+using Flowline.Config;
 using FluentAssertions;
 using Microsoft.Xrm.Sdk;
 using Spectre.Console.Cli;
@@ -199,7 +200,7 @@ public class PushCommandTests : IDisposable
     // net462/, not alongside the .dll itself. ResolvePluginPushPath must search the whole root.
 
     [Fact]
-    public void ResolvePluginPushPath_DllAndNupkgNoForce_ShouldReturnNupkg()
+    public void ResolvePluginPushPath_DllAndNupkgAutoMode_ShouldReturnNupkg()
     {
         var buildOutputRoot = Path.Combine(_root, "bin", "Release");
         var publishDir = Path.Combine(buildOutputRoot, "net462", "publish");
@@ -209,11 +210,11 @@ public class PushCommandTests : IDisposable
         File.WriteAllText(dll, "");
         File.WriteAllText(nupkg, "");
 
-        PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, forceClassicPluginAssembly: false).Should().Be(nupkg);
+        PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Auto).Should().Be(nupkg);
     }
 
     [Fact]
-    public void ResolvePluginPushPath_DllAndNupkgWithForceClassic_ShouldReturnDll()
+    public void ResolvePluginPushPath_DllAndNupkgDllMode_ShouldReturnDll()
     {
         var buildOutputRoot = Path.Combine(_root, "bin", "Release");
         var publishDir = Path.Combine(buildOutputRoot, "net462", "publish");
@@ -223,11 +224,25 @@ public class PushCommandTests : IDisposable
         File.WriteAllText(dll, "");
         File.WriteAllText(nupkg, "");
 
-        PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, forceClassicPluginAssembly: true).Should().Be(dll);
+        PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Dll).Should().Be(dll);
     }
 
     [Fact]
-    public void ResolvePluginPushPath_DllOnly_ShouldReturnDll()
+    public void ResolvePluginPushPath_DllAndNupkgNupkgMode_ShouldReturnNupkg()
+    {
+        var buildOutputRoot = Path.Combine(_root, "bin", "Release");
+        var publishDir = Path.Combine(buildOutputRoot, "net462", "publish");
+        Directory.CreateDirectory(publishDir);
+        var dll = Path.Combine(publishDir, "Plugins.dll");
+        var nupkg = Path.Combine(buildOutputRoot, "Plugins.1.0.0.nupkg");
+        File.WriteAllText(dll, "");
+        File.WriteAllText(nupkg, "");
+
+        PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Nupkg).Should().Be(nupkg);
+    }
+
+    [Fact]
+    public void ResolvePluginPushPath_DllOnlyAutoMode_ShouldReturnDll()
     {
         // Regression guard: most existing plugin projects don't produce a .nupkg yet.
         var buildOutputRoot = Path.Combine(_root, "bin", "Release");
@@ -236,11 +251,25 @@ public class PushCommandTests : IDisposable
         var dll = Path.Combine(publishDir, "Plugins.dll");
         File.WriteAllText(dll, "");
 
-        PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, forceClassicPluginAssembly: false).Should().Be(dll);
+        PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Auto).Should().Be(dll);
     }
 
     [Fact]
-    public void ResolvePluginPushPath_MissingBuildOutputRoot_ShouldReturnDll()
+    public void ResolvePluginPushPath_DllOnlyNupkgMode_ThrowsInsteadOfSilentlyFallingBackToDll()
+    {
+        var buildOutputRoot = Path.Combine(_root, "bin", "Release");
+        var publishDir = Path.Combine(buildOutputRoot, "net462", "publish");
+        Directory.CreateDirectory(publishDir);
+        var dll = Path.Combine(publishDir, "Plugins.dll");
+        File.WriteAllText(dll, "");
+
+        var act = () => PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Nupkg);
+
+        act.Should().Throw<Flowline.FlowlineException>().WithMessage("*Nupkg*no .nupkg was found*");
+    }
+
+    [Fact]
+    public void ResolvePluginPushPath_MissingBuildOutputRootAutoMode_ShouldReturnDll()
     {
         // --no-build with a stale/missing bin folder shouldn't throw here — the earlier File.Exists(dll)
         // check in PreparePluginsForPushAsync already guards the real "nothing built" case.
@@ -248,7 +277,7 @@ public class PushCommandTests : IDisposable
         var dll = Path.Combine(_root, "Plugins.dll");
         File.WriteAllText(dll, "");
 
-        PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, forceClassicPluginAssembly: false).Should().Be(dll);
+        PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Auto).Should().Be(dll);
     }
 
     [Fact]
@@ -265,7 +294,7 @@ public class PushCommandTests : IDisposable
         File.WriteAllText(Path.Combine(buildOutputRoot, "Plugins.1.0.0.nupkg"), "");
         File.WriteAllText(Path.Combine(buildOutputRoot, "Plugins.1.0.1.nupkg"), "");
 
-        var act = () => PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, forceClassicPluginAssembly: false);
+        var act = () => PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Auto);
 
         act.Should().Throw<Flowline.FlowlineException>()
             .WithMessage("*Plugins.1.0.0.nupkg*Plugins.1.0.1.nupkg*");

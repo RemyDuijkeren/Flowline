@@ -138,26 +138,27 @@ public class ProjectConfigTests
     }
 
     [Fact]
-    public void ForceClassicPluginAssembly_True_RoundTripsViaJson()
+    public void PluginPackageMode_Dll_RoundTripsViaJsonAsString()
     {
         var config = new ProjectConfig();
         var sln = config.AddOrUpdateSolution("MySolution");
-        sln.ForceClassicPluginAssembly = true;
+        sln.PluginPackageMode = PluginPackageMode.Dll;
 
         var json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
         var restored = JsonSerializer.Deserialize<ProjectConfig>(json)!;
 
-        restored.Solutions.Single().ForceClassicPluginAssembly.Should().BeTrue();
+        json.Should().Contain("\"Dll\"");
+        restored.Solutions.Single().PluginPackageMode.Should().Be(PluginPackageMode.Dll);
     }
 
     [Fact]
-    public void ForceClassicPluginAssembly_MissingFromJson_DefaultsToFalse()
+    public void PluginPackageMode_MissingFromJson_DefaultsToAuto()
     {
         var json = """{"Solutions":[{"Name":"MySolution"}]}""";
 
         var config = JsonSerializer.Deserialize<ProjectConfig>(json)!;
 
-        config.Solutions.Single().ForceClassicPluginAssembly.Should().BeFalse();
+        config.Solutions.Single().PluginPackageMode.Should().Be(PluginPackageMode.Auto);
     }
 
     [Fact]
@@ -173,31 +174,31 @@ public class ProjectConfigTests
     }
 
     [Fact]
-    public void AddOrUpdateSolution_PreservesForceClassicPluginAssembly_WhenCallerThreadsItThrough()
+    public void AddOrUpdateSolution_PreservesPluginPackageMode_WhenCallerThreadsItThrough()
     {
         // Regression guard: AddOrUpdateSolution's normalizedSolution construction must copy every
         // ProjectSolution field, not just Name/IncludeManaged/Generate — otherwise even a caller that
         // explicitly threads the prior value through (the same pattern the existing Generate test
         // above uses) would still lose it.
         var config = new ProjectConfig();
-        var sln = config.AddOrUpdateSolution(new ProjectSolution { Name = "MySolution", IncludeManaged = false, ForceClassicPluginAssembly = true });
+        var sln = config.AddOrUpdateSolution(new ProjectSolution { Name = "MySolution", IncludeManaged = false, PluginPackageMode = PluginPackageMode.Dll });
 
-        config.AddOrUpdateSolution(new ProjectSolution { Name = "MySolution", IncludeManaged = true, ForceClassicPluginAssembly = sln.ForceClassicPluginAssembly });
+        config.AddOrUpdateSolution(new ProjectSolution { Name = "MySolution", IncludeManaged = true, PluginPackageMode = sln.PluginPackageMode });
 
-        config.Solutions.Single().ForceClassicPluginAssembly.Should().BeTrue();
+        config.Solutions.Single().PluginPackageMode.Should().Be(PluginPackageMode.Dll);
     }
 
     [Fact]
-    public void AddOrUpdateSolution_StringOverload_PreservesForceClassicPluginAssembly()
+    public void AddOrUpdateSolution_StringOverload_PreservesPluginPackageMode()
     {
         var config = new ProjectConfig();
-        config.AddOrUpdateSolution(new ProjectSolution { Name = "MySolution", ForceClassicPluginAssembly = true });
+        config.AddOrUpdateSolution(new ProjectSolution { Name = "MySolution", PluginPackageMode = PluginPackageMode.Nupkg });
 
         // The (string, bool) overload re-adds by name only — it must still preserve the existing
-        // solution's ForceClassicPluginAssembly rather than defaulting it to false.
+        // solution's PluginPackageMode rather than defaulting it to Auto.
         config.AddOrUpdateSolution("MySolution", includeManaged: true);
 
-        config.Solutions.Single().ForceClassicPluginAssembly.Should().BeTrue();
+        config.Solutions.Single().PluginPackageMode.Should().Be(PluginPackageMode.Nupkg);
     }
 
     [Fact]

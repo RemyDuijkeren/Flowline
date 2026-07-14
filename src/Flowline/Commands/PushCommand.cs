@@ -117,7 +117,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (standaloneMode)
             environmentUrl = ResolveStandaloneEnvironmentUrl(settings, dataverseConnector);
 
-        var (devEnv, solutionName, forceClassicPluginAssembly) = await ResolveEnvironmentAndSolutionAsync(settings, standaloneMode, environmentUrl, standaloneParams, cancellationToken);
+        var (devEnv, solutionName, pluginPackageMode) = await ResolveEnvironmentAndSolutionAsync(settings, standaloneMode, environmentUrl, standaloneParams, cancellationToken);
 
         if (!standaloneMode)
             environmentUrl = devEnv.EnvironmentUrl!;
@@ -129,7 +129,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         Logger.LogInformation("scope={Scope} mode={RunMode} standalone={Standalone}", pushScope, runMode, standaloneMode);
 
         var (pluginsPushPath, pluginAssemblyName, reflectedPackageAssemblies) = (pushAssemblyOnly || pushScope.HasFlag(PushScope.Plugins))
-            ? await PreparePluginsForPushAsync(standaloneMode, settings, solutionName, forceClassicPluginAssembly, standaloneParams, cancellationToken)
+            ? await PreparePluginsForPushAsync(standaloneMode, settings, solutionName, pluginPackageMode, standaloneParams, cancellationToken)
             : (null, null, null);
         // FormEvents reads its annotations from the same built dist/ folder web resource sync uses, so
         // either scope alone needs it prepared — WebResources still implies FormEvents (unchanged default
@@ -229,7 +229,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         return new StandaloneParams { SolutionName = solutionName, DllPath = dllPath, WebResourcesPath = webResourcesPath };
     }
 
-    private async Task<(EnvironmentInfo, string, bool)> ResolveEnvironmentAndSolutionAsync(
+    private async Task<(EnvironmentInfo, string, PluginPackageMode)> ResolveEnvironmentAndSolutionAsync(
         Settings settings,
         bool standaloneMode,
         string environmentUrl,
@@ -239,7 +239,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         EnvironmentInfo devEnv;
         string solutionName;
         SolutionInfo slnInfo;
-        var forceClassicPluginAssembly = false;
+        var pluginPackageMode = PluginPackageMode.Auto;
 
         if (standaloneMode)
         {
@@ -253,20 +253,20 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             var (projectSln, slnInfoResult) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, cancellationToken: cancellationToken, settings: settings);
             slnInfo = slnInfoResult;
             solutionName = projectSln.Name;
-            forceClassicPluginAssembly = projectSln.ForceClassicPluginAssembly;
+            pluginPackageMode = projectSln.PluginPackageMode;
         }
 
         if (slnInfo.IsManaged)
             throw new FlowlineException(ExitCode.ValidationFailed, "Managed solutions are not supported for push.");
 
-        return (devEnv, solutionName, forceClassicPluginAssembly);
+        return (devEnv, solutionName, pluginPackageMode);
     }
 
     private async Task<(string? PushPath, string? AssemblyName, List<PluginAssemblyMetadata>? ReflectedAssemblies)> PreparePluginsForPushAsync(
         bool standaloneMode,
         Settings settings,
         string solutionName,
-        bool forceClassicPluginAssembly,
+        PluginPackageMode pluginPackageMode,
         StandaloneParams standaloneParams,
         CancellationToken cancellationToken)
     {
@@ -294,9 +294,10 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
                 : $"{PluginsName}.dll not found — build the solution (Release) first, or drop --no-build.");
 
         // R1/KD1: a .nupkg anywhere under the build output root routes to the package deployment path
-        // automatically, unless ForceClassicPluginAssembly (U2/R2) opts back into the classic path.
-        // Standalone mode already has its final path resolved (ResolveStandalonePluginFilePath).
-        var pluginsPushPath = standaloneMode ? pluginsDll : ResolvePluginPushPath(pluginsDll, releaseOutputRoot!, forceClassicPluginAssembly);
+        // automatically under PluginPackageMode.Auto (U2/R2's default); Nupkg requires one and Dll opts
+        // back into the classic path regardless. Standalone mode already has its final path resolved
+        // (ResolveStandalonePluginFilePath).
+        var pluginsPushPath = standaloneMode ? pluginsDll : ResolvePluginPushPath(pluginsDll, releaseOutputRoot!, pluginPackageMode);
 
         // Project mode's build output assembly name is deterministic (PluginsName). Standalone mode has
         // no such project context — for a .nupkg, the file itself typically embeds its NuGet version
@@ -424,18 +425,28 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         throw new FlowlineException(ExitCode.ValidationFailed, "Dev URL is required in standalone mode — use --dev <URL> or select a resource-specific PAC profile.");
     }
 
-    // R1/KD1: build output has a .dll for certain (regression-checked above); if a .nupkg exists anywhere
-    // under the build output root — dotnet pack drops it at bin/Release/ directly, a sibling of the
-    // net462/publish/ folder the .dll itself lives in, not alongside the .dll — and the solution hasn't
-    // opted into ForceClassicPluginAssembly (U2/R2), use it.
-    internal static string ResolvePluginPushPath(string dllPath, string buildOutputRoot, bool forceClassicPluginAssembly)
+    // R1/KD1: build output has a .dll for certain (regression-checked above). PluginPackageMode.Dll opts
+    // out of the .nupkg search entirely (classic path, unconditionally). Auto and Nupkg both search the
+    // whole build output root for a .nupkg — dotnet pack drops it at bin/Release/ directly, a sibling of
+    // the net462/publish/ folder the .dll itself lives in, not alongside the .dll — and differ only in
+    // what happens when none is found: Auto falls back to the .dll silently, Nupkg fails loudly (U2/R2).
+    internal static string ResolvePluginPushPath(string dllPath, string buildOutputRoot, PluginPackageMode mode)
     {
-        if (forceClassicPluginAssembly || !Directory.Exists(buildOutputRoot))
+        if (mode == PluginPackageMode.Dll)
             return dllPath;
 
-        var nupkgPaths = Directory.GetFiles(buildOutputRoot, "*.nupkg", SearchOption.AllDirectories);
+        var nupkgPaths = Directory.Exists(buildOutputRoot)
+            ? Directory.GetFiles(buildOutputRoot, "*.nupkg", SearchOption.AllDirectories)
+            : [];
+
         if (nupkgPaths.Length == 0)
+        {
+            if (mode == PluginPackageMode.Nupkg)
+                throw new FlowlineException(ExitCode.ValidationFailed,
+                    "PluginPackageMode is \"Nupkg\" but no .nupkg was found under the build output — " +
+                    "enable packaging in the Plugins project (GeneratePackageOnBuild), or switch PluginPackageMode to \"Auto\" or \"Dll\".");
             return dllPath;
+        }
 
         // dotnet pack's filename embeds the NuGet version (e.g. "MyPlugins.1.0.0.nupkg") and neither
         // build nor pack cleans a previously-produced .nupkg with a different version out of bin/Release
