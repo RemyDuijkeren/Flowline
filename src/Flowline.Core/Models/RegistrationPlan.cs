@@ -28,6 +28,22 @@ public class RegistrationPlan
     public int TotalUpserts => PluginTypes.Upserts.Count + Steps.Upserts.Count + Images.Upserts.Count
                              + CustomApis.Upserts.Count + RequestParams.Upserts.Count + ResponseProps.Upserts.Count;
     public int TotalChanges => TotalDeletes + TotalUpserts;
+
+    // KD2/KD4/KTD13: Flowline must never call DeleteAsync("plugintype", ...) — Dataverse's package sync
+    // removes an emptied plugin type automatically. Callers on the package path that need "everything
+    // else" this plan wants deleted, without touching plugin types, use this instead of hand-copying
+    // each category (a 7th category added to RegistrationPlan would otherwise be silently dropped here
+    // by omission — this method must be updated alongside any new category).
+    public RegistrationPlan NonPluginTypeDeletes()
+    {
+        var subset = new RegistrationPlan();
+        subset.Steps.Deletes.AddRange(Steps.Deletes);
+        subset.CustomApis.Deletes.AddRange(CustomApis.Deletes);
+        subset.Images.Deletes.AddRange(Images.Deletes);
+        subset.RequestParams.Deletes.AddRange(RequestParams.Deletes);
+        subset.ResponseProps.Deletes.AddRange(ResponseProps.Deletes);
+        return subset;
+    }
 }
 
 public record CustomApiGroup(string ApiName, ActionPlan Api, ActionPlan RequestParams, ActionPlan ResponseProps, string? PluginTypeName = null);

@@ -395,16 +395,7 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
                 var plan = _planner.Plan(snapshot, metadata, assemblyEntity, solutionName, preKnownPluginTypeIds);
                 if (plan.PluginTypes.Deletes.Count == 0) continue; // no class was removed for this assembly
 
-                var preUpdateDeletes = new RegistrationPlan();
-                preUpdateDeletes.Steps.Deletes.AddRange(plan.Steps.Deletes);
-                preUpdateDeletes.CustomApis.Deletes.AddRange(plan.CustomApis.Deletes);
-                preUpdateDeletes.Images.Deletes.AddRange(plan.Images.Deletes);
-                preUpdateDeletes.RequestParams.Deletes.AddRange(plan.RequestParams.Deletes);
-                preUpdateDeletes.ResponseProps.Deletes.AddRange(plan.ResponseProps.Deletes);
-                // PluginTypes.Deletes intentionally left empty — Dataverse's package sync removes the
-                // now-empty plugin type automatically; Flowline must never call DeleteAsync("plugintype", ...).
-
-                await _executor.ExecuteDeletesAsync(service, preUpdateDeletes, solutionName, false, cancellationToken).ConfigureAwait(false);
+                await _executor.ExecuteDeletesAsync(service, plan.NonPluginTypeDeletes(), solutionName, runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -420,9 +411,13 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         await WritePackageAssemblyMarkerAsync(service, primaryPost.Assembly, hash, cancellationToken).ConfigureAwait(false);
 
         // Re-plan per assembly against the post-update snapshot (types have changed for any assembly
-        // with removed classes) and run the remaining upserts/adds — deletes already ran above, and
-        // Flowline never calls DeleteAsync("plugintype", ...) on this path (KD2/KD4/KTD13), so this
-        // second pass intentionally never calls ExecuteDeletesAsync again.
+        // with removed classes) and run the remaining deletes/upserts/adds. The pre-update pass above
+        // only ever deletes steps/custom-APIs for an assembly whose PLUGIN TYPE was removed (the specific
+        // ordering KD4 requires before the content update) — a step or Custom API removed from a plugin
+        // type that itself survives is never covered by that gate. Guard the post-update delete on
+        // PluginTypes.Deletes being empty here so an assembly the pre-update pass already handled isn't
+        // reprocessed a second time once Dataverse's own package sync has removed its emptied type.
+        // PluginTypes.Deletes itself is never acted on (KD2/KD4/KTD13 — Dataverse handles that removal).
         var postKnownPluginTypeIds = AllPluginTypeIds(postSnapshots);
         foreach (var (metadata, assemblyEntity, snapshot) in postSnapshots)
         {
@@ -430,6 +425,8 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
                 throw new InvalidOperationException($"Assembly '{metadata.Name}' was not found under package '{packageUniqueName}' after the content update.");
 
             var plan = _planner.Plan(snapshot, metadata, assemblyEntity, solutionName, postKnownPluginTypeIds);
+            if (plan.PluginTypes.Deletes.Count == 0)
+                await _executor.ExecuteDeletesAsync(service, plan.NonPluginTypeDeletes(), solutionName, runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
             await _executor.ExecuteUpsertsAsync(service, plan, solutionName, cancellationToken).ConfigureAwait(false);
             await _executor.ExecuteAddToSolutionAsync(service, plan, cancellationToken).ConfigureAwait(false);
         }

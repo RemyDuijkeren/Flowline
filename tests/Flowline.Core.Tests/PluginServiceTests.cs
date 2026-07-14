@@ -1715,6 +1715,76 @@ public class PluginServiceTests
     }
 
     [Fact]
+    public async Task SyncSolutionFromPackageAsync_StepRemovedFromSurvivingType_DeletedAfterUpdate()
+    {
+        // Correctness regression: the plugin TYPE survives (still declared locally, so PluginTypes.Deletes
+        // is empty) but its only step was removed from source. The pre-update delete gate only fires on
+        // PluginTypes.Deletes (KD4's ordering constraint), so without a post-update delete pass this
+        // obsolete step would never be cleaned up.
+        var assemblyId = Guid.NewGuid();
+        var typeId = Guid.NewGuid();
+        var removedStepId = Guid.NewGuid();
+
+        SetupAssembly(PackageOwnedAssembly(assemblyId, hash: "stalehash"));
+        var packageId = Guid.NewGuid();
+        SetupPluginPackage(ExistingPluginPackage(packageId));
+        SetupPluginTypes(new Entity("plugintype", typeId) { ["typename"] = "Ns.Surviving" });
+        SetupSteps(new Entity("sdkmessageprocessingstep", removedStepId)
+        {
+            ["name"] = "Ns.Surviving: Update of account",
+            ["plugintypeid"] = new EntityReference("plugintype", typeId),
+            ["stage"] = new OptionSetValue(20)
+        });
+
+        // Locally, the type still exists but now declares zero steps — the step registration was removed
+        // from source while the class itself stayed.
+        var survivingType = new PluginTypeMetadata("Surviving", "Ns.Surviving", [], []);
+        var assemblies = new List<PluginAssemblyMetadata>
+        {
+            new("MyPlugin", "MyPlugin, Version=1.0.0.1", new byte[] { 9, 9, 9 }, "dll-hash-unused", "1.0.0.1", null, "neutral", [survivingType])
+        };
+
+        var result = await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, assemblies, NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
+
+        Assert.True(result);
+        await _serviceMock.Received(1).DeleteAsync("sdkmessageprocessingstep", removedStepId, Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().DeleteAsync("plugintype", Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_NoDeleteMode_NeverIssuesDeleteAsync()
+    {
+        // Reliability/correctness regression: --no-delete was previously ignored on the package path
+        // (hardcoded `false` passed to the executor's no-delete flag on both the pre- and post-update
+        // delete calls), so a removed class's steps were deleted even under RunMode.NoDelete.
+        var assemblyId = Guid.NewGuid();
+        var removedTypeId = Guid.NewGuid();
+        var removedStepId = Guid.NewGuid();
+
+        SetupAssembly(PackageOwnedAssembly(assemblyId, hash: "stalehash"));
+        var packageId = Guid.NewGuid();
+        SetupPluginPackage(ExistingPluginPackage(packageId));
+        SetupPluginTypes(new Entity("plugintype", removedTypeId) { ["typename"] = "Ns.Removed" });
+        SetupSteps(new Entity("sdkmessageprocessingstep", removedStepId)
+        {
+            ["name"] = "Ns.Removed: Update of account",
+            ["plugintypeid"] = new EntityReference("plugintype", removedTypeId),
+            ["stage"] = new OptionSetValue(20)
+        });
+
+        var assemblies = new List<PluginAssemblyMetadata>
+        {
+            new("MyPlugin", "MyPlugin, Version=1.0.0.1", new byte[] { 9, 9, 9 }, "dll-hash-unused", "1.0.0.1", null, "neutral", [])
+        };
+
+        await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, assemblies, NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution", RunMode.NoDelete);
+
+        await _serviceMock.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task SyncSolutionFromPackageAsync_TwoAssemblies_OnlyAffectedAssemblyStepsDeletedAndRecreated()
     {
         // Integration (KD5/KTD15): two assemblies, only one has a removed class — only its steps are
