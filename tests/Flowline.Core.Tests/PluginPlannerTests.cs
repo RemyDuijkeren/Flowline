@@ -1834,4 +1834,37 @@ public class PluginPlannerTests
         // not merely "correctly attributed" within a shared dictionary — there is no merged dictionary here.
         Assert.DoesNotContain("NamespaceB.TypeB", snapshotAScoped.PluginTypes.Keys);
     }
+
+    // Regression guard: PluginReader.GetRegisteredCustomApisAsync queries by publisher prefix only (not
+    // per-assembly, since a Custom API's plugintypeid doesn't narrow to one physical DLL the way steps do)
+    // — so a package's per-assembly snapshot.CustomApis legitimately contains a sibling assembly's still-live
+    // Custom API. Without knownPackageAssemblyPluginTypeIds, Plan's "unlinked Custom API" sweep can't tell
+    // that apart from a genuinely orphaned one and deletes it on every push (P0 found via adversarial review).
+    [Fact]
+    public void Plan_CustomApiOwnedBySiblingAssembly_DeletedWithoutSiblingIds_PreservedWhenPassed()
+    {
+        var typeIdA = Guid.NewGuid();
+        var typeIdB = Guid.NewGuid();
+        var siblingApiId = Guid.NewGuid();
+        var assemblyA = new Entity("pluginassembly", Guid.NewGuid()) { ["name"] = "AssemblyA" };
+
+        var pluginTypeA = new Entity("plugintype", typeIdA) { ["typename"] = "NamespaceA.TypeA", ["isworkflowactivity"] = false };
+        var siblingApi = new Entity("customapi", siblingApiId) { ["uniquename"] = "abc_SiblingApi", ["plugintypeid"] = new EntityReference("plugintype", typeIdB) };
+
+        var snapshotA = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase) { ["NamespaceA.TypeA"] = pluginTypeA },
+            customApis: [siblingApi]);
+
+        var metadataA = new PluginAssemblyMetadata("AssemblyA", "AssemblyA, Version=1.0.0.0", [1], "hashA", "1.0.0.0", null, "neutral",
+            [new PluginTypeMetadata("TypeA", "NamespaceA.TypeA", [], [], false)]);
+
+        // Without sibling awareness, the sweep can't distinguish "owned by assembly B" from "orphaned" —
+        // this is the bug this test pins the boundary of (classic single-assembly path stays unfixed/out
+        // of scope; only package-path callers that pass sibling ids get the correct behavior below).
+        var planWithoutSiblingIds = _planner.Plan(snapshotA, metadataA, assemblyA, "MySolution");
+        Assert.Contains(planWithoutSiblingIds.CustomApis.Deletes, d => d.Id == siblingApiId);
+
+        var planWithSiblingIds = _planner.Plan(snapshotA, metadataA, assemblyA, "MySolution", knownPackageAssemblyPluginTypeIds: new HashSet<Guid> { typeIdB });
+        Assert.DoesNotContain(planWithSiblingIds.CustomApis.Deletes, d => d.Id == siblingApiId);
+    }
 }

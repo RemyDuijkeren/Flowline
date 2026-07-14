@@ -25,7 +25,15 @@ public class PluginPlanner(IAnsiConsole console)
         ["UpdateMultiple"]        = "Targets",
     };
 
-    public RegistrationPlan Plan(RegistrationSnapshot snapshot, PluginAssemblyMetadata metadata, Entity assembly, string solutionName)
+    // knownPackageAssemblyPluginTypeIds: for a multi-assembly package (U4/KD5), snapshot.CustomApis is
+    // queried by publisher prefix only (not per-assembly, since a custom API's plugintypeid doesn't
+    // narrow to one physical DLL the way steps/images do) — so a sibling assembly's still-live Custom
+    // API shows up in every assembly's snapshot. Without this, the "unlinked Custom API" sweep below
+    // would see a sibling's API as unowned (its plugintypeid isn't among snapshot.PluginTypes, which is
+    // correctly assembly-scoped per KTD15) and delete it on every push. Callers planning a single
+    // classic assembly pass null; package callers pass the union of every sibling assembly's known
+    // plugin type ids so the sweep can tell "orphaned" apart from "owned by a sibling I'm not planning".
+    public RegistrationPlan Plan(RegistrationSnapshot snapshot, PluginAssemblyMetadata metadata, Entity assembly, string solutionName, IReadOnlySet<Guid>? knownPackageAssemblyPluginTypeIds = null)
     {
         var plan = new RegistrationPlan();
         var resolvedCustomApiNames = ResolveCustomApiNames(snapshot, metadata);
@@ -117,6 +125,8 @@ public class PluginPlanner(IAnsiConsole console)
         // Unlinked Custom APIs — plugintypeid is null/empty or references a plugin type not in the snapshot.
         // No PlanCustomApi call ever covers these, so they'd persist forever without this sweep.
         var knownPluginTypeIds = snapshot.PluginTypes.Values.Select(t => t.Id).ToHashSet();
+        if (knownPackageAssemblyPluginTypeIds != null)
+            knownPluginTypeIds.UnionWith(knownPackageAssemblyPluginTypeIds);
         foreach (var unlinkedApi in snapshot.CustomApis.Where(a =>
         {
             var typeId = a.GetAttributeValue<EntityReference>("plugintypeid")?.Id;

@@ -387,11 +387,12 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         if (existingPackage != null)
         {
             var preSnapshots = await _reader.LoadPackageSnapshotsAsync(service, existingPackage.Id, assemblies, solutionName, cancellationToken).ConfigureAwait(false);
+            var preKnownPluginTypeIds = AllPluginTypeIds(preSnapshots);
             foreach (var (metadata, assemblyEntity, snapshot) in preSnapshots)
             {
                 if (assemblyEntity == null || snapshot == null) continue; // not yet present — nothing of this assembly's to delete
 
-                var plan = _planner.Plan(snapshot, metadata, assemblyEntity, solutionName);
+                var plan = _planner.Plan(snapshot, metadata, assemblyEntity, solutionName, preKnownPluginTypeIds);
                 if (plan.PluginTypes.Deletes.Count == 0) continue; // no class was removed for this assembly
 
                 var preUpdateDeletes = new RegistrationPlan();
@@ -422,12 +423,13 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         // with removed classes) and run the remaining upserts/adds — deletes already ran above, and
         // Flowline never calls DeleteAsync("plugintype", ...) on this path (KD2/KD4/KTD13), so this
         // second pass intentionally never calls ExecuteDeletesAsync again.
+        var postKnownPluginTypeIds = AllPluginTypeIds(postSnapshots);
         foreach (var (metadata, assemblyEntity, snapshot) in postSnapshots)
         {
             if (assemblyEntity == null || snapshot == null)
                 throw new InvalidOperationException($"Assembly '{metadata.Name}' was not found under package '{packageUniqueName}' after the content update.");
 
-            var plan = _planner.Plan(snapshot, metadata, assemblyEntity, solutionName);
+            var plan = _planner.Plan(snapshot, metadata, assemblyEntity, solutionName, postKnownPluginTypeIds);
             await _executor.ExecuteUpsertsAsync(service, plan, solutionName, cancellationToken).ConfigureAwait(false);
             await _executor.ExecuteAddToSolutionAsync(service, plan, cancellationToken).ConfigureAwait(false);
         }
@@ -448,13 +450,14 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         CancellationToken cancellationToken)
     {
         var snapshots = await _reader.LoadPackageSnapshotsAsync(service, packageId, assemblies, solutionName, cancellationToken).ConfigureAwait(false);
+        var knownPluginTypeIds = AllPluginTypeIds(snapshots);
 
         var anyChanges = false;
         foreach (var (metadata, assemblyEntity, snapshot) in snapshots)
         {
             if (assemblyEntity == null || snapshot == null) continue;
 
-            var plan = _planner.Plan(snapshot, metadata, assemblyEntity, solutionName);
+            var plan = _planner.Plan(snapshot, metadata, assemblyEntity, solutionName, knownPluginTypeIds);
             if (plan.TotalChanges == 0) continue;
 
             anyChanges = true;
@@ -1287,6 +1290,14 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         };
         await service.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
     }
+
+    // Union of every loaded assembly's own PluginTypes ids across one package's snapshot batch — passed
+    // to PluginPlanner.Plan so its "unlinked Custom API" sweep can tell a sibling assembly's still-live
+    // Custom API (plugintypeid belongs to another assembly in this same package) apart from a genuinely
+    // orphaned one. snapshot.CustomApis is queried by publisher prefix, not per-assembly, so without this
+    // every assembly's plan would otherwise see every OTHER assembly's Custom API as unowned and delete it.
+    static IReadOnlySet<Guid> AllPluginTypeIds(IEnumerable<(PluginAssemblyMetadata Metadata, Entity? Assembly, RegistrationSnapshot? Snapshot)> snapshots) =>
+        snapshots.Where(s => s.Snapshot != null).SelectMany(s => s.Snapshot!.PluginTypes.Values.Select(t => t.Id)).ToHashSet();
 
     static string? ParseStoredHash(string? description)
     {
