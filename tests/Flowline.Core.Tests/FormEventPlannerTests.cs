@@ -557,4 +557,180 @@ public class FormEventPlannerTests
         var entry = Assert.Single(plan.Forms);
         Assert.Single(entry.DesiredHandlers);
     }
+
+    // --- flowline:onchange ---
+
+    [Fact]
+    public void Plan_OnChangeNoFunctionSingleLowercaseAttribute_DefaultsToOnAttributeChange()
+    {
+        var formXml = BuildFormXml();
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnChange, null, null, "creditlimit");
+        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/lib.js", "function onCreditlimitChange() {}", "src/lib.ts");
+
+        var snapshot = BuildSnapshot([resolved], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.Single(entry.DesiredHandlers, h => h.FunctionName == "onCreditlimitChange");
+    }
+
+    [Fact]
+    public void Plan_OnChangeNoFunctionPrefixedTwoSegmentAttribute_StripsPrefixAndPascalCasesBothSegments()
+    {
+        var formXml = BuildFormXml();
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnChange, null, null, "new_credit_limit");
+        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/lib.js", "function onCreditLimitChange() {}", "src/lib.ts");
+
+        var snapshot = BuildSnapshot([resolved], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.Single(entry.DesiredHandlers, h => h.FunctionName == "onCreditLimitChange");
+    }
+
+    [Fact]
+    public void Plan_OnChangeNoFunctionPublisherPrefixedThreeSegmentAttribute_OnlyFirstPrefixStripped()
+    {
+        var formXml = BuildFormXml();
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnChange, null, null, "cr507_risk_rating");
+        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/lib.js", "function onRiskRatingChange() {}", "src/lib.ts");
+
+        var snapshot = BuildSnapshot([resolved], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.Single(entry.DesiredHandlers, h => h.FunctionName == "onRiskRatingChange");
+    }
+
+    [Fact]
+    public void Plan_OnChangeExplicitFunctionName_PassedThroughUnchangedNotRederived()
+    {
+        var formXml = BuildFormXml();
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnChange, "MyCustomHandler", null, "creditlimit");
+        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/lib.js", "function MyCustomHandler() {}", "src/lib.ts");
+
+        var snapshot = BuildSnapshot([resolved], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.Single(entry.DesiredHandlers, h => h.FunctionName == "MyCustomHandler");
+    }
+
+    [Fact]
+    public void Plan_OnChangeExistingHandlerNonMatchingId_UnrecognizedWithOnChangeProposedAnnotation()
+    {
+        var xdoc = XDocument.Parse(BuildFormXml());
+        FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnChange,
+            new HashSet<FormEventHandler> { new("manualOnChange", "av_/manual.js", Guid.NewGuid(), "") }, "creditlimit");
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", xdoc.ToString());
+
+        var snapshot = BuildSnapshot([], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.Equal(FormEventType.OnChange, entry.Event);
+        Assert.Equal("creditlimit", entry.Attribute);
+        var unrecognized = Assert.Single(entry.UnrecognizedHandlers);
+        Assert.Equal("// flowline:onchange account \"Account Main\" creditlimit manualOnChange", unrecognized.ProposedAnnotation);
+    }
+
+    [Fact]
+    public void Plan_OnChangeExistingHandlerOnAttributeWithNoCurrentAnnotation_DetectedAsStaleAndScheduledForRemoval()
+    {
+        // R13/KTD4: orphan detection for onchange must be reachable via GetOnChangeAttributes alone — no
+        // annotation targets "revenue" at all, so the only way this attribute is even considered is by
+        // enumerating the XML.
+        var staleId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnChange, "onRevenueChange", "av_/lib.js", "revenue");
+        var xdoc = XDocument.Parse(BuildFormXml());
+        FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnChange,
+            new HashSet<FormEventHandler> { new("onRevenueChange", "av_/lib.js", staleId, "") }, "revenue");
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", xdoc.ToString());
+
+        var snapshot = BuildSnapshot([], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.Equal("revenue", entry.Attribute);
+        Assert.Empty(entry.DesiredHandlers); // stale, Flowline-owned — dropped automatically
+        Assert.Empty(entry.UnrecognizedHandlers);
+    }
+
+    [Fact]
+    public void Plan_OnChangeGetOnChangeAttributesUnion_CoversBothAnnotationAndXmlAttributesIndependently()
+    {
+        // "creditlimit" only exists via a current annotation (no XML event yet); "revenue" only exists via
+        // an existing XML event (no annotation). Neither alone would surface both — proves the union.
+        var staleId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnChange, "onRevenueChange", "av_/lib.js", "revenue");
+        var xdoc = XDocument.Parse(BuildFormXml());
+        FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnChange,
+            new HashSet<FormEventHandler> { new("onRevenueChange", "av_/lib.js", staleId, "") }, "revenue");
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", xdoc.ToString());
+
+        var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnChange, null, null, "creditlimit");
+        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/lib.js", "function onCreditlimitChange() {}", "src/lib.ts");
+
+        var snapshot = BuildSnapshot([resolved], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        Assert.Contains(plan.Forms, e => e.Event == FormEventType.OnChange && e.Attribute == "creditlimit"
+            && e.DesiredHandlers.Any(h => h.FunctionName == "onCreditlimitChange"));
+        Assert.Contains(plan.Forms, e => e.Event == FormEventType.OnChange && e.Attribute == "revenue" && e.DesiredHandlers.Count == 0);
+    }
+
+    [Fact]
+    public void Plan_OnChangeHandlerOnUntrackedLibraryAlongsideNewAnnotation_ForeignHandlerCarriedThroughUntouched()
+    {
+        // The untracked handler is the only current entry (no library-need-driven narrow-fallback
+        // ambiguity — see KTD4 note above): a brand-new annotation for the same attribute forces a real
+        // handlersChanged=true on the (OnChange, "creditlimit") entry itself, so the untracked handler's
+        // pass-through behavior is verified on the entry it actually belongs to.
+        var xdoc = XDocument.Parse(BuildFormXml());
+        FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnChange,
+            new HashSet<FormEventHandler> { new("untrackedFn", "av_/untracked.js", Guid.NewGuid(), "") }, "creditlimit");
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", xdoc.ToString());
+
+        var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnChange, null, null, "creditlimit");
+        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/keep.js", "function onCreditlimitChange() {}", "src/keep.ts");
+
+        var snapshot = BuildSnapshotUntrackedLibrary([resolved], "av_/untracked.js", ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms, e => e.Attribute == "creditlimit");
+        Assert.Contains(entry.DesiredHandlers, h => h.FunctionName == "untrackedFn");
+        Assert.DoesNotContain(entry.UnrecognizedHandlers, u => u.Handler.FunctionName == "untrackedFn");
+    }
+
+    [Fact]
+    public void StripPublisherPrefix_NoUnderscore_ReturnsUnchanged()
+    {
+        Assert.Equal("creditlimit", FormEventPlanner.StripPublisherPrefix("creditlimit"));
+    }
+
+    [Fact]
+    public void StripPublisherPrefix_SingleUnderscore_StripsPrefix()
+    {
+        Assert.Equal("creditlimit", FormEventPlanner.StripPublisherPrefix("new_creditlimit"));
+    }
+
+    [Fact]
+    public void StripPublisherPrefix_MultipleUnderscores_OnlyStripsFirstPrefix()
+    {
+        Assert.Equal("risk_rating", FormEventPlanner.StripPublisherPrefix("cr507_risk_rating"));
+    }
 }

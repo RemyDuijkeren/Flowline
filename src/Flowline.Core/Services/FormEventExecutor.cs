@@ -348,8 +348,9 @@ public class FormEventExecutor(IAnsiConsole console)
         await Task.WhenAll(entityTasks).ConfigureAwait(false);
     }
 
-    // formGroup holds every FormEventFormPlan for one FormId (one entry per touched event) — each event's
-    // desired handlers are applied to the same xdoc, and libraries are unioned across events and applied
+    // formGroup holds every FormEventFormPlan for one FormId (one entry per touched event, or — for
+    // onchange — per touched (event, attribute) pair) — each entry's desired handlers are applied to the
+    // same xdoc, and libraries are unioned across entries and applied
     // once (SetLibraries replaces the full <formLibraries> section, so applying it per-plan in sequence
     // would drop an earlier plan's libraries). The returned change lists are the single source of truth for
     // both what gets written (empty means nothing changed) and what gets reported (verbose detail, dry-run
@@ -376,8 +377,9 @@ public class FormEventExecutor(IAnsiConsole console)
                 : formPlan.DesiredHandlers;
 
             // Read before this iteration's SetHandlers call below — each event's Handlers live in their own
-            // <event> element, so an earlier iteration in this loop (a different event) never touches this one.
-            var currentHandlers = FormXmlEventSerializer.GetHandlers(xdoc, formPlan.Event);
+            // <event> element, so an earlier iteration in this loop (a different event, or a different
+            // onchange attribute) never touches this one. formPlan.Attribute is non-null only for OnChange.
+            var currentHandlers = FormXmlEventSerializer.GetHandlers(xdoc, formPlan.Event, formPlan.Attribute);
 
             // cleanupOnly (KTD12's phase-1 cleanup pass, U7): removals only, never additions or in-place
             // updates — a clean separation of concerns where cleanup only ever shrinks the current set, and
@@ -399,7 +401,7 @@ public class FormEventExecutor(IAnsiConsole console)
             handlerChanges.AddRange(updated.Select(h => new HandlerChange(formPlan.EntityLogicalName, formPlan.FormName, formPlan.Event, ChangeKind.Updated, h)));
             handlerChanges.AddRange(removed.Select(h => new HandlerChange(formPlan.EntityLogicalName, formPlan.FormName, formPlan.Event, ChangeKind.Removed, h)));
 
-            FormXmlEventSerializer.SetHandlers(xdoc, formPlan.Event, desiredSet);
+            FormXmlEventSerializer.SetHandlers(xdoc, formPlan.Event, desiredSet, formPlan.Attribute);
 
             var desiredLibraries = cleanupOnly
                 ? formPlan.DesiredLibraries.Where(currentLibraries.Contains)

@@ -103,6 +103,36 @@ public class FormEventExecutorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_FormWithTwoOnChangeAttributePlans_MergedIntoSingleUpdateNeitherAttributeClobbered()
+    {
+        // Regression: FormEventFormPlan.Attribute must be threaded into GetHandlers/SetHandlers — without
+        // it, two onchange attributes on one form would read/write the same (first-found) <event
+        // name="onchange"> element and clobber each other.
+        var formId = Guid.NewGuid();
+        var creditLimitHandler = new FormEventHandler("onCreditlimitChange", "av_/lib.js",
+            FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnChange, "onCreditlimitChange", "av_/lib.js", "creditlimit"), "");
+        var revenueHandler = new FormEventHandler("onRevenueChange", "av_/lib.js",
+            FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnChange, "onRevenueChange", "av_/lib.js", "revenue"), "");
+        var library = new FormLibrary("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js"));
+
+        var creditLimitPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnChange,
+            new HashSet<FormEventHandler> { creditLimitHandler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary> { library }, "creditlimit");
+        var revenuePlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnChange,
+            new HashSet<FormEventHandler> { revenueHandler }, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary> { library }, "revenue");
+
+        var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
+        var plan = BuildPlan(creditLimitPlan, revenuePlan);
+        var captured = CaptureUpdatedFormXml();
+
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false);
+
+        await _serviceMock.Received(1).UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        var capturedXdoc = XDocument.Parse(captured[formId]);
+        Assert.Contains(creditLimitHandler, FormXmlEventSerializer.GetHandlers(capturedXdoc, FormEventType.OnChange, "creditlimit"));
+        Assert.Contains(revenueHandler, FormXmlEventSerializer.GetHandlers(capturedXdoc, FormEventType.OnChange, "revenue"));
+    }
+
+    [Fact]
     public async Task ExecuteAsync_UnrecognizedHandlersInteractiveConfirms_ProceedsHandlersRemoved()
     {
         var formId = Guid.NewGuid();

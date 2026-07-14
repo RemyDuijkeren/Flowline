@@ -43,15 +43,31 @@ public class FormEventPlanner(IAnsiConsole console)
             // just auto-removed as stale must actually leave <formLibraries>, or the web resource it
             // points at still looks referenced and its delete still faults — fixing only the <Handler>
             // side left this gap open).
-            var perEventResults = new List<(FormEventType Event, IReadOnlySet<FormEventHandler> DesiredHandlers, IReadOnlySet<UnrecognizedHandler> Unrecognized, IReadOnlySet<FormEventHandler> CurrentHandlers, IReadOnlySet<string> ManagedLibraryNames)>();
+            var perEventResults = new List<(FormEventType Event, string? Attribute, IReadOnlySet<FormEventHandler> DesiredHandlers, IReadOnlySet<UnrecognizedHandler> Unrecognized, IReadOnlySet<FormEventHandler> CurrentHandlers, IReadOnlySet<string> ManagedLibraryNames)>();
 
-            foreach (var evt in Enum.GetValues<FormEventType>())
+            // KTD4: onload/onsave each plan once (Attribute: null); onchange plans once per attribute in
+            // the union of (a) attributes with a live <event name="onchange" attribute="..."> element and
+            // (b) attributes referenced by a current annotation — either alone would miss orphan cleanup
+            // for the other side (R13).
+            var onChangeAttributes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            onChangeAttributes.UnionWith(FormXmlEventSerializer.GetOnChangeAttributes(xdoc));
+            onChangeAttributes.UnionWith(formAnnotations
+                .Where(a => a.Annotation.Event == FormEventType.OnChange)
+                .Select(a => a.Annotation.Attribute!));
+
+            var planningKeys = new List<(FormEventType Event, string? Attribute)> { (FormEventType.OnLoad, null), (FormEventType.OnSave, null) };
+            planningKeys.AddRange(onChangeAttributes.Select(attr => (FormEventType.OnChange, (string?)attr)));
+
+            foreach (var (evt, attribute) in planningKeys)
             {
                 // Desired handlers as derived purely from this push's annotations. Always computes a fresh
                 // deterministic HandlerUniqueId, so a matched-by-identity entry with changed Parameters
                 // naturally lands here with the new Parameters value (no separate "update" bucket needed).
                 var annotationDesired = new HashSet<FormEventHandler>();
-                foreach (var resolved in formAnnotations.Where(a => a.Annotation.Event == evt))
+                var relevantAnnotations = attribute is null
+                    ? formAnnotations.Where(a => a.Annotation.Event == evt)
+                    : formAnnotations.Where(a => a.Annotation.Event == evt && string.Equals(a.Annotation.Attribute, attribute, StringComparison.OrdinalIgnoreCase));
+                foreach (var resolved in relevantAnnotations)
                 {
                     var (requestedFunctionName, autoNamespace, isExplicit) = DeriveHandlerResolutionInputs(resolved, evt);
 
@@ -81,11 +97,11 @@ public class FormEventPlanner(IAnsiConsole console)
                     annotationDesired.Add(new FormEventHandler(
                         finalFunctionName,
                         resolved.LibraryName,
-                        FormEventDeterministicId.ForHandler(entity, form, evt, finalFunctionName, resolved.LibraryName),
+                        FormEventDeterministicId.ForHandler(entity, form, evt, finalFunctionName, resolved.LibraryName, attribute),
                         resolved.Annotation.Parameters ?? ""));
                 }
 
-                var currentHandlers = FormXmlEventSerializer.GetHandlers(xdoc, evt);
+                var currentHandlers = FormXmlEventSerializer.GetHandlers(xdoc, evt, attribute);
 
                 // R15: a Handler on a library this project doesn't track, and whose ID Flowline didn't
                 // derive, is never evaluated for staleness or unrecognized status — it's simply carried
@@ -112,7 +128,7 @@ public class FormEventPlanner(IAnsiConsole console)
                     if (annotationDesired.Contains(current))
                         continue;
 
-                    var expectedId = FormEventDeterministicId.ForHandler(entity, form, evt, current.FunctionName, current.LibraryName);
+                    var expectedId = FormEventDeterministicId.ForHandler(entity, form, evt, current.FunctionName, current.LibraryName, attribute);
                     if (current.HandlerUniqueId == expectedId)
                     {
                         // stale, Flowline-owned — drop automatically, not added to desiredHandlers below.
@@ -127,7 +143,7 @@ public class FormEventPlanner(IAnsiConsole console)
                         continue;
                     }
 
-                    unrecognized.Add(new UnrecognizedHandler(current, BuildProposedAnnotation(entity, form, evt, current)));
+                    unrecognized.Add(new UnrecognizedHandler(current, BuildProposedAnnotation(entity, form, evt, current, attribute)));
                 }
 
                 var desiredHandlers = new HashSet<FormEventHandler>(annotationDesired);
@@ -146,7 +162,7 @@ public class FormEventPlanner(IAnsiConsole console)
                     .Concat(unrecognized.Select(u => u.Handler.LibraryName))
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-                perEventResults.Add((evt, desiredHandlers, unrecognized, currentHandlers, managedLibraryNames));
+                perEventResults.Add((evt, attribute, desiredHandlers, unrecognized, currentHandlers, managedLibraryNames));
             }
 
             // Form-wide library decision, using both events' desired-handler results together.
@@ -182,7 +198,7 @@ public class FormEventPlanner(IAnsiConsole console)
             var librariesChangedForForm = !desiredLibraries.SetEquals(currentLibraries);
             var anyEntryEmitted = false;
 
-            foreach (var (evt, desiredHandlers, unrecognized, currentHandlers, _) in perEventResults)
+            foreach (var (evt, attribute, desiredHandlers, unrecognized, currentHandlers, _) in perEventResults)
             {
                 var handlersChanged = !HandlerSetsFullyEqual(desiredHandlers, currentHandlers);
                 if (!handlersChanged && unrecognized.Count == 0)
@@ -196,7 +212,8 @@ public class FormEventPlanner(IAnsiConsole console)
                     evt,
                     desiredHandlers,
                     unrecognized,
-                    desiredLibraries));
+                    desiredLibraries,
+                    attribute));
             }
 
             // Narrow fallback: a form-wide library change with no individual event flagged — e.g. a library
@@ -205,7 +222,7 @@ public class FormEventPlanner(IAnsiConsole console)
             // orphaned. Attach it to the first event so the executor's per-form library union still sees it.
             if (!anyEntryEmitted && librariesChangedForForm)
             {
-                var (evt, desiredHandlers, unrecognized, _, _) = perEventResults[0];
+                var (evt, attribute, desiredHandlers, unrecognized, _, _) = perEventResults[0];
                 plan.Forms.Add(new FormEventFormPlan(
                     dataverseForm.Id,
                     entity,
@@ -213,7 +230,8 @@ public class FormEventPlanner(IAnsiConsole console)
                     evt,
                     desiredHandlers,
                     unrecognized,
-                    desiredLibraries));
+                    desiredLibraries,
+                    attribute));
             }
         }
 
@@ -235,14 +253,20 @@ public class FormEventPlanner(IAnsiConsole console)
         FormEventHandlerDiffer.Diff(a, b) is (0, 0, 0);
 
     // R18a: proposed annotation text built from the unrecognized handler's own stored state, in the same
-    // `// flowline:onload/onsave <entity> "<form>" Function[(params)]` shape R1 defines. FunctionName is
-    // used verbatim — including a dotted namespace (R6a's escape hatch), since a dotted name round-trips
-    // through the annotation grammar without re-derivation.
-    static string BuildProposedAnnotation(string entity, string form, FormEventType evt, FormEventHandler handler)
+    // `// flowline:onload/onsave <entity> "<form>" Function[(params)]` (or, for onchange, the R1
+    // `// flowline:onchange <entity> "<form>" <attribute> Function[(params)]`) shape R1 defines.
+    // FunctionName is used verbatim — including a dotted namespace (R6a's escape hatch), since a dotted
+    // name round-trips through the annotation grammar without re-derivation.
+    static string BuildProposedAnnotation(string entity, string form, FormEventType evt, FormEventHandler handler, string? attribute)
     {
-        var directive = evt == FormEventType.OnLoad ? "onload" : "onsave";
         var parameters = string.IsNullOrEmpty(handler.Parameters) ? "" : $"({handler.Parameters})";
-        return $"// flowline:{directive} {entity} \"{form}\" {handler.FunctionName}{parameters}";
+        return evt switch
+        {
+            FormEventType.OnLoad => $"// flowline:onload {entity} \"{form}\" {handler.FunctionName}{parameters}",
+            FormEventType.OnSave => $"// flowline:onsave {entity} \"{form}\" {handler.FunctionName}{parameters}",
+            FormEventType.OnChange => $"// flowline:onchange {entity} \"{form}\" {attribute} {handler.FunctionName}{parameters}",
+            _ => throw new ArgumentOutOfRangeException(nameof(evt))
+        };
     }
 
     // Shared with FormEventRenameAdvisor (U3), which needs the same inputs to recompute a self-tag
@@ -254,8 +278,26 @@ public class FormEventPlanner(IAnsiConsole console)
     {
         var isExplicit = resolved.Annotation.FunctionName is not null;
         var requestedFunctionName = resolved.Annotation.FunctionName
-            ?? (evt == FormEventType.OnLoad ? "onLoad" : "onSave");
+            ?? DeriveDefaultFunctionName(evt, resolved.Annotation.Attribute);
         return (requestedFunctionName, DeriveAutoNamespace(resolved.LibraryName), isExplicit);
+    }
+
+    // R5: default onChange function name is "on" + PascalCased attribute (publisher prefix stripped) +
+    // "Change" — e.g. "creditlimit" -> "onCreditlimitChange", "new_credit_limit" -> "onCreditLimitChange".
+    static string DeriveDefaultFunctionName(FormEventType evt, string? attribute) => evt switch
+    {
+        FormEventType.OnLoad => "onLoad",
+        FormEventType.OnSave => "onSave",
+        FormEventType.OnChange => "on" + ToPascalCase(StripPublisherPrefix(attribute!)) + "Change",
+        _ => throw new ArgumentOutOfRangeException(nameof(evt))
+    };
+
+    // Publisher prefix is everything up to and including the first '_' (e.g. "new_creditlimit" ->
+    // "creditlimit"); a name with no underscore is returned unchanged.
+    internal static string StripPublisherPrefix(string name)
+    {
+        var index = name.IndexOf('_');
+        return index < 0 ? name : name[(index + 1)..];
     }
 
     // Internal (not private): FormEventRenameAdvisor (U3) needs to derive the same auto-namespace when
