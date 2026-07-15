@@ -1,6 +1,7 @@
 ---
 title: Form-event rename resilience — advisory-only signals behind a hard-fail contract
 date: 2026-07-12
+last_updated: 2026-07-15
 category: docs/solutions/architecture-patterns
 module: form-event-registration
 problem_type: architecture_pattern
@@ -99,7 +100,7 @@ still-unrenamed `requestedName`, not any candidate's current name), then scans e
 entity for a `<Handler>` whose stored ID matches:
 
 ```csharp
-// FormEventRenameAdvisor.cs:57-84 (FindSelfTagMatch)
+// FormEventRenameAdvisor.cs:52-96 (FindSelfTagMatch)
 foreach (var resolved in sharingAnnotations)
 {
     var evt = resolved.Annotation.Event;
@@ -110,7 +111,10 @@ foreach (var resolved in sharingAnnotations)
     if (!found)
         continue;
 
-    var expectedId = FormEventDeterministicId.ForHandler(entity, requestedName, evt, finalFunctionName!, resolved.LibraryName);
+    var attribute = evt == FormEventType.OnReadyStateComplete && resolved.Annotation.Attribute is not null
+        ? FormXmlEventSerializer.NormalizeIframeControlId(resolved.Annotation.Attribute)
+        : resolved.Annotation.Attribute;
+    var expectedId = FormEventDeterministicId.ForHandler(entity, requestedName, evt, finalFunctionName!, resolved.LibraryName, attribute);
 
     foreach (var candidate in candidatesForEntity)
     {
@@ -118,18 +122,24 @@ foreach (var resolved in sharingAnnotations)
         try { xdoc = XDocument.Parse(candidate.FormXml); }
         catch (Exception) { continue; }
 
-        if (FormXmlEventSerializer.GetHandlers(xdoc, evt).Any(h => h.HandlerUniqueId == expectedId))
+        if (FormXmlEventSerializer.GetHandlers(xdoc, evt, attribute).Any(h => h.HandlerUniqueId == expectedId))
             return candidate.Name;
     }
 }
 ```
 
-Because that ID is a hash Flowline itself derives from `(entity, name, event, functionName, libraryName)`,
-a match is direct evidence — not a guess — that this exact candidate *was* the annotation's target under
-a prior name; nothing else could have produced that exact ID. `DeriveHandlerResolutionInputs` is shared
-(not reimplemented) from `FormEventPlanner.cs:252-259`, so the advisor's resolution logic can't drift
-from the planner's — a small but important reuse decision, since divergent resolution rules between the
-two would make self-tag evidence unreliable.
+Because that ID is a hash Flowline itself derives from `(entity, name, event, functionName, libraryName)`
+— plus a scope token (`attribute`) for OnChange/TabStateChange/OnReadyStateComplete, added by later
+features that extended the identity key — a match is direct evidence — not a guess — that this exact
+candidate *was* the annotation's target under a prior name; nothing else could have produced that exact
+ID. The `attribute` value must be normalized identically to how the planner normalized it when the
+handler was first written — see
+[`docs/solutions/logic-errors/iframe-control-id-prefix-normalization.md`](../logic-errors/iframe-control-id-prefix-normalization.md)
+for why an un-normalized token here would silently break self-tag matching for any annotation using an
+IFRAME control's prefixed spelling. `DeriveHandlerResolutionInputs` is shared (not reimplemented) from
+`FormEventPlanner.cs:436-443`, so the advisor's resolution logic can't drift from the planner's — a small
+but important reuse decision, since divergent resolution rules between the two would make self-tag
+evidence unreliable.
 
 Note the resilience choice at `FormEventRenameAdvisor.cs:78-80`: this loop parses FormXml for *every*
 live candidate on the entity, including ones the feature never validated FormXml for elsewhere. A
@@ -241,7 +251,7 @@ left as-is rather than hardened, each with a stated reason:
   `docs/residual-review-findings/feat-form-event-rename-resilience.md` under "Accepted, not a residual":
   a lost write just means a future push re-resolves by name — the cache is advisory-only bookkeeping, not
   a correctness-bearing store, so file locking was judged disproportionate.
-- *Self-tag's first-sharing-annotation-wins precision gap.* `FindSelfTagMatch` (`FormEventRenameAdvisor.cs:52-88`)
+- *Self-tag's first-sharing-annotation-wins precision gap.* `FindSelfTagMatch` (`FormEventRenameAdvisor.cs:52-96`)
   returns on the *first* sharing annotation that produces a match, without checking whether another
   sharing annotation on the same `(entity, form)` pair (e.g. `onSave` vs `onLoad`) has its own genuine
   self-tag evidence pointing at a *different* candidate. `BuildSuggestion` then prints a rewrite line for
@@ -332,6 +342,11 @@ implementation, not just before they ship in a doc.
 
 ## Related
 
+- [`docs/solutions/logic-errors/iframe-control-id-prefix-normalization.md`](../logic-errors/iframe-control-id-prefix-normalization.md)
+  — modifies `FindSelfTagMatch` (the exact function in Guidance item 2 above) to normalize an IFRAME
+  control-id token before recomputing the deterministic hash; a good example of why self-tag's "recompute
+  and compare a hash your own tool derived" approach depends on every hashing call site agreeing on one
+  canonical input.
 - [`docs/solutions/conventions/match-platform-vocabulary-for-new-domain-concepts.md`](../conventions/match-platform-vocabulary-for-new-domain-concepts.md)
   — same feature area and files (`FormEventReader.cs`, `FormEventPlanner.cs`), defines the "Form Event
   Handler"/"Event annotation" vocabulary this doc's mechanism operates on; a naming-convention lesson, not
