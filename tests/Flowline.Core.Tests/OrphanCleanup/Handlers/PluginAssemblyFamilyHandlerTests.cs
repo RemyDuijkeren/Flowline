@@ -36,6 +36,18 @@ public class PluginAssemblyFamilyHandlerTests
     DetectionContext Ctx(RunMode mode = RunMode.Normal) =>
         new("unused-package-src-root", _serviceMock, "MySolution", "https://example.crm.dynamics.com", mode, []);
 
+    DetectionContext Ctx(string packageSrcRoot, RunMode mode = RunMode.Normal) =>
+        new(packageSrcRoot, _serviceMock, "MySolution", "https://example.crm.dynamics.com", mode, []);
+
+    // Creates a customapis/<name>/ directory (the shape ComponentClassifier.ScanCustomApiNames scans) so
+    // a test can simulate a CustomApi still declared in local source.
+    static string CreateLocalCustomApiSource(string apiName)
+    {
+        var root = Directory.CreateTempSubdirectory("flowline-customapi-src-").FullName;
+        Directory.CreateDirectory(Path.Combine(root, "customapis", apiName));
+        return root;
+    }
+
     void SetupName(string entityLogicalName, string nameAttribute, Guid id, string name)
     {
         var entity = new Entity(entityLogicalName, id) { [nameAttribute] = name };
@@ -499,5 +511,168 @@ public class PluginAssemblyFamilyHandlerTests
 
         var apiFinding = Assert.Single(findings, f => f.EntityName == "customapi");
         Assert.Equal(OrphanPriority.Prio1, apiFinding.Priority);
+    }
+
+    // -- Code-review fix: redirect-path CustomApi claiming must honor the same uniquename-recreation
+    // safety check CustomApiFamilyHandler already enforces, since this handler claims the id first and
+    // CustomApiFamilyHandler's own pass never gets a chance to apply its check to it. --
+
+    [Fact]
+    public async Task DetectAsync_BoundCustomApiStillLocallyDeclaredUnderNewId_LeftAloneNotDeleted()
+    {
+        var assemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        var typeId = Guid.NewGuid();
+        var apiId = Guid.NewGuid();
+        const string apiName = "EchoValue";
+
+        var srcRoot = CreateLocalCustomApiSource(apiName);
+        try
+        {
+            SetupPackageIds((assemblyId, packageId));
+            SetupChildIds("plugintype", "pluginassemblyid", typeId);
+            SetupChildIds("customapi", "plugintypeid", apiId);
+            SetupName("customapi", "name", apiId, apiName);
+
+            var result = await _handler.DetectAsync(Ctx(srcRoot), [(assemblyId, 91), (apiId, 10101)], default);
+
+            Assert.DoesNotContain(result.Findings, f => f.EntityName == "customapi");
+            Assert.DoesNotContain(apiId, result.ClaimedIds);
+        }
+        finally
+        {
+            Directory.Delete(srcRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DetectAsync_BoundCustomApiRecreatedUnderNewIdNotLocallyDeclared_StillDeleted()
+    {
+        // Regression guard: the local-declaration check must not become an unconditional skip — a
+        // CustomApi that's genuinely gone from local source is still correctly claimed and deleted.
+        var assemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        var typeId = Guid.NewGuid();
+        var apiId = Guid.NewGuid();
+
+        var srcRoot = CreateLocalCustomApiSource("SomeOtherApi");
+        try
+        {
+            SetupPackageIds((assemblyId, packageId));
+            SetupChildIds("plugintype", "pluginassemblyid", typeId);
+            SetupChildIds("customapi", "plugintypeid", apiId);
+            SetupName("customapi", "name", apiId, "EchoValue");
+
+            var result = await _handler.DetectAsync(Ctx(srcRoot), [(assemblyId, 91), (apiId, 10101)], default);
+
+            Assert.Contains(result.Findings, f => f.EntityName == "customapi" && f.ObjectId == apiId);
+            Assert.Contains(apiId, result.ClaimedIds);
+        }
+        finally
+        {
+            Directory.Delete(srcRoot, recursive: true);
+        }
+    }
+
+    // -- Code-review fix: a degraded child-cleanup lookup must not leave the redirected package-delete
+    // finding as if cleanup were confirmed complete. --
+
+    [Fact]
+    public async Task DetectAsync_ChildCleanupQueryFaults_SkipsRedirectedPackageFindingThisRun()
+    {
+        var assemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        var typeId = Guid.NewGuid();
+
+        SetupPackageIds((assemblyId, packageId));
+        SetupChildIds("plugintype", "pluginassemblyid", typeId);
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "customapi" && q.Criteria.Conditions.Any(c => c.AttributeName == "plugintypeid")),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<EntityCollection>(new FaultException<OrganizationServiceFault>(new OrganizationServiceFault())));
+
+        var result = await _handler.DetectAsync(Ctx(), [(assemblyId, 91)], default);
+
+        // No finding at all for this assembly this run — neither the redirected package-delete finding
+        // nor the un-redirected fallback (which KD3 confirms always fails for a package-owned assembly).
+        Assert.Empty(result.Findings);
+    }
+
+    [Fact]
+    public async Task DetectAsync_ChildCleanupQueryFaults_NoDeleteModeAlsoSkipsRedirectedFinding()
+    {
+        var assemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        var typeId = Guid.NewGuid();
+
+        SetupPackageIds((assemblyId, packageId));
+        SetupChildIds("plugintype", "pluginassemblyid", typeId);
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "customapi" && q.Criteria.Conditions.Any(c => c.AttributeName == "plugintypeid")),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<EntityCollection>(new FaultException<OrganizationServiceFault>(new OrganizationServiceFault())));
+
+        var result = await _handler.DetectAsync(Ctx(RunMode.NoDelete), [(assemblyId, 91)], default);
+
+        Assert.Empty(result.Findings);
+    }
+
+    [Fact]
+    public async Task DetectAsync_ChildCleanupQueryFaultIsGenericException_AlsoSkipsRedirectedFinding()
+    {
+        var assemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        var typeId = Guid.NewGuid();
+
+        SetupPackageIds((assemblyId, packageId));
+        SetupChildIds("plugintype", "pluginassemblyid", typeId);
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "customapi" && q.Criteria.Conditions.Any(c => c.AttributeName == "plugintypeid")),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("network timeout")));
+
+        var result = await _handler.DetectAsync(Ctx(), [(assemblyId, 91)], default);
+
+        Assert.Empty(result.Findings);
+        Assert.Contains("network timeout", _console.Output);
+        Assert.Contains("Warning", _console.Output);
+    }
+
+    [Fact]
+    public async Task DetectAsync_ChildCleanupSucceedsNormally_RedirectedFindingStillFires()
+    {
+        // Regression guard: the degradation tracking above must not become an unconditional skip — a
+        // clean, non-degraded run still produces the redirected package-delete finding as before.
+        var assemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        var typeId = Guid.NewGuid();
+
+        SetupPackageIds((assemblyId, packageId));
+        SetupChildIds("plugintype", "pluginassemblyid", typeId);
+
+        var result = await _handler.DetectAsync(Ctx(), [(assemblyId, 91)], default);
+
+        Assert.Contains(result.Findings, f => f.EntityName == "pluginpackage" && f.ObjectId == packageId);
+    }
+
+    // -- Code-review fix: QueryChildIdsAsync's ConditionOperator.In batch must guard the same 2000-id
+    // ceiling EntityNameLookup already centralizes, rather than letting an oversized batch surface as an
+    // unhandled query fault. --
+
+    [Fact]
+    public async Task DetectAsync_MoreThan2000RedirectedAssemblies_DegradesGracefullyInsteadOfThrowing()
+    {
+        var assemblies = Enumerable.Range(0, 2001)
+            .Select(_ => (AssemblyId: Guid.NewGuid(), PackageId: Guid.NewGuid()))
+            .ToArray();
+        SetupPackageIds(assemblies);
+
+        var candidates = assemblies.Select(a => (a.AssemblyId, 91)).ToList();
+
+        var result = await _handler.DetectAsync(Ctx(), candidates, default);
+
+        // Degrades the same way any other plugintype-lookup fault does — no unhandled exception, and no
+        // redirected package-delete finding built on unconfirmed cleanup.
+        Assert.DoesNotContain(result.Findings, f => f.EntityName == "pluginpackage");
     }
 }
