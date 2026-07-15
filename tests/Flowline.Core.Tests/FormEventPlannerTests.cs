@@ -239,7 +239,7 @@ public class FormEventPlannerTests
         // OTHER event still has a surviving handler referencing the same library.
         var staleOnLoadId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/shared.js");
         var currentOnLoad = new HashSet<FormEventHandler> { new("onLoad", "av_/shared.js", staleOnLoadId, "") };
-        var currentOnSave = new HashSet<FormEventHandler> { new("onSave", "av_/shared.js", Guid.NewGuid(), "") }; // kept via annotation below
+        var currentOnSave = new List<FormEventHandler> { new("onSave", "av_/shared.js", Guid.NewGuid(), "") }; // kept via annotation below
 
         var xdoc = System.Xml.Linq.XDocument.Parse(BuildFormXml(FormEventType.OnLoad, currentOnLoad));
         FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnSave, currentOnSave);
@@ -633,7 +633,7 @@ public class FormEventPlannerTests
     {
         var xdoc = XDocument.Parse(BuildFormXml());
         FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnChange,
-            new HashSet<FormEventHandler> { new("manualOnChange", "av_/manual.js", Guid.NewGuid(), "") }, "creditlimit");
+            new List<FormEventHandler> { new("manualOnChange", "av_/manual.js", Guid.NewGuid(), "") }, "creditlimit");
         var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", xdoc.ToString());
 
         var snapshot = BuildSnapshot([], ("account", "Account Main", form));
@@ -656,7 +656,7 @@ public class FormEventPlannerTests
         var staleId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnChange, "onRevenueChange", "av_/lib.js", "revenue");
         var xdoc = XDocument.Parse(BuildFormXml());
         FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnChange,
-            new HashSet<FormEventHandler> { new("onRevenueChange", "av_/lib.js", staleId, "") }, "revenue");
+            new List<FormEventHandler> { new("onRevenueChange", "av_/lib.js", staleId, "") }, "revenue");
         var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", xdoc.ToString());
 
         var snapshot = BuildSnapshot([], ("account", "Account Main", form));
@@ -677,7 +677,7 @@ public class FormEventPlannerTests
         var staleId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnChange, "onRevenueChange", "av_/lib.js", "revenue");
         var xdoc = XDocument.Parse(BuildFormXml());
         FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnChange,
-            new HashSet<FormEventHandler> { new("onRevenueChange", "av_/lib.js", staleId, "") }, "revenue");
+            new List<FormEventHandler> { new("onRevenueChange", "av_/lib.js", staleId, "") }, "revenue");
         var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", xdoc.ToString());
 
         var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnChange, null, null, "creditlimit");
@@ -701,7 +701,7 @@ public class FormEventPlannerTests
         // pass-through behavior is verified on the entry it actually belongs to.
         var xdoc = XDocument.Parse(BuildFormXml());
         FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnChange,
-            new HashSet<FormEventHandler> { new("untrackedFn", "av_/untracked.js", Guid.NewGuid(), "") }, "creditlimit");
+            new List<FormEventHandler> { new("untrackedFn", "av_/untracked.js", Guid.NewGuid(), "") }, "creditlimit");
         var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", xdoc.ToString());
 
         var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnChange, null, null, "creditlimit");
@@ -732,5 +732,384 @@ public class FormEventPlannerTests
     public void StripPublisherPrefix_MultipleUnderscores_OnlyStripsFirstPrefix()
     {
         Assert.Equal("risk_rating", FormEventPlanner.StripPublisherPrefix("cr507_risk_rating"));
+    }
+
+    // --- [bulkEdit] (R6-R8) ---
+
+    [Fact]
+    public void Plan_BulkEditOnOnSaveAnnotation_ThrowsNamingOffendingAnnotation()
+    {
+        var formXml = BuildFormXml();
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnSave, null, null, BulkEdit: true);
+        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/lib.js", "function onSave() {}", "src/bad.ts");
+
+        var snapshot = BuildSnapshot([resolved], ("account", "Account Main", form));
+
+        var ex = Assert.Throws<FlowlineException>(() => _planner.Plan(snapshot));
+
+        Assert.Contains("src/bad.ts", ex.Message);
+        Assert.Contains("bulkEdit", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Plan_OneOfTwoOnloadAnnotationsHasBulkEdit_UnionEnablesBulkEditOnPlanEntry()
+    {
+        var formXml = BuildFormXml();
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var withBulkEdit = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "First", null, BulkEdit: true), "av_/a.js", "function First() {}", "src/a.ts");
+        var withoutBulkEdit = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "Second", null), "av_/b.js", "function Second() {}", "src/b.ts");
+
+        var snapshot = BuildSnapshot([withBulkEdit, withoutBulkEdit], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.True(entry.BulkEditEnabled);
+    }
+
+    [Fact]
+    public void Plan_PreviouslyBulkEditEnabledFormWithBulkEditAnnotationRemoved_ClearsBulkEditEnabledAndStillEmitsEntry()
+    {
+        // R8's "previously set, now removed" case, plus the bulk-edit-only-change gate: the handler set
+        // itself is unchanged (same function/library/order), so BulkEditEnabled flipping true->false is the
+        // ONLY thing different about this push — it must still produce a plan entry, or the executor never
+        // gets a chance to clear BehaviorInBulkEditForm.
+        var handlerId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js");
+        var xdoc = XDocument.Parse(BuildFormXml());
+        FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnLoad,
+            [new FormEventHandler("onLoad", "av_/lib.js", handlerId, "")], bulkEditEnabled: true);
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", xdoc.ToString());
+
+        var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "onLoad", null);
+        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/lib.js", "function onLoad() {}", "src/lib.ts");
+
+        var snapshot = BuildSnapshot([resolved], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.False(entry.BulkEditEnabled);
+    }
+
+    // --- [order:N] and encounter order (R9-R11) ---
+
+    [Fact]
+    public void Plan_ThreeUnorderedOnloadAnnotations_ResolveInEncounterOrder()
+    {
+        var formXml = BuildFormXml();
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var first = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "First", null), "av_/a.js", "function First() {}", "src/a.ts");
+        var second = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "Second", null), "av_/b.js", "function Second() {}", "src/b.ts");
+        var third = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "Third", null), "av_/c.js", "function Third() {}", "src/c.ts");
+
+        var snapshot = BuildSnapshot([first, second, third], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.Equal(["First", "Second", "Third"], entry.DesiredHandlers.Select(h => h.FunctionName));
+    }
+
+    [Fact]
+    public void Plan_TwoOrderedOnloadAnnotationsAcrossFiles_ResolveAscendingByOrderRegardlessOfEncounterOrder()
+    {
+        var formXml = BuildFormXml();
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        // Encountered in the order [Second, First] (simulating file-scan order), but [order:1] must sort first.
+        var orderTwo = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "Second", null, Order: 2), "av_/b.js", "function Second() {}", "src/b.ts");
+        var orderOne = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "First", null, Order: 1), "av_/a.js", "function First() {}", "src/a.ts");
+
+        var snapshot = BuildSnapshot([orderTwo, orderOne], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.Equal(["First", "Second"], entry.DesiredHandlers.Select(h => h.FunctionName));
+    }
+
+    [Fact]
+    public void Plan_MixedOrderedAndUnorderedOnloadAnnotations_OrderedSortFirstThenUnorderedAppendInEncounterOrder()
+    {
+        var formXml = BuildFormXml();
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var unorderedA = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "UnorderedA", null), "av_/a.js", "function UnorderedA() {}", "src/a.ts");
+        var orderedOne = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "OrderedOne", null, Order: 1), "av_/b.js", "function OrderedOne() {}", "src/b.ts");
+        var unorderedB = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "UnorderedB", null), "av_/c.js", "function UnorderedB() {}", "src/c.ts");
+
+        var snapshot = BuildSnapshot([unorderedA, orderedOne, unorderedB], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.Equal(["OrderedOne", "UnorderedA", "UnorderedB"], entry.DesiredHandlers.Select(h => h.FunctionName));
+    }
+
+    [Fact]
+    public void Plan_TwoOnloadAnnotationsSameOrderValue_ThrowsNamingBothSourceFiles()
+    {
+        var formXml = BuildFormXml();
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var first = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "First", null, Order: 1), "av_/a.js", "function First() {}", "src/first.ts");
+        var second = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "Second", null, Order: 1), "av_/b.js", "function Second() {}", "src/second.ts");
+
+        var snapshot = BuildSnapshot([first, second], ("account", "Account Main", form));
+
+        var ex = Assert.Throws<FlowlineException>(() => _planner.Plan(snapshot));
+
+        Assert.Contains("src/first.ts", ex.Message);
+        Assert.Contains("src/second.ts", ex.Message);
+        Assert.Contains("order:1", ex.Message);
+    }
+
+    [Fact]
+    public void Plan_OrderOnlyChangeWithOtherwiseIdenticalHandlerSet_StillEmitsPlanEntry()
+    {
+        // KTD8: FormEventHandlerDiffer.Diff alone reports (0,0,0) here (same identity/parameters), so this
+        // proves the independent orderChanged check is what makes the corrected order actually reach the
+        // write path, instead of being silently skipped.
+        var idA = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "A", "av_/a.js");
+        var idB = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "B", "av_/b.js");
+        var current = new List<FormEventHandler> { new("A", "av_/a.js", idA, ""), new("B", "av_/b.js", idB, "") };
+        var formXml = BuildFormXml(FormEventType.OnLoad, current.ToHashSet());
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        // Annotations encountered in the OPPOSITE order from the live FormXml (B before A), with no
+        // [order:N] — so the newly-computed DesiredHandlers is [B, A], not [A, B].
+        var annotationB = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "B", null), "av_/b.js", "function B() {}", "src/b.ts");
+        var annotationA = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "A", null), "av_/a.js", "function A() {}", "src/a.ts");
+
+        var snapshot = BuildSnapshot([annotationB, annotationA], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.Equal(["B", "A"], entry.DesiredHandlers.Select(h => h.FunctionName));
+    }
+
+    // --- 50-handler cap (R12) ---
+
+    [Fact]
+    public void Plan_49ExistingHandlersPlusOneNewAnnotation_SucceedsAt50()
+    {
+        var current = new HashSet<FormEventHandler>();
+        for (var i = 0; i < 49; i++)
+        {
+            current.Add(new FormEventHandler($"Existing{i}", "av_/existing.js", Guid.NewGuid(), ""));
+        }
+        var formXml = BuildFormXml(FormEventType.OnLoad, current);
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        // The 49 existing handlers' library is explicitly untracked (R15 foreign pass-through — a random,
+        // non-deterministic id keeps them from being recognized as stale Flowline-owned entries), so they
+        // pass through untouched, plus one new Flowline-managed annotation brings the total to exactly 50.
+        var annotation = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "NewOne", null), "av_/new.js", "function NewOne() {}", "src/new.ts");
+
+        var snapshot = BuildSnapshotUntrackedLibrary([annotation], "av_/existing.js", ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.Equal(50, entry.DesiredHandlers.Count);
+    }
+
+    [Fact]
+    public void Plan_50ExistingHandlersPlusOneNewAnnotation_ThrowsBeforeAnyWrite()
+    {
+        var current = new HashSet<FormEventHandler>();
+        for (var i = 0; i < 50; i++)
+        {
+            current.Add(new FormEventHandler($"Existing{i}", "av_/existing.js", Guid.NewGuid(), ""));
+        }
+        var formXml = BuildFormXml(FormEventType.OnLoad, current);
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var annotation = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "NewOne", null), "av_/new.js", "function NewOne() {}", "src/new.ts");
+
+        var snapshot = BuildSnapshotUntrackedLibrary([annotation], "av_/existing.js", ("account", "Account Main", form));
+
+        var ex = Assert.Throws<FlowlineException>(() => _planner.Plan(snapshot));
+
+        Assert.Contains("50-handler-per-event limit", ex.Message);
+    }
+
+    [Fact]
+    public void Plan_50CapCountsForeignAndUnrecognizedHandlersNotJustFlowlineManaged()
+    {
+        // 50 foreign (untracked-library) handlers already on the form, plus one new Flowline-managed
+        // annotation for a DIFFERENT library — proves the cap counts the full write-back set, not just
+        // the handlers Flowline itself is adding (R12).
+        var current = new HashSet<FormEventHandler>();
+        for (var i = 0; i < 50; i++)
+            current.Add(new FormEventHandler($"Foreign{i}", "thirdparty/lib.js", Guid.NewGuid(), ""));
+        var formXml = BuildFormXml(FormEventType.OnLoad, current);
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var annotation = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "NewOne", null), "av_/new.js", "function NewOne() {}", "src/new.ts");
+
+        var snapshot = BuildSnapshotUntrackedLibrary([annotation], "thirdparty/lib.js", ("account", "Account Main", form));
+
+        var ex = Assert.Throws<FlowlineException>(() => _planner.Plan(snapshot));
+
+        Assert.Contains("50-handler-per-event limit", ex.Message);
+    }
+
+    // --- Tab/IFRAME scope enumeration and validation (R5) ---
+
+    [Fact]
+    public void Plan_TabStateChangeAnnotationForExistingTab_ProducesEntryScopedToTabName()
+    {
+        var xdoc = XDocument.Parse("""<form><tabs><tab name="Summary"><columns><column width="100%" /></columns></tab></tabs></form>""");
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", xdoc.ToString());
+
+        var annotation = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.TabStateChange, null, null, "Summary"),
+            "av_/lib.js", "function onSummaryTabStateChange() {}", "src/lib.ts");
+
+        var snapshot = BuildSnapshot([annotation], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms, e => e.Event == FormEventType.TabStateChange);
+        Assert.Equal("Summary", entry.Attribute);
+        Assert.Single(entry.DesiredHandlers, h => h.FunctionName == "onSummaryTabStateChange");
+    }
+
+    [Fact]
+    public void Plan_TabStateChangeAnnotationForNonexistentTab_ThrowsCleanlyNamingTabAndSourceFile()
+    {
+        // Correctness-review regression: an unresolvable Tab/IFRAME scope must fail cleanly at plan time
+        // (FlowlineException, before any write), not surface as an unhandled InvalidOperationException
+        // from deep inside the executor and abort the entire push.
+        var formXml = BuildFormXml();
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var annotation = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.TabStateChange, null, null, "DoesNotExist"),
+            "av_/lib.js", "function onX() {}", "src/lib.ts");
+
+        var snapshot = BuildSnapshot([annotation], ("account", "Account Main", form));
+
+        var ex = Assert.Throws<FlowlineException>(() => _planner.Plan(snapshot));
+
+        Assert.Contains("DoesNotExist", ex.Message);
+        Assert.Contains("src/lib.ts", ex.Message);
+    }
+
+    [Fact]
+    public void Plan_OnReadyStateCompleteAnnotationForNonexistentControl_ThrowsCleanlyNamingControlAndSourceFile()
+    {
+        var formXml = BuildFormXml();
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var annotation = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnReadyStateComplete, null, null, "IFRAME_doesNotExist"),
+            "av_/lib.js", "function onX() {}", "src/lib.ts");
+
+        var snapshot = BuildSnapshot([annotation], ("account", "Account Main", form));
+
+        var ex = Assert.Throws<FlowlineException>(() => _planner.Plan(snapshot));
+
+        Assert.Contains("IFRAME_doesNotExist", ex.Message);
+        Assert.Contains("src/lib.ts", ex.Message);
+    }
+
+    [Fact]
+    public void Plan_OnReadyStateCompleteAnnotationWritesPrefixedControlId_ResolvesToLiveControlAsSingleScope()
+    {
+        // Regression: an annotation-supplied "IFRAME_"-prefixed control id must collapse onto the same
+        // scope key GetIframeControlIdsWithReadyStateHandlers' live scan reports (bare, prefix-stripped) —
+        // otherwise the same physical control plans as two distinct scopes and its <events> element gets
+        // written twice, the second write clobbering the first.
+        var xdoc = XDocument.Parse(
+            """<form><tabs><tab name="Details"><columns><column width="100%"><sections><section name="s1"><rows><row><cell id="cell1"><control id="IFRAME_myFrame" classid="{FD2A7985-3187-444E-908D-6624B21F69C0}"><parameters><Url>https://example.com</Url></parameters></control><events><event name="onreadystatecomplete" application="false" active="false"><Handlers><Handler functionName="Old.onReady" libraryName="av_/lib.js" handlerUniqueId="{11111111-1111-1111-1111-111111111111}" enabled="true" parameters="" passExecutionContext="true" /></Handlers></event></events></cell></row></rows></section></sections></column></columns></tab></tabs></form>""");
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", xdoc.ToString());
+
+        var annotation = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnReadyStateComplete, null, null, "IFRAME_myFrame"),
+            "av_/lib.js", "function onMyFrameReadyStateComplete() {}", "src/lib.ts");
+
+        var snapshot = BuildSnapshot([annotation], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms, e => e.Event == FormEventType.OnReadyStateComplete);
+        Assert.Equal("myFrame", entry.Attribute);
+        Assert.Single(entry.DesiredHandlers, h => h.FunctionName == "onMyFrameReadyStateComplete");
+    }
+
+    // --- Interleave-preserving merge (product decision: OOB/foreign handlers outrank Flowline ordering) ---
+
+    [Fact]
+    public void Plan_ForeignHandlerPositionedBeforeFlowlineHandlerLive_KeepsForeignHandlerFirstWhenPlanChanges()
+    {
+        // Product decision: a Microsoft OOB or third-party script that already runs BEFORE a
+        // Flowline-managed handler in the live Form Event Pipeline must never be silently relocated to
+        // run after it — content is preserved for foreign handlers (R15) AND their relative execution
+        // position is too, even when something else about the push forces a plan entry to emit (here: a
+        // brand-new second Flowline annotation, so the reordering behavior is actually observable).
+        var flowlineId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js");
+        var foreignHandler = new FormEventHandler("msdyn.OobHandler", "msdyn_lib.js", Guid.NewGuid(), "");
+        // Live document order: foreign handler FIRST, Flowline handler SECOND.
+        var current = new List<FormEventHandler> { foreignHandler, new("onLoad", "av_/lib.js", flowlineId, "") };
+        var formXml = BuildFormXml(FormEventType.OnLoad, current.ToHashSet());
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var existingAnnotation = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "onLoad", null), "av_/lib.js", "function onLoad() {}", "src/lib.ts");
+        var newAnnotation = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "NewHandler", null), "av_/new.js", "function NewHandler() {}", "src/new.ts");
+
+        var snapshot = BuildSnapshotUntrackedLibrary([existingAnnotation, newAnnotation], "msdyn_lib.js", ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        // Foreign handler keeps its original slot 0; the existing Flowline handler keeps its slot 1;
+        // the brand-new handler (no prior slot) appends at the end.
+        Assert.Equal(["msdyn.OobHandler", "onLoad", "NewHandler"], entry.DesiredHandlers.Select(h => h.FunctionName));
+    }
+
+    [Fact]
+    public void Plan_NewFlowlineHandlerAddedAlongsideExistingForeignHandler_ForeignHandlerKeepsItsSlotNewHandlerFillsGapOrAppends()
+    {
+        var foreignHandler = new FormEventHandler("msdyn.OobHandler", "msdyn_lib.js", Guid.NewGuid(), "");
+        var formXml = BuildFormXml(FormEventType.OnLoad, new HashSet<FormEventHandler> { foreignHandler });
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        // Brand-new Flowline annotation — no prior slot exists for it, so it has no original position to
+        // preserve and simply appends after the existing foreign handler.
+        var annotation = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, "NewHandler", null), "av_/new.js", "function NewHandler() {}", "src/new.ts");
+
+        var snapshot = BuildSnapshotUntrackedLibrary([annotation], "msdyn_lib.js", ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.Equal(["msdyn.OobHandler", "NewHandler"], entry.DesiredHandlers.Select(h => h.FunctionName));
     }
 }

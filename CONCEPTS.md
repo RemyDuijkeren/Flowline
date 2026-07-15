@@ -143,3 +143,18 @@ for this exact entity-and-name pair still exists live, just possibly renamed sin
 survivor** hedge (exactly one form remains on the entity, offered only as a weak "is this what you
 meant?" guess). The first tier to produce a candidate wins; lower tiers are never consulted once a
 higher one fires.
+
+### Bulk edit form
+A Dataverse feature where a user selects multiple grid rows and edits them in one scaled-down "Edit
+(N) records" form; a saved change applies to every selected record at once. Form event handlers
+(onload, onsave, onchange, business rules) don't fire by default in this mode, since a script written
+for one record's context could misbehave applied simultaneously to N records —
+`BehaviorInBulkEditForm="Enabled"` is the per-event opt-in for a handler safe to run there anyway.
+Dataverse only honors this attribute on a form's `onload` event.
+
+### Form Event Pipeline
+Microsoft's term for how Dataverse executes a form event's registered [[Form Event Handler]]s:
+sequentially, in the FormXml list order, with a hard cap of 50 handlers per event. Flowline enforces
+both: handler write order follows annotation-encounter order by default, with an optional `[order:N]`
+annotation modifier for explicit cross-file sequencing; exceeding the 50-handler cap for one event
+fails the push before any Dataverse write.

@@ -400,13 +400,19 @@ public class FormEventExecutor(IAnsiConsole console)
                 desired = currentHandlers.Where(desiredIdentities.Contains);
             }
 
-            var desiredSet = desired.ToHashSet();
-            var (added, updated, removed) = FormEventHandlerDiffer.DiffDetailed(desiredSet, currentHandlers);
+            // Order-preserving de-duplication (KTD2/KTD8's fix): the planner's computed handler order must
+            // reach SetHandlers below, not get discarded by a set conversion first. Distinct() keeps each
+            // identity's first occurrence and its position — unlike ToHashSet(), which has no ordering
+            // contract at all. FormEventHandlerDiffer stays scoped to content-equality (KTD8), so it gets
+            // its own throwaway set conversion here — a pure reorder never confuses it into reporting a
+            // false "updated" handler.
+            var desiredOrdered = desired.Distinct().ToList();
+            var (added, updated, removed) = FormEventHandlerDiffer.DiffDetailed(desiredOrdered.ToHashSet(), currentHandlers.ToHashSet());
             handlerChanges.AddRange(added.Select(h => new HandlerChange(formPlan.EntityLogicalName, formPlan.FormName, formPlan.Event, formPlan.Attribute, ChangeKind.Added, h)));
             handlerChanges.AddRange(updated.Select(h => new HandlerChange(formPlan.EntityLogicalName, formPlan.FormName, formPlan.Event, formPlan.Attribute, ChangeKind.Updated, h)));
             handlerChanges.AddRange(removed.Select(h => new HandlerChange(formPlan.EntityLogicalName, formPlan.FormName, formPlan.Event, formPlan.Attribute, ChangeKind.Removed, h)));
 
-            FormXmlEventSerializer.SetHandlers(xdoc, formPlan.Event, desiredSet, formPlan.Attribute);
+            FormXmlEventSerializer.SetHandlers(xdoc, formPlan.Event, desiredOrdered, formPlan.Attribute, formPlan.BulkEditEnabled);
 
             var desiredLibraries = cleanupOnly
                 ? formPlan.DesiredLibraries.Where(currentLibraries.Contains)

@@ -7,11 +7,16 @@ public enum FormEventType
 {
     OnLoad,
     OnSave,
-    OnChange
+    OnChange,
+    TabStateChange,
+    OnReadyStateComplete
 }
 
-// Attribute is null for OnLoad/OnSave, always non-null for OnChange (enforced by the parser).
-public record FormEventAnnotation(string Entity, string Form, FormEventType Event, string? FunctionName, string? Parameters, string? Attribute = null);
+// Attribute is null for OnLoad/OnSave, always non-null for OnChange/TabStateChange/OnReadyStateComplete
+// (enforced by the parser) — reused as the tab-name / IFRAME-control-id scope token for the latter two.
+// BulkEdit/Order are annotation modifiers ([bulkEdit], [order:N]); semantic validation (BulkEdit is
+// onload-only, duplicate Order per event/scope) is a planner concern, not enforced here.
+public record FormEventAnnotation(string Entity, string Form, FormEventType Event, string? FunctionName, string? Parameters, string? Attribute = null, bool BulkEdit = false, int? Order = null);
 
 public record FormEventHandler(string FunctionName, string LibraryName, Guid HandlerUniqueId, string Parameters)
 {
@@ -73,18 +78,24 @@ public static class FormEventDeterministicId
 // own stored FunctionName/LibraryName/Parameters, per FormEventPlanner.BuildProposedAnnotation.
 public record UnrecognizedHandler(FormEventHandler Handler, string ProposedAnnotation);
 
-// Attribute is null for OnLoad/OnSave, non-null for OnChange — carries the attribute dimension from
-// planner to executor so GetHandlers/SetHandlers can locate the right <event name="onchange" attribute="...">
-// element (there is no other channel between the two).
+// Attribute is null for OnLoad/OnSave, non-null for OnChange/TabStateChange/OnReadyStateComplete — carries
+// the scope-token dimension from planner to executor so GetHandlers/SetHandlers can locate the right
+// container-scoped <event> element (there is no other channel between the two).
+// DesiredHandlers is an ordered list, not a set: the planner computes handler order once per (event, scope)
+// key ([order:N] ascending first, then encounter order) and that order must survive to the FormXml write —
+// callers must de-duplicate by identity without discarding position (Distinct-style, not ToHashSet).
+// BulkEditEnabled is only meaningful for OnLoad plans (BehaviorInBulkEditForm is a whole-event attribute,
+// not per-handler) — the OR-across-annotations union the planner computes for the form's onload event.
 public record FormEventFormPlan(
     Guid FormId,
     string EntityLogicalName,
     string FormName,
     FormEventType Event,
-    IReadOnlySet<FormEventHandler> DesiredHandlers,
+    IReadOnlyList<FormEventHandler> DesiredHandlers,
     IReadOnlySet<UnrecognizedHandler> UnrecognizedHandlers,
     IReadOnlySet<FormLibrary> DesiredLibraries,
-    string? Attribute = null);
+    string? Attribute = null,
+    bool BulkEditEnabled = false);
 
 public class FormEventSyncPlan
 {

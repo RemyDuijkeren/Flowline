@@ -321,4 +321,174 @@ public class FormEventAnnotationParserTests : IDisposable
         Assert.Empty(result.Annotations);
         Assert.Single(result.MalformedLines);
     }
+
+    // --- flowline:tabstatechange ---
+
+    [Fact]
+    public void ParseAnnotations_TabStateChangeQuotedFormNoFunction_ReturnsAttributeAndNullFunction()
+    {
+        var path = Write("form.js", "// flowline:tabstatechange account \"Main\" Summary\ncode();");
+        var result = FormEventAnnotationParser.ParseAnnotations(path);
+
+        Assert.Equal([new FormEventAnnotation("account", "Main", FormEventType.TabStateChange, null, null, "Summary")], result.Annotations);
+    }
+
+    [Fact]
+    public void ParseAnnotations_TabStateChangeBangLineComment_Recognized()
+    {
+        var path = Write("form.js", "//! flowline:tabstatechange account \"Main\" Summary\ncode();");
+        var result = FormEventAnnotationParser.ParseAnnotations(path);
+
+        var annotation = Assert.Single(result.Annotations);
+        Assert.Equal(FormEventType.TabStateChange, annotation.Event);
+    }
+
+    [Fact]
+    public void ParseAnnotations_TabStateChangeBangBlockComment_Recognized()
+    {
+        var path = Write("form.js", "/*! flowline:tabstatechange account \"Main\" Summary */\ncode();");
+        var result = FormEventAnnotationParser.ParseAnnotations(path);
+
+        var annotation = Assert.Single(result.Annotations);
+        Assert.Equal(FormEventType.TabStateChange, annotation.Event);
+    }
+
+    [Fact]
+    public void ParseAnnotations_TabStateChangeMissingAttribute_NotMatchedButFlaggedMalformed()
+    {
+        var path = Write("form.js", "// flowline:tabstatechange account \"Main\"\ncode();");
+        var result = FormEventAnnotationParser.ParseAnnotations(path);
+
+        Assert.Empty(result.Annotations);
+        Assert.Single(result.MalformedLines);
+    }
+
+    // --- flowline:onreadystatecomplete ---
+
+    [Fact]
+    public void ParseAnnotations_OnReadyStateCompleteWithExplicitFunctionAndParams_ReturnsAllFields()
+    {
+        var path = Write("form.js", "// flowline:onreadystatecomplete account \"Main\" IFRAME_myFrame onMyFrameReady(param)\ncode();");
+        var result = FormEventAnnotationParser.ParseAnnotations(path);
+
+        var annotation = Assert.Single(result.Annotations);
+        Assert.Equal(FormEventType.OnReadyStateComplete, annotation.Event);
+        Assert.Equal("IFRAME_myFrame", annotation.Attribute);
+        Assert.Equal("onMyFrameReady", annotation.FunctionName);
+        Assert.Equal("param", annotation.Parameters);
+    }
+
+    [Fact]
+    public void ParseAnnotations_OnReadyStateCompleteMissingAttribute_NotMatchedButFlaggedMalformed()
+    {
+        var path = Write("form.js", "// flowline:onreadystatecomplete account \"Main\"\ncode();");
+        var result = FormEventAnnotationParser.ParseAnnotations(path);
+
+        Assert.Empty(result.Annotations);
+        Assert.Single(result.MalformedLines);
+    }
+
+    // --- bracket modifiers: [bulkEdit] / [order:N] ---
+
+    [Fact]
+    public void ParseAnnotations_OnLoadWithBulkEditModifier_ReturnsBulkEditTrue()
+    {
+        var path = Write("form.js", "// flowline:onload account \"Main\" [bulkEdit]\ncode();");
+        var result = FormEventAnnotationParser.ParseAnnotations(path);
+
+        var annotation = Assert.Single(result.Annotations);
+        Assert.True(annotation.BulkEdit);
+        Assert.Null(annotation.FunctionName);
+    }
+
+    [Fact]
+    public void ParseAnnotations_OnLoadWithOrderModifier_ReturnsOrderValue()
+    {
+        var path = Write("form.js", "// flowline:onload account \"Main\" [order:1] MyFunction\ncode();");
+        var result = FormEventAnnotationParser.ParseAnnotations(path);
+
+        var annotation = Assert.Single(result.Annotations);
+        Assert.Equal(1, annotation.Order);
+        Assert.Equal("MyFunction", annotation.FunctionName);
+    }
+
+    [Fact]
+    public void ParseAnnotations_BulkEditThenOrderModifiers_BothParsed()
+    {
+        var path = Write("form.js", "// flowline:onload account \"Main\" [bulkEdit][order:1] MyFunction\ncode();");
+        var result = FormEventAnnotationParser.ParseAnnotations(path);
+
+        var annotation = Assert.Single(result.Annotations);
+        Assert.True(annotation.BulkEdit);
+        Assert.Equal(1, annotation.Order);
+        Assert.Equal("MyFunction", annotation.FunctionName);
+    }
+
+    [Fact]
+    public void ParseAnnotations_OrderThenBulkEditModifiers_OrderIndependentParsing()
+    {
+        var path = Write("form.js", "// flowline:onload account \"Main\" [order:1][bulkEdit] MyFunction\ncode();");
+        var result = FormEventAnnotationParser.ParseAnnotations(path);
+
+        var annotation = Assert.Single(result.Annotations);
+        Assert.True(annotation.BulkEdit);
+        Assert.Equal(1, annotation.Order);
+    }
+
+    [Fact]
+    public void ParseAnnotations_OnChangeWithOrderModifier_ReturnsAttributeAndOrder()
+    {
+        var path = Write("form.js", "// flowline:onchange account \"Main\" creditlimit [order:2] onCreditLimitChange\ncode();");
+        var result = FormEventAnnotationParser.ParseAnnotations(path);
+
+        var annotation = Assert.Single(result.Annotations);
+        Assert.Equal("creditlimit", annotation.Attribute);
+        Assert.Equal(2, annotation.Order);
+        Assert.Equal("onCreditLimitChange", annotation.FunctionName);
+    }
+
+    [Fact]
+    public void ParseAnnotations_MalformedOrderValue_NotMatchedButFlaggedMalformed()
+    {
+        var path = Write("form.js", "// flowline:onload account \"Main\" [order:abc] MyFunction\ncode();");
+        var result = FormEventAnnotationParser.ParseAnnotations(path);
+
+        Assert.Empty(result.Annotations);
+        Assert.Single(result.MalformedLines);
+    }
+
+    [Fact]
+    public void ParseAnnotations_OrderValueOverflowsIntRange_NotMatchedButFlaggedMalformedNotThrown()
+    {
+        // Regression: the modifier regex used to accept an unbounded digit run, so an oversized [order:N]
+        // reached int.Parse and threw OverflowException instead of falling through to the malformed-line
+        // path like every other invalid modifier. Capping the regex at 9 digits fixes this at the grammar
+        // level — this line must not throw and must be reported the same way [order:abc] already is.
+        var path = Write("form.js", "// flowline:onload account \"Main\" [order:99999999999999999999] MyFunction\ncode();");
+        var result = FormEventAnnotationParser.ParseAnnotations(path);
+
+        Assert.Empty(result.Annotations);
+        Assert.Single(result.MalformedLines);
+    }
+
+    [Fact]
+    public void ParseAnnotations_UnclosedBracketModifier_NotMatchedButFlaggedMalformed()
+    {
+        var path = Write("form.js", "// flowline:onload account \"Main\" [bulkEdit MyFunction\ncode();");
+        var result = FormEventAnnotationParser.ParseAnnotations(path);
+
+        Assert.Empty(result.Annotations);
+        Assert.Single(result.MalformedLines);
+    }
+
+    [Fact]
+    public void ParseAnnotations_NoModifiers_DefaultsToFalseAndNull()
+    {
+        var path = Write("form.js", "// flowline:onload account \"Main\"\ncode();");
+        var result = FormEventAnnotationParser.ParseAnnotations(path);
+
+        var annotation = Assert.Single(result.Annotations);
+        Assert.False(annotation.BulkEdit);
+        Assert.Null(annotation.Order);
+    }
 }

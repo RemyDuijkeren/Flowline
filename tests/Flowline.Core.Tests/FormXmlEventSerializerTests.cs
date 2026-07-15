@@ -128,7 +128,7 @@ public class FormXmlEventSerializerTests
     {
         var doc = XDocument.Parse(NoEventsFormXml);
         var handlerId = Guid.Parse("55555555-5555-5555-5555-555555555555");
-        var desired = new HashSet<FormEventHandler> { new("Example1.onLoad", "av_ns/example1.js", handlerId, "") };
+        var desired = new List<FormEventHandler> { new("Example1.onLoad", "av_ns/example1.js", handlerId, "") };
 
         FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnLoad, desired);
 
@@ -155,7 +155,7 @@ public class FormXmlEventSerializerTests
     {
         var doc = XDocument.Parse(InternalAndPublicHandlersFormXml);
         var originalInternalHandlers = doc.Root!.Element("events")!.Element("event")!.Element("InternalHandlers")!.ToString();
-        var desired = new HashSet<FormEventHandler> { new("New.onLoad", "av_ns/new.js", Guid.NewGuid(), "") };
+        var desired = new List<FormEventHandler> { new("New.onLoad", "av_ns/new.js", Guid.NewGuid(), "") };
 
         FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnLoad, desired);
 
@@ -171,7 +171,7 @@ public class FormXmlEventSerializerTests
     public void SetHandlers_RemovesExistingHandlersBeforeAddingDesired()
     {
         var doc = XDocument.Parse(InternalAndPublicHandlersFormXml);
-        var desired = new HashSet<FormEventHandler>
+        var desired = new List<FormEventHandler>
         {
             new("A.onLoad", "av_ns/a.js", Guid.NewGuid(), ""),
             new("B.onLoad", "av_ns/b.js", Guid.NewGuid(), "")
@@ -191,7 +191,7 @@ public class FormXmlEventSerializerTests
         var onSaveEventBefore = doc.Root!.Element("events")!.Elements("event")
             .First(e => e.Attribute("name")?.Value == "onsave").ToString();
         var tabsBefore = doc.Root!.Element("tabs")!.ToString();
-        var desired = new HashSet<FormEventHandler> { new("New.onLoad", "av_ns/new.js", Guid.NewGuid(), "") };
+        var desired = new List<FormEventHandler> { new("New.onLoad", "av_ns/new.js", Guid.NewGuid(), "") };
 
         FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnLoad, desired);
 
@@ -247,7 +247,7 @@ public class FormXmlEventSerializerTests
         var libraryId = Guid.Parse("88888888-8888-8888-8888-888888888888");
 
         FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnLoad,
-            new HashSet<FormEventHandler> { new("Example1.onLoad", "av_ns/example1.js", handlerId, "") });
+            new List<FormEventHandler> { new("Example1.onLoad", "av_ns/example1.js", handlerId, "") });
         FormXmlEventSerializer.SetLibraries(doc,
             new HashSet<FormLibrary> { new("av_ns/example1.js", libraryId) });
 
@@ -282,7 +282,7 @@ public class FormXmlEventSerializerTests
     {
         var doc = XDocument.Parse(InternalAndPublicHandlersFormXml);
 
-        FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnLoad, new HashSet<FormEventHandler>());
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnLoad, new List<FormEventHandler>());
 
         var handlersElement = doc.Root!.Element("events")!.Element("event")!.Element("Handlers");
         Assert.NotNull(handlersElement);
@@ -370,7 +370,7 @@ public class FormXmlEventSerializerTests
     {
         var doc = XDocument.Parse(NoEventsFormXml);
         var handlerId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
-        var desired = new HashSet<FormEventHandler> { new("Example1.onCreditLimitChange", "av_ns/example1.js", handlerId, "") };
+        var desired = new List<FormEventHandler> { new("Example1.onCreditLimitChange", "av_ns/example1.js", handlerId, "") };
 
         FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnChange, desired, "creditlimit");
 
@@ -389,7 +389,7 @@ public class FormXmlEventSerializerTests
         var doc = XDocument.Parse(TwoOnChangeAttributesFormXml);
         var revenueEventBefore = doc.Root!.Element("events")!.Elements("event")
             .First(e => e.Attribute("attribute")?.Value == "revenue").ToString();
-        var desired = new HashSet<FormEventHandler> { new("Example1.onCreditLimitChangeV2", "av_ns/example1.js", Guid.NewGuid(), "") };
+        var desired = new List<FormEventHandler> { new("Example1.onCreditLimitChangeV2", "av_ns/example1.js", Guid.NewGuid(), "") };
 
         FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnChange, desired, "creditlimit");
 
@@ -407,7 +407,7 @@ public class FormXmlEventSerializerTests
     public void SetHandlers_OnLoadUnaffectedByAttributeParameter_DefaultsStayTrueTrue()
     {
         var doc = XDocument.Parse(NoEventsFormXml);
-        var desired = new HashSet<FormEventHandler> { new("Example1.onLoad", "av_ns/example1.js", Guid.NewGuid(), "") };
+        var desired = new List<FormEventHandler> { new("Example1.onLoad", "av_ns/example1.js", Guid.NewGuid(), "") };
 
         FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnLoad, desired);
 
@@ -441,7 +441,7 @@ public class FormXmlEventSerializerTests
     public void RoundTrip_SetHandlersOnChangeThenGetHandlers_ReturnsOriginalDesiredSet()
     {
         var doc = XDocument.Parse(NoEventsFormXml);
-        var desired = new HashSet<FormEventHandler>
+        var desired = new List<FormEventHandler>
         {
             new("Example1.onCreditLimitChange", "av_ns/example1.js", Guid.NewGuid(), "")
         };
@@ -457,7 +457,7 @@ public class FormXmlEventSerializerTests
     {
         var doc = XDocument.Parse(NoEventsFormXml);
         var handlerId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
-        var desired = new HashSet<FormEventHandler> { new("Example1.onCreditLimitChange", "av_ns/example1.js", handlerId, "") };
+        var desired = new List<FormEventHandler> { new("Example1.onCreditLimitChange", "av_ns/example1.js", handlerId, "") };
 
         FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnChange, desired, "creditlimit");
 
@@ -465,5 +465,313 @@ public class FormXmlEventSerializerTests
         Assert.Equal(
             """<Handler functionName="Example1.onCreditLimitChange" libraryName="av_ns/example1.js" handlerUniqueId="{cccccccc-cccc-cccc-cccc-cccccccccccc}" enabled="true" parameters="" passExecutionContext="true" />""",
             handlerElement.ToString(SaveOptions.DisableFormatting));
+    }
+
+    // --- tabstatechange (container-nested, live-verified shape) ---
+
+    const string TwoTabsFormXml =
+        """
+        <form>
+          <tabs>
+            <tab name="Summary">
+              <labels><label description="Summary" languagecode="1033" /></labels>
+              <columns><column width="100%" /></columns>
+            </tab>
+            <tab name="Details">
+              <labels><label description="Details" languagecode="1033" /></labels>
+              <columns><column width="100%" /></columns>
+            </tab>
+          </tabs>
+        </form>
+        """;
+
+    [Fact]
+    public void SetHandlers_TabStateChangeNoExistingEvent_CreatesNestedEventsInsideNamedTab()
+    {
+        var doc = XDocument.Parse(TwoTabsFormXml);
+        var handlerId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+        var desired = new List<FormEventHandler> { new("onSummaryTabStateChange", "av_ns/example1.js", handlerId, "") };
+
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.TabStateChange, desired, "Summary");
+
+        var summaryTab = doc.Root!.Descendants("tab").First(t => t.Attribute("name")?.Value == "Summary");
+        var eventElement = summaryTab.Element("events")!.Element("event")!;
+        Assert.Equal("tabstatechange", eventElement.Attribute("name")?.Value);
+        Assert.Equal("false", eventElement.Attribute("application")?.Value);
+        Assert.Equal("false", eventElement.Attribute("active")?.Value);
+        var handlerElement = Assert.Single(eventElement.Element("Handlers")!.Elements("Handler"));
+        Assert.Equal("onSummaryTabStateChange", handlerElement.Attribute("functionName")?.Value);
+
+        var detailsTab = doc.Root!.Descendants("tab").First(t => t.Attribute("name")?.Value == "Details");
+        Assert.Null(detailsTab.Element("events"));
+    }
+
+    [Fact]
+    public void SetHandlers_TabStateChangeTwoTabsSameFunctionName_StayIsolatedPerTab()
+    {
+        var doc = XDocument.Parse(TwoTabsFormXml);
+        var desired = new List<FormEventHandler> { new("onTabStateChange", "av_ns/example1.js", Guid.NewGuid(), "") };
+
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.TabStateChange, desired, "Summary");
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.TabStateChange, desired, "Details");
+
+        var summaryTab = doc.Root!.Descendants("tab").First(t => t.Attribute("name")?.Value == "Summary");
+        var detailsTab = doc.Root!.Descendants("tab").First(t => t.Attribute("name")?.Value == "Details");
+        Assert.NotNull(summaryTab.Element("events"));
+        Assert.NotNull(detailsTab.Element("events"));
+        Assert.NotSame(summaryTab.Element("events"), detailsTab.Element("events"));
+    }
+
+    [Fact]
+    public void GetHandlers_TabStateChangeMatchingTab_ReturnsHandlerList()
+    {
+        var doc = XDocument.Parse(TwoTabsFormXml);
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.TabStateChange,
+            [new("onSummaryTabStateChange", "av_ns/example1.js", Guid.NewGuid(), "")], "Summary");
+
+        var result = FormXmlEventSerializer.GetHandlers(doc, FormEventType.TabStateChange, "Summary");
+
+        var handler = Assert.Single(result);
+        Assert.Equal("onSummaryTabStateChange", handler.FunctionName);
+    }
+
+    [Fact]
+    public void GetHandlers_TabStateChangeNoMatchingTab_ReturnsEmptyList()
+    {
+        var doc = XDocument.Parse(TwoTabsFormXml);
+
+        var result = FormXmlEventSerializer.GetHandlers(doc, FormEventType.TabStateChange, "DoesNotExist");
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void SetHandlers_TabStateChangeUnknownTabName_ThrowsInvalidOperationException()
+    {
+        var doc = XDocument.Parse(TwoTabsFormXml);
+        var desired = new List<FormEventHandler> { new("onX", "av_ns/example1.js", Guid.NewGuid(), "") };
+
+        Assert.Throws<InvalidOperationException>(() =>
+            FormXmlEventSerializer.SetHandlers(doc, FormEventType.TabStateChange, desired, "DoesNotExist"));
+    }
+
+    [Fact]
+    public void GetTabNamesWithStateChangeHandlers_OneTabWithHandlers_ReturnsThatTabOnly()
+    {
+        var doc = XDocument.Parse(TwoTabsFormXml);
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.TabStateChange,
+            [new("onSummaryTabStateChange", "av_ns/example1.js", Guid.NewGuid(), "")], "Summary");
+
+        var result = FormXmlEventSerializer.GetTabNamesWithStateChangeHandlers(doc);
+
+        Assert.True(result.SetEquals(new[] { "Summary" }));
+    }
+
+    // --- onreadystatecomplete (container-nested, live-verified shape) ---
+
+    const string IframeCellNoEventsFormXml =
+        """
+        <form>
+          <tabs>
+            <tab name="Details">
+              <columns><column width="100%">
+                <sections><section name="s1">
+                  <rows><row><cell id="cell1">
+                    <control id="IFRAME_myFrame" classid="{FD2A7985-3187-444E-908D-6624B21F69C0}">
+                      <parameters><Url>https://example.com</Url></parameters>
+                    </control>
+                  </cell></row></rows>
+                </section></sections>
+              </column></columns>
+            </tab>
+          </tabs>
+        </form>
+        """;
+
+    const string IframeCellWithOnloadStubFormXml =
+        """
+        <form>
+          <tabs>
+            <tab name="Details">
+              <columns><column width="100%">
+                <sections><section name="s1">
+                  <rows><row><cell id="cell1">
+                    <control id="IFRAME_myFrame" classid="{FD2A7985-3187-444E-908D-6624B21F69C0}">
+                      <parameters><Url>https://example.com</Url></parameters>
+                    </control>
+                    <events>
+                      <event name="onload" application="false" active="false" />
+                    </events>
+                  </cell></row></rows>
+                </section></sections>
+              </column></columns>
+            </tab>
+          </tabs>
+        </form>
+        """;
+
+    [Fact]
+    public void SetHandlers_OnReadyStateCompleteNoExistingEvents_CreatesEventsSiblingOfControl()
+    {
+        var doc = XDocument.Parse(IframeCellNoEventsFormXml);
+        var handlerId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+        var desired = new List<FormEventHandler> { new("Test.onMyFrameReady", "av_ns/example1.js", handlerId, "") };
+
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnReadyStateComplete, desired, "IFRAME_myFrame");
+
+        var control = doc.Root!.Descendants("control").First(c => c.Attribute("id")?.Value == "IFRAME_myFrame");
+        var cell = control.Parent!;
+        var eventElement = cell.Element("events")!.Element("event")!;
+        Assert.Equal("onreadystatecomplete", eventElement.Attribute("name")?.Value);
+        Assert.Equal("false", eventElement.Attribute("application")?.Value);
+        Assert.Equal("false", eventElement.Attribute("active")?.Value);
+        var handlerElement = Assert.Single(eventElement.Element("Handlers")!.Elements("Handler"));
+        Assert.Equal("Test.onMyFrameReady", handlerElement.Attribute("functionName")?.Value);
+    }
+
+    [Fact]
+    public void SetHandlers_OnReadyStateCompleteCellHasOnloadStub_StubLeftUntouched()
+    {
+        // AE7 / R4: the Maker-Portal-auto-generated empty onload stub next to an IFRAME control must
+        // survive a write to that same cell's onreadystatecomplete event untouched.
+        var doc = XDocument.Parse(IframeCellWithOnloadStubFormXml);
+        var stubBefore = doc.Root!.Descendants("event").First(e => e.Attribute("name")?.Value == "onload").ToString();
+        var desired = new List<FormEventHandler> { new("Test.onMyFrameReady", "av_ns/example1.js", Guid.NewGuid(), "") };
+
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnReadyStateComplete, desired, "IFRAME_myFrame");
+
+        var stubAfter = doc.Root!.Descendants("event").First(e => e.Attribute("name")?.Value == "onload").ToString();
+        Assert.Equal(stubBefore, stubAfter);
+        var readyStateEvent = doc.Root!.Descendants("event").First(e => e.Attribute("name")?.Value == "onreadystatecomplete");
+        Assert.Single(readyStateEvent.Element("Handlers")!.Elements("Handler"));
+    }
+
+    [Fact]
+    public void SetHandlers_OnReadyStateCompleteUnknownControlId_ThrowsInvalidOperationException()
+    {
+        var doc = XDocument.Parse(IframeCellNoEventsFormXml);
+        var desired = new List<FormEventHandler> { new("onX", "av_ns/example1.js", Guid.NewGuid(), "") };
+
+        Assert.Throws<InvalidOperationException>(() =>
+            FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnReadyStateComplete, desired, "IFRAME_doesNotExist"));
+    }
+
+    [Fact]
+    public void GetIframeControlIdsWithReadyStateHandlers_OneControlWithHandlers_ReturnsThatControlOnlyAsBareId()
+    {
+        var doc = XDocument.Parse(IframeCellNoEventsFormXml);
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnReadyStateComplete,
+            [new("Test.onMyFrameReady", "av_ns/example1.js", Guid.NewGuid(), "")], "IFRAME_myFrame");
+
+        var result = FormXmlEventSerializer.GetIframeControlIdsWithReadyStateHandlers(doc);
+
+        // Bare form (prefix stripped) is the canonical scope-token representation — see
+        // FormXmlEventSerializer.NormalizeIframeControlId.
+        Assert.True(result.SetEquals(new[] { "myFrame" }));
+    }
+
+    [Theory]
+    [InlineData("IFRAME_myFrame")]
+    [InlineData("myFrame")]
+    [InlineData("iframe_myFrame")]
+    public void SetHandlers_OnReadyStateComplete_ResolvesSameControl_RegardlessOfPrefixCasing(string controlIdToken)
+    {
+        var doc = XDocument.Parse(IframeCellNoEventsFormXml);
+
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnReadyStateComplete,
+            [new("Test.onMyFrameReady", "av_ns/example1.js", Guid.NewGuid(), "")], controlIdToken);
+
+        var handlers = FormXmlEventSerializer.GetHandlers(doc, FormEventType.OnReadyStateComplete, "IFRAME_myFrame");
+        Assert.Single(handlers);
+        Assert.Equal("Test.onMyFrameReady", handlers[0].FunctionName);
+    }
+
+    [Fact]
+    public void RoundTrip_TabStateChangeSetThenGet_Idempotent()
+    {
+        var doc = XDocument.Parse(TwoTabsFormXml);
+        var desired = new List<FormEventHandler> { new("onSummaryTabStateChange", "av_ns/example1.js", Guid.NewGuid(), "") };
+
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.TabStateChange, desired, "Summary");
+        var firstWrite = doc.Root!.Descendants("tab").First(t => t.Attribute("name")?.Value == "Summary").ToString();
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.TabStateChange, desired, "Summary");
+        var secondWrite = doc.Root!.Descendants("tab").First(t => t.Attribute("name")?.Value == "Summary").ToString();
+
+        Assert.Equal(firstWrite, secondWrite);
+    }
+
+    [Fact]
+    public void RoundTrip_OnReadyStateCompleteSetThenGet_Idempotent()
+    {
+        var doc = XDocument.Parse(IframeCellNoEventsFormXml);
+        var desired = new List<FormEventHandler> { new("Test.onMyFrameReady", "av_ns/example1.js", Guid.NewGuid(), "") };
+
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnReadyStateComplete, desired, "IFRAME_myFrame");
+        var firstWrite = doc.Root!.Descendants("cell").First().ToString();
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnReadyStateComplete, desired, "IFRAME_myFrame");
+        var secondWrite = doc.Root!.Descendants("cell").First().ToString();
+
+        Assert.Equal(firstWrite, secondWrite);
+    }
+
+    // --- ordered writes (KTD2) ---
+
+    [Fact]
+    public void SetHandlers_MultipleHandlers_WrittenInSuppliedListOrder()
+    {
+        var doc = XDocument.Parse(NoEventsFormXml);
+        var desired = new List<FormEventHandler>
+        {
+            new("Third", "av_ns/lib.js", Guid.NewGuid(), ""),
+            new("First", "av_ns/lib.js", Guid.NewGuid(), ""),
+            new("Second", "av_ns/lib.js", Guid.NewGuid(), "")
+        };
+
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnLoad, desired);
+
+        var handlerNames = doc.Root!.Element("events")!.Element("event")!.Element("Handlers")!
+            .Elements("Handler").Select(h => h.Attribute("functionName")?.Value);
+        Assert.Equal(["Third", "First", "Second"], handlerNames);
+    }
+
+    // --- BehaviorInBulkEditForm (KTD4) ---
+
+    [Fact]
+    public void SetHandlers_OnLoadBulkEditEnabledTrue_SetsBehaviorInBulkEditFormAttribute()
+    {
+        var doc = XDocument.Parse(NoEventsFormXml);
+        var desired = new List<FormEventHandler> { new("onLoad", "av_ns/lib.js", Guid.NewGuid(), "") };
+
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnLoad, desired, bulkEditEnabled: true);
+
+        var eventElement = doc.Root!.Element("events")!.Element("event")!;
+        Assert.Equal("Enabled", eventElement.Attribute("BehaviorInBulkEditForm")?.Value);
+    }
+
+    [Fact]
+    public void SetHandlers_OnLoadBulkEditEnabledFalseAfterPreviouslyEnabled_RemovesAttributeEntirely()
+    {
+        var doc = XDocument.Parse(NoEventsFormXml);
+        var desired = new List<FormEventHandler> { new("onLoad", "av_ns/lib.js", Guid.NewGuid(), "") };
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnLoad, desired, bulkEditEnabled: true);
+
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnLoad, desired, bulkEditEnabled: false);
+
+        var eventElement = doc.Root!.Element("events")!.Element("event")!;
+        Assert.Null(eventElement.Attribute("BehaviorInBulkEditForm"));
+    }
+
+    [Fact]
+    public void SetHandlers_OnSaveBulkEditEnabledTrue_AttributeNotWritten()
+    {
+        // BehaviorInBulkEditForm is OnLoad-only (Scope Boundaries) — passing bulkEditEnabled for any other
+        // event type must have no effect, even though the parser/model permit the modifier syntactically.
+        var doc = XDocument.Parse(NoEventsFormXml);
+        var desired = new List<FormEventHandler> { new("onSave", "av_ns/lib.js", Guid.NewGuid(), "") };
+
+        FormXmlEventSerializer.SetHandlers(doc, FormEventType.OnSave, desired, bulkEditEnabled: true);
+
+        var eventElement = doc.Root!.Element("events")!.Element("event")!;
+        Assert.Null(eventElement.Attribute("BehaviorInBulkEditForm"));
     }
 }

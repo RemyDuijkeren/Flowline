@@ -66,9 +66,14 @@ public static class FormEventRenameAdvisor
 
             // Recomputed with requestedName (the annotation's still-unrenamed target) — that's what was
             // true when the handler was originally registered, not any candidate's current live name.
-            // attribute is non-null only for OnChange — no new cache dimension needed (R18), but the
-            // deterministic id and the XML scan both still need it to target the right event element.
-            var attribute = resolved.Annotation.Attribute;
+            // attribute is non-null for OnChange/TabStateChange/OnReadyStateComplete — the deterministic id
+            // and the XML scan both still need it to target the right event element. Normalized for
+            // OnReadyStateComplete to match FormEventPlanner's canonical (bare, prefix-stripped) hashing
+            // convention — otherwise a "IFRAME_"-prefixed annotation would never self-tag-match the handler
+            // the planner actually wrote, which hashed against the stripped form.
+            var attribute = evt == FormEventType.OnReadyStateComplete && resolved.Annotation.Attribute is not null
+                ? FormXmlEventSerializer.NormalizeIframeControlId(resolved.Annotation.Attribute)
+                : resolved.Annotation.Attribute;
             var expectedId = FormEventDeterministicId.ForHandler(entity, requestedName, evt, finalFunctionName!, resolved.LibraryName, attribute);
 
             foreach (var candidate in candidatesForEntity)
@@ -117,10 +122,14 @@ public static class FormEventRenameAdvisor
 
     // Mirrors FormEventPlanner.BuildProposedAnnotation's shape, but reconstructed from the annotation as
     // originally written (FunctionName/Parameters may be null/defaulted) rather than a resolved Handler.
+    // KTD6: Attribute is non-null for onchange/tabstatechange/onreadystatecomplete alike, so a null check
+    // already distinguishes them from onload/onsave without listing each attribute-scoped FormEventType —
+    // a rename suggestion for a Tab/IFRAME-scoped annotation now correctly includes its scope token instead
+    // of rendering text that wouldn't parse back through the mandatory-scope-token regex (R2).
     static string BuildSuggestedAnnotation(string entity, string candidateName, ResolvedFormEventAnnotation resolved)
     {
         var directive = resolved.Annotation.Event.ToString().ToLowerInvariant();
-        var attribute = resolved.Annotation.Event == FormEventType.OnChange ? $" {resolved.Annotation.Attribute}" : "";
+        var attribute = resolved.Annotation.Attribute is not null ? $" {resolved.Annotation.Attribute}" : "";
         var function = resolved.Annotation.FunctionName is null ? "" : $" {resolved.Annotation.FunctionName}";
         var parameters = string.IsNullOrEmpty(resolved.Annotation.Parameters) ? "" : $"({resolved.Annotation.Parameters})";
         return $"// flowline:{directive} {entity} \"{candidateName}\"{attribute}{function}{parameters}";

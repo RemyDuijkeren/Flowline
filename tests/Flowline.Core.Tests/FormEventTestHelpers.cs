@@ -18,7 +18,7 @@ static class FormEventTestHelpers
     {
         var xdoc = new XDocument(new XElement("form"));
         if (evt.HasValue)
-            FormXmlEventSerializer.SetHandlers(xdoc, evt.Value, handlers ?? new HashSet<FormEventHandler>());
+            FormXmlEventSerializer.SetHandlers(xdoc, evt.Value, (handlers ?? new HashSet<FormEventHandler>()).ToList());
         if (libraries != null)
             FormXmlEventSerializer.SetLibraries(xdoc, libraries);
         return xdoc.ToString();

@@ -81,6 +81,21 @@ public class FormEventModelsTests
         Assert.Equal(withoutAttributeParam, withNullAttribute);
     }
 
+    [Fact]
+    public void ForHandler_SameScopeStringDifferentEventType_ReturnsDifferentGuid()
+    {
+        // "Summary" as a tab name, an IFRAME control id, and an onchange attribute must never collide —
+        // FormEventType is already part of the hash key, so distinct enum members guarantee distinctness
+        // even though all three now share the same `attribute` hash dimension.
+        var tab = FormEventDeterministicId.ForHandler("account", "main", FormEventType.TabStateChange, "onSummaryTabStateChange", "av_/lib.js", "Summary");
+        var iframe = FormEventDeterministicId.ForHandler("account", "main", FormEventType.OnReadyStateComplete, "onSummaryTabStateChange", "av_/lib.js", "Summary");
+        var onChange = FormEventDeterministicId.ForHandler("account", "main", FormEventType.OnChange, "onSummaryTabStateChange", "av_/lib.js", "Summary");
+
+        Assert.NotEqual(tab, iframe);
+        Assert.NotEqual(tab, onChange);
+        Assert.NotEqual(iframe, onChange);
+    }
+
     // --- FormEventDeterministicId.ForLibrary ---
 
     [Fact]
@@ -141,5 +156,56 @@ public class FormEventModelsTests
 
         Assert.False(added);
         Assert.Single(set);
+    }
+
+    // --- FormEventType ---
+
+    [Fact]
+    public void FormEventType_ContainsFiveMembersIncludingTabAndIframe()
+    {
+        var members = Enum.GetValues<FormEventType>();
+
+        Assert.Equal(5, members.Length);
+        Assert.Contains(FormEventType.TabStateChange, members);
+        Assert.Contains(FormEventType.OnReadyStateComplete, members);
+    }
+
+    // --- FormEventAnnotation modifiers ---
+
+    [Fact]
+    public void FormEventAnnotation_DefaultConstructed_HasFalseBulkEditAndNullOrder()
+    {
+        var annotation = new FormEventAnnotation("account", "main", FormEventType.OnLoad, "onLoad", null);
+
+        Assert.False(annotation.BulkEdit);
+        Assert.Null(annotation.Order);
+    }
+
+    [Fact]
+    public void FormEventAnnotation_WithBulkEditAndOrder_RoundTripsThroughDeconstruction()
+    {
+        var annotation = new FormEventAnnotation("account", "main", FormEventType.OnLoad, "onLoad", null, BulkEdit: true, Order: 5);
+
+        Assert.True(annotation.BulkEdit);
+        Assert.Equal(5, annotation.Order);
+    }
+
+    // --- FormEventFormPlan.DesiredHandlers ordering ---
+
+    [Fact]
+    public void FormEventFormPlan_DesiredHandlers_PreservesConstructedOrder()
+    {
+        IReadOnlyList<FormEventHandler> ordered =
+        [
+            new("First", "av_/lib.js", Guid.NewGuid(), ""),
+            new("Second", "av_/lib.js", Guid.NewGuid(), ""),
+            new("Third", "av_/lib.js", Guid.NewGuid(), "")
+        ];
+
+        var plan = new FormEventFormPlan(
+            Guid.NewGuid(), "account", "main", FormEventType.OnLoad,
+            ordered, new HashSet<UnrecognizedHandler>(), new HashSet<FormLibrary>());
+
+        Assert.Equal(["First", "Second", "Third"], plan.DesiredHandlers.Select(h => h.FunctionName));
     }
 }

@@ -294,7 +294,7 @@ public class FormEventRenameAdvisorTests : IDisposable
         var expectedId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.OnChange, "onCreditlimitChange", library, attribute);
         var xdoc = System.Xml.Linq.XDocument.Parse(BuildFormXml());
         FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnChange,
-            new HashSet<FormEventHandler> { new("onCreditlimitChange", library, expectedId, "") }, attribute);
+            new List<FormEventHandler> { new("onCreditlimitChange", library, expectedId, "") }, attribute);
 
         var annotation = new ResolvedFormEventAnnotation(
             new FormEventAnnotation(entity, oldName, FormEventType.OnChange, null, null, attribute), library, "function onCreditlimitChange() {}", "src/lib.ts");
@@ -326,7 +326,7 @@ public class FormEventRenameAdvisorTests : IDisposable
         var revenueId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.OnChange, "onRevenueChange", library, "revenue");
         var xdoc = System.Xml.Linq.XDocument.Parse(BuildFormXml());
         FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnChange,
-            new HashSet<FormEventHandler> { new("onRevenueChange", library, revenueId, "") }, "revenue");
+            new List<FormEventHandler> { new("onRevenueChange", library, revenueId, "") }, "revenue");
 
         // Annotation targets "creditlimit", not "revenue" — its expected id (derived with attribute
         // "creditlimit") will never match the "revenue"-scoped handler above, id collision aside.
@@ -379,7 +379,7 @@ public class FormEventRenameAdvisorTests : IDisposable
 
         var xdoc = System.Xml.Linq.XDocument.Parse(BuildFormXml());
         FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnChange,
-            new HashSet<FormEventHandler> { new("someOtherFn", "unrelated.js", Guid.NewGuid(), "") }, "creditlimit");
+            new List<FormEventHandler> { new("someOtherFn", "unrelated.js", Guid.NewGuid(), "") }, "creditlimit");
 
         var annotation = new ResolvedFormEventAnnotation(
             new FormEventAnnotation(entity, oldName, FormEventType.OnChange, null, null, "creditlimit"), "av_/lib.js", "function unrelated() {}", "src/lib.ts");
@@ -415,7 +415,7 @@ public class FormEventRenameAdvisorTests : IDisposable
         var expectedId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.OnChange, "onCreditlimitChange", library, attribute);
         var xdoc = System.Xml.Linq.XDocument.Parse(BuildFormXml());
         FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnChange,
-            new HashSet<FormEventHandler> { new("onCreditlimitChange", library, expectedId, "") }, attribute);
+            new List<FormEventHandler> { new("onCreditlimitChange", library, expectedId, "") }, attribute);
 
         var annotation = new ResolvedFormEventAnnotation(
             new FormEventAnnotation(entity, oldName, FormEventType.OnChange, null, null, attribute), library, "function onCreditlimitChange() {}", "src/lib.ts");
@@ -428,5 +428,100 @@ public class FormEventRenameAdvisorTests : IDisposable
         var suggestion = FormEventRenameAdvisor.Suggest(entity, oldName, [annotation], solutionForms, NewCache());
 
         suggestion.Should().NotBeNull(); // a suggestion exists — but Suggest itself never resolves the form or the push
+    }
+
+    // --- Tab/IFRAME scope-token pass-through (U5) ---
+
+    [Fact]
+    public void Suggest_TabStateChangeSelfTagMatch_FindsRenamedFormViaScopeKeyedScanAndIncludesTabNameInSuggestion()
+    {
+        const string entity = "account";
+        const string oldName = "Old Main";
+        const string newName = "New Main";
+        const string library = "av_/lib.js";
+        const string tabName = "Summary";
+
+        var expectedId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.TabStateChange, "onSummaryTabStateChange", library, tabName);
+        var xdoc = System.Xml.Linq.XDocument.Parse("""<form><tabs><tab name="Summary"><columns><column width="100%" /></columns></tab></tabs></form>""");
+        FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.TabStateChange,
+            new List<FormEventHandler> { new("onSummaryTabStateChange", library, expectedId, "") }, tabName);
+
+        var annotation = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation(entity, oldName, FormEventType.TabStateChange, null, null, tabName), library, "function onSummaryTabStateChange() {}", "src/lib.ts");
+
+        var solutionForms = new List<DataverseForm>
+        {
+            new(Guid.NewGuid(), newName, entity, xdoc.ToString(), null)
+        };
+
+        var suggestion = FormEventRenameAdvisor.Suggest(entity, oldName, [annotation], solutionForms, NewCache());
+
+        suggestion.Should().NotBeNull();
+        suggestion.Should().Contain(newName);
+        suggestion.Should().Contain("renamed to");
+        // KTD6 regression: the scope token must appear in the rewritten annotation, same as onchange.
+        suggestion.Should().Contain($"// flowline:tabstatechange {entity} \"{newName}\" {tabName}");
+    }
+
+    [Fact]
+    public void Suggest_OnReadyStateCompleteSelfTagMatch_FindsRenamedFormViaScopeKeyedScanAndIncludesControlIdInSuggestion()
+    {
+        const string entity = "account";
+        const string oldName = "Old Main";
+        const string newName = "New Main";
+        const string library = "av_/lib.js";
+        const string controlId = "IFRAME_myFrame";
+
+        // Hashed against the canonical bare (prefix-stripped) form — matching FormEventPlanner's own
+        // convention (FormXmlEventSerializer.NormalizeIframeControlId) — even though the annotation below
+        // is written with the full "IFRAME_"-prefixed token; self-tag matching must still succeed.
+        var expectedId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.OnReadyStateComplete, "onMyFrameReadyStateComplete", library, "myFrame");
+        var xdoc = System.Xml.Linq.XDocument.Parse(
+            """<form><tabs><tab name="Details"><columns><column width="100%"><sections><section name="s1"><rows><row><cell id="cell1"><control id="IFRAME_myFrame" classid="{FD2A7985-3187-444E-908D-6624B21F69C0}"><parameters><Url>https://example.com</Url></parameters></control></cell></row></rows></section></sections></column></columns></tab></tabs></form>""");
+        FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnReadyStateComplete,
+            new List<FormEventHandler> { new("onMyFrameReadyStateComplete", library, expectedId, "") }, controlId);
+
+        // Explicit function name (not the default-derived "on" + PascalCase(IFRAME_myFrame) +
+        // "ReadyStateComplete", which would PascalCase past the underscore) — keeps this test isolated to
+        // self-tag matching, not name-derivation behavior.
+        var annotation = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation(entity, oldName, FormEventType.OnReadyStateComplete, "onMyFrameReadyStateComplete", null, controlId), library, "function onMyFrameReadyStateComplete() {}", "src/lib.ts");
+
+        var solutionForms = new List<DataverseForm>
+        {
+            new(Guid.NewGuid(), newName, entity, xdoc.ToString(), null)
+        };
+
+        var suggestion = FormEventRenameAdvisor.Suggest(entity, oldName, [annotation], solutionForms, NewCache());
+
+        suggestion.Should().NotBeNull();
+        suggestion.Should().Contain(newName);
+        suggestion.Should().Contain("renamed to");
+        suggestion.Should().Contain($"// flowline:onreadystatecomplete {entity} \"{newName}\" {controlId}");
+    }
+
+    [Fact]
+    public void Suggest_SoleSurvivorWithTabScopedSharingAnnotation_StillFiresAtWholeFormGranularity()
+    {
+        // Scope Boundaries: rename resilience is whole-form-identity scoped, not sub-element (tab/IFRAME)
+        // scoped — a Tab-scoped sharing annotation must not change the sole-survivor signal's behavior.
+        const string entity = "account";
+        const string oldName = "Old Main";
+        const string onlyLiveName = "Only Form";
+
+        var formXml = System.Xml.Linq.XDocument.Parse("""<form><tabs><tab name="Summary"><columns><column width="100%" /></columns></tab></tabs></form>""").ToString();
+        var annotation = new ResolvedFormEventAnnotation(
+            new FormEventAnnotation(entity, oldName, FormEventType.TabStateChange, null, null, "Summary"), "av_/lib.js", "function unrelated() {}", "src/lib.ts");
+
+        var solutionForms = new List<DataverseForm>
+        {
+            new(Guid.NewGuid(), onlyLiveName, entity, formXml, null)
+        };
+
+        var suggestion = FormEventRenameAdvisor.Suggest(entity, oldName, [annotation], solutionForms, NewCache());
+
+        suggestion.Should().NotBeNull();
+        suggestion.Should().Contain(onlyLiveName);
+        suggestion.Should().Contain("only form left");
     }
 }
