@@ -367,44 +367,77 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
 
         if (existingPackage != null && storedHash == hash)
         {
-            if (runMode == RunMode.DryRun)
-            {
-                console.Skip("Plugin package already up to date — skipping");
-                return false;
-            }
-
             // R4/R11 (item 8): package content unchanged — no package write at all, but each assembly's
-            // steps are still diffed and synced directly against its own scoped snapshot (drift
-            // correction). Never touches WarnOrphanAssembliesAsync/WarnOrphanStepsAsync (R11/KTD16).
+            // steps are still diffed and synced (or previewed under --dry-run) directly against its own
+            // scoped snapshot (drift correction). Never touches WarnOrphanAssembliesAsync/WarnOrphanStepsAsync
+            // (R11/KTD16).
             return await SyncPackageStepsOnlyAsync(service, assemblies, existingPackage.Id, solutionName, runMode, cancellationToken).ConfigureAwait(false);
         }
+
+        // Snapshot + plan per assembly against CURRENT (pre-update) state — this is the one plan shown
+        // to the user via WritePlanTree, in both --dry-run and --verbose (real run), so the two never
+        // diverge (the post-update re-plan further down is execution-only, since Dataverse's own package
+        // sync mutates plugin type records mid-flight — KD4). An assembly not yet registered under this
+        // package (a brand-new package, or a brand-new secondary assembly, KD5) has nothing to diff
+        // against, so it falls back to a fresh dummy assembly id — the same trick
+        // GetOrRegisterAssemblyAsync's brand-new-assembly dry-run branch already uses — so
+        // LoadSnapshotAsync naturally comes back empty and the plan renders as a full "create" tree
+        // instead of being skipped.
+        IReadOnlyList<(PluginAssemblyMetadata Metadata, Entity? Assembly, RegistrationSnapshot? Snapshot)> preSnapshots;
+        if (existingPackage != null)
+            preSnapshots = await _reader.LoadPackageSnapshotsAsync(service, existingPackage.Id, assemblies, solutionName, cancellationToken).ConfigureAwait(false);
+        else
+            preSnapshots = assemblies.Select(m => (m, (Entity?)null, (RegistrationSnapshot?)null)).ToList();
+        var preKnownPluginTypeIds = AllPluginTypeIds(preSnapshots);
+
+        var prePlans = new List<(PluginAssemblyMetadata Metadata, RegistrationPlan Plan)>();
+        foreach (var (metadata, assemblyEntity, snapshot) in preSnapshots)
+        {
+            if (assemblyEntity != null && snapshot != null)
+            {
+                prePlans.Add((metadata, _planner.Plan(snapshot, metadata, assemblyEntity, solutionName, preKnownPluginTypeIds)));
+                continue;
+            }
+
+            var planAssembly = new Entity("pluginassembly") { Id = Guid.NewGuid() };
+            var planSnapshot = await _reader.LoadSnapshotAsync(service, planAssembly.Id, metadata, solutionName, cancellationToken).ConfigureAwait(false);
+
+            // snapshot.CustomApis is queried prefix-wide (KTD15/16), so a not-yet-registered assembly's
+            // snapshot still contains every OTHER assembly's live Custom APIs. It owns none of them yet
+            // (nothing exists under its dummy id), so extend the known-plugin-type-ids set with every
+            // type those APIs already belong to — otherwise the unlinked-API sweep mistakes an unrelated,
+            // live Custom API for one this brand-new assembly should delete (display-only; this dummy
+            // plan's PluginTypes.Deletes is always empty, so it never drives a real delete regardless).
+            var dummyKnownPluginTypeIds = new HashSet<Guid>(preKnownPluginTypeIds);
+            foreach (var api in planSnapshot.CustomApis)
+            {
+                var typeId = api.GetAttributeValue<EntityReference>("plugintypeid")?.Id;
+                if (typeId is { } id && id != Guid.Empty)
+                    dummyKnownPluginTypeIds.Add(id);
+            }
+
+            prePlans.Add((metadata, _planner.Plan(planSnapshot, metadata, planAssembly, solutionName, dummyKnownPluginTypeIds)));
+        }
+
+        foreach (var (metadata, plan) in prePlans)
+            WritePlanTree(metadata, needsUpdate: false, plan, runMode);
 
         if (runMode == RunMode.DryRun)
         {
             console.Info(existingPackage == null
                 ? $"  [green]+[/] Package [bold]{packageUniqueName}[/] ({primary.Version}) — would create"
                 : $"  [yellow]~[/] Package [bold]{packageUniqueName}[/] — would update content");
-            console.Ok("Dry run: 1 update. Run without --dry-run to apply.");
             return true;
         }
 
         // KD4/KTD13: for an existing package, any assembly whose class was removed must have its
         // steps/custom APIs deleted *before* the content update — Dataverse rejects the update
-        // otherwise. A brand-new package (existingPackage == null) has no prior assemblies yet, so
-        // there is nothing of theirs to delete.
-        if (existingPackage != null)
+        // otherwise. A brand-new package assembly has nothing existing of its own to delete, so its
+        // plan naturally has zero PluginTypes.Deletes and this is a no-op for it.
+        foreach (var (_, plan) in prePlans)
         {
-            var preSnapshots = await _reader.LoadPackageSnapshotsAsync(service, existingPackage.Id, assemblies, solutionName, cancellationToken).ConfigureAwait(false);
-            var preKnownPluginTypeIds = AllPluginTypeIds(preSnapshots);
-            foreach (var (metadata, assemblyEntity, snapshot) in preSnapshots)
-            {
-                if (assemblyEntity == null || snapshot == null) continue; // not yet present — nothing of this assembly's to delete
-
-                var plan = _planner.Plan(snapshot, metadata, assemblyEntity, solutionName, preKnownPluginTypeIds);
-                if (plan.PluginTypes.Deletes.Count == 0) continue; // no class was removed for this assembly
-
-                await _executor.ExecuteDeletesAsync(service, plan.NonPluginTypeDeletes(), solutionName, runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
-            }
+            if (plan.PluginTypes.Deletes.Count == 0) continue; // no class was removed for this assembly
+            await _executor.ExecuteDeletesAsync(service, plan.NonPluginTypeDeletes(), solutionName, runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
         }
 
         var packageId = await WritePackageContentAsync(service, existingPackage, packageUniqueName, primary, nupkgContent, solutionName, cancellationToken).ConfigureAwait(false);
@@ -419,12 +452,15 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         await WritePackageAssemblyMarkerAsync(service, primaryPost.Assembly, hash, cancellationToken).ConfigureAwait(false);
 
         // Re-plan per assembly against the post-update snapshot (types have changed for any assembly
-        // with removed classes) and run the remaining deletes/upserts/adds. The pre-update pass above
-        // only ever deletes steps/custom-APIs for an assembly whose PLUGIN TYPE was removed (the specific
-        // ordering KD4 requires before the content update) — a step or Custom API removed from a plugin
-        // type that itself survives is never covered by that gate. Guard the post-update delete on
-        // PluginTypes.Deletes being empty here so an assembly the pre-update pass already handled isn't
-        // reprocessed a second time once Dataverse's own package sync has removed its emptied type.
+        // with removed classes) and run the remaining deletes/upserts/adds. Execution-only — the tree
+        // already shown above (from the pre-update snapshot) is what the user sees; this re-plan exists
+        // only because Dataverse's package sync mutates plugin type records as a side effect of the
+        // content update, which the pre-update snapshot can't have known about. The pre-update pass
+        // above only ever deletes steps/custom-APIs for an assembly whose PLUGIN TYPE was removed (the
+        // specific ordering KD4 requires before the content update) — a step or Custom API removed from
+        // a plugin type that itself survives is never covered by that gate. Guard the post-update delete
+        // on PluginTypes.Deletes being empty here so an assembly the pre-update pass already handled
+        // isn't reprocessed a second time once Dataverse's own package sync has removed its emptied type.
         // PluginTypes.Deletes itself is never acted on (KD2/KD4/KTD13 — Dataverse handles that removal).
         var postKnownPluginTypeIds = AllPluginTypeIds(postSnapshots);
         foreach (var (metadata, assemblyEntity, snapshot) in postSnapshots)
@@ -457,7 +493,7 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         var snapshots = await _reader.LoadPackageSnapshotsAsync(service, packageId, assemblies, solutionName, cancellationToken).ConfigureAwait(false);
         var knownPluginTypeIds = AllPluginTypeIds(snapshots);
 
-        var anyChanges = false;
+        var plans = new List<(PluginAssemblyMetadata Metadata, RegistrationPlan Plan)>();
         foreach (var (metadata, assemblyEntity, snapshot) in snapshots)
         {
             if (assemblyEntity == null || snapshot == null) continue;
@@ -465,18 +501,33 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
             var plan = _planner.Plan(snapshot, metadata, assemblyEntity, solutionName, knownPluginTypeIds);
             if (plan.TotalChanges == 0) continue;
 
-            anyChanges = true;
+            plans.Add((metadata, plan));
+        }
+
+        if (plans.Count == 0)
+        {
+            console.Skip("Plugin package already up to date — skipping");
+            return false;
+        }
+
+        // Same plan drives both the --dry-run preview and the --verbose display below (WritePlanTree
+        // branches on runMode internally) and the real execution — no package content write happens on
+        // this path, so unlike the changed-package flow above there's no pre/post snapshot split needed.
+        foreach (var (metadata, plan) in plans)
+            WritePlanTree(metadata, needsUpdate: false, plan, runMode);
+
+        if (runMode == RunMode.DryRun)
+            return true;
+
+        foreach (var (_, plan) in plans)
+        {
             await _executor.ExecuteDeletesAsync(service, plan, solutionName, runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
             await _executor.ExecuteUpsertsAsync(service, plan, solutionName, cancellationToken).ConfigureAwait(false);
             await _executor.ExecuteAddToSolutionAsync(service, plan, cancellationToken).ConfigureAwait(false);
         }
 
-        if (anyChanges)
-            console.Ok("Plugin package content unchanged — synced drifted step registration(s)");
-        else
-            console.Skip("Plugin package already up to date — skipping");
-
-        return anyChanges;
+        console.Ok("Plugin package content unchanged — synced drifted step registration(s)");
+        return true;
     }
 
     // R6/KTD14: a handful of short, bounded 1-second polls — defense-in-depth for the untested case of

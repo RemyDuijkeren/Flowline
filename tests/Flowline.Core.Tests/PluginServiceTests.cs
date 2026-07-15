@@ -1933,6 +1933,122 @@ public class PluginServiceTests
         await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>());
     }
 
+    // -- WritePlanTree carry-over for the package path (dry-run preview / verbose display) --
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_DryRun_NewPackage_ShowsPlanTree()
+    {
+        SetupAssembly(); // no existing pluginassembly -> no classic conflict
+        SetupPluginPackage(); // no existing package
+        SetupPluginTypes(); // no existing plugin types -> the dummy-snapshot fallback sees nothing
+        SetupSteps(); // no existing steps
+
+        var plugin = new PluginTypeMetadata("MyPluginType", "Ns.MyPluginType",
+            [new PluginStepMetadata("Ns.MyPluginType: Update of account", "Update", "account", 20, 0, 1, null, null, [], [])],
+            []);
+        var assemblies = new List<PluginAssemblyMetadata>
+        {
+            new("MyPlugin", "MyPlugin, Version=1.0.0.0", new byte[] { 9, 9, 9 }, "dll-hash-unused", "1.0.0.0", null, "neutral", [plugin])
+        };
+
+        var result = await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, assemblies, NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution", RunMode.DryRun);
+
+        Assert.True(result);
+        Assert.Contains("MyPluginType", _console.Output);
+        Assert.Contains("Update of account", _console.Output);
+        Assert.Contains("would create", _console.Output);
+        Assert.Contains("Dry run:", _console.Output);
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_Verbose_NewPackage_ShowsPlanTree()
+    {
+        // Real (non-dry-run) execution must show the same per-assembly tree the dry-run preview shows —
+        // WritePlanTree renders via console.Verbose(tree) when runMode != DryRun.
+        _runtimeOptions.IsVerbose = true;
+        SetupAssembly();
+        SetupPackageAssemblyFoundAfterCreate("MyPlugin");
+        SetupPluginPackage();
+        SetupPluginTypes();
+        SetupSteps();
+
+        var plugin = new PluginTypeMetadata("MyPluginType", "Ns.MyPluginType",
+            [new PluginStepMetadata("Ns.MyPluginType: Update of account", "Update", "account", 20, 0, 1, null, null, [], [])],
+            []);
+        var assemblies = new List<PluginAssemblyMetadata>
+        {
+            new("MyPlugin", "MyPlugin, Version=1.0.0.0", new byte[] { 9, 9, 9 }, "dll-hash-unused", "1.0.0.0", null, "neutral", [plugin])
+        };
+
+        var result = await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, assemblies, NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
+
+        Assert.True(result);
+        Assert.Contains("MyPluginType", _console.Output);
+        Assert.Contains("Update of account", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_DryRun_UnchangedHash_StepDrift_ShowsPlanTree()
+    {
+        // Steps-only path (hash unchanged): a step that drifted out of Dataverse (e.g. deleted manually)
+        // must still preview via WritePlanTree under --dry-run, not just a generic "up to date" message.
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId, hash: NupkgHash));
+        SetupPluginPackage(ExistingPluginPackage(Guid.NewGuid()));
+        SetupPackageAssemblyByName(assemblyId, "MyPlugin");
+        SetupPluginTypesForAssembly(assemblyId); // no existing types registered -> drift
+        SetupStepsForAssembly(assemblyId);
+
+        var plugin = new PluginTypeMetadata("MyPluginType", "Ns.MyPluginType",
+            [new PluginStepMetadata("Ns.MyPluginType: Update of account", "Update", "account", 20, 0, 1, null, null, [], [])],
+            []);
+        var assemblies = new List<PluginAssemblyMetadata>
+        {
+            new("MyPlugin", "MyPlugin, Version=1.0.0.0", new byte[] { 9, 9, 9 }, "dll-hash-unused", "1.0.0.0", null, "neutral", [plugin])
+        };
+
+        var result = await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, assemblies, NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution", RunMode.DryRun);
+
+        Assert.True(result);
+        Assert.Contains("MyPluginType", _console.Output);
+        Assert.Contains("would create", _console.Output);
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_DryRun_NewPackage_DoesNotFlagUnrelatedCustomApiAsOrphan()
+    {
+        // snapshot.CustomApis is queried by publisher prefix only (not per-assembly) — a brand-new
+        // package's dummy snapshot must not mistake a sibling project's live Custom API for orphaned.
+        SetupAssembly();
+        SetupPluginPackage();
+        SetupPluginTypes();
+        SetupSteps();
+
+        var siblingTypeId = Guid.NewGuid();
+        SetupCustomApis(new Entity("customapi", Guid.NewGuid())
+        {
+            ["uniquename"] = "abc_SiblingApi",
+            ["plugintypeid"] = new EntityReference("plugintype", siblingTypeId)
+        });
+
+        var plugin = new PluginTypeMetadata("MyPluginType", "Ns.MyPluginType", [], [], false);
+        var assemblies = new List<PluginAssemblyMetadata>
+        {
+            new("MyPlugin", "MyPlugin, Version=1.0.0.0", new byte[] { 9, 9, 9 }, "dll-hash-unused", "1.0.0.0", null, "neutral", [plugin])
+        };
+
+        var result = await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, assemblies, NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution", RunMode.DryRun);
+
+        Assert.True(result);
+        Assert.DoesNotContain("abc_SiblingApi", _console.Output);
+    }
+
     // -- WritePackageAssemblyMarkerAsync (standalone marker write, part of R6) --
 
     [Fact]
