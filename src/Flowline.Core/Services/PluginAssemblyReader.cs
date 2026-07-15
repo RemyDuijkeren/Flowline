@@ -49,9 +49,7 @@ public class PluginAssemblyReader(IAnsiConsole console)
             // needing them bundled inside the package.
             var nupkgDir = Path.GetDirectoryName(Path.GetFullPath(nupkgPath));
             var siblingDlls = nupkgDir != null && Directory.Exists(nupkgDir)
-                ? Directory.EnumerateFiles(nupkgDir, "*.dll", SearchOption.AllDirectories)
-                    .GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
-                    .Select(g => g.First())
+                ? DedupeSiblingDlls(Directory.EnumerateFiles(nupkgDir, "*.dll", SearchOption.AllDirectories))
                 : [];
 
             var results = new List<PluginAssemblyMetadata>();
@@ -70,10 +68,11 @@ public class PluginAssemblyReader(IAnsiConsole console)
                 // metadata, not which files a custom pack target physically copies into lib/. When that
                 // happens, the same assembly identity is registered twice: once from tempDir (the
                 // package's own extracted copy) and once from siblingDlls (the copy-local build-output
-                // copy) — MetadataLoadContext throws "already been loaded" on the second load, since
-                // Distinct() only dedupes by exact path string, not by filename/identity. Dedup the
-                // combined list by filename, keeping tempDir's entry (GroupBy preserves Concat's order,
-                // so a name collision resolves to what the package itself actually carries).
+                // copy, already deduped and drift-checked by DedupeSiblingDlls) — MetadataLoadContext
+                // throws "already been loaded" on the second load, since Distinct() only dedupes by exact
+                // path string, not by filename/identity. Dedup the combined list by filename, keeping
+                // tempDir's entry (GroupBy preserves Concat's order, so a name collision resolves to what
+                // the package itself actually carries).
                 var resolver = new PathAssemblyResolver(
                     BuildResolverPaths(dllPath).Concat(siblingDlls)
                         .GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
@@ -110,6 +109,41 @@ public class PluginAssemblyReader(IAnsiConsole console)
         {
             Directory.Delete(tempDir, recursive: true);
         }
+    }
+
+    // dotnet publish copies the whole dependency closure into net462/publish/, duplicating filenames
+    // already present in net462/ itself — an expected, common occurrence, not an anomaly, so a bare
+    // filename collision must not fail loudly. But a stale prior build can leave net462/ and
+    // net462/publish/ holding genuinely different content under the same filename (version drift);
+    // picking an arbitrary one (enumeration order is unspecified) would then silently resolve some
+    // packaged DLL's dependencies against the wrong version. Only the narrower drift case fails loud,
+    // mirroring PushCommand.ResolvePluginPushPath's ambiguous-.nupkg guard; identical duplicates dedupe
+    // silently. Also fixes the previous double-dedup: this runs once against a materialized list,
+    // instead of re-walking and re-deduping siblingDlls on every DLL in AnalyzePackage's loop.
+    private static List<string> DedupeSiblingDlls(IEnumerable<string> dllPaths)
+    {
+        var result = new List<string>();
+        foreach (var group in dllPaths.GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
+        {
+            var paths = group.ToList();
+            if (paths.Count == 1)
+            {
+                result.Add(paths[0]);
+                continue;
+            }
+
+            var distinctHashes = paths
+                .Select(p => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(p))))
+                .Distinct()
+                .ToList();
+            if (distinctHashes.Count > 1)
+                throw new InvalidOperationException(
+                    $"Found {paths.Count} copies of '{group.Key}' with different content under the build output " +
+                    $"({string.Join(", ", paths)}) — run a clean build so only one version of each dependency remains.");
+
+            result.Add(paths[0]);
+        }
+        return result;
     }
 
     // Extracts every *.dll under lib/ from a .nupkg (OPC zip) into destinationDir, preserving the

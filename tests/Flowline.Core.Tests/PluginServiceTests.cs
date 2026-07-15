@@ -1852,6 +1852,7 @@ public class PluginServiceTests
             _serviceMock, [primaryMetadata, secondaryMetadata], NupkgBytes, "pkg.nupkg", "Primary", "MySolution");
 
         Assert.True(result);
+        Assert.Contains("Package contains 2 plugin-bearing assemblies", _console.Output);
 
         await _serviceMock.Received(1).DeleteAsync("sdkmessageprocessingstep", primaryStepId, Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().DeleteAsync("sdkmessageprocessingstep", secondaryStepId, Arg.Any<CancellationToken>());
@@ -1926,6 +1927,7 @@ public class PluginServiceTests
             _serviceMock, [metadataA, metadataB], NupkgBytes, "pkg.nupkg", "AssemblyA", "MySolution");
 
         Assert.False(result);
+        Assert.Contains("Package contains 2 plugin-bearing assemblies", _console.Output);
         await _serviceMock.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().UpdateAsync(Arg.Is<Entity>(e => e.LogicalName == "pluginpackage"), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>());

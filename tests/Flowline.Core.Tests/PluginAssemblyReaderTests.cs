@@ -1110,6 +1110,32 @@ public class PluginAssemblyReaderTests
     }
 
     [Fact]
+    public void AnalyzePackage_SameNamedSiblingDllsWithDifferentContent_ThrowsInvalidOperationException()
+    {
+        var dir = Directory.CreateTempSubdirectory("flowline-reader-test-").FullName;
+        try
+        {
+            var pluginDll = BuildPluginDll(dir, "DriftPlugin", "DriftPackagePlugin");
+            var nupkg = BuildNupkg(dir, pluginDll);
+
+            // Two same-named siblings with genuinely different content — mimics a stale prior build
+            // leaving net462/ and net462/publish/ out of sync after a dependency version bump.
+            var tfmDir = Directory.CreateDirectory(Path.Combine(dir, "net462")).FullName;
+            var publishDir = Directory.CreateDirectory(Path.Combine(tfmDir, "publish")).FullName;
+            File.WriteAllBytes(Path.Combine(tfmDir, "Drifted.Dependency.dll"), [1, 2, 3]);
+            File.WriteAllBytes(Path.Combine(publishDir, "Drifted.Dependency.dll"), [4, 5, 6]);
+
+            var ex = Assert.Throws<InvalidOperationException>(() => AnalyzePackage(nupkg));
+            Assert.Contains("Drifted.Dependency.dll", ex.Message);
+            Assert.Contains("different content", ex.Message);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
     public void AnalyzePackage_TwoIndependentPluginDlls_ReturnsTwoScopedToOwnTypes()
     {
         var dir = Directory.CreateTempSubdirectory("flowline-reader-test-").FullName;
