@@ -1,6 +1,6 @@
 ---
 name: flowline-migration
-description: Migrates a Dataverse project off spkl, Daxif, PACX, or ALM Accelerator onto Flowline. Use when a repo shows a spkl.json, a Daxif _Config.fsx, a .pacxproj, or an ALM Accelerator-style Azure DevOps pipeline with Power Platform Build Tools tasks, and no .flowline exists yet.
+description: Migrates a Dataverse project off spkl, Daxif, PACX, or ALM Accelerator onto Flowline. Use when a repo shows a spkl.json, a Daxif _Config.fsx or *.daxif, a .pacxproj, or an ALM Accelerator-style Azure DevOps pipeline with Power Platform Build Tools tasks, and no .flowline exists yet.
 ---
 
 # Flowline migration — spkl / Daxif / PACX / ALM Accelerator
@@ -14,7 +14,7 @@ Recognize these signatures unprompted, the same way the `flowline` skill detects
 | Tool | Signature |
 |---|---|
 | spkl | `spkl.json` at the project root |
-| Daxif | `_Config.fsx`, other `.fsx` scripts referencing `Daxif`/`DG.Daxif`, or a Daxif NuGet package reference in a `.csproj` |
+| Daxif | `_Config.fsx`, `*.daxif`, other `.fsx` scripts referencing `Daxif`/`DG.Daxif`, or a Daxif NuGet package reference in a `.csproj` |
 | PACX | `.pacxproj` at the project root |
 | ALM Accelerator | An Azure DevOps pipeline (`azure-pipelines.yml` or `.ado/`) referencing Power Platform Build Tools tasks (`PowerPlatformExportSolution`, `PowerPlatformImportSolution`, etc.), with no code-first plugin/web-resource tooling alongside it. This signature is softer than the other three — confirm with the user before assuming it's ALM Accelerator rather than a hand-rolled pipeline. |
 

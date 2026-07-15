@@ -10,7 +10,7 @@ description: Dataverse ALM via the Flowline CLI — plugin registration, web res
 A Flowline project has `.flowline` at the repo root and `solutions/<SolutionName>/` folders.
 
 - **No `.flowline`, but a plugin-DLL-only task** (register a compiled assembly, no cloned project): use standalone mode — `flowline push <SolutionName> --pluginFile <dll> --dev <url>` (or `--webresources <folder>`). No `clone` needed.
-- **No `.flowline`, and the repo has a `spkl.json`, a Daxif config, a PACX folder, or an ALM Accelerator marker**: this is a migration candidate, not a fresh project — defer to the `flowline-migration` skill instead of suggesting `clone`.
+- **No `.flowline`, and the repo has a `spkl.json`, a Daxif config (`_Config.fsx` or `*.daxif`), a PACX folder (.pacxproj), or an ALM Accelerator marker**: this is a migration candidate, not a fresh project — defer to the `flowline-migration` skill instead of suggesting `clone`.
 - **No `.flowline`, greenfield**: suggest `flowline clone <SolutionName> --prod <url>`.
 
 ## Core loop
