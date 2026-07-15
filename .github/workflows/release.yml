@@ -9,53 +9,33 @@ on:
 
 jobs:
   build:
-
-    runs-on: ubuntu-latest
     permissions:
       checks: write
       packages: write
-      id-token: write  # enable GitHub OIDC token issuance for this job
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # create the GitHub Release
+      id-token: write  # enable GitHub OIDC token issuance for NuGet login
 
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          filter: tree:0
+        uses: actions/checkout@v7
 
       - name: 🛠️ Setup .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: 9.0.x
-          cache: true
-          cache-dependency-path: '**/packages.lock.json'
-        env:
-          NUGET_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          global-json-file: global.json
 
-      - name: 💾 Restore dependencies
-        run: dotnet restore
-
-      - name: ⚙️ Build
-        run: dotnet build -c Release --no-restore
-        env:
-          MINVERBUILDMETADATA: build.${{github.run_id}}.${{github.run_attempt}}
-
-      - name: 🚦 Test
-        id: test
-        run: dotnet test -c Release -l trx --results-directory ./artifacts/ --no-build
-        env:
-          DATAVERSE_CONNECTION_OPTIONS: ${{secrets.DATAVERSE_CONNECTION_OPTIONS}}
-
-      - name: 📋 Test reporter
-        uses: dorny/test-reporter@v3
-        if: always() && steps.test.outcome != 'skipped'
+      - name: 📥 Download packages
+        uses: actions/download-artifact@v8
         with:
-          name: unittests
-          path: ./artifacts/*.trx
-          reporter: dotnet-trx
-
-      - name: 📦 Pack
-        run: dotnet pack -c Release -o ./artifacts/ --no-build
+          name: nuget-packages
+          path: ./artifacts/
 
       - name: NuGet login (OIDC → temp API key)
         uses: NuGet/login@v1
@@ -64,9 +44,23 @@ jobs:
           user: ${{secrets.NUGET_USER}}
 
       - name: 🚀 Push to NuGet
-        run: dotnet nuget push **/*.nupkg --api-key ${{steps.login.outputs.NUGET_API_KEY}} --source https://api.nuget.org/v3/index.json
+        run: dotnet nuget push ./artifacts/*.nupkg --api-key ${{steps.login.outputs.NUGET_API_KEY}} --source https://api.nuget.org/v3/index.json
 
-      - name: 🚀 Push to GitHub
+      - name: 📝 Extract release notes from CHANGELOG.md
         run: |
-          dotnet nuget add source --username RemyDuijkeren --password ${{ secrets.GITHUB_TOKEN }} --store-password-in-clear-text --name github "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
-          dotnet nuget push ./artifacts/*.nupkg -k ${{ secrets.GITHUB_TOKEN }} --source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json --skip-duplicate
+          awk -v ver="$GITHUB_REF_NAME" '
+            $0 ~ "^## \\[" ver "\\]" { flag=1; next }
+            flag && /^## \[/ { flag=0 }
+            flag { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "No CHANGELOG.md section found for [$GITHUB_REF_NAME] — aborting." >&2
+            exit 1
+          fi
+
+      - name: 🏷️ Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          name: ${{ github.ref_name }}
+          body_path: release-notes.md
+          generate_release_notes: false
