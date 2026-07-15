@@ -287,7 +287,7 @@ public class PluginAssemblyReaderTests
     public void ValidateExecutionMode_AsyncOnPreOperation_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateExecutionMode("MockPreUpdateAsyncPlugin",
+            PluginTypeMetadataScanner.ValidateExecutionMode("MockPreUpdateAsyncPlugin",
                 (int)ProcessingStage.PreOperation, (int)ProcessingMode.Asynchronous));
         Assert.Contains("Asynchronous", ex.Message);
         Assert.Contains("https://learn.microsoft.com", ex.Message);
@@ -297,7 +297,7 @@ public class PluginAssemblyReaderTests
     public void ValidateExecutionMode_AsyncOnPreValidation_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateExecutionMode("MockValidationUpdateAsyncPlugin",
+            PluginTypeMetadataScanner.ValidateExecutionMode("MockValidationUpdateAsyncPlugin",
                 (int)ProcessingStage.PreValidation, (int)ProcessingMode.Asynchronous));
         Assert.Contains("Asynchronous", ex.Message);
         Assert.Contains("https://learn.microsoft.com", ex.Message);
@@ -306,7 +306,7 @@ public class PluginAssemblyReaderTests
     [Fact]
     public void ValidateExecutionMode_AsyncOnPostOperation_DoesNotThrow()
     {
-        PluginAssemblyReader.ValidateExecutionMode("MockPostUpdateAsyncPlugin",
+        PluginTypeMetadataScanner.ValidateExecutionMode("MockPostUpdateAsyncPlugin",
             (int)ProcessingStage.PostOperation, (int)ProcessingMode.Asynchronous);
     }
 
@@ -314,7 +314,7 @@ public class PluginAssemblyReaderTests
     public void ValidateLogicalName_EmptyString_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateLogicalName("MockPreCreatePlugin", ""));
+            PluginTypeMetadataScanner.ValidateLogicalName("MockPreCreatePlugin", ""));
         Assert.Contains("[Step]", ex.Message);
         Assert.Contains("none", ex.Message);
     }
@@ -323,7 +323,7 @@ public class PluginAssemblyReaderTests
     public void ValidateLogicalName_WhitespaceString_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateLogicalName("MockPreCreatePlugin", "  "));
+            PluginTypeMetadataScanner.ValidateLogicalName("MockPreCreatePlugin", "  "));
         Assert.Contains("[Step]", ex.Message);
     }
 
@@ -331,7 +331,7 @@ public class PluginAssemblyReaderTests
     public void ValidateLogicalName_Null_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateLogicalName("MockPreCreatePlugin", null));
+            PluginTypeMetadataScanner.ValidateLogicalName("MockPreCreatePlugin", null));
         Assert.Contains("[Step]", ex.Message);
         Assert.Contains("\"none\"", ex.Message);
     }
@@ -339,14 +339,14 @@ public class PluginAssemblyReaderTests
     [Fact]
     public void ValidateLogicalName_ValidName_DoesNotThrow()
     {
-        PluginAssemblyReader.ValidateLogicalName("MockPreCreatePlugin", "account");
+        PluginTypeMetadataScanner.ValidateLogicalName("MockPreCreatePlugin", "account");
     }
 
     [Fact]
     public void ValidateSecondaryLogicalName_EmptyString_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateSecondaryLogicalName("MockPreAssociatePlugin", ""));
+            PluginTypeMetadataScanner.ValidateSecondaryLogicalName("MockPreAssociatePlugin", ""));
         Assert.Contains("SecondaryTable", ex.Message);
         Assert.Contains("none", ex.Message);
     }
@@ -354,14 +354,14 @@ public class PluginAssemblyReaderTests
     [Fact]
     public void ValidateSecondaryLogicalName_Null_DoesNotThrow()
     {
-        PluginAssemblyReader.ValidateSecondaryLogicalName("MockPreAssociatePlugin", null);
+        PluginTypeMetadataScanner.ValidateSecondaryLogicalName("MockPreAssociatePlugin", null);
     }
 
     [Fact]
     public void ValidateCustomApiAttributesOnStep_WithAttributes_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateCustomApiAttributesOnStep("MockPreCreatePlugin", true));
+            PluginTypeMetadataScanner.ValidateCustomApiAttributesOnStep("MockPreCreatePlugin", true));
         Assert.Contains("[Input]", ex.Message);
         Assert.Contains("[Output]", ex.Message);
     }
@@ -369,7 +369,7 @@ public class PluginAssemblyReaderTests
     [Fact]
     public void ValidateCustomApiAttributesOnStep_WithoutAttributes_DoesNotThrow()
     {
-        PluginAssemblyReader.ValidateCustomApiAttributesOnStep("MockPreCreatePlugin", false);
+        PluginTypeMetadataScanner.ValidateCustomApiAttributesOnStep("MockPreCreatePlugin", false);
     }
 
     [Fact]
@@ -420,14 +420,14 @@ public class PluginAssemblyReaderTests
     [Fact]
     public void ValidateCustomApiUniqueNameFormat_Null_DoesNotThrow()
     {
-        PluginAssemblyReader.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", null);
+        PluginTypeMetadataScanner.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", null);
     }
 
     [Fact]
     public void ValidateCustomApiUniqueNameFormat_Empty_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", ""));
+            PluginTypeMetadataScanner.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", ""));
         Assert.Contains("UniqueName", ex.Message);
         Assert.Contains("empty", ex.Message);
     }
@@ -436,7 +436,7 @@ public class PluginAssemblyReaderTests
     public void ValidateCustomApiUniqueNameFormat_Whitespace_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", "   "));
+            PluginTypeMetadataScanner.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", "   "));
         Assert.Contains("UniqueName", ex.Message);
     }
 
@@ -444,7 +444,7 @@ public class PluginAssemblyReaderTests
     public void ValidateCustomApiUniqueNameFormat_LeadingDigit_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", "123Bad_Name"));
+            PluginTypeMetadataScanner.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", "123Bad_Name"));
         Assert.Contains("invalid", ex.Message);
     }
 
@@ -452,7 +452,7 @@ public class PluginAssemblyReaderTests
     public void ValidateCustomApiUniqueNameFormat_EmbeddedSpace_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", "Bad Name_Here"));
+            PluginTypeMetadataScanner.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", "Bad Name_Here"));
         Assert.Contains("invalid", ex.Message);
     }
 
@@ -460,7 +460,7 @@ public class PluginAssemblyReaderTests
     public void ValidateCustomApiUniqueNameFormat_NoUnderscore_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", "NoUnderscoreAtAll"));
+            PluginTypeMetadataScanner.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", "NoUnderscoreAtAll"));
         Assert.Contains("publisher prefix", ex.Message);
     }
 
@@ -468,7 +468,7 @@ public class PluginAssemblyReaderTests
     public void ValidateCustomApiUniqueNameFormat_EmptyAfterPrefix_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", "dev1_"));
+            PluginTypeMetadataScanner.ValidateCustomApiUniqueNameFormat("MockGetAccountRiskApi", "dev1_"));
         Assert.Contains("nothing after", ex.Message);
     }
 
@@ -476,7 +476,7 @@ public class PluginAssemblyReaderTests
     public void ValidateSecondaryTable_OnNonAssociateMessage_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateSecondaryTable("MockPreCreatePlugin", "Create", "account"));
+            PluginTypeMetadataScanner.ValidateSecondaryTable("MockPreCreatePlugin", "Create", "account"));
         Assert.Contains("SecondaryTable", ex.Message);
         Assert.Contains("Create", ex.Message);
     }
@@ -484,20 +484,20 @@ public class PluginAssemblyReaderTests
     [Fact]
     public void ValidateSecondaryTable_OnAssociate_DoesNotThrow()
     {
-        PluginAssemblyReader.ValidateSecondaryTable("MockPreAssociatePlugin", "Associate", "account");
+        PluginTypeMetadataScanner.ValidateSecondaryTable("MockPreAssociatePlugin", "Associate", "account");
     }
 
     [Fact]
     public void ValidateSecondaryTable_Null_DoesNotThrow()
     {
-        PluginAssemblyReader.ValidateSecondaryTable("MockPreCreatePlugin", "Create", null);
+        PluginTypeMetadataScanner.ValidateSecondaryTable("MockPreCreatePlugin", "Create", null);
     }
 
     [Fact]
     public void ValidateSecondaryTable_AssociateWithoutSecondaryTable_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateSecondaryTable("MockPreAssociatePlugin", "Associate", null));
+            PluginTypeMetadataScanner.ValidateSecondaryTable("MockPreAssociatePlugin", "Associate", null));
         Assert.Contains("SecondaryTable", ex.Message);
         Assert.Contains("Associate", ex.Message);
         Assert.Contains("\"none\"", ex.Message);
@@ -535,7 +535,7 @@ public class PluginAssemblyReaderTests
     public void ValidateFilter_FilterOnCreate_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateFilter("MockPreCreatePlugin", "Create", "name,telephone1"));
+            PluginTypeMetadataScanner.ValidateFilter("MockPreCreatePlugin", "Create", "name,telephone1"));
         Assert.Contains("[Filter]", ex.Message);
         Assert.Contains("Create", ex.Message);
     }
@@ -544,7 +544,7 @@ public class PluginAssemblyReaderTests
     public void ValidateFilter_FilterOnDelete_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateFilter("MockPreDeletePlugin", "Delete", "name"));
+            PluginTypeMetadataScanner.ValidateFilter("MockPreDeletePlugin", "Delete", "name"));
         Assert.Contains("[Filter]", ex.Message);
         Assert.Contains("Delete", ex.Message);
     }
@@ -552,13 +552,13 @@ public class PluginAssemblyReaderTests
     [Fact]
     public void ValidateFilter_FilterOnUpdate_DoesNotThrow()
     {
-        PluginAssemblyReader.ValidateFilter("MockPreUpdatePlugin", "Update", "name,telephone1");
+        PluginTypeMetadataScanner.ValidateFilter("MockPreUpdatePlugin", "Update", "name,telephone1");
     }
 
     [Fact]
     public void ValidateFilter_NullFilter_DoesNotThrow()
     {
-        PluginAssemblyReader.ValidateFilter("MockPreCreatePlugin", "Create", null);
+        PluginTypeMetadataScanner.ValidateFilter("MockPreCreatePlugin", "Create", null);
     }
 
     [Fact]
@@ -566,7 +566,7 @@ public class PluginAssemblyReaderTests
     {
         var images = new List<PluginImageMetadata> { new("Pre Image", "preimage", (int)ImageType.PreImage, "name") };
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateImages("MockPlugin", "Create", (int)ProcessingStage.PostOperation, images));
+            PluginTypeMetadataScanner.ValidateImages("MockPlugin", "Create", (int)ProcessingStage.PostOperation, images));
         Assert.Contains("[PreImage]", ex.Message);
         Assert.Contains("https://learn.microsoft.com", ex.Message);
     }
@@ -576,7 +576,7 @@ public class PluginAssemblyReaderTests
     {
         var images = new List<PluginImageMetadata> { new("Post Image", "postimage", (int)ImageType.PostImage, "name") };
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateImages("MockPlugin", "Delete", (int)ProcessingStage.PostOperation, images));
+            PluginTypeMetadataScanner.ValidateImages("MockPlugin", "Delete", (int)ProcessingStage.PostOperation, images));
         Assert.Contains("[PostImage]", ex.Message);
         Assert.Contains("https://learn.microsoft.com", ex.Message);
     }
@@ -586,7 +586,7 @@ public class PluginAssemblyReaderTests
     {
         var images = new List<PluginImageMetadata> { new("Post Image", "postimage", (int)ImageType.PostImage, "name") };
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateImages("MockPlugin", "Update", (int)ProcessingStage.PreOperation, images));
+            PluginTypeMetadataScanner.ValidateImages("MockPlugin", "Update", (int)ProcessingStage.PreOperation, images));
         Assert.Contains("[PostImage]", ex.Message);
         Assert.Contains("https://learn.microsoft.com", ex.Message);
     }
@@ -596,7 +596,7 @@ public class PluginAssemblyReaderTests
     {
         var images = new List<PluginImageMetadata> { new("Post Image", "postimage", (int)ImageType.PostImage, "name") };
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateImages("MockPlugin", "Update", (int)ProcessingStage.PreValidation, images));
+            PluginTypeMetadataScanner.ValidateImages("MockPlugin", "Update", (int)ProcessingStage.PreValidation, images));
         Assert.Contains("[PostImage]", ex.Message);
         Assert.Contains("https://learn.microsoft.com", ex.Message);
     }
@@ -606,7 +606,7 @@ public class PluginAssemblyReaderTests
     {
         var images = new List<PluginImageMetadata> { new("Pre Image", "preimage", (int)ImageType.PreImage, "name") };
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateImages("MockPlugin", "Retrieve", (int)ProcessingStage.PostOperation, images));
+            PluginTypeMetadataScanner.ValidateImages("MockPlugin", "Retrieve", (int)ProcessingStage.PostOperation, images));
         Assert.Contains("Retrieve", ex.Message);
         Assert.Contains("https://learn.microsoft.com", ex.Message);
     }
@@ -650,7 +650,7 @@ public class PluginAssemblyReaderTests
     public void ParseStepClassNameOrThrow_NoStageKeyword_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ParseStepClassNameOrThrow("AccountCreatePlugin"));
+            PluginTypeMetadataScanner.ParseStepClassNameOrThrow("AccountCreatePlugin"));
 
         Assert.Contains("[Step]", ex.Message);
         Assert.Contains("no stage", ex.Message);
@@ -662,7 +662,7 @@ public class PluginAssemblyReaderTests
     public void ParseStepClassNameOrThrow_NoMessageKeyword_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ParseStepClassNameOrThrow("AccountPostPlugin"));
+            PluginTypeMetadataScanner.ParseStepClassNameOrThrow("AccountPostPlugin"));
 
         Assert.Contains("[Step]", ex.Message);
         Assert.Contains("no message", ex.Message);
@@ -673,7 +673,7 @@ public class PluginAssemblyReaderTests
     public void ParseStepClassNameOrThrow_NoStageOrMessageKeyword_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ParseStepClassNameOrThrow("AccountPlugin"));
+            PluginTypeMetadataScanner.ParseStepClassNameOrThrow("AccountPlugin"));
 
         Assert.Contains("[Step]", ex.Message);
         Assert.Contains("stage or message", ex.Message);
@@ -683,7 +683,7 @@ public class PluginAssemblyReaderTests
     public void ValidateStepUsage_StepOnNonPlugin_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateStepUsage("NotAPlugin", hasStepAttribute: true, isPlugin: false));
+            PluginTypeMetadataScanner.ValidateStepUsage("NotAPlugin", hasStepAttribute: true, isPlugin: false));
 
         Assert.Contains("[Step]", ex.Message);
         Assert.Contains("IPlugin", ex.Message);
@@ -692,13 +692,13 @@ public class PluginAssemblyReaderTests
     [Fact]
     public void ValidateStepUsage_StepOnPlugin_DoesNotThrow()
     {
-        PluginAssemblyReader.ValidateStepUsage("AccountPreCreatePlugin", hasStepAttribute: true, isPlugin: true);
+        PluginTypeMetadataScanner.ValidateStepUsage("AccountPreCreatePlugin", hasStepAttribute: true, isPlugin: true);
     }
 
     [Fact]
     public void TryParseClassName_PreCreate_ParsesCorrectly()
     {
-        Assert.True(PluginAssemblyReader.TryParseClassName("AccountPreCreatePlugin", out var msg, out var stage, out var mode));
+        Assert.True(PluginTypeMetadataScanner.TryParseClassName("AccountPreCreatePlugin", out var msg, out var stage, out var mode));
         Assert.Equal("Create", msg);
         Assert.Equal((int)ProcessingStage.PreOperation, stage);
         Assert.Equal((int)ProcessingMode.Synchronous, mode);
@@ -707,7 +707,7 @@ public class PluginAssemblyReaderTests
     [Fact]
     public void TryParseClassName_PostUpdateAsync_ParsesCorrectly()
     {
-        Assert.True(PluginAssemblyReader.TryParseClassName("InvoicePostUpdateAsyncPlugin", out var msg, out var stage, out var mode));
+        Assert.True(PluginTypeMetadataScanner.TryParseClassName("InvoicePostUpdateAsyncPlugin", out var msg, out var stage, out var mode));
         Assert.Equal("Update", msg);
         Assert.Equal((int)ProcessingStage.PostOperation, stage);
         Assert.Equal((int)ProcessingMode.Asynchronous, mode);
@@ -716,26 +716,26 @@ public class PluginAssemblyReaderTests
     [Fact]
     public void TryParseClassName_ValidationCreate_ParsesPreValidationStage()
     {
-        Assert.True(PluginAssemblyReader.TryParseClassName("AccountValidationCreatePlugin", out _, out var stage, out _));
+        Assert.True(PluginTypeMetadataScanner.TryParseClassName("AccountValidationCreatePlugin", out _, out var stage, out _));
         Assert.Equal((int)ProcessingStage.PreValidation, stage);
     }
 
     [Fact]
     public void TryParseClassName_NoStageKeyword_ReturnsFalse()
     {
-        Assert.False(PluginAssemblyReader.TryParseClassName("AccountCreatePlugin", out _, out _, out _));
+        Assert.False(PluginTypeMetadataScanner.TryParseClassName("AccountCreatePlugin", out _, out _, out _));
     }
 
     [Fact]
     public void TryParseClassName_NoMessageKeyword_ReturnsFalse()
     {
-        Assert.False(PluginAssemblyReader.TryParseClassName("AccountPostPlugin", out _, out _, out _));
+        Assert.False(PluginTypeMetadataScanner.TryParseClassName("AccountPostPlugin", out _, out _, out _));
     }
 
     [Fact]
     public void TryParseClassName_RetrieveMultiple_MatchesBeforeRetrieve()
     {
-        Assert.True(PluginAssemblyReader.TryParseClassName("AccountPreRetrieveMultiplePlugin", out var msg, out _, out _));
+        Assert.True(PluginTypeMetadataScanner.TryParseClassName("AccountPreRetrieveMultiplePlugin", out var msg, out _, out _));
         Assert.Equal("RetrieveMultiple", msg);
     }
 
@@ -744,14 +744,14 @@ public class PluginAssemblyReaderTests
     [Fact]
     public void ValidateFilter_FilterOnUpdateMultiple_DoesNotThrow()
     {
-        PluginAssemblyReader.ValidateFilter("MockPostUpdateMultiplePlugin", "UpdateMultiple", "name,telephone1");
+        PluginTypeMetadataScanner.ValidateFilter("MockPostUpdateMultiplePlugin", "UpdateMultiple", "name,telephone1");
     }
 
     [Fact]
     public void ValidateFilter_FilterOnDeleteMultiple_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateFilter("MockPreDeleteMultiplePlugin", "DeleteMultiple", "name"));
+            PluginTypeMetadataScanner.ValidateFilter("MockPreDeleteMultiplePlugin", "DeleteMultiple", "name"));
         Assert.Contains("[Filter]", ex.Message);
         Assert.Contains("DeleteMultiple", ex.Message);
     }
@@ -779,34 +779,34 @@ public class PluginAssemblyReaderTests
     public void ValidateImages_ImageOnCreateMultiple_DoesNotThrow()
     {
         var images = new List<PluginImageMetadata> { new("Post Image", "postimage", (int)ImageType.PostImage, "name") };
-        PluginAssemblyReader.ValidateImages("MockPostCreateMultiplePlugin", "CreateMultiple", (int)ProcessingStage.PostOperation, images);
+        PluginTypeMetadataScanner.ValidateImages("MockPostCreateMultiplePlugin", "CreateMultiple", (int)ProcessingStage.PostOperation, images);
     }
 
     [Fact]
     public void ValidateImages_ImageOnUpdateMultiple_DoesNotThrow()
     {
         var images = new List<PluginImageMetadata> { new("Pre Image", "preimage", (int)ImageType.PreImage, "name") };
-        PluginAssemblyReader.ValidateImages("MockPostUpdateMultiplePlugin", "UpdateMultiple", (int)ProcessingStage.PostOperation, images);
+        PluginTypeMetadataScanner.ValidateImages("MockPostUpdateMultiplePlugin", "UpdateMultiple", (int)ProcessingStage.PostOperation, images);
     }
 
     [Fact]
     public void TryParseClassName_PostCreateMultiple_MatchesBeforeCreate()
     {
-        Assert.True(PluginAssemblyReader.TryParseClassName("AccountPostCreateMultiplePlugin", out var msg, out _, out _));
+        Assert.True(PluginTypeMetadataScanner.TryParseClassName("AccountPostCreateMultiplePlugin", out var msg, out _, out _));
         Assert.Equal("CreateMultiple", msg);
     }
 
     [Fact]
     public void TryParseClassName_PostUpdateMultiple_MatchesBeforeUpdate()
     {
-        Assert.True(PluginAssemblyReader.TryParseClassName("AccountPostUpdateMultiplePlugin", out var msg, out _, out _));
+        Assert.True(PluginTypeMetadataScanner.TryParseClassName("AccountPostUpdateMultiplePlugin", out var msg, out _, out _));
         Assert.Equal("UpdateMultiple", msg);
     }
 
     [Fact]
     public void TryParseClassName_PostUpsert_ParsesCorrectly()
     {
-        Assert.True(PluginAssemblyReader.TryParseClassName("AccountPostUpsertPlugin", out var msg, out var stage, out _));
+        Assert.True(PluginTypeMetadataScanner.TryParseClassName("AccountPostUpsertPlugin", out var msg, out var stage, out _));
         Assert.Equal("Upsert", msg);
         Assert.Equal((int)ProcessingStage.PostOperation, stage);
     }
@@ -814,14 +814,14 @@ public class PluginAssemblyReaderTests
     [Fact]
     public void TryParseClassName_PostUpsertMultiple_MatchesBeforeUpsert()
     {
-        Assert.True(PluginAssemblyReader.TryParseClassName("AccountPostUpsertMultiplePlugin", out var msg, out _, out _));
+        Assert.True(PluginTypeMetadataScanner.TryParseClassName("AccountPostUpsertMultiplePlugin", out var msg, out _, out _));
         Assert.Equal("UpsertMultiple", msg);
     }
 
     [Fact]
     public void TryParseClassName_PreDeleteMultiple_MatchesBeforeDelete()
     {
-        Assert.True(PluginAssemblyReader.TryParseClassName("AccountPreDeleteMultiplePlugin", out var msg, out _, out _));
+        Assert.True(PluginTypeMetadataScanner.TryParseClassName("AccountPreDeleteMultiplePlugin", out var msg, out _, out _));
         Assert.Equal("DeleteMultiple", msg);
     }
 
@@ -988,14 +988,14 @@ public class PluginAssemblyReaderTests
     [InlineData("MyPlugin", true, true)]
     public void ValidateMultiHandlesFilter_NoThrow(string name, bool hasFilter, bool anyCompatible)
     {
-        PluginAssemblyReader.ValidateMultiHandlesFilter(name, hasFilter, anyCompatible);
+        PluginTypeMetadataScanner.ValidateMultiHandlesFilter(name, hasFilter, anyCompatible);
     }
 
     [Fact]
     public void ValidateMultiHandlesFilter_FilterPresentNoCompatible_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateMultiHandlesFilter("MyPlugin", hasFilter: true, anyFilterCompatible: false));
+            PluginTypeMetadataScanner.ValidateMultiHandlesFilter("MyPlugin", hasFilter: true, anyFilterCompatible: false));
         Assert.Contains("[Filter]", ex.Message);
         Assert.Contains("Update", ex.Message);
     }
@@ -1005,14 +1005,14 @@ public class PluginAssemblyReaderTests
     [InlineData("MyPlugin", true, true)]
     public void ValidateMultiHandlesPreImage_NoThrow(string name, bool hasPreImage, bool anyCompatible)
     {
-        PluginAssemblyReader.ValidateMultiHandlesPreImage(name, hasPreImage, anyCompatible);
+        PluginTypeMetadataScanner.ValidateMultiHandlesPreImage(name, hasPreImage, anyCompatible);
     }
 
     [Fact]
     public void ValidateMultiHandlesPreImage_PreImagePresentNoCompatible_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateMultiHandlesPreImage("MyPlugin", hasPreImage: true, anyPreImageCompatible: false));
+            PluginTypeMetadataScanner.ValidateMultiHandlesPreImage("MyPlugin", hasPreImage: true, anyPreImageCompatible: false));
         Assert.Contains("[PreImage]", ex.Message);
     }
 
@@ -1021,14 +1021,14 @@ public class PluginAssemblyReaderTests
     [InlineData("MyPlugin", true, true)]
     public void ValidateMultiHandlesPostImage_NoThrow(string name, bool hasPostImage, bool anyCompatible)
     {
-        PluginAssemblyReader.ValidateMultiHandlesPostImage(name, hasPostImage, anyCompatible);
+        PluginTypeMetadataScanner.ValidateMultiHandlesPostImage(name, hasPostImage, anyCompatible);
     }
 
     [Fact]
     public void ValidateMultiHandlesPostImage_PostImagePresentNoCompatible_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.ValidateMultiHandlesPostImage("MyPlugin", hasPostImage: true, anyPostImageCompatible: false));
+            PluginTypeMetadataScanner.ValidateMultiHandlesPostImage("MyPlugin", hasPostImage: true, anyPostImageCompatible: false));
         Assert.Contains("[PostImage]", ex.Message);
     }
 
@@ -1036,7 +1036,7 @@ public class PluginAssemblyReaderTests
     public void TryBuildSteps_MultiHandles_FilterNoCompatibleMessage_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.TryBuildSteps(typeof(MockErrMultiHandlesFilterNoCompatiblePlugin)).ToList());
+            PluginTypeMetadataScanner.TryBuildSteps(typeof(MockErrMultiHandlesFilterNoCompatiblePlugin)).ToList());
         Assert.Contains("[Filter]", ex.Message);
     }
 
@@ -1044,7 +1044,7 @@ public class PluginAssemblyReaderTests
     public void TryBuildSteps_MultiHandles_PreImageNoCompatibleMessage_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.TryBuildSteps(typeof(MockErrMultiHandlesPreImageNoCompatiblePlugin)).ToList());
+            PluginTypeMetadataScanner.TryBuildSteps(typeof(MockErrMultiHandlesPreImageNoCompatiblePlugin)).ToList());
         Assert.Contains("[PreImage]", ex.Message);
     }
 
@@ -1052,7 +1052,7 @@ public class PluginAssemblyReaderTests
     public void TryBuildSteps_MultiHandles_PostImageNoCompatibleMessage_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.TryBuildSteps(typeof(MockErrMultiHandlesPostImageNoCompatiblePlugin)).ToList());
+            PluginTypeMetadataScanner.TryBuildSteps(typeof(MockErrMultiHandlesPostImageNoCompatiblePlugin)).ToList());
         Assert.Contains("[PostImage]", ex.Message);
     }
 
@@ -1060,7 +1060,7 @@ public class PluginAssemblyReaderTests
     public void TryBuildSteps_MultiHandles_DuplicateHandles_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            PluginAssemblyReader.TryBuildSteps(typeof(MockErrMultiHandlesDuplicatePlugin)).ToList());
+            PluginTypeMetadataScanner.TryBuildSteps(typeof(MockErrMultiHandlesDuplicatePlugin)).ToList());
         Assert.Contains("same step name", ex.Message);
     }
 
