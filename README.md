@@ -36,7 +36,7 @@ Familiar with [spkl](https://github.com/scottdurow/SparkleXrm/wiki/spkl)? Flowli
 
 What sets Flowline apart:
 
-- **Attribute-driven plugin registration** — decorate your `IPlugin` classes with `[Step]`, `[Filter]`, `[CustomApi]`; Flowline reads the assembly and handles every Dataverse registration. No Plugin Registration Tool, no `spkl.json`, no boilerplate.
+- **Attribute-driven plugin registration** — decorate your `IPlugin` classes with `[Step]`, `[Filter]`, `[PreImage]`, `[PostImage]`, and `[CustomApi]`; Flowline reads the assembly and handles every Dataverse registration. No Plugin Registration Tool needed. Works with a classic `.dll` or a NuGet `.nupkg` package (Dependent Assemblies).
 - **Form events and web resource dependencies auto-wired from source** —
   `// flowline:onload`, `// flowline:onsave`, or `// flowline:onchange` binds a function straight to a form's event, closing the last manual step in the JS dev loop; `// flowline:depends` links JS-to-JS and RESX dependencies the same way. Both are registered and kept in sync on every `push`. No Maker Portal visits, no manual Configure Event dialogs, or dependency trees.
 - **Orphan cleanup built in** — steps, step images, and web resources missing from source are deleted from Dataverse on every `push`. `deploy` cleans up removed solution components too. No stale registrations, no ghost records. Use `--no-delete` to opt out.

@@ -73,10 +73,10 @@ assets without a full solution import; this makes Flowline practical for daily
 work. Type generation removes the last reason to keep spkl installed alongside
 Flowline.
 
-**v1.0 addition:** NuGet package (`pluginpackage`/Dependent Assemblies) support in
-`push`, replacing raw `.dll` upload — removes the ILMerge/ILRepack step for
-plugins with external NuGet dependencies. Brainstormed but not yet planned:
-`docs/brainstorms/2026-06-12-plugin-nuget-packages-requirements.md`.
+**v1.0 addition, shipped:** NuGet package (`pluginpackage`/Dependent Assemblies) support in
+`push` (`PluginPackageMode`: `Auto`/`Nupkg`/`Dll`), alongside raw `.dll` upload — removes the
+ILMerge/ILRepack step for plugins with external NuGet dependencies. See
+`docs/plans/2026-07-14-001-feat-pluginpackage-nuget-support-plan.md`.
 
 ### Drift detection + component cleanup
 
@@ -104,8 +104,8 @@ over unmanaged.
 - **2026-07-03** — `deploy` pre-backup: `BackupService` wired as pre-import safety net ✓
 - **2026-07-04** — `deploy` core flow (pack, import, DTAP gate, type guard, drift check) tested against real org — basic path works ✓
 - **2026-07-04** — Orphan cleanup (AE1–AE8) real-org testing — open, unit tests only so far
-- **2026-07-04** — WebResource-dependencies integration testing — open
-- **2026-07-05** — `push` NuGet package (Dependent Assemblies) support — open, added to v1 scope; not yet planned
+- **2026-07-04** — WebResource-dependencies (`// flowline:depends`, RESX auto-link) integration tested against a real push ✓
+- **2026-07-14** — `push` NuGet package (`pluginpackage`/Dependent Assemblies) support: auto-detects `.nupkg` build output, per-assembly reflection and step registration for multi-DLL packages, orphan-cleanup redirect to the parent package ✓
 - **2026-07-20** — v1.0 release (moved from 2026-07-01)
 
 ## Deferred
