@@ -12,14 +12,19 @@ public enum DotnetBuild { Release, Debug }
 public static class DotNetUtils
 {
 
-    public static async Task<int> BuildSolutionAsync(string workingDirectory, DotnetBuild configuration, SubprocessCapture capture, CancellationToken cancellationToken = default)
+    public static async Task<int> BuildSolutionAsync(string workingDirectory, DotnetBuild configuration, SubprocessCapture capture, CancellationToken cancellationToken = default, bool rebuild = false)
     {
         var relativeWorkingDirectory = ConsolePath.FormatRelativePath(workingDirectory);
+        var statusVerb = rebuild ? "Rebuilding" : "Building";
 
-        var buildResult = await AnsiConsole.Status().FlowlineSpinner().StartAsync($"Building {relativeWorkingDirectory}...", ctx =>
+        var buildResult = await AnsiConsole.Status().FlowlineSpinner().StartAsync($"{statusVerb} {relativeWorkingDirectory}...", ctx =>
             capture.Apply(
                 Cli.Wrap("dotnet")
-                   .WithArguments(args => args.Add("build").Add("--configuration").Add(configuration.ToString()))
+                   .WithArguments(args =>
+                   {
+                       args.Add("build").Add("--configuration").Add(configuration.ToString());
+                       if (rebuild) args.Add("-t:Rebuild");
+                   })
                    .WithWorkingDirectory(workingDirectory)
                    .WithValidation(CommandResultValidation.None))
                .ExecuteAsync(cancellationToken).Task);

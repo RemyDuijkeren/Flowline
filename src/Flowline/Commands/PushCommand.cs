@@ -273,13 +273,20 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         string? pluginsDll = standaloneMode ? standaloneParams.DllPath : null;
         string? releaseOutputRoot = null;
 
+        string? pluginsFolder = null;
+        var didBuild = false;
+
         if (!standaloneMode)
         {
-            var pluginsFolder = Path.Combine(RootFolder, AllSolutionsFolderName, solutionName, PluginsName);
+            pluginsFolder = Path.Combine(RootFolder, AllSolutionsFolderName, solutionName, PluginsName);
             if (settings.NoBuild)
                 Console.Skip("Build plugins — skipping (--no-build active)");
-            else if (await DotNetUtils.BuildSolutionAsync(pluginsFolder, DotnetBuild.Release, _capture, cancellationToken) != 0)
-                throw new FlowlineException(ExitCode.BuildFailed, "Plugins build failed — fix errors above.");
+            else
+            {
+                didBuild = true;
+                if (await DotNetUtils.BuildSolutionAsync(pluginsFolder, DotnetBuild.Release, _capture, cancellationToken) != 0)
+                    throw new FlowlineException(ExitCode.BuildFailed, "Plugins build failed — fix errors above.");
+            }
 
             // dotnet pack drops the .nupkg at bin/Release/ directly — a sibling of, not inside, the
             // net462/publish/ folder the classic .dll lives in (confirmed against a real `pac plugin init`
@@ -298,6 +305,21 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         // back into the classic path regardless. Standalone mode already has its final path resolved
         // (ResolveStandalonePluginFilePath).
         var pluginsPushPath = standaloneMode ? pluginsDll : ResolvePluginPushPath(pluginsDll, releaseOutputRoot!, pluginPackageMode);
+
+        // NuGet's Pack step (produces the .nupkg the line above just found) has its own incremental check
+        // that isn't aware of the recompiled DLL — if nothing else driving the nuspec changed (e.g. no new
+        // commit, since versioning is git-derived via MinVer), `dotnet build` recompiles the assembly but
+        // leaves a previously-packed, now-stale .nupkg in place. Detected using paths already resolved
+        // above (no new path assumptions); self-heals with one forced rebuild rather than silently pushing
+        // stale content or failing the push outright. Only meaningful right after a build we just ran.
+        if (didBuild && IsPackagePush(pluginsPushPath) && File.GetLastWriteTimeUtc(pluginsPushPath) < File.GetLastWriteTimeUtc(pluginsDll))
+        {
+            Console.Warning($"[bold]{ConsolePath.FormatRelativePath(pluginsPushPath)}[/] is older than the assembly just built — " +
+                "NuGet's Pack step didn't regenerate it (the package version likely didn't change). Forcing a full rebuild...");
+            if (await DotNetUtils.BuildSolutionAsync(pluginsFolder!, DotnetBuild.Release, _capture, cancellationToken, rebuild: true) != 0)
+                throw new FlowlineException(ExitCode.BuildFailed, "Plugins build failed — fix errors above.");
+            pluginsPushPath = ResolvePluginPushPath(pluginsDll, releaseOutputRoot!, pluginPackageMode);
+        }
 
         // Project mode's build output assembly name is deterministic (PluginsName). Standalone mode has
         // no such project context — for a .nupkg, the file itself typically embeds its NuGet version
