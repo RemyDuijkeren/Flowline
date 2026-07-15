@@ -1,5 +1,6 @@
 {
   "name": "flowline",
+  "description": "Dataverse ALM CLI — plugin registration, web resources, and solution deploy via Git-tracked, unmanaged solutions.",
   "owner": {
     "name": "Remy Duijkeren"
   },
@@ -7,9 +8,16 @@
     {
       "name": "flowline",
       "source": "./plugin",
+      "description": "Dataverse ALM CLI — plugin registration, web resources, and solution deploy via Git-tracked, unmanaged solutions. Includes migration guidance off spkl, Daxif, PACX, and ALM Accelerator.",
+      "version": "0.1.0",
       "author": {
         "name": "Remy Duijkeren"
-      }
+      },
+      "homepage": "https://github.com/RemyDuijkeren/Flowline/wiki",
+      "repository": "https://github.com/RemyDuijkeren/Flowline",
+      "license": "Apache-2.0",
+      "keywords": ["dataverse", "power-platform", "alm", "dynamics-365", "dataverse-alm"],
+      "category": "Productivity"
     }
   ]
 }
