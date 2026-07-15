@@ -23,11 +23,14 @@ A Flowline project has `.flowline` at the repo root and `solutions/<SolutionName
 4. `flowline sync` after any Maker Portal changes; commit the result.
 5. Promote: `flowline deploy test` → `flowline deploy prod` (DTAP-gated).
 
+If the solution's schema changed, run `flowline generate` to refresh early-bound C# types in `Plugins/Models/` before building — plugin code that references new or changed entities/columns needs it.
+
 ## Contract
 
 - **Branch on exit codes, not output text.** Non-zero is always a named code; the error message embeds the fix command verbatim — run it, don't parse prose for it.
 - **`push` exiting 0 doesn't mean the task is done.** It means registration succeeded. Verify the actual behavior (the step fires, the form loads the script) before reporting the change complete.
 - **Authority rule:** `push` treats the repo as authoritative — anything in DEV not present in source gets deleted (that's the point of orphan cleanup). `sync` treats DEV as authoritative for solution metadata — the repo gets updated. Never push over DEV changes that haven't been synced yet; run `sync` first if in doubt.
+- **Diagnose before guessing.** `flowline status` is read-only and reports environment, auth, and git state in one call — run it first when an exit code points at auth or connectivity (4, 10), rather than guessing at the fix.
 
 ## Exit codes
 
@@ -47,6 +50,8 @@ Exit codes are a stable public API — they don't change meaning across Flowline
 | 15 | ValidationFailed | Drift detected, missing dependencies, invalid `--force` value, or schema mismatch | Run `flowline sync` first; check error output — an invalid `--force` value lists the ones that are valid for that command |
 | 16 | Timeout | PAC CLI 60-minute limit exceeded | Retry; check environment health |
 | 17 | ForceRequired | Destructive operation requires explicit confirmation | Add the `--force <specifier>` the message names, e.g. `--force config`, `--force recreate-assembly` |
+| 18 | PartialSuccess | Deploy completed but orphan cleanup failed for some components | Check output for items to remove manually via maker portal |
+| 19 | Inconclusive | `drift` couldn't run to completion (empty-input guard skipped the comparison) | Not a pass/fail signal — investigate the printed reason before trusting the result |
 | 130 | Cancelled | Ctrl+C / SIGINT, or `deploy`'s first-import confirmation declined interactively | For the confirmation case: re-run with `--force first-import` to proceed non-interactively |
 
 Codes 2 and 5 are intentionally unused.
