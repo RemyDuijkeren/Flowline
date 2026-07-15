@@ -41,7 +41,7 @@ What sets Flowline apart:
   `// flowline:onload`, `// flowline:onsave`, or `// flowline:onchange` binds a function straight to a form's event, closing the last manual step in the JS dev loop; `// flowline:depends` links JS-to-JS and RESX dependencies the same way. Both are registered and kept in sync on every `push`. No Maker Portal visits, no manual Configure Event dialogs, or dependency trees.
 - **Orphan cleanup built in** — steps, step images, and web resources missing from source are deleted from Dataverse on every `push`. `deploy` cleans up removed solution components too. No stale registrations, no ghost records. Use `--no-delete` to opt out.
 - **Dry-run before you touch anything** — `--dry-run` shows exactly what would change before a single Dataverse record is touched. Run it as a CI safety gate or any time you want confidence. No other Dataverse ALM tool offers this.
-- **AI-native schema context** — `sync` writes `DATAVERSE_CONTEXT.md` with your full schema (entities, attributes, option sets, forms, views, plugin steps); Claude Code, Copilot, and Codex load it automatically via `AGENTS.md`. Your AI assistant knows your field names without live queries.
+- **AI-native by design** — `sync` writes `DATAVERSE_CONTEXT.md` with your full schema (entities, attributes, option sets, forms, views, plugin steps); Claude Code, Copilot, and Codex load it automatically via `AGENTS.md`. Install Flowline as a [Claude Code / Codex plugin](https://github.com/RemyDuijkeren/Flowline/wiki/09-AI-Agents) (`/plugin marketplace add RemyDuijkeren/Flowline`) and an agent knows the full `clone → push → sync → deploy` loop — and how to migrate off other tools, like spkl — before you've even cloned a project.
 
 ---
 
@@ -163,6 +163,6 @@ export function onCreditLimitChange(executionContext) { ... }
 
 ## Documentation
 
-Full docs live on the **[Wiki](https://github.com/RemyDuijkeren/Flowline/wiki)**.
+Full docs live on the **[Wiki](https://github.com/RemyDuijkeren/Flowline/wiki)**. Using an AI agent? See **[AI Agents](https://github.com/RemyDuijkeren/Flowline/wiki/09-AI-Agents)** for the exit-code contract and how to install Flowline as a Claude Code / Codex plugin.
 
-Coming from another tool? [Migration from spkl](https://github.com/RemyDuijkeren/Flowline/wiki/10-Migration-from-spkl) · [Migration from Daxif](https://github.com/RemyDuijkeren/Flowline/wiki/11-Migration-from-Daxif) · [Migration from PACX](https://github.com/RemyDuijkeren/Flowline/wiki/12-Migration-from-PACX)
+Coming from another tool? [Migration from spkl](https://github.com/RemyDuijkeren/Flowline/wiki/11-Migration-from-spkl) · [Migration from Daxif](https://github.com/RemyDuijkeren/Flowline/wiki/12-Migration-from-Daxif) · [Migration from PACX](https://github.com/RemyDuijkeren/Flowline/wiki/13-Migration-from-PACX) · [Migration from ALM Accelerator](https://github.com/RemyDuijkeren/Flowline/wiki/14-Migration-from-ALM-Accelerator)
