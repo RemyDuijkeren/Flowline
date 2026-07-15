@@ -1,0 +1,20 @@
+{
+  "name": "flowline",
+  "interface": {
+    "displayName": "Flowline"
+  },
+  "plugins": [
+    {
+      "name": "flowline",
+      "source": {
+        "source": "local",
+        "path": "./plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
