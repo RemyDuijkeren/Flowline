@@ -115,6 +115,42 @@ public class SubprocessCaptureTests
         _console.Output.Should().Contain("error on stderr");
     }
 
+    // Test 5b: suppressErrors=true → stderr goes through console.Verbose(), never printed in red
+    [Fact]
+    public async Task Apply_Stderr_SuppressErrors_NotRed()
+    {
+        _options.IsVerbose = false;
+        var cmd = CreateCapture().Apply(BaseCmd(), suppressErrors: true);
+
+        await PumpStderrAsync(cmd, "fatal: no such branch: 'master'");
+
+        _console.Output.Should().NotContain("no such branch");
+    }
+
+    // Test 5c: suppressErrors=true + verbose → stderr still visible, just not red/alarming
+    [Fact]
+    public async Task Apply_Stderr_SuppressErrors_Verbose_StillVisible()
+    {
+        _options.IsVerbose = true;
+        var cmd = CreateCapture().Apply(BaseCmd(), suppressErrors: true);
+
+        await PumpStderrAsync(cmd, "fatal: no such branch: 'master'");
+
+        _console.Output.Should().Contain("no such branch");
+    }
+
+    // Test 3b: suppressErrors=true → error-matching stdout no longer force-displayed
+    [Fact]
+    public async Task Apply_ErrorStdout_SuppressErrors_NotVerbose_NoTerminalOutput()
+    {
+        _options.IsVerbose = false;
+        var cmd = CreateCapture().Apply(BaseCmd(), suppressErrors: true);
+
+        await PumpStdoutAsync(cmd, "Error: something failed");
+
+        _console.Output.Should().BeEmpty();
+    }
+
     // Test 6: lineTransform — transformed line displayed on terminal when verbose
     [Fact]
     public async Task Apply_LineTransform_DisplaysTransformed()

@@ -50,7 +50,7 @@ public static class GitUtils
 
             var finalCmd = cmd.WithArguments("rev-parse --abbrev-ref HEAD")
                               .WithValidation(CommandResultValidation.None);
-            var result = await (capture?.Apply(finalCmd) ?? finalCmd)
+            var result = await (capture?.Apply(finalCmd, suppressErrors: true) ?? finalCmd)
                               .ExecuteBufferedAsync(cancellationToken);
 
             if (result.ExitCode != 0) return null;
@@ -73,7 +73,8 @@ public static class GitUtils
             // Get upstream ref of the current branch (e.g., "origin/main")
             var upstreamResult = await capture.Apply(
                                           Cli.Wrap("git")
-                                          .WithArguments("rev-parse --abbrev-ref --symbolic-full-name @{u}"))
+                                          .WithArguments("rev-parse --abbrev-ref --symbolic-full-name @{u}"),
+                                          suppressErrors: true)
                                           .ExecuteBufferedAsync(cancellationToken);
 
             var upstream = upstreamResult.StandardOutput.Trim();

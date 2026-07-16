@@ -25,7 +25,12 @@ public sealed class SubprocessCapture
     /// printed. Other stdout lines go through console.Verbose() — always logged, terminal-visible
     /// only with --verbose.
     /// </summary>
-    public Command Apply(Command cmd, StatusContext? ctx = null, Func<string, string>? lineTransform = null)
+    /// <param name="suppressErrors">
+    /// Set for probe commands whose non-zero exit is an expected, caller-handled outcome (e.g. git
+    /// queries on a repo with no commits yet) — stderr is only logged via console.Verbose(), never
+    /// echoed in red, so callers can report their own friendly message without raw tool noise.
+    /// </param>
+    public Command Apply(Command cmd, StatusContext? ctx = null, Func<string, string>? lineTransform = null, bool suppressErrors = false)
     {
         var prefix = FormatPrefix(cmd);
 
@@ -34,7 +39,7 @@ public sealed class SubprocessCapture
             {
                 SetStatusWithExecutionTime(ctx, line);
 
-                if (IsErrorLine(line))
+                if (!suppressErrors && IsErrorLine(line))
                 {
                     DisplayErrorMessage(line, prefix);
                     return;
@@ -53,6 +58,12 @@ public sealed class SubprocessCapture
             }))
             .WithStandardErrorPipe(PipeTarget.ToDelegate(line =>
             {
+                if (suppressErrors)
+                {
+                    _console.Verbose($"{prefix}: {line}");
+                    return;
+                }
+
                 _console.MarkupLine($"[red]{Markup.Escape(prefix)}: {Markup.Escape(line)}[/]");
             }));
     }
