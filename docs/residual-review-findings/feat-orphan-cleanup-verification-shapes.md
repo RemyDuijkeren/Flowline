@@ -25,4 +25,4 @@ Source: `ce-code-review` run against this branch (base `master` @ `64b836d`, hea
 - Entity-detection query failure isolation (correctness + reliability, cross-corroborated).
 - Null-identity-attribute suppression bypass fixed to skip rather than default to "orphaned" (adversarial + testing, cross-corroborated).
 - OptionSet metadata resolution now distinguishes genuine "not found" faults from real failures (reliability).
-- Wiki (`Flowline.wiki/08-Deploy.md`) MANUAL-components list updated to include Bot/ConnectionReference (project-standards) — committed separately in the wiki's own repository, not this one.
+- Wiki (`Flowline.wiki/07-Deploy.md`) MANUAL-components list updated to include Bot/ConnectionReference (project-standards) — committed separately in the wiki's own repository, not this one.

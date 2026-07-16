@@ -349,8 +349,8 @@ flowchart TB
 
 **Files:**
 - `Flowline.wiki/03-Command-Reference.md` — replace the single global `-f, --force` row (line 29) with either a per-command table or a pointer to each command's own `--help` output plus the full vocabulary table (mirroring the Requirements table's R6-R10 shape in this plan).
-- `Flowline.wiki/08-Deploy.md` — line 25's `"...or pass --force to skip the check"` → `"...or pass --force drift to skip the check"`.
-- `Flowline.wiki/09-AI-Agents.md` — lines 21, 24, 37, 38, 64, 72: update the exit-code corrective-action table (14 `VersionConflict`, 17 `ForceRequired`) and the example invocation (`flowline deploy prod --force` → `flowline deploy prod --force drift`) to name real specifiers, since this page is explicitly the machine-readable contract AI agents read for corrective actions.
+- `Flowline.wiki/07-Deploy.md` — line 25's `"...or pass --force to skip the check"` → `"...or pass --force drift to skip the check"`.
+- `Flowline.wiki/10-AI-Agents.md` — lines 21, 24, 37, 38, 64, 72: update the exit-code corrective-action table (14 `VersionConflict`, 17 `ForceRequired`) and the example invocation (`flowline deploy prod --force` → `flowline deploy prod --force drift`) to name real specifiers, since this page is explicitly the machine-readable contract AI agents read for corrective actions.
 
 **Approach:** Text-only edits, no code. Do this last so the vocabulary being documented is final, not provisional. Include one explicit callout (in `03-Command-Reference.md`, near the `--force` row) about the positional-argument interaction found during planning: since `--force` now requires a value, a bare `--force` immediately followed by a positional token (e.g. `flowline deploy --force prod`, or `flowline push --force MySolution`) binds that token as the force value instead of its intended positional — always name the specifier explicitly and put the positional in its own place, e.g. `flowline deploy prod --force drift` / `flowline push MySolution --force delete-orphans`.
 
@@ -372,5 +372,5 @@ flowchart TB
 
 - U1-U8 all complete; every command's `--force` behavior matches its row in the Requirements table (R6-R10).
 - No remaining reference to `settings.Force` as a `bool` anywhere in `src/` (compiler-enforced) or in test files (grep-verified).
-- Wiki pages (`03-Command-Reference.md`, `08-Deploy.md`, `09-AI-Agents.md`) show only specifier-qualified `--force` examples.
+- Wiki pages (`03-Command-Reference.md`, `07-Deploy.md`, `10-AI-Agents.md`) show only specifier-qualified `--force` examples.
 - `docs/tone-of-voice.md` conventions hold for every new/changed error message (red, direct, names the next action) — spot-check against `/tone` if available.

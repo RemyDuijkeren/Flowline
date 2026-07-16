@@ -125,7 +125,7 @@ One flag, whole event — which is exactly why two annotations can disagree: lib
 - `src/Flowline.Core/Services/FormEventAnnotationParser.cs:18-37` — existing annotation grammar (`OnLoadSaveAnnotationRegex`, `OnChangeAnnotationRegex`, `AnnotationIntentRegex`) this plan's new directives and bracket-modifier grammar extend. No existing bracket-modifier precedent exists anywhere in this codebase.
 - `src/Flowline.Core/Services/FormEventRenameAdvisor.cs` — confirmed whole-form-identity scoped (not sub-element scoped), consistent with this plan's Scope Boundaries; already threads an optional `attribute` value through to `ForHandler`, so Tab/IFRAME's scope token needs no new advisor code path.
 - `docs/plans/2026-07-14-001-feat-form-event-onchange-annotation-plan.md` — prior plan that added `onchange`'s attribute scoping; structural precedent for this plan's units (one unit per file + its test file, KTDs naming exact file/line anchors).
-- `06-WebResources-Project.md:203-249` (sibling repo `Flowline.wiki`) — the wiki page documenting the annotation grammar end-to-end; needs updating alongside this work (see Documentation Notes below).
+- `06-WebResources-Project.md:203-249` (sibling repo `Flowline.wiki`; this content later moved to `05-Push-WebResources.md` when the wiki was reorganized) — the wiki page documenting the annotation grammar end-to-end; needs updating alongside this work (see Documentation Notes below).
 
 ---
 
@@ -162,7 +162,7 @@ flowchart TB
 
 ### Documentation Notes
 
-`06-WebResources-Project.md:203-249` in the sibling `Flowline.wiki` repo documents the annotation grammar end-to-end (directive list, comment forms, examples). Update it alongside this work to add `flowline:tabstatechange`/`flowline:onreadystatecomplete` to the directive list and examples, and document the `[bulkEdit]`/`[order:N]` bracket-modifier grammar with an example of both together. This lives outside this repo's build/test loop.
+`06-WebResources-Project.md:203-249` in the sibling `Flowline.wiki` repo documented the annotation grammar end-to-end (directive list, comment forms, examples) at the time this plan was written; that content now lives in `05-Push-WebResources.md`'s "Form event registration" section. Update it alongside this work to add `flowline:tabstatechange`/`flowline:onreadystatecomplete` to the directive list and examples, and document the `[bulkEdit]`/`[order:N]` bracket-modifier grammar with an example of both together. This lives outside this repo's build/test loop.
 
 ---
 
@@ -276,5 +276,5 @@ flowchart TB
 - All U1-U5 test scenarios pass, including the container-nesting, ordering, bulk-edit, and validation-failure fixtures.
 - `dotnet build Flowline.slnx` is clean; `dotnet test tests/Flowline.Core.Tests` and `tests/Flowline.Tests` pass with no regressions to existing `onload`/`onsave`/`onchange` behavior.
 - A live manual push round-trip against a real Dataverse test environment succeeds for both a Tab-scoped and an IFRAME-scoped annotation, and a repeat push is idempotent.
-- The wiki page `06-WebResources-Project.md` is updated with the two new directives and the bracket-modifier grammar (see Documentation Notes).
+- The wiki page `05-Push-WebResources.md` (formerly `06-WebResources-Project.md`) is updated with the two new directives and the bracket-modifier grammar (see Documentation Notes).
 - No dead-end or experimental code remains from exploring the container-lookup design (e.g. an abandoned resolver-abstraction attempt) — only the switch-based implementation from KTD1 ships.

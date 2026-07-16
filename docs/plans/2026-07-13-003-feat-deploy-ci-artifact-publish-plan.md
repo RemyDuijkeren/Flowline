@@ -112,7 +112,7 @@ flowchart TB
 **Dependencies:** U1
 
 **Files:**
-- `08-Deploy.md` (wiki repo — see note below) — new subsection under "Artifacts" describing: Azure Pipelines gets the packed zip attached as a build artifact automatically; GitHub Actions gets the path exposed as a step output (`artifact-path-<SolutionName>`), with a short example step referencing it via `actions/upload-artifact`, and a note that looping over sibling solutions needs one step per solution to read each output; other CI platforms need to wire their own upload against the existing deterministic `solutions/<Name>/artifacts/` path.
+- `07-Deploy.md` (wiki repo — see note below) — new subsection under "Artifacts" describing: Azure Pipelines gets the packed zip attached as a build artifact automatically; GitHub Actions gets the path exposed as a step output (`artifact-path-<SolutionName>`), with a short example step referencing it via `actions/upload-artifact`, and a note that looping over sibling solutions needs one step per solution to read each output; other CI platforms need to wire their own upload against the existing deterministic `solutions/<Name>/artifacts/` path.
 - `CHANGELOG.md` — `[Unreleased]/Added`: CI artifact publishing for Azure Pipelines and GitHub Actions.
 - `README.md` — no CI-artifact detail exists here today (CI specifics live in the wiki's "Artifacts" section); verify this split still holds and no summary line needs adding.
 
@@ -135,5 +135,5 @@ flowchart TB
 ## Definition of Done
 
 - U1-U2 complete; both platform signals fire automatically with no new flag, never block a deploy's own success/failure outcome, and the GitHub Actions output key is qualified per solution.
-- Wiki (`08-Deploy.md`) and `CHANGELOG.md` document both mechanisms and the GitHub Actions workflow-YAML pairing.
+- Wiki (`07-Deploy.md`) and `CHANGELOG.md` document both mechanisms and the GitHub Actions workflow-YAML pairing.
 - No dead code left from the dispatcher's pure-function/wrapper split.

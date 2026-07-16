@@ -57,7 +57,8 @@ resource handling, project structure — update the relevant wiki page(s) alongs
 Wiki pages and their scope:
 - `Getting-Started.md` — install, auth, project workflow
 - `Command-Reference.md` — all commands and flags
-- `Plugin-Registration.md` — `[Step]`, `[Filter]`, `[CustomApi]` attribute reference
+- `Push-Plugins-and-Custom-APIs.md` — `[Step]`, `[Filter]`, `[CustomApi]` attribute reference
+- `Push-WebResources.md` — form event auto-wiring, web resource dependencies, push/deploy mechanics
 - `WebResources-Project.md` — TypeScript setup, Rollup build, folder structure
 - `Migration-from-spkl.md`, `Migration-from-Daxif.md`, `Migration-from-PACX.md` — migration guides
 - `Known-Limitations.md` — unsupported features and planned work

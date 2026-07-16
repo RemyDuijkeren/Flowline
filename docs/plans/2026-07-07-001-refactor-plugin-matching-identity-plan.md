@@ -683,7 +683,7 @@ continue to pass with the key changed from `name` to `imageType`.
 
 **Files:**
 - `src/Flowline.Attributes/README.md`
-- `Flowline.wiki/04-Plugin-Registration.md` (sibling repo)
+- `Flowline.wiki/04-Push-Plugins-and-Custom-APIs.md` (sibling repo)
 - `CONCEPTS.md` (repo root)
 - `docs/solutions/tooling-decisions/plugintype-id-not-needed.md`
 

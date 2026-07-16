@@ -157,7 +157,7 @@ flowchart TB
 **Dependencies:** U1, U2
 
 **Files:**
-- `08-Deploy.md` (wiki repo — see note below) — "Artifacts" section: describe the every-deploy status line, the Test/UAT-gated explanation, and the CI-specific note (appended to the real outcome, not a replacement for it); keep the existing "Build once, promote many" framing but tie it explicitly to the new visible messaging.
+- `07-Deploy.md` (wiki repo — see note below) — "Artifacts" section: describe the every-deploy status line, the Test/UAT-gated explanation, and the CI-specific note (appended to the real outcome, not a replacement for it); keep the existing "Build once, promote many" framing but tie it explicitly to the new visible messaging.
 - `CHANGELOG.md` — `[Unreleased]/Changed`: cache outcome now reported on every deploy, with a CI-aware note appended pointing at `--path`.
 - `README.md` — no caching detail currently exists here (it's wiki-only per the "Artifacts" section); verify this stays the right split and no summary line needs adding.
 
@@ -181,5 +181,5 @@ flowchart TB
 
 - U1-U3 complete; every non-`--path` deploy reports a cache outcome, never silent on a miss, and CI never overrides a real outcome with a generic message.
 - The pipeline-style explanation appears only when Test and/or UAT is configured, and never on CI regardless of that configuration.
-- Wiki (`08-Deploy.md`) and `CHANGELOG.md` reflect the final shipped messaging.
+- Wiki (`07-Deploy.md`) and `CHANGELOG.md` reflect the final shipped messaging.
 - No dead code left from the old boolean `ArtifactCacheHit` signature.

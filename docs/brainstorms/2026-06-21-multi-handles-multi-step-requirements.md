@@ -145,12 +145,12 @@ Extend the existing `[Handles]` section to cover multi-registration:
   steps in Dataverse — this causes step recreation (delete + create) on the next push. Plan the
   split for a maintenance window or accept the brief removal.
 
-### `wiki/04-Plugin-Registration.md` — `[Handles]` section (line ~142)
+### `wiki/04-Push-Plugins-and-Custom-APIs.md` — `[Handles]` section (line ~142)
 
 Mirror the same additions as the Attributes README. Both documents cover `[Handles]` for the same
 audience; they must stay in sync.
 
-### `wiki/11-Migration-from-spkl.md` — new subsection under plugin migration
+### `wiki/12-Migration-from-spkl.md` — new subsection under plugin migration
 
 spkl supports multiple `[CrmPluginRegistration]` attributes on one class. The migration guide
 currently shows `[Handles]` only for class renaming. Add a new subsection:
@@ -161,13 +161,13 @@ currently shows `[Handles]` only for class renaming. Add a new subsection:
 - Note the migration warning Flowline emits and that the long-term goal is named subclasses
 - Warn about step recreation when splitting (same warning as above)
 
-### `wiki/12-Migration-from-Daxif.md` — new subsection under plugin migration
+### `wiki/13-Migration-from-Daxif.md` — new subsection under plugin migration
 
 Daxif's fluent registration can register one class for multiple steps. Same treatment as the spkl
 guide — add a "One class, multiple step registrations" subsection with before/after and the same
 splitting warning.
 
-### `wiki/13-Migration-from-PACX.md` — no changes needed
+### `wiki/14-Migration-from-PACX.md` — no changes needed
 
 PACX registers steps via individual CLI calls, not class-level annotations. There is no
 multi-registration-per-class concept to migrate from.

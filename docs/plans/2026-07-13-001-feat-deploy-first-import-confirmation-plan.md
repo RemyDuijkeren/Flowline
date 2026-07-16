@@ -178,7 +178,7 @@ flowchart TB
 **Dependencies:** U1, U2, U3 (needs final behavior settled before describing it).
 
 **Files:**
-- `08-Deploy.md` (wiki repo — see note below) — "Managed vs unmanaged" section: remove the `deploy prod --managed` example and the sentence describing `--managed`/`--managed false` on `deploy`; state managed/unmanaged is configured exclusively via `clone`/`sync`. Add a short section on the first-import confirmation and `--force first-import`.
+- `07-Deploy.md` (wiki repo — see note below) — "Managed vs unmanaged" section: remove the `deploy prod --managed` example and the sentence describing `--managed`/`--managed false` on `deploy`; state managed/unmanaged is configured exclusively via `clone`/`sync`. Add a short section on the first-import confirmation and `--force first-import`.
 - `03-Command-Reference.md` (wiki repo) — remove the `deploy` options table's `--managed` row; add `--force first-import` to the vocabulary shown for `deploy`.
 - `CHANGELOG.md` — `[Unreleased]/Changed`: note `--managed` removed from `deploy` (breaking change, no deprecation window, matching this project's established convention for CLI-surface changes). `[Unreleased]/Added`: first-import confirmation gate.
 - `README.md` — "Quick start (project mode)" doesn't show a `deploy --managed` example, so no change is expected there; verify it and the "Commands" table (line ~153) still read correctly with `--managed` gone from `deploy`.
@@ -204,5 +204,5 @@ flowchart TB
 - U1-U4 complete; `deploy --managed` no longer exists; the first-import gate fires only on a true first import to a target, not on `dev`, not on an already-existing solution.
 - `ConsoleHelper.Confirm` takes an explicit specifier everywhere it's called; no remaining hardcoded `"config"` inside `Confirm` itself.
 - `deploy`'s `ValidSpecifiers` is `["drift", "first-import", "all"]` — `config` no longer appears, and no test still asserts it does.
-- Wiki pages (`08-Deploy.md`, `03-Command-Reference.md`) and `CHANGELOG.md` reflect the final shipped behavior.
+- Wiki pages (`07-Deploy.md`, `03-Command-Reference.md`) and `CHANGELOG.md` reflect the final shipped behavior.
 - No dead code left from the removed `Managed` property or its `FlagValue<bool>` usage in `DeployCommand`.
