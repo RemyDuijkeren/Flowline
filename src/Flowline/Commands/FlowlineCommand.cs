@@ -213,7 +213,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         if (remoteSln == null)
             throw new FlowlineException(ExitCode.NotFound, $"Solution '{projectSln.Name}' not found in that environment.");
 
-        Console.Ok($"Solution [bold]{projectSln.Name}[/] (managed: {remoteSln.IsManaged}) exists");
+        Console.Ok($"Solution [bold]{projectSln.Name}[/] ({(remoteSln.IsManaged ? "managed": "unmanaged")}) exists");
 
         return (projectSln, remoteSln);
     }
