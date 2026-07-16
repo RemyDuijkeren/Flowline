@@ -228,6 +228,29 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     private async Task<(EnvironmentInfo sourceEnv, ProjectSolution projectSolution, SolutionInfo solutionInfo)> FindUnmanagedSourceAsync(Settings settings,
         CancellationToken cancellationToken)
     {
+        // clone only pulls fresh source once (CloneSolutionFromDataverseAsync skips when Package.cdsproj
+        // already exists) — an already-cloned solution's Package/src was unpacked for whatever packagetype
+        // was requested back then, so flipping --managed here would update config without ever re-fetching
+        // the managed layer, and fail confusingly at pack time. Route mode changes through sync instead,
+        // which always re-fetches with the correct --packagetype. Re-passing the same value that's
+        // already in config (or --managed on a solution that isn't cloned yet) is harmless and stays allowed.
+        if (settings.IncludeManaged.IsSet)
+        {
+            var resolvedName = ResolveSolutionName(Config!, settings.Solution);
+            var existingSln = resolvedName != null
+                ? Config!.Solutions.FirstOrDefault(s => StringComparer.OrdinalIgnoreCase.Equals(s.Name, resolvedName))
+                : null;
+
+            if (existingSln != null &&
+                existingSln.IncludeManaged != settings.IncludeManaged.Value &&
+                IsAlreadyCloned(RootFolder, resolvedName!))
+            {
+                throw new FlowlineException(ExitCode.ValidationFailed,
+                    $"'{resolvedName}' is already cloned as {(existingSln.IncludeManaged ? "managed" : "unmanaged")} — clone can't change managed mode after the fact. " +
+                    $"Run 'flowline sync --managed{(settings.IncludeManaged.Value ? "" : " false")}' instead.");
+            }
+        }
+
         foreach (var role in new[] { EnvironmentRole.Prod, EnvironmentRole.Uat, EnvironmentRole.Test, EnvironmentRole.Dev })
         {
             var configUrl = role switch
@@ -255,6 +278,22 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         }
 
         throw new FlowlineException(ExitCode.NotFound, "No unmanaged environment found — provide a --dev, --test, --uat, or --prod URL with an unmanaged solution.");
+    }
+
+    // Read-only name resolution — mirrors ProjectConfig.GetOrUpdateSolution's lookup without mutating
+    // config, so this precondition check can run before that method's confirm-and-overwrite prompt.
+    internal static string? ResolveSolutionName(ProjectConfig config, string? inputName)
+    {
+        var name = inputName?.Trim();
+        if (!string.IsNullOrWhiteSpace(name)) return name;
+        return config.Solutions.Count == 1 ? config.Solutions.Single().Name : null;
+    }
+
+    internal static bool IsAlreadyCloned(string rootFolder, string solutionName)
+    {
+        var slnFolder = Path.Combine(rootFolder, AllSolutionsFolderName, solutionName);
+        var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
+        return File.Exists(cdsprojPath);
     }
 
     private void SeedWebResourceDistFromSrc(string slnFolder, string? publisherPrefix, string solutionName, Settings settings)

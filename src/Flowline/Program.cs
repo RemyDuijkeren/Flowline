@@ -94,6 +94,7 @@ runtimeOptions.ArgsRedacted = SubprocessCapture.RedactSensitiveArgs(string.Join(
 
 // Configure and run the app
 var app = new CommandApp(new TypeRegistrar(services));
+var logLinkShown = false;
 
 app.Configure(config =>
 {
@@ -107,6 +108,7 @@ app.Configure(config =>
     {
         var logFilePath = FlowlineStoragePaths.GetLogsPath(runTime, args.FirstOrDefault());
         var logLink = $"[dim][link={new Uri(logFilePath).AbsoluteUri}]Log: {Markup.Escape(logFilePath)}[/][/]";
+        logLinkShown = true;
 
         switch (ex)
         {
@@ -200,6 +202,15 @@ AnsiConsole.Console.Pipeline.Attach(new LoggingRenderHook(
 ));
 
 var exitCode = await app.RunAsync(args, cancellationTokenSource.Token);
+
+// Commands that return a non-zero exit code directly (e.g. build/pack failures) instead of throwing
+// a FlowlineException skip SetExceptionHandler entirely, so its "Log: ..." pointer never printed.
+if (exitCode != 0 && !logLinkShown)
+{
+    var logFilePath = FlowlineStoragePaths.GetLogsPath(runTime, args.FirstOrDefault());
+    AnsiConsole.MarkupLine($"[dim][link={new Uri(logFilePath).AbsoluteUri}]Log: {Markup.Escape(logFilePath)}[/][/]");
+}
+
 Log.CloseAndFlush();
 hookLoggerFactory.Dispose();
 return exitCode;
