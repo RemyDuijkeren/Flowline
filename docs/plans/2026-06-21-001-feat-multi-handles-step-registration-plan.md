@@ -56,9 +56,9 @@ the path toward the preferred convention.
 - R11. `src/Flowline.Attributes/README.md` `[Handles]` section: stacked syntax, migration use
   case, nudge warning behavior, step-recreation risk when splitting into subclasses.
 - R12. `Flowline.wiki/04-Push-Plugins-and-Custom-APIs.md` `[Handles]` section: same additions as R11.
-- R13. `Flowline.wiki/12-Migration-from-spkl.md`: new "One class, multiple step registrations"
+- R13. `Flowline.wiki/13-Migration-from-spkl.md`: new "One class, multiple step registrations"
   subsection with spkl before/after and the splitting warning.
-- R14. `Flowline.wiki/13-Migration-from-Daxif.md`: same subsection for Daxif.
+- R14. `Flowline.wiki/14-Migration-from-Daxif.md`: same subsection for Daxif.
 
 ---
 
@@ -289,8 +289,8 @@ step-recreation risk when splitting into subclasses.
 **Files:**
 - `src/Flowline.Attributes/README.md`
 - `Flowline.wiki/04-Push-Plugins-and-Custom-APIs.md` (sibling repo `Flowline.wiki`)
-- `Flowline.wiki/12-Migration-from-spkl.md` (sibling repo)
-- `Flowline.wiki/13-Migration-from-Daxif.md` (sibling repo)
+- `Flowline.wiki/13-Migration-from-spkl.md` (sibling repo)
+- `Flowline.wiki/14-Migration-from-Daxif.md` (sibling repo)
 
 **Approach:**
 
