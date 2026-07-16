@@ -26,8 +26,9 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         [Description("Development environment URL")]
         public string? DevUrl { get; set; }
 
-        [CommandOption("--managed")]
+        [CommandOption("--managed [false]")]
         [Description("Include managed artifacts (--managed false resets to default)")]
+        [DefaultValue(true)]
         public FlagValue<bool> IncludeManaged { get; set; } = null!;
 
         [CommandOption("--bump")]

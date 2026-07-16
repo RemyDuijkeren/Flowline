@@ -36,8 +36,9 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         [Description("Development environment URL to clone solution from")]
         public string? DevUrl { get; set; }
 
-        [CommandOption("--managed")]
+        [CommandOption("--managed [false]")]
         [Description("Include managed artifacts (--managed false resets to default)")]
+        [DefaultValue(true)]
         public FlagValue<bool> IncludeManaged { get; set; } = null!;
     }
 

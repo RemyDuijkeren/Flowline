@@ -73,11 +73,12 @@ public static class GitUtils
             // Get upstream ref of the current branch (e.g., "origin/main")
             var upstreamResult = await capture.Apply(
                                           Cli.Wrap("git")
-                                          .WithArguments("rev-parse --abbrev-ref --symbolic-full-name @{u}"),
+                                          .WithArguments("rev-parse --abbrev-ref --symbolic-full-name @{u}")
+                                          .WithValidation(CommandResultValidation.None),
                                           suppressErrors: true)
                                           .ExecuteBufferedAsync(cancellationToken);
 
-            var upstream = upstreamResult.StandardOutput.Trim();
+            var upstream = upstreamResult.ExitCode == 0 ? upstreamResult.StandardOutput.Trim() : null;
 
             if (!string.IsNullOrWhiteSpace(upstream) && upstream.Contains('/'))
             {
@@ -88,7 +89,9 @@ public static class GitUtils
             {
                 var remoteUrlResult = await capture.Apply(
                                                Cli.Wrap("git")
-                                               .WithArguments(args => args.Add("remote").Add("get-url").Add(remoteName)))
+                                               .WithArguments(args => args.Add("remote").Add("get-url").Add(remoteName))
+                                               .WithValidation(CommandResultValidation.None),
+                                               suppressErrors: true)
                                                .ExecuteBufferedAsync(cancellationToken);
 
                 if (remoteUrlResult.ExitCode == 0)
@@ -100,7 +103,9 @@ public static class GitUtils
             {
                 var originResult = await capture.Apply(
                                         Cli.Wrap("git")
-                                        .WithArguments("remote get-url origin"))
+                                        .WithArguments("remote get-url origin")
+                                        .WithValidation(CommandResultValidation.None),
+                                        suppressErrors: true)
                                         .ExecuteBufferedAsync(cancellationToken);
 
                 if (originResult.ExitCode == 0)
@@ -112,7 +117,9 @@ public static class GitUtils
             {
                 var remotesResult = await capture.Apply(
                                          Cli.Wrap("git")
-                                         .WithArguments("remote"))
+                                         .WithArguments("remote")
+                                         .WithValidation(CommandResultValidation.None),
+                                         suppressErrors: true)
                                          .ExecuteBufferedAsync(cancellationToken);
 
                 var firstRemote = remotesResult.StandardOutput
@@ -123,7 +130,9 @@ public static class GitUtils
                 {
                     var firstUrlResult = await capture.Apply(
                                               Cli.Wrap("git")
-                                              .WithArguments(args => args.Add("remote").Add("get-url").Add(firstRemote)))
+                                              .WithArguments(args => args.Add("remote").Add("get-url").Add(firstRemote))
+                                              .WithValidation(CommandResultValidation.None),
+                                              suppressErrors: true)
                                               .ExecuteBufferedAsync(cancellationToken);
 
                     if (firstUrlResult.ExitCode == 0)
