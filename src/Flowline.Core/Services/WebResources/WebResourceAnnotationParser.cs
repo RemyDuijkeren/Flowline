@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Services.WebResources;
 
 public static class WebResourceAnnotationParser
 {

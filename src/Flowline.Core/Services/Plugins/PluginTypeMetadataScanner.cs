@@ -3,7 +3,7 @@ using Flowline.Attributes;
 using Flowline.Core.Models;
 using Spectre.Console;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Services.Plugins;
 
 // Code-review split (maintainability P1): extracted from PluginAssemblyReader, which crossed 1000 lines.
 // Owns reflection-based attribute/step/CustomApi metadata parsing for one already-loaded assembly;

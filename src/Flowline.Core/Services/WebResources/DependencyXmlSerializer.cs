@@ -1,7 +1,7 @@
 using System.Xml.Linq;
 using Flowline.Core.Models;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Services.WebResources;
 
 public static class DependencyXmlSerializer
 {

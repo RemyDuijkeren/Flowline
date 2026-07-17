@@ -5,9 +5,10 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Flowline.Core.Models;
+using Flowline.Core.Services.FormEvents.Support;
 using Spectre.Console;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Services.FormEvents;
 
 // U6: applies a FormEventSyncPlan (U5) — confirms unrecognized handlers, writes formxml, publishes per entity.
 //

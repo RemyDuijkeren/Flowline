@@ -2,7 +2,7 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 using Flowline.Core.Models;
 using Spectre.Console;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Services.FormEvents;
 
 // U7: wires FormEventReader → FormEventPlanner → FormEventExecutor behind two entry points, mirroring
 // WebResourceService's orchestration shape (status spinner load → pure plan → execute).

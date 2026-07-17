@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using Flowline.Attributes;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
+using Flowline.Core.Services.Plugins;
 using Microsoft.Xrm.Sdk;
 using Spectre.Console.Testing;
 

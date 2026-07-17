@@ -1,7 +1,7 @@
 using System.Xml.Linq;
 using Flowline.Core.Models;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Services.FormEvents.Support;
 
 // U3: on a name-lookup miss (FormEventReader's globalMatches.Count == 0 branch), combines three advisory
 // signals into a single tiered suggestion appended to the existing failure message — self-tag match

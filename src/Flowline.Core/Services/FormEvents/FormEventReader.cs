@@ -6,9 +6,11 @@ using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Metadata;
 using Microsoft.Xrm.Sdk.Query;
 using Flowline.Core.Models;
+using Flowline.Core.Services.FormEvents.Support;
+using Flowline.Core.Services.WebResources;
 using Spectre.Console;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Services.FormEvents;
 
 public class FormEventReader(IAnsiConsole console)
 {

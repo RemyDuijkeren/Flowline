@@ -3,6 +3,7 @@ using Flowline;
 using Flowline.Core;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
+using Flowline.Core.Services.Plugins;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;

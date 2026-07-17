@@ -6,6 +6,9 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 using NSubstitute;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
+using Flowline.Core.Services.FormEvents;
+using Flowline.Core.Services.FormEvents.Support;
+using Flowline.Core.Services.WebResources;
 using Spectre.Console.Testing;
 
 namespace Flowline.Core.Tests;

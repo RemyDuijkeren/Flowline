@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
 using Flowline.Core.Models;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Services.FormEvents.Support;
 
 // The successfully parsed annotations, plus any line that clearly intends to be a flowline:on... comment
 // (matches AnnotationIntentRegex) but fails the strict grammar — surfaced so a caller can warn instead of

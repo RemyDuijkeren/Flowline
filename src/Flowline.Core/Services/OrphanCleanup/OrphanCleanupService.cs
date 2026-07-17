@@ -8,7 +8,7 @@ using Spectre.Console;
 using Flowline.Core.Services.OrphanCleanup;
 using Flowline.Core.Services.OrphanCleanup.Handlers;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Services.OrphanCleanup;
 
 public enum OrphanAction { Delete, RemoveFromSolution, Manual }
 

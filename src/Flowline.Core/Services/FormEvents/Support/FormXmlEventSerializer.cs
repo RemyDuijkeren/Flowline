@@ -1,7 +1,7 @@
 using System.Xml.Linq;
 using Flowline.Core.Models;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Services.FormEvents.Support;
 
 // Assumes formxml has no XML namespace (matches the verified ground truth - Dataverse formxml is
 // namespace-free). Element("...") lookups here are namespace-sensitive and would silently miss

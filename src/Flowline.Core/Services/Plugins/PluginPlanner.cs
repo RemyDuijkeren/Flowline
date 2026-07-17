@@ -2,7 +2,7 @@ using Microsoft.Xrm.Sdk;
 using Flowline.Core.Models;
 using Spectre.Console;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Services.Plugins;
 
 public class PluginPlanner(IAnsiConsole console)
 {

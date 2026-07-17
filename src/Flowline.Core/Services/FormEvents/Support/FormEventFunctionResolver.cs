@@ -1,7 +1,7 @@
 using Acornima;
 using Acornima.Ast;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Services.FormEvents.Support;
 
 // Replaces regex-based function-existence checking (the old FormXmlEventSerializer.ResolveFunction)
 // with a real structural JS parse (Acornima, no execution) - see KTD13/KTD4. A regex can be fooled by

@@ -1,6 +1,6 @@
 using System.Xml.Linq;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Services.OrphanCleanup;
 
 public enum ComponentAction { AutoDelete, Manual }
 

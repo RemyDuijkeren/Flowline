@@ -2,7 +2,7 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 using Flowline.Core.Models;
 using Spectre.Console;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Services.WebResources;
 
 public class WebResourceService(IAnsiConsole console)
 {

@@ -1,6 +1,6 @@
 using Flowline.Core.Models;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Services.FormEvents.Support;
 
 // FormEventHandler's Equals/GetHashCode are identity-only (FunctionName+LibraryName, R12 dedup key) so a
 // Parameters-only change lands in both a desired and current set by identity — a plain set comparison

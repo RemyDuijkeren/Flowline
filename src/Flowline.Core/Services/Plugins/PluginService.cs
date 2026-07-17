@@ -7,7 +7,7 @@ using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Query;
 using Spectre.Console;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Services.Plugins;
 
 public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
 {

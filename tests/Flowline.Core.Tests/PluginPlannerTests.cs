@@ -1,6 +1,7 @@
 using Microsoft.Xrm.Sdk;
 using NSubstitute;
 using Flowline.Core.Services;
+using Flowline.Core.Services.Plugins;
 using Flowline.Core.Models;
 using Spectre.Console.Testing;
 

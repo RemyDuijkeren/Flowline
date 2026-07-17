@@ -3,7 +3,7 @@ using Microsoft.Xrm.Sdk.Query;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Flowline.Core.Models;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Services.Plugins;
 
 public class PluginReader
 {

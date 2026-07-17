@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Services.FormEvents.Support;
 
 /// <summary>
 /// Persists resolved (entity, form name) -> formId mappings to a JSON file, so a later push can suggest

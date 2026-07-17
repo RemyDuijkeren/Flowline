@@ -6,7 +6,7 @@ using Microsoft.Xrm.Sdk.Messages;
 using Flowline.Core.Models;
 using Spectre.Console;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Services.WebResources;
 
 public class WebResourceExecutor(IAnsiConsole console)
 {
