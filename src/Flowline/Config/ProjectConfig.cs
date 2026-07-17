@@ -267,9 +267,19 @@ public class ProjectConfig
         return JsonSerializer.Deserialize<ProjectConfig>(json);
     }
 
-    // Raw JSON pre-parse check, ahead of strongly-typed deserialization, so legacy/invalid
-    // configs fail closed with ConfigInvalid instead of silently deserializing into a
-    // half-populated (or empty) ProjectConfig. See R13 in the refactor plan.
+    /// <summary>
+    /// Raw JSON pre-parse check, ahead of strongly-typed deserialization, so legacy or invalid
+    /// configs fail closed with <see cref="ExitCode.ConfigInvalid"/> instead of silently
+    /// deserializing into a half-populated (or empty) <see cref="ProjectConfig"/>.
+    /// </summary>
+    /// <param name="json">The raw, unparsed contents of the <c>.flowline</c> file.</param>
+    /// <param name="configPath">The config file's path, used in thrown exception messages.</param>
+    /// <exception cref="FlowlineException">
+    /// Thrown with <see cref="ExitCode.ConfigInvalid"/> when the JSON is malformed, its root
+    /// isn't an object, it uses the legacy multi-solution <c>Solutions</c> array, its
+    /// <c>SchemaVersion</c> is missing or unsupported, or a non-null <c>Solution</c> is not a
+    /// JSON object or has a missing/empty <c>UniqueName</c>.
+    /// </exception>
     static void ValidateSchema(string json, string configPath)
     {
         JsonDocument doc;
