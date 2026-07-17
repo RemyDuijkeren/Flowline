@@ -26,10 +26,6 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         [Description("Target environment: prod, uat, test, dev, or a URL")]
         public string Target { get; set; } = null!;
 
-        [CommandOption("--solution <name>")]
-        [Description("Solution to deploy (optional in project mode)")]
-        public string? Solution { get; set; }
-
         [CommandOption("--path <zip>")]
         [Description("Import this pre-built solution zip instead of packing from source")]
         public string? Path { get; set; }
@@ -63,8 +59,8 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         var targetUrl = ResolveTargetUrl(settings);
-        var sln = Config!.GetOrUpdateSolution(settings.Solution, settings: settings)
-            ?? throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — use --solution <name>.");
+        var sln = Config!.Solution
+            ?? throw new FlowlineException(ExitCode.ConfigInvalid, "No solution configured — run 'clone' first.");
         var slnFolder = RootFolder;
         var usingExplicitArtifact = !string.IsNullOrWhiteSpace(settings.Path);
 

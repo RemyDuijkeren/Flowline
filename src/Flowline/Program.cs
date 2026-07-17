@@ -162,15 +162,14 @@ app.Configure(config =>
     config.AddCommand<SyncCommand>("sync")
           .WithDescription("Export solution from DEV, bump build version, and unpack to source-controlled XML. Run after testing changes in DEV. Requires no uncommitted changes in Package/src/.")
           .WithExample("sync")
-          .WithExample("sync", "ContosoCustomizations --managed --bump minor");
+          .WithExample("sync", "--managed --bump minor");
 
     // Deploy (pack and import solution into environment)
     config.AddCommand<DeployCommand>("deploy")
           .WithDescription("Pack solution from repo and import into target environment (test, uat, prod, or URL). Requires clean git working directory.")
           .WithExample("deploy", "prod")
           .WithExample("deploy", "test")
-          .WithExample("deploy", "https://contoso-test.crm4.dynamics.com/")
-          .WithExample("deploy", "prod --solution ContosoCustomizations");
+          .WithExample("deploy", "https://contoso-test.crm4.dynamics.com/");
 
     // copy/provision = Copy Source environment to destination environment
     config.AddCommand<ProvisionCommand>("provision")
@@ -195,7 +194,7 @@ app.Configure(config =>
           .WithDescription("Compare committed source against a live environment (dev, test, uat, prod, or a URL) and report components present there but not declared in source. Read-only — never deletes or modifies anything. Run against prod/test for drift detection, or dev before sync/deploy as a preview.")
           .WithExample("drift", "prod")
           .WithExample("drift", "dev")
-          .WithExample("drift", "test ContosoCustomizations")
+          .WithExample("drift", "test")
           .WithExample("drift", "https://contoso-test.crm4.dynamics.com/");
 });
 

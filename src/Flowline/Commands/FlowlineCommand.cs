@@ -213,7 +213,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     {
         var projectSln = Config!.GetOrUpdateSolution(inputName, includeManaged, settings);
         if (projectSln == null)
-            throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — pass it as an argument or use --solution <name>.");
+            throw new FlowlineException(ExitCode.ConfigInvalid, "No solution is configured for this project yet — run 'flowline clone <solution>' first.");
 
         SolutionInfo? remoteSln = await Console.Status().FlowlineSpinner().StartAsync(
             $"Looking up solution [bold]{projectSln.UniqueName}[/]...",

@@ -21,10 +21,6 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
         [CommandArgument(0, "<target>")]
         [Description("Target environment: prod, uat, test, dev, or a URL")]
         public string Target { get; set; } = null!;
-
-        [CommandArgument(1, "[solution]")]
-        [Description("Solution to check (optional in project mode)")]
-        public string? Solution { get; set; }
     }
 
     protected override string[] ValidForceSpecifiers => FlowlineSettings.ConfigOnlyValidSpecifiers;
@@ -37,7 +33,7 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
         // import, or sync's export) to catch a stale "solution still exists" cache entry. Without this,
         // a solution deleted or renamed in the target could read as "no drift" for up to the solution
         // cache's TTL.
-        var (projectSln, _) = await GetAndCheckSolutionAsync(settings.Solution, env.EnvironmentUrl!, includeManaged: null, settings, cancellationToken, bypassCache: true);
+        var (projectSln, _) = await GetAndCheckSolutionAsync(null, env.EnvironmentUrl!, includeManaged: null, settings, cancellationToken, bypassCache: true);
 
         var slnFolder = RootFolder;
         var packageFolder = PackageFolder(slnFolder);

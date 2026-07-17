@@ -18,10 +18,6 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 {
     public sealed class Settings : FlowlineSettings
     {
-        [CommandArgument(0, "[solution]")]
-        [Description("Solution to sync (optional in project mode)")]
-        public string? Solution { get; set; }
-
         [CommandOption("--dev <URL>")]
         [Description("Development environment URL")]
         public string? DevUrl { get; set; }
@@ -50,8 +46,8 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         // Dev URL is required
         var (devEnv, _) = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, settings.DevUrl, settings, cancellationToken);
 
-        // Solution name is required
-        var (projectSln, slnInfo) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, settings.IncludeManaged.IsSet ? settings.IncludeManaged.Value : (bool?)null, settings, cancellationToken);
+        // Solution is the single one configured in .flowline — sync is project-mode only
+        var (projectSln, slnInfo) = await GetAndCheckSolutionAsync(null, devEnv.EnvironmentUrl!, settings.IncludeManaged.IsSet ? settings.IncludeManaged.Value : (bool?)null, settings, cancellationToken);
         if (slnInfo.IsManaged)
             throw new FlowlineException(ExitCode.ValidationFailed, "Managed solutions are not supported for sync — use an unmanaged solution.");
 

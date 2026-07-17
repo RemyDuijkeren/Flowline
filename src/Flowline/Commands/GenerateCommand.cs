@@ -126,6 +126,11 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         }
         else
         {
+            // R8: a passed [solution] no longer selects among multiple configured solutions (only one
+            // exists) — it now just needs to match the one already configured.
+            if (Config!.Solution != null)
+                ValidateSolutionMatchesConfig(settings.Solution, Config.Solution.UniqueName);
+
             projectSln = Config!.GetOrUpdateSolution(settings.Solution, settings: settings);
             if (projectSln == null)
                 throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — pass it as an argument or configure a single solution in .flowline.");
@@ -355,6 +360,17 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
 
     private bool IsStandaloneMode() =>
         !File.Exists(Path.Combine(RootFolder, ProjectConfig.s_configFileName));
+
+    // R8: project mode has exactly one configured solution — a passed [solution] argument no longer
+    // selects among several, it just has to name the one that's already configured.
+    internal static void ValidateSolutionMatchesConfig(string? inputName, string configuredUniqueName)
+    {
+        if (string.IsNullOrWhiteSpace(inputName)) return;
+        if (string.Equals(inputName.Trim(), configuredUniqueName, StringComparison.OrdinalIgnoreCase)) return;
+
+        throw new FlowlineException(ExitCode.ValidationFailed,
+            $"'{inputName}' doesn't match the configured solution '{configuredUniqueName}' — pass the correct name, or omit it to use the configured solution.");
+    }
 
     private async Task CheckStandaloneEnvironmentAsync(string devUrl, PacProfile profile, Settings settings, CancellationToken cancellationToken)
     {

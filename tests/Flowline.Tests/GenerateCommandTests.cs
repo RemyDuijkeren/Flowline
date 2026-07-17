@@ -412,3 +412,42 @@ public class GenerateCommandForceTests
         act.Should().NotThrow();
     }
 }
+
+public class GenerateCommandSolutionValidationTests
+{
+    // R8: project mode's positional [solution] validated against the single configured solution.
+
+    [Fact]
+    public void ValidateSolutionMatchesConfig_NoInputName_DoesNotThrow()
+    {
+        var act = () => GenerateCommand.ValidateSolutionMatchesConfig(null, "ContosoCustomizations");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateSolutionMatchesConfig_MatchingNameCaseInsensitive_DoesNotThrow()
+    {
+        var act = () => GenerateCommand.ValidateSolutionMatchesConfig("contosocustomizations", "ContosoCustomizations");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateSolutionMatchesConfig_MatchingNameWithWhitespace_DoesNotThrow()
+    {
+        var act = () => GenerateCommand.ValidateSolutionMatchesConfig("  ContosoCustomizations  ", "ContosoCustomizations");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateSolutionMatchesConfig_MismatchedName_Throws()
+    {
+        var act = () => GenerateCommand.ValidateSolutionMatchesConfig("OtherSolution", "ContosoCustomizations");
+
+        act.Should().Throw<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed
+                && e.Message.Contains("OtherSolution") && e.Message.Contains("ContosoCustomizations"));
+    }
+}
