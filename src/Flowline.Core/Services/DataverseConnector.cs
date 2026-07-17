@@ -44,10 +44,7 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
 
         console.Verbose($"Connecting via PAC profile '{profile.Name ?? profile.User}' at {resourceUrl}...");
 
-        var authority = string.IsNullOrWhiteSpace(profile.Authority)
-            ? "https://login.microsoftonline.com/organizations"
-            : profile.Authority.TrimEnd('/');
-
+        var authority = ResolveAuthority(profile);
         var cacheHelper = await GetOrCreateMsalCacheHelperAsync();
 
         return profile.IsServicePrincipal
@@ -55,15 +52,30 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
             : await ConnectUserAsync(profile, authority, resourceUrl, serviceUri, cacheHelper, cancellationToken);
     }
 
+    static string ResolveAuthority(PacProfile profile) =>
+        string.IsNullOrWhiteSpace(profile.Authority)
+            ? "https://login.microsoftonline.com/organizations"
+            : profile.Authority.TrimEnd('/');
+
     /// <summary>
     /// Platform storage backends:
     ///   Windows — DPAPI encryption, transparent via MsalCacheHelper
     ///   Linux/macOS — Secret Service / Keychain when available; unprotected file fallback for
     ///                 headless environments (CI, Docker, WSL) where no keyring is running
     /// Shared by ConnectViaPacAsync and GetEnvironmentInfoAsync — both read the same PAC CLI token cache.
+    /// Only a successfully-completed task is memoized — a transient failure (e.g. a momentary file
+    /// lock) must not permanently poison every later call in the process with the same faulted Task.
     /// </summary>
-    static Task<MsalCacheHelper> GetOrCreateMsalCacheHelperAsync() =>
-        s_cacheHelperTask ??= CreateMsalCacheHelperAsync();
+    static Task<MsalCacheHelper> GetOrCreateMsalCacheHelperAsync()
+    {
+        var existing = s_cacheHelperTask;
+        if (existing is { IsFaulted: false, IsCanceled: false })
+            return existing;
+
+        var created = CreateMsalCacheHelperAsync();
+        s_cacheHelperTask = created;
+        return created;
+    }
 
     static async Task<MsalCacheHelper> CreateMsalCacheHelperAsync()
     {
@@ -132,10 +144,7 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         if (string.IsNullOrWhiteSpace(environmentUrl))
             throw new ArgumentException("Environment URL is required for looking up environment info.", nameof(environmentUrl));
 
-        var authority = string.IsNullOrWhiteSpace(profile.Authority)
-            ? "https://login.microsoftonline.com/organizations"
-            : profile.Authority.TrimEnd('/');
-
+        var authority = ResolveAuthority(profile);
         var cacheHelper = await GetOrCreateMsalCacheHelperAsync();
 
         var accessToken = profile.IsServicePrincipal

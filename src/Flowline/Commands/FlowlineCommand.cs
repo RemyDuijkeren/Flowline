@@ -166,14 +166,13 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         if (string.IsNullOrEmpty(url))
             throw new FlowlineException(ExitCode.ConfigInvalid, $"{label} URL is required — use {flag} <URL>.");
 
-        PacProfile? profile = resolvedProfile;
+        // Resolved before opening the status spinner — ProfileResolutionService.ResolveAsync can prompt
+        // interactively on an ambiguous match, and Spectre.Console throws if a prompt runs while a
+        // Status/Live display is active ("Trying to run one or more interactive functions concurrently").
+        var profile = resolvedProfile ?? await ProfileResolutionService.ResolveAsync(url, cancellationToken);
         EnvironmentInfo? env = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking {label.ToLower()} [bold]{url}[/]...",
-            async ctx =>
-            {
-                profile ??= await ProfileResolutionService.ResolveAsync(url, cancellationToken);
-                return await FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(url, profile, settings, cancellationToken);
-            });
+            ctx => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(url, profile, settings, cancellationToken));
 
         if (env == null)
             throw new FlowlineException(ExitCode.ConnectionFailed, $"{label} environment not found — check the URL or your PAC login.");
@@ -185,23 +184,23 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
             throw new FlowlineException(ExitCode.ValidationFailed, "That's a Production environment — use a sandbox or dev instead.");
 
         Console.Ok($"{label} env [bold]{env.DisplayName}[/] ({env.EnvironmentUrl}) exists");
-        return (env, profile!);
+        return (env, profile);
     }
 
     protected async Task<(IOrganizationServiceAsync2 Connection, PacProfile Profile)> ConnectToDataverseAsync(
         DataverseConnector dataverseConnector, string environmentUrl, CancellationToken cancellationToken, PacProfile? resolvedProfile = null)
     {
-        PacProfile? profile = resolvedProfile;
+        // Resolved before opening the status spinner — see the comment in GetAndCheckEnvironmentInfoAsync.
+        var profile = resolvedProfile ?? await ProfileResolutionService.ResolveAsync(environmentUrl, cancellationToken);
         IOrganizationServiceAsync2? conn = null;
 
         await Console.Status().FlowlineSpinner().StartAsync("Connecting to Dataverse...", async _ =>
         {
-            profile ??= await ProfileResolutionService.ResolveAsync(environmentUrl, cancellationToken);
             conn = await dataverseConnector.ConnectViaPacAsync(profile, environmentUrl, cancellationToken);
         });
 
         Console.Ok("Connected to Dataverse");
-        return (conn!, profile!);
+        return (conn!, profile);
     }
 
     protected async Task<(ProjectSolution projectSolution, SolutionInfo solutionInfo)> GetAndCheckSolutionAsync(
