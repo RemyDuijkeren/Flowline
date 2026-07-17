@@ -6,6 +6,7 @@ using CliWrap;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
+using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Services;

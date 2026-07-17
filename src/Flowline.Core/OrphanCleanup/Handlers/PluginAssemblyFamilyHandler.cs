@@ -3,6 +3,7 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using Flowline.Core.Console;
+using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Spectre.Console;
 
