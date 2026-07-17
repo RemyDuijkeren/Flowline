@@ -7,9 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+## [0.12.0] - 2026-07-17
 
+### Fixed
+
+- **Bare `--managed` no longer crashes `clone`/`sync`**: passing `--managed` with no value threw an unhandled `NullReferenceException` — the option bound to Spectre's optional-value flag syntax without a `[DefaultValue]`, so `IncludeManaged` was left in a state neither command's `.IsSet` check handled. Bare `--managed` now defaults to `true`; `--managed false` and omitting the flag entirely are unaffected.
+- **`sync --managed`/`--managed false` on a single-solution project now actually applies**: when no solution name is passed (the common case), `ProjectConfig.GetOrUpdateSolution`'s no-name shortcut returned the resolved solution immediately, skipping the managed-mode conflict check below it — so the requested mode was silently ignored, with no prompt, no `--force config` requirement, and no update. Passing an explicit solution name was unaffected.
+- **`sync` now writes `.flowline` back to disk on every run**: a confirmed managed-mode change previously only lived in memory for that invocation — `Config.Save()` was never called, so the change was lost the moment the process exited.
 - **`clone` re-syncs an already-cloned solution when it's missing the managed layer**: re-running `clone --managed` on a solution that was previously cloned unmanaged now re-fetches `Package/src/` from Dataverse to pick up the managed layer, instead of silently skipping. Detected by checking for PAC's `*_managed.xml` sibling files on disk — no re-sync (and no extra Dataverse round-trip) when the local source already has what the current mode needs. Fixes a bug where `clone --managed` after an initial unmanaged clone updated `.flowline` but left `Package/src/` unpacked for unmanaged only, causing a later managed `pac solution pack` to fail with a cryptic error. Re-syncing overwrites `Package/src/` — commit local edits there first.
+- **Managed/unmanaged status message no longer prints raw C# bool casing**: `Solution X (managed: True) exists` is now `Solution X (managed) exists` / `Solution X (unmanaged) exists`.
+- **Log-file pointer now prints on every failing run**: a command that returns a non-zero exit code directly (e.g. a build/pack failure) instead of throwing a `FlowlineException` used to skip the "Log: ..." line entirely, leaving no pointer to the invocation log to debug from.
+- **Raw git stderr no longer printed in red for expected-to-fail probe commands**: git-context enrichment (branch/remote detection for invocation logs) and the pre-sync change-summary's `git diff --numstat` probe both hit real, expected non-zero exits on a repo with no commits yet or no upstream configured — output now routes through `--verbose` logging instead of the console's red error styling.
 
 ## [0.11.0] - 2026-07-16
 
@@ -288,7 +296,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions CI and release workflows.
 
 
-[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.11.0...HEAD
+[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.12.0...HEAD
+[0.12.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.11.0...0.12.0
 [0.11.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.10.0...0.11.0
 [0.10.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.9.0...0.10.0
 [0.9.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.8.0...0.9.0
