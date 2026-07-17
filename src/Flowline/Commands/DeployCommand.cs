@@ -73,7 +73,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         if (!usingExplicitArtifact)
             await ValidateGitCleanAsync(sln.Name, slnFolder, cancellationToken);
 
-        var (targetEnv, existingSolutionInTarget) = await ValidateTargetAsync(targetUrl, sln, settings, cancellationToken);
+        var (targetEnv, existingSolutionInTarget, resolvedProfile) = await ValidateTargetAsync(targetUrl, sln, settings, cancellationToken);
 
         // Resolve the DTAP gate's version cheaply (artifact manifest, cache entry, or local Solution.xml) so the
         // gate keeps failing fast before any expensive work — packing itself is deferred past the gate below.
@@ -151,7 +151,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         Logger.LogInformation("target={TargetUrl} solution={SolutionName} mode={RunMode} managed={Managed} stageAndUpgrade={StageAndUpgrade} publishChanges={PublishChanges} cacheOutcome={CacheOutcome}",
             targetUrl, sln.Name, runMode, sln.IncludeManaged, useStageAndUpgrade, publishChanges, usingExplicitArtifact ? (CacheOutcome?)null : cacheOutcome);
 
-        var (service, _) = await ConnectToDataverseAsync(dataverseConnector, targetUrl, cancellationToken);
+        var (service, _) = await ConnectToDataverseAsync(dataverseConnector, targetUrl, cancellationToken, resolvedProfile);
 
         string packagePath;
         if (usingExplicitArtifact)
@@ -257,12 +257,13 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         return url;
     }
 
-    private async Task<(EnvironmentInfo TargetEnv, bool ExistingSolution)> ValidateTargetAsync(
+    private async Task<(EnvironmentInfo TargetEnv, bool ExistingSolution, PacProfile Profile)> ValidateTargetAsync(
         string targetUrl, ProjectSolution sln, Settings settings, CancellationToken ct)
     {
+        var profile = await ProfileResolutionService.ResolveAsync(targetUrl, ct);
         var targetEnv = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{targetUrl}[/]...",
-            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, settings, ct));
+            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, profile, settings, ct));
 
         if (targetEnv == null)
             throw new FlowlineException(ExitCode.ConnectionFailed,
@@ -284,7 +285,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
                     $"'{sln.Name}' is managed in {targetEnv.DisplayName} — can't import unmanaged over managed. Deploy managed instead.");
         }
 
-        return (targetEnv, existingSolution != null);
+        return (targetEnv, existingSolution != null, profile);
     }
 
     // R5/KTD6: pure so the mode-specific wording is unit-testable without a live PAC CLI or Dataverse

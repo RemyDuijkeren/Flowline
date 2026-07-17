@@ -121,7 +121,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (standaloneMode)
             environmentUrl = ResolveStandaloneEnvironmentUrl(settings, dataverseConnector);
 
-        var (devEnv, solutionName, pluginPackageMode) = await ResolveEnvironmentAndSolutionAsync(settings, standaloneMode, environmentUrl, standaloneParams, cancellationToken);
+        var (devEnv, solutionName, pluginPackageMode, resolvedProfile) = await ResolveEnvironmentAndSolutionAsync(settings, standaloneMode, environmentUrl, standaloneParams, cancellationToken);
 
         if (!standaloneMode)
             environmentUrl = devEnv.EnvironmentUrl!;
@@ -143,7 +143,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             ? await PrepareWebResourcesForPushAsync(standaloneMode, settings, solutionName, standaloneParams, cancellationToken)
             : null;
 
-        var (conn, _) = await ConnectToDataverseAsync(dataverseConnector, environmentUrl, cancellationToken);
+        var (conn, _) = await ConnectToDataverseAsync(dataverseConnector, environmentUrl, cancellationToken, resolvedProfile);
 
         var pushedChanges = false;
 
@@ -233,7 +233,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         return new StandaloneParams { SolutionName = solutionName, DllPath = dllPath, WebResourcesPath = webResourcesPath };
     }
 
-    private async Task<(EnvironmentInfo, string, PluginPackageMode)> ResolveEnvironmentAndSolutionAsync(
+    private async Task<(EnvironmentInfo, string, PluginPackageMode, PacProfile)> ResolveEnvironmentAndSolutionAsync(
         Settings settings,
         bool standaloneMode,
         string environmentUrl,
@@ -241,19 +241,20 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         CancellationToken cancellationToken)
     {
         EnvironmentInfo devEnv;
+        PacProfile profile;
         string solutionName;
         SolutionInfo slnInfo;
         var pluginPackageMode = PluginPackageMode.Auto;
 
         if (standaloneMode)
         {
-            devEnv = await GetAndCheckStandaloneEnvironmentAsync(Console, environmentUrl, settings, cancellationToken).ConfigureAwait(false);
+            (devEnv, profile) = await GetAndCheckStandaloneEnvironmentAsync(environmentUrl, settings, cancellationToken).ConfigureAwait(false);
             slnInfo = await GetAndCheckStandaloneSolutionAsync(Console, standaloneParams.SolutionName!, environmentUrl, settings, cancellationToken).ConfigureAwait(false);
             solutionName = standaloneParams.SolutionName!;
         }
         else
         {
-            devEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, settings.DevUrl, settings, cancellationToken);
+            (devEnv, profile) = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, settings.DevUrl, settings, cancellationToken);
             var (projectSln, slnInfoResult) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, cancellationToken: cancellationToken, settings: settings);
             slnInfo = slnInfoResult;
             solutionName = projectSln.Name;
@@ -263,7 +264,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (slnInfo.IsManaged)
             throw new FlowlineException(ExitCode.ValidationFailed, "Managed solutions are not supported for push.");
 
-        return (devEnv, solutionName, pluginPackageMode);
+        return (devEnv, solutionName, pluginPackageMode, profile);
     }
 
     private async Task<(string? PushPath, string? AssemblyName, List<PluginAssemblyMetadata>? ReflectedAssemblies)> PreparePluginsForPushAsync(
@@ -557,15 +558,15 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         return remoteSln;
     }
 
-    static async Task<EnvironmentInfo> GetAndCheckStandaloneEnvironmentAsync(
-        IAnsiConsole console,
+    async Task<(EnvironmentInfo Info, PacProfile Profile)> GetAndCheckStandaloneEnvironmentAsync(
         string environmentUrl,
         Settings settings,
         CancellationToken cancellationToken)
     {
-        EnvironmentInfo? env = await console.Status().FlowlineSpinner().StartAsync(
+        var profile = await ProfileResolutionService.ResolveAsync(environmentUrl, cancellationToken);
+        EnvironmentInfo? env = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking dev [bold]{environmentUrl}[/]...",
-            ctx => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(environmentUrl, settings, cancellationToken));
+            ctx => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(environmentUrl, profile, settings, cancellationToken));
 
         if (env == null)
             throw new FlowlineException(ExitCode.ConnectionFailed, "Dev environment not found — check the URL or your PAC login.");
@@ -573,7 +574,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (env.Type == "Production")
             throw new FlowlineException(ExitCode.ValidationFailed, "That's a Production environment — use a sandbox or dev instead.");
 
-        console.Ok($"Dev: [bold]{env.DisplayName}[/] ({env.EnvironmentUrl})");
-        return env;
+        Console.Ok($"Dev: [bold]{env.DisplayName}[/] ({env.EnvironmentUrl})");
+        return (env, profile);
     }
 }

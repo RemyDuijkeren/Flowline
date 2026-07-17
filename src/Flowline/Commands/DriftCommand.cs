@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Flowline.Core;
 using Flowline.Core.Console;
+using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Core.OrphanCleanup;
 using Flowline.Diagnostics;
@@ -30,8 +31,8 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        var env = await ResolveEnvironmentAsync(settings.Target, settings, cancellationToken);
-        var (service, _) = await ConnectToDataverseAsync(dataverseConnector, env.EnvironmentUrl!, cancellationToken);
+        var (env, profile) = await ResolveEnvironmentAsync(settings.Target, settings, cancellationToken);
+        var (service, _) = await ConnectToDataverseAsync(dataverseConnector, env.EnvironmentUrl!, cancellationToken, profile);
         // bypassCache: true — drift is a health-check signal with no downstream step (unlike deploy's
         // import, or sync's export) to catch a stale "solution still exists" cache entry. Without this,
         // a solution deleted or renamed in the target could read as "no drift" for up to the solution
@@ -58,20 +59,21 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
     // A role keyword still resolves via the shared, role-generic GetAndCheckEnvironmentInfoAsync (config
     // lookup + Production-type safety check); anything else is treated as a literal URL, matching how
     // DeployCommand's ResolveTargetUrl falls through to the raw target string.
-    async Task<EnvironmentInfo> ResolveEnvironmentAsync(string target, Settings settings, CancellationToken ct)
+    async Task<(EnvironmentInfo Info, PacProfile Profile)> ResolveEnvironmentAsync(string target, Settings settings, CancellationToken ct)
     {
         var role = TryResolveRole(target);
         if (role is not null)
             return await GetAndCheckEnvironmentInfoAsync(role.Value, null, settings, ct);
 
+        var profile = await ProfileResolutionService.ResolveAsync(target, ct);
         var env = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{target}[/]...",
-            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(target, settings, ct));
+            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(target, profile, settings, ct));
         if (env == null)
             throw new FlowlineException(ExitCode.ConnectionFailed, $"Environment not found — check the URL '{target}' or your PAC login.");
 
         Console.Ok($"Env [bold]{env.DisplayName}[/] ({env.EnvironmentUrl}) exists");
-        return env;
+        return (env, profile);
     }
 
     internal static EnvironmentRole? TryResolveRole(string target) => target.ToLowerInvariant() switch

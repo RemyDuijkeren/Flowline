@@ -255,7 +255,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             };
             if (string.IsNullOrEmpty(configUrl)) continue;
 
-            var env = await GetAndCheckEnvironmentInfoAsync(role, null, settings, cancellationToken);
+            var (env, _) = await GetAndCheckEnvironmentInfoAsync(role, null, settings, cancellationToken);
             var (sln, info) = await GetAndCheckSolutionAsync(
                 settings.Solution, env.EnvironmentUrl!, settings.IncludeManaged.IsSet ? settings.IncludeManaged.Value : (bool?)null, settings, cancellationToken);
 

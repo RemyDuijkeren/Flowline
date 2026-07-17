@@ -1,7 +1,17 @@
 using Flowline;
 using Flowline.Commands;
+using Flowline.Core;
+using Flowline.Core.Models;
+using Flowline.Core.Services;
 using Flowline.Diagnostics;
+using Flowline.Services;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.PowerPlatform.Dataverse.Client;
+using Spectre.Console;
+using Spectre.Console.Cli;
+using Spectre.Console.Testing;
 
 namespace Flowline.Tests;
 
@@ -87,5 +97,77 @@ public class FlowlineCommandTests
 
         result.Should().BeNull();
         Directory.Delete(isolated, recursive: true);
+    }
+
+    // Minimal concrete subclass — FlowlineCommand<TSettings> is abstract, and ConnectToDataverseAsync /
+    // GetAndCheckEnvironmentInfoAsync are protected, so a test-local subclass is the only seam available.
+    sealed class TestCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture)
+        : FlowlineCommand<FlowlineSettings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture)
+    {
+        protected override Task<int> ExecuteFlowlineAsync(CommandContext context, FlowlineSettings settings, CancellationToken cancellationToken) =>
+            Task.FromResult(0);
+
+        public Task<(IOrganizationServiceAsync2 Connection, PacProfile Profile)> Connect(
+            DataverseConnector connector, string environmentUrl, CancellationToken cancellationToken, PacProfile? resolvedProfile = null) =>
+            ConnectToDataverseAsync(connector, environmentUrl, cancellationToken, resolvedProfile);
+    }
+
+    static TestCommand MakeCommand(ProfileResolutionService profileResolutionService)
+    {
+        var console = new TestConsole();
+        return new TestCommand(console, new FlowlineRuntimeOptions(), profileResolutionService, NullLoggerFactory.Instance, new SubprocessCapture(console));
+    }
+
+    [Fact]
+    public async Task ConnectToDataverseAsync_WithResolvedProfile_DoesNotReResolve()
+    {
+        const string environmentUrl = "https://contoso.crm4.dynamics.com";
+        var console = new TestConsole();
+        var connector = new DataverseConnector(console, new HttpClient());
+        var givenProfile = new PacProfile { Name = "Given", Resource = environmentUrl };
+        var resolveCalls = 0;
+        var profileService = new ProfileResolutionService(console, connector)
+        {
+            FindBestProfileOverride = _ => { resolveCalls++; return new ProfileFound(givenProfile); }
+        };
+        var command = MakeCommand(profileService);
+
+        try
+        {
+            await command.Connect(connector, environmentUrl, CancellationToken.None, resolvedProfile: givenProfile);
+        }
+        catch (InvalidOperationException)
+        {
+            // Expected — no real PAC CLI auth cache in this test environment; ConnectViaPacAsync fails
+            // past the point this test cares about. Only the resolve-call count matters here.
+        }
+
+        resolveCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ConnectToDataverseAsync_WithoutResolvedProfile_ResolvesExactlyOnce()
+    {
+        const string environmentUrl = "https://contoso.crm4.dynamics.com";
+        var console = new TestConsole();
+        var connector = new DataverseConnector(console, new HttpClient());
+        var resolvedProfile = new PacProfile { Name = "Resolved", Resource = environmentUrl };
+        var resolveCalls = 0;
+        var profileService = new ProfileResolutionService(console, connector)
+        {
+            FindBestProfileOverride = _ => { resolveCalls++; return new ProfileFound(resolvedProfile); }
+        };
+        var command = MakeCommand(profileService);
+
+        try
+        {
+            await command.Connect(connector, environmentUrl, CancellationToken.None);
+        }
+        catch (InvalidOperationException)
+        {
+            // Expected — see note above.
+        }
+
+        resolveCalls.Should().Be(1);
     }
 }

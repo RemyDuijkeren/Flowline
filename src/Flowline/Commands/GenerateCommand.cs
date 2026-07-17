@@ -3,6 +3,7 @@ using System.Diagnostics;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
+using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Generators;
@@ -213,12 +214,12 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         SolutionInfo remoteSln;
         if (standaloneMode)
         {
-            await CheckStandaloneEnvironmentAsync(devUrl, settings, cancellationToken);
+            await CheckStandaloneEnvironmentAsync(devUrl, resolvedProfile, settings, cancellationToken);
             remoteSln = await GetStandaloneSolutionAsync(solutionName, devUrl, settings, cancellationToken);
         }
         else
         {
-            var devEnv = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, devUrl, settings, cancellationToken);
+            var (devEnv, _) = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, devUrl, settings, cancellationToken, resolvedProfile);
             (_, remoteSln) = await GetAndCheckSolutionAsync(solutionName, devEnv.EnvironmentUrl!, cancellationToken: cancellationToken, settings: settings);
         }
 
@@ -355,11 +356,11 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
     private bool IsStandaloneMode() =>
         !File.Exists(Path.Combine(RootFolder, ProjectConfig.s_configFileName));
 
-    private async Task CheckStandaloneEnvironmentAsync(string devUrl, Settings settings, CancellationToken cancellationToken)
+    private async Task CheckStandaloneEnvironmentAsync(string devUrl, PacProfile profile, Settings settings, CancellationToken cancellationToken)
     {
         EnvironmentInfo? env = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking dev [bold]{devUrl}[/]...",
-            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(devUrl, settings, cancellationToken));
+            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(devUrl, profile, settings, cancellationToken));
 
         if (env == null)
             throw new FlowlineException(ExitCode.ConnectionFailed, "Dev environment not found — check the URL or your PAC login.");

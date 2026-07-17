@@ -36,6 +36,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
 
     protected readonly IAnsiConsole Console = console;
     protected FlowlineRuntimeOptions RuntimeOptions { get; } = runtimeOptions;
+    protected ProfileResolutionService ProfileResolutionService { get; } = profileResolutionService;
     private ILogger? _logger;
     protected ILogger Logger => _logger ??= loggerFactory.CreateLogger(GetType().Name);
 
@@ -133,7 +134,8 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         Console.Ok("Prerequisites all good, let's go!");
     }
 
-    protected async Task<EnvironmentInfo> GetAndCheckEnvironmentInfoAsync(EnvironmentRole role, string? inputUrl, TSettings settings, CancellationToken cancellationToken)
+    protected async Task<(EnvironmentInfo Info, PacProfile Profile)> GetAndCheckEnvironmentInfoAsync(
+        EnvironmentRole role, string? inputUrl, TSettings settings, CancellationToken cancellationToken, PacProfile? resolvedProfile = null)
     {
         var label = role switch
         {
@@ -164,9 +166,14 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         if (string.IsNullOrEmpty(url))
             throw new FlowlineException(ExitCode.ConfigInvalid, $"{label} URL is required — use {flag} <URL>.");
 
+        PacProfile? profile = resolvedProfile;
         EnvironmentInfo? env = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking {label.ToLower()} [bold]{url}[/]...",
-            ctx => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(url, settings, cancellationToken));
+            async ctx =>
+            {
+                profile ??= await ProfileResolutionService.ResolveAsync(url, cancellationToken);
+                return await FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(url, profile, settings, cancellationToken);
+            });
 
         if (env == null)
             throw new FlowlineException(ExitCode.ConnectionFailed, $"{label} environment not found — check the URL or your PAC login.");
@@ -178,23 +185,23 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
             throw new FlowlineException(ExitCode.ValidationFailed, "That's a Production environment — use a sandbox or dev instead.");
 
         Console.Ok($"{label} env [bold]{env.DisplayName}[/] ({env.EnvironmentUrl}) exists");
-        return env;
+        return (env, profile!);
     }
 
     protected async Task<(IOrganizationServiceAsync2 Connection, PacProfile Profile)> ConnectToDataverseAsync(
-        DataverseConnector dataverseConnector, string environmentUrl, CancellationToken cancellationToken)
+        DataverseConnector dataverseConnector, string environmentUrl, CancellationToken cancellationToken, PacProfile? resolvedProfile = null)
     {
-        PacProfile? resolvedProfile = null;
+        PacProfile? profile = resolvedProfile;
         IOrganizationServiceAsync2? conn = null;
 
         await Console.Status().FlowlineSpinner().StartAsync("Connecting to Dataverse...", async _ =>
         {
-            resolvedProfile = await profileResolutionService.ResolveAsync(environmentUrl, cancellationToken);
-            conn = await dataverseConnector.ConnectViaPacAsync(resolvedProfile, environmentUrl, cancellationToken);
+            profile ??= await ProfileResolutionService.ResolveAsync(environmentUrl, cancellationToken);
+            conn = await dataverseConnector.ConnectViaPacAsync(profile, environmentUrl, cancellationToken);
         });
 
         Console.Ok("Connected to Dataverse");
-        return (conn!, resolvedProfile!);
+        return (conn!, profile!);
     }
 
     protected async Task<(ProjectSolution projectSolution, SolutionInfo solutionInfo)> GetAndCheckSolutionAsync(
