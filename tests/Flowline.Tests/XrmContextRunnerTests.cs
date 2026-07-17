@@ -115,7 +115,7 @@ public class XrmContextRunnerTests
     {
         var args = XrmContextRunner.BuildArgs(EnvironmentUrl, BrowserOAuthAuth, SolutionName, null, Namespace, OutputPath);
 
-        args.Should().Contain("/mfaAppId:51f81489-12ee-4a9e-aaae-a2591f45987d");
+        args.Should().Contain("/mfaAppId:9cee029c-6210-4654-90bb-17e6e9d36617");
     }
 
     [Fact]
@@ -151,7 +151,7 @@ public class XrmContextRunnerTests
         var args = XrmContextRunner.BuildArgs(EnvironmentUrl, auth, SolutionName, null, Namespace, OutputPath);
 
         args.Should().Contain($"/mfaAppId:{ClientId}");
-        args.Should().NotContain("/mfaAppId:51f81489-12ee-4a9e-aaae-a2591f45987d");
+        args.Should().NotContain("/mfaAppId:9cee029c-6210-4654-90bb-17e6e9d36617");
     }
 
     // ── Common args (both methods) ───────────────────────────────────────────

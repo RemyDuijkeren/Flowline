@@ -306,7 +306,7 @@ public class DataverseConnectorTests
 
         Assert.Contains("AuthType=OAuth", result);
         Assert.Contains("Url=https://contoso.crm4.dynamics.com", result);
-        Assert.Contains("AppId=51f81489-12ee-4a9e-aaae-a2591f45987d", result); // PAC CLI app — already consented
+        Assert.Contains("AppId=9cee029c-6210-4654-90bb-17e6e9d36617", result); // PAC CLI app — already consented
     }
 
     [Fact]
@@ -337,7 +337,7 @@ public class DataverseConnectorTests
             "https://contoso.crm4.dynamics.com", profiles, clientId: "my-custom-app-id");
 
         Assert.Contains("AppId=my-custom-app-id", result);
-        Assert.DoesNotContain("AppId=51f81489", result);
+        Assert.DoesNotContain("AppId=9cee029c", result);
     }
 
     [Fact]

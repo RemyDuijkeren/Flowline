@@ -13,7 +13,18 @@ namespace Flowline.Core.Services;
 
 public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
 {
-    public const string PacCliAppId = "51f81489-12ee-4a9e-aaae-a2591f45987d";
+    // Power Platform CLI's own registered app id (Microsoft-documented as "Power Platform CLI - pac":
+    // https://github.com/MicrosoftDocs/power-platform/blob/main/power-platform/admin/apps-to-allow.md),
+    // reused verbatim so Flowline's own MSAL client can silently read tokens pac.exe already cached
+    // under this identity, and so first-run users don't need a separate app registration/consent.
+    // Previously hardcoded 51f81489-12ee-4a9e-aaae-a2591f45987d, which the SAME Microsoft doc lists as
+    // "Dynamics 365 Example Client Application" -- a sample/tutorial app id (also explicitly labeled
+    // "Sample / stand-in appID" in Microsoft's own PowerPlatform-DataverseServiceClient source), not
+    // pac.exe's real identity. Using it caused AADSTS90072-shaped failures specifically for BAP admin
+    // API calls (GetEnvironmentInfoAsync) in tenants where the sample app had incidental Dataverse
+    // consent but was never granted BAP admin scope -- while pac.exe's own subprocess calls (PacUtils)
+    // worked fine, since those use pac.exe's real, already-consented app id internally.
+    public const string PacCliAppId = "9cee029c-6210-4654-90bb-17e6e9d36617";
     const string BapAdminResource = "https://api.bap.microsoft.com";
     const string BapAdminEnvironmentsUrl = BapAdminResource + "/providers/Microsoft.BusinessAppPlatform/scopes/admin/environments?api-version=2020-10-01";
 
