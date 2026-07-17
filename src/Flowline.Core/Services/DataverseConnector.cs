@@ -15,7 +15,12 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
 {
     public const string PacCliAppId = "51f81489-12ee-4a9e-aaae-a2591f45987d";
     const string BapAdminResource = "https://api.bap.microsoft.com";
-    const string BapAdminEnvironmentsUrl = "https://api.bap.microsoft.com/providers/Microsoft.BusinessAppPlatform/scopes/admin/environments?api-version=2020-10-01";
+    const string BapAdminEnvironmentsUrl = BapAdminResource + "/providers/Microsoft.BusinessAppPlatform/scopes/admin/environments?api-version=2020-10-01";
+
+    // Deterministic for the whole process (same cache file/directory regardless of which
+    // DataverseConnector instance asks), so one MsalCacheHelper is reused rather than reopening
+    // the on-disk token cache on every call.
+    static Task<MsalCacheHelper>? s_cacheHelperTask;
 
     /// <summary>
     /// Connects to Dataverse by re-using the token that PAC CLI already acquired.
@@ -43,7 +48,7 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
             ? "https://login.microsoftonline.com/organizations"
             : profile.Authority.TrimEnd('/');
 
-        var cacheHelper = await CreateMsalCacheHelperAsync();
+        var cacheHelper = await GetOrCreateMsalCacheHelperAsync();
 
         return profile.IsServicePrincipal
             ? await ConnectServicePrincipalAsync(profile, authority, resourceUrl, serviceUri, cacheHelper, cancellationToken)
@@ -57,6 +62,9 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
     ///                 headless environments (CI, Docker, WSL) where no keyring is running
     /// Shared by ConnectViaPacAsync and GetEnvironmentInfoAsync — both read the same PAC CLI token cache.
     /// </summary>
+    static Task<MsalCacheHelper> GetOrCreateMsalCacheHelperAsync() =>
+        s_cacheHelperTask ??= CreateMsalCacheHelperAsync();
+
     static async Task<MsalCacheHelper> CreateMsalCacheHelperAsync()
     {
         var storagePropsBuilder = new StorageCreationPropertiesBuilder(
@@ -80,41 +88,10 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         PacProfile profile, string authority, string resourceUrl, Uri serviceUri,
         MsalCacheHelper cacheHelper, CancellationToken cancellationToken)
     {
-        var appId = profile.ApplicationId
-            ?? throw new InvalidOperationException(
-                $"Service principal profile '{profile.Name}' is missing ApplicationId.");
-
-        // Service principal authority must be tenant-specific, not 'organizations'
-        var tenantAuthority = !string.IsNullOrWhiteSpace(profile.TenantId)
-            ? $"https://login.microsoftonline.com/{profile.TenantId}"
-            : authority;
-
         var scopes = new[] { $"{resourceUrl}/.default" };
+        var (app, initialToken) = await AcquireServicePrincipalTokenAsync(profile, authority, cacheHelper, resourceUrl, cancellationToken);
 
-        // The assertion is only sent to AAD on cache miss. On a cache hit (< 1 hour since
-        // 'pac auth create --kind ServicePrincipal'), MSAL returns the stored app token directly.
-        var app = ConfidentialClientApplicationBuilder
-            .Create(appId)
-            .WithAuthority(tenantAuthority)
-            .WithClientAssertion((AssertionRequestOptions _) => Task.FromResult("cache-only"))
-            .Build();
-
-        cacheHelper.RegisterCache(app.AppTokenCache);
-
-        AuthenticationResult initialToken;
-        try
-        {
-            initialToken = await app.AcquireTokenForClient(scopes).ExecuteAsync(cancellationToken);
-        }
-        catch (MsalException ex)
-        {
-            var tenantArg = !string.IsNullOrWhiteSpace(profile.TenantId) ? $" --tenant {profile.TenantId}" : "";
-            throw new InvalidOperationException(
-                $"No cached token for service principal '{appId}' at {resourceUrl}. " +
-                $"Run 'pac auth create --kind ServicePrincipal --applicationId {appId} --clientSecret <secret>{tenantArg}' to authenticate.", ex);
-        }
-
-        console.Verbose($"Token acquired for app '{appId}' (expires {initialToken.ExpiresOn:HH:mm})");
+        console.Verbose($"Token acquired for app '{profile.ApplicationId}' (expires {initialToken.ExpiresOn:HH:mm})");
 
         return new ServiceClient(serviceUri, async _ =>
         {
@@ -127,38 +104,8 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         PacProfile profile, string authority, string resourceUrl, Uri serviceUri,
         MsalCacheHelper cacheHelper, CancellationToken cancellationToken)
     {
-        // must match PAC CLI's client registration
-        const string redirectUri = "http://localhost";
-
         var scopes = new[] { $"{resourceUrl}/.default" };
-
-        var app = PublicClientApplicationBuilder
-            .Create(PacCliAppId)
-            .WithAuthority(authority)
-            .WithRedirectUri(redirectUri)
-            .Build();
-
-        cacheHelper.RegisterCache(app.UserTokenCache);
-
-        var accounts = await app.GetAccountsAsync();
-        var account  = (!string.IsNullOrWhiteSpace(profile.User)
-                ? accounts.FirstOrDefault(a => string.Equals(a.Username, profile.User, StringComparison.OrdinalIgnoreCase))
-                : null)
-            ?? accounts.FirstOrDefault();
-
-        // throws a clear error instead of opening the browser unexpectedly
-        AuthenticationResult initialToken;
-        try
-        {
-            initialToken = await app.AcquireTokenSilent(scopes, account).ExecuteAsync(cancellationToken);
-        }
-        catch (MsalUiRequiredException ex)
-        {
-            var user = profile.User ?? "unknown";
-            throw new InvalidOperationException(
-                $"Session expired for '{user}' at {resourceUrl}. " +
-                $"Run 'pac auth create --url {resourceUrl}' to re-authenticate.", ex);
-        }
+        var (app, initialToken) = await AcquireUserTokenAsync(profile, authority, cacheHelper, resourceUrl, cancellationToken);
 
         console.Verbose($"Token acquired silently for {initialToken.Account.Username} (expires {initialToken.ExpiresOn:HH:mm})");
 
@@ -189,11 +136,11 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
             ? "https://login.microsoftonline.com/organizations"
             : profile.Authority.TrimEnd('/');
 
-        var cacheHelper = await CreateMsalCacheHelperAsync();
+        var cacheHelper = await GetOrCreateMsalCacheHelperAsync();
 
         var accessToken = profile.IsServicePrincipal
-            ? await AcquireServicePrincipalTokenAsync(profile, authority, cacheHelper, BapAdminResource, cancellationToken)
-            : await AcquireUserTokenAsync(profile, authority, cacheHelper, BapAdminResource, cancellationToken);
+            ? (await AcquireServicePrincipalTokenAsync(profile, authority, cacheHelper, BapAdminResource, cancellationToken)).Token.AccessToken
+            : (await AcquireUserTokenAsync(profile, authority, cacheHelper, BapAdminResource, cancellationToken)).Token.AccessToken;
 
         // Per-request Authorization header, never HttpClient.DefaultRequestHeaders — httpClient is a
         // shared singleton also used for unrelated calls (e.g. XrmContextToolProvider's NuGet download),
@@ -208,7 +155,9 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         return MapBapEnvironmentsResponse(json, environmentUrl);
     }
 
-    async Task<string> AcquireUserTokenAsync(
+    // Shared by ConnectUserAsync (which additionally wraps the result in a ServiceClient renewal
+    // callback) and GetEnvironmentInfoAsync (which only needs Token.AccessToken).
+    async Task<(IPublicClientApplication App, AuthenticationResult Token)> AcquireUserTokenAsync(
         PacProfile profile, string authority, MsalCacheHelper cacheHelper, string resourceUrl, CancellationToken cancellationToken)
     {
         const string redirectUri = "http://localhost";
@@ -228,10 +177,11 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
                 : null)
             ?? accounts.FirstOrDefault();
 
+        // throws a clear error instead of opening the browser unexpectedly
         try
         {
-            var result = await app.AcquireTokenSilent(scopes, account).ExecuteAsync(cancellationToken);
-            return result.AccessToken;
+            var token = await app.AcquireTokenSilent(scopes, account).ExecuteAsync(cancellationToken);
+            return (app, token);
         }
         catch (MsalUiRequiredException ex)
         {
@@ -242,19 +192,24 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         }
     }
 
-    async Task<string> AcquireServicePrincipalTokenAsync(
+    // Shared by ConnectServicePrincipalAsync (which additionally wraps the result in a ServiceClient
+    // renewal callback) and GetEnvironmentInfoAsync (which only needs Token.AccessToken).
+    async Task<(IConfidentialClientApplication App, AuthenticationResult Token)> AcquireServicePrincipalTokenAsync(
         PacProfile profile, string authority, MsalCacheHelper cacheHelper, string resourceUrl, CancellationToken cancellationToken)
     {
         var appId = profile.ApplicationId
             ?? throw new InvalidOperationException(
                 $"Service principal profile '{profile.Name}' is missing ApplicationId.");
 
+        // Service principal authority must be tenant-specific, not 'organizations'
         var tenantAuthority = !string.IsNullOrWhiteSpace(profile.TenantId)
             ? $"https://login.microsoftonline.com/{profile.TenantId}"
             : authority;
 
         var scopes = new[] { $"{resourceUrl}/.default" };
 
+        // The assertion is only sent to AAD on cache miss. On a cache hit (< 1 hour since
+        // 'pac auth create --kind ServicePrincipal'), MSAL returns the stored app token directly.
         var app = ConfidentialClientApplicationBuilder
             .Create(appId)
             .WithAuthority(tenantAuthority)
@@ -265,8 +220,8 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
 
         try
         {
-            var result = await app.AcquireTokenForClient(scopes).ExecuteAsync(cancellationToken);
-            return result.AccessToken;
+            var token = await app.AcquireTokenForClient(scopes).ExecuteAsync(cancellationToken);
+            return (app, token);
         }
         catch (MsalException ex)
         {
