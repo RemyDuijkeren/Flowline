@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.IO.Compression;
 using System.Text.Json;
+using System.Xml;
 using System.Xml.Linq;
 using CliWrap;
 using Flowline.Config;
@@ -661,7 +662,17 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         if (!File.Exists(solutionXmlPath))
             throw new FlowlineException(ExitCode.NotFound, $"Solution.xml not found at '{solutionXmlPath}' — run 'clone' first.");
 
-        var doc = XDocument.Load(solutionXmlPath);
+        XDocument doc;
+        try
+        {
+            doc = XDocument.Load(solutionXmlPath);
+        }
+        catch (Exception ex) when (ex is XmlException or IOException or UnauthorizedAccessException)
+        {
+            throw new FlowlineException(ExitCode.ConfigInvalid,
+                $"Solution.xml at '{solutionXmlPath}' is malformed or unreadable — restore 'Package/' from git or re-run 'flowline clone'.", ex);
+        }
+
         return ParseSolutionManifest(doc).Version;
     }
 

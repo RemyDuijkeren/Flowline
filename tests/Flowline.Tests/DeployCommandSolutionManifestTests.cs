@@ -48,6 +48,29 @@ public class DeployCommandSolutionManifestTests
             .Which.ExitCode.Should().Be(ExitCode.ValidationFailed);
     }
 
+    // ── ReadLocalSolutionVersion ────────────────────────────────────────────────
+
+    [Fact]
+    public void ReadLocalSolutionVersion_Throws_WhenSolutionXmlIsMalformed()
+    {
+        var packageFolderPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        var otherFolder = Path.Combine(packageFolderPath, "src", "Other");
+        Directory.CreateDirectory(otherFolder);
+        File.WriteAllText(Path.Combine(otherFolder, "Solution.xml"), "<not><valid</xml");
+
+        try
+        {
+            var act = () => DeployCommand.ReadLocalSolutionVersion(packageFolderPath);
+
+            act.Should().Throw<FlowlineException>()
+                .Which.ExitCode.Should().Be(ExitCode.ConfigInvalid);
+        }
+        finally
+        {
+            Directory.Delete(packageFolderPath, recursive: true);
+        }
+    }
+
     // ── ReadArtifactSolutionManifest ───────────────────────────────────────────
 
     [Fact]
