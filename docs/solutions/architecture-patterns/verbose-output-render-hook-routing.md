@@ -1,6 +1,7 @@
 ---
 title: "Route Verbose Output Through the Render-Hook Pipeline, Never a Hand-Rolled Guard"
 date: 2026-07-09
+last_updated: 2026-07-17
 category: docs/solutions/architecture-patterns/
 module: "Flowline.Core / Flowline - Console Output and Verbose Logging"
 problem_type: architecture_pattern
@@ -23,8 +24,8 @@ related_components: [PluginService, WebResourceService, SubprocessCapture]
 
 Flowline already has a render-hook pipeline (documented in [`spectre-console-ilogger-render-hook.md`](spectre-console-ilogger-render-hook.md)) built from two `IRenderHook`s attached to the console's `Pipeline`:
 
-- **`VerboseFilterHook`** (`src/Flowline.Core/VerboseFilterHook.cs`) — drops renderables marked as verbose-only from the terminal unless `--verbose` is passed.
-- **`LoggingRenderHook`** (`src/Flowline.Core/LoggingRenderHook.cs`) — logs every renderable's rendered text to the log file unconditionally, because it `yield return`s the renderable *before* attempting to log it, so terminal suppression can never block logging.
+- **`VerboseFilterHook`** (`src/Flowline.Core/Console/VerboseFilterHook.cs`) — drops renderables marked as verbose-only from the terminal unless `--verbose` is passed.
+- **`LoggingRenderHook`** (`src/Flowline.Core/Console/LoggingRenderHook.cs`) — logs every renderable's rendered text to the log file unconditionally, because it `yield return`s the renderable *before* attempting to log it, so terminal suppression can never block logging.
 
 These two hooks already cleanly separate two concerns that look like one: *terminal visibility* and *audit-trail completeness*. Several call sites conflated them anyway, bypassing the pipeline entirely:
 
@@ -40,7 +41,7 @@ Both are the same underlying mistake: verbosity gating implemented in applicatio
 The marker type `VerboseMarkup` originally wrapped only a `Markup` string, so `VerboseFilterHook` could identify "this is verbose-only" by type. It couldn't wrap a `Tree`. The instinct to add a *new* type (e.g. one specifically for `Tree`/`Panel`) would require updating both hooks' type checks to also recognize it. Instead, the type itself was extended with a second constructor accepting any `IRenderable`, and renamed `VerboseRenderable` (the old name was misleading once it could wrap non-Markup content). Neither hook needed to change, because both already check by type name, not by inspecting wrapped content:
 
 ```csharp
-// VerboseRenderable.cs — extended, not replaced
+// Console/VerboseRenderable.cs — extended, not replaced
 public sealed class VerboseRenderable : IRenderable
 {
     private readonly IRenderable _inner;
@@ -194,9 +195,9 @@ Attach `VerboseFilterHook` (and `LoggingRenderHook` if the test needs to assert 
 
 ## Related
 
-- [`spectre-console-ilogger-render-hook.md`](spectre-console-ilogger-render-hook.md) — the parent architecture this learning extends (documents `LoggingRenderHook`'s original design). Its embedded code sample and prefix-detection section are stale relative to current source — refreshed alongside this doc.
+- [`spectre-console-ilogger-render-hook.md`](spectre-console-ilogger-render-hook.md) — the parent architecture this learning extends (documents `LoggingRenderHook`'s original design). Its file-path citations drifted after the `src/Flowline.Core/Console/` folder move and were refreshed on 2026-07-17; the embedded code sample and prefix-detection content still match current source.
 - [`../logic-errors/stale-bool-capture-hook-construction.md`](../logic-errors/stale-bool-capture-hook-construction.md) — sibling incident about `VerboseFilterHook`'s constructor; already reflects the `VerboseRenderable` rename and established the `TestConsole.Pipeline.Attach(VerboseFilterHook)` test pattern this learning reused.
-- `src/Flowline.Core/VerboseRenderable.cs`, `src/Flowline.Core/VerboseFilterHook.cs`, `src/Flowline.Core/LoggingRenderHook.cs`, `src/Flowline.Core/FlowlineConsoleExtensions.cs` — implementation
-- `src/Flowline.Core/Services/PluginService.cs`, `src/Flowline.Core/Services/WebResourceService.cs`, `src/Flowline/Diagnostics/SubprocessCapture.cs` — call sites fixed
+- `src/Flowline.Core/Console/VerboseRenderable.cs`, `src/Flowline.Core/Console/VerboseFilterHook.cs`, `src/Flowline.Core/Console/LoggingRenderHook.cs`, `src/Flowline.Core/Console/FlowlineConsoleExtensions.cs` — implementation
+- `src/Flowline.Core/Plugins/PluginService.cs`, `src/Flowline.Core/WebResources/WebResourceService.cs`, `src/Flowline/Diagnostics/SubprocessCapture.cs` — call sites fixed
 - `tests/Flowline.Tests/SubprocessCaptureTests.cs`, `tests/Flowline.Core.Tests/PluginServiceTests.cs`, `tests/Flowline.Core.Tests/WebResourceServiceTests.cs` — test wiring fixed
 - Commit `0a3d34c` — `refactor(verbose-routing): route verbose output through render-hook pipeline, drop dead IsVerbose params` (40 files changed, 1051 tests passing)

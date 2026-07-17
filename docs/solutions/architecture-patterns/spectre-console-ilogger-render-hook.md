@@ -1,7 +1,7 @@
 ---
 title: "Bridging Spectre.Console Terminal Output to ILogger via IRenderHook"
 date: 2026-06-28
-last_updated: 2026-07-09
+last_updated: 2026-07-17
 category: docs/solutions/architecture-patterns/
 module: "Flowline.Core - Logging and Console Output"
 problem_type: architecture_pattern
@@ -47,7 +47,7 @@ The implementation has three parts: the hook itself, visual prefix conventions o
 `LoggingRenderHook` implements `IRenderHook` and is attached to `AnsiConsole.Console.Pipeline`. Spectre calls `Process(...)` for every renderable before it reaches the terminal.
 
 ```csharp
-// LoggingRenderHook.cs
+// Console/LoggingRenderHook.cs
 public sealed class LoggingRenderHook(ILogger<LoggingRenderHook> logger) : IRenderHook
 {
     public IEnumerable<IRenderable> Process(RenderOptions options, IEnumerable<IRenderable> renderables)
@@ -220,11 +220,11 @@ private sealed class CaptureLogger(List<(LogLevel, string)> entries)
 
 ## Related
 
-- `src/Flowline.Core/LoggingRenderHook.cs` — implementation
-- `src/Flowline.Core/FlowlineConsoleExtensions.cs` — visual prefix conventions
+- `src/Flowline.Core/Console/LoggingRenderHook.cs` — implementation
+- `src/Flowline.Core/Console/FlowlineConsoleExtensions.cs` — visual prefix conventions
 - `src/Flowline/Program.cs` — hook wiring and `ILoggerFactory` lifecycle
 - `tests/Flowline.Core.Tests/LoggingRenderHookTests.cs` — test suite
-- Flowline exception-handling convention — the try/catch here is a deliberate exception to the "no try/catch around service calls" rule (see `memory/feedback_exception_handling.md`)
+- Flowline exception-handling convention — the try/catch here is a deliberate exception to the "no try/catch around service calls" rule (recorded in the user's auto-memory store, not a repo path — see the "feedback_exception_handling" entry)
 - [`activity-correlation-structured-logging.md`](activity-correlation-structured-logging.md) — complementary pattern: W3C TraceId correlation via ActivitySource/ActivityListener + Serilog enricher. Both patterns are wired in `Program.cs` and coexist without interference.
 - [`../logic-errors/stale-bool-capture-hook-construction.md`](../logic-errors/stale-bool-capture-hook-construction.md) — sibling hook `VerboseFilterHook` must accept `FlowlineRuntimeOptions` (reference type) rather than `bool isVerbose` (value copy) so it reads the post-parse `--verbose` state. Stale-capture bug found in code review.
 - [`verbose-output-render-hook-routing.md`](verbose-output-render-hook-routing.md) — extends this pipeline: generalizes the `VerboseMarkup`→`VerboseRenderable` wrapper to any `IRenderable` (not just a markup string), and covers the pattern of routing verbose-gated `Tree`/`Panel`/`Table` output through `console.Verbose(...)` instead of an in-source `if (!opt.IsVerbose) return;` guard.
