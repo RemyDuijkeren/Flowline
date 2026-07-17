@@ -226,4 +226,15 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         return (projectSln, remoteSln);
     }
 
+    // R8: project mode has exactly one configured solution — a passed [solution] argument no longer
+    // selects among several, it just has to name the one that's already configured.
+    internal static void ValidateSolutionMatchesConfig(string? inputName, string configuredUniqueName)
+    {
+        if (string.IsNullOrWhiteSpace(inputName)) return;
+        if (string.Equals(inputName.Trim(), configuredUniqueName, StringComparison.OrdinalIgnoreCase)) return;
+
+        throw new FlowlineException(ExitCode.ValidationFailed,
+            $"'{inputName}' doesn't match the configured solution '{configuredUniqueName}' — pass the correct name, or omit it to use the configured solution.");
+    }
+
 }

@@ -107,6 +107,34 @@ public class ProjectConfigTests : IDisposable
         sln!.IncludeManaged.Should().BeFalse();
     }
 
+    // Regression: the single-object collapse dropped the by-name identity check the old
+    // HashSet lookup provided implicitly (a name not found used to create a new entry, not
+    // silently resolve to a different existing one). Without this check, `flowline clone
+    // SolutionB` on a project already configured for SolutionA would silently keep SolutionA
+    // and report success, ignoring the requested name entirely -- found during code review.
+    [Fact]
+    public void GetOrUpdateSolution_MismatchedName_ThrowsValidationFailed()
+    {
+        var config = new ProjectConfig();
+        config.AddOrUpdateSolution("SolutionA");
+
+        var act = () => config.GetOrUpdateSolution("SolutionB");
+
+        act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ValidationFailed);
+        config.Solution!.UniqueName.Should().Be("SolutionA");
+    }
+
+    [Fact]
+    public void GetOrUpdateSolution_MatchingNameCaseInsensitive_DoesNotThrow()
+    {
+        var config = new ProjectConfig();
+        config.AddOrUpdateSolution("SolutionA");
+
+        var sln = config.GetOrUpdateSolution("solutiona");
+
+        sln!.UniqueName.Should().Be("SolutionA");
+    }
+
     // GetOrUpdateUatUrl tests
 
     [Fact]
@@ -410,6 +438,56 @@ public class ProjectConfigTests : IDisposable
     public void Load_UnsupportedSchemaVersion_ThrowsConfigInvalid()
     {
         WriteConfigFile("""{"SchemaVersion":2,"Solution":{"UniqueName":"MySolution"}}""");
+
+        var act = () => ProjectConfig.Load(_tempDir);
+
+        act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ConfigInvalid);
+    }
+
+    [Fact]
+    public void Load_SchemaVersionAsString_ThrowsConfigInvalid()
+    {
+        WriteConfigFile("""{"SchemaVersion":"1","Solution":{"UniqueName":"MySolution"}}""");
+
+        var act = () => ProjectConfig.Load(_tempDir);
+
+        act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ConfigInvalid);
+    }
+
+    [Fact]
+    public void Load_ExplicitNullSolution_LoadsSuccessfully()
+    {
+        WriteConfigFile("""{"SchemaVersion":1,"Solution":null}""");
+
+        var config = ProjectConfig.Load(_tempDir);
+
+        config.Should().NotBeNull();
+        config!.Solution.Should().BeNull();
+    }
+
+    [Fact]
+    public void Load_NonIntegerSchemaVersion_ThrowsConfigInvalid_NotFormatException()
+    {
+        // Regression: JsonElement.GetInt32() throws FormatException on a numeric-but-non-integer
+        // token (e.g. 1.0) -- found during code review. TryGetInt32 must be used instead so this
+        // fails closed with ConfigInvalid rather than crashing with a raw, unhandled exception.
+        WriteConfigFile("""{"SchemaVersion":1.0,"Solution":{"UniqueName":"MySolution"}}""");
+
+        var act = () => ProjectConfig.Load(_tempDir);
+
+        act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ConfigInvalid);
+    }
+
+    [Theory]
+    [InlineData("""{"SchemaVersion":1,"Solution":"MySolution"}""")]
+    [InlineData("""{"SchemaVersion":1,"Solution":42}""")]
+    [InlineData("""{"SchemaVersion":1,"Solution":["MySolution"]}""")]
+    public void Load_SolutionNotAnObject_ThrowsConfigInvalid_NotInvalidOperationException(string json)
+    {
+        // Regression: JsonElement.TryGetProperty throws InvalidOperationException when called on a
+        // non-object element -- found during code review. A non-null Solution that isn't a JSON
+        // object must fail closed with ConfigInvalid before any TryGetProperty call on it.
+        WriteConfigFile(json);
 
         var act = () => ProjectConfig.Load(_tempDir);
 

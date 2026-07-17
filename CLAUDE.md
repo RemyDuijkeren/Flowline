@@ -37,7 +37,7 @@ ProjectRoot/
 ├── WebResources/                     ← WebResources.csproj + src/ + public/ + dist/
 ├── artifacts/                        ← packed solution zips (gitignored)
 ├── CHANGES.md
-├── docs/                             ← not scaffolded; created on first sync (DATAVERSE_CONTEXT.md)
+├── docs/                             ← not scaffolded; created by clone/sync as needed (DATAVERSE_CONTEXT.md)
 └── tests/                            ← not scaffolded; recognized if present
 ```
 

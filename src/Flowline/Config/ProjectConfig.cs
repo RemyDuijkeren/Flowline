@@ -214,6 +214,12 @@ public class ProjectConfig
             return AddOrUpdateSolution(uniqueName, includeManaged ?? false);
         }
 
+        if (!string.Equals(uniqueName, Solution.UniqueName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"'{uniqueName}' doesn't match the configured solution '{Solution.UniqueName}' — pass the correct name, or omit it to use the configured solution.");
+        }
+
         if (includeManaged.HasValue && Solution.IncludeManaged != includeManaged.Value)
         {
             AnsiConsole.MarkupLine($"[yellow]{Solution.UniqueName} is already set to managed: {Solution.IncludeManaged}[/]");
@@ -296,7 +302,8 @@ public class ProjectConfig
 
             if (!root.TryGetProperty("SchemaVersion", out var schemaVersionElement)
                 || schemaVersionElement.ValueKind != JsonValueKind.Number
-                || schemaVersionElement.GetInt32() != CurrentSchemaVersion)
+                || !schemaVersionElement.TryGetInt32(out var schemaVersion)
+                || schemaVersion != CurrentSchemaVersion)
             {
                 throw new FlowlineException(ExitCode.ConfigInvalid,
                     $"'{configPath}' has a missing or unsupported schema version — {DocPointer}.");
@@ -304,6 +311,12 @@ public class ProjectConfig
 
             if (root.TryGetProperty("Solution", out var solutionElement) && solutionElement.ValueKind != JsonValueKind.Null)
             {
+                if (solutionElement.ValueKind != JsonValueKind.Object)
+                {
+                    throw new FlowlineException(ExitCode.ConfigInvalid,
+                        $"'{configPath}' has a Solution that is not a JSON object — {DocPointer}.");
+                }
+
                 var hasUniqueName = solutionElement.TryGetProperty("UniqueName", out var uniqueNameElement)
                     && uniqueNameElement.ValueKind == JsonValueKind.String
                     && !string.IsNullOrWhiteSpace(uniqueNameElement.GetString());
