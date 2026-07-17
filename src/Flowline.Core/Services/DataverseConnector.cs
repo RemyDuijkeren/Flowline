@@ -149,7 +149,7 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
 
         var accessToken = profile.IsServicePrincipal
             ? (await AcquireServicePrincipalTokenAsync(profile, authority, cacheHelper, BapAdminResource, cancellationToken)).Token.AccessToken
-            : (await AcquireUserTokenAsync(profile, authority, cacheHelper, BapAdminResource, cancellationToken)).Token.AccessToken;
+            : (await AcquireUserTokenAsync(profile, authority, cacheHelper, BapAdminResource, cancellationToken, isInternalResource: true)).Token.AccessToken;
 
         // Per-request Authorization header, never HttpClient.DefaultRequestHeaders — httpClient is a
         // shared singleton also used for unrelated calls (e.g. XrmContextToolProvider's NuGet download),
@@ -167,7 +167,8 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
     // Shared by ConnectUserAsync (which additionally wraps the result in a ServiceClient renewal
     // callback) and GetEnvironmentInfoAsync (which only needs Token.AccessToken).
     async Task<(IPublicClientApplication App, AuthenticationResult Token)> AcquireUserTokenAsync(
-        PacProfile profile, string authority, MsalCacheHelper cacheHelper, string resourceUrl, CancellationToken cancellationToken)
+        PacProfile profile, string authority, MsalCacheHelper cacheHelper, string resourceUrl, CancellationToken cancellationToken,
+        bool isInternalResource = false)
     {
         const string redirectUri = "http://localhost";
         var scopes = new[] { $"{resourceUrl}/.default" };
@@ -195,9 +196,13 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         catch (MsalUiRequiredException ex)
         {
             var user = profile.User ?? "unknown";
-            throw new InvalidOperationException(
-                $"Session expired for '{user}' at {resourceUrl}. " +
-                $"Run 'pac auth create --url {resourceUrl}' to re-authenticate.", ex);
+            // resourceUrl is Flowline's internal BAP admin endpoint here, not a Dataverse
+            // environment URL a user would ever pass to 'pac auth create --url' -- point them
+            // at re-authenticating the PAC profile itself instead of that internal resource.
+            var remediation = isInternalResource
+                ? $"Run 'pac auth create' to refresh your PAC session for profile '{profile.Name ?? user}'."
+                : $"Run 'pac auth create --url {resourceUrl}' to re-authenticate.";
+            throw new InvalidOperationException($"Session expired for '{user}'. {remediation}", ex);
         }
     }
 
