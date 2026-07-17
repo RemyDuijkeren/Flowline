@@ -1,6 +1,7 @@
 using System.Reflection;
 using Flowline.Core;
 using Flowline.Core.Console;
+using Flowline.Core.Models;
 using Spectre.Console;
 
 namespace Flowline.Validation;
@@ -83,10 +84,29 @@ public sealed class FlowlineValidator
         _store.Save(cache);
     }
 
-    public async Task<EnvironmentInfo?> GetEnvironmentInfoByUrlAsync(
+    public Task<EnvironmentInfo?> GetEnvironmentInfoByUrlAsync(
         string environmentUrl,
         FlowlineSettings settings,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        GetEnvironmentInfoCoreAsync(environmentUrl, settings, cancellationToken,
+            () => _probes.GetEnvironmentAsync(environmentUrl, settings.Verbose, cancellationToken));
+
+    // Profile-scoped overload — used wherever a PAC profile has already been resolved for the target
+    // URL (R1/R4). Shares the same cache dictionary/TTL as the unprofiled overload above (KTD6):
+    // Type/existence at a URL doesn't vary by which correctly-resolved profile asked.
+    public Task<EnvironmentInfo?> GetEnvironmentInfoByUrlAsync(
+        string environmentUrl,
+        PacProfile profile,
+        FlowlineSettings settings,
+        CancellationToken cancellationToken) =>
+        GetEnvironmentInfoCoreAsync(environmentUrl, settings, cancellationToken,
+            () => _probes.GetEnvironmentByProfileAsync(profile, environmentUrl, settings.Verbose, cancellationToken));
+
+    async Task<EnvironmentInfo?> GetEnvironmentInfoCoreAsync(
+        string environmentUrl,
+        FlowlineSettings settings,
+        CancellationToken cancellationToken,
+        Func<Task<EnvironmentInfo?>> probe)
     {
         var key = NormalizeEnvironmentUrl(environmentUrl);
         var cache = _store.Load();
@@ -99,7 +119,7 @@ public sealed class FlowlineValidator
             return cached.Value;
         }
 
-        var env = await _probes.GetEnvironmentAsync(environmentUrl, settings.Verbose, cancellationToken);
+        var env = await probe();
         if (env != null)
         {
             cache = _store.Load();
