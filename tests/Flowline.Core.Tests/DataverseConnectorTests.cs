@@ -1,11 +1,19 @@
 using Flowline;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
+using Microsoft.Identity.Client;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Spectre.Console.Testing;
 using Xunit;
 
 namespace Flowline.Core.Tests;
+
+file sealed class FakeAccount(string username, string tenantId, string identifier = "id") : IAccount
+{
+    public string Username { get; } = username;
+    public string Environment => "login.microsoftonline.com";
+    public AccountId HomeAccountId { get; } = new(identifier, identifier, tenantId);
+}
 
 public class DataverseConnectorTests
 {
@@ -78,9 +86,10 @@ public class DataverseConnectorTests
     {
         var profile = new PacProfile { Kind = "ServicePrincipal", TenantId = "tenant-id" };
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+        var ex = await Assert.ThrowsAsync<FlowlineException>(
             () => _service.ConnectViaPacAsync(profile, "https://test.crm.dynamics.com"));
 
+        Assert.Equal(ExitCode.NotAuthenticated, ex.ExitCode);
         Assert.Contains("ApplicationId", ex.Message);
     }
 
@@ -89,9 +98,10 @@ public class DataverseConnectorTests
     {
         var profile = new PacProfile { Kind = "ServicePrincipal", TenantId = "tenant-id" };
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+        var ex = await Assert.ThrowsAsync<FlowlineException>(
             () => _service.GetEnvironmentInfoAsync(profile, "https://test.crm.dynamics.com"));
 
+        Assert.Equal(ExitCode.NotAuthenticated, ex.ExitCode);
         Assert.Contains("ApplicationId", ex.Message);
     }
 
@@ -603,5 +613,93 @@ public class DataverseConnectorTests
         {
             File.Delete(tempFile);
         }
+    }
+
+    // SelectCachedAccount: regression coverage for a real bug found in the field. The same
+    // username can be cached under multiple home tenants (e.g. a stale guest/B2B entry from an
+    // unrelated org alongside the real member account for the profile's actual tenant).
+    // AcquireTokenSilent picking the wrong one produced a confusing AADSTS90072 "account doesn't
+    // exist in tenant" failure for a genuinely valid, already-re-authenticated account.
+
+    [Fact]
+    public void SelectCachedAccount_SingleMatchingUsername_ReturnsIt()
+    {
+        var account = new FakeAccount("user@contoso.com", "tenant-a");
+
+        var result = DataverseConnector.SelectCachedAccount([account], "user@contoso.com", tenantId: null);
+
+        Assert.Same(account, result);
+    }
+
+    [Fact]
+    public void SelectCachedAccount_SameUsernameMultipleTenants_PrefersMatchingTenantId()
+    {
+        var wrongTenant = new FakeAccount("user@contoso.com", "tenant-wrong", "id-1");
+        var rightTenant = new FakeAccount("user@contoso.com", "tenant-right", "id-2");
+
+        var result = DataverseConnector.SelectCachedAccount([wrongTenant, rightTenant], "user@contoso.com", "tenant-right");
+
+        Assert.Same(rightTenant, result);
+    }
+
+    [Fact]
+    public void SelectCachedAccount_TenantIdMatchIsCaseInsensitive()
+    {
+        var account = new FakeAccount("user@contoso.com", "Tenant-ABC");
+
+        var result = DataverseConnector.SelectCachedAccount([account], "user@contoso.com", "tenant-abc");
+
+        Assert.Same(account, result);
+    }
+
+    [Fact]
+    public void SelectCachedAccount_NoTenantIdRecorded_FallsBackToFirstUsernameMatch()
+    {
+        var first = new FakeAccount("user@contoso.com", "tenant-a", "id-1");
+        var second = new FakeAccount("user@contoso.com", "tenant-b", "id-2");
+
+        var result = DataverseConnector.SelectCachedAccount([first, second], "user@contoso.com", tenantId: null);
+
+        Assert.Same(first, result);
+    }
+
+    [Fact]
+    public void SelectCachedAccount_TenantIdSetButNoAccountMatchesIt_FallsBackToFirstUsernameMatch()
+    {
+        var first = new FakeAccount("user@contoso.com", "tenant-a", "id-1");
+        var second = new FakeAccount("user@contoso.com", "tenant-b", "id-2");
+
+        var result = DataverseConnector.SelectCachedAccount([first, second], "user@contoso.com", "tenant-c-not-cached");
+
+        Assert.Same(first, result);
+    }
+
+    [Fact]
+    public void SelectCachedAccount_NoUsernameGiven_ReturnsFirstAccount()
+    {
+        var first = new FakeAccount("a@contoso.com", "tenant-a");
+        var second = new FakeAccount("b@contoso.com", "tenant-b");
+
+        var result = DataverseConnector.SelectCachedAccount([first, second], username: null, tenantId: null);
+
+        Assert.Same(first, result);
+    }
+
+    [Fact]
+    public void SelectCachedAccount_UsernameNotCached_FallsBackToAnyAccount()
+    {
+        var other = new FakeAccount("someone-else@contoso.com", "tenant-a");
+
+        var result = DataverseConnector.SelectCachedAccount([other], "user@contoso.com", tenantId: null);
+
+        Assert.Same(other, result);
+    }
+
+    [Fact]
+    public void SelectCachedAccount_NoAccountsCached_ReturnsNull()
+    {
+        var result = DataverseConnector.SelectCachedAccount([], "user@contoso.com", "tenant-a");
+
+        Assert.Null(result);
     }
 }

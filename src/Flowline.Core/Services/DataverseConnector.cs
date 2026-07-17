@@ -89,7 +89,7 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         try { return await MsalCacheHelper.CreateAsync(storagePropsBuilder.Build()); }
         catch (MsalCachePersistenceException ex)
         {
-            throw new InvalidOperationException(
+            throw new FlowlineException(ExitCode.NotAuthenticated,
                 "Could not open the PAC CLI token cache. " +
                 "Ensure 'pac auth create' has been run and the cache file is accessible. " +
                 $"Detail: {ex.Message}", ex);
@@ -182,16 +182,29 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         cacheHelper.RegisterCache(app.UserTokenCache);
 
         var accounts = await app.GetAccountsAsync();
-        var account  = (!string.IsNullOrWhiteSpace(profile.User)
-                ? accounts.FirstOrDefault(a => string.Equals(a.Username, profile.User, StringComparison.OrdinalIgnoreCase))
-                : null)
-            ?? accounts.FirstOrDefault();
+        var account = SelectCachedAccount(accounts, profile.User, profile.TenantId);
 
         // throws a clear error instead of opening the browser unexpectedly
         try
         {
             var token = await app.AcquireTokenSilent(scopes, account).ExecuteAsync(cancellationToken);
             return (app, token);
+        }
+        // AADSTS90072/AADSTS50020: the resolved account isn't valid in this tenant. Either it
+        // genuinely lacks access, or (if the same account works via 'pac' directly) the cached
+        // MSAL entry picked above belongs to a different tenant this username is also known to
+        // -- re-running 'pac auth create' for the same account/profile won't fix either case on
+        // its own. Distinguish this from a plain expired token, which the catch below still
+        // handles correctly.
+        catch (MsalUiRequiredException ex) when (ex.Message.Contains("AADSTS90072") || ex.Message.Contains("AADSTS50020"))
+        {
+            var user = profile.User ?? "unknown";
+            throw new FlowlineException(ExitCode.NotAuthenticated,
+                $"'{user}' isn't valid in tenant '{profile.TenantId ?? "unknown"}' for profile '{profile.Name ?? user}'. " +
+                "If this account should have access, the cached PAC credential may be stale or bound " +
+                "to a different tenant -- run 'pac auth clear' then 'pac auth create' to re-authenticate " +
+                "from scratch. If it genuinely lacks access, ask a tenant admin to add it as a guest, " +
+                "or sign in with a different account.", ex);
         }
         catch (MsalUiRequiredException ex)
         {
@@ -202,8 +215,30 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
             var remediation = isInternalResource
                 ? $"Run 'pac auth create' to refresh your PAC session for profile '{profile.Name ?? user}'."
                 : $"Run 'pac auth create --url {resourceUrl}' to re-authenticate.";
-            throw new InvalidOperationException($"Session expired for '{user}'. {remediation}", ex);
+            throw new FlowlineException(ExitCode.NotAuthenticated, $"Session expired for '{user}'. {remediation}", ex);
         }
+    }
+
+    /// <summary>
+    /// Picks the cached MSAL account to acquire a token with. The same username can be cached
+    /// under multiple home tenants (e.g. a stale guest/B2B entry from an unrelated org alongside
+    /// the real member account for this profile's tenant) -- picking by username alone can
+    /// silently select the wrong one, which <c>AcquireTokenSilent</c> then fails against with a
+    /// confusing "account doesn't exist in tenant" error instead of a clean re-authentication
+    /// prompt. Prefers the entry whose home tenant matches <paramref name="tenantId"/> when one
+    /// is recorded; falls back to the first username match, then to any cached account.
+    /// </summary>
+    internal static IAccount? SelectCachedAccount(IEnumerable<IAccount> accounts, string? username, string? tenantId)
+    {
+        var usernameMatches = string.IsNullOrWhiteSpace(username)
+            ? accounts.ToList()
+            : accounts.Where(a => string.Equals(a.Username, username, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        return (!string.IsNullOrWhiteSpace(tenantId)
+                ? usernameMatches.FirstOrDefault(a => string.Equals(a.HomeAccountId?.TenantId, tenantId, StringComparison.OrdinalIgnoreCase))
+                : null)
+            ?? usernameMatches.FirstOrDefault()
+            ?? accounts.FirstOrDefault();
     }
 
     // Shared by ConnectServicePrincipalAsync (which additionally wraps the result in a ServiceClient
@@ -212,7 +247,7 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         PacProfile profile, string authority, MsalCacheHelper cacheHelper, string resourceUrl, CancellationToken cancellationToken)
     {
         var appId = profile.ApplicationId
-            ?? throw new InvalidOperationException(
+            ?? throw new FlowlineException(ExitCode.NotAuthenticated,
                 $"Service principal profile '{profile.Name}' is missing ApplicationId.");
 
         // Service principal authority must be tenant-specific, not 'organizations'
@@ -240,7 +275,7 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         catch (MsalException ex)
         {
             var tenantArg = !string.IsNullOrWhiteSpace(profile.TenantId) ? $" --tenant {profile.TenantId}" : "";
-            throw new InvalidOperationException(
+            throw new FlowlineException(ExitCode.NotAuthenticated,
                 $"No cached token for service principal '{appId}' at {resourceUrl}. " +
                 $"Run 'pac auth create --kind ServicePrincipal --applicationId {appId} --clientSecret <secret>{tenantArg}' to authenticate.", ex);
         }
