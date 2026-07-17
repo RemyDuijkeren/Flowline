@@ -14,7 +14,7 @@ product_contract_source: ce-brainstorm
 
 - **Objective:** `flowline push` discovers and pushes every plugin-bearing project in a solution's `.sln`, and correctly resolves each project's build output regardless of assembly name or output-folder shape — not just a single fixed `Plugins.csproj` producing an assembly literally named "Plugins".
 - **Product authority:** direct discussion with the maintainer, grounded in the 2026-07-14 pluginpackage/NuGet-support plan and a real legacy plugin project (`E:\Code\AutomateValue\SpotlerAutomate.Dataverse\src\Plugins\Plugins.csproj`, outside this repo) that breaks two of Flowline's current hardcoded assumptions.
-- **Open blockers:** none — see Outstanding Questions for items deferred to planning.
+- **Open blockers:** Blocked by `docs/plans/2026-07-17-003-refactor-single-solution-layout-plan.md` — that plan collapses the `solutions/<Name>/` folder structure this plan's KD5/R8 still assumes when updating `docs/folder-structure.md`. Land the 2026-07-17 plan first; this plan's `docs/folder-structure.md` edits rebase onto its root-level layout.
 
 ## Product Contract
 
