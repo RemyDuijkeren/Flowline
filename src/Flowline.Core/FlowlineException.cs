@@ -1,7 +1,7 @@
 using System.Collections;
 using Spectre.Console;
 
-namespace Flowline;
+namespace Flowline.Core;
 
 public class FlowlineException : Exception
 {

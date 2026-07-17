@@ -1,4 +1,5 @@
 using Flowline;
+using Flowline.Core;
 using FluentAssertions;
 
 namespace Flowline.Tests;

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Flowline.Commands;
 using Flowline.Config;
+using Flowline.Core;
 using FluentAssertions;
 
 namespace Flowline.Tests;

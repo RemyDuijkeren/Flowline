@@ -1,6 +1,7 @@
 using CliWrap;
 using CliWrap.Buffered;
 using FluentAssertions;
+using Flowline.Core;
 
 namespace Flowline.Tests;
 

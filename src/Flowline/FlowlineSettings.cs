@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Flowline.Core;
 using Spectre.Console.Cli;
 
 namespace Flowline;

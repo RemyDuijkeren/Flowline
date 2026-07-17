@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Reflection.Emit;
 using Flowline.Commands;
 using Flowline.Config;
+using Flowline.Core;
 using FluentAssertions;
 using Microsoft.Xrm.Sdk;
 using Spectre.Console.Cli;
@@ -265,7 +266,7 @@ public class PushCommandTests : IDisposable
 
         var act = () => PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Nupkg);
 
-        act.Should().Throw<Flowline.FlowlineException>().WithMessage("*Nupkg*no .nupkg was found*");
+        act.Should().Throw<Flowline.Core.FlowlineException>().WithMessage("*Nupkg*no .nupkg was found*");
     }
 
     [Fact]
@@ -296,7 +297,7 @@ public class PushCommandTests : IDisposable
 
         var act = () => PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Auto);
 
-        act.Should().Throw<Flowline.FlowlineException>()
+        act.Should().Throw<Flowline.Core.FlowlineException>()
             .WithMessage("*Plugins.1.0.0.nupkg*Plugins.1.0.1.nupkg*");
     }
 
@@ -347,7 +348,7 @@ public class PushCommandTests : IDisposable
 
         var act = () => PushCommand.ResolveStandalonePackageAssemblyName(nupkgPath, new Spectre.Console.Testing.TestConsole());
 
-        act.Should().Throw<Flowline.FlowlineException>()
+        act.Should().Throw<Flowline.Core.FlowlineException>()
             .WithMessage("*AssemblyA*AssemblyB*");
     }
 

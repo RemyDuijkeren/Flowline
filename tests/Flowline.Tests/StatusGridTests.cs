@@ -1,6 +1,7 @@
 using System.Xml;
 using FluentAssertions;
 using Flowline.Config;
+using Flowline.Core;
 using Flowline.Utils;
 using Spectre.Console.Testing;
 

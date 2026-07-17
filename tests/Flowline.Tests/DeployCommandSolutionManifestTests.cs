@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Xml.Linq;
 using FluentAssertions;
 using Flowline.Commands;
+using Flowline.Core;
 
 namespace Flowline.Tests;
 

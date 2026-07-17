@@ -1,4 +1,4 @@
-namespace Flowline;
+namespace Flowline.Core;
 
 /// <summary>
 /// Process exit codes returned by Flowline commands.
