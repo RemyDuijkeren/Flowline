@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Flowline.Commands;
+using Flowline.Config;
 using Flowline.Core;
 using Flowline.Diagnostics;
 using FluentAssertions;
@@ -70,5 +71,42 @@ public class InvocationLoggerTests
         };
         var act = () => InvocationLogger.Log(NullLogger.Instance, opts, config: null, rootFolder: "C:\\project", activity: null);
         act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Log_SetsSolutionTag_WhenConfigHasSolution()
+    {
+        var opts = new FlowlineRuntimeOptions
+        {
+            ToolVersions = new FlowlineToolVersions("1.0.0", "8.0", "1.0", null, "2.44", null)
+        };
+        var config = new ProjectConfig();
+        config.AddOrUpdateSolution("MySolution");
+
+        using var activity = FlowlineActivitySource.Source.StartActivity("test-log-solution-present");
+        activity.Should().NotBeNull("ActivityListener must be registered");
+
+        InvocationLogger.Log(NullLogger.Instance, opts, config, rootFolder: "C:\\project", activity);
+
+        activity!.GetTagItem("project.solutions").Should().Be("MySolution");
+    }
+
+    [Fact]
+    public void Log_OmitsSolutionTag_WhenNoFlowlineConfigExists()
+    {
+        var opts = new FlowlineRuntimeOptions
+        {
+            ToolVersions = new FlowlineToolVersions("1.0.0", "8.0", "1.0", null, "2.44", null)
+        };
+
+        using var activity = FlowlineActivitySource.Source.StartActivity("test-log-solution-absent");
+        activity.Should().NotBeNull("ActivityListener must be registered");
+
+        // Fresh clone / standalone execution: no .flowline present, config is null. Telemetry
+        // must omit the solution tag entirely (not log a placeholder/empty string) and must
+        // never make the command itself fail.
+        InvocationLogger.Log(NullLogger.Instance, opts, config: null, rootFolder: "C:\\project", activity);
+
+        activity!.GetTagItem("project.solutions").Should().BeNull();
     }
 }

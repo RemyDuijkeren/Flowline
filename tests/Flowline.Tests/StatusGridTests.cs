@@ -9,7 +9,7 @@ namespace Flowline.Tests;
 
 public class StatusGridTests
 {
-    private static ProjectSolution Solution(string name) => new() { Name = name };
+    private static ProjectSolution Solution(string name) => new() { UniqueName = name };
 
     private static StatusGrid.EnvStatus EnvResult(
         string label, string? url, WhoAmIInfo? who, Dictionary<string, string?>? versions = null) =>

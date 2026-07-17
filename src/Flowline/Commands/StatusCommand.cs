@@ -118,9 +118,7 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
         };
 
         var hasUrls = envs.Any(e => !string.IsNullOrEmpty(e.Url));
-        var solutions = config.Solution is not null
-            ? new List<ProjectSolution> { config.Solution }
-            : new List<ProjectSolution>();
+        var solution = config.Solution;
 
         // Sequential, not folded into the Task.WhenAll below — this is a separate, cheap, local-file
         // check (no pac.exe subprocess), and keeping it out of the concurrent block keeps that block
@@ -140,23 +138,18 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
                         : null;
 
                     var versions = new Dictionary<string, string?>();
-                    if (who is not null && solutions.Count > 0)
+                    if (who is not null && solution is not null)
                     {
-                        var versionTasks = solutions.Select(async sol =>
+                        string? version = null;
+                        try
                         {
-                            string? version = null;
-                            try
-                            {
-                                version = await PacUtils.GetSolutionVersionAsync(sol.UniqueName, e.Url!, _capture, cancellationToken);
-                            }
-                            catch (FlowlineException)
-                            {
-                                // solution not deployed or version unreadable
-                            }
-                            return (sol.UniqueName, version);
-                        });
-                        foreach (var (name, ver) in await Task.WhenAll(versionTasks))
-                            versions[name] = ver;
+                            version = await PacUtils.GetSolutionVersionAsync(solution.UniqueName, e.Url!, _capture, cancellationToken);
+                        }
+                        catch (FlowlineException)
+                        {
+                            // solution not deployed or version unreadable
+                        }
+                        versions[solution.UniqueName] = version;
                     }
 
                     return new StatusGrid.EnvStatus(e.Label, e.Url, who, versions);
@@ -188,7 +181,7 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
 
         Console.MarkupLine("");
 
-        if (solutions.Count == 0)
+        if (solution is null)
         {
             Console.MarkupLine("[dim]No solutions configured[/]");
             return 0;
@@ -214,13 +207,12 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
             }
         }
 
-        var dirtyByName = (await Task.WhenAll(solutions.Select(async sol => (sol.UniqueName, IsDirty: await IsRepoDirtyAsync(sol.UniqueName)))))
-            .ToDictionary(x => x.UniqueName, x => x.IsDirty);
+        var isDirty = await IsRepoDirtyAsync(solution.UniqueName);
 
-        var (headers, rows) = StatusGrid.BuildGridRows(solutions, results,
+        var (headers, rows) = StatusGrid.BuildGridRows([solution], results,
             solutionName => DeployCommand.ReadLocalSolutionVersion(
                 FlowlineCommand<Settings>.PackageFolder(rootFolder)),
-            solutionName => dirtyByName.GetValueOrDefault(solutionName));
+            solutionName => isDirty);
 
         rows = StatusGrid.DetectVersionDrift(StatusGrid.TrimUnusedRevisionSegment(rows));
         StatusGrid.RenderGrid(Console, headers, rows);

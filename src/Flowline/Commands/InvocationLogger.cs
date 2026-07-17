@@ -30,7 +30,7 @@ internal static class InvocationLogger
             }
         }
 
-        var solutionNames = string.Join(",", cfg.Solutions.Select(s => s.Name));
+        var solutionName = cfg.Solution?.UniqueName;
         var envConfigured = string.Join(",", envTiers);
         var envHashStr = string.Join(",", envHashes);
 
@@ -43,7 +43,7 @@ internal static class InvocationLogger
             runtimeOptions.IsVerbose, string.Join(",", runtimeOptions.Force));
         logger.LogInformation(
             "Invocation: root={ProjectRoot} solutions={ProjectSolutions} env.configured={EnvConfigured} env.hashes={EnvHashes}",
-            rootFolder, solutionNames, envConfigured, envHashStr);
+            rootFolder, solutionName, envConfigured, envHashStr);
 
         if (activity is null) return;
         activity.SetTag("flowline.version", tv.FlowlineVersion);
@@ -59,7 +59,7 @@ internal static class InvocationLogger
         activity.SetTag("verbose", runtimeOptions.IsVerbose);
         activity.SetTag("force", string.Join(",", runtimeOptions.Force));
         activity.SetTag("project.root", rootFolder);
-        activity.SetTag("project.solutions", solutionNames);
+        activity.SetTag("project.solutions", solutionName);
         activity.SetTag("env.configured", envConfigured);
         activity.SetTag("env.hashes", envHashStr);
     }
