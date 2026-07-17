@@ -1,6 +1,7 @@
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
+using Flowline.Core.Models;
 using Flowline.Utils;
 using CliWrap;
 using CliWrap.Buffered;
@@ -580,17 +581,6 @@ public static class PacUtils
             Region = region
         };
     }
-}
-
-public class EnvironmentInfo
-{
-    public Guid EnvironmentId { get; set; }
-    public string? EnvironmentUrl { get; set; }
-    public Guid OrganizationId { get; set; }
-    public string? DisplayName { get; set; }
-    public string? Type { get; set; }
-    public string? DomainName { get; set; }
-    public string? Version { get; set; }
 }
 
 public class EnvironmentUrlParts

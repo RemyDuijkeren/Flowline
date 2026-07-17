@@ -135,7 +135,7 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
     /// independent of which PAC auth profile is globally active. Mirrors ConnectViaPacAsync's token
     /// acquisition but scoped to the Power Platform BAP admin API instead of the Dataverse environment.
     /// </summary>
-    public async Task<BapEnvironmentInfo?> GetEnvironmentInfoAsync(
+    public async Task<EnvironmentInfo?> GetEnvironmentInfoAsync(
         PacProfile profile,
         string environmentUrl,
         CancellationToken cancellationToken = default)
@@ -246,7 +246,7 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
     //   { "value": [ { "name": "<env-guid>", "properties": { "displayName", "environmentSku",
     //       "linkedEnvironmentMetadata": { "resourceId", "friendlyName", "domainName", "instanceUrl", "version" } } } ] }
     // Pure and internal so it's unit-testable without a token or network call.
-    internal static BapEnvironmentInfo? MapBapEnvironmentsResponse(string bapResponseJson, string environmentUrl)
+    internal static EnvironmentInfo? MapBapEnvironmentsResponse(string bapResponseJson, string environmentUrl)
     {
         var normalizedTarget = environmentUrl.TrimEnd('/');
         using var doc = JsonDocument.Parse(bapResponseJson);
@@ -264,7 +264,7 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         return null;
     }
 
-    internal static BapEnvironmentInfo? MapBapEnvironment(JsonElement env)
+    internal static EnvironmentInfo? MapBapEnvironment(JsonElement env)
     {
         if (!env.TryGetProperty("properties", out var props))
             return null;
@@ -278,7 +278,7 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         Guid.TryParse(GetStringProperty(env, "name"), out var environmentId);
         Guid.TryParse(GetStringProperty(linked, "resourceId"), out var organizationId);
 
-        return new BapEnvironmentInfo
+        return new EnvironmentInfo
         {
             EnvironmentId = environmentId,
             EnvironmentUrl = instanceUrl,

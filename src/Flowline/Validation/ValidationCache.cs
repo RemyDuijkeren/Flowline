@@ -1,3 +1,5 @@
+using Flowline.Core.Models;
+
 namespace Flowline.Validation;
 
 public sealed class ValidationCache

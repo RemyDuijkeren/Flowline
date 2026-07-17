@@ -35,23 +35,7 @@ public sealed class ValidationProbes
     // stays pac.exe-backed for ProvisionCommand's target-environment-creation checks (KTD7), which
     // check a URL that intentionally has no matching local PAC profile yet.
     public Func<PacProfile, string, bool, CancellationToken, Task<EnvironmentInfo?>> GetEnvironmentByProfileAsync { get; init; } =
-        async (profile, url, _, ct) =>
-            MapToEnvironmentInfo(await s_defaultDataverseConnector.GetEnvironmentInfoAsync(profile, url, ct));
-
-    // Pure so the field mapping is unit-testable without a token or network call.
-    internal static EnvironmentInfo? MapToEnvironmentInfo(BapEnvironmentInfo? bapEnv) =>
-        bapEnv is null
-            ? null
-            : new EnvironmentInfo
-            {
-                EnvironmentId = bapEnv.EnvironmentId,
-                EnvironmentUrl = bapEnv.EnvironmentUrl,
-                OrganizationId = bapEnv.OrganizationId,
-                DisplayName = bapEnv.DisplayName,
-                Type = bapEnv.Type,
-                DomainName = bapEnv.DomainName,
-                Version = bapEnv.Version
-            };
+        (profile, url, _, ct) => s_defaultDataverseConnector.GetEnvironmentInfoAsync(profile, url, ct);
 
     public Func<string, bool, CancellationToken, Task<List<SolutionInfo>>> GetSolutionsAsync { get; init; } =
         (url, _, ct) => PacUtils.GetSolutionsAsync(url, s_defaultCapture, ct);
