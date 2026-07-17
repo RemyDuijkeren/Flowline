@@ -69,6 +69,36 @@ public class FlowlineValidatorTests
     }
 
     [Fact]
+    public async Task GetEnvironmentInfoByUrlAsync_ProfileOverload_StaleCache_ReInvokesProbeWithCurrentProfile()
+    {
+        var newProfile = new PacProfile { Name = "New", Resource = EnvironmentUrl };
+        PacProfile? capturedProfile = null;
+        var probes = new ValidationProbes
+        {
+            GetEnvironmentByProfileAsync = (p, url, _, _) =>
+            {
+                capturedProfile = p;
+                return Task.FromResult<EnvironmentInfo?>(new EnvironmentInfo { EnvironmentUrl = url, Type = "Sandbox" });
+            }
+        };
+        var validator = MakeValidator(out var store, probes);
+
+        // Seed a cache entry older than the 12h EnvironmentTtl for this URL.
+        var key = FlowlineValidator.NormalizeEnvironmentUrl(EnvironmentUrl);
+        var cache = store.Load();
+        cache.Environments[key] = new ValidationCacheEntry<EnvironmentInfo>
+        {
+            CheckedAtUtc = DateTimeOffset.UtcNow.AddHours(-13),
+            Value = new EnvironmentInfo { EnvironmentUrl = EnvironmentUrl, Type = "Sandbox" }
+        };
+        store.Save(cache);
+
+        await validator.GetEnvironmentInfoByUrlAsync(EnvironmentUrl, newProfile, new FlowlineSettings(), CancellationToken.None);
+
+        capturedProfile.Should().BeSameAs(newProfile);
+    }
+
+    [Fact]
     public async Task GetEnvironmentInfoByUrlAsync_UnprofiledOverload_StillUsesUnprofiledProbe()
     {
         var profiledCalls = 0;

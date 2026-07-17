@@ -36,21 +36,22 @@ public sealed class ValidationProbes
     // check a URL that intentionally has no matching local PAC profile yet.
     public Func<PacProfile, string, bool, CancellationToken, Task<EnvironmentInfo?>> GetEnvironmentByProfileAsync { get; init; } =
         async (profile, url, _, ct) =>
-        {
-            var bapEnv = await s_defaultDataverseConnector.GetEnvironmentInfoAsync(profile, url, ct);
-            return bapEnv is null
-                ? null
-                : new EnvironmentInfo
-                {
-                    EnvironmentId = bapEnv.EnvironmentId,
-                    EnvironmentUrl = bapEnv.EnvironmentUrl,
-                    OrganizationId = bapEnv.OrganizationId,
-                    DisplayName = bapEnv.DisplayName,
-                    Type = bapEnv.Type,
-                    DomainName = bapEnv.DomainName,
-                    Version = bapEnv.Version
-                };
-        };
+            MapToEnvironmentInfo(await s_defaultDataverseConnector.GetEnvironmentInfoAsync(profile, url, ct));
+
+    // Pure so the field mapping is unit-testable without a token or network call.
+    internal static EnvironmentInfo? MapToEnvironmentInfo(BapEnvironmentInfo? bapEnv) =>
+        bapEnv is null
+            ? null
+            : new EnvironmentInfo
+            {
+                EnvironmentId = bapEnv.EnvironmentId,
+                EnvironmentUrl = bapEnv.EnvironmentUrl,
+                OrganizationId = bapEnv.OrganizationId,
+                DisplayName = bapEnv.DisplayName,
+                Type = bapEnv.Type,
+                DomainName = bapEnv.DomainName,
+                Version = bapEnv.Version
+            };
 
     public Func<string, bool, CancellationToken, Task<List<SolutionInfo>>> GetSolutionsAsync { get; init; } =
         (url, _, ct) => PacUtils.GetSolutionsAsync(url, s_defaultCapture, ct);

@@ -181,6 +181,42 @@ public class DataverseConnectorTests
     }
 
     [Fact]
+    public void MapBapEnvironmentsResponse_MissingValueProperty_ReturnsNull()
+    {
+        var result = DataverseConnector.MapBapEnvironmentsResponse("""{ "other": [] }""", "https://contoso.crm4.dynamics.com");
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void MapBapEnvironmentsResponse_ValueIsNotArray_ReturnsNull()
+    {
+        var result = DataverseConnector.MapBapEnvironmentsResponse("""{ "value": "not-an-array" }""", "https://contoso.crm4.dynamics.com");
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void MapBapEnvironmentsResponse_EntryMissingProperties_SkipsEntry()
+    {
+        var json = """{ "value": [ { "name": "11111111-1111-1111-1111-111111111111" } ] }""";
+
+        var result = DataverseConnector.MapBapEnvironmentsResponse(json, "https://contoso.crm4.dynamics.com");
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void MapBapEnvironmentsResponse_EntryMissingLinkedEnvironmentMetadata_SkipsEntry()
+    {
+        var json = """{ "value": [ { "name": "11111111-1111-1111-1111-111111111111", "properties": { "displayName": "Contoso", "environmentSku": "Sandbox" } } ] }""";
+
+        var result = DataverseConnector.MapBapEnvironmentsResponse(json, "https://contoso.crm4.dynamics.com");
+
+        Assert.Null(result);
+    }
+
+    [Fact]
     public async Task ConnectViaPacAsync_ShouldThrow_WhenProfileIsNull()
     {
         // Act & Assert
@@ -229,6 +265,23 @@ public class DataverseConnectorTests
                 Assert.True(sc.IsReady);
             }
         }
+    }
+
+    [Fact(Skip = "Requires a valid PAC CLI auth profile — not available in CI")]
+    public async Task GetEnvironmentInfoAsync_NeverSetsSharedHttpClientDefaultAuthorizationHeader()
+    {
+        // Regression guard: the acquired bearer token must be attached per-request
+        // (HttpRequestMessage.Headers.Authorization), never on HttpClient.DefaultRequestHeaders —
+        // that HttpClient may be a shared singleton also used for unrelated calls (e.g. NuGet
+        // downloads), and DefaultRequestHeaders would leak the admin-scoped token onto those too.
+        var httpClient = new HttpClient();
+        var service = new DataverseConnector(new TestConsole(), httpClient);
+        var profile = service.GetPacProfiles().FirstOrDefault();
+        if (profile == null) return;
+
+        await service.GetEnvironmentInfoAsync(profile, "https://contoso.crm4.dynamics.com");
+
+        Assert.Null(httpClient.DefaultRequestHeaders.Authorization);
     }
 
     [Fact]
