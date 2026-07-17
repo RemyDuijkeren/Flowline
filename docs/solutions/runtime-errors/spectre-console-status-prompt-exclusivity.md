@@ -55,6 +55,7 @@ await console.Status().StartAsync("Checking...", async _ =>
 {
     var result = console.Prompt(new TextPrompt<string>("Pick:"));
 });
+// -> no exception thrown
 ```
 
 This did **not** throw. `TestConsole` does not enforce the same live-display exclusivity lock that `AnsiConsole.Console` (the real console, and the instance `Program.cs` registers via `services.AddSingleton<IAnsiConsole>(AnsiConsole.Console)` in production) does. A unit test written against `TestConsole` — the only console double this codebase's tests use — cannot catch this bug class, regardless of how the test is structured. This was a false negative, not evidence the bug was wrong.
@@ -65,8 +66,7 @@ Switching the probe to the real `AnsiConsole.Console` reproduced the exception i
 var console = AnsiConsole.Console;
 await console.Status().StartAsync("Checking...", async _ =>
 {
-    console.Write("about to prompt\n");
-    var result = console.Prompt(new TextPrompt<string>("Pick:").DefaultValue("default"));
+    var result = console.Prompt(new TextPrompt<string>("Pick:"));
 });
 // -> System.InvalidOperationException: Trying to run one or more interactive functions concurrently...
 ```
