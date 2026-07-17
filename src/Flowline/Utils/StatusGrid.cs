@@ -42,7 +42,7 @@ internal static class StatusGrid
             GridCell repo;
             try
             {
-                var version = readRepoVersion(sol.Name);
+                var version = readRepoVersion(sol.UniqueName);
                 repo = version is not null ? GridCell.OfVersion(version) : GridCell.Dash;
             }
             catch (FlowlineException)
@@ -54,7 +54,7 @@ internal static class StatusGrid
                 repo = GridCell.Dash;
             }
 
-            if (isRepoDirty(sol.Name))
+            if (isRepoDirty(sol.UniqueName))
                 repo = repo with { IsDirty = true };
 
             var envCells = configuredEnvs.Select(e =>
@@ -62,13 +62,13 @@ internal static class StatusGrid
                 if (e.Who is null)
                     return GridCell.AuthFailed;
 
-                return e.Versions.TryGetValue(sol.Name, out var version) && version is not null
+                return e.Versions.TryGetValue(sol.UniqueName, out var version) && version is not null
                     ? GridCell.OfVersion(version)
                     : GridCell.Dash;
             }).ToList();
             envCells.Insert(repoIndex, repo);
 
-            return new GridRow(sol.Name, envCells);
+            return new GridRow(sol.UniqueName, envCells);
         }).ToList();
 
         return (headers, rows);

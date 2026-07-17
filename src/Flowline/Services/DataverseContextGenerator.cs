@@ -20,7 +20,7 @@ public class DataverseContextGenerator(IAnsiConsole console)
         string repoRootPath,
         CancellationToken ct = default)
     {
-        var contextFilePath = Path.Combine(repoRootPath, "solutions", solutionName, "DATAVERSE_CONTEXT.md");
+        var contextFilePath = Path.Combine(repoRootPath, "docs", "DATAVERSE_CONTEXT.md");
 
         var markdown = AssembleMarkdown(packageSrcPath, solutionName);
 
@@ -44,8 +44,8 @@ public class DataverseContextGenerator(IAnsiConsole console)
         }
 
         var content = await File.ReadAllTextAsync(agentsPath, ct);
-        var importLine  = $"@solutions/{solutionName}/DATAVERSE_CONTEXT.md";
-        var linkLine    = $"- [{solutionName}](solutions/{solutionName}/DATAVERSE_CONTEXT.md)";
+        var importLine  = "@docs/DATAVERSE_CONTEXT.md";
+        var linkLine    = $"- [{solutionName}](docs/DATAVERSE_CONTEXT.md)";
         const string SectionHeader = "## Dataverse schema context";
 
         var changed = false;

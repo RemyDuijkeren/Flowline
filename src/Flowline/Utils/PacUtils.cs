@@ -180,7 +180,7 @@ public static class PacUtils
     {
         var packageType = managed ? "Managed" : "Unmanaged";
         var suffix = managed ? "_managed" : "_unmanaged";
-        var zipFile = Path.Combine(artifactsFolder, $"{projectSln.Name}{suffix}.zip");
+        var zipFile = Path.Combine(artifactsFolder, $"{projectSln.UniqueName}{suffix}.zip");
 
         Directory.CreateDirectory(artifactsFolder);
 

@@ -118,7 +118,9 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
         };
 
         var hasUrls = envs.Any(e => !string.IsNullOrEmpty(e.Url));
-        var solutions = config.Solutions.ToList();
+        var solutions = config.Solution is not null
+            ? new List<ProjectSolution> { config.Solution }
+            : new List<ProjectSolution>();
 
         // Sequential, not folded into the Task.WhenAll below — this is a separate, cheap, local-file
         // check (no pac.exe subprocess), and keeping it out of the concurrent block keeps that block
@@ -145,13 +147,13 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
                             string? version = null;
                             try
                             {
-                                version = await PacUtils.GetSolutionVersionAsync(sol.Name, e.Url!, _capture, cancellationToken);
+                                version = await PacUtils.GetSolutionVersionAsync(sol.UniqueName, e.Url!, _capture, cancellationToken);
                             }
                             catch (FlowlineException)
                             {
                                 // solution not deployed or version unreadable
                             }
-                            return (sol.Name, version);
+                            return (sol.UniqueName, version);
                         });
                         foreach (var (name, ver) in await Task.WhenAll(versionTasks))
                             versions[name] = ver;
@@ -198,7 +200,7 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
             // dirty gate (GitUtils.AssertRepoCleanAsync) blocks on any uncommitted change
             // anywhere in the repo, and things like deploymentSettings.json or build
             // artifacts under the solution folder are just as relevant as the unpacked XML.
-            var solutionPath = Path.Combine(rootFolder, "solutions", solutionName);
+            var solutionPath = rootFolder;
             try
             {
                 var changes = await GitUtils.GetUncommittedChangesInPathAsync(solutionPath, rootFolder, _capture, cancellationToken);
@@ -212,12 +214,12 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
             }
         }
 
-        var dirtyByName = (await Task.WhenAll(solutions.Select(async sol => (sol.Name, IsDirty: await IsRepoDirtyAsync(sol.Name)))))
-            .ToDictionary(x => x.Name, x => x.IsDirty);
+        var dirtyByName = (await Task.WhenAll(solutions.Select(async sol => (sol.UniqueName, IsDirty: await IsRepoDirtyAsync(sol.UniqueName)))))
+            .ToDictionary(x => x.UniqueName, x => x.IsDirty);
 
         var (headers, rows) = StatusGrid.BuildGridRows(solutions, results,
             solutionName => DeployCommand.ReadLocalSolutionVersion(
-                FlowlineCommand<Settings>.PackageFolder(Path.Combine(rootFolder, "solutions", solutionName))),
+                FlowlineCommand<Settings>.PackageFolder(rootFolder)),
             solutionName => dirtyByName.GetValueOrDefault(solutionName));
 
         rows = StatusGrid.DetectVersionDrift(StatusGrid.TrimUnusedRevisionSegment(rows));

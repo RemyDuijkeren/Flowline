@@ -135,7 +135,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
                 throw new FlowlineException(ExitCode.ConfigInvalid, "No DEV environment configured — run 'flowline provision' or pass --dev <URL>.");
             devUrl = resolvedDevUrl;
 
-            solutionName = projectSln.Name;
+            solutionName = projectSln.UniqueName;
 
             // Apply --namespace (R7)
             if (!string.IsNullOrWhiteSpace(settings.Namespace))
@@ -164,7 +164,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
                 projectSln.Generate.OutputPath = Path.GetRelativePath(RootFolder, Path.GetFullPath(settings.Output));
             }
 
-            var slnFolder = Path.Combine(RootFolder, AllSolutionsFolderName, solutionName);
+            var slnFolder = RootFolder;
 
             // Derive namespace if not yet set (R4)
             modelNamespace = projectSln.Generate?.Namespace ?? string.Empty;

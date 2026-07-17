@@ -39,7 +39,7 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
         // cache's TTL.
         var (projectSln, _) = await GetAndCheckSolutionAsync(settings.Solution, env.EnvironmentUrl!, includeManaged: null, settings, cancellationToken, bypassCache: true);
 
-        var slnFolder = Path.Combine(RootFolder, AllSolutionsFolderName, projectSln.Name);
+        var slnFolder = RootFolder;
         var packageFolder = PackageFolder(slnFolder);
 
         // drift has no --no-delete flag of its own — it's always read-only — so suppress the
@@ -47,7 +47,7 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
         // owns parsing committed source itself here — drift has no packing step or RunMode choice of its
         // own, so it only needs to say where the source lives (unlike DeployCommand, which builds
         // PostDeployContext directly because it also carries PackagePath/RunMode from its own packing step).
-        var result = await orphanCleanupService.CompareAsync(packageFolder, service, projectSln.Name, env.EnvironmentUrl!, cancellationToken, noDeleteHint: null);
+        var result = await orphanCleanupService.CompareAsync(packageFolder, service, projectSln.UniqueName, env.EnvironmentUrl!, cancellationToken, noDeleteHint: null);
 
         return SelectExitCode(result);
     }

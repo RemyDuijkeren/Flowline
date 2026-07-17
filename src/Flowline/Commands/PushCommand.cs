@@ -133,14 +133,14 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         Logger.LogInformation("scope={Scope} mode={RunMode} standalone={Standalone}", pushScope, runMode, standaloneMode);
 
         var (pluginsPushPath, pluginAssemblyName, reflectedPackageAssemblies) = (pushAssemblyOnly || pushScope.HasFlag(PushScope.Plugins))
-            ? await PreparePluginsForPushAsync(standaloneMode, settings, solutionName, pluginPackageMode, standaloneParams, cancellationToken)
+            ? await PreparePluginsForPushAsync(standaloneMode, settings, pluginPackageMode, standaloneParams, cancellationToken)
             : (null, null, null);
         // FormEvents reads its annotations from the same built dist/ folder web resource sync uses, so
         // either scope alone needs it prepared — WebResources still implies FormEvents (unchanged default
         // bundling); FormEvents lets the registration step run on its own, against an already-pushed dist/.
         var runFormEvents = pushScope.HasFlag(PushScope.WebResources) || pushScope.HasFlag(PushScope.FormEvents);
         var webResourcesSyncFolder = runFormEvents
-            ? await PrepareWebResourcesForPushAsync(standaloneMode, settings, solutionName, standaloneParams, cancellationToken)
+            ? await PrepareWebResourcesForPushAsync(standaloneMode, settings, standaloneParams, cancellationToken)
             : null;
 
         var (conn, _) = await ConnectToDataverseAsync(dataverseConnector, environmentUrl, cancellationToken, resolvedProfile);
@@ -257,7 +257,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             (devEnv, profile) = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, settings.DevUrl, settings, cancellationToken);
             var (projectSln, slnInfoResult) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, cancellationToken: cancellationToken, settings: settings);
             slnInfo = slnInfoResult;
-            solutionName = projectSln.Name;
+            solutionName = projectSln.UniqueName;
             pluginPackageMode = projectSln.PluginPackageMode;
         }
 
@@ -270,7 +270,6 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     private async Task<(string? PushPath, string? AssemblyName, List<PluginAssemblyMetadata>? ReflectedAssemblies)> PreparePluginsForPushAsync(
         bool standaloneMode,
         Settings settings,
-        string solutionName,
         PluginPackageMode pluginPackageMode,
         StandaloneParams standaloneParams,
         CancellationToken cancellationToken)
@@ -283,7 +282,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
 
         if (!standaloneMode)
         {
-            pluginsFolder = Path.Combine(RootFolder, AllSolutionsFolderName, solutionName, PluginsName);
+            pluginsFolder = Path.Combine(RootFolder, PluginsName);
             if (settings.NoBuild)
                 Console.Skip("Build plugins — skipping (--no-build active)");
             else
@@ -348,13 +347,12 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     private async Task<string?> PrepareWebResourcesForPushAsync(
         bool standaloneMode,
         Settings settings,
-        string solutionName,
         StandaloneParams standaloneParams,
         CancellationToken cancellationToken)
     {
         if (standaloneMode) return standaloneParams.WebResourcesPath;
 
-        var webResourcesFolder = Path.Combine(RootFolder, AllSolutionsFolderName, solutionName, WebResourcesName);
+        var webResourcesFolder = Path.Combine(RootFolder, WebResourcesName);
         var webResourcesSyncFolder = Path.Combine(webResourcesFolder, "dist");
 
         if (!Directory.Exists(webResourcesFolder))

@@ -551,7 +551,7 @@ public class DataverseContextGeneratorTests
             var generator = new DataverseContextGenerator(new TestConsole());
             await generator.GenerateAsync(packageSrc, "MySolution", root);
 
-            var expectedPath = Path.Combine(root, "solutions", "MySolution", "DATAVERSE_CONTEXT.md");
+            var expectedPath = Path.Combine(root, "docs", "DATAVERSE_CONTEXT.md");
             File.Exists(expectedPath).Should().BeTrue();
 
             var content = File.ReadAllText(expectedPath);
@@ -594,9 +594,9 @@ public class DataverseContextGeneratorTests
         var original = """
             # Agent Instructions
             ## Dataverse schema context
-            - [MySolution](solutions/MySolution/DATAVERSE_CONTEXT.md)
+            - [MySolution](docs/DATAVERSE_CONTEXT.md)
 
-            @solutions/MySolution/DATAVERSE_CONTEXT.md
+            @docs/DATAVERSE_CONTEXT.md
             """;
         await File.WriteAllTextAsync(agentsPath, original);
         var lastWrite = File.GetLastWriteTimeUtc(agentsPath);
@@ -624,8 +624,8 @@ public class DataverseContextGeneratorTests
 
             var result = await File.ReadAllTextAsync(agentsPath);
             result.Should().Contain("## Dataverse schema context");
-            result.Should().Contain("- [MySolution](solutions/MySolution/DATAVERSE_CONTEXT.md)");
-            result.Should().Contain("@solutions/MySolution/DATAVERSE_CONTEXT.md");
+            result.Should().Contain("- [MySolution](docs/DATAVERSE_CONTEXT.md)");
+            result.Should().Contain("@docs/DATAVERSE_CONTEXT.md");
         }
         finally { Directory.Delete(root, recursive: true); }
     }
@@ -637,20 +637,20 @@ public class DataverseContextGeneratorTests
         Directory.CreateDirectory(root);
         var agentsPath = Path.Combine(root, "AGENTS.md");
         await File.WriteAllTextAsync(agentsPath,
-            "# Agent Instructions\n## Dataverse schema context\n- [SolutionA](solutions/SolutionA/DATAVERSE_CONTEXT.md)\n\n@solutions/SolutionA/DATAVERSE_CONTEXT.md\n");
+            "# Agent Instructions\n## Dataverse schema context\n- [SolutionA](docs/DATAVERSE_CONTEXT.md)\n\n@docs/DATAVERSE_CONTEXT.md\n");
         try
         {
             var generator = new DataverseContextGenerator(new TestConsole());
             await generator.SelfHealAgentsMdAsync(root, "SolutionB", CancellationToken.None);
 
             var result = await File.ReadAllTextAsync(agentsPath);
-            result.Should().Contain("- [SolutionB](solutions/SolutionB/DATAVERSE_CONTEXT.md)");
-            result.Should().Contain("@solutions/SolutionB/DATAVERSE_CONTEXT.md");
+            result.Should().Contain("- [SolutionB](docs/DATAVERSE_CONTEXT.md)");
+            result.Should().Contain("@docs/DATAVERSE_CONTEXT.md");
 
-            // Link for SolutionB must appear before the blank line after SolutionA's link (i.e., inside the section)
-            var linkBIdx    = result.IndexOf("- [SolutionB]", StringComparison.Ordinal);
-            var importAIdx  = result.IndexOf("@solutions/SolutionA/", StringComparison.Ordinal);
-            linkBIdx.Should().BeLessThan(importAIdx, "SolutionB link must be in the section, not after the @ import");
+            // Link for SolutionB must appear before the pre-existing @ import (i.e., inside the section)
+            var linkBIdx  = result.IndexOf("- [SolutionB]", StringComparison.Ordinal);
+            var importIdx = result.IndexOf("@docs/DATAVERSE_CONTEXT.md", StringComparison.Ordinal);
+            linkBIdx.Should().BeLessThan(importIdx, "SolutionB link must be in the section, not after the @ import");
         }
         finally { Directory.Delete(root, recursive: true); }
     }
@@ -662,14 +662,14 @@ public class DataverseContextGeneratorTests
         Directory.CreateDirectory(root);
         var agentsPath = Path.Combine(root, "AGENTS.md");
         await File.WriteAllTextAsync(agentsPath,
-            "# Agent Instructions\n## Dataverse schema context\n- [MySolution](solutions/MySolution/DATAVERSE_CONTEXT.md)\n");
+            "# Agent Instructions\n## Dataverse schema context\n- [MySolution](docs/DATAVERSE_CONTEXT.md)\n");
         try
         {
             var generator = new DataverseContextGenerator(new TestConsole());
             await generator.SelfHealAgentsMdAsync(root, "MySolution", CancellationToken.None);
 
             var result = await File.ReadAllTextAsync(agentsPath);
-            result.Should().Contain("@solutions/MySolution/DATAVERSE_CONTEXT.md");
+            result.Should().Contain("@docs/DATAVERSE_CONTEXT.md");
         }
         finally { Directory.Delete(root, recursive: true); }
     }
@@ -689,7 +689,7 @@ public class DataverseContextGeneratorTests
 
             var result = await File.ReadAllTextAsync(agentsPath);
             var linkCount   = CountOccurrences(result, "- [MySolution]");
-            var importCount = CountOccurrences(result, "@solutions/MySolution/DATAVERSE_CONTEXT.md");
+            var importCount = CountOccurrences(result, "@docs/DATAVERSE_CONTEXT.md");
             linkCount.Should().Be(1, "link must not be duplicated");
             importCount.Should().Be(1, "import must not be duplicated");
         }

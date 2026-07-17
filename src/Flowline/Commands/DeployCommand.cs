@@ -65,19 +65,19 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var targetUrl = ResolveTargetUrl(settings);
         var sln = Config!.GetOrUpdateSolution(settings.Solution, settings: settings)
             ?? throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — use --solution <name>.");
-        var slnFolder = Path.Combine(RootFolder, "solutions", sln.Name);
+        var slnFolder = RootFolder;
         var usingExplicitArtifact = !string.IsNullOrWhiteSpace(settings.Path);
 
         // --path supplies an artifact that wasn't necessarily packed from the current local tree, so neither
         // check is meaningful there: git-clean and drift both assume packagePath is derived from Package/src.
         if (!usingExplicitArtifact)
-            await ValidateGitCleanAsync(sln.Name, slnFolder, cancellationToken);
+            await ValidateGitCleanAsync(sln.UniqueName, slnFolder, cancellationToken);
 
         var (targetEnv, existingSolutionInTarget, resolvedProfile) = await ValidateTargetAsync(targetUrl, sln, settings, cancellationToken);
 
         // Resolve the DTAP gate's version cheaply (artifact manifest, cache entry, or local Solution.xml) so the
         // gate keeps failing fast before any expensive work — packing itself is deferred past the gate below.
-        var candidatePackagePath = ResolveArtifactZipPath(slnFolder, sln.Name, sln.IncludeManaged);
+        var candidatePackagePath = ResolveArtifactZipPath(slnFolder, sln.UniqueName, sln.IncludeManaged);
         string gateVersion;
         ArtifactCacheEntry? cacheEntry = null;
         string? currentCommitSha = null;
@@ -112,7 +112,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         // on a deploy that's about to be blocked moments later anyway.
         if (!existingSolutionInTarget)
         {
-            var prompt = BuildFirstImportPrompt(sln.Name, targetEnv.DisplayName!, sln.IncludeManaged);
+            var prompt = BuildFirstImportPrompt(sln.UniqueName, targetEnv.DisplayName!, sln.IncludeManaged);
             if (!ConsoleHelper.Confirm(prompt, false, settings, "first-import"))
             {
                 Console.Info("Deploy cancelled. Re-run with --force first-import to skip this confirmation.");
@@ -154,7 +154,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         // nothing else pending for that org-wide publish to sweep up anyway.
         var publishChanges = !sln.IncludeManaged;
         Logger.LogInformation("target={TargetUrl} solution={SolutionName} mode={RunMode} managed={Managed} stageAndUpgrade={StageAndUpgrade} publishChanges={PublishChanges} cacheOutcome={CacheOutcome}",
-            targetUrl, sln.Name, runMode, sln.IncludeManaged, useStageAndUpgrade, publishChanges, usingExplicitArtifact ? (CacheOutcome?)null : cacheOutcome);
+            targetUrl, sln.UniqueName, runMode, sln.IncludeManaged, useStageAndUpgrade, publishChanges, usingExplicitArtifact ? (CacheOutcome?)null : cacheOutcome);
 
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, targetUrl, cancellationToken, resolvedProfile);
 
@@ -166,7 +166,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         else
         {
             var hasTestOrUat = !string.IsNullOrEmpty(Config!.TestUrl) || !string.IsNullOrEmpty(Config.UatUrl);
-            var cacheMessage = BuildCacheStatusMessage(cacheOutcome, sln.Name, cacheEntry?.CommitSha, currentCommitSha,
+            var cacheMessage = BuildCacheStatusMessage(cacheOutcome, sln.UniqueName, cacheEntry?.CommitSha, currentCommitSha,
                 cacheEntry?.Managed ?? false, sln.IncludeManaged, CiEnvironment.IsCi(), hasTestOrUat);
             if (cacheOutcome == CacheOutcome.Hit)
                 Console.Skip(cacheMessage);
@@ -179,7 +179,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             }
             else
             {
-                Logger.LogInformation("Packing: {SolutionName}", sln.Name);
+                Logger.LogInformation("Packing: {SolutionName}", sln.UniqueName);
                 packagePath = await PackSolutionAsync(sln, slnFolder, candidatePackagePath, settings, cancellationToken);
                 if (currentCommitSha != null)
                     WriteCacheEntry(CacheManifestPath(packagePath), new ArtifactCacheEntry(gateVersion, sln.IncludeManaged, currentCommitSha));
@@ -189,7 +189,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         // R5: fires regardless of whether the subsequent import succeeds — the packed zip is already
         // valid and potentially useful (manual retry, inspection) once it's resolved, independent of
         // origin (fresh pack, cache reuse, or --path) or import outcome.
-        PublishArtifactForCi(packagePath, sln.Name, gateVersion);
+        PublishArtifactForCi(packagePath, sln.UniqueName, gateVersion);
 
         // Always unpack the zip actually being imported — whether freshly packed, reused from cache, or
         // supplied via --path — so post-deploy services evaluate real imported content, never an assumed
@@ -199,7 +199,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         {
             await PacUtils.UnpackSolutionAsync(packagePath, tmpUnpackDir, _capture, cancellationToken);
 
-            var solutionInfo = new DeploySolutionInfo(sln.Name, targetEnv.EnvironmentUrl!, sln.IncludeManaged, existingSolutionInTarget);
+            var solutionInfo = new DeploySolutionInfo(sln.UniqueName, targetEnv.EnvironmentUrl!, sln.IncludeManaged, existingSolutionInTarget);
             var postDeployContext = new PostDeployContext(service, solutionInfo, runMode, packagePath, tmpUnpackDir);
 
             bool IsSkipped(IPostDeployService s) =>
@@ -212,7 +212,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
                 await postDeployService.RunPreImportAsync(postDeployContext, cancellationToken);
 
             Logger.LogInformation("Importing to: {TargetUrl}", targetUrl);
-            await ImportSolutionAsync(packagePath, targetEnv, sln.Name, useStageAndUpgrade, publishChanges, cancellationToken);
+            await ImportSolutionAsync(packagePath, targetEnv, sln.UniqueName, useStageAndUpgrade, publishChanges, cancellationToken);
 
             var cleanupFailures = 0;
             foreach (var postDeployService in activeServices)
@@ -277,17 +277,17 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         Console.MarkupLine($"[green]Target: [bold]{targetEnv.DisplayName}[/] ({targetEnv.EnvironmentUrl})[/]");
 
         var existingSolution = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Checking [bold]{sln.Name}[/]...",
-            _ => FlowlineValidator.Default.GetSolutionInfoAsync(targetUrl, sln.Name, includeManaged: true, settings, ct, bypassCache: true));
+            $"Checking [bold]{sln.UniqueName}[/]...",
+            _ => FlowlineValidator.Default.GetSolutionInfoAsync(targetUrl, sln.UniqueName, includeManaged: true, settings, ct, bypassCache: true));
 
         if (existingSolution != null)
         {
             if (sln.IncludeManaged && !existingSolution.IsManaged)
                 throw new FlowlineException(ExitCode.ValidationFailed,
-                    $"'{sln.Name}' is unmanaged in {targetEnv.DisplayName} — importing managed is irreversible. Deploy solution as unmanaged.");
+                    $"'{sln.UniqueName}' is unmanaged in {targetEnv.DisplayName} — importing managed is irreversible. Deploy solution as unmanaged.");
             if (!sln.IncludeManaged && existingSolution.IsManaged)
                 throw new FlowlineException(ExitCode.ValidationFailed,
-                    $"'{sln.Name}' is managed in {targetEnv.DisplayName} — can't import unmanaged over managed. Deploy managed instead.");
+                    $"'{sln.UniqueName}' is managed in {targetEnv.DisplayName} — can't import unmanaged over managed. Deploy managed instead.");
         }
 
         return (targetEnv, existingSolution != null, profile);
@@ -314,7 +314,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         if (settings.SkipDtapCheck)
         {
-            Console.Skip($"Skipping DTAP gate — '{sln.Name}' not verified in {dtapDecision.PredecessorLabel}.");
+            Console.Skip($"Skipping DTAP gate — '{sln.UniqueName}' not verified in {dtapDecision.PredecessorLabel}.");
             return;
         }
 
@@ -324,16 +324,16 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         await ProfileResolutionService.ResolveAsync(dtapDecision.PredecessorUrl!, ct);
 
         var predecessorInfo = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Checking [bold]{sln.Name}[/] in {dtapDecision.PredecessorLabel}...",
-            _ => FlowlineValidator.Default.GetSolutionInfoAsync(dtapDecision.PredecessorUrl!, sln.Name, includeManaged: true, settings, ct, bypassCache: true));
+            $"Checking [bold]{sln.UniqueName}[/] in {dtapDecision.PredecessorLabel}...",
+            _ => FlowlineValidator.Default.GetSolutionInfoAsync(dtapDecision.PredecessorUrl!, sln.UniqueName, includeManaged: true, settings, ct, bypassCache: true));
 
         if (predecessorInfo == null)
             throw new FlowlineException(ExitCode.ValidationFailed,
-                $"'{sln.Name}' hasn't been deployed to {dtapDecision.PredecessorLabel} yet — promote there first, or use --skip-dtap-check.");
+                $"'{sln.UniqueName}' hasn't been deployed to {dtapDecision.PredecessorLabel} yet — promote there first, or use --skip-dtap-check.");
 
         if (!DtapVersionMatches(predecessorInfo.VersionNumber, gateVersion))
             throw new FlowlineException(ExitCode.ValidationFailed,
-                $"'{sln.Name}' in {dtapDecision.PredecessorLabel} environment is v{predecessorInfo.VersionNumber ?? "unknown"} — v{gateVersion} hasn't been verified there. Promote v{gateVersion} through {dtapDecision.PredecessorLabel} first, or use --skip-dtap-check.");
+                $"'{sln.UniqueName}' in {dtapDecision.PredecessorLabel} environment is v{predecessorInfo.VersionNumber ?? "unknown"} — v{gateVersion} hasn't been verified there. Promote v{gateVersion} through {dtapDecision.PredecessorLabel} first, or use --skip-dtap-check.");
     }
 
     // Requires an exact version match, not just "predecessor is at least as new" — deliberately promoting an
@@ -552,7 +552,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(ct);
         var result = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Packing [bold]{sln.Name}[/]...",
+            $"Packing [bold]{sln.UniqueName}[/]...",
             _ => Cli.Wrap(cmdName)
                     .WithArguments(args => args
                         .AddIfNotNull(prefixArgs)

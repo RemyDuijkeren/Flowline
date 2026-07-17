@@ -55,13 +55,13 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         if (slnInfo.IsManaged)
             throw new FlowlineException(ExitCode.ValidationFailed, "Managed solutions are not supported for sync — use an unmanaged solution.");
 
-        Logger.LogInformation("target={EnvironmentUrl} solution={SolutionName} bump={Bump}", devEnv.EnvironmentUrl, projectSln.Name, settings.Bump);
+        Logger.LogInformation("target={EnvironmentUrl} solution={SolutionName} bump={Bump}", devEnv.EnvironmentUrl, projectSln.UniqueName, settings.Bump);
 
         Config!.Save();
         Console.Verbose($"Project configuration saved to {ProjectConfig.s_configFileName}");
 
         // Validate that we have an initialized project
-        var slnFolder = Path.Combine(RootFolder, "solutions", projectSln.Name);
+        var slnFolder = RootFolder;
         var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
         if (!File.Exists(cdsprojPath))
             throw new FlowlineException(ExitCode.NotFound, $"No solution found at '{cdsprojPath}' — run 'clone' first");
@@ -74,21 +74,21 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         {
             if (settings.HasForce("dirty"))
             {
-                Console.Warning($"Uncommitted changes in '{projectSln.Name}/{PackageName}/src/' — overwriting.");
+                Console.Warning($"Uncommitted changes in '{PackageName}/src/' — overwriting.");
                 preSyncSummary.WriteFlat(Console, RuntimeOptions, "[dim]  ");
             }
             else
             {
-                Console.Warning($"Found uncommitted changes in '{projectSln.Name}/{PackageName}/src/'.");
+                Console.Warning($"Found uncommitted changes in '{PackageName}/src/'.");
                 preSyncSummary.WriteFlat(Console, RuntimeOptions, "[dim]  ");
-                throw new FlowlineException(ExitCode.DirtyWorkingDirectory, $"Uncommitted changes in '{projectSln.Name}/{PackageName}/src/' — Commit or stash changes first, or re-run with --force dirty.");
+                throw new FlowlineException(ExitCode.DirtyWorkingDirectory, $"Uncommitted changes in '{PackageName}/src/' — Commit or stash changes first, or re-run with --force dirty.");
             }
         }
 
         // Bump version in Dataverse before sync so the downloaded XML reflects the new version
         var skipBump = settings.Bump == BumpComponent.None;
         var tagVersion = await Console.Status().FlowlineSpinner().StartAsync(
-            skipBump ? $"Reading version [bold]{projectSln.Name}[/]..." : $"Bump {settings.Bump} version [bold]{projectSln.Name}[/]...",
+            skipBump ? $"Reading version [bold]{projectSln.UniqueName}[/]..." : $"Bump {settings.Bump} version [bold]{projectSln.UniqueName}[/]...",
             async ctx =>
             {
                 var currentVersion = await PacUtils.GetSolutionVersionAsync(slnInfo.SolutionUniqueName!, devEnv.EnvironmentUrl!, _capture, cancellationToken);
@@ -108,10 +108,10 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             Console.Ok($"Version bumped: {tagVersion}");
 
         // Sync solution from Dataverse
-        await PacUtils.SyncSolutionFromDataverseAsync(projectSln.Name, PackageFolder(slnFolder), devEnv.EnvironmentUrl!, projectSln.IncludeManaged, _capture, cancellationToken);
+        await PacUtils.SyncSolutionFromDataverseAsync(projectSln.UniqueName, PackageFolder(slnFolder), devEnv.EnvironmentUrl!, projectSln.IncludeManaged, _capture, cancellationToken);
 
         // Pack the solution in pac to validate it
-        Logger.LogInformation("Validating pack: {SolutionName}", projectSln.Name);
+        Logger.LogInformation("Validating pack: {SolutionName}", projectSln.UniqueName);
         var artifactsFolder = Path.Combine(slnFolder, "artifacts");
         if (await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, false, _capture, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
         if (projectSln.IncludeManaged &&
@@ -156,9 +156,9 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         var summary = await SolutionChangeSummary.ComputeAsync(srcPath, RootFolder, _capture, cancellationToken);
         Logger.LogInformation("Diff: {TotalFiles} files changed", summary.TotalFiles);
         summary.WriteTree(Console, devEnv.DisplayName, settings.Verbose);
-        await summary.WriteChangesFileAsync(slnFolder, projectSln.Name, devEnv.DisplayName, cancellationToken);
+        await summary.WriteChangesFileAsync(slnFolder, projectSln.UniqueName, devEnv.DisplayName, cancellationToken);
         await new DataverseContextGenerator(Console).GenerateAsync(
-            srcPath, projectSln.Name, RootFolder, cancellationToken);
+            srcPath, projectSln.UniqueName, RootFolder, cancellationToken);
 
         Console.Done(summary.TotalFiles == 0
             ? $"Synced {tagVersion} — no component changes, nothing to deploy."

@@ -14,7 +14,7 @@ public class GeneratorResolutionTests
     static GeneratorType Resolve(GeneratorType? settingsGenerator, GeneratorType? configGenerator)
     {
         var projectSln = configGenerator.HasValue
-            ? new ProjectSolution { Name = "Test", Generate = new GenerateConfig { Generator = configGenerator } }
+            ? new ProjectSolution { UniqueName = "Test", Generate = new GenerateConfig { Generator = configGenerator } }
             : null;
 
         // Replicate the expression directly

@@ -22,7 +22,6 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     where TSettings : FlowlineSettings
 {
     protected readonly SubprocessCapture _capture = capture;
-    protected const string AllSolutionsFolderName = "solutions";
     protected const string PackageName = "Package";
     protected const string WebResourcesName = "WebResources";
     protected const string PluginsName = "Plugins";
@@ -217,12 +216,12 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
             throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — pass it as an argument or use --solution <name>.");
 
         SolutionInfo? remoteSln = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Looking up solution [bold]{projectSln.Name}[/]...",
-            ctx => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, projectSln.Name, includeManaged ?? false, settings, cancellationToken, bypassCache));
+            $"Looking up solution [bold]{projectSln.UniqueName}[/]...",
+            ctx => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, projectSln.UniqueName, includeManaged ?? false, settings, cancellationToken, bypassCache));
         if (remoteSln == null)
-            throw new FlowlineException(ExitCode.NotFound, $"Solution '{projectSln.Name}' not found in that environment.");
+            throw new FlowlineException(ExitCode.NotFound, $"Solution '{projectSln.UniqueName}' not found in that environment.");
 
-        Console.Ok($"Solution [bold]{projectSln.Name}[/] ({(remoteSln.IsManaged ? "managed": "unmanaged")}) exists");
+        Console.Ok($"Solution [bold]{projectSln.UniqueName}[/] ({(remoteSln.IsManaged ? "managed": "unmanaged")}) exists");
 
         return (projectSln, remoteSln);
     }
