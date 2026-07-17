@@ -1,5 +1,6 @@
 using Flowline;
 using Flowline.Core.Models;
+using Flowline.Core.Console;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Client.Extensions.Msal;
 using Microsoft.PowerPlatform.Dataverse.Client;

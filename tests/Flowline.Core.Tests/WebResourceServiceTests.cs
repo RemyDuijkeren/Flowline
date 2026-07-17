@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using NSubstitute;
 using Flowline.Core.Services;
-using Flowline.Core.Services.WebResources;
+using Flowline.Core.WebResources;
 using Flowline.Core.Models;
 using Flowline.Core;
 using Spectre.Console.Testing;

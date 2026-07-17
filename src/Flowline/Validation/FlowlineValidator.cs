@@ -1,5 +1,6 @@
 using System.Reflection;
 using Flowline.Core;
+using Flowline.Core.Console;
 using Spectre.Console;
 
 namespace Flowline.Validation;

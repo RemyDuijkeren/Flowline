@@ -1,7 +1,7 @@
 using Flowline.Core.Models;
 using Flowline.Core.Services;
-using Flowline.Core.Services.FormEvents;
-using Flowline.Core.Services.FormEvents.Support;
+using Flowline.Core.FormEvents;
+using Flowline.Core.FormEvents.Support;
 using FluentAssertions;
 using static Flowline.Core.Tests.FormEventTestHelpers;
 

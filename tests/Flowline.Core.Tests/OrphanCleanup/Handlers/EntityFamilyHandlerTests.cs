@@ -4,8 +4,8 @@ using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Metadata;
 using NSubstitute;
 using Flowline.Core.Services;
-using Flowline.Core.Services.OrphanCleanup;
-using Flowline.Core.Services.OrphanCleanup.Handlers;
+using Flowline.Core.OrphanCleanup;
+using Flowline.Core.OrphanCleanup.Handlers;
 using Spectre.Console.Testing;
 
 namespace Flowline.Core.Tests.OrphanCleanup.Handlers;

@@ -1,5 +1,6 @@
 using CliWrap;
 using Flowline.Core;
+using Flowline.Core.Console;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Utils;

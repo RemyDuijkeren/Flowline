@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Console;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Generators;

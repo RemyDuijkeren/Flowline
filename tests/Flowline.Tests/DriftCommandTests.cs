@@ -2,7 +2,7 @@ using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Core;
 using Flowline.Core.Services;
-using Flowline.Core.Services.OrphanCleanup;
+using Flowline.Core.OrphanCleanup;
 
 namespace Flowline.Tests;
 

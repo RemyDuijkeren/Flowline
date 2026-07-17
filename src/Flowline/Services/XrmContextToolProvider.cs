@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Flowline.Core;
+using Flowline.Core.Console;
 using Flowline.Utils;
 using Spectre.Console;
 

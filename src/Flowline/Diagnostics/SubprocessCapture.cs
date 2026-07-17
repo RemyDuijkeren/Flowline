@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using CliWrap;
 using Flowline.Core;
+using Flowline.Core.Console;
 using Spectre.Console;
 
 namespace Flowline.Diagnostics;

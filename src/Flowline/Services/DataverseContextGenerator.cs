@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 using Flowline.Core;
+using Flowline.Core.Console;
 using Spectre.Console;
 
 namespace Flowline.Services;

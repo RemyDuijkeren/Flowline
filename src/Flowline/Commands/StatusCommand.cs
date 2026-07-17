@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Console;
 using Flowline.Diagnostics;
 using Flowline.Utils;
 using Flowline.Validation;

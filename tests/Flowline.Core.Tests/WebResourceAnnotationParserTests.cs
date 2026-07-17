@@ -1,5 +1,5 @@
 using Flowline.Core.Services;
-using Flowline.Core.Services.WebResources;
+using Flowline.Core.WebResources;
 
 namespace Flowline.Core.Tests;
 

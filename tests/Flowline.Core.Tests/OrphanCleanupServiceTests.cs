@@ -3,8 +3,8 @@ using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using NSubstitute;
 using Flowline.Core.Services;
-using Flowline.Core.Services.OrphanCleanup;
-using Flowline.Core.Services.OrphanCleanup.Handlers;
+using Flowline.Core.OrphanCleanup;
+using Flowline.Core.OrphanCleanup.Handlers;
 using Flowline.Core;
 using Spectre.Console.Testing;
 

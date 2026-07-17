@@ -1,9 +1,10 @@
 using System.Security.Cryptography;
 using Flowline;
 using Flowline.Core;
+using Flowline.Core.Console;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
-using Flowline.Core.Services.Plugins;
+using Flowline.Core.Plugins;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;

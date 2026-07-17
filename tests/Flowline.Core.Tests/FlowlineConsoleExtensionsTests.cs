@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Flowline.Core.Console;
 using Spectre.Console.Testing;
 using Xunit;
 
