@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Flowline.Core;
 using Flowline.Utils;
 using Spectre.Console;
 
@@ -7,20 +8,15 @@ namespace Flowline.Config;
 public class ProjectConfig
 {
     internal static readonly string s_configFileName = ".flowline";
+    const int CurrentSchemaVersion = 1;
+    const string DocPointer = "see docs/folder-structure.md";
 
-    HashSet<ProjectSolution> _solutions = new(ProjectSolution.NameComparer);
-
+    public int? SchemaVersion { get; set; }
     public string? ProdUrl { get; set; }
     public string? UatUrl { get; set; }
     public string? TestUrl { get; set; }
     public string? DevUrl { get; set; }
-    public HashSet<ProjectSolution> Solutions
-    {
-        get => _solutions;
-        set => _solutions = value == null
-            ? new HashSet<ProjectSolution>(ProjectSolution.NameComparer)
-            : new HashSet<ProjectSolution>(value.Where(solution => !string.IsNullOrWhiteSpace(solution.Name)), ProjectSolution.NameComparer);
-    }
+    public ProjectSolution? Solution { get; set; }
 
     public string? GetOrUpdateUatUrl(string? inputUatUrl, FlowlineSettings? settings = null)
     {
@@ -166,80 +162,78 @@ public class ProjectConfig
     {
         ArgumentNullException.ThrowIfNull(solution);
 
-        if (string.IsNullOrWhiteSpace(solution.Name))
+        if (string.IsNullOrWhiteSpace(solution.UniqueName))
         {
-            throw new ArgumentException("Solution name is required.", nameof(solution));
+            throw new ArgumentException("Solution unique name is required.", nameof(solution));
         }
 
         var normalizedSolution = new ProjectSolution
         {
-            Name = solution.Name.Trim(),
+            UniqueName = solution.UniqueName.Trim(),
             IncludeManaged = solution.IncludeManaged,
             Generate = solution.Generate,
             PluginPackageMode = solution.PluginPackageMode,
         };
 
-        _solutions.Remove(normalizedSolution);
-        _solutions.Add(normalizedSolution);
+        Solution = normalizedSolution;
 
         return normalizedSolution;
     }
 
-    public ProjectSolution AddOrUpdateSolution(string name, bool includeManaged = false)
+    public ProjectSolution AddOrUpdateSolution(string uniqueName, bool includeManaged = false)
     {
-        var existing = _solutions.FirstOrDefault(s => StringComparer.OrdinalIgnoreCase.Equals(s.Name, name));
+        var existing = Solution;
         return AddOrUpdateSolution(new ProjectSolution
         {
-            Name = name,
+            UniqueName = uniqueName,
             IncludeManaged = includeManaged,
             Generate = existing?.Generate,
             PluginPackageMode = existing?.PluginPackageMode ?? PluginPackageMode.Auto,
         });
     }
 
-    public ProjectSolution? GetOrUpdateSolution(string? name, bool? includeManaged = null, FlowlineSettings? settings = null)
+    public ProjectSolution? GetOrUpdateSolution(string? uniqueName, bool? includeManaged = null, FlowlineSettings? settings = null)
     {
-        name = name?.Trim();
-        if (string.IsNullOrWhiteSpace(name))
+        uniqueName = uniqueName?.Trim();
+        if (string.IsNullOrWhiteSpace(uniqueName))
         {
-            if (Solutions.Count != 1)
+            if (Solution == null)
             {
                 return null;
             }
 
-            name = Solutions.Single().Name;
+            uniqueName = Solution.UniqueName;
             if (settings is { Verbose: true })
             {
-                AnsiConsole.MarkupLine($"[dim]Solution: [bold]{name}[/][/]");
+                AnsiConsole.MarkupLine($"[dim]Solution: [bold]{uniqueName}[/][/]");
             }
         }
 
-        var sln = _solutions.FirstOrDefault(solution => StringComparer.OrdinalIgnoreCase.Equals(solution.Name, name));
-        if (sln == null)
+        if (Solution == null)
         {
-            return AddOrUpdateSolution(name, includeManaged ?? false);
+            return AddOrUpdateSolution(uniqueName, includeManaged ?? false);
         }
 
-        if (includeManaged.HasValue && sln.IncludeManaged != includeManaged.Value)
+        if (includeManaged.HasValue && Solution.IncludeManaged != includeManaged.Value)
         {
-            AnsiConsole.MarkupLine($"[yellow]{sln.Name} is already set to managed: {sln.IncludeManaged}[/]");
+            AnsiConsole.MarkupLine($"[yellow]{Solution.UniqueName} is already set to managed: {Solution.IncludeManaged}[/]");
 
             if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings, "config"))
             {
                 AnsiConsole.MarkupLine("[dim]Keeping solution config as-is[/]");
-                return sln;
+                return Solution;
             }
             AnsiConsole.MarkupLine("[green]Solution config updated[/]");
             return AddOrUpdateSolution(new ProjectSolution
             {
-                Name = name,
+                UniqueName = uniqueName,
                 IncludeManaged = includeManaged.Value,
-                Generate = sln.Generate,
-                PluginPackageMode = sln.PluginPackageMode,
+                Generate = Solution.Generate,
+                PluginPackageMode = Solution.PluginPackageMode,
             });
         }
 
-        return sln;
+        return Solution;
     }
 
     public static ProjectConfig? Load(string? rootFolder = null)
@@ -252,15 +246,74 @@ public class ProjectConfig
             return null;
         }
 
+        string json;
         try
         {
-            var json = File.ReadAllText(configPath);
-            return JsonSerializer.Deserialize<ProjectConfig>(json);
+            json = File.ReadAllText(configPath);
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"Failed to read configuration: {ex.Message}");
             return null;
+        }
+
+        ValidateSchema(json, configPath);
+
+        return JsonSerializer.Deserialize<ProjectConfig>(json);
+    }
+
+    // Raw JSON pre-parse check, ahead of strongly-typed deserialization, so legacy/invalid
+    // configs fail closed with ConfigInvalid instead of silently deserializing into a
+    // half-populated (or empty) ProjectConfig. See R13 in the refactor plan.
+    static void ValidateSchema(string json, string configPath)
+    {
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(json);
+        }
+        catch (JsonException ex)
+        {
+            throw new FlowlineException(ExitCode.ConfigInvalid,
+                $"'{configPath}' is not valid JSON — {DocPointer}.", ex);
+        }
+
+        using (doc)
+        {
+            var root = doc.RootElement;
+
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                throw new FlowlineException(ExitCode.ConfigInvalid,
+                    $"'{configPath}' is not a valid Flowline config (expected a JSON object) — {DocPointer}.");
+            }
+
+            if (root.TryGetProperty("Solutions", out _))
+            {
+                throw new FlowlineException(ExitCode.ConfigInvalid,
+                    $"'{configPath}' uses an unsupported legacy schema (Solutions array) — {DocPointer}.");
+            }
+
+            if (!root.TryGetProperty("SchemaVersion", out var schemaVersionElement)
+                || schemaVersionElement.ValueKind != JsonValueKind.Number
+                || schemaVersionElement.GetInt32() != CurrentSchemaVersion)
+            {
+                throw new FlowlineException(ExitCode.ConfigInvalid,
+                    $"'{configPath}' has a missing or unsupported schema version — {DocPointer}.");
+            }
+
+            if (root.TryGetProperty("Solution", out var solutionElement) && solutionElement.ValueKind != JsonValueKind.Null)
+            {
+                var hasUniqueName = solutionElement.TryGetProperty("UniqueName", out var uniqueNameElement)
+                    && uniqueNameElement.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrWhiteSpace(uniqueNameElement.GetString());
+
+                if (!hasUniqueName)
+                {
+                    throw new FlowlineException(ExitCode.ConfigInvalid,
+                        $"'{configPath}' has a Solution with a missing or empty UniqueName — {DocPointer}.");
+                }
+            }
         }
     }
 
@@ -268,6 +321,8 @@ public class ProjectConfig
     {
         rootFolder ??= Directory.GetCurrentDirectory();
         var configPath = Path.Combine(rootFolder, s_configFileName);
+
+        SchemaVersion ??= CurrentSchemaVersion;
 
         try
         {

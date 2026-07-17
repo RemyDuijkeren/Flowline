@@ -5,8 +5,25 @@ using FluentAssertions;
 
 namespace Flowline.Tests;
 
-public class ProjectConfigTests
+public class ProjectConfigTests : IDisposable
 {
+    readonly string _tempDir;
+
+    public ProjectConfigTests()
+    {
+        _tempDir = Directory.CreateTempSubdirectory("flowline-config-tests-").FullName;
+    }
+
+    public void Dispose()
+    {
+        Directory.Delete(_tempDir, recursive: true);
+    }
+
+    void WriteConfigFile(string json)
+    {
+        File.WriteAllText(Path.Combine(_tempDir, ".flowline"), json);
+    }
+
     [Fact]
     public void GetOrUpdateSolution_NewSolution_ReturnsWithName()
     {
@@ -14,7 +31,7 @@ public class ProjectConfigTests
 
         var sln = config.GetOrUpdateSolution("MySolution");
 
-        sln!.Name.Should().Be("MySolution");
+        sln!.UniqueName.Should().Be("MySolution");
     }
 
     [Fact]
@@ -25,7 +42,7 @@ public class ProjectConfigTests
 
         var sln = config.GetOrUpdateSolution("MySolution");
 
-        sln!.Name.Should().Be("MySolution");
+        sln!.UniqueName.Should().Be("MySolution");
     }
 
     [Fact]
@@ -36,15 +53,13 @@ public class ProjectConfigTests
 
         var sln = config.GetOrUpdateSolution(null);
 
-        sln!.Name.Should().Be("OnlySolution");
+        sln!.UniqueName.Should().Be("OnlySolution");
     }
 
     [Fact]
-    public void GetOrUpdateSolution_NoName_MultipleSolutions_ReturnsNull()
+    public void GetOrUpdateSolution_NoName_NoSolution_ReturnsNull()
     {
         var config = new ProjectConfig();
-        config.AddOrUpdateSolution("SolutionA");
-        config.AddOrUpdateSolution("SolutionB");
 
         var sln = config.GetOrUpdateSolution(null);
 
@@ -66,7 +81,7 @@ public class ProjectConfigTests
         var sln = config.GetOrUpdateSolution(null, includeManaged: false, settings);
 
         sln!.IncludeManaged.Should().BeFalse();
-        config.Solutions.Single().IncludeManaged.Should().BeFalse();
+        config.Solution!.IncludeManaged.Should().BeFalse();
     }
 
     [Fact]
@@ -78,7 +93,7 @@ public class ProjectConfigTests
         var act = () => config.GetOrUpdateSolution(null, includeManaged: false, new FlowlineSettings());
 
         act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ForceRequired);
-        config.Solutions.Single().IncludeManaged.Should().BeTrue();
+        config.Solution!.IncludeManaged.Should().BeTrue();
     }
 
     [Fact]
@@ -159,7 +174,7 @@ public class ProjectConfigTests
         var json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
         var restored = JsonSerializer.Deserialize<ProjectConfig>(json)!;
 
-        restored.Solutions.Single().Generate.Should().BeNull();
+        restored.Solution!.Generate.Should().BeNull();
         json.Should().NotContain("Generate"); // omitted when null
     }
 
@@ -173,7 +188,7 @@ public class ProjectConfigTests
         var json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
         var restored = JsonSerializer.Deserialize<ProjectConfig>(json)!;
 
-        var g = restored.Solutions.Single().Generate;
+        var g = restored.Solution!.Generate;
         g.Should().NotBeNull();
         g!.Namespace.Should().Be("A.Models");
         g.ExtraTables.Should().BeEquivalentTo(["account", "lead"]);
@@ -190,57 +205,57 @@ public class ProjectConfigTests
         var restored = JsonSerializer.Deserialize<ProjectConfig>(json)!;
 
         json.Should().Contain("\"Dll\"");
-        restored.Solutions.Single().PluginPackageMode.Should().Be(PluginPackageMode.Dll);
+        restored.Solution!.PluginPackageMode.Should().Be(PluginPackageMode.Dll);
     }
 
     [Fact]
     public void PluginPackageMode_MissingFromJson_DefaultsToAuto()
     {
-        var json = """{"Solutions":[{"Name":"MySolution"}]}""";
+        var json = """{"SchemaVersion":1,"Solution":{"UniqueName":"MySolution"}}""";
 
         var config = JsonSerializer.Deserialize<ProjectConfig>(json)!;
 
-        config.Solutions.Single().PluginPackageMode.Should().Be(PluginPackageMode.Auto);
+        config.Solution!.PluginPackageMode.Should().Be(PluginPackageMode.Auto);
     }
 
     [Fact]
     public void AddOrUpdateSolution_PreservesGenerate_WhenUpdatingIncludeManaged()
     {
         var config = new ProjectConfig();
-        var sln = config.AddOrUpdateSolution(new ProjectSolution { Name = "MySolution", IncludeManaged = false, Generate = new GenerateConfig { Namespace = "A.Models" } });
+        var sln = config.AddOrUpdateSolution(new ProjectSolution { UniqueName = "MySolution", IncludeManaged = false, Generate = new GenerateConfig { Namespace = "A.Models" } });
 
         // Re-add same solution with IncludeManaged = true — Generate must survive
-        config.AddOrUpdateSolution(new ProjectSolution { Name = "MySolution", IncludeManaged = true, Generate = sln.Generate });
+        config.AddOrUpdateSolution(new ProjectSolution { UniqueName = "MySolution", IncludeManaged = true, Generate = sln.Generate });
 
-        config.Solutions.Single().Generate?.Namespace.Should().Be("A.Models");
+        config.Solution!.Generate?.Namespace.Should().Be("A.Models");
     }
 
     [Fact]
     public void AddOrUpdateSolution_PreservesPluginPackageMode_WhenCallerThreadsItThrough()
     {
         // Regression guard: AddOrUpdateSolution's normalizedSolution construction must copy every
-        // ProjectSolution field, not just Name/IncludeManaged/Generate — otherwise even a caller that
-        // explicitly threads the prior value through (the same pattern the existing Generate test
+        // ProjectSolution field, not just UniqueName/IncludeManaged/Generate — otherwise even a caller
+        // that explicitly threads the prior value through (the same pattern the existing Generate test
         // above uses) would still lose it.
         var config = new ProjectConfig();
-        var sln = config.AddOrUpdateSolution(new ProjectSolution { Name = "MySolution", IncludeManaged = false, PluginPackageMode = PluginPackageMode.Dll });
+        var sln = config.AddOrUpdateSolution(new ProjectSolution { UniqueName = "MySolution", IncludeManaged = false, PluginPackageMode = PluginPackageMode.Dll });
 
-        config.AddOrUpdateSolution(new ProjectSolution { Name = "MySolution", IncludeManaged = true, PluginPackageMode = sln.PluginPackageMode });
+        config.AddOrUpdateSolution(new ProjectSolution { UniqueName = "MySolution", IncludeManaged = true, PluginPackageMode = sln.PluginPackageMode });
 
-        config.Solutions.Single().PluginPackageMode.Should().Be(PluginPackageMode.Dll);
+        config.Solution!.PluginPackageMode.Should().Be(PluginPackageMode.Dll);
     }
 
     [Fact]
     public void AddOrUpdateSolution_StringOverload_PreservesPluginPackageMode()
     {
         var config = new ProjectConfig();
-        config.AddOrUpdateSolution(new ProjectSolution { Name = "MySolution", PluginPackageMode = PluginPackageMode.Nupkg });
+        config.AddOrUpdateSolution(new ProjectSolution { UniqueName = "MySolution", PluginPackageMode = PluginPackageMode.Nupkg });
 
         // The (string, bool) overload re-adds by name only — it must still preserve the existing
         // solution's PluginPackageMode rather than defaulting it to Auto.
         config.AddOrUpdateSolution("MySolution", includeManaged: true);
 
-        config.Solutions.Single().PluginPackageMode.Should().Be(PluginPackageMode.Nupkg);
+        config.Solution!.PluginPackageMode.Should().Be(PluginPackageMode.Nupkg);
     }
 
     [Fact]
@@ -289,6 +304,155 @@ public class ProjectConfigTests
         restored.ExtraTables.Should().BeEquivalentTo(["account"]);
         restored.Namespace.Should().BeNull();
         json.Should().NotContain("Namespace");
+    }
+
+    // Load() schema-validation tests (U1: SchemaVersion + collapsed Solution)
+
+    [Fact]
+    public void Load_ValidV1Config_FullSolution_RoundTripsEveryField()
+    {
+        WriteConfigFile("""
+            {
+              "SchemaVersion": 1,
+              "ProdUrl": "https://contoso.crm.dynamics.com/",
+              "Solution": {
+                "UniqueName": "MySolution",
+                "IncludeManaged": true,
+                "PluginPackageMode": "Nupkg",
+                "Generate": {
+                  "Namespace": "A.Models",
+                  "ExtraTables": ["account", "lead"]
+                }
+              }
+            }
+            """);
+
+        var config = ProjectConfig.Load(_tempDir);
+
+        config.Should().NotBeNull();
+        config!.SchemaVersion.Should().Be(1);
+        config.ProdUrl.Should().Be("https://contoso.crm.dynamics.com/");
+        config.Solution.Should().NotBeNull();
+        config.Solution!.UniqueName.Should().Be("MySolution");
+        config.Solution.IncludeManaged.Should().BeTrue();
+        config.Solution.PluginPackageMode.Should().Be(PluginPackageMode.Nupkg);
+        config.Solution.Generate.Should().NotBeNull();
+        config.Solution.Generate!.Namespace.Should().Be("A.Models");
+        config.Solution.Generate.ExtraTables.Should().BeEquivalentTo(["account", "lead"]);
+    }
+
+    [Fact]
+    public void Load_SchemaV1_NoSolution_LoadsSuccessfully()
+    {
+        // Post-provision, pre-clone bootstrap state: only URL fields saved, Solution absent.
+        WriteConfigFile("""{"SchemaVersion":1,"DevUrl":"https://contoso-dev.crm.dynamics.com/"}""");
+
+        var config = ProjectConfig.Load(_tempDir);
+
+        config.Should().NotBeNull();
+        config!.Solution.Should().BeNull();
+        config.DevUrl.Should().Be("https://contoso-dev.crm.dynamics.com/");
+    }
+
+    [Fact]
+    public void Load_NoConfigFile_ReturnsNull()
+    {
+        var config = ProjectConfig.Load(_tempDir);
+
+        config.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("""{"SchemaVersion":1,"Solution":{"UniqueName":""}}""")]
+    [InlineData("""{"SchemaVersion":1,"Solution":{"UniqueName":"   "}}""")]
+    [InlineData("""{"SchemaVersion":1,"Solution":{}}""")]
+    public void Load_SolutionWithEmptyOrMissingUniqueName_ThrowsConfigInvalid(string json)
+    {
+        WriteConfigFile(json);
+
+        var act = () => ProjectConfig.Load(_tempDir);
+
+        act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ConfigInvalid);
+    }
+
+    [Fact]
+    public void Load_LegacySolutionsArray_ThrowsConfigInvalid()
+    {
+        WriteConfigFile("""{"Solutions":[{"Name":"MySolution"}]}""");
+
+        var act = () => ProjectConfig.Load(_tempDir);
+
+        act.Should().Throw<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.ConfigInvalid && e.Message.Contains("docs/folder-structure.md"));
+    }
+
+    [Fact]
+    public void Load_LegacySolutionsArray_WithSchemaVersion_StillThrowsConfigInvalid()
+    {
+        WriteConfigFile("""{"SchemaVersion":1,"Solutions":[{"Name":"MySolution"}]}""");
+
+        var act = () => ProjectConfig.Load(_tempDir);
+
+        act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ConfigInvalid);
+    }
+
+    [Fact]
+    public void Load_MissingSchemaVersion_ThrowsConfigInvalid()
+    {
+        WriteConfigFile("""{"ProdUrl":"https://contoso.crm.dynamics.com/"}""");
+
+        var act = () => ProjectConfig.Load(_tempDir);
+
+        act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ConfigInvalid);
+    }
+
+    [Fact]
+    public void Load_UnsupportedSchemaVersion_ThrowsConfigInvalid()
+    {
+        WriteConfigFile("""{"SchemaVersion":2,"Solution":{"UniqueName":"MySolution"}}""");
+
+        var act = () => ProjectConfig.Load(_tempDir);
+
+        act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ConfigInvalid);
+    }
+
+    [Fact]
+    public void Load_MalformedJson_ThrowsConfigInvalid_NotSilentNull()
+    {
+        WriteConfigFile("{ this is not valid json");
+
+        var act = () => ProjectConfig.Load(_tempDir);
+
+        act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ConfigInvalid);
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("42")]
+    [InlineData("\"foo\"")]
+    public void Load_ValidJsonButNotAnObject_ThrowsConfigInvalid(string json)
+    {
+        // Parseable JSON whose root isn't an object (array/number/string) must fail closed too —
+        // TryGetProperty on a non-object JsonElement throws InvalidOperationException otherwise.
+        WriteConfigFile(json);
+
+        var act = () => ProjectConfig.Load(_tempDir);
+
+        act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ConfigInvalid);
+    }
+
+    [Fact]
+    public void Save_StampsSchemaVersion1_EvenWithNullSolution()
+    {
+        // provision saves .flowline with only URL fields, before any solution is cloned.
+        var config = new ProjectConfig { DevUrl = "https://contoso-dev.crm.dynamics.com/" };
+
+        config.Save(_tempDir);
+        var reloaded = ProjectConfig.Load(_tempDir);
+
+        reloaded.Should().NotBeNull();
+        reloaded!.SchemaVersion.Should().Be(1);
+        reloaded.Solution.Should().BeNull();
     }
 }
 
