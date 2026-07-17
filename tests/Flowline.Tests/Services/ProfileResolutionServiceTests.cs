@@ -16,7 +16,7 @@ public class ProfileResolutionServiceTests
         ProfileResolutionResult resolvedResult)
     {
         console = new TestConsole();
-        var connector = new DataverseConnector(console);
+        var connector = new DataverseConnector(console, new HttpClient());
         var svc = new ProfileResolutionService(console, connector);
         svc.FindBestProfileOverride = _ => resolvedResult;
         return svc;

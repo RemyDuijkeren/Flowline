@@ -13,7 +13,7 @@ public class DataverseConnectorTests
 
     public DataverseConnectorTests()
     {
-        _service = new DataverseConnector(new TestConsole());
+        _service = new DataverseConnector(new TestConsole(), new HttpClient());
     }
 
     [Fact(Skip = "Requires PAC CLI auth profile file on the machine — not available in CI")]
@@ -82,6 +82,102 @@ public class DataverseConnectorTests
             () => _service.ConnectViaPacAsync(profile, "https://test.crm.dynamics.com"));
 
         Assert.Contains("ApplicationId", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetEnvironmentInfoAsync_ServicePrincipal_ShouldThrow_WhenApplicationIdIsMissing()
+    {
+        var profile = new PacProfile { Kind = "ServicePrincipal", TenantId = "tenant-id" };
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.GetEnvironmentInfoAsync(profile, "https://test.crm.dynamics.com"));
+
+        Assert.Contains("ApplicationId", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetEnvironmentInfoAsync_ShouldThrow_WhenProfileIsNull()
+    {
+        await Assert.ThrowsAsync<ArgumentNullException>(() => _service.GetEnvironmentInfoAsync(null!, "https://test.crm.dynamics.com"));
+    }
+
+    [Fact]
+    public async Task GetEnvironmentInfoAsync_ShouldThrow_WhenEnvironmentUrlIsNull()
+    {
+        var profile = new PacProfile { User = "test@test.com" };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => _service.GetEnvironmentInfoAsync(profile, null!));
+    }
+
+    static readonly string BapEnvironmentJson = """
+        {
+          "value": [
+            {
+              "name": "11111111-1111-1111-1111-111111111111",
+              "properties": {
+                "displayName": "Contoso Prod",
+                "environmentSku": "Production",
+                "linkedEnvironmentMetadata": {
+                  "resourceId": "22222222-2222-2222-2222-222222222222",
+                  "friendlyName": "Contoso Prod",
+                  "domainName": "contoso",
+                  "instanceUrl": "https://contoso.crm4.dynamics.com/",
+                  "version": "9.2.23092.00206"
+                }
+              }
+            },
+            {
+              "name": "33333333-3333-3333-3333-333333333333",
+              "properties": {
+                "displayName": "Contoso Dev",
+                "environmentSku": "Sandbox",
+                "linkedEnvironmentMetadata": {
+                  "resourceId": "44444444-4444-4444-4444-444444444444",
+                  "friendlyName": "Contoso Dev",
+                  "domainName": "contoso-dev",
+                  "instanceUrl": "https://contoso-dev.crm4.dynamics.com/",
+                  "version": "9.2.23092.00206"
+                }
+              }
+            }
+          ]
+        }
+        """;
+
+    [Fact]
+    public void MapBapEnvironmentsResponse_MatchesByUrl_ReturnsProductionType()
+    {
+        var result = DataverseConnector.MapBapEnvironmentsResponse(BapEnvironmentJson, "https://contoso.crm4.dynamics.com");
+
+        Assert.NotNull(result);
+        Assert.Equal("Production", result!.Type);
+        Assert.Equal("Contoso Prod", result.DisplayName);
+    }
+
+    [Fact]
+    public void MapBapEnvironmentsResponse_MatchesByUrl_ReturnsSandboxType()
+    {
+        var result = DataverseConnector.MapBapEnvironmentsResponse(BapEnvironmentJson, "https://contoso-dev.crm4.dynamics.com");
+
+        Assert.NotNull(result);
+        Assert.Equal("Sandbox", result!.Type);
+    }
+
+    [Fact]
+    public void MapBapEnvironmentsResponse_MultipleEntries_SelectsUrlMatchCaseInsensitiveTrailingSlash()
+    {
+        var result = DataverseConnector.MapBapEnvironmentsResponse(BapEnvironmentJson, "HTTPS://CONTOSO-DEV.CRM4.DYNAMICS.COM/");
+
+        Assert.NotNull(result);
+        Assert.Equal("Contoso Dev", result!.DisplayName);
+    }
+
+    [Fact]
+    public void MapBapEnvironmentsResponse_NoUrlMatch_ReturnsNull()
+    {
+        var result = DataverseConnector.MapBapEnvironmentsResponse(BapEnvironmentJson, "https://no-such-env.crm4.dynamics.com");
+
+        Assert.Null(result);
     }
 
     [Fact]

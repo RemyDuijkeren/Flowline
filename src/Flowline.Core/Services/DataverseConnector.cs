@@ -5,14 +5,17 @@ using Microsoft.Identity.Client;
 using Microsoft.Identity.Client.Extensions.Msal;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using System.Diagnostics;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class DataverseConnector(IAnsiConsole console)
+public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
 {
     public const string PacCliAppId = "51f81489-12ee-4a9e-aaae-a2591f45987d";
+    const string BapAdminResource = "https://api.bap.microsoft.com";
+    const string BapAdminEnvironmentsUrl = "https://api.bap.microsoft.com/providers/Microsoft.BusinessAppPlatform/scopes/admin/environments?api-version=2020-10-01";
 
     /// <summary>
     /// Connects to Dataverse by re-using the token that PAC CLI already acquired.
@@ -40,10 +43,22 @@ public class DataverseConnector(IAnsiConsole console)
             ? "https://login.microsoftonline.com/organizations"
             : profile.Authority.TrimEnd('/');
 
-        // Platform storage backends:
-        //   Windows — DPAPI encryption, transparent via MsalCacheHelper
-        //   Linux/macOS — Secret Service / Keychain when available; unprotected file fallback for
-        //                 headless environments (CI, Docker, WSL) where no keyring is running
+        var cacheHelper = await CreateMsalCacheHelperAsync();
+
+        return profile.IsServicePrincipal
+            ? await ConnectServicePrincipalAsync(profile, authority, resourceUrl, serviceUri, cacheHelper, cancellationToken)
+            : await ConnectUserAsync(profile, authority, resourceUrl, serviceUri, cacheHelper, cancellationToken);
+    }
+
+    /// <summary>
+    /// Platform storage backends:
+    ///   Windows — DPAPI encryption, transparent via MsalCacheHelper
+    ///   Linux/macOS — Secret Service / Keychain when available; unprotected file fallback for
+    ///                 headless environments (CI, Docker, WSL) where no keyring is running
+    /// Shared by ConnectViaPacAsync and GetEnvironmentInfoAsync — both read the same PAC CLI token cache.
+    /// </summary>
+    static async Task<MsalCacheHelper> CreateMsalCacheHelperAsync()
+    {
         var storagePropsBuilder = new StorageCreationPropertiesBuilder(
             cacheFileName: "tokencache_msalv3.dat",
             cacheDirectory: GetPacCliDataDirectory());
@@ -51,8 +66,7 @@ public class DataverseConnector(IAnsiConsole console)
         if (!OperatingSystem.IsWindows())
             storagePropsBuilder.WithLinuxUnprotectedFile();
 
-        MsalCacheHelper cacheHelper;
-        try { cacheHelper = await MsalCacheHelper.CreateAsync(storagePropsBuilder.Build()); }
+        try { return await MsalCacheHelper.CreateAsync(storagePropsBuilder.Build()); }
         catch (MsalCachePersistenceException ex)
         {
             throw new InvalidOperationException(
@@ -60,10 +74,6 @@ public class DataverseConnector(IAnsiConsole console)
                 "Ensure 'pac auth create' has been run and the cache file is accessible. " +
                 $"Detail: {ex.Message}", ex);
         }
-
-        return profile.IsServicePrincipal
-            ? await ConnectServicePrincipalAsync(profile, authority, resourceUrl, serviceUri, cacheHelper, cancellationToken)
-            : await ConnectUserAsync(profile, authority, resourceUrl, serviceUri, cacheHelper, cancellationToken);
     }
 
     async Task<IOrganizationServiceAsync2> ConnectServicePrincipalAsync(
@@ -159,6 +169,167 @@ public class DataverseConnector(IAnsiConsole console)
             return result.AccessToken;
         });
     }
+
+    /// <summary>
+    /// Resolves an environment's existence and Production/Sandbox Type via a direct token read against
+    /// the resolved profile's cached PAC CLI credentials — no pac.exe subprocess, so the result is
+    /// independent of which PAC auth profile is globally active. Mirrors ConnectViaPacAsync's token
+    /// acquisition but scoped to the Power Platform BAP admin API instead of the Dataverse environment.
+    /// </summary>
+    public async Task<BapEnvironmentInfo?> GetEnvironmentInfoAsync(
+        PacProfile profile,
+        string environmentUrl,
+        CancellationToken cancellationToken = default)
+    {
+        if (profile == null) throw new ArgumentNullException(nameof(profile));
+        if (string.IsNullOrWhiteSpace(environmentUrl))
+            throw new ArgumentException("Environment URL is required for looking up environment info.", nameof(environmentUrl));
+
+        var authority = string.IsNullOrWhiteSpace(profile.Authority)
+            ? "https://login.microsoftonline.com/organizations"
+            : profile.Authority.TrimEnd('/');
+
+        var cacheHelper = await CreateMsalCacheHelperAsync();
+
+        var accessToken = profile.IsServicePrincipal
+            ? await AcquireServicePrincipalTokenAsync(profile, authority, cacheHelper, BapAdminResource, cancellationToken)
+            : await AcquireUserTokenAsync(profile, authority, cacheHelper, BapAdminResource, cancellationToken);
+
+        // Per-request Authorization header, never HttpClient.DefaultRequestHeaders — httpClient is a
+        // shared singleton also used for unrelated calls (e.g. XrmContextToolProvider's NuGet download),
+        // and DefaultRequestHeaders would leak this admin-scoped bearer token onto those requests too.
+        using var request = new HttpRequestMessage(HttpMethod.Get, BapAdminEnvironmentsUrl);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+        return MapBapEnvironmentsResponse(json, environmentUrl);
+    }
+
+    async Task<string> AcquireUserTokenAsync(
+        PacProfile profile, string authority, MsalCacheHelper cacheHelper, string resourceUrl, CancellationToken cancellationToken)
+    {
+        const string redirectUri = "http://localhost";
+        var scopes = new[] { $"{resourceUrl}/.default" };
+
+        var app = PublicClientApplicationBuilder
+            .Create(PacCliAppId)
+            .WithAuthority(authority)
+            .WithRedirectUri(redirectUri)
+            .Build();
+
+        cacheHelper.RegisterCache(app.UserTokenCache);
+
+        var accounts = await app.GetAccountsAsync();
+        var account  = (!string.IsNullOrWhiteSpace(profile.User)
+                ? accounts.FirstOrDefault(a => string.Equals(a.Username, profile.User, StringComparison.OrdinalIgnoreCase))
+                : null)
+            ?? accounts.FirstOrDefault();
+
+        try
+        {
+            var result = await app.AcquireTokenSilent(scopes, account).ExecuteAsync(cancellationToken);
+            return result.AccessToken;
+        }
+        catch (MsalUiRequiredException ex)
+        {
+            var user = profile.User ?? "unknown";
+            throw new InvalidOperationException(
+                $"Session expired for '{user}' at {resourceUrl}. " +
+                $"Run 'pac auth create --url {resourceUrl}' to re-authenticate.", ex);
+        }
+    }
+
+    async Task<string> AcquireServicePrincipalTokenAsync(
+        PacProfile profile, string authority, MsalCacheHelper cacheHelper, string resourceUrl, CancellationToken cancellationToken)
+    {
+        var appId = profile.ApplicationId
+            ?? throw new InvalidOperationException(
+                $"Service principal profile '{profile.Name}' is missing ApplicationId.");
+
+        var tenantAuthority = !string.IsNullOrWhiteSpace(profile.TenantId)
+            ? $"https://login.microsoftonline.com/{profile.TenantId}"
+            : authority;
+
+        var scopes = new[] { $"{resourceUrl}/.default" };
+
+        var app = ConfidentialClientApplicationBuilder
+            .Create(appId)
+            .WithAuthority(tenantAuthority)
+            .WithClientAssertion((AssertionRequestOptions _) => Task.FromResult("cache-only"))
+            .Build();
+
+        cacheHelper.RegisterCache(app.AppTokenCache);
+
+        try
+        {
+            var result = await app.AcquireTokenForClient(scopes).ExecuteAsync(cancellationToken);
+            return result.AccessToken;
+        }
+        catch (MsalException ex)
+        {
+            var tenantArg = !string.IsNullOrWhiteSpace(profile.TenantId) ? $" --tenant {profile.TenantId}" : "";
+            throw new InvalidOperationException(
+                $"No cached token for service principal '{appId}' at {resourceUrl}. " +
+                $"Run 'pac auth create --kind ServicePrincipal --applicationId {appId} --clientSecret <secret>{tenantArg}' to authenticate.", ex);
+        }
+    }
+
+    // BAP's admin/environments response shape (verified live for `properties.environmentSku` only —
+    // https://api.bap.microsoft.com/providers/Microsoft.BusinessAppPlatform/scopes/admin/environments):
+    //   { "value": [ { "name": "<env-guid>", "properties": { "displayName", "environmentSku",
+    //       "linkedEnvironmentMetadata": { "resourceId", "friendlyName", "domainName", "instanceUrl", "version" } } } ] }
+    // Pure and internal so it's unit-testable without a token or network call.
+    internal static BapEnvironmentInfo? MapBapEnvironmentsResponse(string bapResponseJson, string environmentUrl)
+    {
+        var normalizedTarget = environmentUrl.TrimEnd('/');
+        using var doc = JsonDocument.Parse(bapResponseJson);
+
+        if (!doc.RootElement.TryGetProperty("value", out var envs) || envs.ValueKind != JsonValueKind.Array)
+            return null;
+
+        foreach (var env in envs.EnumerateArray())
+        {
+            var mapped = MapBapEnvironment(env);
+            if (mapped?.EnvironmentUrl?.TrimEnd('/').Equals(normalizedTarget, StringComparison.OrdinalIgnoreCase) == true)
+                return mapped;
+        }
+
+        return null;
+    }
+
+    internal static BapEnvironmentInfo? MapBapEnvironment(JsonElement env)
+    {
+        if (!env.TryGetProperty("properties", out var props))
+            return null;
+
+        var linked = props.TryGetProperty("linkedEnvironmentMetadata", out var lm) ? lm : default;
+
+        var instanceUrl = GetStringProperty(linked, "instanceUrl");
+        if (string.IsNullOrWhiteSpace(instanceUrl))
+            return null;
+
+        Guid.TryParse(GetStringProperty(env, "name"), out var environmentId);
+        Guid.TryParse(GetStringProperty(linked, "resourceId"), out var organizationId);
+
+        return new BapEnvironmentInfo
+        {
+            EnvironmentId = environmentId,
+            EnvironmentUrl = instanceUrl,
+            OrganizationId = organizationId,
+            DisplayName = GetStringProperty(props, "displayName") ?? GetStringProperty(linked, "friendlyName"),
+            Type = GetStringProperty(props, "environmentSku"),
+            DomainName = GetStringProperty(linked, "domainName"),
+            Version = GetStringProperty(linked, "version")
+        };
+    }
+
+    static string? GetStringProperty(JsonElement element, string name) =>
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 
     public string BuildXrmContextConnectionString(string environmentUrl, string? username = null, string? password = null, string? clientId = null)
     {
