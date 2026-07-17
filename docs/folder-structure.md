@@ -86,4 +86,4 @@ Projects created before this layout change used a `solutions/<Name>/` wrapper fo
 2. Edit `.flowline`: add `"SchemaVersion": 1` and replace the `"Solutions": [ { "Name": ..., ... } ]` array with a single `"Solution": { "UniqueName": ..., ... }` object — the array's one entry becomes the object, and `Name` becomes `UniqueName`.
 3. Run `flowline status` to confirm the project loads cleanly against the new layout.
 
-A project still on the old layout fails closed with a clear `ConfigInvalid` error pointing at `docs/folder-structure.md` (this file), rather than silently behaving as an empty or misconfigured project.
+A project still on the old layout fails closed with a clear `ConfigInvalid` error telling you to delete `.flowline` and the old `solutions/<Name>/` folder and start again with `flowline clone <solution>`, rather than silently behaving as an empty or misconfigured project.

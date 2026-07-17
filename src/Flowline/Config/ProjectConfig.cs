@@ -9,7 +9,6 @@ public class ProjectConfig
 {
     internal static readonly string s_configFileName = ".flowline";
     const int CurrentSchemaVersion = 1;
-    const string DocPointer = "see docs/folder-structure.md";
 
     public int? SchemaVersion { get; set; }
     public string? ProdUrl { get; set; }
@@ -281,7 +280,7 @@ public class ProjectConfig
         catch (JsonException ex)
         {
             throw new FlowlineException(ExitCode.ConfigInvalid,
-                $"'{configPath}' is not valid JSON — {DocPointer}.", ex);
+                $"'{configPath}' is not valid JSON.", ex);
         }
 
         using (doc)
@@ -291,13 +290,13 @@ public class ProjectConfig
             if (root.ValueKind != JsonValueKind.Object)
             {
                 throw new FlowlineException(ExitCode.ConfigInvalid,
-                    $"'{configPath}' is not a valid Flowline config (expected a JSON object) — {DocPointer}.");
+                    $"'{configPath}' is not a valid Flowline config (expected a JSON object).");
             }
 
-            if (root.TryGetProperty("Solutions", out _))
+            if (root.TryGetProperty("Solutions", out _)) // <= 0.12.0 was multi-solution folder structure
             {
                 throw new FlowlineException(ExitCode.ConfigInvalid,
-                    $"'{configPath}' is on Flowline's old multi-solution format (Solutions array) — Flowline is now single-solution only, a breaking change. Delete '{configPath}' and this project's old solutions/<Name>/ folder, then run 'flowline clone <solution>' to start again.");
+                    $"'{configPath}' is on Flowline's old multi-solution format (Solutions array) — Flowline is now single-solution tool only, a breaking change. Delete '{configPath}' and this project's old solutions/<Name>/ folder, then run 'flowline clone <solution>' to start again.");
             }
 
             if (!root.TryGetProperty("SchemaVersion", out var schemaVersionElement)
@@ -314,7 +313,7 @@ public class ProjectConfig
                 if (solutionElement.ValueKind != JsonValueKind.Object)
                 {
                     throw new FlowlineException(ExitCode.ConfigInvalid,
-                        $"'{configPath}' has a Solution that is not a JSON object — {DocPointer}.");
+                        $"'{configPath}' has a Solution that is not a JSON object.");
                 }
 
                 var hasUniqueName = solutionElement.TryGetProperty("UniqueName", out var uniqueNameElement)
@@ -324,7 +323,7 @@ public class ProjectConfig
                 if (!hasUniqueName)
                 {
                     throw new FlowlineException(ExitCode.ConfigInvalid,
-                        $"'{configPath}' has a Solution with a missing or empty UniqueName — {DocPointer}.");
+                        $"'{configPath}' has a Solution with a missing or empty UniqueName.");
                 }
             }
         }
