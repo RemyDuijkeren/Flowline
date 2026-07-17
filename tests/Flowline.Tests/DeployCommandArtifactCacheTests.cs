@@ -123,4 +123,34 @@ public class DeployCommandArtifactCacheTests
             File.Delete(path);
         }
     }
+
+    // ── GetDeploymentInputPaths (R15) ─────────────────────────────────────────
+
+    [Fact]
+    public void GetDeploymentInputPaths_ReturnsPackageFolderAndPluginsAndWebResourcesProjectFiles()
+    {
+        var slnFolder = Path.Combine("C:", "repo");
+
+        var paths = DeployCommand.GetDeploymentInputPaths(slnFolder);
+
+        paths.Should().BeEquivalentTo(
+        [
+            Path.Combine(slnFolder, "Package"),
+            Path.Combine(slnFolder, "Plugins", "Plugins.csproj"),
+            Path.Combine(slnFolder, "WebResources", "WebResources.csproj")
+        ]);
+    }
+
+    [Fact]
+    public void GetDeploymentInputPaths_ExcludesDocsTestsAndAgentInstructionFiles()
+    {
+        var slnFolder = Path.Combine("C:", "repo");
+
+        var paths = DeployCommand.GetDeploymentInputPaths(slnFolder);
+
+        paths.Should().NotContain(p => p.Contains("docs"));
+        paths.Should().NotContain(p => p.Contains("tests"));
+        paths.Should().NotContain(p => p.EndsWith("CHANGES.md"));
+        paths.Should().NotContain(p => p.EndsWith("AGENTS.md") || p.EndsWith("CLAUDE.md"));
+    }
 }

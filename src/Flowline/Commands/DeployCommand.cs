@@ -67,7 +67,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         // --path supplies an artifact that wasn't necessarily packed from the current local tree, so neither
         // check is meaningful there: git-clean and drift both assume packagePath is derived from Package/src.
         if (!usingExplicitArtifact)
-            await ValidateGitCleanAsync(sln.UniqueName, slnFolder, cancellationToken);
+            await ValidateGitCleanAsync(slnFolder, cancellationToken);
 
         var (targetEnv, existingSolutionInTarget, resolvedProfile) = await ValidateTargetAsync(targetUrl, sln, settings, cancellationToken);
 
@@ -87,7 +87,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         }
         else
         {
-            currentCommitSha = await GitUtils.GetLastCommitShaForPathAsync(slnFolder, RootFolder, _capture, cancellationToken);
+            currentCommitSha = await GitUtils.GetLastCommitShaForPathAsync(GetDeploymentInputPaths(slnFolder), RootFolder, _capture, cancellationToken);
             cacheEntry = ReadCacheEntryIfExists(CacheManifestPath(candidatePackagePath));
             cacheOutcome = ResolveCacheOutcome(cacheEntry, currentCommitSha, sln.IncludeManaged, settings.NoCache, File.Exists(candidatePackagePath));
 
@@ -342,14 +342,25 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         && Version.TryParse(gateVersion, out var localVer)
         && predVer == localVer;
 
-    private async Task ValidateGitCleanAsync(string solutionName, string slnFolder, CancellationToken ct)
+    private async Task ValidateGitCleanAsync(string slnFolder, CancellationToken ct)
     {
-        var changes = await GitUtils.GetUncommittedChangesInPathAsync(slnFolder, RootFolder, _capture, ct);
+        var changes = await GitUtils.GetUncommittedChangesInPathAsync(GetDeploymentInputPaths(slnFolder), RootFolder, _capture, ct);
         if (changes.Count == 0) return;
 
         throw new FlowlineException(ExitCode.DirtyWorkingDirectory,
-            $"Uncommitted changes in 'solutions/{solutionName}/' — commit or stash changes first before deploying.");
+            $"Uncommitted changes in {PackageName}/, {PluginsName}/{PluginsName}.csproj, or {WebResourcesName}/{WebResourcesName}.csproj — commit or stash changes first before deploying.");
     }
+
+    // R15: the SAME path list scopes both this clean-check and the artifact-cache commit-sha lookup
+    // (see the currentCommitSha call site above), so the two can never diverge — deliberately narrow to
+    // what actually affects the packed artifact (Package/, plus the known Plugins/WebResources project
+    // files), not real .sln-membership discovery (a later, separate plan's job per KTD12).
+    internal static IReadOnlyList<string> GetDeploymentInputPaths(string slnFolder) =>
+    [
+        PackageFolder(slnFolder),
+        Path.Combine(slnFolder, PluginsName, $"{PluginsName}.csproj"),
+        Path.Combine(slnFolder, WebResourcesName, $"{WebResourcesName}.csproj")
+    ];
 
     private void ValidateLocalState(string slnFolder, Settings settings, CancellationToken ct, bool checkDrift = true)
     {

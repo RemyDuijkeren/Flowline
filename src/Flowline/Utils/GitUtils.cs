@@ -151,24 +151,35 @@ public static class GitUtils
 
     // Relative paths are required for untracked file reporting on some platforms;
     // absolute paths can silently omit untracked entries when the directory is new
-    private static (Command Cmd, string PathArg) BuildGitPathCommand(string path, string? workingDirectory)
+    private static (Command Cmd, string[] PathArgs) BuildGitPathCommand(IEnumerable<string> paths, string? workingDirectory)
     {
         var cmd = Cli.Wrap("git");
         if (workingDirectory != null)
             cmd = cmd.WithWorkingDirectory(workingDirectory);
 
-        var pathArg = workingDirectory != null && Path.IsPathRooted(path)
-            ? Path.GetRelativePath(workingDirectory, path)
-            : path;
+        var pathArgs = paths.Select(path =>
+            workingDirectory != null && Path.IsPathRooted(path)
+                ? Path.GetRelativePath(workingDirectory, path)
+                : path).ToArray();
 
-        return (cmd, pathArg);
+        return (cmd, pathArgs);
     }
 
-    public static async Task<IReadOnlyList<string>> GetUncommittedChangesInPathAsync(string path, string? workingDirectory = null, SubprocessCapture? capture = null, CancellationToken cancellationToken = default)
-    {
-        var (cmd, pathArg) = BuildGitPathCommand(path, workingDirectory);
+    public static Task<IReadOnlyList<string>> GetUncommittedChangesInPathAsync(string path, string? workingDirectory = null, SubprocessCapture? capture = null, CancellationToken cancellationToken = default) =>
+        GetUncommittedChangesInPathAsync([path], workingDirectory, capture, cancellationToken);
 
-        var finalCmd = cmd.WithArguments(args => args.Add("status").Add("--porcelain").Add("--").Add(pathArg));
+    // Single git invocation covering every given path — callers that need to scope both a clean-check and a
+    // cache-key to the same explicit path set (e.g. DeployCommand's deployment-input list) must never shell
+    // out per-path, since that would let the two scopes drift independently.
+    public static async Task<IReadOnlyList<string>> GetUncommittedChangesInPathAsync(IEnumerable<string> paths, string? workingDirectory = null, SubprocessCapture? capture = null, CancellationToken cancellationToken = default)
+    {
+        var (cmd, pathArgs) = BuildGitPathCommand(paths, workingDirectory);
+
+        var finalCmd = cmd.WithArguments(args =>
+        {
+            args.Add("status").Add("--porcelain").Add("--");
+            foreach (var pathArg in pathArgs) args.Add(pathArg);
+        });
         var result = await (capture?.Apply(finalCmd) ?? finalCmd)
                            .ExecuteBufferedAsync(cancellationToken);
 
@@ -178,11 +189,21 @@ public static class GitUtils
                      .ToList();
     }
 
-    public static async Task<string?> GetLastCommitShaForPathAsync(string path, string? workingDirectory = null, SubprocessCapture? capture = null, CancellationToken cancellationToken = default)
-    {
-        var (cmd, pathArg) = BuildGitPathCommand(path, workingDirectory);
+    public static Task<string?> GetLastCommitShaForPathAsync(string path, string? workingDirectory = null, SubprocessCapture? capture = null, CancellationToken cancellationToken = default) =>
+        GetLastCommitShaForPathAsync([path], workingDirectory, capture, cancellationToken);
 
-        var finalCmd = cmd.WithArguments(args => args.Add("log").Add("-1").Add("--format=%H").Add("--").Add(pathArg))
+    // Returns the single most-recent commit touching ANY of the given paths (`git log -1 -- path1 path2`
+    // already resolves to exactly that) — one process call, so a multi-path cache key always resolves to
+    // one SHA.
+    public static async Task<string?> GetLastCommitShaForPathAsync(IEnumerable<string> paths, string? workingDirectory = null, SubprocessCapture? capture = null, CancellationToken cancellationToken = default)
+    {
+        var (cmd, pathArgs) = BuildGitPathCommand(paths, workingDirectory);
+
+        var finalCmd = cmd.WithArguments(args =>
+                          {
+                              args.Add("log").Add("-1").Add("--format=%H").Add("--");
+                              foreach (var pathArg in pathArgs) args.Add(pathArg);
+                          })
                           .WithValidation(CommandResultValidation.None);
         var result = await (capture?.Apply(finalCmd, suppressErrors: true) ?? finalCmd)
                            .ExecuteBufferedAsync(cancellationToken);

@@ -189,10 +189,10 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
 
         async Task<bool> IsRepoDirtyAsync(string solutionName)
         {
-            // Scoped to the whole solution folder, not just Package/src -- deploy's own
-            // dirty gate (GitUtils.AssertRepoCleanAsync) blocks on any uncommitted change
-            // anywhere in the repo, and things like deploymentSettings.json or build
-            // artifacts under the solution folder are just as relevant as the unpacked XML.
+            // Scoped to the whole project root, not just Package/src -- status reports on
+            // the project as a whole, so uncommitted changes anywhere (docs, tests, config)
+            // are relevant here even though deploy's own dirty gate is narrower (Package/ and
+            // packaging project files only, per R15).
             var solutionPath = rootFolder;
             try
             {

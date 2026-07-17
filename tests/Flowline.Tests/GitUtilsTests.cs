@@ -1,6 +1,7 @@
 using CliWrap;
 using CliWrap.Buffered;
 using FluentAssertions;
+using Flowline.Commands;
 using Flowline.Core;
 
 namespace Flowline.Tests;
@@ -262,5 +263,133 @@ public class GitUtilsTests : IDisposable
         {
             Directory.Delete(nonRepoDir, recursive: true);
         }
+    }
+
+    // ── Multi-path overloads (R15) ────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetUncommittedChangesInPathAsync_WithMultiplePaths_DetectsChangeInEitherPath()
+    {
+        CreateAndCommitFile("Package/src/existing.xml");
+        CreateAndCommitFile("Plugins/Plugins.csproj");
+        File.WriteAllText(Path.Combine(_root, "Plugins", "Plugins.csproj"), "modified");
+
+        var result = await GitUtils.GetUncommittedChangesInPathAsync(
+            [Path.Combine(_root, "Package"), Path.Combine(_root, "Plugins", "Plugins.csproj")], _root);
+
+        result.Should().ContainSingle().Which.Should().Be("Plugins/Plugins.csproj");
+    }
+
+    [Fact]
+    public async Task GetUncommittedChangesInPathAsync_WithMultiplePaths_AndNoChangesInAny_ReturnsEmptyList()
+    {
+        CreateAndCommitFile("Package/src/existing.xml");
+        CreateAndCommitFile("Plugins/Plugins.csproj");
+
+        var result = await GitUtils.GetUncommittedChangesInPathAsync(
+            [Path.Combine(_root, "Package"), Path.Combine(_root, "Plugins", "Plugins.csproj")], _root);
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetUncommittedChangesInPathAsync_WithMultiplePaths_IgnoresChangeOutsideAllGivenPaths()
+    {
+        CreateAndCommitFile("Package/src/existing.xml");
+        CreateAndCommitFile("docs/BRAINSTORM.md");
+        File.WriteAllText(Path.Combine(_root, "docs", "BRAINSTORM.md"), "modified");
+
+        var result = await GitUtils.GetUncommittedChangesInPathAsync(
+            [Path.Combine(_root, "Package"), Path.Combine(_root, "Plugins", "Plugins.csproj")], _root);
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetLastCommitShaForPathAsync_WithMultiplePaths_ReturnsMostRecentShaAcrossAll()
+    {
+        CreateAndCommitFile("Package/src/first.xml");
+        var olderSha = ReadGitOutput("rev-parse", "HEAD");
+
+        CreateAndCommitFile("Plugins/Plugins.csproj");
+        var newerSha = ReadGitOutput("rev-parse", "HEAD");
+
+        var sha = await GitUtils.GetLastCommitShaForPathAsync(
+            [Path.Combine(_root, "Package"), Path.Combine(_root, "Plugins", "Plugins.csproj")], _root);
+
+        sha.Should().Be(newerSha);
+        sha.Should().NotBe(olderSha);
+    }
+
+    [Fact]
+    public async Task GetLastCommitShaForPathAsync_WithMultiplePaths_AndNoCommitsTouchingEither_ReturnsNull()
+    {
+        CreateAndCommitFile("docs/BRAINSTORM.md");
+
+        var sha = await GitUtils.GetLastCommitShaForPathAsync(
+            [Path.Combine(_root, "Package"), Path.Combine(_root, "Plugins", "Plugins.csproj")], _root);
+
+        sha.Should().BeNull();
+    }
+
+    // ── DeployCommand.GetDeploymentInputPaths integration (R15) ───────────────
+    // These exercise the actual scope DeployCommand's clean-check and cache-key call sites share —
+    // GetDeploymentInputPaths feeding straight into the multi-path GitUtils methods above.
+
+    [Fact]
+    public async Task DeploymentInputPaths_UncommittedChangeUnderPackage_IsDetected()
+    {
+        CreateAndCommitFile("Package/src/Other/Solution.xml");
+        File.WriteAllText(Path.Combine(_root, "Package", "src", "Other", "Solution.xml"), "modified");
+
+        var changes = await GitUtils.GetUncommittedChangesInPathAsync(
+            DeployCommand.GetDeploymentInputPaths(_root), _root);
+
+        changes.Should().ContainSingle().Which.Should().Be("Package/src/Other/Solution.xml");
+    }
+
+    [Fact]
+    public async Task DeploymentInputPaths_UncommittedChangeUnderPluginsProjectFile_IsDetected()
+    {
+        CreateAndCommitFile("Plugins/Plugins.csproj");
+        File.WriteAllText(Path.Combine(_root, "Plugins", "Plugins.csproj"), "modified");
+
+        var changes = await GitUtils.GetUncommittedChangesInPathAsync(
+            DeployCommand.GetDeploymentInputPaths(_root), _root);
+
+        changes.Should().ContainSingle().Which.Should().Be("Plugins/Plugins.csproj");
+    }
+
+    [Theory]
+    [InlineData("docs/BRAINSTORM.md")]
+    [InlineData("tests/Flowline.Tests/SomeTest.cs")]
+    [InlineData("CHANGES.md")]
+    [InlineData("AGENTS.md")]
+    [InlineData("CLAUDE.md")]
+    public async Task DeploymentInputPaths_UncommittedChangeOutsideScope_IsIgnored(string relativePath)
+    {
+        CreateAndCommitFile(relativePath);
+        File.WriteAllText(Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar)), "modified");
+
+        var changes = await GitUtils.GetUncommittedChangesInPathAsync(
+            DeployCommand.GetDeploymentInputPaths(_root), _root);
+
+        changes.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task DeploymentInputPaths_CacheKeyChangesWhenPackageChanges_ButNotWhenDocsChange()
+    {
+        CreateAndCommitFile("Package/src/Other/Solution.xml");
+        var initialSha = await GitUtils.GetLastCommitShaForPathAsync(DeployCommand.GetDeploymentInputPaths(_root), _root);
+
+        CreateAndCommitFile("docs/BRAINSTORM.md");
+        var afterDocsSha = await GitUtils.GetLastCommitShaForPathAsync(DeployCommand.GetDeploymentInputPaths(_root), _root);
+
+        CreateAndCommitFile("Package/src/Other/Customizations.xml");
+        var afterPackageChangeSha = await GitUtils.GetLastCommitShaForPathAsync(DeployCommand.GetDeploymentInputPaths(_root), _root);
+
+        afterDocsSha.Should().Be(initialSha); // docs-only commit must not invalidate the cache key
+        afterPackageChangeSha.Should().NotBe(initialSha); // a Package/ change must invalidate it
     }
 }
