@@ -8,7 +8,6 @@
     <File Path="LICENSE" />
     <File Path="README.md" />
     <File Path="reinstall-flowline.ps1" />
-    <File Path="src/Flowline/Properties/launchSettings.json" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src\Flowline\Flowline.csproj" />
