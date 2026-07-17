@@ -1,4 +1,5 @@
 using Flowline;
+using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Spectre.Console.Testing;

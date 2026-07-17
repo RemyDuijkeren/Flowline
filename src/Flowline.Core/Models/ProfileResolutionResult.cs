@@ -1,4 +1,4 @@
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Models;
 
 public abstract record ProfileResolutionResult;
 public record ProfileFound(PacProfile Profile) : ProfileResolutionResult;

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using CliWrap;
 using FluentAssertions;
+using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Generators;
 using Spectre.Console.Testing;

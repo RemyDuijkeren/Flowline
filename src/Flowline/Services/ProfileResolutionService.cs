@@ -1,4 +1,5 @@
 using Flowline.Core;
+using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Utils;
 using Spectre.Console;
