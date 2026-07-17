@@ -29,23 +29,25 @@ solution files and paths. The full spec is at [`docs/folder-structure.md`](docs/
 ```
 ProjectRoot/
 ├── .flowline                         ← project config
-└── solutions/
-    └── <SolutionName>/
-        ├── <SolutionName>.sln
-        ├── Package/                  ← PAC-managed (do not edit manually)
-        │   ├── Package.cdsproj       ← solution package project
-        │   └── src/                  ← unpacked solution XML (git-diffable)
-        ├── Plugins/                  ← Plugins.csproj (plugins, workflows, custom APIs)
-        └── WebResources/             ← WebResources.csproj + src/ + public/ + dist/
+├── <SolutionName>.sln
+├── Package/                          ← PAC-managed (do not edit manually)
+│   ├── Package.cdsproj               ← solution package project
+│   └── src/                          ← unpacked solution XML (git-diffable)
+├── Plugins/                          ← Plugins.csproj (plugins, workflows, custom APIs)
+├── WebResources/                     ← WebResources.csproj + src/ + public/ + dist/
+├── artifacts/                        ← packed solution zips (gitignored)
+├── CHANGES.md
+├── docs/                             ← not scaffolded; created on first sync (DATAVERSE_CONTEXT.md)
+└── tests/                            ← not scaffolded; recognized if present
 ```
 
 Key rules:
-- All solutions live under `solutions/<SolutionName>/` — never at the repo root
+- Exactly one Dataverse solution lives directly at the project root — never under a `solutions/<Name>/` wrapper
 - The cdsproj is always `Package/Package.cdsproj` — PAC-managed, never edit manually
 - Unpacked solution XML lives in `Package/src/` — committed to source control
 - The plugins project is always named `Plugins` (`Plugins.csproj`)
 - Web asset build output goes to `WebResources/dist/` — this is what syncs to Dataverse
-- Multiple solutions can coexist as sibling folders under `solutions/`
+- A second solution is a separate repo, or (rarer) a nested `solutions/<Name>/` folder of independent Flowline projects — see `docs/folder-structure.md` §4
 
 ## GitHub Wiki
 
