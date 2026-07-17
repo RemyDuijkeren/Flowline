@@ -411,7 +411,7 @@ public class ProjectConfigTests : IDisposable
         var act = () => ProjectConfig.Load(_tempDir);
 
         act.Should().Throw<FlowlineException>()
-            .Where(e => e.ExitCode == ExitCode.ConfigInvalid && e.Message.Contains("docs/folder-structure.md"));
+            .Where(e => e.ExitCode == ExitCode.ConfigInvalid && e.Message.Contains("flowline clone"));
     }
 
     [Fact]

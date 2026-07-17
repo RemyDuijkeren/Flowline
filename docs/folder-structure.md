@@ -2,6 +2,22 @@
 
 To support a scalable and developer-friendly environment for Dataverse development, Flowline CLI uses the following folder structure. Every Flowline project holds exactly one Dataverse solution at its root — no wrapper folder, no `src/` nesting — keeping the layout as flat as the common case actually is.
 
+#### 0. What Changed (and Why)
+
+Flowline started out modeling *multiple* Dataverse solutions per project: `.flowline` held a `"Solutions": [...]` array, and each solution lived in its own `solutions/<Name>/` subfolder (`solutions/Cr07982/Package/`, `solutions/Cr07982/Plugins/`, and so on). As of this change, Flowline is a **single-solution tool**: exactly one Dataverse solution per project root, full stop.
+
+Why: not one real Flowline project ever populated that array with more than one entry. The multi-solution wrapper was speculative generality that added a directory level and selection logic to every command, for a capability nobody used. Microsoft's own Power Platform ALM guidance backs the default too: a single-solution strategy is "recommended for small-medium scale implementations, scenarios where future modularization is unlikely" — which describes Flowline's solo/small-team consultant audience exactly.
+
+What concretely changed:
+
+- **Folder layout** — `Package/`, `Plugins/`, `WebResources/`, `artifacts/`, and the `.sln` moved from `solutions/<Name>/` up to the project root. See the layout diagram below.
+- **`.flowline` config schema** — `"Solutions": [ { "Name": ..., ... } ]` (an array) became `"Solution": { "UniqueName": ..., ... }` (a single object), plus a new required `"SchemaVersion": 1`. See §5 below for the exact before/after shape.
+- **Command surface** — `flowline deploy`'s `--solution <name>` flag and `flowline sync`/`flowline drift`'s positional `[solution]` argument are gone; they had nothing left to select once only one solution exists. `flowline push`/`flowline generate` keep their positional argument (still needed for standalone mode), but it's now checked against the one configured solution rather than used to pick among several.
+- **`flowline status`** always renders exactly one row instead of a multi-solution grid.
+- **No automated migration** — a project on the old layout doesn't silently break or misbehave; it fails closed with a clear `ConfigInvalid` error (see §5 for the manual cutover).
+
+Still need more than one Dataverse solution in the same environment? See §4 below — it's a documented pattern, not a built-in Flowline feature.
+
 #### 1. Folder Hierarchy Overview
 
 The solution's own `.sln` file lives directly at the project root, alongside `Package/`, `Plugins/`, `WebResources/`, and `artifacts/`.
