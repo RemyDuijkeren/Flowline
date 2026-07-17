@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`clone` also scaffolds `CLAUDE.md`**: `AGENTS.md` alone isn't picked up by Claude Code, which only auto-loads `CLAUDE.md` — clone now writes a one-line `CLAUDE.md` (`@AGENTS.md`) alongside it so Claude Code loads the same instructions. Skipped if `CLAUDE.md` already exists.
+
 ## [0.12.0] - 2026-07-17
 
 ### Fixed

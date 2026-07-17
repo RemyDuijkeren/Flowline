@@ -92,6 +92,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         }
 
         await ScaffoldAgentsFileAsync(projectSln.Name, cancellationToken);
+        await ScaffoldClaudeFileAsync(cancellationToken);
         await new DataverseContextGenerator(Console).GenerateAsync(
             Path.Combine(PackageFolder(slnFolder), "src"), projectSln.Name, RootFolder, cancellationToken);
 
@@ -223,6 +224,19 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
         await File.WriteAllTextAsync(agentsPath, content, cancellationToken);
         Console.Ok("AGENTS.md created.");
+    }
+
+    private async Task ScaffoldClaudeFileAsync(CancellationToken cancellationToken)
+    {
+        var claudePath = Path.Combine(RootFolder, "CLAUDE.md");
+        if (File.Exists(claudePath))
+        {
+            Console.Skip("CLAUDE.md already exists — skipping.");
+            return;
+        }
+
+        await File.WriteAllTextAsync(claudePath, "@AGENTS.md\n", cancellationToken);
+        Console.Ok("CLAUDE.md created.");
     }
 
     private async Task<(EnvironmentInfo sourceEnv, ProjectSolution projectSolution, SolutionInfo solutionInfo)> FindUnmanagedSourceAsync(Settings settings,
