@@ -143,7 +143,7 @@ app.Configure(config =>
 
     // clone = Clone solution from environment to local folder
     config.AddCommand<CloneCommand>("clone") // init (new repo) or clone (existing repo)
-          .WithDescription("Initialize a Flowline project from an existing Dataverse solution. Creates folder structure, unpacks solution XML, scaffolds Plugins and WebResources projects, and generates AGENTS.md. One-time setup per solution.")
+          .WithDescription("Initialize a Flowline project from an existing Dataverse solution. Creates folder structure, unpacks solution XML, scaffolds Plugins and WebResources projects, and generates AGENTS.md. One-time setup per solution — safe to re-run (will recreate what is missing).")
           .WithExample("clone", "ContosoCustomizations --prod https://contoso.crm4.dynamics.com")
           .WithExample("clone", "ContosoCustomizations --dev https://contoso-test.crm4.dynamics.com --managed");
 

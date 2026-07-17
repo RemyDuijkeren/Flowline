@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using CliWrap;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Diagnostics;
@@ -57,6 +56,9 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         Logger.LogInformation("target={EnvironmentUrl} solution={SolutionName} bump={Bump}", devEnv.EnvironmentUrl, projectSln.Name, settings.Bump);
 
+        Config!.Save();
+        Console.Verbose($"Project configuration saved to {ProjectConfig.s_configFileName}");
+
         // Validate that we have an initialized project
         var slnFolder = Path.Combine(RootFolder, "solutions", projectSln.Name);
         var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
@@ -105,28 +107,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             Console.Ok($"Version bumped: {tagVersion}");
 
         // Sync solution from Dataverse
-        Logger.LogInformation("Syncing from Dataverse: {SolutionName}", projectSln.Name);
-        var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-        CommandResult result = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Syncing solution [bold]{projectSln.Name}[/]...",
-            ctx => Cli.Wrap(cmdName)
-                      .WithArguments(args =>
-                          args.AddIfNotNull(prefixArgs)
-                              .Add("solution")
-                              .Add("sync")
-                              .Add("--solution-folder").Add(PackageFolder(slnFolder))
-                              .Add("--environment").Add(devEnv.EnvironmentUrl!)
-                              .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
-                              .Add("--async"))
-                      .WithValidation(CommandResultValidation.None)
-                      .WithCapture(_capture, ctx)
-                      .ExecuteAsync(cancellationToken)
-                      .Task);
-
-        if (!result.IsSuccess)
-            throw new FlowlineException(ExitCode.GeneralError, "Sync failed — check the environment and your PAC login. Use --verbose for more details.");
-
-        Console.Ok($"Solution synced from Dataverse in {FormatDuration(result.RunTime)}");
+        await PacUtils.SyncSolutionFromDataverseAsync(projectSln.Name, PackageFolder(slnFolder), devEnv.EnvironmentUrl!, projectSln.IncludeManaged, _capture, cancellationToken);
 
         // Pack the solution in pac to validate it
         Logger.LogInformation("Validating pack: {SolutionName}", projectSln.Name);

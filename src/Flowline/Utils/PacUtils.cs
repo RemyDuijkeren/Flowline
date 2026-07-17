@@ -212,6 +212,36 @@ public static class PacUtils
         return 0;
     }
 
+    public static async Task SyncSolutionFromDataverseAsync(
+        string solutionName, string packageFolder, string environmentUrl,
+        bool includeManaged, SubprocessCapture capture, CancellationToken cancellationToken)
+    {
+        var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
+        CommandResult result = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+            $"Syncing solution [bold]{solutionName}[/]...",
+            ctx => Cli.Wrap(cmdName)
+                      .WithArguments(args =>
+                          args.AddIfNotNull(prefixArgs)
+                              .Add("solution")
+                              .Add("sync")
+                              .Add("--solution-folder").Add(packageFolder)
+                              .Add("--environment").Add(environmentUrl)
+                              .Add("--packagetype").Add(includeManaged ? "Both" : "Unmanaged")
+                              .Add("--async"))
+                      .WithValidation(CommandResultValidation.None)
+                      .WithCapture(capture, ctx)
+                      .ExecuteAsync(cancellationToken)
+                      .Task);
+
+        if (!result.IsSuccess)
+            throw new FlowlineException(ExitCode.GeneralError, "Sync failed — check the environment and your PAC login. Use --verbose for more details.");
+
+        var duration = result.RunTime.TotalMinutes >= 1
+            ? $"{(int)result.RunTime.TotalMinutes}m {result.RunTime.Seconds}s"
+            : $"{(int)result.RunTime.TotalSeconds}s";
+        AnsiConsole.MarkupLine($"[green]✓[/] Solution synced from Dataverse in {duration}");
+    }
+
     public static async Task UnpackSolutionAsync(string zipPath, string destinationFolder, SubprocessCapture capture, CancellationToken cancellationToken)
     {
         var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);

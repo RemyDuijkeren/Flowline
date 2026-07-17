@@ -38,8 +38,8 @@ public class SolutionChangeSummary
     {
         var srcRelPath = Path.GetRelativePath(workingDirectory, srcFolder).Replace('\\', '/');
 
-        static Task<CliWrap.Buffered.BufferedCommandResult> Run(Command cmd, SubprocessCapture? cap, CancellationToken ct) =>
-            (cap?.Apply(cmd) ?? cmd).ExecuteBufferedAsync(ct);
+        static Task<CliWrap.Buffered.BufferedCommandResult> Run(Command cmd, SubprocessCapture? cap, CancellationToken ct, bool suppressErrors = false) =>
+            (cap?.Apply(cmd, suppressErrors: suppressErrors) ?? cmd).ExecuteBufferedAsync(ct);
 
         var statusResult = await Run(
             Cli.Wrap("git")
@@ -71,7 +71,7 @@ public class SolutionChangeSummary
                 .Add("diff").Add("HEAD").Add("--numstat")
                 .Add("--").Add(srcRelPath))
             .WithValidation(CommandResultValidation.None),
-            capture, ct);
+            capture, ct, suppressErrors: true);
 
         var linesByPath = numstatResult.StandardOutput
             .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)

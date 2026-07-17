@@ -228,29 +228,6 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     private async Task<(EnvironmentInfo sourceEnv, ProjectSolution projectSolution, SolutionInfo solutionInfo)> FindUnmanagedSourceAsync(Settings settings,
         CancellationToken cancellationToken)
     {
-        // clone only pulls fresh source once (CloneSolutionFromDataverseAsync skips when Package.cdsproj
-        // already exists) — an already-cloned solution's Package/src was unpacked for whatever packagetype
-        // was requested back then, so flipping --managed here would update config without ever re-fetching
-        // the managed layer, and fail confusingly at pack time. Route mode changes through sync instead,
-        // which always re-fetches with the correct --packagetype. Re-passing the same value that's
-        // already in config (or --managed on a solution that isn't cloned yet) is harmless and stays allowed.
-        if (settings.IncludeManaged.IsSet)
-        {
-            var resolvedName = ResolveSolutionName(Config!, settings.Solution);
-            var existingSln = resolvedName != null
-                ? Config!.Solutions.FirstOrDefault(s => StringComparer.OrdinalIgnoreCase.Equals(s.Name, resolvedName))
-                : null;
-
-            if (existingSln != null &&
-                existingSln.IncludeManaged != settings.IncludeManaged.Value &&
-                IsAlreadyCloned(RootFolder, resolvedName!))
-            {
-                throw new FlowlineException(ExitCode.ValidationFailed,
-                    $"'{resolvedName}' is already cloned as {(existingSln.IncludeManaged ? "managed" : "unmanaged")} — clone can't change managed mode after the fact. " +
-                    $"Run 'flowline sync --managed{(settings.IncludeManaged.Value ? "" : " false")}' instead.");
-            }
-        }
-
         foreach (var role in new[] { EnvironmentRole.Prod, EnvironmentRole.Uat, EnvironmentRole.Test, EnvironmentRole.Dev })
         {
             var configUrl = role switch
@@ -278,22 +255,6 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         }
 
         throw new FlowlineException(ExitCode.NotFound, "No unmanaged environment found — provide a --dev, --test, --uat, or --prod URL with an unmanaged solution.");
-    }
-
-    // Read-only name resolution — mirrors ProjectConfig.GetOrUpdateSolution's lookup without mutating
-    // config, so this precondition check can run before that method's confirm-and-overwrite prompt.
-    internal static string? ResolveSolutionName(ProjectConfig config, string? inputName)
-    {
-        var name = inputName?.Trim();
-        if (!string.IsNullOrWhiteSpace(name)) return name;
-        return config.Solutions.Count == 1 ? config.Solutions.Single().Name : null;
-    }
-
-    internal static bool IsAlreadyCloned(string rootFolder, string solutionName)
-    {
-        var slnFolder = Path.Combine(rootFolder, AllSolutionsFolderName, solutionName);
-        var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
-        return File.Exists(cdsprojPath);
     }
 
     private void SeedWebResourceDistFromSrc(string slnFolder, string? publisherPrefix, string solutionName, Settings settings)
@@ -345,7 +306,14 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     {
         if (File.Exists(cdsprojPath))
         {
-            Console.Skip("Solution already cloned — skipping");
+            // Unmanaged content is always present once cloned (Both is a superset), so only a
+            // switch to managed can leave the local source stale — and only when it doesn't
+            // already have the managed layer (e.g. a previous clone/sync already fetched Both).
+            if (projectSln.IncludeManaged && !HasManagedContent(PackageFolder(slnFolder)))
+                await PacUtils.SyncSolutionFromDataverseAsync(projectSln.Name, PackageFolder(slnFolder), environmentUrl, projectSln.IncludeManaged, _capture, cancellationToken);
+            else
+                Console.Skip("Solution already cloned — skipping");
+
             return;
         }
 
@@ -385,6 +353,17 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         DeleteScaffoldedGitignore(PackageFolder(slnFolder)); // superseded by the project-root .gitignore
 
         Console.Ok($"Solution [bold]{projectSln.Name}[/] cloned in {FormatDuration(result.RunTime)}");
+    }
+
+    // PAC gives packagetype-sensitive components (FormXml, AppModuleSiteMap, AppModule) a second
+    // "{name}_managed.xml" file alongside the plain one only when unpacked with --packagetype Both —
+    // its presence is a reliable, on-disk signal that the managed layer was already fetched, without
+    // needing to track our own "what did we last sync" state (which could go stale if a prior fetch failed).
+    internal static bool HasManagedContent(string packageFolder)
+    {
+        var srcFolder = Path.Combine(packageFolder, "src");
+        return Directory.Exists(srcFolder) &&
+               Directory.EnumerateFiles(srcFolder, "*_managed.xml", SearchOption.AllDirectories).Any();
     }
 
     private async Task CreateSolutionFileAsync(ProjectSolution projectSln, string slnFolder, string slnFilePath, string cdsprojPath, Settings settings,

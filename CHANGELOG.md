@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`clone` re-syncs an already-cloned solution when it's missing the managed layer**: re-running `clone --managed` on a solution that was previously cloned unmanaged now re-fetches `Package/src/` from Dataverse to pick up the managed layer, instead of silently skipping. Detected by checking for PAC's `*_managed.xml` sibling files on disk — no re-sync (and no extra Dataverse round-trip) when the local source already has what the current mode needs. Fixes a bug where `clone --managed` after an initial unmanaged clone updated `.flowline` but left `Package/src/` unpacked for unmanaged only, causing a later managed `pac solution pack` to fail with a cryptic error. Re-syncing overwrites `Package/src/` — commit local edits there first.
+
 ## [0.11.0] - 2026-07-16
 
 ### Added

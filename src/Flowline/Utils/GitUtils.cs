@@ -183,7 +183,7 @@ public static class GitUtils
 
         var finalCmd = cmd.WithArguments(args => args.Add("log").Add("-1").Add("--format=%H").Add("--").Add(pathArg))
                           .WithValidation(CommandResultValidation.None);
-        var result = await (capture?.Apply(finalCmd) ?? finalCmd)
+        var result = await (capture?.Apply(finalCmd, suppressErrors: true) ?? finalCmd)
                            .ExecuteBufferedAsync(cancellationToken);
 
         if (result.ExitCode != 0) return null;

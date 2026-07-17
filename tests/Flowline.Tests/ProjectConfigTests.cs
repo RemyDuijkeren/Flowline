@@ -50,6 +50,47 @@ public class ProjectConfigTests
         sln.Should().BeNull();
     }
 
+    // Regression: the no-name/single-solution shortcut used to return the resolved solution
+    // immediately, bypassing the includeManaged conflict check below it entirely — so
+    // `sync --managed false` on a single-solution project (the common case: no positional
+    // solution name passed) silently kept the old IncludeManaged value with no prompt, no
+    // warning, no update.
+    [Fact]
+    public void GetOrUpdateSolution_NoName_SingleSolution_IncludeManagedDiffers_ForceConfig_Updates()
+    {
+        var config = new ProjectConfig();
+        config.AddOrUpdateSolution("OnlySolution", includeManaged: true);
+        var settings = new FlowlineSettings { Force = ["config"] };
+
+        var sln = config.GetOrUpdateSolution(null, includeManaged: false, settings);
+
+        sln!.IncludeManaged.Should().BeFalse();
+        config.Solutions.Single().IncludeManaged.Should().BeFalse();
+    }
+
+    [Fact]
+    public void GetOrUpdateSolution_NoName_SingleSolution_IncludeManagedDiffers_NoForce_ThrowsForceRequired()
+    {
+        var config = new ProjectConfig();
+        config.AddOrUpdateSolution("OnlySolution", includeManaged: true);
+
+        var act = () => config.GetOrUpdateSolution(null, includeManaged: false, new FlowlineSettings());
+
+        act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ForceRequired);
+        config.Solutions.Single().IncludeManaged.Should().BeTrue();
+    }
+
+    [Fact]
+    public void GetOrUpdateSolution_NoName_SingleSolution_IncludeManagedMatches_NoPromptNeeded()
+    {
+        var config = new ProjectConfig();
+        config.AddOrUpdateSolution("OnlySolution", includeManaged: false);
+
+        var sln = config.GetOrUpdateSolution(null, includeManaged: false, new FlowlineSettings());
+
+        sln!.IncludeManaged.Should().BeFalse();
+    }
+
     // GetOrUpdateUatUrl tests
 
     [Fact]

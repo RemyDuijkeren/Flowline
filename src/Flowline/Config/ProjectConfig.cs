@@ -206,15 +206,11 @@ public class ProjectConfig
             {
                 return null;
             }
-            else
-            {
-                var first = Solutions.Single();
-                if (settings is { Verbose: true })
-                {
-                    AnsiConsole.MarkupLine($"[dim]Solution: [bold]{first.Name}[/][/]");
-                }
 
-                return first;
+            name = Solutions.Single().Name;
+            if (settings is { Verbose: true })
+            {
+                AnsiConsole.MarkupLine($"[dim]Solution: [bold]{name}[/][/]");
             }
         }
 
