@@ -279,7 +279,7 @@ public class DataverseConnectorTests
     [Fact(Skip = "Failing with 'Need a non-empty authority' error in current environment")]
     public async Task ConnectViaPacAsync_ShouldConnect_WhenRealEnvironmentUrlIsProvided()
     {
-        // This test requires a valid PAC profile to be present on the machine
+        // This test requires a valid PAC auth profile to be present on the machine
         var profiles = _service.GetPacProfiles();
         var profile = profiles.FirstOrDefault();
 
@@ -294,7 +294,7 @@ public class DataverseConnectorTests
     [Fact(Skip = "Opens a device code flow window in the browser, which is not supported in CI")]
     public async Task ConnectViaPacAsync_Universal_ShouldConnect_WhenEnvironmentUrlIsProvided()
     {
-        // This test requires a valid UNIVERSAL PAC profile to be present on the machine
+        // This test requires a valid UNIVERSAL PAC auth profile to be present on the machine
         var profiles = _service.GetPacProfiles();
         var profile = profiles.FirstOrDefault(p => p.IsUniversal);
         var environmentUrl = "https://spotlerautomate.crm4.dynamics.com";
@@ -396,13 +396,13 @@ public class DataverseConnectorTests
                 Enumerable.Empty<PacProfile>()));
 
         Assert.Equal(ExitCode.NotAuthenticated, ex.ExitCode);
-        Assert.Contains("No PAC profile found", ex.Message);
+        Assert.Contains("No PAC auth profile found", ex.Message);
     }
 
     [Fact]
     public void BuildXrmContextConnectionString_ServicePrincipalProfile_ThrowsFlowlineException()
     {
-        // PAC CLI does not store raw client secrets; XrmContext ClientSecret auth is not possible from a PAC profile alone.
+        // PAC CLI does not store raw client secrets; XrmContext ClientSecret auth is not possible from a PAC auth profile alone.
         var profiles = new List<PacProfile>
         {
             new() { Kind = "ServicePrincipal", Resource = "https://contoso.crm4.dynamics.com", ApplicationId = "some-app-id" }
@@ -418,7 +418,7 @@ public class DataverseConnectorTests
     [Fact]
     public void BuildXrmContextConnectionString_WithUsernameAndPassword_NoProfileRequired()
     {
-        // ROPC path does not require a PAC profile
+        // ROPC path does not require a PAC auth profile
         var result = DataverseConnector.BuildXrmContextConnectionString(
             "https://contoso.crm4.dynamics.com",
             Enumerable.Empty<PacProfile>(),

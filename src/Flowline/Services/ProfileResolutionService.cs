@@ -42,11 +42,11 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
         {
             var lines = string.Join("\n", candidates.Select(FormatCandidate));
             throw new FlowlineException(ExitCode.NotAuthenticated,
-                $"Multiple PAC profiles match {environmentUrl} — run: pac auth select --index <n> to set one profile active\n{lines}");
+                $"Multiple PAC auth profiles match {environmentUrl} — run: pac auth select --index <n> to set one profile active\n{lines}");
         }
 
         var prompt = new SelectionPrompt<PacProfile>()
-            .Title("Multiple PAC profiles match — select one:")
+            .Title("Multiple PAC auth profiles match — select one:")
             .UseConverter(FormatCandidate)
             .AddChoices(candidates);
 
@@ -67,8 +67,8 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
     void EmitStatusLine(PacProfile profile)
     {
         var status = string.IsNullOrEmpty(profile.Name)
-            ? $"Using PAC profile (unnamed, {Markup.Escape(profile.Kind ?? "")}) — {Markup.Escape(profile.Resource ?? "")}"
-            : $"Using PAC profile '{Markup.Escape(profile.Name)}' ({Markup.Escape(profile.Kind ?? "")})";
+            ? $"Using PAC auth profile (unnamed, {Markup.Escape(profile.Kind ?? "")}) — {Markup.Escape(profile.Resource ?? "")}"
+            : $"Using PAC auth profile '{Markup.Escape(profile.Name)}' ({Markup.Escape(profile.Kind ?? "")})";
         console.Info(status);
     }
 

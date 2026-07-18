@@ -46,12 +46,12 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
     {
         if (profile == null) throw new ArgumentNullException(nameof(profile));
         if (string.IsNullOrWhiteSpace(environmentUrl))
-            throw new ArgumentException("Environment URL is required for connecting via PAC profile.", nameof(environmentUrl));
+            throw new ArgumentException("Environment URL is required for connecting via PAC auth profile.", nameof(environmentUrl));
 
         var resourceUrl = environmentUrl.TrimEnd('/');
         var serviceUri  = new Uri(resourceUrl + "/");
 
-        console.Verbose($"Connecting via PAC profile '{profile.Name ?? profile.User}' at {resourceUrl}...");
+        console.Verbose($"Connecting via PAC auth profile '{profile.Name ?? profile.User}' at {resourceUrl}...");
 
         var authority = ResolveAuthority(profile);
         var cacheHelper = await GetOrCreateMsalCacheHelperAsync();
@@ -362,7 +362,7 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
 
         if (!string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password))
         {
-            // ROPC flow — no browser or PAC profile required
+            // ROPC flow — no browser or PAC auth profile required
             if (username.IndexOfAny([';', '=']) >= 0)
                 throw new FlowlineException(ExitCode.ValidationFailed, "XrmContext username must not contain ';' or '='. Remove those characters from --username.");
             if (password.IndexOfAny([';', '=']) >= 0)
@@ -370,14 +370,14 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
             return $"AuthType=OAuth;Username={username};Password={password};Url={normalizedUrl};AppId={appId};RedirectUri=http://localhost;LoginPrompt=Never;TokenCacheStorePath={tokenCachePath};";
         }
 
-        // Browser OAuth — PAC profile validates the environment exists in auth store
+        // Browser OAuth — PAC auth profile validates the environment exists in auth store
         var profile = profiles
             .FirstOrDefault(p => p.Resource?.TrimEnd('/').Equals(normalizedUrl, StringComparison.OrdinalIgnoreCase) == true)
             ?? profiles.FirstOrDefault(p => p.IsUniversal);
 
         if (profile is null)
             throw new FlowlineException(ExitCode.NotAuthenticated,
-                $"No PAC profile found for {normalizedUrl}. Run 'pac auth create --environment {normalizedUrl}' first.");
+                $"No PAC auth profile found for {normalizedUrl}. Run 'pac auth create --environment {normalizedUrl}' first.");
 
         if (profile.IsServicePrincipal)
             throw new FlowlineException(ExitCode.NotAuthenticated,

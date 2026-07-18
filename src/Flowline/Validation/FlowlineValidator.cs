@@ -91,7 +91,7 @@ public sealed class FlowlineValidator
         GetEnvironmentInfoCoreAsync(environmentUrl, settings, cancellationToken,
             () => _probes.GetEnvironmentAsync(environmentUrl, settings.Verbose, cancellationToken));
 
-    // Profile-scoped overload — used wherever a PAC profile has already been resolved for the target
+    // Profile-scoped overload — used wherever a PAC auth profile has already been resolved for the target
     // URL (R1/R4). Shares the same cache dictionary/TTL as the unprofiled overload above (KTD6):
     // Type/existence at a URL doesn't vary by which correctly-resolved profile asked.
     public Task<EnvironmentInfo?> GetEnvironmentInfoByUrlAsync(

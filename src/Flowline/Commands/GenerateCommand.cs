@@ -255,7 +255,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             else
             {
                 throw new FlowlineException(ExitCode.NotAuthenticated,
-                    $"PAC profile kind '{effectiveProfile.Kind}' is not supported by xrmcontext3 — switch to a service principal or UNIVERSAL profile, or pass --client-id <CLIENT_ID> --client-secret <SECRET>. " +
+                    $"PAC auth profile kind '{effectiveProfile.Kind}' is not supported by xrmcontext3 — switch to a service principal or UNIVERSAL profile, or pass --client-id <CLIENT_ID> --client-secret <SECRET>. " +
                     $"run: pac auth select");
             }
         }

@@ -15,7 +15,7 @@ public class XrmContext3Generator(
     {
         if (context.XrmContextAuth is null)
             throw new FlowlineException(ExitCode.NotAuthenticated,
-                "XrmContext3 generator requires auth — check that your PAC profile is configured for this environment.");
+                "XrmContext3 generator requires auth — check that your PAC auth profile is configured for this environment.");
 
         var exePath = await xrmContextToolProvider.GetExePathAsync(cancellationToken);
 

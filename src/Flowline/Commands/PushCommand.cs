@@ -449,7 +449,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (!string.IsNullOrWhiteSpace(profile?.Resource))
             return profile.Resource.Trim();
 
-        throw new FlowlineException(ExitCode.ValidationFailed, "Dev URL is required in standalone mode — use --dev <URL> or select a resource-specific PAC profile.");
+        throw new FlowlineException(ExitCode.ValidationFailed, "Dev URL is required in standalone mode — use --dev <URL> or select a resource-specific PAC auth profile.");
     }
 
     // R1/KD1: build output has a .dll for certain (regression-checked above). PluginPackageMode.Dll opts

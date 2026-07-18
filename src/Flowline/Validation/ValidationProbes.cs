@@ -31,9 +31,9 @@ public sealed class ValidationProbes
         (url, _, ct) => PacUtils.GetEnvironmentInfoByUrlAsync(url, s_defaultCapture, ct);
 
     // Profile-scoped, pac.exe-free environment lookup via a direct BAP admin API token read — used
-    // wherever a PAC profile has already been resolved for the target URL. GetEnvironmentAsync above
+    // wherever a PAC auth profile has already been resolved for the target URL. GetEnvironmentAsync above
     // stays pac.exe-backed for ProvisionCommand's target-environment-creation checks (KTD7), which
-    // check a URL that intentionally has no matching local PAC profile yet.
+    // check a URL that intentionally has no matching local PAC auth profile yet.
     public Func<PacProfile, string, bool, CancellationToken, Task<EnvironmentInfo?>> GetEnvironmentByProfileAsync { get; init; } =
         (profile, url, _, ct) => s_defaultDataverseConnector.GetEnvironmentInfoAsync(profile, url, ct);
 

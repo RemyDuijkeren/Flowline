@@ -47,7 +47,7 @@ public class ProfileResolutionServiceTests
 
         await svc.ResolveAsync(EnvironmentUrl);
 
-        console.Output.Should().Contain("Using PAC profile 'MyProfile' (DATAVERSE)");
+        console.Output.Should().Contain("Using PAC auth profile 'MyProfile' (DATAVERSE)");
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public class ProfileResolutionServiceTests
         await svc.ResolveAsync(EnvironmentUrl);
 
         // TestConsole may word-wrap long lines; assert the key parts appear in output
-        console.Output.Should().Contain("Using PAC profile (unnamed, UNIVERSAL)");
+        console.Output.Should().Contain("Using PAC auth profile (unnamed, UNIVERSAL)");
         console.Output.Should().Contain(EnvironmentUrl);
     }
 
@@ -72,7 +72,7 @@ public class ProfileResolutionServiceTests
         await svc.ResolveAsync(EnvironmentUrl);
 
         // TestConsole may word-wrap long lines; assert the key parts appear in output
-        console.Output.Should().Contain("Using PAC profile (unnamed, DATAVERSE)");
+        console.Output.Should().Contain("Using PAC auth profile (unnamed, DATAVERSE)");
         console.Output.Should().Contain(EnvironmentUrl);
     }
 
