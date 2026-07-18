@@ -35,10 +35,10 @@ public static class WebResourceTypeSniffer
     {
         if (content.Length == 0) return null;
 
-        if (StartsWith(content, PngMagic)) return WebResourceType.Png;
-        if (StartsWith(content, JpegMagic)) return WebResourceType.Jpg;
-        if (StartsWith(content, GifMagic)) return WebResourceType.Gif;
-        if (StartsWith(content, IcoMagic)) return WebResourceType.Ico;
+        if (content.AsSpan().StartsWith(PngMagic)) return WebResourceType.Png;
+        if (content.AsSpan().StartsWith(JpegMagic)) return WebResourceType.Jpg;
+        if (content.AsSpan().StartsWith(GifMagic)) return WebResourceType.Gif;
+        if (content.AsSpan().StartsWith(IcoMagic)) return WebResourceType.Ico;
 
         string text;
         try
@@ -59,14 +59,5 @@ public static class WebResourceTypeSniffer
         if (JsSignalRegex.IsMatch(text)) return WebResourceType.Js;
 
         return null;
-    }
-
-    static bool StartsWith(byte[] content, byte[] magic)
-    {
-        if (content.Length < magic.Length) return false;
-        for (var i = 0; i < magic.Length; i++)
-            if (content[i] != magic[i])
-                return false;
-        return true;
     }
 }

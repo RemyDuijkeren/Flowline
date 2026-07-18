@@ -89,11 +89,13 @@ public class WebResourceReader(IAnsiConsole console)
 
             WebResourceType resolvedType;
             string reason;
+            string source;
 
             if (dataverseResourcesDict.TryGetValue(name, out var dataverseMatch))
             {
                 resolvedType = dataverseMatch.Type;
                 reason = "resolved type";
+                source = "from the existing Dataverse record";
             }
             else
             {
@@ -101,11 +103,17 @@ public class WebResourceReader(IAnsiConsole console)
                 // a different solution — R3's confirmed scope decision falls that case through to here
                 // rather than a broader cross-solution lookup). Content sniffing is a guess even when
                 // constrained to strong signals (KTD4), so it always warns too.
-                var sniffed = WebResourceTypeSniffer.TrySniff(File.ReadAllBytes(resource.Path));
+                // resource.Content is already the base64-encoded bytes LocalResourceFromFile read from
+                // disk — decode that instead of reading the file a second time. Null means the file was
+                // empty (LocalResourceFromFile nulls out empty content), so there's nothing to sniff.
+                var sniffed = resource.Content is null
+                    ? null
+                    : WebResourceTypeSniffer.TrySniff(Convert.FromBase64String(resource.Content));
                 if (sniffed is null) continue;
 
                 resolvedType = sniffed.Value;
                 reason = "inferred type";
+                source = "from file content";
             }
 
             var dependsOn = resolvedType == WebResourceType.Js
@@ -115,7 +123,6 @@ public class WebResourceReader(IAnsiConsole console)
             backfilled ??= localResources.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
             backfilled[name] = resource with { Type = resolvedType, DependsOn = dependsOn };
 
-            var source = dataverseMatch != null ? "from the existing Dataverse record" : "from file content";
             console.Warning(
                 $"'{name}' has no file extension — {reason} '{resolvedType}' {source}. " +
                 $"Recommend creating a properly-named replacement (e.g. '{name}.{ConventionalExtension(resolvedType)}') " +
