@@ -204,9 +204,11 @@ public class WebResourceServiceTests : IDisposable
     [Fact]
     public async Task SyncSolutionAsync_UnsupportedExtension_ShouldThrow()
     {
+        // "not a web resource" has no magic bytes, RESX/SVG/XML/HTML markers, or CSS/JS signals —
+        // Tier 2 content sniffing doesn't resolve it either, so it still fails validation.
         File.WriteAllText(Path.Combine(_webresourceRoot, "notes.txt"), "not a web resource");
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        await Assert.ThrowsAsync<FlowlineException>(() =>
             _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
     }
 
@@ -215,7 +217,7 @@ public class WebResourceServiceTests : IDisposable
     {
         File.WriteAllBytes(Path.Combine(_webresourceRoot, "legacy.xap"), []);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
             _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
 
         Assert.Contains("cannot be synced", ex.Message);
@@ -228,7 +230,7 @@ public class WebResourceServiceTests : IDisposable
     {
         File.WriteAllText(Path.Combine(_webresourceRoot, "my file.js"), "console.log('test');");
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
             _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
 
         Assert.Contains("cannot be synced", ex.Message);
@@ -243,7 +245,7 @@ public class WebResourceServiceTests : IDisposable
         File.WriteAllText(Path.Combine(_webresourceRoot, "my file.js"), "console.log('test');");
         File.WriteAllText(Path.Combine(_webresourceRoot, "other file.css"), "body {}");
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
             _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
 
         Assert.Contains("2 web resource", ex.Message);

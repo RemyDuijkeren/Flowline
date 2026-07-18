@@ -86,18 +86,39 @@ public class WebResourceReader(IAnsiConsole console)
         foreach (var (name, resource) in localResources)
         {
             if (resource.Type != WebResourceType.Unknown) continue;
-            if (!dataverseResourcesDict.TryGetValue(name, out var dataverseMatch)) continue;
 
-            var dependsOn = dataverseMatch.Type == WebResourceType.Js
+            WebResourceType resolvedType;
+            string reason;
+
+            if (dataverseResourcesDict.TryGetValue(name, out var dataverseMatch))
+            {
+                resolvedType = dataverseMatch.Type;
+                reason = "resolved type";
+            }
+            else
+            {
+                // Tier 2: no same-solution Dataverse match (including a match that exists only under
+                // a different solution — R3's confirmed scope decision falls that case through to here
+                // rather than a broader cross-solution lookup). Content sniffing is a guess even when
+                // constrained to strong signals (KTD4), so it always warns too.
+                var sniffed = WebResourceTypeSniffer.TrySniff(File.ReadAllBytes(resource.Path));
+                if (sniffed is null) continue;
+
+                resolvedType = sniffed.Value;
+                reason = "inferred type";
+            }
+
+            var dependsOn = resolvedType == WebResourceType.Js
                 ? WebResourceAnnotationParser.ParseAnnotations(resource.Path)
                 : resource.DependsOn;
 
             backfilled ??= localResources.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
-            backfilled[name] = resource with { Type = dataverseMatch.Type, DependsOn = dependsOn };
+            backfilled[name] = resource with { Type = resolvedType, DependsOn = dependsOn };
 
+            var source = dataverseMatch != null ? "from the existing Dataverse record" : "from file content";
             console.Warning(
-                $"'{name}' has no file extension — resolved type '{dataverseMatch.Type}' from the existing Dataverse record. " +
-                $"Recommend creating a properly-named replacement (e.g. '{name}.{ConventionalExtension(dataverseMatch.Type)}') " +
+                $"'{name}' has no file extension — {reason} '{resolvedType}' {source}. " +
+                $"Recommend creating a properly-named replacement (e.g. '{name}.{ConventionalExtension(resolvedType)}') " +
                 "and migrating references — Dataverse web resource names can't be renamed after creation.");
         }
 

@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Microsoft.Xrm.Sdk;
+using Flowline.Core;
 using Flowline.Core.Models;
 using Flowline.Core.Console;
 using Spectre.Console;
@@ -216,13 +217,13 @@ public class WebResourcePlanner(IAnsiConsole console)
         if (errorCount <= 0) return;
 
         foreach (var filePath in unknownFiles)
-            console.Error($"Unsupported file extension: '{filePath}'");
+            console.Error($"Unsupported file extension: '{filePath}' — metadata lookup and content sniffing were both tried and neither resolved a type.");
         foreach (var filePath in invalidNames)
             console.Error($"Invalid file name: '{filePath}'");
         foreach (var filePath in xapFiles)
             console.Error($"Silverlight/XAP is deprecated: '{filePath}'");
 
-        throw new InvalidOperationException($"{errorCount} web resource file(s) cannot be synced.");
+        throw new FlowlineException(ExitCode.ValidationFailed, $"{errorCount} web resource file(s) cannot be synced.");
     }
 
     static Entity ToEntity(LocalWebResource local) =>

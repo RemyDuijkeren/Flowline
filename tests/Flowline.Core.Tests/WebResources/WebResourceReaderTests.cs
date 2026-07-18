@@ -76,13 +76,35 @@ public class WebResourceReaderTests : IDisposable
     }
 
     [Fact]
-    public async Task LoadSnapshotAsync_ExtensionlessFileWithNoMatch_StaysUnknown()
+    public async Task LoadSnapshotAsync_ExtensionlessFileWithNoMatch_FallsThroughToTier2Sniffing()
     {
+        // No Dataverse match (Tier 1 miss) and JS content — resolved by Tier 2 content sniffing instead
+        // of staying Unknown, since both tiers run in sequence at the same fallback point.
         File.WriteAllText(Path.Combine(_webresourceRoot, "my_orphan"), "function orphan() {}");
 
         var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
 
+        snapshot.LocalResources["my_MySolution/my_orphan"].Type.Should().Be(WebResourceType.Js);
+    }
+
+    [Fact]
+    public async Task LoadSnapshotAsync_ExtensionlessFileWithNoMatchAndNoContentSignal_StaysUnknown()
+    {
+        File.WriteAllText(Path.Combine(_webresourceRoot, "my_orphan"), "nothing recognizable here");
+
+        var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
+
         snapshot.LocalResources["my_MySolution/my_orphan"].Type.Should().Be(WebResourceType.Unknown);
+    }
+
+    [Fact]
+    public async Task LoadSnapshotAsync_Tier2Resolution_PrintsWarningNamingFileContentAsSource()
+    {
+        File.WriteAllText(Path.Combine(_webresourceRoot, "my_orphan"), "function orphan() {}");
+
+        await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        _console.Output.Should().Contain("my_MySolution/my_orphan").And.Contain("from file content");
     }
 
     [Fact]
