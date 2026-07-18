@@ -133,14 +133,16 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
             $"PAC auth profile '{profile.DisplayName}' isn't the active PAC CLI profile — run: pac auth select {argName} '{argValue}'");
     }
 
-    // A full profile table, then a two-line "Currently active / Switching to" pair, were both tried
-    // here and dropped: each still repeated the resolved profile's name/environment a second or
-    // third time next to the prompt. One line, Active -> Target, says the same thing once.
+    // A full profile table was tried and dropped here (buried the one useful comparison among
+    // unrelated rows); a single-line "Active -> Target" was tried next and also dropped (still too
+    // long with full URLs on both sides, which the decision actually needs to see). Two lines,
+    // Active italicized to read as secondary/context and Target bold as the actual decision.
     void ShowActiveVsTarget(IReadOnlyList<PacProfile> allProfiles, Func<PacProfile, bool> isActive, PacProfile target)
     {
         var current = allProfiles.FirstOrDefault(p => p.Kind == target.Kind && isActive(p));
         var currentLabel = current != null ? FormatProfileLabel(current) : "(none)";
-        console.MarkupLine($"Active: {currentLabel} [dim]→[/] Target: [bold]{FormatProfileLabel(target)}[/]");
+        console.MarkupLine($"Active: [italic]{currentLabel}[/]");
+        console.MarkupLine($"Target: [bold]{FormatProfileLabel(target)}[/]");
     }
 
     static string FormatProfileLabel(PacProfile p) =>
