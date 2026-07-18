@@ -25,8 +25,6 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
     // consent but was never granted BAP admin scope -- while pac.exe's own subprocess calls (PacUtils)
     // worked fine, since those use pac.exe's real, already-consented app id internally.
     public const string PacCliAppId = "9cee029c-6210-4654-90bb-17e6e9d36617";
-    const string BapAdminResource = "https://api.bap.microsoft.com";
-    const string BapAdminEnvironmentsUrl = BapAdminResource + "/providers/Microsoft.BusinessAppPlatform/scopes/admin/environments?api-version=2020-10-01";
 
     // Deterministic for the whole process (same cache file/directory regardless of which
     // DataverseConnector instance asks), so one MsalCacheHelper is reused rather than reopening
@@ -144,7 +142,9 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
     /// Resolves an environment's existence and Production/Sandbox Type via a direct token read against
     /// the resolved profile's cached PAC CLI credentials — no pac.exe subprocess, so the result is
     /// independent of which PAC auth profile is globally active. Mirrors ConnectViaPacAsync's token
-    /// acquisition but scoped to the Power Platform BAP admin API instead of the Dataverse environment.
+    /// acquisition, scoped to the target Dataverse environment itself (not an admin API), and calls its
+    /// RetrieveCurrentOrganization Web API function for the Production/Sandbox Type instead of relying
+    /// on the BAP admin API — see PacCliAppId's comment for why a BAP admin dependency was fragile.
     /// </summary>
     public async Task<EnvironmentInfo?> GetEnvironmentInfoAsync(
         PacProfile profile,
@@ -155,31 +155,44 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         if (string.IsNullOrWhiteSpace(environmentUrl))
             throw new ArgumentException("Environment URL is required for looking up environment info.", nameof(environmentUrl));
 
+        var resourceUrl = environmentUrl.TrimEnd('/');
         var authority = ResolveAuthority(profile);
         var cacheHelper = await GetOrCreateMsalCacheHelperAsync();
 
         var accessToken = profile.IsServicePrincipal
-            ? (await AcquireServicePrincipalTokenAsync(profile, authority, cacheHelper, BapAdminResource, cancellationToken)).Token.AccessToken
-            : (await AcquireUserTokenAsync(profile, authority, cacheHelper, BapAdminResource, cancellationToken, isInternalResource: true)).Token.AccessToken;
+            ? (await AcquireServicePrincipalTokenAsync(profile, authority, cacheHelper, resourceUrl, cancellationToken)).Token.AccessToken
+            : (await AcquireUserTokenAsync(profile, authority, cacheHelper, resourceUrl, cancellationToken)).Token.AccessToken;
+
+        var requestUrl = $"{resourceUrl}/api/data/v9.2/RetrieveCurrentOrganization(AccessType=Microsoft.Dynamics.CRM.EndpointAccessType'Default')";
 
         // Per-request Authorization header, never HttpClient.DefaultRequestHeaders — httpClient is a
         // shared singleton also used for unrelated calls (e.g. XrmContextToolProvider's NuGet download),
-        // and DefaultRequestHeaders would leak this admin-scoped bearer token onto those requests too.
-        using var request = new HttpRequestMessage(HttpMethod.Get, BapAdminEnvironmentsUrl);
+        // and DefaultRequestHeaders would leak this bearer token onto those requests too.
+        using var request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        try
+        {
+            using var response = await httpClient.SendAsync(request, cancellationToken);
+            // A non-existent environment URL, or one this profile can't access, fails here (DNS/connection
+            // failure, or a non-2xx from the host) -- callers already treat a null result as "not found".
+            if (!response.IsSuccessStatusCode)
+                return null;
 
-        var json = await response.Content.ReadAsStringAsync(cancellationToken);
-        return MapBapEnvironmentsResponse(json, environmentUrl);
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            return MapRetrieveCurrentOrganizationResponse(json, resourceUrl);
+        }
+        catch (HttpRequestException)
+        {
+            return null;
+        }
     }
 
     // Shared by ConnectUserAsync (which additionally wraps the result in a ServiceClient renewal
     // callback) and GetEnvironmentInfoAsync (which only needs Token.AccessToken).
     async Task<(IPublicClientApplication App, AuthenticationResult Token)> AcquireUserTokenAsync(
-        PacProfile profile, string authority, MsalCacheHelper cacheHelper, string resourceUrl, CancellationToken cancellationToken,
-        bool isInternalResource = false)
+        PacProfile profile, string authority, MsalCacheHelper cacheHelper, string resourceUrl, CancellationToken cancellationToken)
     {
         const string redirectUri = "http://localhost";
         var scopes = new[] { $"{resourceUrl}/.default" };
@@ -220,13 +233,8 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         catch (MsalUiRequiredException ex)
         {
             var user = profile.User ?? "unknown";
-            // resourceUrl is Flowline's internal BAP admin endpoint here, not a Dataverse
-            // environment URL a user would ever pass to 'pac auth create --url' -- point them
-            // at re-authenticating the PAC profile itself instead of that internal resource.
-            var remediation = isInternalResource
-                ? $"Run 'pac auth create' to refresh your PAC session for profile '{profile.Name ?? user}'."
-                : $"Run 'pac auth create --url {resourceUrl}' to re-authenticate.";
-            throw new FlowlineException(ExitCode.NotAuthenticated, $"Session expired for '{user}'. {remediation}", ex);
+            throw new FlowlineException(ExitCode.NotAuthenticated,
+                $"Session expired for '{user}'. Run 'pac auth create --url {resourceUrl}' to re-authenticate.", ex);
         }
     }
 
@@ -292,54 +300,44 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         }
     }
 
-    // BAP's admin/environments response shape (verified live for `properties.environmentSku` only —
-    // https://api.bap.microsoft.com/providers/Microsoft.BusinessAppPlatform/scopes/admin/environments):
-    //   { "value": [ { "name": "<env-guid>", "properties": { "displayName", "environmentSku",
-    //       "linkedEnvironmentMetadata": { "resourceId", "friendlyName", "domainName", "instanceUrl", "version" } } } ] }
+    // RetrieveCurrentOrganization's Web API JSON shape (verified live against a real Dev and a real
+    // Production environment — https://<org>.crm.dynamics.com/api/data/v9.2/RetrieveCurrentOrganization(...)):
+    //   { "Detail": { "OrganizationId", "EnvironmentId", "FriendlyName", "UniqueName", "UrlName",
+    //       "State", "OrganizationType", "OrganizationVersion", ... } }
+    // OrganizationType is a string enum name (Microsoft.Xrm.Sdk.Organization.OrganizationType), not the
+    // BAP admin API's "environmentSku" — mapped to Flowline's "Production"/"Sandbox"/etc via MapOrganizationType.
     // Pure and internal so it's unit-testable without a token or network call.
-    internal static EnvironmentInfo? MapBapEnvironmentsResponse(string bapResponseJson, string environmentUrl)
+    internal static EnvironmentInfo? MapRetrieveCurrentOrganizationResponse(string responseJson, string environmentUrl)
     {
-        var normalizedTarget = environmentUrl.TrimEnd('/');
-        using var doc = JsonDocument.Parse(bapResponseJson);
+        using var doc = JsonDocument.Parse(responseJson);
 
-        if (!doc.RootElement.TryGetProperty("value", out var envs) || envs.ValueKind != JsonValueKind.Array)
+        if (!doc.RootElement.TryGetProperty("Detail", out var detail) || detail.ValueKind != JsonValueKind.Object)
             return null;
 
-        foreach (var env in envs.EnumerateArray())
-        {
-            var mapped = MapBapEnvironment(env);
-            if (mapped?.EnvironmentUrl?.TrimEnd('/').Equals(normalizedTarget, StringComparison.OrdinalIgnoreCase) == true)
-                return mapped;
-        }
-
-        return null;
-    }
-
-    internal static EnvironmentInfo? MapBapEnvironment(JsonElement env)
-    {
-        if (!env.TryGetProperty("properties", out var props))
-            return null;
-
-        var linked = props.TryGetProperty("linkedEnvironmentMetadata", out var lm) ? lm : default;
-
-        var instanceUrl = GetStringProperty(linked, "instanceUrl");
-        if (string.IsNullOrWhiteSpace(instanceUrl))
-            return null;
-
-        Guid.TryParse(GetStringProperty(env, "name"), out var environmentId);
-        Guid.TryParse(GetStringProperty(linked, "resourceId"), out var organizationId);
+        Guid.TryParse(GetStringProperty(detail, "EnvironmentId"), out var environmentId);
+        Guid.TryParse(GetStringProperty(detail, "OrganizationId"), out var organizationId);
 
         return new EnvironmentInfo
         {
             EnvironmentId = environmentId,
-            EnvironmentUrl = instanceUrl,
+            EnvironmentUrl = environmentUrl.TrimEnd('/'),
             OrganizationId = organizationId,
-            DisplayName = GetStringProperty(props, "displayName") ?? GetStringProperty(linked, "friendlyName"),
-            Type = GetStringProperty(props, "environmentSku"),
-            DomainName = GetStringProperty(linked, "domainName"),
-            Version = GetStringProperty(linked, "version")
+            DisplayName = GetStringProperty(detail, "FriendlyName"),
+            Type = MapOrganizationType(GetStringProperty(detail, "OrganizationType")),
+            DomainName = GetStringProperty(detail, "UrlName"),
+            Version = GetStringProperty(detail, "OrganizationVersion")
         };
     }
+
+    // Microsoft.Xrm.Sdk.Organization.OrganizationType enum names -> Flowline's Type string. Unrecognized
+    // values pass through as-is rather than defaulting to a guess -- only "Production" is compared
+    // against elsewhere (FlowlineCommand's role/Type guard), so an unmapped value simply won't match it.
+    internal static string? MapOrganizationType(string? organizationType) => organizationType switch
+    {
+        "Secondary" or "Customer" => "Production",
+        "CustomerTest" or "CustomerFreeTest" => "Sandbox",
+        _ => organizationType
+    };
 
     static string? GetStringProperty(JsonElement element, string name) =>
         element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String

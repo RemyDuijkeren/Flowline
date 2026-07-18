@@ -119,109 +119,74 @@ public class DataverseConnectorTests
         await Assert.ThrowsAsync<ArgumentException>(() => _service.GetEnvironmentInfoAsync(profile, null!));
     }
 
-    static readonly string BapEnvironmentJson = """
+    static string RetrieveCurrentOrganizationJson(string organizationType) => $$"""
         {
-          "value": [
-            {
-              "name": "11111111-1111-1111-1111-111111111111",
-              "properties": {
-                "displayName": "Contoso Prod",
-                "environmentSku": "Production",
-                "linkedEnvironmentMetadata": {
-                  "resourceId": "22222222-2222-2222-2222-222222222222",
-                  "friendlyName": "Contoso Prod",
-                  "domainName": "contoso",
-                  "instanceUrl": "https://contoso.crm4.dynamics.com/",
-                  "version": "9.2.23092.00206"
-                }
-              }
-            },
-            {
-              "name": "33333333-3333-3333-3333-333333333333",
-              "properties": {
-                "displayName": "Contoso Dev",
-                "environmentSku": "Sandbox",
-                "linkedEnvironmentMetadata": {
-                  "resourceId": "44444444-4444-4444-4444-444444444444",
-                  "friendlyName": "Contoso Dev",
-                  "domainName": "contoso-dev",
-                  "instanceUrl": "https://contoso-dev.crm4.dynamics.com/",
-                  "version": "9.2.23092.00206"
-                }
-              }
-            }
-          ]
+          "Detail": {
+            "OrganizationId": "22222222-2222-2222-2222-222222222222",
+            "EnvironmentId": "11111111-1111-1111-1111-111111111111",
+            "FriendlyName": "Contoso",
+            "UniqueName": "unqcontoso",
+            "UrlName": "contoso",
+            "State": "Enabled",
+            "OrganizationType": "{{organizationType}}",
+            "OrganizationVersion": "9.2.23092.00206"
+          }
         }
         """;
 
     [Fact]
-    public void MapBapEnvironmentsResponse_MatchesByUrl_ReturnsProductionType()
+    public void MapRetrieveCurrentOrganizationResponse_SecondaryType_ReturnsProductionType()
     {
-        var result = DataverseConnector.MapBapEnvironmentsResponse(BapEnvironmentJson, "https://contoso.crm4.dynamics.com");
+        var result = DataverseConnector.MapRetrieveCurrentOrganizationResponse(
+            RetrieveCurrentOrganizationJson("Secondary"), "https://contoso.crm4.dynamics.com");
 
         Assert.NotNull(result);
         Assert.Equal("Production", result!.Type);
-        Assert.Equal("Contoso Prod", result.DisplayName);
+        Assert.Equal("Contoso", result.DisplayName);
     }
 
     [Fact]
-    public void MapBapEnvironmentsResponse_MatchesByUrl_ReturnsSandboxType()
+    public void MapRetrieveCurrentOrganizationResponse_CustomerTestType_ReturnsSandboxType()
     {
-        var result = DataverseConnector.MapBapEnvironmentsResponse(BapEnvironmentJson, "https://contoso-dev.crm4.dynamics.com");
+        var result = DataverseConnector.MapRetrieveCurrentOrganizationResponse(
+            RetrieveCurrentOrganizationJson("CustomerTest"), "https://contoso.crm4.dynamics.com");
 
         Assert.NotNull(result);
         Assert.Equal("Sandbox", result!.Type);
     }
 
     [Fact]
-    public void MapBapEnvironmentsResponse_MultipleEntries_SelectsUrlMatchCaseInsensitiveTrailingSlash()
+    public void MapRetrieveCurrentOrganizationResponse_UnrecognizedType_PassesThroughRawValue()
     {
-        var result = DataverseConnector.MapBapEnvironmentsResponse(BapEnvironmentJson, "HTTPS://CONTOSO-DEV.CRM4.DYNAMICS.COM/");
+        var result = DataverseConnector.MapRetrieveCurrentOrganizationResponse(
+            RetrieveCurrentOrganizationJson("Trial"), "https://contoso.crm4.dynamics.com");
 
         Assert.NotNull(result);
-        Assert.Equal("Contoso Dev", result!.DisplayName);
+        Assert.Equal("Trial", result!.Type);
     }
 
     [Fact]
-    public void MapBapEnvironmentsResponse_NoUrlMatch_ReturnsNull()
+    public void MapRetrieveCurrentOrganizationResponse_UrlNormalizedToRequestedEnvironmentUrl()
     {
-        var result = DataverseConnector.MapBapEnvironmentsResponse(BapEnvironmentJson, "https://no-such-env.crm4.dynamics.com");
+        var result = DataverseConnector.MapRetrieveCurrentOrganizationResponse(
+            RetrieveCurrentOrganizationJson("Secondary"), "https://contoso.crm4.dynamics.com/");
+
+        Assert.NotNull(result);
+        Assert.Equal("https://contoso.crm4.dynamics.com", result!.EnvironmentUrl);
+    }
+
+    [Fact]
+    public void MapRetrieveCurrentOrganizationResponse_MissingDetailProperty_ReturnsNull()
+    {
+        var result = DataverseConnector.MapRetrieveCurrentOrganizationResponse("""{ "other": {} }""", "https://contoso.crm4.dynamics.com");
 
         Assert.Null(result);
     }
 
     [Fact]
-    public void MapBapEnvironmentsResponse_MissingValueProperty_ReturnsNull()
+    public void MapRetrieveCurrentOrganizationResponse_DetailIsNotObject_ReturnsNull()
     {
-        var result = DataverseConnector.MapBapEnvironmentsResponse("""{ "other": [] }""", "https://contoso.crm4.dynamics.com");
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void MapBapEnvironmentsResponse_ValueIsNotArray_ReturnsNull()
-    {
-        var result = DataverseConnector.MapBapEnvironmentsResponse("""{ "value": "not-an-array" }""", "https://contoso.crm4.dynamics.com");
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void MapBapEnvironmentsResponse_EntryMissingProperties_SkipsEntry()
-    {
-        var json = """{ "value": [ { "name": "11111111-1111-1111-1111-111111111111" } ] }""";
-
-        var result = DataverseConnector.MapBapEnvironmentsResponse(json, "https://contoso.crm4.dynamics.com");
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void MapBapEnvironmentsResponse_EntryMissingLinkedEnvironmentMetadata_SkipsEntry()
-    {
-        var json = """{ "value": [ { "name": "11111111-1111-1111-1111-111111111111", "properties": { "displayName": "Contoso", "environmentSku": "Sandbox" } } ] }""";
-
-        var result = DataverseConnector.MapBapEnvironmentsResponse(json, "https://contoso.crm4.dynamics.com");
+        var result = DataverseConnector.MapRetrieveCurrentOrganizationResponse("""{ "Detail": "not-an-object" }""", "https://contoso.crm4.dynamics.com");
 
         Assert.Null(result);
     }
