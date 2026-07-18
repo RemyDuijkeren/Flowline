@@ -98,13 +98,16 @@ public class WebResourcePlanner(IAnsiConsole console)
         {
             var remote = snapshot.DataverseResources[name];
 
-            if (remote.Ownership is { NonDefaultUnmanagedSolutionCount: 1, IsInCurrentUnmanagedSolution: true })
+            if (remote.Ownership is { NonDefaultUnmanagedSolutionCount: 1, IsInCurrentUnmanagedSolution: true, HasManagedSolutionReference: false })
             {
                 plan.Deletes.Add(new WebResourcePlanAction(name, WebResourceAction.Delete, Id: remote.Id));
                 continue;
             }
 
-            if (remote.Ownership.NonDefaultUnmanagedSolutionCount > 1)
+            // A managed solution reference means some other product (e.g. Field Service) owns the record —
+            // only this unmanaged solution's link is ours to drop, never the record itself.
+            if (remote.Ownership.NonDefaultUnmanagedSolutionCount > 1 ||
+                (remote.Ownership is { IsInCurrentUnmanagedSolution: true, HasManagedSolutionReference: true }))
             {
                 plan.RemovesFromSolution.Add(
                     new WebResourcePlanAction(name, WebResourceAction.RemoveFromSolution, Id: remote.Id, SolutionName: targetSolutionName));

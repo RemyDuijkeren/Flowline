@@ -68,7 +68,7 @@ public record DataverseWebResource(
     WebResourceOwnership Ownership,
     string? DependencyXml = null);
 
-public record WebResourceOwnership(int NonDefaultUnmanagedSolutionCount, bool IsInCurrentUnmanagedSolution);
+public record WebResourceOwnership(int NonDefaultUnmanagedSolutionCount, bool IsInCurrentUnmanagedSolution, bool HasManagedSolutionReference = false);
 
 public record WebResourceSyncSnapshot(
     DataverseSolutionInfo Solution,

@@ -323,7 +323,8 @@ public class WebResourceReader(IAnsiConsole console)
 
         var unmanaged = solutionRefs.Where(s => s.IsManaged == false).ToList();
         var isInCurrent = unmanaged.Any(s => string.Equals(s.Name, currentSolutionName, StringComparison.OrdinalIgnoreCase));
-        return new WebResourceOwnership(unmanaged.Count, isInCurrent);
+        var hasManagedReference = solutionRefs.Any(s => s.IsManaged);
+        return new WebResourceOwnership(unmanaged.Count, isInCurrent, hasManagedReference);
     }
 
     static DataverseWebResource ToDataverseWebResource(Entity entity, WebResourceOwnership ownership) =>

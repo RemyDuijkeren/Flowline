@@ -177,6 +177,25 @@ public class WebResourceServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SyncSolutionAsync_ManagedAndCurrentUnmanagedOrphan_ShouldRemoveFromSolutionInsteadOfDelete()
+    {
+        var webResourceId = Guid.NewGuid();
+        SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/orphan.js", "old"));
+        SetupOwnership(webResourceId,
+            ("MySolution", false),
+            ("msdyn_FieldService", true));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
+
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<OrganizationRequest>(r =>
+            r.RequestName == "RemoveSolutionComponent" &&
+            (Guid)r["ComponentId"] == webResourceId &&
+            (int)r["ComponentType"] == 61 &&
+            r["SolutionUniqueName"].ToString() == "MySolution"), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().DeleteAsync("webresource", webResourceId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task SyncSolutionAsync_NoDeleteMode_ShouldKeepOrphan()
     {
         var webResourceId = Guid.NewGuid();
