@@ -146,9 +146,6 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
         {
             var p = allProfiles[i];
             var index = isActive(p) ? $"{i + 1}*" : (i + 1).ToString();
-            var environment = string.IsNullOrEmpty(p.FriendlyName)
-                ? Markup.Escape(p.Resource ?? "")
-                : $"{Markup.Escape(p.FriendlyName)} ({Markup.Escape(p.Resource ?? "")})";
 
             string Cell(string text) => p == target ? $"[green]{text}[/]" : text;
 
@@ -157,10 +154,17 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
                 Cell(Markup.Escape(p.Kind ?? "")),
                 Cell(Markup.Escape(p.Name ?? "(unnamed)")),
                 Cell(Markup.Escape(p.User ?? "")),
-                Cell(environment));
+                Cell(FormatEnvironment(p)));
         }
         console.Write(table);
     }
+
+    // "FriendlyName (Url)" when a display name is available, otherwise the bare URL — shared by the
+    // profile table and the resolved-profile status line so both describe an environment the same way.
+    static string FormatEnvironment(PacProfile profile) =>
+        string.IsNullOrEmpty(profile.FriendlyName)
+            ? Markup.Escape(profile.Resource ?? "")
+            : $"{Markup.Escape(profile.FriendlyName)} ({Markup.Escape(profile.Resource ?? "")})";
 
     bool IsInteractive() => IsInteractiveOverride?.Invoke() ?? ConsoleHelper.IsInteractive(settings: null);
 
@@ -176,9 +180,10 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
     // necessarily active yet (that's exactly what the guard below may still need to fix).
     void EmitStatusLine(PacProfile profile)
     {
+        var environment = FormatEnvironment(profile);
         var status = string.IsNullOrEmpty(profile.Name)
-            ? $"Resolved PAC auth profile (unnamed, {Markup.Escape(profile.Kind ?? "")}) — {Markup.Escape(profile.Resource ?? "")}"
-            : $"Resolved PAC auth profile '{Markup.Escape(profile.Name)}' ({Markup.Escape(profile.Kind ?? "")})";
+            ? $"Resolved PAC auth profile (unnamed, {Markup.Escape(profile.Kind ?? "")}) — {environment}"
+            : $"Resolved PAC auth profile '{Markup.Escape(profile.Name)}' ({Markup.Escape(profile.Kind ?? "")}) — {environment}";
         console.Info(status);
     }
 

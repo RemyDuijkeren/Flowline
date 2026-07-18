@@ -63,6 +63,29 @@ public class ProfileResolutionServiceTests
     }
 
     [Fact]
+    public async Task ProfileFound_EmitsStatusLine_WithFriendlyNameAndUrl()
+    {
+        var profile = MakeProfile(name: "MyProfile", kind: "DATAVERSE") with { FriendlyName = "AutomateValue Dev" };
+        var svc = MakeService(out var console, new ProfileFound(profile));
+
+        await svc.ResolveAsync(EnvironmentUrl);
+
+        console.Output.Should().Contain("AutomateValue Dev");
+        console.Output.Should().Contain(profile.Resource!);
+    }
+
+    [Fact]
+    public async Task ProfileFound_EmitsStatusLine_NoFriendlyName_FallsBackToUrlOnly()
+    {
+        var profile = MakeProfile(name: "MyProfile", kind: "DATAVERSE");
+        var svc = MakeService(out var console, new ProfileFound(profile));
+
+        await svc.ResolveAsync(EnvironmentUrl);
+
+        console.Output.Should().Contain(profile.Resource!);
+    }
+
+    [Fact]
     public async Task ProfileFound_NameEmpty_EmitsUnnamedStatusLine()
     {
         var profile = MakeProfile(name: "", kind: "UNIVERSAL", resource: EnvironmentUrl);
