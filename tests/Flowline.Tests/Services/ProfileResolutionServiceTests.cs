@@ -19,14 +19,15 @@ public class ProfileResolutionServiceTests
         bool isProfileActive = true,
         bool isInteractive = false,
         bool autoSwitchProfile = false,
-        IReadOnlyList<PacProfile>? allProfiles = null)
+        IReadOnlyList<PacProfile>? allProfiles = null,
+        Func<PacProfile, bool>? isProfileActiveOverride = null)
     {
         console = new TestConsole();
         var connector = new DataverseConnector(console, new HttpClient());
         var svc = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions { AutoSwitchProfile = autoSwitchProfile })
         {
             FindBestProfileOverride = _ => resolvedResult,
-            IsProfileActiveOverride = _ => isProfileActive,
+            IsProfileActiveOverride = isProfileActiveOverride ?? (_ => isProfileActive),
             IsInteractiveOverride = () => isInteractive,
             GetPacProfilesOverride = () => allProfiles ?? []
         };
@@ -241,8 +242,10 @@ public class ProfileResolutionServiceTests
     {
         var profile = MakeProfile();
         var switchCalls = 0;
-        var svc = MakeService(out var console, new ProfileFound(profile), isProfileActive: false, isInteractive: true, allProfiles: [profile]);
-        svc.SelectAuthProfileOverride = (_, _, _) => { switchCalls++; return Task.CompletedTask; };
+        var switched = false;
+        var svc = MakeService(out var console, new ProfileFound(profile), isInteractive: true, allProfiles: [profile],
+            isProfileActiveOverride: _ => switched);
+        svc.SelectAuthProfileOverride = (_, _, _) => { switchCalls++; switched = true; return Task.CompletedTask; };
         console.Interactive();
         console.Input.PushTextWithEnter("y");
 
@@ -292,8 +295,10 @@ public class ProfileResolutionServiceTests
     {
         var profile = MakeProfile();
         var switchCalls = 0;
-        var svc = MakeService(out var console, new ProfileFound(profile), isProfileActive: false, isInteractive: false, autoSwitchProfile: true, allProfiles: [profile]);
-        svc.SelectAuthProfileOverride = (_, _, _) => { switchCalls++; return Task.CompletedTask; };
+        var switched = false;
+        var svc = MakeService(out var console, new ProfileFound(profile), isInteractive: false, autoSwitchProfile: true, allProfiles: [profile],
+            isProfileActiveOverride: _ => switched);
+        svc.SelectAuthProfileOverride = (_, _, _) => { switchCalls++; switched = true; return Task.CompletedTask; };
 
         var result = await svc.ResolveAsync(EnvironmentUrl);
 
@@ -307,8 +312,10 @@ public class ProfileResolutionServiceTests
     {
         var profile = MakeProfile();
         var switchCalls = 0;
-        var svc = MakeService(out var console, new ProfileFound(profile), isProfileActive: false, isInteractive: true, autoSwitchProfile: true, allProfiles: [profile]);
-        svc.SelectAuthProfileOverride = (_, _, _) => { switchCalls++; return Task.CompletedTask; };
+        var switched = false;
+        var svc = MakeService(out var console, new ProfileFound(profile), isInteractive: true, autoSwitchProfile: true, allProfiles: [profile],
+            isProfileActiveOverride: _ => switched);
+        svc.SelectAuthProfileOverride = (_, _, _) => { switchCalls++; switched = true; return Task.CompletedTask; };
         // No input pushed — if a prompt were shown, TestConsole would throw on empty input queue.
 
         var result = await svc.ResolveAsync(EnvironmentUrl);
@@ -325,6 +332,7 @@ public class ProfileResolutionServiceTests
         var profileB = MakeProfile(name: "B", resource: "https://b.crm4.dynamics.com");
         var activeChecks = new List<string>();
         var switchCalls = 0;
+        var switched = new HashSet<string>();
 
         var console = new TestConsole();
         var connector = new DataverseConnector(console, new HttpClient());
@@ -332,8 +340,8 @@ public class ProfileResolutionServiceTests
         {
             IsInteractiveOverride = () => false,
             GetPacProfilesOverride = () => [profileA, profileB],
-            IsProfileActiveOverride = p => { activeChecks.Add(p.Name!); return false; },
-            SelectAuthProfileOverride = (_, _, _) => { switchCalls++; return Task.CompletedTask; }
+            IsProfileActiveOverride = p => { activeChecks.Add(p.Name!); return switched.Contains(p.Name!); },
+            SelectAuthProfileOverride = (p, _, _) => { switchCalls++; switched.Add(p.Name!); return Task.CompletedTask; }
         };
 
         svc.FindBestProfileOverride = _ => new ProfileFound(profileA);
@@ -342,7 +350,8 @@ public class ProfileResolutionServiceTests
         svc.FindBestProfileOverride = _ => new ProfileFound(profileB);
         await svc.ResolveAsync(profileB.Resource!);
 
-        activeChecks.Should().Equal("A", "B");
+        // Each URL is checked twice: once to detect the mismatch, once after switching to confirm it took.
+        activeChecks.Should().Equal("A", "A", "B", "B");
         switchCalls.Should().Be(2);
     }
 
@@ -358,6 +367,22 @@ public class ProfileResolutionServiceTests
 
         ex.ExitCode.Should().Be(ExitCode.NotAuthenticated);
         ex.Message.Should().Contain("boom");
+        console.Output.Should().NotContain("Switched active PAC auth profile");
+    }
+
+    [Fact]
+    public async Task Guard_SelectReportsSuccessButProfileStillNotActive_ThrowsAndDoesNotPrintAnnouncement()
+    {
+        // pac auth select can exit 0 without authprofiles_v2.json actually reflecting the change
+        // (e.g. a race with a concurrent 'pac auth select') — the guard must not trust the exit code alone.
+        var profile = MakeProfile();
+        var svc = MakeService(out var console, new ProfileFound(profile), isProfileActive: false, autoSwitchProfile: true, allProfiles: [profile]);
+        svc.SelectAuthProfileOverride = (_, _, _) => Task.CompletedTask;
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() => svc.ResolveAsync(EnvironmentUrl));
+
+        ex.ExitCode.Should().Be(ExitCode.NotAuthenticated);
+        ex.Message.Should().Contain("still isn't active");
         console.Output.Should().NotContain("Switched active PAC auth profile");
     }
 

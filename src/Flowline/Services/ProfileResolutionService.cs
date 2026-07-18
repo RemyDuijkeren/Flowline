@@ -107,6 +107,14 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
     {
         var select = SelectAuthProfileOverride ?? PacUtils.SelectAuthProfileAsync;
         await select(profile, allProfiles, cancellationToken);
+
+        // pac auth select exiting 0 only means the process ran without error — re-read the auth
+        // profile file to confirm the switch actually took effect before reporting success.
+        var isActive = IsProfileActiveOverride ?? dataverseConnector.IsProfileActive;
+        if (!isActive(profile))
+            throw new FlowlineException(ExitCode.NotAuthenticated,
+                $"pac auth select reported success, but PAC auth profile '{profile.Name ?? "(unnamed)"}' still isn't active — check 'pac auth list' and try again.");
+
         console.Info($"Switched active PAC auth profile to '{Markup.Escape(profile.Name ?? "(unnamed)")}'");
     }
 
