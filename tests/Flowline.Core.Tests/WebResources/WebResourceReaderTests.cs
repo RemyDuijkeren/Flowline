@@ -41,12 +41,12 @@ public class WebResourceReaderTests : IDisposable
     {
         var webResourceId = Guid.NewGuid();
         File.WriteAllText(Path.Combine(_webresourceRoot, "my_widget"), "function widget() {}");
-        SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/my_widget", WebResourceType.Js));
+        SetupWebResources(RemoteWebResource(webResourceId, "my_widget", WebResourceType.Js));
         SetupOwnership(webResourceId, ("MySolution", false));
 
         var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
 
-        snapshot.LocalResources["my_MySolution/my_widget"].Type.Should().Be(WebResourceType.Js);
+        snapshot.LocalResources["my_widget"].Type.Should().Be(WebResourceType.Js);
     }
 
     [Fact]
@@ -54,12 +54,12 @@ public class WebResourceReaderTests : IDisposable
     {
         var webResourceId = Guid.NewGuid();
         File.WriteAllText(Path.Combine(_webresourceRoot, "my_widget"), "function widget() {}");
-        SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/my_widget", WebResourceType.Js));
+        SetupWebResources(RemoteWebResource(webResourceId, "my_widget", WebResourceType.Js));
         SetupOwnership(webResourceId, ("MySolution", false));
 
         await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
 
-        _console.Output.Should().Contain("my_MySolution/my_widget").And.Contain("Js");
+        _console.Output.Should().Contain("my_widget").And.Contain("Js");
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public class WebResourceReaderTests : IDisposable
 
         var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
 
-        snapshot.LocalResources["my_MySolution/my_orphan"].Type.Should().Be(WebResourceType.Js);
+        snapshot.LocalResources["my_orphan"].Type.Should().Be(WebResourceType.Js);
     }
 
     [Fact]
@@ -94,7 +94,7 @@ public class WebResourceReaderTests : IDisposable
 
         var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
 
-        snapshot.LocalResources["my_MySolution/my_orphan"].Type.Should().Be(WebResourceType.Unknown);
+        snapshot.LocalResources["my_orphan"].Type.Should().Be(WebResourceType.Unknown);
     }
 
     [Fact]
@@ -104,7 +104,7 @@ public class WebResourceReaderTests : IDisposable
 
         await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
 
-        _console.Output.Should().Contain("my_MySolution/my_orphan").And.Contain("from file content");
+        _console.Output.Should().Contain("my_orphan").And.Contain("guessed");
     }
 
     [Fact]
@@ -115,14 +115,14 @@ public class WebResourceReaderTests : IDisposable
         File.WriteAllText(Path.Combine(_webresourceRoot, "my_widget"),
             "// flowline:depends my_MySolution/helper.js\nfunction widget() {}");
         SetupWebResources(
-            RemoteWebResource(webResourceId, "my_MySolution/my_widget", WebResourceType.Js),
+            RemoteWebResource(webResourceId, "my_widget", WebResourceType.Js),
             RemoteWebResource(depId, "my_MySolution/helper.js", WebResourceType.Js));
         SetupOwnership(webResourceId, ("MySolution", false));
         SetupOwnership(depId, ("MySolution", false));
 
         var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
 
-        snapshot.LocalResources["my_MySolution/my_widget"].DependsOn.Should().Contain("my_MySolution/helper.js");
+        snapshot.LocalResources["my_widget"].DependsOn.Should().Contain("my_MySolution/helper.js");
     }
 
     [Fact]
@@ -133,11 +133,11 @@ public class WebResourceReaderTests : IDisposable
         // adopt that record's type rather than let Tier 2's guess plan an update to a foreign record.
         var orphanId = Guid.NewGuid();
         File.WriteAllText(Path.Combine(_webresourceRoot, "my_widget"), "function widget() {}");
-        SetupGlobalOrphans(RemoteWebResource(orphanId, "my_MySolution/my_widget", WebResourceType.Html));
+        SetupGlobalOrphans(RemoteWebResource(orphanId, "my_widget", WebResourceType.Html));
 
         var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
 
-        snapshot.LocalResources["my_MySolution/my_widget"].Type.Should().Be(WebResourceType.Html);
+        snapshot.LocalResources["my_widget"].Type.Should().Be(WebResourceType.Html);
     }
 
     [Fact]
@@ -148,15 +148,15 @@ public class WebResourceReaderTests : IDisposable
         File.WriteAllText(Path.Combine(_webresourceRoot, "dwe_cateringjs"), "function catering() {}");
         File.WriteAllBytes(Path.Combine(_webresourceRoot, "dwe_Logoromeo"), [0xFF, 0xD8, 0xFF, 0xE0]);
         SetupWebResources(
-            RemoteWebResource(jsId, "my_MySolution/dwe_cateringjs", WebResourceType.Js),
-            RemoteWebResource(imgId, "my_MySolution/dwe_Logoromeo", WebResourceType.Jpg));
+            RemoteWebResource(jsId, "dwe_cateringjs", WebResourceType.Js),
+            RemoteWebResource(imgId, "dwe_Logoromeo", WebResourceType.Jpg));
         SetupOwnership(jsId, ("MySolution", false));
         SetupOwnership(imgId, ("MySolution", false));
 
         var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
 
-        snapshot.LocalResources["my_MySolution/dwe_cateringjs"].Type.Should().Be(WebResourceType.Js);
-        snapshot.LocalResources["my_MySolution/dwe_Logoromeo"].Type.Should().Be(WebResourceType.Jpg);
+        snapshot.LocalResources["dwe_cateringjs"].Type.Should().Be(WebResourceType.Js);
+        snapshot.LocalResources["dwe_Logoromeo"].Type.Should().Be(WebResourceType.Jpg);
     }
 
     void SetupSolution(string solutionName, string prefix)

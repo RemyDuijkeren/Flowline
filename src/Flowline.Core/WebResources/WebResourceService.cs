@@ -158,7 +158,7 @@ public class WebResourceService(IAnsiConsole console)
         WriteSection(line, "Updates", plan.Updates, withReason: true);
         WriteSection(line, "Add to solution", plan.AddsToSolution);
         WriteSection(line, "Deletes", plan.Deletes);
-        WriteSection(line, "Remove from solution", plan.RemovesFromSolution);
+        WriteSection(line, "Remove from solution", plan.RemovesFromSolution, withReason: true);
         WriteSection(line, "Skips", plan.Skips, withReason: true);
 
         if (publishCount > 0)

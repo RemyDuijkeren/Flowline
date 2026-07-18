@@ -46,9 +46,13 @@ public class FormEventReader(IAnsiConsole console)
 
         // Deliberate second call to the same reader WebResourceService already uses elsewhere in the
         // same push — cheap, and keeps this reader independent of a shared snapshot being threaded in.
+        // Always suppresses that reader's own warnings (extensionless type fallback, LCID/RESX matching):
+        // WebResourceService.SyncSolutionAsync's own load already owns reporting those, in both the
+        // cleanup and registration passes here — this method's own suppressWarnings param is unrelated,
+        // it only dedupes this reader's/planner's own annotation warnings between those two passes.
         var webResourceReader = new WebResourceReader(console);
         var webResourceSnapshot = await webResourceReader
-            .LoadSnapshotAsync(service, webresourceRoot, solutionName, cancellationToken)
+            .LoadSnapshotAsync(service, webresourceRoot, solutionName, cancellationToken, suppressWarnings: true)
             .ConfigureAwait(false);
 
         // R15: every JS web resource tracked by this project, not just files that currently carry an

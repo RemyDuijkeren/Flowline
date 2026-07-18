@@ -18,11 +18,16 @@ public class WebResourceReader(IAnsiConsole console)
     static readonly Regex ResxLcidSuffixRegex = new(@"\.\d{4}\.resx$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     readonly SolutionReader _solutionReader = new();
 
+    // suppressWarnings: FormEventReader re-scans this same local file set on every push (it needs the
+    // resource list, not just its own annotations) — WebResourceService.SyncSolutionAsync's own load is
+    // the sole owner of reader-level warnings (extensionless type fallback, LCID/RESX matching), so a
+    // caller that only wants the snapshot's data passes true to avoid printing them a second (and third) time.
     public async Task<WebResourceSyncSnapshot> LoadSnapshotAsync(
         IOrganizationServiceAsync2 service,
         string webresourceRoot,
         string solutionName,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool suppressWarnings = false)
     {
         var baseSolution = await _solutionReader.GetSupportedSolutionInfoAsync(service, solutionName, cancellationToken).ConfigureAwait(false);
 
@@ -63,9 +68,9 @@ public class WebResourceReader(IAnsiConsole console)
             ? await GetGlobalWebResourcesByNameAsync(service, orphanNames, cancellationToken).ConfigureAwait(false)
             : new Dictionary<string, DataverseWebResource>(StringComparer.OrdinalIgnoreCase).AsReadOnly();
 
-        var backfilledLocals = BackfillUnresolvedTypes(localResourcesTask.Result, dataverseResourcesDict, globalOrphans);
+        var backfilledLocals = BackfillUnresolvedTypes(localResourcesTask.Result, dataverseResourcesDict, globalOrphans, suppressWarnings);
 
-        var enrichedLocals = EnrichDependencies(backfilledLocals, dataverseNames);
+        var enrichedLocals = EnrichDependencies(backfilledLocals, dataverseNames, suppressWarnings);
 
         return new WebResourceSyncSnapshot(
             baseSolution,
@@ -89,7 +94,8 @@ public class WebResourceReader(IAnsiConsole console)
     IReadOnlyDictionary<string, LocalWebResource> BackfillUnresolvedTypes(
         IReadOnlyDictionary<string, LocalWebResource> localResources,
         IReadOnlyDictionary<string, DataverseWebResource> dataverseResourcesDict,
-        IReadOnlyDictionary<string, DataverseWebResource> globalOrphans)
+        IReadOnlyDictionary<string, DataverseWebResource> globalOrphans,
+        bool suppressWarnings)
     {
         Dictionary<string, LocalWebResource>? backfilled = null;
 
@@ -98,15 +104,13 @@ public class WebResourceReader(IAnsiConsole console)
             if (resource.Type != WebResourceType.Unknown) continue;
 
             WebResourceType resolvedType;
-            string reason;
-            string source;
+            string verb;
 
             if (dataverseResourcesDict.TryGetValue(name, out var dataverseMatch) ||
                 globalOrphans.TryGetValue(name, out dataverseMatch))
             {
                 resolvedType = dataverseMatch.Type;
-                reason = "resolved type";
-                source = "from the existing Dataverse record";
+                verb = "matched";
             }
             else
             {
@@ -123,8 +127,7 @@ public class WebResourceReader(IAnsiConsole console)
                 if (sniffed is null) continue;
 
                 resolvedType = sniffed.Value;
-                reason = "inferred type";
-                source = "from file content";
+                verb = "guessed";
             }
 
             var dependsOn = resolvedType == WebResourceType.Js
@@ -134,10 +137,10 @@ public class WebResourceReader(IAnsiConsole console)
             backfilled ??= localResources.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
             backfilled[name] = resource with { Type = resolvedType, DependsOn = dependsOn };
 
-            console.Warning(
-                $"'{name}' has no file extension — {reason} '{resolvedType}' {source}. " +
-                $"Recommend creating a properly-named replacement (e.g. '{name}.{ConventionalExtension(resolvedType)}') " +
-                "and migrating references — Dataverse web resource names can't be renamed after creation.");
+            if (!suppressWarnings)
+                console.Warning(
+                    $"'{name}' has no extension — {verb} '{resolvedType}'. " +
+                    $"Create '{name}.{ConventionalExtension(resolvedType)}' and repoint references — names can't change later.");
         }
 
         return backfilled?.AsReadOnly() ?? localResources;
@@ -162,7 +165,8 @@ public class WebResourceReader(IAnsiConsole console)
 
     IReadOnlyDictionary<string, LocalWebResource> EnrichDependencies(
         IReadOnlyDictionary<string, LocalWebResource> localResources,
-        HashSet<string> dataverseNames)
+        HashSet<string> dataverseNames,
+        bool suppressWarnings)
     {
         var allNames = localResources.Keys
             .Concat(dataverseNames)
@@ -170,14 +174,14 @@ public class WebResourceReader(IAnsiConsole console)
 
         var enriched = localResources.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
 
-        ExpandLcidDependencies(enriched, allNames);
-        AutoMatchResxDependencies(enriched);
+        ExpandLcidDependencies(enriched, allNames, suppressWarnings);
+        AutoMatchResxDependencies(enriched, suppressWarnings);
 
         return enriched.AsReadOnly();
     }
 
     // Phase 2a: resolve bare ".resx" references (no LCID) to all matching LCID variants.
-    void ExpandLcidDependencies(Dictionary<string, LocalWebResource> enriched, HashSet<string> allNames)
+    void ExpandLcidDependencies(Dictionary<string, LocalWebResource> enriched, HashSet<string> allNames, bool suppressWarnings)
     {
         foreach (var (name, resource) in enriched.ToList())
         {
@@ -198,7 +202,8 @@ public class WebResourceReader(IAnsiConsole console)
                     resolved.AddRange(expanded);
                 else
                 {
-                    console.Warning($"'{name}': bare RESX reference '{dep}' has no LCID variants — kept as-is.");
+                    if (!suppressWarnings)
+                        console.Warning($"'{name}': bare RESX reference '{dep}' has no LCID variants — kept as-is.");
                     resolved.Add(dep);
                 }
             }
@@ -209,7 +214,7 @@ public class WebResourceReader(IAnsiConsole console)
     }
 
     // Phase 2b: link each RESX group to its unique JS match by folder-qualified base name.
-    void AutoMatchResxDependencies(Dictionary<string, LocalWebResource> enriched)
+    void AutoMatchResxDependencies(Dictionary<string, LocalWebResource> enriched, bool suppressWarnings)
     {
         var resxByBaseName = enriched.Values
             .Where(r => r.Type == WebResourceType.Resx)
@@ -225,15 +230,17 @@ public class WebResourceReader(IAnsiConsole console)
             var baseName = resxGroup.Key;
             if (!jsByBaseName.TryGetValue(baseName, out var jsMatches) || jsMatches.Count == 0)
             {
-                foreach (var resx in resxGroup)
-                    console.Warning($"'{resx.Name}': no JS file matches base name '{baseName}' — dependency not registered.");
+                if (!suppressWarnings)
+                    foreach (var resx in resxGroup)
+                        console.Warning($"'{resx.Name}': no JS file matches base name '{baseName}' — dependency not registered.");
                 continue;
             }
 
             if (jsMatches.Count > 1)
             {
-                foreach (var resx in resxGroup)
-                    console.Warning($"'{resx.Name}': multiple JS files match base name '{baseName}' — use // flowline:depends to specify the target.");
+                if (!suppressWarnings)
+                    foreach (var resx in resxGroup)
+                        console.Warning($"'{resx.Name}': multiple JS files match base name '{baseName}' — use // flowline:depends to specify the target.");
                 continue;
             }
 
@@ -377,13 +384,16 @@ public class WebResourceReader(IAnsiConsole console)
         return result.AsReadOnly();
     }
 
-    // Verbatim mode: only applies when the file is inside a subfolder whose name starts with a publisher prefix.
-    // Root-level files (no '/') always use auto-prefix regardless of filename.
+    // Verbatim mode: applies when the file's top-level segment starts with a publisher prefix —
+    // either a subfolder name, or (for a root-level file with no subfolder) the filename itself.
+    // Lets a flat, pre-existing Dataverse name (e.g. "dwe_legacyscript", no folder) round-trip as-is
+    // instead of getting double-prefixed. A root-level file whose name doesn't look prefixed
+    // (e.g. "app.js") still falls through to auto-prefix.
     static bool IsVerbatimPath(string relativePath)
     {
         var slashIndex = relativePath.IndexOf('/');
-        if (slashIndex < 0) return false;
-        return VerbatimPrefixRegex.IsMatch(relativePath[..slashIndex]);
+        var firstSegment = slashIndex < 0 ? relativePath : relativePath[..slashIndex];
+        return VerbatimPrefixRegex.IsMatch(firstSegment);
     }
 
     static LocalWebResource LocalResourceFromFile(string path, string name, string relativePath)

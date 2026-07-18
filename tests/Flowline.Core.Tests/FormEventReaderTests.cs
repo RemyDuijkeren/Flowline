@@ -90,6 +90,20 @@ public class FormEventReaderTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadSnapshotAsync_ExtensionlessLocalFile_ShouldNotPrintWebResourceReaderWarning()
+    {
+        // Extensionless files go through WebResourceReader's own Tier 1/2 type-fallback, which warns —
+        // but that warning belongs solely to WebResourceService's own pass (KTD12); this reader re-scans
+        // the same files for annotations and must never surface it, in either the cleanup or registration
+        // pass, or a single push prints it 2-3 times over.
+        File.WriteAllText(Path.Combine(_webresourceRoot, "my_legacyscript"), "function legacy() {}");
+
+        await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        Assert.DoesNotContain("has no extension", _console.Output);
+    }
+
+    [Fact]
     public async Task LoadSnapshotAsync_SameEntityTwoAnnotations_ShouldResolveEntityOnlyOnce()
     {
         File.WriteAllText(Path.Combine(_webresourceRoot, "form1.js"),

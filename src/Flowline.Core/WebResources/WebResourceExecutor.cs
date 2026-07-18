@@ -90,7 +90,7 @@ public class WebResourceExecutor(IAnsiConsole console)
                         try { await RemoveFromSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken).ConfigureAwait(false); }
                         catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
                     }, ctx.AddTask("Removing web resources from solution", maxValue: plan.RemovesFromSolution.Count), cancellationToken)).ConfigureAwait(false);
-                foreach (var a in plan.RemovesFromSolution) console.Verbose($"Web resource '{a.Name}' removed from solution");
+                foreach (var a in plan.RemovesFromSolution) console.Verbose($"Web resource '{a.Name}' removed from solution ({a.Reason})");
                 console.Ok($"{plan.RemovesFromSolution.Count} web resource(s) removed from solution");
             }
         }
@@ -98,8 +98,8 @@ public class WebResourceExecutor(IAnsiConsole console)
         {
             foreach (var a in plan.Deletes) console.Skip($"Web resource '{a.Name}' not in source — kept (--no-delete)");
             if (plan.Deletes.Count > 0) console.Skip($"{plan.Deletes.Count} web resource(s) not in source — kept (--no-delete)");
-            foreach (var a in plan.RemovesFromSolution) console.Skip($"Web resource '{a.Name}' still in other solution — kept (--no-delete)");
-            if (plan.RemovesFromSolution.Count > 0) console.Skip($"{plan.RemovesFromSolution.Count} web resource(s) still in other solution — kept (--no-delete)");
+            foreach (var a in plan.RemovesFromSolution) console.Skip($"Web resource '{a.Name}' kept — {a.Reason} (--no-delete)");
+            if (plan.RemovesFromSolution.Count > 0) console.Skip($"{plan.RemovesFromSolution.Count} web resource(s) kept (--no-delete)");
         }
 
         if (publishAfterSync && publishIds.Count > 0)

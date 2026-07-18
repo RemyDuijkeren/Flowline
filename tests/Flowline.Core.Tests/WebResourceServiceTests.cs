@@ -123,6 +123,7 @@ public class WebResourceServiceTests : IDisposable
             (int)r["ComponentType"] == 61 &&
             r["SolutionUniqueName"].ToString() == "MySolution"), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", webResourceId, Arg.Any<CancellationToken>());
+        Assert.Contains("still in other solution", _console.Output);
     }
 
     [Fact]
@@ -193,6 +194,7 @@ public class WebResourceServiceTests : IDisposable
             (int)r["ComponentType"] == 61 &&
             r["SolutionUniqueName"].ToString() == "MySolution"), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", webResourceId, Arg.Any<CancellationToken>());
+        Assert.Contains("owned by managed solution", _console.Output);
     }
 
     [Fact]
@@ -746,10 +748,11 @@ public class WebResourceServiceTests : IDisposable
     // --- Verbatim mode ---
 
     [Fact]
-    public async Task SyncSolutionAsync_AutoPrefix_RootLevelFileWithPublisherLikeName_ShouldAutoPrefix()
+    public async Task SyncSolutionAsync_VerbatimMode_RootLevelFileWithPublisherLikeName_ShouldUseVerbatimName()
     {
-        // A root-level file whose name starts with a publisher-like prefix must still be auto-prefixed
-        // because it has no subfolder — verbatim mode only fires when there is a containing folder.
+        // A root-level file whose name starts with a publisher-like prefix (any publisher, not just
+        // this project's) goes verbatim even without a containing subfolder — same rule as the
+        // folder case, so a flat pre-existing Dataverse name round-trips unchanged.
         File.WriteAllText(Path.Combine(_webresourceRoot, "av_helper.js"), "// helper");
         var createdId = Guid.NewGuid();
         var createResponse = new CreateResponse();
@@ -760,7 +763,7 @@ public class WebResourceServiceTests : IDisposable
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
 
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_MySolution/av_helper.js"),
+            Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "av_helper.js"),
             Arg.Any<CancellationToken>());
     }
 
@@ -779,6 +782,24 @@ public class WebResourceServiceTests : IDisposable
 
         await _serviceMock.Received(1).ExecuteAsync(
             Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_MySolution/js/app.js"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_VerbatimMode_RootLevelPrefixedFilename_ShouldUseVerbatimName()
+    {
+        // Legacy flat Dataverse name, no subfolder — e.g. cloned from a pre-Flowline solution.
+        File.WriteAllText(Path.Combine(_webresourceRoot, "my_legacyscript.js"), "// legacy");
+        var createdId = Guid.NewGuid();
+        var createResponse = new CreateResponse();
+        createResponse.Results["id"] = createdId;
+        _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(createResponse));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_legacyscript.js"),
             Arg.Any<CancellationToken>());
     }
 

@@ -109,8 +109,11 @@ public class WebResourcePlanner(IAnsiConsole console)
             if (remote.Ownership.NonDefaultUnmanagedSolutionCount > 1 ||
                 (remote.Ownership is { IsInCurrentUnmanagedSolution: true, HasManagedSolutionReference: true }))
             {
+                var removeReason = remote.Ownership.HasManagedSolutionReference
+                    ? "owned by managed solution"
+                    : "still in other solution";
                 plan.RemovesFromSolution.Add(
-                    new WebResourcePlanAction(name, WebResourceAction.RemoveFromSolution, Id: remote.Id, SolutionName: targetSolutionName));
+                    new WebResourcePlanAction(name, WebResourceAction.RemoveFromSolution, Id: remote.Id, SolutionName: targetSolutionName, Reason: removeReason));
                 continue;
             }
 
