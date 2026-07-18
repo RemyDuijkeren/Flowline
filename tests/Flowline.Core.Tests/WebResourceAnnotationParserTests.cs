@@ -135,4 +135,24 @@ public class WebResourceAnnotationParserTests : IDisposable
         var result = WebResourceAnnotationParser.CollectAllReferences(Path.Combine(_dir, "does-not-exist"));
         Assert.Empty(result);
     }
+
+    [Fact]
+    public void CollectAllReferences_ExtensionlessJsFile_AnnotationsIncluded()
+    {
+        Write("my_widget", "// flowline:depends av_sol/helper.js\ncode();");
+
+        var result = WebResourceAnnotationParser.CollectAllReferences(_dir);
+
+        Assert.Contains("av_sol/helper.js", result);
+    }
+
+    [Fact]
+    public void CollectAllReferences_NonJsExtension_Ignored()
+    {
+        Write("styles.css", "/*! flowline:depends av_sol/should-not-be-picked-up.js */\n.foo { color: red; }");
+
+        var result = WebResourceAnnotationParser.CollectAllReferences(_dir);
+
+        Assert.Empty(result);
+    }
 }

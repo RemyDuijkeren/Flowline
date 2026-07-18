@@ -1,4 +1,5 @@
 using System.Text;
+using System.Linq;
 using Flowline.Core.Models;
 using Flowline.Core.WebResources;
 using FluentAssertions;
@@ -115,6 +116,53 @@ public class WebResourceTypeSnifferTests
     }
 
     [Fact]
+    public void TrySniff_JsSwitchStatement_ResolvesJs_NotCss()
+    {
+        // "default: return 0;" inside a brace pair looks like a CSS declaration to a naive regex.
+        var content = Bytes("function f(x) {\n  switch (x) {\n    case 1: return 1;\n    default: return 0;\n  }\n}");
+
+        WebResourceTypeSniffer.TrySniff(content).Should().Be(WebResourceType.Js);
+    }
+
+    [Fact]
+    public void TrySniff_JsWithCssTemplateLiteral_ResolvesJs_NotCss()
+    {
+        var content = Bytes("const css = `.foo { color: red; }`;\nconst handler = () => {};");
+
+        WebResourceTypeSniffer.TrySniff(content).Should().Be(WebResourceType.Js);
+    }
+
+    [Fact]
+    public void TrySniff_HtmlWithInlineSvg_ResolvesHtml_NotSvg()
+    {
+        var content = Bytes("<!DOCTYPE html><html><body><svg><path d=\"M0 0\"/></svg></body></html>");
+
+        WebResourceTypeSniffer.TrySniff(content).Should().Be(WebResourceType.Html);
+    }
+
+    [Fact]
+    public void TrySniff_CssContainingArrowLikeStringLiteral_ResolvesCss_NotJs()
+    {
+        // The signal regex matches "=>" anywhere, including inside a CSS string value — the
+        // real-parse guard must reject this as JS since it isn't valid JavaScript syntax.
+        var content = Bytes(".foo:after { content: \"=>\"; }");
+
+        WebResourceTypeSniffer.TrySniff(content).Should().Be(WebResourceType.Css);
+    }
+
+    [Fact]
+    public void TrySniff_LargeValidJsFile_ResolvesJs()
+    {
+        // Content longer than the 4096-byte regex-check prefix must still parse-validate against
+        // the FULL content, not a truncated prefix that would fail on an unterminated statement.
+        // The JS signal itself sits within the prefix; the padding after it pushes total length past it.
+        var padding = string.Concat(Enumerable.Repeat("// padding comment to exceed the prefix length\n", 200));
+        var content = Bytes("function widget() {\n  console.log('hi');\n}\n" + padding);
+
+        WebResourceTypeSniffer.TrySniff(content).Should().Be(WebResourceType.Js);
+    }
+
+    [Fact]
     public void TrySniff_EmptyByteArray_ReturnsNull()
     {
         WebResourceTypeSniffer.TrySniff([]).Should().BeNull();
@@ -124,5 +172,15 @@ public class WebResourceTypeSnifferTests
     public void TrySniff_PlainTextNoSignals_ReturnsNull()
     {
         WebResourceTypeSniffer.TrySniff(Bytes("hello world, nothing to see here")).Should().BeNull();
+    }
+
+    [Fact]
+    public void TrySniff_InvalidUtf8Bytes_ReturnsNull()
+    {
+        // Lone continuation byte (0x80) is not valid UTF-8 on its own — no magic-byte match, so
+        // this must be rejected by the decoder rather than silently decoded with replacement chars.
+        byte[] content = [0x80, 0x81, 0x82, 0x83];
+
+        WebResourceTypeSniffer.TrySniff(content).Should().BeNull();
     }
 }

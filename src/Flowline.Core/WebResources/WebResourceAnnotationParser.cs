@@ -35,7 +35,9 @@ public static class WebResourceAnnotationParser
     }
 
     /// <summary>
-    /// Collects all raw flowline:depends references across JS files in a directory.
+    /// Collects all raw flowline:depends references across JS files in a directory, including
+    /// extensionless files (a JS file whose Dataverse name has no extension parses annotations
+    /// too — see WebResourceReader.BackfillUnresolvedTypes).
     /// Used by OrphanCleanupService to determine exemption set.
     /// </summary>
     public static IReadOnlySet<string> CollectAllReferences(string webresourceRoot)
@@ -44,8 +46,12 @@ public static class WebResourceAnnotationParser
             return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var file in Directory.EnumerateFiles(webresourceRoot, "*.js", SearchOption.AllDirectories))
+        foreach (var file in Directory.EnumerateFiles(webresourceRoot, "*", SearchOption.AllDirectories))
         {
+            var extension = Path.GetExtension(file);
+            if (extension.Length > 0 && !extension.Equals(".js", StringComparison.OrdinalIgnoreCase))
+                continue;
+
             foreach (var name in ParseAnnotations(file))
                 result.Add(name);
         }
