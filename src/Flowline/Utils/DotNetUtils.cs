@@ -12,13 +12,15 @@ public enum DotnetBuild { Release, Debug }
 
 public static class DotNetUtils
 {
-
     public static async Task<int> BuildSolutionAsync(string workingDirectory, DotnetBuild configuration, SubprocessCapture capture, CancellationToken cancellationToken = default, bool rebuild = false)
     {
-        var relativeWorkingDirectory = ConsolePath.FormatRelativePath(workingDirectory);
+        // Not FormatRelativePath(workingDirectory) — callers sometimes cd into workingDirectory
+        // itself before building, which collapses the relative path to a meaningless "./". The
+        // folder's own name stays meaningful regardless of the current directory.
+        var buildTarget = Path.GetFileName(workingDirectory.TrimEnd('/', '\\'));
         var statusVerb = rebuild ? "Rebuilding" : "Building";
 
-        var buildResult = await AnsiConsole.Status().FlowlineSpinner().StartAsync($"{statusVerb} {relativeWorkingDirectory}...", ctx =>
+        var buildResult = await AnsiConsole.Status().FlowlineSpinner().StartAsync($"{statusVerb} [bold]{Markup.Escape(buildTarget)}[/] ({configuration})...", ctx =>
             capture.Apply(
                 Cli.Wrap("dotnet")
                    .WithArguments(args =>
@@ -38,8 +40,8 @@ public static class DotNetUtils
         else
         {
             var elapsed = buildResult.RunTime;
-        var duration = elapsed.TotalMinutes >= 1 ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds}s" : $"{(int)elapsed.TotalSeconds}s";
-        AnsiConsole.MarkupLine($"[green]✓[/] Build {relativeWorkingDirectory} done in {duration}");
+            var duration = elapsed.TotalMinutes >= 1 ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds}s" : $"{(int)elapsed.TotalSeconds}s";
+            AnsiConsole.MarkupLine($"[green]✓[/] Build [bold]{Markup.Escape(buildTarget)}[/] done in {duration} ({configuration})");
             return 0;
         }
     }

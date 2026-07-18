@@ -231,11 +231,7 @@ public static class GitUtils
     public static async Task AssertGitRepoAsync(string rootFolder, SubprocessCapture capture, bool verbose = true, CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(Path.Combine(rootFolder, ".git")))
-        {
-            AnsiConsole.MarkupLine("[red]No Git repo found. Run 'git init' or 'git clone' first.[/]");
-            Environment.Exit(1);
-            return;
-        }
+            throw new FlowlineException(ExitCode.ConfigInvalid, "No Git repo found. Run 'git init' or 'git clone' first.");
 
         AnsiConsole.MarkupLine("You're in a Git repo");
 
