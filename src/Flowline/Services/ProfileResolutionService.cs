@@ -125,16 +125,24 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
             $"PAC auth profile '{profile.Name ?? "(unnamed)"}' isn't the active PAC CLI profile — run: pac auth select {argName} '{argValue}'");
     }
 
+    // Column order/naming mirrors 'pac auth list' (Index, Active, Kind, Name, User, Environment) so the
+    // table reads familiarly to anyone who already knows that command. Index is 1-based, matching what
+    // 'pac auth select --index' expects. Cloud/Type/Environment-display-name aren't shown — PacProfile
+    // doesn't carry them (only the raw Environment Url via Resource), and they add no value for the
+    // single job this table does: sanity-check which profile Flowline is about to switch to.
     void RenderProfileTable(IReadOnlyList<PacProfile> allProfiles, Func<PacProfile, bool> isActive)
     {
-        var table = new Table().AddColumn("Name").AddColumn("Kind").AddColumn("User").AddColumn("Active");
-        foreach (var p in allProfiles)
+        var table = new Table().AddColumn("Index").AddColumn("Active").AddColumn("Kind").AddColumn("Name").AddColumn("User").AddColumn("Environment");
+        for (var i = 0; i < allProfiles.Count; i++)
         {
+            var p = allProfiles[i];
             table.AddRow(
-                Markup.Escape(p.Name ?? "(unnamed)"),
+                (i + 1).ToString(),
+                isActive(p) ? "yes" : "",
                 Markup.Escape(p.Kind ?? ""),
+                Markup.Escape(p.Name ?? "(unnamed)"),
                 Markup.Escape(p.User ?? ""),
-                isActive(p) ? "yes" : "");
+                Markup.Escape(p.Resource ?? ""));
         }
         console.Write(table);
     }
