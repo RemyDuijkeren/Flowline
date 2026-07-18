@@ -47,7 +47,7 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
     async Task<PacProfile> HandleFound(PacProfile profile, CancellationToken cancellationToken)
     {
         EmitStatusLine(profile);
-        console.Verbose($"Matched profile: {profile.Name ?? "(unnamed)"}, Kind: {profile.Kind}, URL: {profile.Resource}");
+        console.Verbose($"Matched profile: {profile.DisplayName}, Kind: {profile.Kind}, URL: {profile.Resource}");
         await EnsureActiveProfileAsync(profile, cancellationToken);
         return profile;
     }
@@ -95,13 +95,9 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
         ShowActiveVsTarget(allProfiles, isActive, profile);
 
         var confirmed = console.Prompt(
-            new ConfirmationPrompt($"Switch active PAC auth profile to '{profile.Name ?? "(unnamed)"}'?")
+            new ConfirmationPrompt($"Switch active PAC auth profile to '{profile.DisplayName}'?")
             {
-                DefaultValue = false,
-                // Spectre's ConfirmationPrompt defaults DefaultValueStyle to green, which collides with
-                // the green highlight on the target row in the table above — dim it so '(n)' doesn't
-                // read as another way to select the highlighted profile.
-                DefaultValueStyle = new Style(foreground: Color.Grey)
+                DefaultValue = false
             });
 
         if (!confirmed)
@@ -120,16 +116,16 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
         var isActive = IsProfileActiveOverride ?? dataverseConnector.IsProfileActive;
         if (!isActive(profile))
             throw new FlowlineException(ExitCode.NotAuthenticated,
-                $"pac auth select reported success, but PAC auth profile '{profile.Name ?? "(unnamed)"}' still isn't active — check 'pac auth list' and try again.");
+                $"pac auth select reported success, but PAC auth profile '{profile.DisplayName}' still isn't active — check 'pac auth list' and try again.");
 
-        console.Info($"Switched active PAC auth profile to '{Markup.Escape(profile.Name ?? "(unnamed)")}'");
+        console.Info($"Switched active PAC auth profile to '{Markup.Escape(profile.DisplayName)}'");
     }
 
     FlowlineException BuildMismatchException(PacProfile profile, IReadOnlyList<PacProfile> allProfiles)
     {
         var (argName, argValue) = PacUtils.BuildAuthSelectArgs(profile, allProfiles);
         return new FlowlineException(ExitCode.NotAuthenticated,
-            $"PAC auth profile '{profile.Name ?? "(unnamed)"}' isn't the active PAC CLI profile — run: pac auth select {argName} '{argValue}'");
+            $"PAC auth profile '{profile.DisplayName}' isn't the active PAC CLI profile — run: pac auth select {argName} '{argValue}'");
     }
 
     // A full profile table was tried here and dropped: with only one valid switch target, it mostly
@@ -142,20 +138,13 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
         console.MarkupLine(current != null
             ? $"Currently active: {FormatProfileLabel(current)}"
             : "Currently active: (none)");
-        console.MarkupLine($"[green]Switching to: {FormatProfileLabel(target)}[/]");
+        console.MarkupLine($"Switching to: [bold]{FormatProfileLabel(target)}[/]");
     }
 
     static string FormatProfileLabel(PacProfile p) =>
         string.IsNullOrEmpty(p.Name)
-            ? $"(unnamed) — {FormatEnvironment(p)}"
-            : $"'{Markup.Escape(p.Name)}' — {FormatEnvironment(p)}";
-
-    // "FriendlyName (Url)" when a display name is available, otherwise the bare URL — shared by the
-    // profile table and the resolved-profile status line so both describe an environment the same way.
-    static string FormatEnvironment(PacProfile profile) =>
-        string.IsNullOrEmpty(profile.FriendlyName)
-            ? Markup.Escape(profile.Resource ?? "")
-            : $"{Markup.Escape(profile.FriendlyName)} ({Markup.Escape(profile.Resource ?? "")})";
+            ? $"({Markup.Escape(p.DisplayName)}) — {Markup.Escape(p.EnvironmentLabel)}"
+            : $"'{Markup.Escape(p.DisplayName)}' — {Markup.Escape(p.EnvironmentLabel)}";
 
     bool IsInteractive() => IsInteractiveOverride?.Invoke() ?? ConsoleHelper.IsInteractive(settings: null);
 
@@ -171,17 +160,16 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
     // necessarily active yet (that's exactly what the guard below may still need to fix).
     void EmitStatusLine(PacProfile profile)
     {
-        var environment = FormatEnvironment(profile);
         var status = string.IsNullOrEmpty(profile.Name)
-            ? $"Resolved PAC auth profile (unnamed, {Markup.Escape(profile.Kind ?? "")}) — {environment}"
-            : $"Resolved PAC auth profile '{Markup.Escape(profile.Name)}' ({Markup.Escape(profile.Kind ?? "")}) — {environment}";
+            ? $"Resolved PAC auth profile ({Markup.Escape(profile.DisplayName)}, {Markup.Escape(profile.Kind ?? "")}) — {Markup.Escape(profile.EnvironmentLabel)}"
+            : $"Resolved PAC auth profile '{Markup.Escape(profile.DisplayName)}' ({Markup.Escape(profile.Kind ?? "")}) — {Markup.Escape(profile.EnvironmentLabel)}";
         console.Info(status);
     }
 
     static string FormatCandidate(PacProfile p) =>
         string.IsNullOrEmpty(p.Name)
-            ? $"(unnamed, {Markup.Escape(p.Kind ?? "")}) — {Markup.Escape(p.Resource ?? "")}"
-            : $"'{Markup.Escape(p.Name)}' ({Markup.Escape(p.Kind ?? "")}) — {Markup.Escape(p.Resource ?? "")}";
+            ? $"({Markup.Escape(p.DisplayName)}, {Markup.Escape(p.Kind ?? "")}) — {Markup.Escape(p.EnvironmentLabel)}"
+            : $"'{Markup.Escape(p.DisplayName)}' ({Markup.Escape(p.Kind ?? "")}) — {Markup.Escape(p.EnvironmentLabel)}";
 
     internal static string BuildNameSuggestion(string environmentUrl)
     {

@@ -42,6 +42,19 @@ public record PacProfile
 
     [JsonIgnore]
     public bool IsServicePrincipal => string.Equals(Kind, "ServicePrincipal", StringComparison.OrdinalIgnoreCase);
+
+    // Bare text, not pre-quoted/parenthesized — profiles created without `--name` have an empty
+    // Name, and callers format that fallback differently (quoted, parenthesized, combined with
+    // Kind, ...), so this only owns the "what text represents this profile" decision, not its
+    // surrounding punctuation.
+    [JsonIgnore]
+    public string DisplayName => string.IsNullOrEmpty(Name) ? "unnamed" : Name;
+
+    // "FriendlyName (Url)" when a display name is available, otherwise the bare URL.
+    [JsonIgnore]
+    public string EnvironmentLabel => string.IsNullOrEmpty(FriendlyName)
+        ? Resource ?? ""
+        : $"{FriendlyName} ({Resource})";
 }
 
 public record PacAuthProfiles
