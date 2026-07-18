@@ -141,7 +141,7 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
     {
         var current = allProfiles.FirstOrDefault(p => p.Kind == target.Kind && isActive(p));
         var currentLabel = current != null ? FormatProfileLabel(current) : "(none)";
-        console.MarkupLine($"Active: [italic]{currentLabel}[/]");
+        console.MarkupLine($"Active: [dim]{currentLabel}[/]");
         console.MarkupLine($"Target: [bold]{FormatProfileLabel(target)}[/]");
     }
 
