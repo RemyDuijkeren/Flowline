@@ -46,7 +46,6 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
 
     async Task<PacProfile> HandleFound(PacProfile profile, CancellationToken cancellationToken)
     {
-        EmitStatusLine(profile);
         console.Verbose($"Matched profile: {profile.DisplayName}, Kind: {profile.Kind}, URL: {profile.Resource}");
         await EnsureActiveProfileAsync(profile, cancellationToken);
         return profile;
@@ -68,7 +67,6 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
 
         var selected = console.Prompt(prompt);
 
-        EmitStatusLine(selected);
         await EnsureActiveProfileAsync(selected, cancellationToken);
         return selected;
     }
@@ -79,26 +77,33 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
     async Task EnsureActiveProfileAsync(PacProfile profile, CancellationToken cancellationToken)
     {
         var isActive = IsProfileActiveOverride ?? dataverseConnector.IsProfileActive;
-        if (isActive(profile)) return;
+        if (isActive(profile))
+        {
+            EmitStatusLine(profile);
+            return;
+        }
 
         var allProfiles = GetPacProfilesOverride?.Invoke() ?? dataverseConnector.GetPacProfiles().ToList();
 
         if (runtimeOptions.AutoSwitchProfile)
         {
+            EmitStatusLine(profile);
             await SwitchProfileAsync(profile, allProfiles, cancellationToken);
             return;
         }
 
         if (!IsInteractive())
+        {
+            EmitStatusLine(profile);
             throw BuildMismatchException(profile, allProfiles);
+        }
 
+        // Interactive mismatch: skip the "Resolved..." status line — the active-vs-target line
+        // below already names the profile, and the prompt doesn't repeat the name a third time.
         ShowActiveVsTarget(allProfiles, isActive, profile);
 
         var confirmed = console.Prompt(
-            new ConfirmationPrompt($"Switch active PAC auth profile to '{profile.DisplayName}'?")
-            {
-                DefaultValue = false
-            });
+            new ConfirmationPrompt("[yellow]Switch active PAC auth profile?[/]") { DefaultValue = false });
 
         if (!confirmed)
             throw BuildMismatchException(profile, allProfiles);
@@ -128,17 +133,14 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
             $"PAC auth profile '{profile.DisplayName}' isn't the active PAC CLI profile — run: pac auth select {argName} '{argValue}'");
     }
 
-    // A full profile table was tried here and dropped: with only one valid switch target, it mostly
-    // repeated what EmitStatusLine already said, buried the one useful comparison (what's currently
-    // active vs. what we're switching to) in unrelated rows, and didn't scale past a handful of
-    // profiles. A two-line diff says the same thing faster.
+    // A full profile table, then a two-line "Currently active / Switching to" pair, were both tried
+    // here and dropped: each still repeated the resolved profile's name/environment a second or
+    // third time next to the prompt. One line, Active -> Target, says the same thing once.
     void ShowActiveVsTarget(IReadOnlyList<PacProfile> allProfiles, Func<PacProfile, bool> isActive, PacProfile target)
     {
         var current = allProfiles.FirstOrDefault(p => p.Kind == target.Kind && isActive(p));
-        console.MarkupLine(current != null
-            ? $"Currently active: {FormatProfileLabel(current)}"
-            : "Currently active: (none)");
-        console.MarkupLine($"Switching to: [bold]{FormatProfileLabel(target)}[/]");
+        var currentLabel = current != null ? FormatProfileLabel(current) : "(none)";
+        console.MarkupLine($"Active: {currentLabel} [dim]→[/] Target: [bold]{FormatProfileLabel(target)}[/]");
     }
 
     static string FormatProfileLabel(PacProfile p) =>

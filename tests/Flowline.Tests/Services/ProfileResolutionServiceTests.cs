@@ -213,18 +213,22 @@ public class ProfileResolutionServiceTests
         result.Should().BeSameAs(profile);
         switchCalls.Should().Be(0);
         console.Output.Should().NotContain("Switched active PAC auth profile");
+        console.Output.Should().Contain("Resolved PAC auth profile"); // already active: this is the only status line shown
     }
 
     [Fact]
     public async Task Guard_NonInteractiveMismatch_ThrowsWithCorrectiveCommand()
     {
         var profile = MakeProfile(name: "MyProfile");
-        var svc = MakeService(out _, new ProfileFound(profile), isProfileActive: false, isInteractive: false);
+        var svc = MakeService(out var console, new ProfileFound(profile), isProfileActive: false, isInteractive: false);
 
         var ex = await Assert.ThrowsAsync<FlowlineException>(() => svc.ResolveAsync(EnvironmentUrl));
 
         ex.ExitCode.Should().Be(ExitCode.NotAuthenticated);
         ex.Message.Should().Contain("pac auth select --name 'MyProfile'");
+        // No active-vs-target comparison is shown (no prompt is possible here), so the resolved
+        // profile is still worth printing for context before the error.
+        console.Output.Should().Contain("Resolved PAC auth profile");
     }
 
     [Fact]
@@ -277,8 +281,9 @@ public class ProfileResolutionServiceTests
         result.Should().BeSameAs(profile);
         switchCalls.Should().Be(1);
         console.Output.Should().Contain("Switched active PAC auth profile");
-        console.Output.Should().Contain("Currently active:"); // R3: active-vs-target comparison rendered before the confirm prompt
-        console.Output.Should().Contain("Switching to:");
+        console.Output.Should().Contain("Active:"); // R3: active-vs-target comparison rendered before the confirm prompt
+        console.Output.Should().Contain("Target:");
+        console.Output.Should().NotContain("Resolved PAC auth profile"); // skipped when a switch prompt follows
     }
 
     [Fact]
@@ -329,6 +334,7 @@ public class ProfileResolutionServiceTests
         result.Should().BeSameAs(profile);
         switchCalls.Should().Be(1);
         console.Output.Should().Contain("Switched active PAC auth profile");
+        console.Output.Should().Contain("Resolved PAC auth profile"); // -a skips the prompt, not the status line
     }
 
     [Fact]
