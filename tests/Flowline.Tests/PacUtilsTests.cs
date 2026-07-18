@@ -1,4 +1,6 @@
 using Flowline;
+using Flowline.Core;
+using Flowline.Core.Models;
 using FluentAssertions;
 
 namespace Flowline.Tests;
@@ -182,6 +184,57 @@ public class PacUtilsTests : IDisposable
         prefixArgs.Should().HaveCount(2);
         prefixArgs.Should().ContainInOrder("microsoft.powerapps.cli.tool", "--yes");
         isDotnetTool.Should().BeTrue();
+    }
+}
+
+public class BuildAuthSelectArgsTests
+{
+    [Fact]
+    public void BuildAuthSelectArgs_ProfileHasName_ReturnsNameArg()
+    {
+        var profile = new PacProfile { Name = "MyProfile", Kind = "DATAVERSE" };
+        var allProfiles = new List<PacProfile> { profile };
+
+        var result = PacUtils.BuildAuthSelectArgs(profile, allProfiles);
+
+        result.ArgName.Should().Be("--name");
+        result.ArgValue.Should().Be("MyProfile");
+    }
+
+    [Fact]
+    public void BuildAuthSelectArgs_ProfileHasNoName_ReturnsIndexArgAtItsPosition()
+    {
+        var first = new PacProfile { Kind = "DATAVERSE", User = "a@contoso.com" };
+        var target = new PacProfile { Kind = "DATAVERSE", User = "b@contoso.com" };
+        var allProfiles = new List<PacProfile> { first, target };
+
+        var result = PacUtils.BuildAuthSelectArgs(target, allProfiles);
+
+        result.ArgName.Should().Be("--index");
+        result.ArgValue.Should().Be("1");
+    }
+
+    [Fact]
+    public void BuildAuthSelectArgs_ProfileNameIsWhitespace_FallsBackToIndex()
+    {
+        var profile = new PacProfile { Name = "   ", Kind = "DATAVERSE" };
+        var allProfiles = new List<PacProfile> { profile };
+
+        var result = PacUtils.BuildAuthSelectArgs(profile, allProfiles);
+
+        result.ArgName.Should().Be("--index");
+        result.ArgValue.Should().Be("0");
+    }
+
+    [Fact]
+    public void BuildAuthSelectArgs_UnnamedProfileNotInList_Throws()
+    {
+        var profile = new PacProfile { Kind = "DATAVERSE" };
+        var allProfiles = new List<PacProfile>();
+
+        var act = () => PacUtils.BuildAuthSelectArgs(profile, allProfiles);
+
+        act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.NotAuthenticated);
     }
 }
 

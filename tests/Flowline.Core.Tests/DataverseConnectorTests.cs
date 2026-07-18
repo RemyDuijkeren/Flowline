@@ -32,6 +32,74 @@ public class DataverseConnectorTests
     }
 
     [Fact]
+    public void IsResolvedProfileActive_ResolvedMatchesCurrentForKind_ReturnsTrue()
+    {
+        var profile = new PacProfile { Kind = "DATAVERSE", Resource = "https://contoso.crm4.dynamics.com", User = "a@contoso.com" };
+        var profiles = new PacAuthProfiles
+        {
+            Current = new Dictionary<string, PacProfile> { ["DATAVERSE"] = profile }
+        };
+
+        var result = DataverseConnector.IsResolvedProfileActive(profile, profiles);
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void IsResolvedProfileActive_ResolvedDoesNotMatchCurrentForKind_ReturnsFalse()
+    {
+        var resolved = new PacProfile { Kind = "DATAVERSE", Resource = "https://contoso.crm4.dynamics.com", User = "a@contoso.com" };
+        var active = new PacProfile { Kind = "DATAVERSE", Resource = "https://contoso.crm4.dynamics.com", User = "b@contoso.com" };
+        var profiles = new PacAuthProfiles
+        {
+            Current = new Dictionary<string, PacProfile> { ["DATAVERSE"] = active }
+        };
+
+        var result = DataverseConnector.IsResolvedProfileActive(resolved, profiles);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void IsResolvedProfileActive_CurrentHasNoEntryForKind_ReturnsFalse()
+    {
+        var resolved = new PacProfile { Kind = "ServicePrincipal", Resource = "https://contoso.crm4.dynamics.com" };
+        var profiles = new PacAuthProfiles
+        {
+            Current = new Dictionary<string, PacProfile> { ["DATAVERSE"] = new() { Kind = "DATAVERSE" } }
+        };
+
+        var result = DataverseConnector.IsResolvedProfileActive(resolved, profiles);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void IsResolvedProfileActive_CurrentIsNull_ReturnsFalse()
+    {
+        var resolved = new PacProfile { Kind = "DATAVERSE", Resource = "https://contoso.crm4.dynamics.com" };
+        var profiles = new PacAuthProfiles { Current = null };
+
+        var result = DataverseConnector.IsResolvedProfileActive(resolved, profiles);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void IsResolvedProfileActive_ResolvedHasNullKind_ReturnsFalse()
+    {
+        var resolved = new PacProfile { Kind = null, Resource = "https://contoso.crm4.dynamics.com" };
+        var profiles = new PacAuthProfiles
+        {
+            Current = new Dictionary<string, PacProfile> { ["DATAVERSE"] = resolved }
+        };
+
+        var result = DataverseConnector.IsResolvedProfileActive(resolved, profiles);
+
+        Assert.False(result);
+    }
+
+    [Fact]
     public void GetCurrentResourceSpecificPacProfile_WithOneCurrentResourceProfile_ShouldReturnProfile()
     {
         var profile = new PacProfile { Kind = "DATAVERSE", Resource = "https://contoso.crm4.dynamics.com" };

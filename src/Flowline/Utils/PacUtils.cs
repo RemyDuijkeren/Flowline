@@ -521,6 +521,49 @@ public static class PacUtils
         }
     }
 
+    // R6: switching does not restore the previous profile afterward — this only sets the new active
+    // profile, callers never re-select the prior one.
+    public static async Task SelectAuthProfileAsync(PacProfile profile, IReadOnlyList<PacProfile> allProfiles, CancellationToken cancellationToken = default)
+    {
+        var (argName, argValue) = BuildAuthSelectArgs(profile, allProfiles);
+
+        var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
+        var result = await Cli.Wrap(cmdName)
+            .WithArguments(args => args
+                .AddIfNotNull(prefixArgs)
+                .Add("auth").Add("select")
+                .Add(argName).Add(argValue))
+            .WithValidation(CommandResultValidation.None)
+            .ExecuteBufferedAsync(cancellationToken);
+
+        if (result.ExitCode != 0)
+            throw new FlowlineException(ExitCode.NotAuthenticated,
+                $"'pac auth select {argName} {argValue}' failed: {result.StandardError.Trim()}");
+    }
+
+    // Pure arg-building piece, unit-testable without a real pac process — mirrors BuildBackupLabel/
+    // EnsureBackupSucceeded/TryCountSeverities's extraction pattern elsewhere in this file.
+    // Confirmed live via 'pac auth select --help': --name <profile-name> for named profiles,
+    // --index <n> (position in authprofiles_v2.json's Profiles list) for unnamed ones.
+    internal static (string ArgName, string ArgValue) BuildAuthSelectArgs(PacProfile profile, IReadOnlyList<PacProfile> allProfiles)
+    {
+        if (!string.IsNullOrWhiteSpace(profile.Name))
+            return ("--name", profile.Name);
+
+        var index = -1;
+        for (var i = 0; i < allProfiles.Count; i++)
+        {
+            if (allProfiles[i] != profile) continue;
+            index = i;
+            break;
+        }
+        if (index < 0)
+            throw new FlowlineException(ExitCode.NotAuthenticated,
+                "Could not determine profile index for 'pac auth select' — profile not found in loaded auth profiles.");
+
+        return ("--index", index.ToString());
+    }
+
     static string? GetStringProperty(JsonElement element, params string[] names)
     {
         foreach (var name in names)

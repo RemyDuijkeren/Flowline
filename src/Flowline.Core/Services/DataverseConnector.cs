@@ -427,6 +427,16 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         return new ProfileNotFound(environmentUrl);
     }
 
+    // Standalone check, not the same as FindBestProfile's ambiguous-candidate active-preference
+    // tiebreak: does profiles.Current[resolved.Kind] equal resolved? False when Current has no
+    // entry for that Kind (nothing confirmed active) or the resolved profile has no matching entry.
+    internal static bool IsResolvedProfileActive(PacProfile resolved, PacAuthProfiles? profiles)
+    {
+        if (resolved.Kind is null) return false;
+        return profiles?.Current?.TryGetValue(resolved.Kind, out var activeProfile) == true
+            && activeProfile == resolved;
+    }
+
     public PacProfile? GetCurrentResourceSpecificPacProfile()
     {
         var profiles = LoadPacAuthProfiles();
