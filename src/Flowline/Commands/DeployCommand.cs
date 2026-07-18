@@ -313,6 +313,11 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             return;
         }
 
+        // ValidateTargetAsync only resolves/guards targetUrl — the predecessor is a different
+        // environment (e.g. Test when deploying to UAT) with its own pac.exe solution-list call below,
+        // so it needs its own resolution to be covered by the active-profile guard (U4).
+        await ProfileResolutionService.ResolveAsync(dtapDecision.PredecessorUrl!, ct);
+
         var predecessorInfo = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{sln.Name}[/] in {dtapDecision.PredecessorLabel}...",
             _ => FlowlineValidator.Default.GetSolutionInfoAsync(dtapDecision.PredecessorUrl!, sln.Name, includeManaged: true, settings, ct, bypassCache: true));
