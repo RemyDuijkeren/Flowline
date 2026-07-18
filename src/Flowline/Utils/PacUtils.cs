@@ -538,7 +538,7 @@ public static class PacUtils
 
         if (result.ExitCode != 0)
             throw new FlowlineException(ExitCode.NotAuthenticated,
-                $"'pac auth select {argName} {argValue}' failed: {result.StandardError.Trim()}");
+                $"pac auth select {argName} '{argValue}' failed: {result.StandardError.Trim()}");
     }
 
     // Pure arg-building piece, unit-testable without a real pac process — mirrors BuildBackupLabel/

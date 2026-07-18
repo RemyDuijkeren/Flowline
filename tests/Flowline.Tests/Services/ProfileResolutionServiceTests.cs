@@ -1,8 +1,10 @@
+using Flowline;
 using Flowline.Core;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Services;
 using FluentAssertions;
+using Spectre.Console.Cli;
 using Spectre.Console.Testing;
 
 namespace Flowline.Tests.Services;
@@ -13,12 +15,21 @@ public class ProfileResolutionServiceTests
 
     static ProfileResolutionService MakeService(
         out TestConsole console,
-        ProfileResolutionResult resolvedResult)
+        ProfileResolutionResult resolvedResult,
+        bool isProfileActive = true,
+        bool isInteractive = false,
+        bool autoSwitchProfile = false,
+        IReadOnlyList<PacProfile>? allProfiles = null)
     {
         console = new TestConsole();
         var connector = new DataverseConnector(console, new HttpClient());
-        var svc = new ProfileResolutionService(console, connector);
-        svc.FindBestProfileOverride = _ => resolvedResult;
+        var svc = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions { AutoSwitchProfile = autoSwitchProfile })
+        {
+            FindBestProfileOverride = _ => resolvedResult,
+            IsProfileActiveOverride = _ => isProfileActive,
+            IsInteractiveOverride = () => isInteractive,
+            GetPacProfilesOverride = () => allProfiles ?? []
+        };
         return svc;
     }
 
@@ -161,6 +172,208 @@ public class ProfileResolutionServiceTests
         var ex = await Assert.ThrowsAsync<FlowlineException>(() => svc.ResolveAsync(EnvironmentUrl));
 
         ex.Message.Should().Contain("Automatevalue-Dev");
+    }
+
+    // ── Guard — active profile enforcement (R2-R8) ──────────────────────────
+
+    [Fact]
+    public async Task Guard_ProfileAlreadyActive_NoPromptNoSwitch()
+    {
+        var profile = MakeProfile();
+        var switchCalls = 0;
+        var svc = MakeService(out var console, new ProfileFound(profile), isProfileActive: true);
+        svc.SelectAuthProfileOverride = (_, _, _) => { switchCalls++; return Task.CompletedTask; };
+
+        var result = await svc.ResolveAsync(EnvironmentUrl);
+
+        result.Should().BeSameAs(profile);
+        switchCalls.Should().Be(0);
+        console.Output.Should().NotContain("Switched active PAC auth profile");
+    }
+
+    [Fact]
+    public async Task Guard_NonInteractiveMismatch_ThrowsWithCorrectiveCommand()
+    {
+        var profile = MakeProfile(name: "MyProfile");
+        var svc = MakeService(out _, new ProfileFound(profile), isProfileActive: false, isInteractive: false);
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() => svc.ResolveAsync(EnvironmentUrl));
+
+        ex.ExitCode.Should().Be(ExitCode.NotAuthenticated);
+        ex.Message.Should().Contain("pac auth select --name 'MyProfile'");
+    }
+
+    [Fact]
+    public async Task Guard_NonInteractiveMismatch_UnnamedProfile_CorrectiveCommandUsesIndex()
+    {
+        var profile = MakeProfile(name: null, kind: "DATAVERSE");
+        var allProfiles = new List<PacProfile> { MakeProfile(name: "Other"), profile };
+        var svc = MakeService(out _, new ProfileFound(profile), isProfileActive: false, isInteractive: false, allProfiles: allProfiles);
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() => svc.ResolveAsync(EnvironmentUrl));
+
+        ex.Message.Should().Contain("pac auth select --index '1'");
+    }
+
+    [Fact]
+    public async Task Guard_NonInteractiveMismatch_ForceFlagDoesNotBypass()
+    {
+        // The guard never consults --force at all — proven here by asserting it still throws
+        // regardless of RuntimeOptions.Force being populated for an unrelated hazard.
+        var profile = MakeProfile();
+        var console = new TestConsole();
+        var connector = new DataverseConnector(console, new HttpClient());
+        var svc = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions { Force = ["all"] })
+        {
+            FindBestProfileOverride = _ => new ProfileFound(profile),
+            IsProfileActiveOverride = _ => false,
+            IsInteractiveOverride = () => false,
+            GetPacProfilesOverride = () => [profile]
+        };
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() => svc.ResolveAsync(EnvironmentUrl));
+
+        ex.ExitCode.Should().Be(ExitCode.NotAuthenticated);
+    }
+
+    [Fact]
+    public async Task Guard_InteractiveMismatchConfirmed_SwitchesAndProceeds()
+    {
+        var profile = MakeProfile();
+        var switchCalls = 0;
+        var svc = MakeService(out var console, new ProfileFound(profile), isProfileActive: false, isInteractive: true, allProfiles: [profile]);
+        svc.SelectAuthProfileOverride = (_, _, _) => { switchCalls++; return Task.CompletedTask; };
+        console.Interactive();
+        console.Input.PushTextWithEnter("y");
+
+        var result = await svc.ResolveAsync(EnvironmentUrl);
+
+        result.Should().BeSameAs(profile);
+        switchCalls.Should().Be(1);
+        console.Output.Should().Contain("Switched active PAC auth profile");
+        console.Output.Should().Contain("Active"); // R3: profile table's "Active" column header rendered before the confirm prompt
+    }
+
+    [Fact]
+    public async Task Guard_InteractiveMismatchDeclined_ThrowsSameExceptionAsNonInteractive()
+    {
+        var profile = MakeProfile(name: "MyProfile");
+        var switchCalls = 0;
+        var svc = MakeService(out var console, new ProfileFound(profile), isProfileActive: false, isInteractive: true, allProfiles: [profile]);
+        svc.SelectAuthProfileOverride = (_, _, _) => { switchCalls++; return Task.CompletedTask; };
+        console.Interactive();
+        console.Input.PushTextWithEnter("n");
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() => svc.ResolveAsync(EnvironmentUrl));
+
+        ex.ExitCode.Should().Be(ExitCode.NotAuthenticated);
+        ex.Message.Should().Contain("pac auth select --name 'MyProfile'");
+        switchCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Guard_InteractiveMismatchBareEnter_DefaultsToDecline()
+    {
+        var profile = MakeProfile(name: "MyProfile");
+        var switchCalls = 0;
+        var svc = MakeService(out var console, new ProfileFound(profile), isProfileActive: false, isInteractive: true, allProfiles: [profile]);
+        svc.SelectAuthProfileOverride = (_, _, _) => { switchCalls++; return Task.CompletedTask; };
+        console.Interactive();
+        console.Input.PushKey(ConsoleKey.Enter);
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() => svc.ResolveAsync(EnvironmentUrl));
+
+        ex.ExitCode.Should().Be(ExitCode.NotAuthenticated);
+        switchCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Guard_AutoSwitchNonInteractive_SwitchesWithoutPromptOrException()
+    {
+        var profile = MakeProfile();
+        var switchCalls = 0;
+        var svc = MakeService(out var console, new ProfileFound(profile), isProfileActive: false, isInteractive: false, autoSwitchProfile: true, allProfiles: [profile]);
+        svc.SelectAuthProfileOverride = (_, _, _) => { switchCalls++; return Task.CompletedTask; };
+
+        var result = await svc.ResolveAsync(EnvironmentUrl);
+
+        result.Should().BeSameAs(profile);
+        switchCalls.Should().Be(1);
+        console.Output.Should().Contain("Switched active PAC auth profile");
+    }
+
+    [Fact]
+    public async Task Guard_AutoSwitchInteractive_SwitchesWithoutShowingPrompt()
+    {
+        var profile = MakeProfile();
+        var switchCalls = 0;
+        var svc = MakeService(out var console, new ProfileFound(profile), isProfileActive: false, isInteractive: true, autoSwitchProfile: true, allProfiles: [profile]);
+        svc.SelectAuthProfileOverride = (_, _, _) => { switchCalls++; return Task.CompletedTask; };
+        // No input pushed — if a prompt were shown, TestConsole would throw on empty input queue.
+
+        var result = await svc.ResolveAsync(EnvironmentUrl);
+
+        result.Should().BeSameAs(profile);
+        switchCalls.Should().Be(1);
+        console.Output.Should().NotContain("Switch active PAC auth profile to");
+    }
+
+    [Fact]
+    public async Task Guard_TwoDifferentUrls_ReEvaluatesIndependently()
+    {
+        var profileA = MakeProfile(name: "A", resource: "https://a.crm4.dynamics.com");
+        var profileB = MakeProfile(name: "B", resource: "https://b.crm4.dynamics.com");
+        var activeChecks = new List<string>();
+        var switchCalls = 0;
+
+        var console = new TestConsole();
+        var connector = new DataverseConnector(console, new HttpClient());
+        var svc = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions { AutoSwitchProfile = true })
+        {
+            IsInteractiveOverride = () => false,
+            GetPacProfilesOverride = () => [profileA, profileB],
+            IsProfileActiveOverride = p => { activeChecks.Add(p.Name!); return false; },
+            SelectAuthProfileOverride = (_, _, _) => { switchCalls++; return Task.CompletedTask; }
+        };
+
+        svc.FindBestProfileOverride = _ => new ProfileFound(profileA);
+        await svc.ResolveAsync(profileA.Resource!);
+
+        svc.FindBestProfileOverride = _ => new ProfileFound(profileB);
+        await svc.ResolveAsync(profileB.Resource!);
+
+        activeChecks.Should().Equal("A", "B");
+        switchCalls.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Guard_SelectWrapperFails_ThrowsAndDoesNotPrintAnnouncement()
+    {
+        var profile = MakeProfile();
+        var svc = MakeService(out var console, new ProfileFound(profile), isProfileActive: false, autoSwitchProfile: true, allProfiles: [profile]);
+        svc.SelectAuthProfileOverride = (_, _, _) =>
+            throw new FlowlineException(ExitCode.NotAuthenticated, "'pac auth select --name MyProfile' failed: boom");
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() => svc.ResolveAsync(EnvironmentUrl));
+
+        ex.ExitCode.Should().Be(ExitCode.NotAuthenticated);
+        ex.Message.Should().Contain("boom");
+        console.Output.Should().NotContain("Switched active PAC auth profile");
+    }
+
+    // ── AutoSwitchProfile flag parsing (-a / --auto-select-auth-profile) ────
+
+    [Fact]
+    public void AutoSwitchProfile_ShortAndLongForm_ParseToSameProperty()
+    {
+        // No CommandApp-level short-form-alias parsing test exists elsewhere in this codebase to mirror
+        // (e.g. for -v/-f) — asserting the attribute directly is the simplest equivalent check that -a
+        // and --auto-select-auth-profile both bind to FlowlineSettings.AutoSwitchProfile.
+        var property = typeof(FlowlineSettings).GetProperty(nameof(FlowlineSettings.AutoSwitchProfile))!;
+        var option = (CommandOptionAttribute)property.GetCustomAttributes(typeof(CommandOptionAttribute), false).Single();
+
+        option.LongNames.Should().Contain("auto-select-auth-profile");
+        option.ShortNames.Should().Contain("a");
     }
 
     // ── BuildNameSuggestion ──────────────────────────────────────────────────

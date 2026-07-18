@@ -17,4 +17,5 @@ public sealed class FlowlineRuntimeOptions
     public string? ArgsRedacted { get; set; }
     public FlowlineToolVersions? ToolVersions { get; set; }
     public byte[]? TelemetrySalt { get; set; }
+    public bool AutoSwitchProfile { get; set; }
 }

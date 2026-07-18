@@ -49,6 +49,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     {
         RuntimeOptions.IsVerbose = settings.Verbose;
         RuntimeOptions.Force = settings.Force;
+        RuntimeOptions.AutoSwitchProfile = settings.AutoSwitchProfile;
     }
 
     // Empty by default — commands with a force-gated hazard override this with their own vocabulary.

@@ -396,6 +396,8 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
     public ProfileResolutionResult FindBestProfile(string environmentUrl)
         => FindBestProfile(environmentUrl, LoadPacAuthProfiles());
 
+    public bool IsProfileActive(PacProfile profile) => IsResolvedProfileActive(profile, LoadPacAuthProfiles());
+
     internal static ProfileResolutionResult FindBestProfile(string environmentUrl, PacAuthProfiles? profiles)
     {
         var normalizedUrl = environmentUrl.TrimEnd('/');

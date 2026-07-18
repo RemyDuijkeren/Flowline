@@ -126,9 +126,10 @@ public class FlowlineCommandTests
         var connector = new DataverseConnector(console, new HttpClient());
         var givenProfile = new PacProfile { Name = "Given", Resource = environmentUrl };
         var resolveCalls = 0;
-        var profileService = new ProfileResolutionService(console, connector)
+        var profileService = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions())
         {
-            FindBestProfileOverride = _ => { resolveCalls++; return new ProfileFound(givenProfile); }
+            FindBestProfileOverride = _ => { resolveCalls++; return new ProfileFound(givenProfile); },
+            IsProfileActiveOverride = _ => true
         };
         var command = MakeCommand(profileService);
 
@@ -153,9 +154,10 @@ public class FlowlineCommandTests
         var connector = new DataverseConnector(console, new HttpClient());
         var resolvedProfile = new PacProfile { Name = "Resolved", Resource = environmentUrl };
         var resolveCalls = 0;
-        var profileService = new ProfileResolutionService(console, connector)
+        var profileService = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions())
         {
-            FindBestProfileOverride = _ => { resolveCalls++; return new ProfileFound(resolvedProfile); }
+            FindBestProfileOverride = _ => { resolveCalls++; return new ProfileFound(resolvedProfile); },
+            IsProfileActiveOverride = _ => true
         };
         var command = MakeCommand(profileService);
 
