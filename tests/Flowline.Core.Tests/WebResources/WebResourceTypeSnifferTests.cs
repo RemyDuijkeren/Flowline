@@ -37,27 +37,32 @@ public class WebResourceTypeSnifferTests
     }
 
     [Fact]
-    public void TrySniff_SvgRootTag_WithXmlDeclaration_ResolvesSvg()
+    public void TrySniff_SvgRootTag_WithXmlDeclaration_ReturnsNull_SvgSniffingDisabled()
     {
+        // Svg sniffing is disabled (~80% confidence, below the 90% bar) — stays Unknown rather
+        // than guessing. Tier 1 (an existing Dataverse record) is unaffected and still resolves
+        // real Svg files correctly.
         var content = Bytes("""<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"></svg>""");
 
-        WebResourceTypeSniffer.TrySniff(content).Should().Be(WebResourceType.Svg);
+        WebResourceTypeSniffer.TrySniff(content).Should().BeNull();
     }
 
     [Fact]
-    public void TrySniff_SvgRootTag_WithoutXmlDeclaration_ResolvesSvg()
+    public void TrySniff_SvgRootTag_WithoutXmlDeclaration_ReturnsNull_SvgSniffingDisabled()
     {
         var content = Bytes("""<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>""");
 
-        WebResourceTypeSniffer.TrySniff(content).Should().Be(WebResourceType.Svg);
+        WebResourceTypeSniffer.TrySniff(content).Should().BeNull();
     }
 
     [Fact]
-    public void TrySniff_BareXmlDeclaration_NoResxOrSvgMarker_ResolvesXml()
+    public void TrySniff_BareXmlDeclaration_ReturnsNull_XmlSniffingDisabled()
     {
+        // Xml sniffing is disabled (~70% confidence, below the 90% bar) — stays Unknown rather
+        // than guessing (a generic "<?xml" declaration can't distinguish Xml from Xsl).
         var content = Bytes("""<?xml version="1.0"?><config><setting>1</setting></config>""");
 
-        WebResourceTypeSniffer.TrySniff(content).Should().Be(WebResourceType.Xml);
+        WebResourceTypeSniffer.TrySniff(content).Should().BeNull();
     }
 
     [Theory]
@@ -70,19 +75,21 @@ public class WebResourceTypeSnifferTests
     }
 
     [Fact]
-    public void TrySniff_CssAtRule_ResolvesCss()
+    public void TrySniff_CssAtRule_ReturnsNull_CssSniffingDisabled()
     {
+        // Css sniffing is disabled (~55% confidence, below the 90% bar) — no real CSS parser
+        // backs this check (unlike the Acornima-validated Js check), so it stays Unknown.
         var content = Bytes("@media (min-width: 768px) { .foo { display: block; } }");
 
-        WebResourceTypeSniffer.TrySniff(content).Should().Be(WebResourceType.Css);
+        WebResourceTypeSniffer.TrySniff(content).Should().BeNull();
     }
 
     [Fact]
-    public void TrySniff_CssPropertyBlock_NoAtRule_ResolvesCss()
+    public void TrySniff_CssPropertyBlock_NoAtRule_ReturnsNull_CssSniffingDisabled()
     {
         var content = Bytes(".foo { color: red; margin: 10px; }");
 
-        WebResourceTypeSniffer.TrySniff(content).Should().Be(WebResourceType.Css);
+        WebResourceTypeSniffer.TrySniff(content).Should().BeNull();
     }
 
     [Theory]
@@ -96,14 +103,6 @@ public class WebResourceTypeSnifferTests
     public void TrySniff_JsSignal_ResolvesJs(string text)
     {
         WebResourceTypeSniffer.TrySniff(Bytes(text)).Should().Be(WebResourceType.Js);
-    }
-
-    [Fact]
-    public void TrySniff_RespectsPriority_XmlDeclarationWithSvgTag_ResolvesSvgNotXml()
-    {
-        var content = Bytes("""<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"></svg>""");
-
-        WebResourceTypeSniffer.TrySniff(content).Should().Be(WebResourceType.Svg);
     }
 
     [Fact]
@@ -133,7 +132,7 @@ public class WebResourceTypeSnifferTests
     }
 
     [Fact]
-    public void TrySniff_HtmlWithInlineSvg_ResolvesHtml_NotSvg()
+    public void TrySniff_HtmlWithInlineSvg_ResolvesHtml()
     {
         var content = Bytes("<!DOCTYPE html><html><body><svg><path d=\"M0 0\"/></svg></body></html>");
 
@@ -141,13 +140,14 @@ public class WebResourceTypeSnifferTests
     }
 
     [Fact]
-    public void TrySniff_CssContainingArrowLikeStringLiteral_ResolvesCss_NotJs()
+    public void TrySniff_CssContainingArrowLikeStringLiteral_ReturnsNull_NotJs()
     {
-        // The signal regex matches "=>" anywhere, including inside a CSS string value — the
-        // real-parse guard must reject this as JS since it isn't valid JavaScript syntax.
+        // The JS signal regex matches "=>" anywhere, including inside a CSS string value — the
+        // real-parse guard rejects this as JS since it isn't valid JavaScript syntax. Css
+        // sniffing itself is disabled, so this now stays Unknown rather than resolving to Css.
         var content = Bytes(".foo:after { content: \"=>\"; }");
 
-        WebResourceTypeSniffer.TrySniff(content).Should().Be(WebResourceType.Css);
+        WebResourceTypeSniffer.TrySniff(content).Should().BeNull();
     }
 
     [Fact]
