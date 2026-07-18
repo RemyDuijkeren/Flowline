@@ -31,14 +31,14 @@ public class WebResourceReader(IAnsiConsole console)
 
         await Task.WhenAll(baseResourcesTask, localResourcesTask).ConfigureAwait(false);
 
-        // Phase 2: LCID expansion + RESX matching now that both local and Dataverse names are available.
         var dataverseNames = baseResourcesTask.Result
             .Select(e => e.GetAttributeValue<string>("name"))
             .Where(n => !string.IsNullOrEmpty(n))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var enrichedLocals = EnrichDependencies(localResourcesTask.Result, dataverseNames);
-
+        // dataverseResourcesDict is built before EnrichDependencies (not after, as in the original
+        // ordering) because the fallback type backfill below needs it, and EnrichDependencies' LCID/RESX
+        // matching needs to see the backfilled types, not the pre-backfill ones.
         var ownershipTasks = baseResourcesTask.Result.Select(async entity =>
         {
             var ownership = await GetOwnershipAsync(service, entity.Id, solutionName, cancellationToken).ConfigureAwait(false);
@@ -49,6 +49,10 @@ public class WebResourceReader(IAnsiConsole console)
         var dataverseResourcesDict = dataverseResources
             .ToDictionary(r => r.Name, r => r, StringComparer.OrdinalIgnoreCase)
             .AsReadOnly();
+
+        var backfilledLocals = BackfillUnresolvedTypes(localResourcesTask.Result, dataverseResourcesDict);
+
+        var enrichedLocals = EnrichDependencies(backfilledLocals, dataverseNames);
 
         // Local files not in this solution may exist globally under a different solution — look them up
         // to plan AddToSolution instead of Create (Dataverse enforces global name uniqueness).
@@ -66,6 +70,56 @@ public class WebResourceReader(IAnsiConsole console)
             dataverseResourcesDict,
             globalOrphans);
     }
+
+    // Fallback type resolution for local files whose extension is missing or unrecognized
+    // (WebResourceType.Unknown after LocalResourceFromFile). Tier 1: adopt the type of a matching
+    // same-solution Dataverse resource. Files a Tier 1 match resolves to Js never got their
+    // // flowline:depends annotations parsed at read time (LocalResourceFromFile only parses them
+    // when the extension-derived type is already Js), so annotations are re-parsed here before
+    // EnrichDependencies runs. Never overrides a type already resolved from a recognized extension.
+    IReadOnlyDictionary<string, LocalWebResource> BackfillUnresolvedTypes(
+        IReadOnlyDictionary<string, LocalWebResource> localResources,
+        IReadOnlyDictionary<string, DataverseWebResource> dataverseResourcesDict)
+    {
+        Dictionary<string, LocalWebResource>? backfilled = null;
+
+        foreach (var (name, resource) in localResources)
+        {
+            if (resource.Type != WebResourceType.Unknown) continue;
+            if (!dataverseResourcesDict.TryGetValue(name, out var dataverseMatch)) continue;
+
+            var dependsOn = dataverseMatch.Type == WebResourceType.Js
+                ? WebResourceAnnotationParser.ParseAnnotations(resource.Path)
+                : resource.DependsOn;
+
+            backfilled ??= localResources.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
+            backfilled[name] = resource with { Type = dataverseMatch.Type, DependsOn = dependsOn };
+
+            console.Warning(
+                $"'{name}' has no file extension — resolved type '{dataverseMatch.Type}' from the existing Dataverse record. " +
+                $"Recommend creating a properly-named replacement (e.g. '{name}.{ConventionalExtension(dataverseMatch.Type)}') " +
+                "and migrating references — Dataverse web resource names can't be renamed after creation.");
+        }
+
+        return backfilled?.AsReadOnly() ?? localResources;
+    }
+
+    static string ConventionalExtension(WebResourceType type) => type switch
+    {
+        WebResourceType.Html => "html",
+        WebResourceType.Css => "css",
+        WebResourceType.Js => "js",
+        WebResourceType.Xml => "xml",
+        WebResourceType.Png => "png",
+        WebResourceType.Jpg => "jpg",
+        WebResourceType.Gif => "gif",
+        WebResourceType.Xap => "xap",
+        WebResourceType.Xsl => "xsl",
+        WebResourceType.Ico => "ico",
+        WebResourceType.Svg => "svg",
+        WebResourceType.Resx => "resx",
+        _ => type.ToString().ToLowerInvariant()
+    };
 
     IReadOnlyDictionary<string, LocalWebResource> EnrichDependencies(
         IReadOnlyDictionary<string, LocalWebResource> localResources,
