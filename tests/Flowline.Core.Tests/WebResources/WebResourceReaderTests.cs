@@ -126,6 +126,21 @@ public class WebResourceReaderTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadSnapshotAsync_ExtensionlessFileMatchesGlobalOrphan_AdoptsItsTypeInsteadOfSniffing()
+    {
+        // The file's JS-shaped content would sniff to Js via Tier 2, but a global orphan (a record
+        // owned only by another solution) exists under this name with a different type — Tier 1 must
+        // adopt that record's type rather than let Tier 2's guess plan an update to a foreign record.
+        var orphanId = Guid.NewGuid();
+        File.WriteAllText(Path.Combine(_webresourceRoot, "my_widget"), "function widget() {}");
+        SetupGlobalOrphans(RemoteWebResource(orphanId, "my_MySolution/my_widget", WebResourceType.Html));
+
+        var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        snapshot.LocalResources["my_MySolution/my_widget"].Type.Should().Be(WebResourceType.Html);
+    }
+
+    [Fact]
     public async Task LoadSnapshotAsync_ReportedFailureShape_MultipleExtensionlessFilesAllMatched_AllResolve()
     {
         var jsId = Guid.NewGuid();
@@ -161,6 +176,14 @@ public class WebResourceReaderTests : IDisposable
     {
         _serviceMock.RetrieveMultipleAsync(
                 Arg.Is<QueryExpression>(q => q.EntityName == "webresource" && q.LinkEntities.Count > 0),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(webResources.ToList())));
+    }
+
+    void SetupGlobalOrphans(params Entity[] webResources)
+    {
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "webresource" && q.LinkEntities.Count == 0),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(webResources.ToList())));
     }

@@ -50,19 +50,22 @@ public class WebResourceReader(IAnsiConsole console)
             .ToDictionary(r => r.Name, r => r, StringComparer.OrdinalIgnoreCase)
             .AsReadOnly();
 
-        var backfilledLocals = BackfillUnresolvedTypes(localResourcesTask.Result, dataverseResourcesDict);
-
-        var enrichedLocals = EnrichDependencies(backfilledLocals, dataverseNames);
-
         // Local files not in this solution may exist globally under a different solution — look them up
-        // to plan AddToSolution instead of Create (Dataverse enforces global name uniqueness).
-        var orphanNames = enrichedLocals.Keys
+        // to plan AddToSolution instead of Create (Dataverse enforces global name uniqueness), and so
+        // Tier 1 backfill below can adopt a foreign-solution record's type too instead of guessing one
+        // via Tier 2. Computed off the raw local names (backfill/enrichment never add or remove keys),
+        // so this can run before backfill instead of after.
+        var orphanNames = localResourcesTask.Result.Keys
             .Where(n => !dataverseResourcesDict.ContainsKey(n))
             .ToList();
 
         var globalOrphans = orphanNames.Count > 0
             ? await GetGlobalWebResourcesByNameAsync(service, orphanNames, cancellationToken).ConfigureAwait(false)
             : new Dictionary<string, DataverseWebResource>(StringComparer.OrdinalIgnoreCase).AsReadOnly();
+
+        var backfilledLocals = BackfillUnresolvedTypes(localResourcesTask.Result, dataverseResourcesDict, globalOrphans);
+
+        var enrichedLocals = EnrichDependencies(backfilledLocals, dataverseNames);
 
         return new WebResourceSyncSnapshot(
             baseSolution,
@@ -73,13 +76,20 @@ public class WebResourceReader(IAnsiConsole console)
 
     // Fallback type resolution for local files whose extension is missing or unrecognized
     // (WebResourceType.Unknown after LocalResourceFromFile). Tier 1: adopt the type of a matching
-    // same-solution Dataverse resource. Files a Tier 1 match resolves to Js never got their
-    // // flowline:depends annotations parsed at read time (LocalResourceFromFile only parses them
-    // when the extension-derived type is already Js), so annotations are re-parsed here before
-    // EnrichDependencies runs. Never overrides a type already resolved from a recognized extension.
+    // Dataverse resource — same-solution first, then a global orphan owned by another solution. Checking
+    // global orphans here (rather than leaving them to Tier 2's guess) matters beyond accuracy: a
+    // fallback-resolved Unknown local name that matches a global orphan is planned as an Update to that
+    // foreign-owned record (WebResourcePlanner.cs), so a wrong Tier 2 guess would overwrite a record this
+    // solution doesn't own. Routing it through Tier 1 instead means Tier 2 only ever runs for names with
+    // no Dataverse record anywhere, so a guess can only ever produce a Create, never overwrite existing
+    // data. Files a Tier 1 match resolves to Js never got their // flowline:depends annotations parsed at
+    // read time (LocalResourceFromFile only parses them when the extension-derived type is already Js),
+    // so annotations are re-parsed here before EnrichDependencies runs. Never overrides a type already
+    // resolved from a recognized extension.
     IReadOnlyDictionary<string, LocalWebResource> BackfillUnresolvedTypes(
         IReadOnlyDictionary<string, LocalWebResource> localResources,
-        IReadOnlyDictionary<string, DataverseWebResource> dataverseResourcesDict)
+        IReadOnlyDictionary<string, DataverseWebResource> dataverseResourcesDict,
+        IReadOnlyDictionary<string, DataverseWebResource> globalOrphans)
     {
         Dictionary<string, LocalWebResource>? backfilled = null;
 
@@ -91,7 +101,8 @@ public class WebResourceReader(IAnsiConsole console)
             string reason;
             string source;
 
-            if (dataverseResourcesDict.TryGetValue(name, out var dataverseMatch))
+            if (dataverseResourcesDict.TryGetValue(name, out var dataverseMatch) ||
+                globalOrphans.TryGetValue(name, out dataverseMatch))
             {
                 resolvedType = dataverseMatch.Type;
                 reason = "resolved type";
@@ -99,10 +110,10 @@ public class WebResourceReader(IAnsiConsole console)
             }
             else
             {
-                // Tier 2: no same-solution Dataverse match (including a match that exists only under
-                // a different solution — R3's confirmed scope decision falls that case through to here
-                // rather than a broader cross-solution lookup). Content sniffing is a guess even when
-                // constrained to strong signals (KTD4), so it always warns too.
+                // Tier 2: no Dataverse record anywhere under this name. Content sniffing is a guess even
+                // when constrained to strong signals (KTD4), so it always warns too. Because Tier 1 above
+                // now also checks global orphans, a Tier 2 result only ever feeds a Create (see the type
+                // doc comment), never an Update to a record this solution doesn't own.
                 // resource.Content is already the base64-encoded bytes LocalResourceFromFile read from
                 // disk — decode that instead of reading the file a second time. Null means the file was
                 // empty (LocalResourceFromFile nulls out empty content), so there's nothing to sniff.
