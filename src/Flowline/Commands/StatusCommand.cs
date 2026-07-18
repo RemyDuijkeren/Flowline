@@ -2,6 +2,8 @@ using System.ComponentModel;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
+using Flowline.Core.Models;
+using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Utils;
 using Flowline.Validation;
@@ -11,7 +13,7 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILoggerFactory loggerFactory) : AsyncCommand<StatusCommand.Settings>
+public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, DataverseConnector dataverseConnector, ILoggerFactory loggerFactory) : AsyncCommand<StatusCommand.Settings>
 {
     private readonly IAnsiConsole Console = console;
     private readonly SubprocessCapture _capture = capture;
@@ -26,6 +28,49 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILog
     {
         if (settings.Force.Length > 0)
             throw new FlowlineException(ExitCode.ValidationFailed, "'status' has no force-gated behavior — remove --force.");
+    }
+
+    // status is a multi-environment overview, so it reports on profile resolution rather than going
+    // through ProfileResolutionService.ResolveAsync (which can block/throw/prompt) — up to 4 confirm
+    // prompts in one glance command would defeat the point. Pure so it's testable without a live
+    // DataverseConnector/pac.exe. Returns null when there's nothing worth surfacing (matched profile).
+    internal static string? FormatProfileNote(ProfileResolutionResult resolution, bool isActive) =>
+        resolution switch
+        {
+            ProfileFound found when !isActive =>
+                $"PAC auth profile mismatch — active identity may not be '{found.Profile.Name ?? found.Profile.User ?? "(unnamed)"}'",
+            ProfileFound => null,
+            ProfileAmbiguous ambiguous =>
+                $"{ambiguous.Candidates.Count} local PAC profiles match this environment — run 'pac auth list' to check",
+            ProfileNotFound => "No local PAC auth profile matches this environment yet",
+            _ => null
+        };
+
+    // DataverseConnector isn't mockable (no interface, its instance overloads read the real
+    // authprofiles_v2.json with no override seam) -- taking the two operations as funcs lets tests
+    // exercise the loop, including the "never throw" guarantee, without a live PAC auth file.
+    internal static Dictionary<string, string?> BuildProfileNotes(
+        IEnumerable<(string Label, string? Url)> envs,
+        Func<string, ProfileResolutionResult> findBestProfile,
+        Func<PacProfile, bool> isProfileActive)
+    {
+        var notes = new Dictionary<string, string?>();
+        foreach (var e in envs)
+        {
+            if (string.IsNullOrEmpty(e.Url)) continue;
+            try
+            {
+                var resolution = findBestProfile(e.Url);
+                var isActive = resolution is ProfileFound found && isProfileActive(found.Profile);
+                notes[e.Label] = FormatProfileNote(resolution, isActive);
+            }
+            catch (FlowlineException)
+            {
+                // No PAC auth profile file on this machine at all (e.g. 'pac auth create' never run) --
+                // advisory only; the "Not authenticated" who-check below already surfaces this case.
+            }
+        }
+        return notes;
     }
 
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
@@ -72,6 +117,11 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILog
 
         var hasUrls = envs.Any(e => !string.IsNullOrEmpty(e.Url));
         var solutions = config.Solutions.ToList();
+
+        // Sequential, not folded into the Task.WhenAll below — this is a separate, cheap, local-file
+        // check (no pac.exe subprocess), and keeping it out of the concurrent block keeps that block
+        // exactly as it was before this check existed.
+        var profileNotes = BuildProfileNotes(envs, dataverseConnector.FindBestProfile, dataverseConnector.IsProfileActive);
 
         StatusGrid.EnvStatus[] results;
 
@@ -127,6 +177,9 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, ILog
                 Console.MarkupLine($"    [green]✓[/] {Markup.Escape(who.ConnectedAs)}");
             else
                 Console.MarkupLine($"    [yellow]✗ Not authenticated[/]");
+
+            if (profileNotes.TryGetValue(label, out var note) && note is not null)
+                Console.MarkupLine($"    [yellow]⚠[/] {Markup.Escape(note)}");
         }
 
         Console.MarkupLine("");
