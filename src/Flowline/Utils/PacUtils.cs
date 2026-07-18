@@ -543,8 +543,8 @@ public static class PacUtils
 
     // Pure arg-building piece, unit-testable without a real pac process — mirrors BuildBackupLabel/
     // EnsureBackupSucceeded/TryCountSeverities's extraction pattern elsewhere in this file.
-    // Confirmed live via 'pac auth select --help': --name <profile-name> for named profiles,
-    // --index <n> (position in authprofiles_v2.json's Profiles list) for unnamed ones.
+    // Confirmed live via 'pac auth list': indices shown as [1], [2], ... are 1-based, and 'pac auth
+    // select --index' expects that same 1-based value — not the 0-based position in the list.
     internal static (string ArgName, string ArgValue) BuildAuthSelectArgs(PacProfile profile, IReadOnlyList<PacProfile> allProfiles)
     {
         if (!string.IsNullOrWhiteSpace(profile.Name))
@@ -561,7 +561,7 @@ public static class PacUtils
             throw new FlowlineException(ExitCode.NotAuthenticated,
                 "Could not determine profile index for 'pac auth select' — profile not found in loaded auth profiles.");
 
-        return ("--index", index.ToString());
+        return ("--index", (index + 1).ToString());
     }
 
     static string? GetStringProperty(JsonElement element, params string[] names)

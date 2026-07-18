@@ -175,6 +175,18 @@ public class StatusCommandTests
     }
 
     [Fact]
+    public void BuildProfileNotes_FindBestProfileThrowsNonFlowlineException_DoesNotThrow_AndSkipsEnv()
+    {
+        ProfileResolutionResult Resolve(string url) =>
+            throw new UnauthorizedAccessException("access denied reading authprofiles_v2.json");
+
+        var act = () => StatusCommand.BuildProfileNotes(SingleDevEnv, Resolve, _ => false);
+
+        var notes = act.Should().NotThrow().Subject;
+        notes.Should().NotContainKey("Dev");
+    }
+
+    [Fact]
     public void BuildProfileNotes_UnconfiguredEnv_IsSkipped_NoConnectorCall()
     {
         (string Label, string? Url)[] envs = [("Dev", null)];

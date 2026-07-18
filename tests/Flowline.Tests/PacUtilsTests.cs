@@ -211,7 +211,7 @@ public class BuildAuthSelectArgsTests
         var result = PacUtils.BuildAuthSelectArgs(target, allProfiles);
 
         result.ArgName.Should().Be("--index");
-        result.ArgValue.Should().Be("1");
+        result.ArgValue.Should().Be("2");
     }
 
     [Fact]
@@ -223,7 +223,7 @@ public class BuildAuthSelectArgsTests
         var result = PacUtils.BuildAuthSelectArgs(profile, allProfiles);
 
         result.ArgName.Should().Be("--index");
-        result.ArgValue.Should().Be("0");
+        result.ArgValue.Should().Be("1");
     }
 
     [Fact]

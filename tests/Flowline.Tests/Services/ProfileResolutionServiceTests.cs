@@ -212,7 +212,7 @@ public class ProfileResolutionServiceTests
 
         var ex = await Assert.ThrowsAsync<FlowlineException>(() => svc.ResolveAsync(EnvironmentUrl));
 
-        ex.Message.Should().Contain("pac auth select --index '1'");
+        ex.Message.Should().Contain("pac auth select --index '2'");
     }
 
     [Fact]

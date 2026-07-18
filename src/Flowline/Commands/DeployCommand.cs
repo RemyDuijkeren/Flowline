@@ -102,6 +102,11 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         await ValidateDtapGateAsync(sln, gateVersion, targetUrl, settings, cancellationToken);
 
+        // ValidateDtapGateAsync's predecessor resolution (U4) can switch PAC's active profile away
+        // from the target when predecessor and target use different auth profiles — re-guard the
+        // target here so every pac.exe call below (import, etc.) runs under the right profile again.
+        await ProfileResolutionService.ResolveAsync(targetUrl, cancellationToken);
+
         // R8: placed after the DTAP gate, not right after ValidateTargetAsync — a `dev` target is already
         // rejected by the gate's DevBlock outcome above, so a first-import confirmation would otherwise fire
         // on a deploy that's about to be blocked moments later anyway.

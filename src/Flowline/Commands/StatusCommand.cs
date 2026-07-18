@@ -64,10 +64,12 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
                 var isActive = resolution is ProfileFound found && isProfileActive(found.Profile);
                 notes[e.Label] = FormatProfileNote(resolution, isActive);
             }
-            catch (FlowlineException)
+            catch (Exception)
             {
-                // No PAC auth profile file on this machine at all (e.g. 'pac auth create' never run) --
-                // advisory only; the "Not authenticated" who-check below already surfaces this case.
+                // No PAC auth profile file on this machine at all (e.g. 'pac auth create' never run), or
+                // any other read failure (permissions, malformed file) -- advisory only, and this check
+                // must never abort 'status'; the "Not authenticated" who-check below already surfaces the
+                // no-profile case.
             }
         }
         return notes;
