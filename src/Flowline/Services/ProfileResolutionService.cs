@@ -95,7 +95,14 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
         RenderProfileTable(allProfiles, isActive, profile);
 
         var confirmed = console.Prompt(
-            new ConfirmationPrompt($"Switch active PAC auth profile to '{profile.Name ?? "(unnamed)"}'?") { DefaultValue = false });
+            new ConfirmationPrompt($"Switch active PAC auth profile to '{profile.Name ?? "(unnamed)"}'?")
+            {
+                DefaultValue = false,
+                // Spectre's ConfirmationPrompt defaults DefaultValueStyle to green, which collides with
+                // the green highlight on the target row in the table above — dim it so '(n)' doesn't
+                // read as another way to select the highlighted profile.
+                DefaultValueStyle = new Style(foreground: Color.Grey)
+            });
 
         if (!confirmed)
             throw BuildMismatchException(profile, allProfiles);
@@ -165,11 +172,13 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
             $"No PAC auth profile found for {url}\nRun: pac auth create --environment {url} --name \"{suggestion}\"");
     }
 
+    // "Resolved", not "Using" — this fires before the active-profile guard runs, so the profile isn't
+    // necessarily active yet (that's exactly what the guard below may still need to fix).
     void EmitStatusLine(PacProfile profile)
     {
         var status = string.IsNullOrEmpty(profile.Name)
-            ? $"Using PAC auth profile (unnamed, {Markup.Escape(profile.Kind ?? "")}) — {Markup.Escape(profile.Resource ?? "")}"
-            : $"Using PAC auth profile '{Markup.Escape(profile.Name)}' ({Markup.Escape(profile.Kind ?? "")})";
+            ? $"Resolved PAC auth profile (unnamed, {Markup.Escape(profile.Kind ?? "")}) — {Markup.Escape(profile.Resource ?? "")}"
+            : $"Resolved PAC auth profile '{Markup.Escape(profile.Name)}' ({Markup.Escape(profile.Kind ?? "")})";
         console.Info(status);
     }
 
