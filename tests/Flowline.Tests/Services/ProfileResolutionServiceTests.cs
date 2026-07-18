@@ -254,7 +254,7 @@ public class ProfileResolutionServiceTests
         result.Should().BeSameAs(profile);
         switchCalls.Should().Be(1);
         console.Output.Should().Contain("Switched active PAC auth profile");
-        console.Output.Should().Contain("Active"); // R3: profile table's "Active" column header rendered before the confirm prompt
+        console.Output.Should().Contain("Environment"); // R3: profile table rendered before the confirm prompt
     }
 
     [Fact]

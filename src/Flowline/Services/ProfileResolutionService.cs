@@ -92,7 +92,7 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
         if (!IsInteractive())
             throw BuildMismatchException(profile, allProfiles);
 
-        RenderProfileTable(allProfiles, isActive);
+        RenderProfileTable(allProfiles, isActive, profile);
 
         var confirmed = console.Prompt(
             new ConfirmationPrompt($"Switch active PAC auth profile to '{profile.Name ?? "(unnamed)"}'?") { DefaultValue = false });
@@ -125,24 +125,32 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
             $"PAC auth profile '{profile.Name ?? "(unnamed)"}' isn't the active PAC CLI profile — run: pac auth select {argName} '{argValue}'");
     }
 
-    // Column order/naming mirrors 'pac auth list' (Index, Active, Kind, Name, User, Environment) so the
-    // table reads familiarly to anyone who already knows that command. Index is 1-based, matching what
-    // 'pac auth select --index' expects. Cloud/Type/Environment-display-name aren't shown — PacProfile
-    // doesn't carry them (only the raw Environment Url via Resource), and they add no value for the
-    // single job this table does: sanity-check which profile Flowline is about to switch to.
-    void RenderProfileTable(IReadOnlyList<PacProfile> allProfiles, Func<PacProfile, bool> isActive)
+    // Column order/naming mirrors 'pac auth list' (Index, Kind, Name, User, Environment) so the table
+    // reads familiarly to anyone who already knows that command. Index is 1-based, matching what
+    // 'pac auth select --index' expects; the active profile's index carries a trailing '*' instead of
+    // a separate Active column. The row for `target` (the profile Flowline is about to switch to, if
+    // confirmed) is highlighted green so it's unambiguous which row the y/n prompt below refers to.
+    // Cloud/Type aren't shown — PacProfile doesn't carry them and they add no value for this table's
+    // one job: sanity-check the switch target.
+    void RenderProfileTable(IReadOnlyList<PacProfile> allProfiles, Func<PacProfile, bool> isActive, PacProfile target)
     {
-        var table = new Table().AddColumn("Index").AddColumn("Active").AddColumn("Kind").AddColumn("Name").AddColumn("User").AddColumn("Environment");
+        var table = new Table().AddColumn("Index").AddColumn("Kind").AddColumn("Name").AddColumn("User").AddColumn("Environment");
         for (var i = 0; i < allProfiles.Count; i++)
         {
             var p = allProfiles[i];
+            var index = isActive(p) ? $"{i + 1}*" : (i + 1).ToString();
+            var environment = string.IsNullOrEmpty(p.FriendlyName)
+                ? Markup.Escape(p.Resource ?? "")
+                : $"{Markup.Escape(p.FriendlyName)} ({Markup.Escape(p.Resource ?? "")})";
+
+            string Cell(string text) => p == target ? $"[green]{text}[/]" : text;
+
             table.AddRow(
-                (i + 1).ToString(),
-                isActive(p) ? "yes" : "",
-                Markup.Escape(p.Kind ?? ""),
-                Markup.Escape(p.Name ?? "(unnamed)"),
-                Markup.Escape(p.User ?? ""),
-                Markup.Escape(p.Resource ?? ""));
+                Cell(index),
+                Cell(Markup.Escape(p.Kind ?? "")),
+                Cell(Markup.Escape(p.Name ?? "(unnamed)")),
+                Cell(Markup.Escape(p.User ?? "")),
+                Cell(environment));
         }
         console.Write(table);
     }
