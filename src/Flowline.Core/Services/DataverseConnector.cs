@@ -461,8 +461,18 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         return Path.Combine(localAppData, "Microsoft", "PowerAppsCLI");
     }
 
+    PacAuthProfiles? _cachedAuthProfiles;
+
+    // Cached for the process lifetime (DataverseConnector is a singleton — one CLI invocation).
+    // FindBestProfile/IsProfileActive/GetPacProfiles all funnel through here and were each re-reading
+    // + re-parsing the file from disk, so a single profile resolution could hit it 7+ times. Must be
+    // invalidated after anything that rewrites the file out from under us — see InvalidateAuthProfilesCache.
     PacAuthProfiles LoadPacAuthProfiles() =>
-        LoadPacAuthProfiles(Path.Combine(GetPacCliDataDirectory(), "authprofiles_v2.json"));
+        _cachedAuthProfiles ??= LoadPacAuthProfiles(Path.Combine(GetPacCliDataDirectory(), "authprofiles_v2.json"));
+
+    // Call after anything that changes PAC CLI's active profile on disk (e.g. 'pac auth select')
+    // so the next read reflects the change instead of the cached snapshot.
+    public void InvalidateAuthProfilesCache() => _cachedAuthProfiles = null;
 
     internal PacAuthProfiles LoadPacAuthProfiles(string authProfilesPath)
     {
@@ -483,7 +493,7 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
             if (profiles == null)
                 throw new JsonException("Profile file deserialized to null.");
 
-            console.Verbose($"Loaded {profiles.Profiles?.Count ?? 0} PAC auth profile(s) from {authProfilesPath}");
+            console.Verbose($"Loaded {profiles.Profiles?.Count ?? 0} PAC auth profile(s) from {ConsolePath.ShortenPath(authProfilesPath)}");
 
             return profiles;
         }

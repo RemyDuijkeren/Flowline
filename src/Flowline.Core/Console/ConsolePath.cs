@@ -1,4 +1,4 @@
-﻿namespace Flowline.Utils;
+namespace Flowline.Core.Console;
 
 using System;
 using System.IO;

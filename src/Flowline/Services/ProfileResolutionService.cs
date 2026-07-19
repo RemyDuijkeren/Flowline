@@ -116,8 +116,11 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
         var select = SelectAuthProfileOverride ?? PacUtils.SelectAuthProfileAsync;
         await select(profile, allProfiles, cancellationToken);
 
-        // pac auth select exiting 0 only means the process ran without error — re-read the auth
-        // profile file to confirm the switch actually took effect before reporting success.
+        // pac auth select exiting 0 only means the process ran without error — invalidate the cached
+        // auth profile file and re-read it to confirm the switch actually took effect before reporting
+        // success (DataverseConnector caches the parsed file for the process lifetime; see LoadPacAuthProfiles).
+        if (IsProfileActiveOverride == null)
+            dataverseConnector.InvalidateAuthProfilesCache();
         var isActive = IsProfileActiveOverride ?? dataverseConnector.IsProfileActive;
         if (!isActive(profile))
             throw new FlowlineException(ExitCode.NotAuthenticated,
