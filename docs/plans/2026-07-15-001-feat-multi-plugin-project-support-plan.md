@@ -14,7 +14,7 @@ product_contract_source: ce-brainstorm
 
 - **Objective:** `flowline push` discovers and pushes every plugin-bearing project in a solution's `.sln`, and correctly resolves each project's build output regardless of assembly name or output-folder shape — not just a single fixed `Plugins.csproj` producing an assembly literally named "Plugins".
 - **Product authority:** direct discussion with the maintainer, grounded in the 2026-07-14 pluginpackage/NuGet-support plan and a real legacy plugin project (`E:\Code\AutomateValue\SpotlerAutomate.Dataverse\src\Plugins\Plugins.csproj`, outside this repo) that breaks two of Flowline's current hardcoded assumptions.
-- **Open blockers:** Blocked by `docs/plans/2026-07-17-003-refactor-single-solution-layout-plan.md` — that plan collapses the `solutions/<Name>/` folder structure this plan's KD5/R8 still assumes when updating `docs/folder-structure.md`. Land the 2026-07-17 plan first; this plan's `docs/folder-structure.md` edits rebase onto its root-level layout.
+- **Open blockers:** None. Previously blocked by `docs/plans/2026-07-17-003-refactor-single-solution-layout-plan.md`, which has since been **implemented** (`e6d9f5b` collapse `Solutions[]`→`Solution`, `3c5d423` remove `AllSolutionsFolderName`, `a34277a` rewrite `folder-structure.md`, post-merge fixes `068e224`/`9b14798`). This plan has been rebased onto the root-level layout: `Package/`, `Plugins/`, `WebResources/` and the `.sln` now live directly at the project root, with no `solutions/<Name>/` wrapper. KD5/R8's `docs/folder-structure.md` edits target the current root-level text.
 
 ## Product Contract
 
@@ -58,7 +58,7 @@ Once detection stops depending on a fixed folder name and instead walks the solu
 
 ### Acceptance Examples
 
-- AE1. **Solution with one plugin project, today's exact shape** (`solutions/MySolution/Plugins/Plugins.csproj`, assembly named "Plugins"). `flowline push` behaves exactly as it does today. Covers R1, R7.
+- AE1. **Solution with one plugin project, today's exact shape** (`Plugins/Plugins.csproj` at the project root, assembly named "Plugins"). `flowline push` behaves exactly as it does today. Covers R1, R7.
 - AE2. **Solution with two independent plugin projects** (e.g. `Plugins.Sales.csproj` and `Plugins.Support.csproj`, both referenced by the `.sln`, neither named "Plugins"). Both are discovered, both build and reflect as `IPlugin`-bearing, both get pushed and registered independently in one `flowline push` run. Covers R1, R2, R4, R5.
 - AE3. **Solution with a plugin project plus a non-plugin project** (e.g. `Entities.csproj`, a shared DTO library referenced by the `.sln` but implementing no `IPlugin`/`CodeActivity` type). `Entities.csproj` is silently excluded; only the real plugin project is pushed. Covers R2, R3.
 - AE4. **Classic (non-packaged) project with a custom `AssemblyName` and no `publish` subfolder** — the Spotler-shaped project (`<AssemblyName>AV.SpotlerAutomate.Plugins</AssemblyName>`, plain `dotnet build` output at `bin/Release/net462/AV.SpotlerAutomate.Plugins.dll`). Flowline finds and reflects this DLL correctly despite neither the fixed name nor the fixed subfolder holding. Covers R4.
@@ -68,7 +68,8 @@ Once detection stops depending on a fixed folder name and instead walks the solu
 
 - Per-project `PluginPackageMode` override — rejected in KD4, not deferred; the per-solution setting is the intended long-term shape, not a stopgap.
 - New registration semantics for `CodeActivity`-derived custom workflow activities beyond what reflection already detects — out of scope; this brainstorm only extends *where* the existing `IPlugin`/`CodeActivity` filter is applied (per-project across a solution), not *what* Flowline does once it finds one.
-- Automated migration of a legacy/arbitrary folder layout (e.g. the Spotler example's `src/Plugins` location) into Flowline's own `solutions/<Sln>/` convention — out of scope; this plan makes Flowline tolerate an arbitrary location via `.sln`-membership detection, not reorganize it.
+- Automated migration of a legacy/arbitrary folder layout (e.g. the Spotler example's `src/Plugins` location) into Flowline's root-level `Plugins/` convention — out of scope; this plan makes Flowline tolerate an arbitrary location via `.sln`-membership detection, not reorganize it.
+- Extending `.sln`-driven discovery to `WebResources/` (`WebResources.csproj`) and `Package/` (`Package.cdsproj`) — **adjacent and endorsed, but a separate plan.** Both are already registered in the generated `.sln` (`CloneCommand.cs:387-450`, `:545-552`), so the same KD1 principle applies and would retire the remaining `WebResourcesName`/`PackageName` constants. Deliberately not folded in here: this plan's contract is scoped to plugin projects, and generalising it mid-flight would widen the blast radius of an already cross-cutting change. Track as follow-up once this lands. Design rationale: `docs/others/folder-structure-analysis.md` §4.1.
 
 ### Outstanding Questions
 
