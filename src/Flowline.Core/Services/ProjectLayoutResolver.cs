@@ -136,6 +136,18 @@ public static class ProjectLayoutResolver
     internal static string ConventionalWebResourcesProject(string slnFolder) =>
         Path.Combine(slnFolder, "WebResources", "WebResources.csproj");
 
-    static bool DeclaresWebResourcesSdk(string projectPath) =>
-        File.ReadAllText(projectPath).Contains(WebResourcesSdk, StringComparison.OrdinalIgnoreCase);
+    // An unreadable candidate (locked by the IDE, deleted between the File.Exists check and here) is
+    // treated as "not the WebResources project", not surfaced — same landing as the "isn't one" case above,
+    // and the reason this method can honour its "never throws" contract.
+    static bool DeclaresWebResourcesSdk(string projectPath)
+    {
+        try
+        {
+            return File.ReadAllText(projectPath).Contains(WebResourcesSdk, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
 }

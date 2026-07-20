@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.IO.Compression;
 using System.Text.Json;
 using System.Xml;
@@ -694,7 +694,8 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         catch (Exception ex) when (ex is XmlException or IOException or UnauthorizedAccessException)
         {
             throw new FlowlineException(ExitCode.ConfigInvalid,
-                $"Solution.xml at '{solutionXmlPath}' is malformed or unreadable — restore 'Solution/' from git or re-run 'flowline clone'.", ex);
+                $"Solution.xml at '{solutionXmlPath}' is malformed or unreadable — restore " +
+                $"'{ConsolePath.FormatRelativePath(packageFolderPath)}' from git or re-run 'flowline clone'.", ex);
         }
 
         return ParseSolutionManifest(doc).Version;

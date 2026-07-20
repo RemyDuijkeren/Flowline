@@ -1,4 +1,4 @@
-﻿using FluentAssertions;
+using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Core;
 using Flowline.Core.Services;

@@ -1,4 +1,4 @@
-﻿using System.ServiceModel;
+using System.ServiceModel;
 using Microsoft.Xrm.Sdk;
 using Flowline.Core.WebResources;
 using Flowline.Core.Console;
