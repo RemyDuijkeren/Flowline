@@ -155,10 +155,10 @@ public class MsBuildSolutionWriterSurgicalTests : IDisposable
     }
 
     [Fact]
-    public async Task AddProjectAsync_ExistingSlnWithNonDefaultPlatform_WritesConfigRowsForEveryDeclaredPair()
+    public async Task AddProjectAsync_ExistingSlnWithNonDefaultPlatform_MapsEachDeclaredPairToTheProjectsAnyCpuConfiguration()
     {
-        // Debug|x64 is the proof that the pairs come from the file rather than a hardcoded
-        // Debug/Release x Any CPU assumption.
+        // Debug|x64 is the proof that the left-hand pairs come from the file rather than a hardcoded
+        // Debug/Release x Any CPU assumption — and that the right-hand side does NOT echo them back.
         var solution = Write("DWE_Base.sln", "\r\n",
             "Microsoft Visual Studio Solution File, Format Version 12.00",
             "Global",
@@ -174,13 +174,32 @@ public class MsBuildSolutionWriterSurgicalTests : IDisposable
         await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
 
         var text = await File.ReadAllTextAsync(solution);
-        foreach (var pair in new[] { "Debug|x64", "Release|x64", "CustomCfg|ARM64" })
+
+        // Left side: the declared pair, verbatim. Right side: the configuration the *project* builds,
+        // which for a .cdsproj is always Any CPU. Verified against `dotnet sln add` on SDK 10, which
+        // writes `{guid}.Debug|x64.ActiveCfg = Debug|Any CPU` for exactly this solution.
+        (string Declared, string Project)[] expected =
+        [
+            ("Debug|x64",       "Debug|Any CPU"),
+            ("Release|x64",     "Release|Any CPU"),
+            // dotnet sln add falls back to Debug|Any CPU here, because the project has no CustomCfg. We
+            // keep the declared name instead — the project has no matching configuration either way, and
+            // silently substituting Debug is the more surprising of the two.
+            ("CustomCfg|ARM64", "CustomCfg|Any CPU"),
+        ];
+
+        foreach (var (declared, project) in expected)
         {
-            text.Should().Contain($".{pair}.ActiveCfg = {pair}");
-            text.Should().Contain($".{pair}.Build.0 = {pair}");
+            text.Should().Contain($".{declared}.ActiveCfg = {project}");
+            text.Should().Contain($".{declared}.Build.0 = {project}");
         }
-        // No invented pairs — the solution never declared Any CPU.
-        text.Should().NotContain("Any CPU");
+
+        // No invented pairs on the left. dotnet sln add cross-produces every build type against every
+        // platform — 3 declared pairs became 12 rows, inventing Any CPU and x86 solution configurations
+        // the file never had. Rewriting the user's declared set is what this path exists to avoid.
+        text.Should().NotContain("x86");
+        text.Should().NotContain("Any CPU = ");
+        text.Should().NotContain("Any CPU.ActiveCfg");
     }
 
     [Theory]
@@ -213,7 +232,7 @@ public class MsBuildSolutionWriterSurgicalTests : IDisposable
             "\tEndGlobalSection",
             "EndGlobal");
 
-        var added = await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
+        var added = (await _writer.AddProjectAsync(solution, "Package/Package.cdsproj")).Added;
 
         added.Should().BeTrue();
         (await _reader.ReadProjectsAsync(solution)).Should().ContainSingle();
@@ -231,7 +250,7 @@ public class MsBuildSolutionWriterSurgicalTests : IDisposable
 
         // Separator differs from what the file stores, which is exactly the case a raw string compare
         // would miss and then duplicate.
-        var added = await _writer.AddProjectAsync(solution, "Plugins/DWE_Base.Plugins.csproj");
+        var added = (await _writer.AddProjectAsync(solution, "Plugins/DWE_Base.Plugins.csproj")).Added;
 
         added.Should().BeFalse();
         (await File.ReadAllBytesAsync(solution)).Should().Equal(before);
@@ -297,7 +316,7 @@ public class MsBuildSolutionWriterSurgicalTests : IDisposable
             $"Project(\"{LegacyCSharpTypeGuid}\") = \"MyFriendlyName\", \"Plugins\\DWE_Base.Plugins.csproj\", \"{ExistingProjectGuid}\"",
             "EndProject");
 
-        var added = await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
+        var added = (await _writer.AddProjectAsync(solution, "Package/Package.cdsproj")).Added;
 
         added.Should().BeTrue();
         var text = await File.ReadAllTextAsync(solution);

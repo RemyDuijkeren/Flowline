@@ -59,8 +59,7 @@ namespace Flowline.Attributes
         /// <param name="stage">The pipeline stage and execution mode.</param>
         public HandlesAttribute(string message, Stage stage)
         {
-            if (message == null) throw new ArgumentNullException(nameof(message));
-            Message = message;
+            Message = message ?? throw new ArgumentNullException(nameof(message));
             Stage = stage;
             IsCustomMessage = true;
         }

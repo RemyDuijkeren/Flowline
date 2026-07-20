@@ -64,7 +64,7 @@ Separately, `.slnx` has become the default for `dotnet new sln` in .NET 10, and 
 - R4. Adding a project already present in the solution file succeeds without duplicating the entry.
 - R5. A missing project file produces an actionable error naming the path that was not found.
 - R5a. When a `.sln` and a `.slnx` sharing a base name are both present, Flowline operates on the `.slnx` and reports that the leftover `.sln` should be deleted. This is not an error state — it is what `dotnet sln migrate` leaves behind.
-- R5b. When no solution file exists, `flowline sln add` creates one in the format `clone` would produce and then writes the entry. The migrating and hand-assembled projects the command exists for start from exactly this state.
+- R5b. ~~When no solution file exists, `flowline sln add` creates one in the format `clone` would produce and then writes the entry.~~ **Changed — the maintainer reversed this during code review.** `sln add` never creates a solution file; it only adds a `.cdsproj` to one that already exists. It resolves the file by walking up from the current directory, and fails with `ExitCode.NotFound` when no `.sln` or `.slnx` is found in any ancestor, pointing the user at `dotnet new sln`. Rationale: creating a solution file is `dotnet new sln`'s job, and KD2 already scopes Flowline to what the SDK cannot do.
 
 **Solution file format**
 
@@ -118,10 +118,10 @@ Separately, `.slnx` has become the default for `dotnet new sln` in .NET 10, and 
   - **Then:** the build targets one named solution file and does not fail with MSB1011.
   - **Covers R12.**
 
-- AE7. Adding to a project with no solution file
-  - **Given:** a repo migrated off spkl with `Package/Package.cdsproj` and no `.sln` or `.slnx`.
+- AE7. Adding to a project with no solution file — **changed, see R5b**
+  - **Given:** a repo migrated off spkl with `Package/Package.cdsproj` and no `.sln` or `.slnx` in the current directory or any folder above it.
   - **When:** the user runs `flowline sln add Package/Package.cdsproj`.
-  - **Then:** a solution file is created in the format R7 would choose, and the entry is written into it.
+  - **Then:** ~~a solution file is created in the format R7 would choose, and the entry is written into it~~ the command fails with `ExitCode.NotFound`, names the directory it searched from, and tells the user to run `dotnet new sln` first. Nothing is written. *(Reversed by the maintainer during code review: creating a solution file is `dotnet new sln`'s job, and KD2 scopes Flowline to what the SDK cannot do.)*
   - **Covers R5b.**
 
 - AE8. Cloning for a team on an older toolchain
@@ -286,7 +286,7 @@ Both consumer plans depend on the reader only — neither writes solution files.
 - Adding a `.cdsproj` to a new `.sln` produces the C# type GUID and matching `ProjectConfigurationPlatforms` rows for every configuration.
 - Adding a project that is already present is a no-op — no duplicate entry, no throw (covers R4/AE3).
 - Idempotency holds when the existing entry uses the opposite separator (`Solution\X.cdsproj` vs `Solution/X.cdsproj`).
-- Adding to a path with no solution file creates one in the configured format, then writes the entry (covers R5b/AE7).
+- Adding to a path with no solution file creates one in the configured format, then writes the entry, and reports `Created` (this is `clone`'s path — `sln add` no longer uses it, see revised R5b).
 - A `.csproj` is accepted by the writer (the refusal is a command-level concern, U5).
 - Round-tripping a `.slnx` with comments and user-added elements preserves them.
 **Verification:** `dotnet sln list` enumerates the written entry, and `dotnet build` on the result runs SolutionPackager and produces the zip.
@@ -323,7 +323,8 @@ Both consumer plans depend on the reader only — neither writes solution files.
 - Re-adding an already-present project → reports already-present, no second entry (covers R4/AE3).
 - A path that does not exist → `ExitCode.NotFound`, message names the missing path (covers R5).
 - Both `MySolution.sln` and `MySolution.slnx` present → writes to the `.slnx`, output says to delete the leftover `.sln`, exit code is success not failure (covers R5a/AE5).
-- No solution file at all → one is created in the default format and the entry written (covers R5b/AE7).
+- No solution file in the current directory or any folder above it → `ExitCode.NotFound`, message names the directory searched and points at `dotnet new sln`, nothing written (covers R5b/AE7 as revised).
+- Run from a subfolder whose repo root holds the solution file → the walk-up finds it and the entry is written relative to the solution file, not the current directory.
 - Runs in a directory with no `.flowline` and no git repo — the standalone requirement (KTD6).
 - Exit-code helper maps each outcome to the right `ExitCode`.
 **Verification:** the command works end-to-end in a scratch repo that has never been touched by Flowline.

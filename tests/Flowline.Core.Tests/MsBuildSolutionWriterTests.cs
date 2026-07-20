@@ -40,7 +40,7 @@ public class MsBuildSolutionWriterTests : IDisposable
     {
         var solution = Path_("DWE_Base.slnx");
 
-        var added = await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
+        var added = (await _writer.AddProjectAsync(solution, "Package/Package.cdsproj")).Added;
 
         added.Should().BeTrue();
         var xml = await File.ReadAllTextAsync(solution);
@@ -75,9 +75,10 @@ public class MsBuildSolutionWriterTests : IDisposable
         var solution = Path_("DWE_Base.slnx");
         await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
 
-        var addedAgain = await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
+        var again = await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
 
-        addedAgain.Should().BeFalse();
+        again.Added.Should().BeFalse();
+        again.Created.Should().BeFalse("the first call already made the file");
         var projects = await _reader.ReadProjectsAsync(solution);
         projects.Should().ContainSingle().Which.Path.Should().Be(Sep("Package/Package.cdsproj"));
     }
@@ -96,7 +97,7 @@ public class MsBuildSolutionWriterTests : IDisposable
 </Solution>
 """);
 
-        var added = await _writer.AddProjectAsync(solution, reAddAs);
+        var added = (await _writer.AddProjectAsync(solution, reAddAs)).Added;
 
         added.Should().BeFalse();
         (await _reader.ReadProjectsAsync(solution)).Should().ContainSingle();
@@ -110,9 +111,12 @@ public class MsBuildSolutionWriterTests : IDisposable
         // "No solution file yet" is the state migrating and hand-assembled projects start from.
         var solution = Path_(fileName);
 
-        var added = await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
+        var result = await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
 
-        added.Should().BeTrue();
+        result.Added.Should().BeTrue();
+        // Created is decided inside the writer off the same stat that picks its write path — callers no
+        // longer run their own File.Exists, which was both duplicated and racy.
+        result.Created.Should().BeTrue();
         File.Exists(solution).Should().BeTrue();
         var projects = await _reader.ReadProjectsAsync(solution);
         projects.Should().ContainSingle().Which.IsCdsProject.Should().BeTrue();
@@ -125,7 +129,7 @@ public class MsBuildSolutionWriterTests : IDisposable
         // writer has no reason to care.
         var solution = Path_("DWE_Base.slnx");
 
-        var added = await _writer.AddProjectAsync(solution, "Plugins/DWE_Base.Plugins.csproj");
+        var added = (await _writer.AddProjectAsync(solution, "Plugins/DWE_Base.Plugins.csproj")).Added;
 
         added.Should().BeTrue();
         (await _reader.ReadProjectsAsync(solution)).Should().ContainSingle().Which.IsCsProject.Should().BeTrue();

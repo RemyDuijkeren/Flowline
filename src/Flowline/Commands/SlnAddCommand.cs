@@ -65,16 +65,14 @@ public class SlnAddCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
         ValidateExtension(settings.ProjectPath);
         ValidateProjectExists(projectFullPath, settings.ProjectPath);
 
-        var solutionFolder = RootFolder;
-        var result = await AddAsync(_reader, _writer, projectFullPath, solutionFolder, cancellationToken);
+        var result = await AddAsync(_reader, _writer, projectFullPath, Directory.GetCurrentDirectory(), cancellationToken);
 
+        // Paths are shown relative to the solution file's own folder, which is what the entry inside it is
+        // relative to — the folder the user happens to be standing in would name a different thing.
+        var solutionFolder = Path.GetDirectoryName(result.SolutionFilePath)!;
         var project = ConsolePath.FormatRelativePath(projectFullPath, solutionFolder);
         var solution = ConsolePath.FormatRelativePath(result.SolutionFilePath, solutionFolder);
         var outcome = result.Outcome;
-
-        // Announced after the write, not before it — the file only exists once the writer succeeded.
-        if (result.CreatedSolutionFile)
-            Console.Ok($"Solution file {solution} created");
 
         if (outcome == Outcome.Added)
             Console.Ok($"{project} added to {solution}");
@@ -90,34 +88,60 @@ public class SlnAddCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
     }
 
     /// <summary>What <see cref="AddAsync"/> did.</summary>
-    /// <param name="SolutionFilePath">The solution file that was written to, existing or newly created.</param>
-    /// <param name="CreatedSolutionFile"><c>true</c> when there was no solution file and one was made.</param>
+    /// <param name="SolutionFilePath">The solution file that was written to.</param>
+    /// <param name="CreatedSolutionFile">
+    /// Whether the writer had to create the file. Always <c>false</c> here, because
+    /// <see cref="FindSolutionFileUpwards"/> has already proved the file exists — carried through from the
+    /// writer rather than hardcoded, so the two can never drift apart.
+    /// </param>
     /// <param name="Outcome">Whether an entry was written or the project was already referenced.</param>
     internal readonly record struct AddResult(string SolutionFilePath, bool CreatedSolutionFile, Outcome Outcome);
 
     /// <summary>
-    /// Locates (or names) the solution file and writes the entry. All of the command's decisions, none
-    /// of its output.
+    /// Locates the solution file and writes the entry. All of the command's decisions, none of its output.
     /// </summary>
     /// <remarks>
     /// Static and dependency-free apart from the two services it is handed, so the whole resolve-and-write
     /// path is exercisable against a real temp directory. Splitting it out is what keeps the tests off a
     /// re-implementation of the same composition, which is exactly where a wiring bug would hide.
     /// </remarks>
+    /// <exception cref="FlowlineException">
+    /// <see cref="ExitCode.NotFound"/> when no solution file exists at or above <paramref name="startFolder"/>.
+    /// </exception>
     internal static async Task<AddResult> AddAsync(
         MsBuildSolutionReader reader,
         MsBuildSolutionWriter writer,
         string projectFullPath,
-        string solutionFolder,
+        string startFolder,
         CancellationToken cancellationToken = default)
     {
-        var existing = reader.FindSolutionFile(solutionFolder);
-        var solutionFilePath = existing ?? Path.Combine(solutionFolder, DefaultSolutionFileName(solutionFolder));
+        var solutionFilePath = FindSolutionFileUpwards(reader, startFolder)
+            ?? throw new FlowlineException(ExitCode.NotFound,
+                $"No .sln or .slnx in '{startFolder}' or any folder above it. 'sln add' adds to a solution file, it doesn't make one — run 'dotnet new sln' first.");
 
+        var solutionFolder = Path.GetDirectoryName(solutionFilePath)!;
         var entryPath = ToSolutionRelativePath(projectFullPath, solutionFolder);
-        var written = await writer.AddProjectAsync(solutionFilePath, entryPath, cancellationToken);
+        var result = await writer.AddProjectAsync(solutionFilePath, entryPath, cancellationToken);
 
-        return new AddResult(solutionFilePath, existing is null, written ? Outcome.Added : Outcome.AlreadyPresent);
+        return new AddResult(solutionFilePath, result.Created, result.Added ? Outcome.Added : Outcome.AlreadyPresent);
+    }
+
+    /// <summary>The nearest solution file at or above <paramref name="startFolder"/>, or <c>null</c> when there is none.</summary>
+    /// <remarks>
+    /// Walks up rather than looking only in the current folder because the natural place to run this is
+    /// from inside <c>Package/</c>, next to the <c>.cdsproj</c> being added — while the solution file
+    /// lives at the repo root. Same shape as <c>FlowlineCommand.FindProjectRoot</c>, which walks up for
+    /// <c>.flowline</c>; nearest-wins, so a nested project's own solution file beats the one above it.
+    /// </remarks>
+    internal static string? FindSolutionFileUpwards(MsBuildSolutionReader reader, string startFolder)
+    {
+        var dir = startFolder;
+        while (dir != null)
+        {
+            if (reader.FindSolutionFile(dir) is { } found) return found;
+            dir = Directory.GetParent(dir)?.FullName;
+        }
+        return null;
     }
 
     /// <summary>Refuses anything that is not a <c>.cdsproj</c>.</summary>
@@ -148,16 +172,6 @@ public class SlnAddCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
         throw new FlowlineException(ExitCode.NotFound,
             $"No project at '{projectPathAsGiven}' — check the path.");
     }
-
-    /// <summary>The name given to a solution file this command has to create itself.</summary>
-    /// <remarks>
-    /// The folder name, not the Dataverse solution's unique name: this command runs where there may be
-    /// no <c>.flowline</c> to read that from, and <c>dotnet new sln</c> defaults to the folder name for
-    /// the same reason. <c>.slnx</c> is the .NET 10 default and holds a <c>.cdsproj</c> fine — a fresh
-    /// file has no downstream consumer pinned to an older SDK, so nothing argues for <c>.sln</c> here.
-    /// </remarks>
-    internal static string DefaultSolutionFileName(string solutionFolder) =>
-        Path.GetFileName(Path.TrimEndingDirectorySeparator(solutionFolder)) + ".slnx";
 
     /// <summary>Rewrites the user's path into one relative to the folder holding the solution file.</summary>
     /// <remarks>

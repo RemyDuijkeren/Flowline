@@ -15,7 +15,7 @@ public enum ExitCode
 
     // 2 intentionally unused — Spectre.Console handles argument validation errors internally.
 
-    /// <summary>Resource not found: solution not in Dataverse or repo. Verify solution name matches .flowline config.</summary>
+    /// <summary>Resource not found: a Dataverse solution, or a local file the command needs (project file, solution file). Check the name or path named in the error output.</summary>
     NotFound = 3,
 
     /// <summary>Not authenticated. Run: pac auth create --environment &lt;url&gt;</summary>
@@ -26,7 +26,7 @@ public enum ExitCode
     /// <summary>Dataverse environment unreachable. Check environment URL in .flowline.</summary>
     ConnectionFailed = 10,
 
-    /// <summary>.flowline config missing or malformed. Check .flowline exists and is valid.</summary>
+    /// <summary>A file the command reads or writes is missing or malformed: .flowline, or an MSBuild solution file (.sln/.slnx). Check the file named in the error output is present and valid.</summary>
     ConfigInvalid = 11,
 
     /// <summary>Uncommitted git changes block the operation. Commit or stash changes first.</summary>

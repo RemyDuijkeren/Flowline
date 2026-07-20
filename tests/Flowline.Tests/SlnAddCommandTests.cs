@@ -173,22 +173,62 @@ public sealed class SlnAddCommandTests : IDisposable
         _reader.HasCoexistingSolutionFiles(_root).Should().BeTrue();
     }
 
-    // ── No solution file at all (R5b / AE7) ───────────────────────────────────
+    // ── No solution file at all (R5b / AE7, reversed in review) ───────────────
 
     [Fact]
-    public async Task AddAsync_NoSolutionFile_CreatesOneAndWritesTheEntry()
+    public async Task AddAsync_NoSolutionFileAnywhere_FailsWithNotFoundAndCreatesNothing()
     {
+        // The maintainer reversed R5b/AE7 during review: creating a solution file is `dotnet new sln`'s
+        // job, and Flowline only covers what the SDK cannot (KD2). So this is an error, not a scaffold.
         _reader.FindSolutionFile(_root).Should().BeNull();
 
-        var result = await SlnAddCommand.AddAsync(_reader, _writer, _cdsproj, _root);
+        var act = () => SlnAddCommand.AddAsync(_reader, _writer, _cdsproj, _root);
 
-        result.CreatedSolutionFile.Should().BeTrue();
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Which.ExitCode.Should().Be(ExitCode.NotFound);
+        Directory.EnumerateFiles(_root, "*.sln*").Should().BeEmpty("a failed add must not leave a file behind");
+    }
+
+    [Fact]
+    public async Task AddAsync_NoSolutionFileAnywhere_ErrorNamesTheDirectoryAndPointsAtDotnetNewSln()
+    {
+        var act = () => SlnAddCommand.AddAsync(_reader, _writer, _cdsproj, _root);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Which.Message.Should().Contain(_root).And.Contain("dotnet new sln");
+    }
+
+    // ── Walking up to the solution file ───────────────────────────────────────
+
+    [Fact]
+    public async Task AddAsync_RunFromASubfolder_WalksUpToTheSolutionFileAtTheRoot()
+    {
+        // The natural place to run this is next to the .cdsproj being added, while the solution file sits
+        // at the repo root. Without the walk-up that invocation would fail outright.
+        WriteExistingSln();
+
+        var result = await SlnAddCommand.AddAsync(_reader, _writer, _cdsproj, Path.Combine(_root, "Package"));
+
         result.Outcome.Should().Be(SlnAddCommand.Outcome.Added);
-        File.Exists(result.SolutionFilePath).Should().BeTrue();
-        Path.GetExtension(result.SolutionFilePath).Should().Be(".slnx");
+        Path.GetFileName(result.SolutionFilePath).Should().Be("MySolution.sln");
+        // The entry stays relative to the solution file, not to the folder the user stood in.
+        (await File.ReadAllTextAsync(result.SolutionFilePath)).Should().Contain(@"Package\Package.cdsproj");
+    }
 
-        var projects = await _reader.ReadProjectsAsync(result.SolutionFilePath);
-        projects.Should().ContainSingle(p => p.IsCdsProject);
+    [Fact]
+    public void FindSolutionFileUpwards_NoSolutionFileInAnyAncestor_ReturnsNull()
+    {
+        SlnAddCommand.FindSolutionFileUpwards(_reader, Path.Combine(_root, "Package")).Should().BeNull();
+    }
+
+    [Fact]
+    public void FindSolutionFileUpwards_SolutionFileInTheStartFolder_PrefersItOverAnyAbove()
+    {
+        WriteExistingSln();
+        var nested = Path.Combine(_root, "Package", "Nested.sln");
+        File.WriteAllText(nested, "Microsoft Visual Studio Solution File, Format Version 12.00\r\n");
+
+        SlnAddCommand.FindSolutionFileUpwards(_reader, Path.Combine(_root, "Package")).Should().Be(nested);
     }
 
     // ── Standalone operation (KTD6) ───────────────────────────────────────────
@@ -196,13 +236,15 @@ public sealed class SlnAddCommandTests : IDisposable
     [Fact]
     public async Task AddAsync_FolderWithNoFlowlineConfigAndNoGitRepo_StillWrites()
     {
+        WriteExistingSln();
         Directory.EnumerateFiles(_root, ".flowline").Should().BeEmpty();
         Directory.Exists(Path.Combine(_root, ".git")).Should().BeFalse();
 
         var result = await SlnAddCommand.AddAsync(_reader, _writer, _cdsproj, _root);
 
         result.Outcome.Should().Be(SlnAddCommand.Outcome.Added);
-        File.Exists(result.SolutionFilePath).Should().BeTrue();
+        // The command never creates a solution file, so this is the only value it can honestly report.
+        result.CreatedSolutionFile.Should().BeFalse();
     }
 
     [Fact]
@@ -221,21 +263,6 @@ public sealed class SlnAddCommandTests : IDisposable
     }
 
     // ── Path and naming helpers ───────────────────────────────────────────────
-
-    [Fact]
-    public void DefaultSolutionFileName_UsesTheFolderNameAndSlnxFormat()
-    {
-        SlnAddCommand.DefaultSolutionFileName(Path.Combine("C:", "repos", "MigratedRepo"))
-                     .Should().Be("MigratedRepo.slnx");
-    }
-
-    [Fact]
-    public void DefaultSolutionFileName_TrailingSeparator_StillUsesTheFolderName()
-    {
-        var folder = Path.Combine("C:", "repos", "MigratedRepo") + Path.DirectorySeparatorChar;
-
-        SlnAddCommand.DefaultSolutionFileName(folder).Should().Be("MigratedRepo.slnx");
-    }
 
     [Fact]
     public void ToSolutionRelativePath_RewritesTheArgumentRelativeToTheSolutionFolder()

@@ -421,20 +421,18 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     /// any more. That rename used to leave a <c>Package.csproj</c> behind whenever clone was interrupted
     /// mid-flight — a state clone's own guard then read as a broken package folder.
     ///
+    /// Both flags come from the writer rather than a <c>File.Exists</c> here: the writer stats the file
+    /// anyway to choose its write path, so asking again would be a duplicate and a TOCTOU window.
+    ///
     /// Separate from the console output so the whole create-and-write path is testable without a clone.
     /// </remarks>
-    internal static async Task<(bool Created, bool Added)> AddPackageProjectAsync(
+    internal static Task<SolutionWriteResult> AddPackageProjectAsync(
         MsBuildSolutionWriter writer,
         string slnFolder,
         string slnFilePath,
         string cdsprojPath,
-        CancellationToken cancellationToken = default)
-    {
-        var created = !File.Exists(slnFilePath);
-        var added = await writer.AddProjectAsync(slnFilePath, Path.GetRelativePath(slnFolder, cdsprojPath), cancellationToken);
-
-        return (created, added);
-    }
+        CancellationToken cancellationToken = default) =>
+        writer.AddProjectAsync(slnFilePath, Path.GetRelativePath(slnFolder, cdsprojPath), cancellationToken);
 
     /// <summary>The solution file clone scaffolds, named for the Dataverse solution.</summary>
     /// <remarks>

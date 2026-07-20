@@ -6,6 +6,17 @@ using Microsoft.VisualStudio.SolutionPersistence.Serializer;
 
 namespace Flowline.Core.Services;
 
+/// <summary>What a call to <see cref="MsBuildSolutionWriter.AddProjectAsync"/> changed on disk.</summary>
+/// <param name="Created"><c>true</c> when there was no solution file and the writer made one.</param>
+/// <param name="Added"><c>true</c> when an entry was written; <c>false</c> when the solution already referenced the project.</param>
+/// <remarks>
+/// Both flags are decided inside the writer because it is the only place that can decide them without a
+/// race: it already stats the file to pick its write path, so a caller doing its own <c>File.Exists</c>
+/// first is both a duplicate and a TOCTOU window — a concurrent create between the two calls would have
+/// the caller report a creation that never happened.
+/// </remarks>
+public readonly record struct SolutionWriteResult(bool Created, bool Added);
+
 /// <summary>
 /// Writes project entries into MSBuild solution files (<c>.sln</c> and <c>.slnx</c>).
 /// </summary>
@@ -56,7 +67,7 @@ public class MsBuildSolutionWriter
     /// </summary>
     /// <param name="solutionFilePath">Full path to the solution file. Its extension decides the format written.</param>
     /// <param name="projectPath">Path to the project, relative to the folder holding the solution file.</param>
-    /// <returns><c>true</c> when an entry was written; <c>false</c> when the solution already referenced the project.</returns>
+    /// <returns>Whether the solution file had to be created, and whether an entry was written.</returns>
     /// <remarks>
     /// The single entry point, and the decider between two very different write strategies, so callers
     /// need no knowledge of the split:
@@ -78,7 +89,7 @@ public class MsBuildSolutionWriter
     /// <see cref="ExitCode.ConfigInvalid"/> when the path is not a solution file, when an existing file is
     /// malformed, or when the library rejects the entry.
     /// </exception>
-    public async Task<bool> AddProjectAsync(
+    public async Task<SolutionWriteResult> AddProjectAsync(
         string solutionFilePath,
         string projectPath,
         CancellationToken cancellationToken = default)
@@ -91,13 +102,19 @@ public class MsBuildSolutionWriter
         // reads as a second project to it. Normalizing here is what makes re-adding a no-op.
         var normalizedPath = MsBuildSolutionReader.NormalizePath(projectPath);
 
-        var isPreExistingSln = File.Exists(solutionFilePath)
+        // Stat once and reuse. Both the write-path choice and the caller's "did I create it" answer come
+        // off this one observation, so the two can never disagree about the file they saw.
+        var exists = File.Exists(solutionFilePath);
+
+        var isPreExistingSln = exists
             && string.Equals(Path.GetExtension(solutionFilePath), ".sln", StringComparison.OrdinalIgnoreCase);
 
-        return isPreExistingSln
+        var added = isPreExistingSln
             ? await InsertIntoExistingSlnAsync(solutionFilePath, normalizedPath, cancellationToken).ConfigureAwait(false)
-            : await AddViaSolutionModelAsync(serializer, solutionFilePath, normalizedPath, projectPath, cancellationToken)
+            : await AddViaSolutionModelAsync(serializer, solutionFilePath, exists, normalizedPath, projectPath, cancellationToken)
                 .ConfigureAwait(false);
+
+        return new SolutionWriteResult(Created: !exists, Added: added);
     }
 
     /// <summary>
@@ -111,13 +128,14 @@ public class MsBuildSolutionWriter
     static async Task<bool> AddViaSolutionModelAsync(
         ISolutionSerializer serializer,
         string solutionFilePath,
+        bool exists,
         string normalizedPath,
         string projectPath,
         CancellationToken cancellationToken)
     {
         SolutionModel model;
 
-        if (File.Exists(solutionFilePath))
+        if (exists)
         {
             model = await MsBuildSolutionReader.OpenAsync(solutionFilePath, cancellationToken).ConfigureAwait(false);
             if (ContainsProject(model, normalizedPath)) return false;
@@ -247,6 +265,26 @@ public class MsBuildSolutionWriter
     ///
     /// No declared pairs (no <c>Global</c>, or no <c>SolutionConfigurationPlatforms</c>) means there is
     /// nothing to map to, so no rows are written and no section is invented.
+    ///
+    /// The two sides of each row mean different things and must not be the same string. The left is the
+    /// <b>solution</b> configuration, copied verbatim from what the file declares. The right is the
+    /// <b>project</b> configuration to build for it — and a <c>.cdsproj</c> builds Any CPU, so pointing it
+    /// at <c>Debug|x64</c> names a project configuration that may not resolve. Verified against
+    /// <c>dotnet sln add</c> on SDK 10: for a solution declaring <c>Debug|x64</c> it writes
+    /// <c>{guid}.Debug|x64.ActiveCfg = Debug|Any CPU</c>.
+    ///
+    /// Two deliberate divergences from <c>dotnet sln add</c>:
+    /// <list type="bullet">
+    /// <item>It falls back to <c>Debug|Any CPU</c> for a build type the project lacks (so a declared
+    /// <c>CustomCfg|ARM64</c> gets <c>Debug|Any CPU</c>). We keep the declared name and write
+    /// <c>CustomCfg|Any CPU</c>. The two differ only for names outside Debug/Release, where the project
+    /// has no matching configuration either way — and preserving what the user named is less surprising
+    /// than silently substituting Debug.</item>
+    /// <item>It also cross-produces every build type against every platform, turning 3 declared pairs into
+    /// 12 rows and inventing <c>Any CPU</c> and <c>x86</c> entries the solution never had. Rewriting the
+    /// user's declared configuration set is exactly what this surgical path exists to avoid, so one row
+    /// pair per declared pair is all that is written.</item>
+    /// </list>
     /// </remarks>
     static string InsertConfigurationRows(string text, string guid, string newline)
     {
@@ -263,8 +301,9 @@ public class MsBuildSolutionWriter
         var rows = new StringBuilder();
         foreach (var pair in pairs)
         {
-            rows.Append(rowIndent).Append(guid).Append('.').Append(pair).Append(".ActiveCfg = ").Append(pair).Append(newline);
-            rows.Append(rowIndent).Append(guid).Append('.').Append(pair).Append(".Build.0 = ").Append(pair).Append(newline);
+            var projectConfig = ToProjectConfiguration(pair);
+            rows.Append(rowIndent).Append(guid).Append('.').Append(pair).Append(".ActiveCfg = ").Append(projectConfig).Append(newline);
+            rows.Append(rowIndent).Append(guid).Append('.').Append(pair).Append(".Build.0 = ").Append(projectConfig).Append(newline);
         }
 
         var projectSection = SectionRegex("ProjectConfigurationPlatforms").Match(text);
@@ -283,6 +322,19 @@ public class MsBuildSolutionWriter
             $"{sectionIndent}EndGlobalSection{newline}";
 
         return text.Insert(solutionSection.Index + solutionSection.Length, newSection);
+    }
+
+    /// <summary>Maps a declared solution pair to the project configuration it should build.</summary>
+    /// <remarks>
+    /// Keeps the build-type half and replaces the platform with <c>Any CPU</c>, which is what the projects
+    /// Flowline writes actually build. A pair with no <c>|</c> is malformed rather than meaningful, so the
+    /// whole string is treated as the build type instead of guessing at where it was meant to split.
+    /// </remarks>
+    static string ToProjectConfiguration(string declaredPair)
+    {
+        var separator = declaredPair.IndexOf('|');
+        var buildType = separator < 0 ? declaredPair : declaredPair[..separator];
+        return $"{buildType}|Any CPU";
     }
 
     /// <summary>Reads the left-hand side of each <c>Debug|Any CPU = Debug|Any CPU</c> row in a section body.</summary>
