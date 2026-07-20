@@ -196,6 +196,19 @@ app.Configure(config =>
           .WithExample("drift", "dev")
           .WithExample("drift", "test")
           .WithExample("drift", "https://contoso-test.crm4.dynamics.com/");
+
+    // sln = the project's .sln/.slnx file. A branch rather than a flat 'sln-add' because the noun is
+    // the solution *file*, which collides with "solution" meaning the Dataverse artifact everywhere
+    // else in this CLI — 'flowline sln add' reads as a one-word substitution for the 'dotnet sln add'
+    // the user just watched fail.
+    config.AddBranch("sln", sln =>
+    {
+        sln.SetDescription("Work with the project's solution file (.sln or .slnx).");
+
+        sln.AddCommand<SlnAddCommand>("add")
+           .WithDescription("Add a .cdsproj to the project's solution file. 'dotnet sln add' refuses .cdsproj files and exits 0 while doing it, so this writes the entry directly. Creates the solution file when there isn't one. Runs standalone — no Flowline project needed.")
+           .WithExample("sln", "add", "Package/Package.cdsproj");
+    });
 });
 
 var hookLoggerFactory = LoggerFactory.Create(b => b.AddSerilog(serilogLogger));
