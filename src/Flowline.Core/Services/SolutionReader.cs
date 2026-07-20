@@ -7,7 +7,7 @@ namespace Flowline.Core.Services;
 
 public class SolutionReader
 {
-    public async Task<DataverseSolutionInfo> GetSolutionInfoAsync(
+    private async Task<DataverseSolutionInfo> GetSolutionInfoAsync(
         IOrganizationServiceAsync2 service,
         string uniqueName,
         CancellationToken cancellationToken = default)
