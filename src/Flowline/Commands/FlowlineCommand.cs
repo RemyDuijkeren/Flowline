@@ -22,11 +22,16 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     where TSettings : FlowlineSettings
 {
     protected readonly SubprocessCapture _capture = capture;
-    protected const string PackageName = "Solution";
-    protected const string WebResourcesName = "WebResources";
-    protected const string PluginsName = "Plugins";
 
-    public static string PackageFolder(string slnFolder) => Path.Combine(slnFolder, PackageName);
+    /// <summary>The folder holding the unpacked solution and its package project.</summary>
+    /// <remarks>
+    /// Role-based and identical in every Flowline repo — it answers "what kind of thing lives here", which
+    /// has the same answer everywhere, so it stays a plain static rather than becoming a discovery call
+    /// (KD3/KTD3). Identity lives on the project file inside it, and *that* is resolved from the solution
+    /// file — see <see cref="ProjectLayoutResolver.ResolvePackageProjectAsync"/>. Nothing composes a
+    /// project *file* name from a constant any more.
+    /// </remarks>
+    public static string PackageFolder(string slnFolder) => Path.Combine(slnFolder, "Solution");
 
     public static string FormatDuration(TimeSpan elapsed) =>
         elapsed.TotalMinutes >= 1 ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds}s" :

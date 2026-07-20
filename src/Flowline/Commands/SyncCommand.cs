@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
+using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Services;
 using Flowline.Utils;
@@ -58,9 +59,11 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         // Validate that we have an initialized project
         var slnFolder = RootFolder;
-        var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{projectSln.UniqueName}.cdsproj");
-        if (!File.Exists(cdsprojPath))
-            throw new FlowlineException(ExitCode.NotFound, $"No solution found at '{cdsprojPath}' — run 'clone' first");
+
+        // The solution file says which project packs the solution — sync never composes that filename.
+        // Resolution throws with the fix in it when there's no solution file, no .cdsproj entry, or the
+        // entry points at nothing.
+        await ProjectLayoutResolver.ResolvePackageProjectAsync(slnFolder, cancellationToken);
 
         // Check for uncommitted changes
         var srcPath = Path.Combine(PackageFolder(slnFolder), "src");
@@ -70,14 +73,14 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         {
             if (settings.HasForce("dirty"))
             {
-                Console.Warning($"Uncommitted changes in '{PackageName}/src/' — overwriting.");
+                Console.Warning("Uncommitted changes in 'Solution/src/' — overwriting.");
                 preSyncSummary.WriteFlat(Console, RuntimeOptions, "[dim]  ");
             }
             else
             {
-                Console.Warning($"Found uncommitted changes in '{PackageName}/src/'.");
+                Console.Warning("Found uncommitted changes in 'Solution/src/'.");
                 preSyncSummary.WriteFlat(Console, RuntimeOptions, "[dim]  ");
-                throw new FlowlineException(ExitCode.DirtyWorkingDirectory, $"Uncommitted changes in '{PackageName}/src/' — Commit or stash changes first, or re-run with --force dirty.");
+                throw new FlowlineException(ExitCode.DirtyWorkingDirectory, "Uncommitted changes in 'Solution/src/' — Commit or stash changes first, or re-run with --force dirty.");
             }
         }
 

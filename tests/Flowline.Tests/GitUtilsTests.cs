@@ -315,7 +315,7 @@ public class GitUtilsTests : IDisposable
         File.WriteAllText(Path.Combine(_root, "Solution", "src", "Other", "Solution.xml"), "modified");
 
         var changes = await GitUtils.GetUncommittedChangesInPathAsync(
-            await DeployCommand.GetDeploymentInputPathsAsync(_root, "CrO7982"), _root);
+            await DeployCommand.GetDeploymentInputPathsAsync(_root), _root);
 
         changes.Should().ContainSingle().Which.Should().Be("Solution/src/Other/Solution.xml");
     }
@@ -327,7 +327,7 @@ public class GitUtilsTests : IDisposable
         File.WriteAllText(Path.Combine(_root, "Plugins", "Plugins.csproj"), "modified");
 
         var changes = await GitUtils.GetUncommittedChangesInPathAsync(
-            await DeployCommand.GetDeploymentInputPathsAsync(_root, "CrO7982"), _root);
+            await DeployCommand.GetDeploymentInputPathsAsync(_root), _root);
 
         changes.Should().ContainSingle().Which.Should().Be("Plugins/Plugins.csproj");
     }
@@ -344,7 +344,7 @@ public class GitUtilsTests : IDisposable
         File.WriteAllText(Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar)), "modified");
 
         var changes = await GitUtils.GetUncommittedChangesInPathAsync(
-            await DeployCommand.GetDeploymentInputPathsAsync(_root, "CrO7982"), _root);
+            await DeployCommand.GetDeploymentInputPathsAsync(_root), _root);
 
         changes.Should().BeEmpty();
     }
@@ -353,13 +353,13 @@ public class GitUtilsTests : IDisposable
     public async Task DeploymentInputPaths_CacheKeyChangesWhenSolutionFolderChanges_ButNotWhenDocsChange()
     {
         CreateAndCommitFile("Solution/src/Other/Solution.xml");
-        var initialSha = await GitUtils.GetLastCommitShaForPathAsync(await DeployCommand.GetDeploymentInputPathsAsync(_root, "CrO7982"), _root);
+        var initialSha = await GitUtils.GetLastCommitShaForPathAsync(await DeployCommand.GetDeploymentInputPathsAsync(_root), _root);
 
         CreateAndCommitFile("docs/BRAINSTORM.md");
-        var afterDocsSha = await GitUtils.GetLastCommitShaForPathAsync(await DeployCommand.GetDeploymentInputPathsAsync(_root, "CrO7982"), _root);
+        var afterDocsSha = await GitUtils.GetLastCommitShaForPathAsync(await DeployCommand.GetDeploymentInputPathsAsync(_root), _root);
 
         CreateAndCommitFile("Solution/src/Other/Customizations.xml");
-        var afterSolutionChangeSha = await GitUtils.GetLastCommitShaForPathAsync(await DeployCommand.GetDeploymentInputPathsAsync(_root, "CrO7982"), _root);
+        var afterSolutionChangeSha = await GitUtils.GetLastCommitShaForPathAsync(await DeployCommand.GetDeploymentInputPathsAsync(_root), _root);
 
         afterDocsSha.Should().Be(initialSha); // docs-only commit must not invalidate the cache key
         afterSolutionChangeSha.Should().NotBe(initialSha); // a Solution/ change must invalidate it

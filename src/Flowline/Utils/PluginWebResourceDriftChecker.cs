@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Flowline.Core.Plugins;
+using Flowline.Core.Services;
 
 namespace Flowline.Utils;
 
@@ -27,16 +28,18 @@ public static class PluginWebResourceDriftChecker
                              .Where(Directory.Exists)
                              .ToList();
 
+        var webResourcesProject = await ProjectLayoutResolver.ResolveWebResourcesProjectAsync(slnFolder, cancellationToken).ConfigureAwait(false);
+
         var warnings = new List<DriftWarning>();
-        warnings.AddRange(CheckWebResources(slnFolder, packageFolder, publisherPrefix, cancellationToken));
+        warnings.AddRange(CheckWebResources(slnFolder, Path.GetDirectoryName(webResourcesProject)!, packageFolder, publisherPrefix, cancellationToken));
         warnings.AddRange(CheckPlugins(releaseFolders, packageFolder));
         warnings.AddRange(CheckOrphanAssemblies(releaseFolders, packageFolder));
         return warnings;
     }
 
-    static IEnumerable<DriftWarning> CheckWebResources(string slnFolder, string packageFolder, string? publisherPrefix, CancellationToken cancellationToken = default)
+    static IEnumerable<DriftWarning> CheckWebResources(string slnFolder, string webResourcesFolder, string packageFolder, string? publisherPrefix, CancellationToken cancellationToken = default)
     {
-        var distFolder = Path.Combine(slnFolder, "WebResources", "dist");
+        var distFolder = Path.Combine(webResourcesFolder, "dist");
         var srcWebFolder = Path.Combine(packageFolder, "src", "WebResources");
 
         if (!Directory.Exists(distFolder) || !Directory.EnumerateFiles(distFolder, "*.*", SearchOption.AllDirectories).Any())

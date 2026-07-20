@@ -71,7 +71,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         IReadOnlyList<string> deploymentInputPaths = [];
         if (!usingExplicitArtifact)
         {
-            deploymentInputPaths = await GetDeploymentInputPathsAsync(slnFolder, sln.UniqueName, cancellationToken);
+            deploymentInputPaths = await GetDeploymentInputPathsAsync(slnFolder, cancellationToken);
             await ValidateGitCleanAsync(deploymentInputPaths, cancellationToken);
         }
 
@@ -122,7 +122,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             }
         }
 
-        await ValidateLocalStateAsync(slnFolder, sln.UniqueName, settings, cancellationToken, checkDrift: !usingExplicitArtifact);
+        await ValidateLocalStateAsync(slnFolder, settings, cancellationToken, checkDrift: !usingExplicitArtifact);
 
         // Managed import only removes components no longer in the solution when Dataverse runs it as an
         // Upgrade (pac's --stage-and-upgrade) — plain import ("Update" semantics) never deletes anything,
@@ -366,28 +366,31 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     // two can never diverge — resolved once per run in ExecuteFlowlineAsync and handed to both, which also
     // keeps the solution file read to one per deploy.
     //
-    // Deliberately narrow to what actually affects the packed artifact: Package/, every plugin project the
+    // Deliberately narrow to what actually affects the packed artifact: Solution/, every plugin project the
     // solution file references (KTD12 — this is the .sln-membership discovery the fixed Plugins/ path
     // deferred to), and the WebResources project file. The plugin pre-filter is what keeps this narrow —
     // an unrelated csproj in the solution stays out of the cache key, so it can't invalidate a deploy.
-    internal static async Task<IReadOnlyList<string>> GetDeploymentInputPathsAsync(string slnFolder, string solutionName, CancellationToken ct = default)
+    //
+    // Takes no solution name: all three project paths now come out of the solution file, so a relocated or
+    // renamed project stays in scope without deploy knowing what it is called.
+    internal static async Task<IReadOnlyList<string>> GetDeploymentInputPathsAsync(string slnFolder, CancellationToken ct = default)
     {
         var pluginProjects = await PluginProjectResolver.DiscoverAsync(slnFolder, SkipMissingProject, ct).ConfigureAwait(false);
+        var webResourcesProject = await ProjectLayoutResolver.ResolveWebResourcesProjectAsync(slnFolder, ct).ConfigureAwait(false);
 
         return
         [
             PackageFolder(slnFolder),
             ..pluginProjects.Select(c => c.ProjectPath),
-            Path.Combine(slnFolder, WebResourcesName, CloneCommand.WebResourcesProjectFileName(solutionName))
+            webResourcesProject
         ];
     }
 
-    private async Task ValidateLocalStateAsync(string slnFolder, string solutionName, Settings settings, CancellationToken ct, bool checkDrift = true)
+    private async Task ValidateLocalStateAsync(string slnFolder, Settings settings, CancellationToken ct, bool checkDrift = true)
     {
-        var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{solutionName}.cdsproj");
-        if (!File.Exists(cdsprojPath))
-            throw new FlowlineException(ExitCode.NotFound,
-                $"No solution found at '{cdsprojPath}' — run 'clone' first.");
+        // Resolved, not composed: the .cdsproj entry in the solution file is what says the project is set
+        // up, and it carries its own actionable failures.
+        await ProjectLayoutResolver.ResolvePackageProjectAsync(slnFolder, ct);
 
         if (!checkDrift) return;
 

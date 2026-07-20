@@ -129,10 +129,17 @@ public static class PluginProjectResolver
                .ToList();
     }
 
-    /// <summary>The pre-discovery layout: a project named <c>Plugins</c> in a folder named <c>Plugins</c>.</summary>
+    /// <summary>The pre-Flowline layout: a project named <c>Plugins</c> in a folder named <c>Plugins</c>.</summary>
     /// <remarks>
     /// The only place in the codebase allowed to compose a plugin path from a fixed project name, and only
     /// as the no-solution-file fallback. <c>PluginPathConventionTests</c> enforces that.
+    ///
+    /// Deliberately NOT updated to <c>&lt;SolutionName&gt;.Plugins.csproj</c> when scaffolding moved to
+    /// solution-identity names (U2). Clone writes the solution file before it writes the plugin project, so
+    /// a Flowline-scaffolded repo always has a solution file and never reaches this line — the only repos
+    /// that do are hand-built or migrated ones following the old spkl/Daxif convention, and
+    /// <c>Plugins/Plugins.csproj</c> is precisely what those have. Renaming it to match the new scaffold
+    /// would point the fallback at a file that, by construction, only exists in repos that don't need it.
     /// </remarks>
     internal static PluginProjectCandidate ConventionalCandidate(string slnFolder) =>
         new(Path.Combine(slnFolder, "Plugins", "Plugins.csproj"),

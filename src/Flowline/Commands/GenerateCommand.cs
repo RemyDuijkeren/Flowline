@@ -186,7 +186,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
                 ? Path.GetFullPath(settings.Output)
                 : !string.IsNullOrWhiteSpace(savedOutputPath)
                     ? Path.GetFullPath(Path.Combine(RootFolder, savedOutputPath))
-                    : Path.Combine(slnFolder, PluginsName, "Models");
+                    : Path.Combine(slnFolder, "Plugins", "Models");
 
             extraTables = projectSln.Generate?.ExtraTables ?? [];
 

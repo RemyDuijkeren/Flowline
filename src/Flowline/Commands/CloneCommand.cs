@@ -71,6 +71,12 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
         var slnFolder = RootFolder;
         var solutionName = projectSln.UniqueName;
+
+        // Clone composes this path on purpose, and it is the only command allowed to. On a first clone
+        // there is no solution file and no .cdsproj yet — clone creates both — so there is nothing to
+        // resolve from. Everything downstream of creation (sync, deploy) reads the path back out of the
+        // solution file via ProjectLayoutResolver instead. Do not "fix" this into a resolver call: it runs
+        // before the thing it would resolve exists.
         var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{solutionName}.cdsproj");
         var slnFilePath = ResolveSolutionFilePath(slnFolder, solutionName);
         var slnFileName = Path.GetFileName(slnFilePath);
@@ -501,9 +507,11 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     {
         var stray = Directory.EnumerateFiles(packageFolder, "*.cdsproj", SearchOption.TopDirectoryOnly).FirstOrDefault();
 
+        var folderName = Path.GetFileName(packageFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+
         return stray != null
-            ? $"{PackageName}/ holds {Path.GetFileName(stray)}, not {cdsprojFileName}. Rename it and run clone again."
-            : $"{PackageName}/ is here but {cdsprojFileName} isn't. Move {PackageName}/ aside and run clone again.";
+            ? $"{folderName}/ holds {Path.GetFileName(stray)}, not {cdsprojFileName}. Rename it and run clone again."
+            : $"{folderName}/ is here but {cdsprojFileName} isn't. Move {folderName}/ aside and run clone again.";
     }
 
     /// <summary>The plugin project file clone scaffolds for a solution.</summary>
@@ -516,11 +524,11 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     /// <c>DWE_Base</c> and <c>DWEBase</c> are two distinct legal solutions and collapsing them reintroduces
     /// the anonymous identity the name exists to remove.
     /// </remarks>
-    internal static string PluginsProjectFileName(string solutionName) => $"{solutionName}.{PluginsName}.csproj";
+    internal static string PluginsProjectFileName(string solutionName) => $"{solutionName}.Plugins.csproj";
 
     private async Task SetupPluginsProjectAsync(string slnFolder, string slnFilePath, string solutionName, Settings settings, CancellationToken cancellationToken)
     {
-        var pluginsFolder = Path.Combine(slnFolder, PluginsName);
+        var pluginsFolder = Path.Combine(slnFolder, "Plugins");
         var pluginsCsproj = Path.Combine(pluginsFolder, PluginsProjectFileName(solutionName));
         if (File.Exists(pluginsCsproj))
         {
@@ -533,10 +541,10 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         // filename. Init therefore runs in <SolutionName>.Plugins/ and only the *folder* is renamed —
         // renaming the file too would drop the assembly back to "Plugins" while PackageId and the namespaces
         // stayed prefixed, leaving three identities disagreeing with nothing to signal it.
-        var initFolder = Path.Combine(slnFolder, $"{solutionName}.{PluginsName}");
+        var initFolder = Path.Combine(slnFolder, $"{solutionName}.Plugins");
         if (Directory.Exists(pluginsFolder))
             throw new FlowlineException(ExitCode.ConfigInvalid,
-                $"{PluginsName}/ is here but {Path.GetFileName(pluginsCsproj)} isn't. Move {PluginsName}/ aside and run clone again.");
+                $"Plugins/ is here but {Path.GetFileName(pluginsCsproj)} isn't. Move Plugins/ aside and run clone again.");
 
         await Console.Status().FlowlineSpinner().StartAsync(
             "Setting up Plugins project...", async ctx =>
@@ -555,7 +563,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
                 DeleteScaffoldedGitignore(initFolder); // superseded by the project-root .gitignore
 
                 Directory.Move(initFolder, pluginsFolder);
-                Console.Verbose($"Moved {Path.GetFileName(initFolder)} to {PluginsName}");
+                Console.Verbose($"Moved {Path.GetFileName(initFolder)} to {Path.GetFileName(pluginsFolder)}");
 
                 // Add Flowline.Attributes NuGet package
                 await Cli.Wrap("dotnet")
@@ -604,12 +612,12 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     /// does. It takes the prefix so the naming rule has no exception, and so a solution-named node is easy
     /// to pick out with several projects open. The template itself is untouched.
     /// </remarks>
-    internal static string WebResourcesProjectFileName(string solutionName) => $"{solutionName}.{WebResourcesName}.csproj";
+    internal static string WebResourcesProjectFileName(string solutionName) => $"{solutionName}.WebResources.csproj";
 
     private async Task SetupWebResourcesProjectAsync(string slnFolder, string slnFilePath, string solutionName, Settings settings, CancellationToken cancellationToken)
     {
         // Create WebResources project if it doesn't exist
-        var webresourcesFolder = Path.Combine(slnFolder, WebResourcesName);
+        var webresourcesFolder = Path.Combine(slnFolder, "WebResources");
         var webresourcesCsproj = Path.Combine(webresourcesFolder, WebResourcesProjectFileName(solutionName));
         if (File.Exists(webresourcesCsproj))
         {
@@ -645,7 +653,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
                          .WithCapture(_capture)
                          .ExecuteAsync(cancellationToken);
 
-                Console.Verbose($"Added {WebResourcesName} project to solution");
+                Console.Verbose($"Added {Path.GetFileName(webresourcesCsproj)} to solution");
             });
 
         Console.Ok("WebResources project ready");

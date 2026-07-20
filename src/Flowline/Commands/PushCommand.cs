@@ -536,7 +536,11 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     {
         if (standaloneMode) return standaloneParams.WebResourcesPath;
 
-        var webResourcesFolder = Path.Combine(RootFolder, WebResourcesName);
+        // The solution file identifies the WebResources project, so its folder follows it wherever it moved.
+        // With no solution file the resolver hands back the conventional folder, which is what push looked
+        // at before discovery landed.
+        var webResourcesProject = await ProjectLayoutResolver.ResolveWebResourcesProjectAsync(RootFolder, cancellationToken);
+        var webResourcesFolder = Path.GetDirectoryName(webResourcesProject)!;
         var webResourcesSyncFolder = Path.Combine(webResourcesFolder, "dist");
 
         if (!Directory.Exists(webResourcesFolder))

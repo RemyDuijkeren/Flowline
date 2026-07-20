@@ -31,8 +31,6 @@ public class PluginPathConventionTests
             "scaffolding: creates the Plugins project, so it picks the name rather than discovering it",
         ["src/Flowline/Commands/GenerateCommand.cs"] =
             "Plugins/Models is the default early-bound output path, not plugin-project discovery",
-        ["src/Flowline/Commands/FlowlineCommand.cs"] =
-            "declares the PluginsName constant the two entries above consume",
         ["src/Flowline/Program.cs"] =
             "an example invocation string in --help text",
     };
