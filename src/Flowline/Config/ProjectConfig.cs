@@ -17,144 +17,57 @@ public class ProjectConfig
     public string? DevUrl { get; set; }
     public ProjectSolution? Solution { get; set; }
 
-    public string? GetOrUpdateUatUrl(string? inputUatUrl, FlowlineSettings? settings = null)
-    {
-        inputUatUrl = inputUatUrl?.Trim();
+    public string? GetOrUpdateUatUrl(string? inputUatUrl, FlowlineSettings? settings = null) =>
+        GetOrUpdateUrl(inputUatUrl, () => UatUrl, v => UatUrl = v, "UAT", settings);
 
-        if (string.IsNullOrWhiteSpace(UatUrl))
+    public string? GetOrUpdateTestUrl(string? inputTestUrl, FlowlineSettings? settings = null) =>
+        GetOrUpdateUrl(inputTestUrl, () => TestUrl, v => TestUrl = v, "Test", settings);
+
+    public string? GetOrUpdateDevUrl(string? inputDevUrl, FlowlineSettings? settings = null) =>
+        GetOrUpdateUrl(inputDevUrl, () => DevUrl, v => DevUrl = v, "Dev", settings);
+
+    public string? GetOrUpdateProdUrl(string? inputProdUrl, FlowlineSettings? settings = null) =>
+        GetOrUpdateUrl(inputProdUrl, () => ProdUrl, v => ProdUrl = v, "Prod", settings);
+
+    // Properties can't be passed by ref, so the four environment URLs share this via get/set delegates.
+    static string? GetOrUpdateUrl(
+        string? input,
+        Func<string?> get,
+        Action<string?> set,
+        string label,
+        FlowlineSettings? settings)
+    {
+        input = input?.Trim();
+
+        if (string.IsNullOrWhiteSpace(get()))
         {
-            UatUrl = inputUatUrl;
-            return string.IsNullOrWhiteSpace(inputUatUrl) ? null : inputUatUrl;
+            set(input);
+            return string.IsNullOrWhiteSpace(input) ? null : input;
         }
 
-        if (string.IsNullOrWhiteSpace(inputUatUrl))
+        if (string.IsNullOrWhiteSpace(input))
         {
             if (settings is { Verbose: true })
             {
-                AnsiConsole.MarkupLine($"[dim]UAT: [bold]{UatUrl}[/][/]");
+                AnsiConsole.MarkupLine($"[dim]{label}: [bold]{get()}[/][/]");
             }
 
-            return UatUrl;
+            return get();
         }
 
-        if (UatUrl != inputUatUrl)
+        if (get() != input)
         {
-            AnsiConsole.MarkupLine($"[yellow]UAT is already set: [bold]{UatUrl}[/][/]");
+            AnsiConsole.MarkupLine($"[yellow]{label} is already set: [bold]{get()}[/][/]");
             if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings, "config"))
             {
-                AnsiConsole.MarkupLine($"[dim]Keeping UAT as-is: [link]{UatUrl}[/][/]");
-                return UatUrl;
+                AnsiConsole.MarkupLine($"[dim]Keeping {label} as-is: [link]{get()}[/][/]");
+                return get();
             }
-            AnsiConsole.MarkupLine("[green]UAT updated[/]");
+            AnsiConsole.MarkupLine($"[green]{label} updated[/]");
         }
 
-        UatUrl = inputUatUrl;
-        return UatUrl;
-    }
-
-    public string? GetOrUpdateTestUrl(string? inputTestUrl, FlowlineSettings? settings = null)
-    {
-        inputTestUrl = inputTestUrl?.Trim();
-
-        if (string.IsNullOrWhiteSpace(TestUrl))
-        {
-            TestUrl = inputTestUrl;
-            return string.IsNullOrWhiteSpace(inputTestUrl) ? null : inputTestUrl;
-        }
-
-        if (string.IsNullOrWhiteSpace(inputTestUrl))
-        {
-            if (settings is { Verbose: true })
-            {
-                AnsiConsole.MarkupLine($"[dim]Test: [bold]{TestUrl}[/][/]");
-            }
-
-            return TestUrl;
-        }
-
-        if (TestUrl != inputTestUrl)
-        {
-            AnsiConsole.MarkupLine($"[yellow]Test is already set: [bold]{TestUrl}[/][/]");
-            if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings, "config"))
-            {
-                AnsiConsole.MarkupLine($"[dim]Keeping test as-is: [link]{TestUrl}[/][/]");
-                return TestUrl;
-            }
-            AnsiConsole.MarkupLine("[green]Test updated[/]");
-        }
-
-        TestUrl = inputTestUrl;
-        return TestUrl;
-    }
-
-    public string? GetOrUpdateDevUrl(string? inputDevUrl, FlowlineSettings? settings = null)
-    {
-        inputDevUrl = inputDevUrl?.Trim();
-
-        if (string.IsNullOrWhiteSpace(DevUrl))
-        {
-            DevUrl = inputDevUrl;
-            return string.IsNullOrWhiteSpace(inputDevUrl) ? null : inputDevUrl;
-        }
-
-        if (string.IsNullOrWhiteSpace(inputDevUrl))
-        {
-            if (settings is { Verbose: true })
-            {
-                AnsiConsole.MarkupLine($"[dim]Dev: [bold]{DevUrl}[/][/]");
-            }
-
-            return DevUrl;
-        }
-
-        if (DevUrl != inputDevUrl)
-        {
-            AnsiConsole.MarkupLine($"[yellow]Dev is already set: [bold]{DevUrl}[/][/]");
-            if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings, "config"))
-            {
-                AnsiConsole.MarkupLine($"[dim]Keeping dev as-is: [link]{DevUrl}[/][/]");
-                return DevUrl;
-            }
-            AnsiConsole.MarkupLine("[green]Dev updated[/]");
-        }
-
-        DevUrl = inputDevUrl;
-        return DevUrl;
-    }
-
-    public string? GetOrUpdateProdUrl(string? inputProdUrl, FlowlineSettings? settings = null)
-    {
-        inputProdUrl = inputProdUrl?.Trim();
-
-        if (string.IsNullOrWhiteSpace(ProdUrl))
-        {
-            ProdUrl = inputProdUrl;
-            return string.IsNullOrWhiteSpace(inputProdUrl) ? null : inputProdUrl;
-        }
-
-        if (string.IsNullOrWhiteSpace(inputProdUrl))
-        {
-            if (settings is { Verbose: true })
-            {
-                AnsiConsole.MarkupLine($"[dim]Prod: [bold]{ProdUrl}[/][/]");
-            }
-
-            return ProdUrl;
-        }
-
-        if (ProdUrl != inputProdUrl)
-        {
-            AnsiConsole.MarkupLine($"[yellow]Prod is already set: [bold]{ProdUrl}[/][/]");
-            if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings, "config"))
-            {
-                AnsiConsole.MarkupLine($"[dim]Keeping prod as-is: [link]{ProdUrl}[/][/]");
-                return ProdUrl;
-            }
-            AnsiConsole.MarkupLine("[green]Prod updated[/]");
-        }
-
-        ProdUrl = inputProdUrl;
-        return ProdUrl;
+        set(input);
+        return get();
     }
 
     public ProjectSolution AddOrUpdateSolution(ProjectSolution solution)

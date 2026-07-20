@@ -180,6 +180,62 @@ public class ProjectConfigTests : IDisposable
         result.Should().Be("https://contoso-uat.crm.dynamics.com/");
     }
 
+    // The four GetOrUpdate*Url methods share one implementation, wired to their backing property by
+    // get/set delegates. These pin each wrapper to the right property — a mismatched delegate pair
+    // would otherwise write the wrong environment's URL and still pass every UAT test above.
+    [Fact]
+    public void GetOrUpdateTestUrl_WithUrl_WhenEmpty_SetsOnlyTestUrl()
+    {
+        var config = new ProjectConfig();
+
+        var result = config.GetOrUpdateTestUrl("https://contoso-test.crm.dynamics.com/");
+
+        result.Should().Be("https://contoso-test.crm.dynamics.com/");
+        config.TestUrl.Should().Be("https://contoso-test.crm.dynamics.com/");
+        config.UatUrl.Should().BeNull();
+        config.DevUrl.Should().BeNull();
+        config.ProdUrl.Should().BeNull();
+    }
+
+    [Fact]
+    public void GetOrUpdateDevUrl_WithUrl_WhenEmpty_SetsOnlyDevUrl()
+    {
+        var config = new ProjectConfig();
+
+        var result = config.GetOrUpdateDevUrl("https://contoso-dev.crm.dynamics.com/");
+
+        result.Should().Be("https://contoso-dev.crm.dynamics.com/");
+        config.DevUrl.Should().Be("https://contoso-dev.crm.dynamics.com/");
+        config.UatUrl.Should().BeNull();
+        config.TestUrl.Should().BeNull();
+        config.ProdUrl.Should().BeNull();
+    }
+
+    [Fact]
+    public void GetOrUpdateProdUrl_WithUrl_WhenEmpty_SetsOnlyProdUrl()
+    {
+        var config = new ProjectConfig();
+
+        var result = config.GetOrUpdateProdUrl("https://contoso.crm.dynamics.com/");
+
+        result.Should().Be("https://contoso.crm.dynamics.com/");
+        config.ProdUrl.Should().Be("https://contoso.crm.dynamics.com/");
+        config.UatUrl.Should().BeNull();
+        config.TestUrl.Should().BeNull();
+        config.DevUrl.Should().BeNull();
+    }
+
+    [Fact]
+    public void GetOrUpdateProdUrl_NullInput_WhenAlreadySet_ReturnsStoredUrl()
+    {
+        var config = new ProjectConfig { ProdUrl = "https://contoso.crm.dynamics.com/" };
+
+        var result = config.GetOrUpdateProdUrl(null);
+
+        result.Should().Be("https://contoso.crm.dynamics.com/");
+        config.ProdUrl.Should().Be("https://contoso.crm.dynamics.com/");
+    }
+
     [Fact]
     public void UatUrl_RoundTripsViaJson()
     {
