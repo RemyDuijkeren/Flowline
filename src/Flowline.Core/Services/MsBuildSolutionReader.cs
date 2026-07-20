@@ -84,7 +84,10 @@ public class MsBuildSolutionReader
         return model.SolutionProjects
                     .Select(p => new MsBuildSolutionProject(
                         NormalizePath(p.FilePath),
-                        p.ActualDisplayName,
+                        // DisplayName is what the file declares; ActualDisplayName is re-derived from the
+                        // filename and so disagrees for any project the solution named differently. The
+                        // declared name is the one `msbuild -t:<Target>` resolves, so it is the truthful one.
+                        p.DisplayName ?? p.ActualDisplayName,
                         Path.GetExtension(p.FilePath).ToLowerInvariant()))
                     .ToList();
     }

@@ -94,6 +94,28 @@ EndGlobal
     }
 
     [Fact]
+    public async Task ReadProjectsAsync_DisplayNameDiffersFromFileName_ReportsTheNameTheFileDeclares()
+    {
+        // The library exposes two names: DisplayName is what the file says, ActualDisplayName is
+        // re-derived from the filename. Reading the derived one makes Name silently wrong for any
+        // solution that named a project differently — and `msbuild -t:<Name>` uses the declared one.
+        var path = Write("Friendly.sln", """
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyFriendlyName", "Plugins\DWE_Base.Plugins.csproj", "{11111111-1111-1111-1111-111111111111}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+	EndGlobalSection
+EndGlobal
+""");
+
+        var projects = await _reader.ReadProjectsAsync(path);
+
+        projects.Should().ContainSingle().Which.Name.Should().Be("MyFriendlyName");
+    }
+
+    [Fact]
     public async Task ReadProjectsAsync_SolutionWithNoProjects_ReturnsEmptyNotNull()
     {
         var path = Write("Empty.slnx", "<Solution />");
