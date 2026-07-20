@@ -70,6 +70,30 @@ public class PluginPathConventionTests
                  .Should().BeEmpty("every allowlisted path must still be a real file");
     }
 
+    /// <summary>
+    /// Standalone mode must never reach solution-file discovery — that's what makes `--pluginFile` the way
+    /// out when discovery can't classify a project and refuses the push.
+    /// </summary>
+    [Fact]
+    public void PushCommand_StandalonePreparation_TouchesNoDiscoveryApi()
+    {
+        var source = File.ReadAllLines(Path.Combine(FindRepoRoot(), "src", "Flowline", "Commands", "PushCommand.cs"));
+
+        var start = Array.FindIndex(source, l => l.Contains("PrepareStandalonePluginForPush(", StringComparison.Ordinal) &&
+                                                 l.Contains("private", StringComparison.Ordinal));
+        start.Should().BeGreaterThan(-1, "the standalone preparation method must still exist");
+
+        // Body runs to the next member declaration at the same nesting level.
+        var end = Array.FindIndex(source, start + 1, l => l.StartsWith("    private ", StringComparison.Ordinal) ||
+                                                          l.StartsWith("    internal ", StringComparison.Ordinal));
+        if (end < 0) end = source.Length;
+
+        source[start..end]
+            .Where(l => l.Contains("PluginProjectResolver", StringComparison.Ordinal) ||
+                        l.Contains("MsBuildSolutionReader", StringComparison.Ordinal))
+            .Should().BeEmpty("--pluginFile names the artifact outright, so it must bypass discovery entirely");
+    }
+
     static IEnumerable<string> FindOffendingLines(string filePath)
     {
         var relative = Path.GetRelativePath(FindRepoRoot(), filePath).Replace(Path.DirectorySeparatorChar, '/');

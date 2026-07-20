@@ -142,28 +142,62 @@ public static class PluginProjectResolver
     /// <summary>Cheap pre-filter (KTD4): why this candidate can't be a plugin project, or <c>null</c> if it might be.</summary>
     /// <remarks>
     /// Building every solution project just to reflect and discard it is wasteful, so obvious
-    /// non-candidates are dropped from the project file's own text before any build runs. Deliberately
-    /// textual and deliberately generous — it reads the csproj only, so a reference or target framework
-    /// inherited from a props file isn't visible here, and both checks are written to let an unknown shape
-    /// through rather than drop it. Every drop is surfaced under <c>--verbose</c> by the caller, because a
-    /// silent one is indistinguishable from "Flowline didn't register my plugin".
+    /// non-candidates are dropped from the project file's own text before any build runs.
+    ///
+    /// The pre-filter's job is avoiding a pointless build, not classifying. A drop here is final — the
+    /// project never reaches reflection, and since discovery also defines what the orphan sweeps treat as
+    /// having local source, a wrong drop deletes a live assembly, its steps, and its Custom APIs. So it
+    /// drops only when the project file's own text makes it certain, and defers to reflection otherwise:
+    /// a plugin project whose SDK reference arrives from <c>Directory.Build.props</c> or transitively
+    /// through a <c>ProjectReference</c> carries none of the marker strings in its own csproj, and
+    /// dropping it on that absence is a guess. The target-framework check runs first and stays
+    /// unconditional because <c>&lt;TargetFramework&gt;</c> is the project's own declaration — nothing a
+    /// props file or a project reference adds can make a <c>net10.0</c> project a plugin project.
     /// </remarks>
     public static string? DescribePreFilterSkip(string projectFilePath)
     {
         var text = File.ReadAllText(projectFilePath);
 
-        // Microsoft.CrmSdk is in the list because that's the package name real projects reference
-        // (Microsoft.CrmSdk.CoreAssemblies) — the Microsoft.Xrm.Sdk assembly it delivers never appears in
-        // the csproj by name.
-        string[] pluginSdkMarkers = ["Microsoft.Xrm.Sdk", "Microsoft.CrmSdk", "Flowline.Attributes"];
-        if (!pluginSdkMarkers.Any(m => text.Contains(m, StringComparison.OrdinalIgnoreCase)))
-            return "no Microsoft.Xrm.Sdk or Flowline.Attributes reference";
-
         var frameworks = ReadTargetFrameworks(text);
         if (frameworks.Count > 0 && !frameworks.Any(f => f.StartsWith("net4", StringComparison.OrdinalIgnoreCase)))
             return $"targets {string.Join(", ", frameworks)}, not .NET Framework";
 
-        return null;
+        // Microsoft.CrmSdk is in the list because that's the package name real projects reference
+        // (Microsoft.CrmSdk.CoreAssemblies) — the Microsoft.Xrm.Sdk assembly it delivers never appears in
+        // the csproj by name.
+        string[] pluginSdkMarkers = ["Microsoft.Xrm.Sdk", "Microsoft.CrmSdk", "Flowline.Attributes"];
+        if (pluginSdkMarkers.Any(m => text.Contains(m, StringComparison.OrdinalIgnoreCase)))
+            return null;
+
+        // No marker in this file. Both of these mean the SDK could still reach the project from text this
+        // check never reads, so the filter can't be confident — hand it to reflection, which can be.
+        if (text.Contains("<ProjectReference", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        if (HasDirectoryBuildProps(projectFilePath))
+            return null;
+
+        return "no Microsoft.Xrm.Sdk or Flowline.Attributes reference";
+    }
+
+    /// <summary>Whether a <c>Directory.Build.props</c> sits at or above the project folder.</summary>
+    /// <remarks>
+    /// Presence alone is the signal — this deliberately does not read the file. Anything it imports could
+    /// add the SDK reference, and evaluating that properly means evaluating MSBuild, which discovery
+    /// exists to avoid. Cheap and over-inclusive is the right shape: the cost of a false "might be" is one
+    /// extra reflection pass, the cost of a false "definitely isn't" is a deleted plugin registration.
+    /// </remarks>
+    static bool HasDirectoryBuildProps(string projectFilePath)
+    {
+        for (var dir = new DirectoryInfo(Path.GetDirectoryName(Path.GetFullPath(projectFilePath))!);
+             dir != null;
+             dir = dir.Parent)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "Directory.Build.props")))
+                return true;
+        }
+
+        return false;
     }
 
     static readonly Regex s_targetFrameworkElement =
@@ -174,71 +208,99 @@ public static class PluginProjectResolver
                                 .SelectMany(m => m.Groups[1].Value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                                 .ToList();
 
+    /// <summary>What to tell a user who needs this push to go through before they can fix the project.</summary>
+    /// <remarks>
+    /// Every "Flowline can't tell" failure carries it. Standalone mode runs no discovery at all — the user
+    /// names the artifact and Flowline pushes it — so it is a real way out of every one of these, not a
+    /// consolation. Refusing the push is only defensible when the refusal comes with the alternative.
+    /// </remarks>
+    internal const string StandaloneEscapeHatch =
+        "To push right now, use standalone mode: flowline push --pluginFile <dll>.";
+
     /// <summary>
     /// Finds the assembly in a candidate's Release output that carries plugin types (R4/KD3, R2/KD2).
     /// </summary>
     /// <param name="candidate">The candidate to resolve, already built.</param>
     /// <param name="reportSkip">Receives one note per output assembly that turned out not to be the plugin assembly.</param>
-    /// <param name="requireBuildOutput">
-    /// Whether an unbuilt candidate is an error. See <see cref="FindOutputAssemblies"/>.
-    /// </param>
     /// <returns>The confirmed assembly path, or <c>null</c> when nothing in the output is plugin-bearing (R3).</returns>
+    /// <exception cref="FlowlineException">
+    /// <see cref="ExitCode.ValidationFailed"/> when not one assembly in the output could be reflected, so
+    /// "not a plugin project" was never established — only assumed.
+    /// </exception>
     /// <remarks>
-    /// Returning <c>null</c> rather than throwing is R3: a solution project that builds no plugin types is
-    /// not an error, it's just not a plugin project. Not finding any build output at all <em>is</em> an
-    /// error — see <see cref="FindOutputAssemblies"/>.
+    /// Two very different things end up as "no plugin assembly here", and only one of them is safe.
+    ///
+    /// The assembly loaded and carries no <c>IPlugin</c> or <c>CodeActivity</c> type: that is R3, and it is
+    /// the common case — WebResources, a shared DTO library, a test project. Definitively not a plugin
+    /// project, <c>null</c>, and the caller skips it silently.
+    ///
+    /// Nothing loaded at all: that is not a verdict, it is a failure to reach one. The classic cause is
+    /// <c>Microsoft.Xrm.Sdk.dll</c> not being copy-local, which makes a real plugin project's base types
+    /// unresolvable and reports it as carrying none. Since the discovered set also defines what the orphan
+    /// sweeps treat as having local source, guessing "not a plugin project" here deletes that project's
+    /// live assembly, steps, and Custom APIs. So it throws: a refused push the user can report is strictly
+    /// better than a half-baked one that silently deletes.
+    ///
+    /// "Any assembly loaded" is the bar, not "the project's own assembly loaded" — a dependency DLL in the
+    /// same folder is routinely unreadable on its own, and demanding a per-assembly verdict would turn
+    /// ordinary output folders into failures.
     /// </remarks>
-    public static string? ResolvePluginAssembly(PluginProjectCandidate candidate, Action<string> reportSkip, bool requireBuildOutput = true)
+    public static string? ResolvePluginAssembly(PluginProjectCandidate candidate, Action<string> reportSkip)
     {
-        foreach (var dllPath in FindOutputAssemblies(candidate, requireBuildOutput))
+        var reflectedSomething = false;
+
+        foreach (var dllPath in FindOutputAssemblies(candidate))
         {
             if (ConfirmsPluginTypes(dllPath, out var failure))
                 return dllPath;
+
+            reflectedSomething |= failure == null;
 
             reportSkip(failure == null
                 ? $"{ConsolePath.FormatRelativePath(dllPath)} — no IPlugin or CodeActivity type"
                 : $"{ConsolePath.FormatRelativePath(dllPath)} — couldn't reflect it ({failure})");
         }
 
+        // FindOutputAssemblies never returns empty — it throws instead — so this means every assembly there
+        // failed to load.
+        if (!reflectedSomething)
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"Couldn't read a single assembly in '{candidate.ProjectName}' build output, so Flowline can't tell " +
+                "whether it's a plugin project — and won't guess. Usually Microsoft.Xrm.Sdk.dll isn't copy-local next " +
+                $"to the output. Run with --verbose for the reflection errors. {StandaloneEscapeHatch}");
+
         return null;
     }
 
     /// <summary>Every assembly in a candidate's Release output, best guess at the plugin assembly first.</summary>
     /// <param name="candidate">The candidate whose output to enumerate.</param>
-    /// <param name="requireBuildOutput">
-    /// Whether an unbuilt candidate is an error (the default) or just an empty result.
-    /// <para>
-    /// After a build ran, empty output is a real problem and must throw. Under <c>--no-build</c> it isn't:
-    /// the solution file can reference a <c>net4x</c> project that simply hasn't been built, and that
-    /// project may not be a plugin project at all — reflection is the only thing that could have said so,
-    /// and there is nothing to reflect. Throwing there kills the whole push over a project it was never
-    /// going to register, so the caller excludes it instead and the "no plugin project found" error still
-    /// fires when nothing resolves.
-    /// </para>
-    /// </param>
     /// <exception cref="FlowlineException">
-    /// <see cref="ExitCode.NotFound"/> when the project has no Release output and
-    /// <paramref name="requireBuildOutput"/> is set — reflection needs something to read, and "unbuilt"
-    /// must say so rather than resolve to nothing and look like "not a plugin project".
+    /// <see cref="ExitCode.NotFound"/> when the project has no Release output at all.
     /// </exception>
     /// <remarks>
+    /// Empty output is always an error, <c>--no-build</c> included. Reflection is the only thing that can
+    /// say whether a candidate is a plugin project, and with nothing to reflect it never got to say —
+    /// treating that as "not a plugin project" is a guess, and a guess here costs the project's live
+    /// assembly, steps, and Custom APIs on the next orphan sweep. The user has two cheap ways out (build
+    /// it, or drop <c>--no-build</c>) and a third that skips discovery entirely, so failing loudly is not
+    /// a dead end.
+    ///
     /// Ordering carries the whole optimisation: an assembly named after the project file goes first, so the
     /// common case confirms on the first reflection instead of walking the dependency closure. A project
     /// with its own <c>&lt;AssemblyName&gt;</c> simply has no such match and falls back to reflecting in
     /// path order, which still resolves it — just not on the first try.
     /// </remarks>
-    public static IReadOnlyList<string> FindOutputAssemblies(PluginProjectCandidate candidate, bool requireBuildOutput = true)
+    public static IReadOnlyList<string> FindOutputAssemblies(PluginProjectCandidate candidate)
     {
         var dllPaths = Directory.Exists(candidate.BuildOutputRoot)
             ? Directory.GetFiles(candidate.BuildOutputRoot, "*.dll", SearchOption.AllDirectories)
             : [];
 
         if (dllPaths.Length == 0)
-            return requireBuildOutput
-                ? throw new FlowlineException(ExitCode.NotFound,
-                    $"No Release build output for '{candidate.ProjectName}' — build it first, or drop --no-build. " +
-                    $"Looked in {ConsolePath.FormatRelativePath(candidate.BuildOutputRoot)}.")
-                : [];
+            throw new FlowlineException(ExitCode.NotFound,
+                $"No Release build output for '{candidate.ProjectName}' — nothing to reflect, so Flowline can't tell " +
+                "whether it's a plugin project. Build it first, or drop --no-build. " +
+                $"Looked in {ConsolePath.FormatRelativePath(candidate.BuildOutputRoot)}. {StandaloneEscapeHatch}");
 
         var expectedName = Path.GetFileNameWithoutExtension(candidate.ProjectPath);
 
@@ -254,15 +316,6 @@ public static class PluginProjectResolver
                .ThenBy(p => p, StringComparer.OrdinalIgnoreCase)
                .ToList();
     }
-
-    /// <summary>Whether the candidate's Release output holds anything at all to reflect.</summary>
-    /// <remarks>
-    /// Lets a caller that passed <c>requireBuildOutput: false</c> tell the two reasons for a <c>null</c>
-    /// resolve apart — "nothing was built" and "built, but carries no plugin types" are different things
-    /// to tell the user, and only the resolver knows what counts as output.
-    /// </remarks>
-    public static bool HasBuildOutput(PluginProjectCandidate candidate) =>
-        FindOutputAssemblies(candidate, requireBuildOutput: false).Count > 0;
 
     static bool IsUnderPublishFolder(string dllPath) =>
         Path.GetDirectoryName(dllPath) is { } dir &&

@@ -134,6 +134,55 @@ public class PluginProjectResolverTests : IDisposable
         PluginProjectResolver.DescribePreFilterSkip(projectPath).Should().BeNull();
     }
 
+    [Fact]
+    public void DescribePreFilterSkip_WithNoSdkMarkerButAProjectReference_ShouldDeferToReflection()
+    {
+        // The SDK can arrive transitively through a shared base library, so the marker's absence from this
+        // csproj proves nothing. The filter must hand the project to reflection, not decide.
+        var projectPath = WriteProject("Sales", "Sales.csproj",
+            "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net462</TargetFramework></PropertyGroup>" +
+            "<ItemGroup><ProjectReference Include=\"..\\Base\\Base.csproj\" /></ItemGroup></Project>");
+
+        PluginProjectResolver.DescribePreFilterSkip(projectPath).Should().BeNull();
+    }
+
+    [Fact]
+    public void DescribePreFilterSkip_WithNoSdkMarkerButADirectoryBuildProps_ShouldDeferToReflection()
+    {
+        // Centralised PackageReferences in Directory.Build.props leave a real plugin project's own csproj
+        // marker-free.
+        File.WriteAllText(Path.Combine(_root, "Directory.Build.props"), "<Project />");
+        var projectPath = WriteProject("Sales", "Sales.csproj",
+            "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net462</TargetFramework></PropertyGroup></Project>");
+
+        PluginProjectResolver.DescribePreFilterSkip(projectPath).Should().BeNull();
+    }
+
+    [Fact]
+    public void DescribePreFilterSkip_WithNoSdkMarkerNoProjectReferenceAndNoProps_ShouldStillDrop()
+    {
+        // The filter has to stay useful: with nothing that could smuggle the SDK in, the absence of a
+        // marker IS confident, and the project is dropped without a build.
+        var projectPath = WriteProject("Docs", "Docs.csproj",
+            "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net462</TargetFramework></PropertyGroup></Project>");
+
+        Directory.EnumerateFiles(_root, "Directory.Build.props", SearchOption.AllDirectories).Should().BeEmpty();
+        PluginProjectResolver.DescribePreFilterSkip(projectPath).Should().Contain("Microsoft.Xrm.Sdk");
+    }
+
+    [Fact]
+    public void DescribePreFilterSkip_WithModernTargetFrameworkAndAProjectReference_ShouldStillDrop()
+    {
+        // The deferral covers the SDK-marker check only. <TargetFramework> is the project's own
+        // declaration — nothing a props file or a project reference adds makes net10.0 a plugin project,
+        // and this is the shape the scaffolded WebResources.csproj has.
+        var projectPath = WriteProject("WebResources", "WebResources.csproj",
+            "<Project Sdk=\"Microsoft.Build.NoTargets/3.7.134\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>" +
+            "<ItemGroup><ProjectReference Include=\"..\\Base\\Base.csproj\" /></ItemGroup></Project>");
+
+        PluginProjectResolver.DescribePreFilterSkip(projectPath).Should().Contain("net10.0");
+    }
+
     // ---- U2: generalized build-output resolution ----
 
     [Fact]
@@ -193,57 +242,64 @@ public class PluginProjectResolverTests : IDisposable
         var act = () => PluginProjectResolver.FindOutputAssemblies(candidate);
 
         act.Should().Throw<FlowlineException>()
-           .Which.Message.Should().Contain("build it first").And.Contain("Plugins");
+           .Which.Message.Should().Contain("Build it first").And.Contain("Plugins");
     }
 
+    // ---- undeterminable candidates fail the push instead of being guessed away ----
+
     [Fact]
-    public void FindOutputAssemblies_WithUnbuiltProjectAndBuildOutputNotRequired_ShouldReturnEmptyInsteadOfThrowing()
+    public void FindOutputAssemblies_WithNothingBuiltUnderNoBuild_ShouldThrowNamingTheProjectAndStandaloneMode()
     {
-        // --no-build: the solution can reference a net4x project nobody built this run, which may not be a
-        // plugin project at all. Throwing would kill the whole push before reflection could exclude it.
+        // --no-build with an empty bin/Release: reflection is the only thing that could have said whether
+        // this is a plugin project, and it never ran. Skipping would hand the orphan sweeps a project with
+        // "no local source" and delete its live registration, so the push stops instead.
         var candidate = Candidate("SomeLibrary", "SomeLibrary.csproj");
 
-        PluginProjectResolver.FindOutputAssemblies(candidate, requireBuildOutput: false).Should().BeEmpty();
+        var act = () => PluginProjectResolver.FindOutputAssemblies(candidate);
+
+        var message = act.Should().Throw<FlowlineException>()
+                         .Which.Message;
+        message.Should().Contain("SomeLibrary").And.Contain("--pluginFile");
     }
 
     [Fact]
-    public void ResolvePluginAssembly_WithUnbuiltProjectAndBuildOutputNotRequired_ShouldReturnNull()
+    public void ResolvePluginAssembly_WithNothingBuiltUnderNoBuild_ShouldThrowRatherThanReturnNull()
     {
         var candidate = Candidate("SomeLibrary", "SomeLibrary.csproj");
 
-        PluginProjectResolver.ResolvePluginAssembly(candidate, _ => { }, requireBuildOutput: false).Should().BeNull();
+        var act = () => PluginProjectResolver.ResolvePluginAssembly(candidate, _ => { });
+
+        act.Should().Throw<FlowlineException>().Which.ExitCode.Should().Be(ExitCode.NotFound);
     }
 
     [Fact]
-    public void ResolvePluginAssembly_WithOneUnbuiltAndOneBuiltProjectUnderNoBuild_ShouldResolveTheBuiltOne()
+    public void ResolvePluginAssembly_WithNoAssemblyItCanLoad_ShouldThrowNamingTheProjectAndStandaloneMode()
     {
-        // The push shape Finding 3 is about: one candidate has nothing in bin/Release, the other does.
-        // The unbuilt one is excluded; the built one still resolves, so the push proceeds.
-        var unbuilt = Candidate("SomeLibrary", "SomeLibrary.csproj");
-        var built = Candidate("Plugins", "Plugins.csproj");
-        var outputDir = CreateOutput(built, "net462", "publish");
-        var pluginsDll = BuildPluginDll(outputDir, "Plugins", "Acme.AccountPostCreatePlugin");
-        CopyXrmSdkDllNextTo(outputDir);
+        // The classic trigger: a real plugin project whose Microsoft.Xrm.Sdk.dll isn't copy-local. The
+        // IPlugin base type won't resolve, so reflection reports "no plugin types" for a project that has
+        // them. That verdict is a guess, and acting on it deletes the live assembly, steps, and Custom
+        // APIs — so it errors instead.
+        var candidate = Candidate("Plugins", "Plugins.csproj");
+        BuildPluginDll(CreateOutput(candidate, "net462"), "Plugins", "Acme.AccountPostCreatePlugin");
 
-        var resolved = new[] { unbuilt, built }
-                       .Select(c => PluginProjectResolver.ResolvePluginAssembly(c, _ => { }, requireBuildOutput: false))
-                       .Where(p => p != null)
-                       .ToList();
+        var act = () => PluginProjectResolver.ResolvePluginAssembly(candidate, _ => { });
 
-        resolved.Should().ContainSingle().Which.Should().Be(pluginsDll);
+        var thrown = act.Should().Throw<FlowlineException>().Which;
+        thrown.ExitCode.Should().Be(ExitCode.ValidationFailed);
+        thrown.Message.Should().Contain("Plugins").And.Contain("--pluginFile");
     }
 
     [Fact]
-    public void HasBuildOutput_ShouldSeparateNothingBuiltFromBuiltButNotAPluginProject()
+    public void ResolvePluginAssembly_WithOneLoadableAssemblyAmongUnloadableOnes_ShouldSkipSilentlyInsteadOfThrowing()
     {
-        // The caller's two --no-build skip messages hang off this: "nothing built" and "built, no plugin
-        // types" are different things to tell the user.
-        var unbuilt = Candidate("SomeLibrary", "SomeLibrary.csproj");
-        var dtoOnly = Candidate("Entities", "Entities.csproj");
-        BuildDependencyDll(CreateOutput(dtoOnly, "net462"), "Entities", "Acme.AccountDto");
+        // A dependency DLL that can't be reflected on its own is ordinary, not a failure — one clean load
+        // is enough to make "no plugin types here" a real verdict rather than a guess.
+        var candidate = Candidate("Entities", "Entities.csproj");
+        var outputDir = CreateOutput(candidate, "net462");
+        BuildDependencyDll(outputDir, "Entities", "Acme.AccountDto");
+        File.WriteAllText(Path.Combine(outputDir, "Native.dll"), "not a PE image");
 
-        PluginProjectResolver.HasBuildOutput(unbuilt).Should().BeFalse();
-        PluginProjectResolver.HasBuildOutput(dtoOnly).Should().BeTrue();
+        PluginProjectResolver.ResolvePluginAssembly(candidate, _ => { }).Should().BeNull();
     }
 
     // ---- U3: confirmation by reflection ----
@@ -343,6 +399,55 @@ public class PluginProjectResolverTests : IDisposable
         var act = async () => await PluginProjectResolver.DiscoverAsync(_root);
 
         await act.Should().NotThrowAsync();
+    }
+
+    // ---- the common case: an ordinary multi-project solution still pushes ----
+
+    [Fact]
+    public void ResolvePluginAssembly_AcrossAnOrdinaryMultiProjectSolution_ShouldResolveOneAndSkipTheRestSilently()
+    {
+        // The regression this whole change must not cause. One plugin project alongside WebResources, a
+        // test project, a marker-free DTO library, and a shared library that only reaches the SDK through
+        // a ProjectReference. Every non-plugin project has to fall out — pre-filtered or definitively
+        // reflected away — without a single throw, exactly as it does today.
+        WriteProject("Plugins", "Plugins.csproj", PluginProjectXml());
+        WriteProject("WebResources", "WebResources.csproj",
+            "<Project Sdk=\"Microsoft.Build.NoTargets/3.7.134\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>");
+        WriteProject("Tests", "Tests.csproj",
+            "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>");
+        WriteProject("Entities", "Entities.csproj", DtoProjectXml());
+        WriteProject("Shared", "Shared.csproj",
+            "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net462</TargetFramework></PropertyGroup>" +
+            "<ItemGroup><ProjectReference Include=\"..\\Entities\\Entities.csproj\" /></ItemGroup></Project>");
+
+        var candidates = PluginProjectResolver.EnumerateCandidates(
+        [
+            SolutionEntry("Plugins", @"Plugins\Plugins.csproj"),
+            SolutionEntry("WebResources", @"WebResources\WebResources.csproj"),
+            SolutionEntry("Tests", @"Tests\Tests.csproj"),
+            SolutionEntry("Entities", @"Entities\Entities.csproj"),
+            SolutionEntry("Shared", @"Shared\Shared.csproj"),
+        ], _root);
+
+        // Whatever survives the pre-filter, push builds — so give those two real output to reflect.
+        var pluginsOutput = Path.Combine(_root, "Plugins", "bin", "Release", "net462", "publish");
+        Directory.CreateDirectory(pluginsOutput);
+        var pluginsDll = BuildPluginDll(pluginsOutput, "Plugins", "Acme.AccountPostCreatePlugin");
+        CopyXrmSdkDllNextTo(pluginsOutput);
+
+        var sharedOutput = Path.Combine(_root, "Shared", "bin", "Release", "net462");
+        Directory.CreateDirectory(sharedOutput);
+        BuildDependencyDll(sharedOutput, "Shared", "Acme.SharedHelper");
+
+        var resolved = new List<string>();
+
+        foreach (var candidate in candidates.Where(c => PluginProjectResolver.DescribePreFilterSkip(c.ProjectPath) == null))
+        {
+            var dll = PluginProjectResolver.ResolvePluginAssembly(candidate, _ => { });
+            if (dll != null) resolved.Add(dll);
+        }
+
+        resolved.Should().ContainSingle().Which.Should().Be(pluginsDll);
     }
 
     // ---- fixtures ----

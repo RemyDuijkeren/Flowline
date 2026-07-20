@@ -472,18 +472,16 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
                 throw new FlowlineException(ExitCode.BuildFailed, $"{candidate.ProjectName} build failed — fix errors above.");
         }
 
-        // R3: no plugin-bearing assembly in the output means this simply isn't a plugin project. Not an
-        // error — but never silent either, or it reads exactly like "my plugin didn't get registered".
-        // Under --no-build an unbuilt candidate is excluded, not fatal: the solution can reference a net4x
-        // project nobody built this run, which reflection would very likely have dropped anyway. Failing
-        // the whole push over it would take the projects that DID resolve down with it.
-        var pluginsDll = PluginProjectResolver.ResolvePluginAssembly(candidate, note => Console.Verbose(note),
-            requireBuildOutput: !settings.NoBuild);
+        // R3: reflection read the output and found no plugin-bearing assembly, so this simply isn't a
+        // plugin project. Not an error — but never silent either, or it reads exactly like "my plugin
+        // didn't get registered". The case where reflection could NOT read the output is a different
+        // animal and ResolvePluginAssembly throws on it rather than returning null here: the discovered
+        // set is what the orphan sweeps treat as having local source, so guessing wrong deletes a live
+        // registration. Undeterminable fails the push; only a definite verdict skips.
+        var pluginsDll = PluginProjectResolver.ResolvePluginAssembly(candidate, note => Console.Verbose(note));
         if (pluginsDll == null)
         {
-            Console.Verbose(PluginProjectResolver.HasBuildOutput(candidate)
-                ? $"Skipped {candidate.ProjectName} — no IPlugin or CodeActivity type in its build output"
-                : $"Skipped {candidate.ProjectName} — nothing built in bin/Release to reflect (--no-build active)");
+            Console.Verbose($"Skipped {candidate.ProjectName} — no IPlugin or CodeActivity type in its build output");
             return null;
         }
 
