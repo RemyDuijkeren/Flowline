@@ -343,7 +343,7 @@ public class GitUtilsTests : IDisposable
         File.WriteAllText(Path.Combine(_root, "Package", "src", "Other", "Solution.xml"), "modified");
 
         var changes = await GitUtils.GetUncommittedChangesInPathAsync(
-            DeployCommand.GetDeploymentInputPaths(_root), _root);
+            await DeployCommand.GetDeploymentInputPathsAsync(_root), _root);
 
         changes.Should().ContainSingle().Which.Should().Be("Package/src/Other/Solution.xml");
     }
@@ -355,7 +355,7 @@ public class GitUtilsTests : IDisposable
         File.WriteAllText(Path.Combine(_root, "Plugins", "Plugins.csproj"), "modified");
 
         var changes = await GitUtils.GetUncommittedChangesInPathAsync(
-            DeployCommand.GetDeploymentInputPaths(_root), _root);
+            await DeployCommand.GetDeploymentInputPathsAsync(_root), _root);
 
         changes.Should().ContainSingle().Which.Should().Be("Plugins/Plugins.csproj");
     }
@@ -372,7 +372,7 @@ public class GitUtilsTests : IDisposable
         File.WriteAllText(Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar)), "modified");
 
         var changes = await GitUtils.GetUncommittedChangesInPathAsync(
-            DeployCommand.GetDeploymentInputPaths(_root), _root);
+            await DeployCommand.GetDeploymentInputPathsAsync(_root), _root);
 
         changes.Should().BeEmpty();
     }
@@ -381,13 +381,13 @@ public class GitUtilsTests : IDisposable
     public async Task DeploymentInputPaths_CacheKeyChangesWhenPackageChanges_ButNotWhenDocsChange()
     {
         CreateAndCommitFile("Package/src/Other/Solution.xml");
-        var initialSha = await GitUtils.GetLastCommitShaForPathAsync(DeployCommand.GetDeploymentInputPaths(_root), _root);
+        var initialSha = await GitUtils.GetLastCommitShaForPathAsync(await DeployCommand.GetDeploymentInputPathsAsync(_root), _root);
 
         CreateAndCommitFile("docs/BRAINSTORM.md");
-        var afterDocsSha = await GitUtils.GetLastCommitShaForPathAsync(DeployCommand.GetDeploymentInputPaths(_root), _root);
+        var afterDocsSha = await GitUtils.GetLastCommitShaForPathAsync(await DeployCommand.GetDeploymentInputPathsAsync(_root), _root);
 
         CreateAndCommitFile("Package/src/Other/Customizations.xml");
-        var afterPackageChangeSha = await GitUtils.GetLastCommitShaForPathAsync(DeployCommand.GetDeploymentInputPaths(_root), _root);
+        var afterPackageChangeSha = await GitUtils.GetLastCommitShaForPathAsync(await DeployCommand.GetDeploymentInputPathsAsync(_root), _root);
 
         afterDocsSha.Should().Be(initialSha); // docs-only commit must not invalidate the cache key
         afterPackageChangeSha.Should().NotBe(initialSha); // a Package/ change must invalidate it

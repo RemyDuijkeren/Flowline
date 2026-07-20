@@ -33,72 +33,87 @@ public class PluginWebResourceDriftCheckerTests : IDisposable
         File.WriteAllBytes(full, new byte[sizeBytes]);
     }
 
-    List<DriftWarning> Check(string? publisherPrefix = null) =>
-        PluginWebResourceDriftChecker.Check(_root, _pkg, publisherPrefix);
+    Task<List<DriftWarning>> Check(string? publisherPrefix = null) =>
+        PluginWebResourceDriftChecker.CheckAsync(_root, _pkg, publisherPrefix);
+
+    /// <summary>Writes a .slnx at the root referencing each given project path, as `clone` would.</summary>
+    void WriteSolution(params string[] relativeProjectPaths)
+    {
+        var projects = string.Concat(relativeProjectPaths.Select(p => $"""<Project Path="{p}" />"""));
+        File.WriteAllText(Path.Combine(_root, "Test.slnx"), $"<Solution>{projects}</Solution>");
+    }
+
+    /// <summary>A csproj the plugin pre-filter accepts, so discovery keeps it as a candidate.</summary>
+    void WritePluginProject(string relativePath) =>
+        WriteFile(relativePath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net462</TargetFramework></PropertyGroup>
+            <ItemGroup><PackageReference Include="Microsoft.CrmSdk.CoreAssemblies" Version="9.0.2" /></ItemGroup></Project>
+            """);
 
     // ── no artifacts → nothing to check ─────────────────────────────────────
 
     [Fact]
-    public void Check_NeitherDistNorPluginsRelease_ReturnsEmpty()
+    public async Task Check_NeitherDistNorPluginsRelease_ReturnsEmpty()
     {
-        Check().Should().BeEmpty();
+        (await Check()).Should().BeEmpty();
     }
 
     [Fact]
-    public void Check_EmptyDist_ReturnsEmpty()
+    public async Task Check_EmptyDist_ReturnsEmpty()
     {
         Directory.CreateDirectory(Path.Combine(_root, "WebResources", "dist"));
 
-        Check().Should().BeEmpty();
+        (await Check()).Should().BeEmpty();
     }
 
     // ── web resource checks ───────────────────────────────────────────────────
 
     [Fact]
-    public void Check_IdenticalFile_NoWarning()
+    public async Task Check_IdenticalFile_NoWarning()
     {
         WriteFile(Path.Combine("WebResources", "dist", "script.js"), "console.log('hi')");
         WriteFile(Path.Combine("Package", "src", "WebResources", "script.js"), "console.log('hi')");
 
-        Check().Should().BeEmpty();
+        (await Check()).Should().BeEmpty();
     }
 
     [Fact]
-    public void Check_ContentDiffers_ReturnsContentDiffersWarning()
+    public async Task Check_ContentDiffers_ReturnsContentDiffersWarning()
     {
         WriteFile(Path.Combine("WebResources", "dist", "script.js"), "v1");
         WriteFile(Path.Combine("Package", "src", "WebResources", "script.js"), "v2");
 
-        Check().Should().ContainSingle(w =>
+        (await Check()).Should().ContainSingle(w =>
             w.Category == DriftCategory.ContentDiffers &&
             w.RelativePath.Contains("script.js"));
     }
 
     [Fact]
-    public void Check_FileInSrcButNotDist_ReturnsNewInDataverseWarning()
+    public async Task Check_FileInSrcButNotDist_ReturnsNewInDataverseWarning()
     {
         WriteFile(Path.Combine("WebResources", "dist", "existing.js"), "x");
         WriteFile(Path.Combine("Package", "src", "WebResources", "existing.js"), "x");
         WriteFile(Path.Combine("Package", "src", "WebResources", "newfile.js"), "new");
 
-        Check().Should().ContainSingle(w =>
+        (await Check()).Should().ContainSingle(w =>
             w.Category == DriftCategory.NewInDataverse &&
             w.RelativePath.Contains("newfile.js"));
     }
 
     [Fact]
-    public void Check_FileInDistButNotSrc_ReturnsOnlyLocalWarning()
+    public async Task Check_FileInDistButNotSrc_ReturnsOnlyLocalWarning()
     {
         WriteFile(Path.Combine("WebResources", "dist", "local.js"), "local");
         // no Package/src counterpart
 
-        Check().Should().ContainSingle(w =>
+        (await Check()).Should().ContainSingle(w =>
             w.Category == DriftCategory.OnlyLocal &&
             w.RelativePath.Contains("local.js"));
     }
 
     [Fact]
-    public void Check_MultipleFiles_CorrectCategoryPerFile()
+    public async Task Check_MultipleFiles_CorrectCategoryPerFile()
     {
         WriteFile(Path.Combine("WebResources", "dist", "same.js"), "same");
         WriteFile(Path.Combine("WebResources", "dist", "differ.js"), "old");
@@ -108,7 +123,7 @@ public class PluginWebResourceDriftCheckerTests : IDisposable
         WriteFile(Path.Combine("Package", "src", "WebResources", "differ.js"), "new");
         WriteFile(Path.Combine("Package", "src", "WebResources", "dataverseonly.js"), "dv");
 
-        var warnings = Check();
+        var warnings = await Check();
 
         warnings.Should().Contain(w => w.Category == DriftCategory.ContentDiffers && w.RelativePath.Contains("differ.js"));
         warnings.Should().Contain(w => w.Category == DriftCategory.OnlyLocal && w.RelativePath.Contains("localonly.js"));
@@ -117,12 +132,12 @@ public class PluginWebResourceDriftCheckerTests : IDisposable
     }
 
     [Fact]
-    public void Check_DistPopulated_NoSrcWebFolder_AllOnlyLocal()
+    public async Task Check_DistPopulated_NoSrcWebFolder_AllOnlyLocal()
     {
         WriteFile(Path.Combine("WebResources", "dist", "script.js"), "content");
         // no Package/src/WebResources folder
 
-        Check().Should().ContainSingle(w =>
+        (await Check()).Should().ContainSingle(w =>
             w.Category == DriftCategory.OnlyLocal &&
             w.RelativePath.Contains("script.js"));
     }
@@ -130,7 +145,7 @@ public class PluginWebResourceDriftCheckerTests : IDisposable
     // ── plugin checks ─────────────────────────────────────────────────────────
 
     [Fact]
-    public void Check_PluginWithinThreshold_NoWarning()
+    public async Task Check_PluginWithinThreshold_NoWarning()
     {
         var srcSize = 50_000;
         var releaseSize = 50_000 + 5_000; // 5 KB diff — within 10 KB threshold
@@ -138,11 +153,11 @@ public class PluginWebResourceDriftCheckerTests : IDisposable
         WriteBinaryFile(Path.Combine("Package", "src", "PluginAssemblies", "MyPlugin.dll"), srcSize);
         WriteBinaryFile(Path.Combine("Plugins", "bin", "Release", "MyPlugin.dll"), releaseSize);
 
-        Check().Should().BeEmpty();
+        (await Check()).Should().BeEmpty();
     }
 
     [Fact]
-    public void Check_PluginExceedsThreshold_ReturnsPluginSizeMismatch()
+    public async Task Check_PluginExceedsThreshold_ReturnsPluginSizeMismatch()
     {
         var srcSize = 50_000;
         var releaseSize = 50_000 + 15_000; // 15 KB diff — exceeds 10 KB threshold
@@ -150,26 +165,110 @@ public class PluginWebResourceDriftCheckerTests : IDisposable
         WriteBinaryFile(Path.Combine("Package", "src", "PluginAssemblies", "MyPlugin.dll"), srcSize);
         WriteBinaryFile(Path.Combine("Plugins", "bin", "Release", "MyPlugin.dll"), releaseSize);
 
-        Check().Should().ContainSingle(w =>
+        (await Check()).Should().ContainSingle(w =>
             w.Category == DriftCategory.PluginSizeMismatch &&
             w.RelativePath.Equals("MyPlugin.dll", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
-    public void Check_ReleaseDllNotInSrcPluginAssemblies_NoWarning()
+    public async Task Check_ReleaseDllNotInSrcPluginAssemblies_NoWarning()
     {
         WriteBinaryFile(Path.Combine("Plugins", "bin", "Release", "Unrelated.dll"), 100_000);
         // no matching name in Package/src/PluginAssemblies
 
-        Check().Should().BeEmpty();
+        (await Check()).Should().BeEmpty();
     }
 
     [Fact]
-    public void Check_SrcPluginAssembliesExists_NoReleaseFolder_NoWarning()
+    public async Task Check_SrcPluginAssembliesExists_NoReleaseFolder_NoWarning()
     {
         WriteBinaryFile(Path.Combine("Package", "src", "PluginAssemblies", "MyPlugin.dll"), 50_000);
         // no Plugins/bin/Release folder
 
-        Check().Should().BeEmpty();
+        (await Check()).Should().BeEmpty();
+    }
+
+    // ── U5: plugin output located through the solution file ───────────────────
+    // Before discovery these checks read a literal Plugins/bin/Release. A project under any other name
+    // went unchecked with no warning at all, which is the silent half of the failure.
+
+    [Fact]
+    public async Task Check_PluginProjectNotNamedPlugins_StillDriftChecked()
+    {
+        WritePluginProject(Path.Combine("Sales", "AV.Sales.Plugins.csproj"));
+        WriteSolution(@"Sales\AV.Sales.Plugins.csproj");
+
+        WriteBinaryFile(Path.Combine("Package", "src", "PluginAssemblies", "AV.Sales.Plugins.dll"), 50_000);
+        WriteBinaryFile(Path.Combine("Sales", "bin", "Release", "AV.Sales.Plugins.dll"), 50_000 + 15_000);
+
+        (await Check()).Should().ContainSingle(w =>
+            w.Category == DriftCategory.PluginSizeMismatch &&
+            w.RelativePath.Equals("AV.Sales.Plugins.dll", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Check_TwoPluginProjects_BothAssembliesDriftChecked()
+    {
+        WritePluginProject(Path.Combine("Sales", "Sales.Plugins.csproj"));
+        WritePluginProject(Path.Combine("Support", "Support.Plugins.csproj"));
+        WriteSolution(@"Sales\Sales.Plugins.csproj", @"Support\Support.Plugins.csproj");
+
+        WriteBinaryFile(Path.Combine("Package", "src", "PluginAssemblies", "Sales.Plugins.dll"), 50_000);
+        WriteBinaryFile(Path.Combine("Sales", "bin", "Release", "Sales.Plugins.dll"), 50_000 + 15_000);
+        WriteBinaryFile(Path.Combine("Package", "src", "PluginAssemblies", "Support.Plugins.dll"), 50_000);
+        WriteBinaryFile(Path.Combine("Support", "bin", "Release", "Support.Plugins.dll"), 50_000 + 15_000);
+
+        var warnings = await Check();
+
+        // The second project is the assertion that matters: the old code stopped after one folder.
+        warnings.Should().HaveCount(2);
+        warnings.Should().Contain(w => w.Category == DriftCategory.PluginSizeMismatch && w.RelativePath == "Sales.Plugins.dll");
+        warnings.Should().Contain(w => w.Category == DriftCategory.PluginSizeMismatch && w.RelativePath == "Support.Plugins.dll");
+    }
+
+    [Fact]
+    public async Task Check_TwoPluginProjects_AssemblyBuiltByEitherIsNotOrphan()
+    {
+        WritePluginProject(Path.Combine("Sales", "Sales.Plugins.csproj"));
+        WritePluginProject(Path.Combine("Support", "Support.Plugins.csproj"));
+        WriteSolution(@"Sales\Sales.Plugins.csproj", @"Support\Support.Plugins.csproj");
+
+        WriteBinaryFile(Path.Combine("Sales", "bin", "Release", "Sales.Plugins.dll"), 1_000);
+        WriteBinaryFile(Path.Combine("Support", "bin", "Release", "Support.Plugins.dll"), 1_000);
+
+        WriteBinaryFile(Path.Combine("Package", "src", "PluginAssemblies", "Sales.Plugins.dll"), 1_000);
+        WriteBinaryFile(Path.Combine("Package", "src", "PluginAssemblies", "Support.Plugins.dll"), 1_000);
+        WriteBinaryFile(Path.Combine("Package", "src", "PluginAssemblies", "Retired.Plugins.dll"), 1_000);
+
+        (await Check()).Should().ContainSingle(w =>
+            w.Category == DriftCategory.OrphanAssembly && w.RelativePath == "Retired.Plugins.dll");
+    }
+
+    [Fact]
+    public async Task Check_StalePluginsDllAfterProjectRename_ReportedAsOrphan()
+    {
+        WritePluginProject(Path.Combine("Sales", "AV.Sales.Plugins.csproj"));
+        WriteSolution(@"Sales\AV.Sales.Plugins.csproj");
+
+        WriteBinaryFile(Path.Combine("Sales", "bin", "Release", "AV.Sales.Plugins.dll"), 1_000);
+        WriteBinaryFile(Path.Combine("Package", "src", "PluginAssemblies", "AV.Sales.Plugins.dll"), 1_000);
+        // Left behind by the rename — no project builds it any more.
+        WriteBinaryFile(Path.Combine("Package", "src", "PluginAssemblies", "Plugins.dll"), 1_000);
+
+        (await Check()).Should().ContainSingle(w =>
+            w.Category == DriftCategory.OrphanAssembly && w.RelativePath == "Plugins.dll");
+    }
+
+    [Fact]
+    public async Task Check_NoSolutionFile_FallsBackToConventionalPluginsFolder()
+    {
+        // A partially-set-up repo: no solution file, but a built conventional Plugins project.
+        WriteBinaryFile(Path.Combine("Package", "src", "PluginAssemblies", "MyPlugin.dll"), 50_000);
+        WriteBinaryFile(Path.Combine("Plugins", "bin", "Release", "MyPlugin.dll"), 50_000 + 15_000);
+
+        var act = async () => await Check();
+
+        await act.Should().NotThrowAsync();
+        (await Check()).Should().ContainSingle(w => w.Category == DriftCategory.PluginSizeMismatch);
     }
 }

@@ -244,7 +244,64 @@ public class PluginProjectResolverTests : IDisposable
         failure.Should().NotBeNullOrWhiteSpace();
     }
 
+    // ---- U5: the shared discovery entry point non-push consumers use ----
+
+    [Fact]
+    public async Task DiscoverAsync_WithSolutionFile_ShouldReturnPreFilteredCandidates()
+    {
+        WriteProject("Sales", "AV.Sales.Plugins.csproj", PluginProjectXml());
+        WriteProject("Entities", "Entities.csproj", DtoProjectXml());
+        WriteSolution(@"Sales\AV.Sales.Plugins.csproj", @"Entities\Entities.csproj");
+
+        var candidates = await PluginProjectResolver.DiscoverAsync(_root);
+
+        candidates.Select(c => c.ProjectName).Should().BeEquivalentTo(["AV.Sales.Plugins"]);
+    }
+
+    [Fact]
+    public async Task DiscoverAsync_WithTwoPluginProjects_ShouldReturnBoth()
+    {
+        WriteProject("Sales", "Sales.Plugins.csproj", PluginProjectXml());
+        WriteProject("Support", "Support.Plugins.csproj", PluginProjectXml());
+        WriteSolution(@"Sales\Sales.Plugins.csproj", @"Support\Support.Plugins.csproj");
+
+        var candidates = await PluginProjectResolver.DiscoverAsync(_root);
+
+        candidates.Should().HaveCount(2);
+        candidates.Select(c => c.BuildOutputRoot).Should().BeEquivalentTo(
+        [
+            Path.Combine(_root, "Sales", "bin", "Release"),
+            Path.Combine(_root, "Support", "bin", "Release")
+        ]);
+    }
+
+    [Fact]
+    public async Task DiscoverAsync_WithNoSolutionFile_ShouldFallBackToTheConventionalProject()
+    {
+        var candidates = await PluginProjectResolver.DiscoverAsync(_root);
+
+        candidates.Should().ContainSingle();
+        candidates[0].ProjectName.Should().Be("Plugins");
+        candidates[0].ProjectPath.Should().Be(Path.Combine(_root, "Plugins", "Plugins.csproj"));
+        candidates[0].BuildOutputRoot.Should().Be(Path.Combine(_root, "Plugins", "bin", "Release"));
+    }
+
+    [Fact]
+    public async Task DiscoverAsync_WithNoSolutionFileAndNoPluginsFolder_ShouldNotThrow()
+    {
+        // The partially-set-up repo the drift check has to survive.
+        var act = async () => await PluginProjectResolver.DiscoverAsync(_root);
+
+        await act.Should().NotThrowAsync();
+    }
+
     // ---- fixtures ----
+
+    void WriteSolution(params string[] relativeProjectPaths)
+    {
+        var projects = string.Concat(relativeProjectPaths.Select(p => $"""<Project Path="{p}" />"""));
+        File.WriteAllText(Path.Combine(_root, "Test.slnx"), $"<Solution>{projects}</Solution>");
+    }
 
     static MsBuildSolutionProject SolutionEntry(string name, string path) =>
         new(path.Replace('\\', Path.DirectorySeparatorChar), name, Path.GetExtension(path).ToLowerInvariant());
@@ -326,6 +383,36 @@ public class PluginProjectResolverTests : IDisposable
         ab.Save(path);
         return path;
     }
+    [Fact]
+    public void EnumerateCandidates_MissingProjectAndNoReporter_Throws()
+    {
+        // push is about to build these — a solution file that lies should stop the run.
+        var projects = new[] { new MsBuildSolutionProject(Path.Combine("Gone", "Gone.csproj"), "Gone", ".csproj") };
+
+        var act = () => PluginProjectResolver.EnumerateCandidates(projects, _root);
+
+        act.Should().Throw<FlowlineException>().Which.ExitCode.Should().Be(ExitCode.NotFound);
+    }
+
+    [Fact]
+    public void EnumerateCandidates_MissingProjectWithReporter_SkipsAndReportsInsteadOfThrowing()
+    {
+        // deploy packs from the snapshot and never builds a plugin project, so a stale solution entry
+        // for an unrelated project must not block it.
+        var present = WriteProject("Real", "Real.csproj", PluginProjectXml());
+        var projects = new[]
+        {
+            new MsBuildSolutionProject(Path.Combine("Gone", "Gone.csproj"), "Gone", ".csproj"),
+            new MsBuildSolutionProject(Path.Combine("Real", "Real.csproj"), "Real", ".csproj"),
+        };
+        var reported = new List<string>();
+
+        var candidates = PluginProjectResolver.EnumerateCandidates(projects, _root, reported.Add);
+
+        candidates.Should().ContainSingle().Which.ProjectPath.Should().Be(present);
+        reported.Should().ContainSingle().Which.Should().Contain("Gone");
+    }
+
 
     // An IPlugin-referencing fixture assembly only reflects when Microsoft.Xrm.Sdk.dll sits where the
     // resolver looks — copy-local next to the build output, exactly as a real plugin project's is.

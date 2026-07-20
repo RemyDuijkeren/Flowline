@@ -175,7 +175,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             modelNamespace = projectSln.Generate?.Namespace ?? string.Empty;
             if (string.IsNullOrEmpty(modelNamespace))
             {
-                modelNamespace = NamespaceDeriver.Derive(slnFolder, solutionName);
+                modelNamespace = await NamespaceDeriver.DeriveAsync(slnFolder, solutionName, cancellationToken);
                 namespaceWasDerived = true;
                 Console.Verbose($"Derived namespace: {modelNamespace}");
             }

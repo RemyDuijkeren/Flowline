@@ -124,7 +124,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             return (int)ExitCode.BuildFailed;
 
         // Check for drift between local solution (Plugins/WebResources) and Dataverse (/src)
-        var driftWarnings = PluginWebResourceDriftChecker.Check(slnFolder, PackageFolder(slnFolder), slnInfo.PublisherPrefix, cancellationToken);
+        var driftWarnings = await PluginWebResourceDriftChecker.CheckAsync(slnFolder, PackageFolder(slnFolder), slnInfo.PublisherPrefix, cancellationToken);
         Logger.LogInformation("Drift: {DriftCount} warnings", driftWarnings.Count);
         if (driftWarnings.Count == 0)
         {

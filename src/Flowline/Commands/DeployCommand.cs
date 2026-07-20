@@ -8,6 +8,7 @@ using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Models;
+using Flowline.Core.Plugins;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Services;
@@ -67,8 +68,12 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         // --path supplies an artifact that wasn't necessarily packed from the current local tree, so neither
         // check is meaningful there: git-clean and drift both assume packagePath is derived from Package/src.
+        IReadOnlyList<string> deploymentInputPaths = [];
         if (!usingExplicitArtifact)
-            await ValidateGitCleanAsync(slnFolder, cancellationToken);
+        {
+            deploymentInputPaths = await GetDeploymentInputPathsAsync(slnFolder, cancellationToken);
+            await ValidateGitCleanAsync(deploymentInputPaths, cancellationToken);
+        }
 
         var (targetEnv, existingSolutionInTarget, resolvedProfile) = await ValidateTargetAsync(targetUrl, sln, settings, cancellationToken);
 
@@ -88,7 +93,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         }
         else
         {
-            currentCommitSha = await GitUtils.GetLastCommitShaForPathAsync(GetDeploymentInputPaths(slnFolder), RootFolder, _capture, cancellationToken);
+            currentCommitSha = await GitUtils.GetLastCommitShaForPathAsync(deploymentInputPaths, RootFolder, _capture, cancellationToken);
             cacheEntry = ReadCacheEntryIfExists(CacheManifestPath(candidatePackagePath));
             cacheOutcome = ResolveCacheOutcome(cacheEntry, currentCommitSha, sln.IncludeManaged, settings.NoCache, File.Exists(candidatePackagePath));
 
@@ -117,7 +122,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             }
         }
 
-        ValidateLocalState(slnFolder, settings, cancellationToken, checkDrift: !usingExplicitArtifact);
+        await ValidateLocalStateAsync(slnFolder, settings, cancellationToken, checkDrift: !usingExplicitArtifact);
 
         // Managed import only removes components no longer in the solution when Dataverse runs it as an
         // Upgrade (pac's --stage-and-upgrade) — plain import ("Update" semantics) never deletes anything,
@@ -343,27 +348,41 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         && Version.TryParse(gateVersion, out var localVer)
         && predVer == localVer;
 
-    private async Task ValidateGitCleanAsync(string slnFolder, CancellationToken ct)
+    private async Task ValidateGitCleanAsync(IReadOnlyList<string> deploymentInputPaths, CancellationToken ct)
     {
-        var changes = await GitUtils.GetUncommittedChangesInPathAsync(GetDeploymentInputPaths(slnFolder), RootFolder, _capture, ct);
+        var changes = await GitUtils.GetUncommittedChangesInPathAsync(deploymentInputPaths, RootFolder, _capture, ct);
         if (changes.Count == 0) return;
 
+        // Names the files rather than the folders it looked in — the scope is discovered now, so restating
+        // it would mean restating a list the user can't predict from the message.
+        var shown = string.Join(", ", changes.Take(3));
+        var more = changes.Count > 3 ? $" (+{changes.Count - 3} more)" : "";
+
         throw new FlowlineException(ExitCode.DirtyWorkingDirectory,
-            $"Uncommitted changes in {PackageName}/, {PluginsName}/{PluginsName}.csproj, or {WebResourcesName}/{WebResourcesName}.csproj — commit or stash changes first before deploying.");
+            $"Uncommitted changes in {shown}{more} — commit or stash first, then deploy.");
     }
 
-    // R15: the SAME path list scopes both this clean-check and the artifact-cache commit-sha lookup
-    // (see the currentCommitSha call site above), so the two can never diverge — deliberately narrow to
-    // what actually affects the packed artifact (Package/, plus the known Plugins/WebResources project
-    // files), not real .sln-membership discovery (a later, separate plan's job per KTD12).
-    internal static IReadOnlyList<string> GetDeploymentInputPaths(string slnFolder) =>
-    [
-        PackageFolder(slnFolder),
-        Path.Combine(slnFolder, PluginsName, $"{PluginsName}.csproj"),
-        Path.Combine(slnFolder, WebResourcesName, $"{WebResourcesName}.csproj")
-    ];
+    // R15: the SAME path list scopes both the clean-check and the artifact-cache commit-sha lookup, so the
+    // two can never diverge — resolved once per run in ExecuteFlowlineAsync and handed to both, which also
+    // keeps the solution file read to one per deploy.
+    //
+    // Deliberately narrow to what actually affects the packed artifact: Package/, every plugin project the
+    // solution file references (KTD12 — this is the .sln-membership discovery the fixed Plugins/ path
+    // deferred to), and the WebResources project file. The plugin pre-filter is what keeps this narrow —
+    // an unrelated csproj in the solution stays out of the cache key, so it can't invalidate a deploy.
+    internal static async Task<IReadOnlyList<string>> GetDeploymentInputPathsAsync(string slnFolder, CancellationToken ct = default)
+    {
+        var pluginProjects = await PluginProjectResolver.DiscoverAsync(slnFolder, SkipMissingProject, ct).ConfigureAwait(false);
 
-    private void ValidateLocalState(string slnFolder, Settings settings, CancellationToken ct, bool checkDrift = true)
+        return
+        [
+            PackageFolder(slnFolder),
+            ..pluginProjects.Select(c => c.ProjectPath),
+            Path.Combine(slnFolder, WebResourcesName, $"{WebResourcesName}.csproj")
+        ];
+    }
+
+    private async Task ValidateLocalStateAsync(string slnFolder, Settings settings, CancellationToken ct, bool checkDrift = true)
     {
         var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
         if (!File.Exists(cdsprojPath))
@@ -372,7 +391,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         if (!checkDrift) return;
 
-        var drift = PluginWebResourceDriftChecker.Check(slnFolder, PackageFolder(slnFolder), cancellationToken: ct)
+        var drift = (await PluginWebResourceDriftChecker.CheckAsync(slnFolder, PackageFolder(slnFolder), cancellationToken: ct))
             .Where(w => w.Category is DriftCategory.OnlyLocal or DriftCategory.PluginSizeMismatch)
             .ToList();
 
@@ -729,4 +748,12 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             return ParseSolutionManifest(doc);
         }
     }
+
+    /// <summary>Ignore a solution entry whose project is gone, rather than failing this path over it.</summary>
+    /// <remarks>
+    /// Scoping and advisory work only — none of it builds the project. `push` keeps the throw, so a broken
+    /// solution file is still reported loudly by the command that actually cares.
+    /// </remarks>
+    static void SkipMissingProject(string _) { }
+
 }

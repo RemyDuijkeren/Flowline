@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using Flowline.Core.Console;
 using Flowline.Core.Models;
+using Flowline.Core.Services;
 
 namespace Flowline.Core.Plugins;
 
@@ -40,9 +41,24 @@ public static class PluginProjectResolver
     /// project" list, so a stray or experimental csproj is skipped by construction. Ordering is by path so
     /// the candidate list doesn't depend on how the solution file happens to be written.
     /// </remarks>
+    /// <param name="reportMissingProject">
+    /// How to handle a project the solution file references but that isn't on disk — the state a deleted
+    /// project folder leaves behind when the solution entry survives it.
+    /// <para>
+    /// <c>null</c> (the default) throws. That is right for <c>push</c>, which is about to build and
+    /// register these projects: a solution file that lies about its contents should stop the run.
+    /// </para>
+    /// <para>
+    /// Supply a callback to skip the project and report it instead. That is right for advisory and
+    /// packaging paths — <c>deploy</c> packs from the snapshot and never builds a plugin project, so
+    /// failing a production deploy over a stale entry for an unrelated project is disproportionate, and
+    /// a drift warning that throws is worse than one that reports on what it can see.
+    /// </para>
+    /// </param>
     public static IReadOnlyList<PluginProjectCandidate> EnumerateCandidates(
         IReadOnlyList<MsBuildSolutionProject> projects,
-        string solutionFolder)
+        string solutionFolder,
+        Action<string>? reportMissingProject = null)
     {
         var candidates = new List<PluginProjectCandidate>();
 
@@ -51,9 +67,16 @@ public static class PluginProjectResolver
             var projectPath = Path.GetFullPath(Path.Combine(solutionFolder, project.Path));
 
             if (!File.Exists(projectPath))
-                throw new FlowlineException(ExitCode.NotFound,
-                    $"The solution file references '{project.Name}' at {ConsolePath.FormatRelativePath(projectPath)}, " +
-                    "but it isn't there. Restore the project, or remove it from the solution file.");
+            {
+                var message = $"The solution file references '{project.Name}' at {ConsolePath.FormatRelativePath(projectPath)}, " +
+                              "but it isn't there. Restore the project, or remove it from the solution file.";
+
+                if (reportMissingProject == null)
+                    throw new FlowlineException(ExitCode.NotFound, message);
+
+                reportMissingProject(message);
+                continue;
+            }
 
             candidates.Add(new PluginProjectCandidate(
                 projectPath,
@@ -63,6 +86,58 @@ public static class PluginProjectResolver
 
         return candidates.OrderBy(c => c.ProjectPath, StringComparer.OrdinalIgnoreCase).ToList();
     }
+
+    /// <summary>The plugin projects of a Flowline project folder, for consumers that only need the list.</summary>
+    /// <param name="slnFolder">The Flowline project root — the folder holding the solution file.</param>
+    /// <returns>
+    /// Solution-referenced projects that survive <see cref="DescribePreFilterSkip"/>, or the single
+    /// conventional <c>Plugins/</c> candidate when the folder holds no solution file.
+    /// </returns>
+    /// <remarks>
+    /// One entry point for every consumer that needs "which projects are the plugin projects" without
+    /// running a build — the drift check, the deploy input-path scope, and namespace derivation. Push does
+    /// not use it: push reports each pre-filter drop under <c>--verbose</c> and must fail loudly when the
+    /// solution file is missing, so it drives <see cref="EnumerateCandidates"/> itself.
+    ///
+    /// The no-solution-file fallback is what keeps a partially-set-up repo working. Those consumers all run
+    /// on paths that must survive a folder Flowline has not finished scaffolding, and a drift check that
+    /// throws is worse than one that checks the conventional folder. The fallback candidate is returned
+    /// unbuilt and unverified — callers already guard on the paths existing, which is exactly the behaviour
+    /// they had before discovery landed.
+    ///
+    /// A solution file referencing a project that isn't on disk — a deleted project folder whose solution
+    /// entry outlived it — is reported and skipped here rather than thrown, because none of these consumers
+    /// is about to build that project. Push, which is, keeps the throw. Blocking a production deploy over a
+    /// stale entry for a project the deploy never touches is the wrong trade; push failing on it is the
+    /// right one.
+    /// </remarks>
+    public static async Task<IReadOnlyList<PluginProjectCandidate>> DiscoverAsync(
+        string slnFolder,
+        Action<string>? reportMissingProject = null,
+        CancellationToken cancellationToken = default)
+    {
+        var reader = new MsBuildSolutionReader();
+        var solutionFile = reader.FindSolutionFile(slnFolder);
+
+        if (solutionFile == null)
+            return [ConventionalCandidate(slnFolder)];
+
+        var projects = await reader.ReadProjectsAsync(solutionFile, cancellationToken).ConfigureAwait(false);
+
+        return EnumerateCandidates(projects, slnFolder, reportMissingProject ?? (_ => { }))
+               .Where(c => DescribePreFilterSkip(c.ProjectPath) == null)
+               .ToList();
+    }
+
+    /// <summary>The pre-discovery layout: a project named <c>Plugins</c> in a folder named <c>Plugins</c>.</summary>
+    /// <remarks>
+    /// The only place in the codebase allowed to compose a plugin path from a fixed project name, and only
+    /// as the no-solution-file fallback. <c>PluginPathConventionTests</c> enforces that.
+    /// </remarks>
+    internal static PluginProjectCandidate ConventionalCandidate(string slnFolder) =>
+        new(Path.Combine(slnFolder, "Plugins", "Plugins.csproj"),
+            "Plugins",
+            Path.Combine(slnFolder, "Plugins", "bin", "Release"));
 
     /// <summary>Cheap pre-filter (KTD4): why this candidate can't be a plugin project, or <c>null</c> if it might be.</summary>
     /// <remarks>

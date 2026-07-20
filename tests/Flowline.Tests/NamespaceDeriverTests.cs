@@ -20,81 +20,81 @@ public class NamespaceDeriverTests : IDisposable
     }
 
     [Fact]
-    public void Derive_NoCsproj_ReturnsSolutionNameModels()
+    public async Task Derive_NoCsproj_ReturnsSolutionNameModels()
     {
-        var result = NamespaceDeriver.Derive(_tempDir, "MyApp");
+        var result = await NamespaceDeriver.DeriveAsync(_tempDir, "MyApp");
 
         result.Should().Be("MyApp.Models");
     }
 
     [Fact]
-    public void Derive_RootNamespace_ReturnsRootNamespaceDotModels()
+    public async Task Derive_RootNamespace_ReturnsRootNamespaceDotModels()
     {
         CreateCsproj("<Project><PropertyGroup><RootNamespace>Contoso.Plugins</RootNamespace></PropertyGroup></Project>");
 
-        var result = NamespaceDeriver.Derive(_tempDir, "MyApp");
+        var result = await NamespaceDeriver.DeriveAsync(_tempDir, "MyApp");
 
         result.Should().Be("Contoso.Plugins.Models");
     }
 
     [Fact]
-    public void Derive_PackageIdNoRootNamespace_ReturnsPackageIdDotModels()
+    public async Task Derive_PackageIdNoRootNamespace_ReturnsPackageIdDotModels()
     {
         CreateCsproj("<Project><PropertyGroup><PackageId>Contoso.Plugins</PackageId></PropertyGroup></Project>");
 
-        var result = NamespaceDeriver.Derive(_tempDir, "MyApp");
+        var result = await NamespaceDeriver.DeriveAsync(_tempDir, "MyApp");
 
         result.Should().Be("Contoso.Plugins.Models");
     }
 
     [Fact]
-    public void Derive_EmptyRootNamespace_FallsBackToPackageId()
+    public async Task Derive_EmptyRootNamespace_FallsBackToPackageId()
     {
         CreateCsproj("<Project><PropertyGroup><RootNamespace></RootNamespace><PackageId>Contoso.Plugins</PackageId></PropertyGroup></Project>");
 
-        var result = NamespaceDeriver.Derive(_tempDir, "MyApp");
+        var result = await NamespaceDeriver.DeriveAsync(_tempDir, "MyApp");
 
         result.Should().Be("Contoso.Plugins.Models");
     }
 
     [Fact]
-    public void Derive_NeitherRootNamespaceNorPackageId_ReturnsFilenameModels()
+    public async Task Derive_NeitherRootNamespaceNorPackageId_ReturnsFilenameModels()
     {
         CreateCsproj("<Project><PropertyGroup></PropertyGroup></Project>");
 
-        var result = NamespaceDeriver.Derive(_tempDir, "MyApp");
+        var result = await NamespaceDeriver.DeriveAsync(_tempDir, "MyApp");
 
         result.Should().Be("Plugins.Models");
     }
 
     [Fact]
-    public void Derive_RootNamespaceTakesPrecedenceOverPackageId()
+    public async Task Derive_RootNamespaceTakesPrecedenceOverPackageId()
     {
         CreateCsproj("<Project><PropertyGroup><RootNamespace>Root.NS</RootNamespace><PackageId>Pkg.Id</PackageId></PropertyGroup></Project>");
 
-        var result = NamespaceDeriver.Derive(_tempDir, "MyApp");
+        var result = await NamespaceDeriver.DeriveAsync(_tempDir, "MyApp");
 
         result.Should().Be("Root.NS.Models");
     }
 
     [Fact]
-    public void Derive_WhitespaceOnlyRootNamespace_FallsBackToPackageId()
+    public async Task Derive_WhitespaceOnlyRootNamespace_FallsBackToPackageId()
     {
         CreateCsproj("<Project><PropertyGroup><RootNamespace>   </RootNamespace><PackageId>Contoso.Plugins</PackageId></PropertyGroup></Project>");
 
-        var result = NamespaceDeriver.Derive(_tempDir, "MyApp");
+        var result = await NamespaceDeriver.DeriveAsync(_tempDir, "MyApp");
 
         result.Should().Be("Contoso.Plugins.Models");
     }
 
     [Fact]
-    public void Derive_InvalidXmlCsproj_ReturnsSolutionNameModels()
+    public async Task Derive_InvalidXmlCsproj_ReturnsSolutionNameModels()
     {
         var pluginsDir = Path.Combine(_tempDir, "Plugins");
         Directory.CreateDirectory(pluginsDir);
         File.WriteAllText(Path.Combine(pluginsDir, "Plugins.csproj"), "not xml <<<");
 
-        var result = NamespaceDeriver.Derive(_tempDir, "MyApp");
+        var result = await NamespaceDeriver.DeriveAsync(_tempDir, "MyApp");
 
         result.Should().Be("MyApp.Models");
     }

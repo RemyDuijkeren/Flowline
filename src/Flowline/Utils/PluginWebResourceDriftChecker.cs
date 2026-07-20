@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Flowline.Core.Plugins;
 
 namespace Flowline.Utils;
 
@@ -10,12 +11,26 @@ public static class PluginWebResourceDriftChecker
 {
     private const long PluginSizeThresholdBytes = 10 * 1024; // 10 KB
 
-    public static List<DriftWarning> Check(string slnFolder, string packageFolder, string? publisherPrefix = null, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Compares local build output against the unpacked solution under <paramref name="packageFolder"/>.
+    /// </summary>
+    /// <remarks>
+    /// Async only because plugin build output is located through the solution file now, not a fixed
+    /// <c>Plugins/bin/Release</c> — every plugin project the solution references gets checked, whatever it
+    /// is named. With no solution file, <see cref="PluginProjectResolver.DiscoverAsync"/> hands back the
+    /// conventional folder, so a partially-set-up repo drifts exactly as it did before.
+    /// </remarks>
+    public static async Task<List<DriftWarning>> CheckAsync(string slnFolder, string packageFolder, string? publisherPrefix = null, CancellationToken cancellationToken = default)
     {
+        var releaseFolders = (await PluginProjectResolver.DiscoverAsync(slnFolder, SkipMissingProject, cancellationToken).ConfigureAwait(false))
+                             .Select(c => c.BuildOutputRoot)
+                             .Where(Directory.Exists)
+                             .ToList();
+
         var warnings = new List<DriftWarning>();
         warnings.AddRange(CheckWebResources(slnFolder, packageFolder, publisherPrefix, cancellationToken));
-        warnings.AddRange(CheckPlugins(slnFolder, packageFolder));
-        warnings.AddRange(CheckOrphanAssemblies(slnFolder, packageFolder));
+        warnings.AddRange(CheckPlugins(releaseFolders, packageFolder));
+        warnings.AddRange(CheckOrphanAssemblies(releaseFolders, packageFolder));
         return warnings;
     }
 
@@ -66,18 +81,17 @@ public static class PluginWebResourceDriftChecker
         return result;
     }
 
-    static IEnumerable<DriftWarning> CheckPlugins(string slnFolder, string packageFolder)
+    static IEnumerable<DriftWarning> CheckPlugins(IReadOnlyList<string> releaseFolders, string packageFolder)
     {
-        var releaseFolder = Path.Combine(slnFolder, "Plugins", "bin", "Release");
         var pluginAssembliesFolder = Path.Combine(packageFolder, "src", "PluginAssemblies");
 
-        if (!Directory.Exists(releaseFolder) || !Directory.Exists(pluginAssembliesFolder))
+        if (releaseFolders.Count == 0 || !Directory.Exists(pluginAssembliesFolder))
             yield break;
 
         var srcDlls = Directory.EnumerateFiles(pluginAssembliesFolder, "*.dll", SearchOption.AllDirectories)
             .ToDictionary(f => Path.GetFileName(f), f => new FileInfo(f).Length, StringComparer.OrdinalIgnoreCase);
 
-        foreach (var releaseDll in Directory.EnumerateFiles(releaseFolder, "*.dll", SearchOption.AllDirectories))
+        foreach (var releaseDll in EnumerateReleaseDlls(releaseFolders))
         {
             var name = Path.GetFileName(releaseDll);
             if (!srcDlls.TryGetValue(name, out var srcSize))
@@ -89,25 +103,33 @@ public static class PluginWebResourceDriftChecker
         }
     }
 
-    static IEnumerable<DriftWarning> CheckOrphanAssemblies(string slnFolder, string packageFolder)
+    static IEnumerable<DriftWarning> CheckOrphanAssemblies(IReadOnlyList<string> releaseFolders, string packageFolder)
     {
         var pluginAssembliesFolder = Path.Combine(packageFolder, "src", "PluginAssemblies");
-        var releaseFolder = Path.Combine(slnFolder, "Plugins", "bin", "Release");
 
-        if (!Directory.Exists(pluginAssembliesFolder) || !Directory.Exists(releaseFolder))
+        if (!Directory.Exists(pluginAssembliesFolder) || releaseFolders.Count == 0)
             yield break;
 
-        var releaseDlls = Directory.EnumerateFiles(releaseFolder, "*.dll", SearchOption.AllDirectories)
+        // Every discovered project's output, not one folder's — an assembly is only an orphan when no
+        // plugin project in the solution produces it. The old code also exempted the literal name
+        // "Plugins.dll" from ever being reported; that exemption is gone, because the assembly a project
+        // actually builds is now known. It was the wrong shape twice over: it exempted nothing for a
+        // project with its own <AssemblyName>, and it hid the one case worth reporting — a stale
+        // Plugins.dll left in the unpacked solution after the project was renamed.
+        var releaseDlls = EnumerateReleaseDlls(releaseFolders)
             .Select(Path.GetFileName)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var dll in Directory.EnumerateFiles(pluginAssembliesFolder, "*.dll", SearchOption.AllDirectories))
         {
             var name = Path.GetFileName(dll);
-            if (!name.Equals("Plugins.dll", StringComparison.OrdinalIgnoreCase) && !releaseDlls.Contains(name))
+            if (!releaseDlls.Contains(name))
                 yield return new DriftWarning(DriftCategory.OrphanAssembly, name);
         }
     }
+
+    static IEnumerable<string> EnumerateReleaseDlls(IReadOnlyList<string> releaseFolders) =>
+        releaseFolders.SelectMany(f => Directory.EnumerateFiles(f, "*.dll", SearchOption.AllDirectories));
 
     static Dictionary<string, byte[]> GetFileHashes(string baseFolder, CancellationToken cancellationToken = default)
     {
@@ -121,4 +143,12 @@ public static class PluginWebResourceDriftChecker
         }
         return result;
     }
+
+    /// <summary>Ignore a solution entry whose project is gone, rather than failing this path over it.</summary>
+    /// <remarks>
+    /// Scoping and advisory work only — none of it builds the project. `push` keeps the throw, so a broken
+    /// solution file is still reported loudly by the command that actually cares.
+    /// </remarks>
+    static void SkipMissingProject(string _) { }
+
 }
