@@ -1,4 +1,4 @@
-using Microsoft.PowerPlatform.Dataverse.Client;
+﻿using Microsoft.PowerPlatform.Dataverse.Client;
 using Flowline.Core.Models;
 
 namespace Flowline.Core.Services;
@@ -15,8 +15,8 @@ public sealed record DeploySolutionInfo(
     bool ExistsInTarget);
 
 // PackageSrcRoot is an unpacked copy of whatever zip DeployCommand actually imported (freshly packed,
-// reused from the artifact cache, or supplied via --path) — not necessarily the committed Package/src
-// folder itself; DeployCommand always unpacks PackagePath into a temp directory before building this
+// reused from the artifact cache, or supplied via --path) — not necessarily the committed package
+// source folder itself; DeployCommand always unpacks PackagePath into a temp directory before building this
 // context, so PackageSrcRoot reflects the real imported content even when it wasn't packed just now
 // from the current checkout. OrphanCleanupService parses it itself (ComponentClassifier.ParseLocalSource)
 // rather than receiving pre-parsed LocalComponents/EntityLogicalNames/NamedComponents fields, since it's

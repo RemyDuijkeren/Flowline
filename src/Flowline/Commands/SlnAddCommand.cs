@@ -16,7 +16,7 @@ namespace Flowline.Commands;
 /// <remarks>
 /// Exists because <c>dotnet sln add</c> refuses a <c>.cdsproj</c> and exits 0 while doing so
 /// (https://github.com/dotnet/sdk/issues/47638). Everything it touches is a local file, so it runs
-/// standalone — a repo migrating off spkl with nothing but a <c>Package/Package.cdsproj</c> is exactly
+/// standalone — a repo migrating off spkl with nothing but a <c>.cdsproj</c> on disk is exactly
 /// the case it exists for, and that repo has no <c>.flowline</c>, no git history worth probing, and
 /// possibly no pac install.
 /// </remarks>
@@ -129,7 +129,7 @@ public class SlnAddCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
     /// <summary>The nearest solution file at or above <paramref name="startFolder"/>, or <c>null</c> when there is none.</summary>
     /// <remarks>
     /// Walks up rather than looking only in the current folder because the natural place to run this is
-    /// from inside <c>Package/</c>, next to the <c>.cdsproj</c> being added — while the solution file
+    /// from inside the folder holding the <c>.cdsproj</c> being added — while the solution file
     /// lives at the repo root. Same shape as <c>FlowlineCommand.FindProjectRoot</c>, which walks up for
     /// <c>.flowline</c>; nearest-wins, so a nested project's own solution file beats the one above it.
     /// </remarks>
@@ -176,8 +176,8 @@ public class SlnAddCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
     /// <summary>Rewrites the user's path into one relative to the folder holding the solution file.</summary>
     /// <remarks>
     /// The argument is relative to wherever the user is standing; the solution entry has to be relative
-    /// to the solution file. Running <c>flowline sln add Package.cdsproj</c> from inside <c>Package/</c>
-    /// must record <c>Package\Package.cdsproj</c>, not <c>Package.cdsproj</c>.
+    /// to the solution file. Running <c>flowline sln add DWE_Base.cdsproj</c> from inside <c>Solution/</c>
+    /// must record <c>Solution\DWE_Base.cdsproj</c>, not <c>DWE_Base.cdsproj</c>.
     ///
     /// Separator normalization is left to the writer, which does it on every path it is handed —
     /// duplicating it here would just be a second place to keep in step.

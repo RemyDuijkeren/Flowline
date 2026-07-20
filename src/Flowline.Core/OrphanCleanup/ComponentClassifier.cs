@@ -1,4 +1,4 @@
-using System.Xml.Linq;
+﻿using System.Xml.Linq;
 
 namespace Flowline.Core.OrphanCleanup;
 
@@ -18,7 +18,7 @@ public sealed record SolutionXmlComponents(
     IReadOnlyList<(int ComponentType, string SchemaName)> NamedComponents);
 
 /// <summary>
-/// CustomApi family names still declared in Package/src/customapis/**. Solution.xml never lists these
+/// CustomApi family names still declared in the package source under customapis/**. Solution.xml never lists these
 /// as RootComponents (componenttype codes are env-specific — see OrphanCleanupService), and the unpacked
 /// XML has no GUID at all — uniquename is the only local identity.
 /// </summary>
@@ -220,7 +220,7 @@ public static class ComponentClassifier
     }
 
     /// <summary>
-    /// Scans Package/src/customapis/&lt;uniquename&gt;/** for CustomApi family components still in source.
+    /// Scans the package source under customapis/&lt;uniquename&gt;/** for CustomApi family components still in source.
     /// Used to cross-check live CustomApi orphan candidates by name before reporting them — a recreated
     /// CustomApi (same uniquename, new customapiid) is not actually orphaned.
     /// </summary>
@@ -235,7 +235,7 @@ public static class ComponentClassifier
     }
 
     /// <summary>
-    /// Scans Package/src/bots/&lt;schemaname&gt;/** for Bot components still in source. Used to cross-check
+    /// Scans the package source under bots/&lt;schemaname&gt;/** for Bot components still in source. Used to cross-check
     /// live Bot orphan candidates by schemaname before reporting them — a Bot re-created with the same
     /// schemaname (new botid) is not actually orphaned. Bot has no request/response-property equivalent,
     /// so unlike ScanCustomApiNames there's only a top-level set, no child collections.

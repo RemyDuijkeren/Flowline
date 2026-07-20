@@ -550,4 +550,45 @@ public class CloneCommandTests
 
         settings.HasForce("config").Should().BeTrue();
     }
+
+    // ── Scaffolded AGENTS.md (U5) ───────────────────────────────────────────
+    // Clone writes these instructions into the user's repo, where a coding agent reads them as fact.
+    // Every path has to come from the layout clone just built, or the guidance contradicts the tree
+    // sitting next to it.
+
+    [Theory]
+    [InlineData("CrO7982")]
+    [InlineData("DWE_Base")]
+    public void BuildAgentsFileContent_NamesTheProjectFilesClonePutOnDisk(string solutionName)
+    {
+        var content = CloneCommand.BuildAgentsFileContent(solutionName, $"{solutionName}.slnx", "Solution");
+
+        content.Should().Contain($"Solution/{solutionName}.cdsproj")
+               .And.Contain($"Plugins/{solutionName}.Plugins.csproj")
+               .And.Contain($"WebResources/{solutionName}.WebResources.csproj")
+               .And.Contain($"{solutionName}.slnx");
+    }
+
+    [Fact]
+    public void BuildAgentsFileContent_NeverMentionsTheOldPackageFolder()
+    {
+        var content = CloneCommand.BuildAgentsFileContent("CrO7982", "CrO7982.slnx", "Solution");
+
+        content.Should().NotContain("Package/")
+               .And.NotContain("Package.cdsproj")
+               .And.NotContain("Plugins/Plugins.csproj")
+               .And.NotContain("WebResources/WebResources.csproj");
+    }
+
+    [Fact]
+    public void BuildAgentsFileContent_FollowsARelocatedPackageFolder()
+    {
+        // The folder resolves from the solution file, so a project that moved its package folder must
+        // not be handed instructions naming the folder clone would have created.
+        var content = CloneCommand.BuildAgentsFileContent("CrO7982", "CrO7982.slnx", "Dataverse");
+
+        content.Should().Contain("Dataverse/CrO7982.cdsproj")
+               .And.Contain("Dataverse/src/")
+               .And.NotContain("Solution/src/");
+    }
 }

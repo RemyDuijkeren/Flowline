@@ -72,7 +72,8 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var packageFolder = await ProjectLayoutResolver.ResolvePackageFolderAsync(slnFolder, cancellationToken);
 
         // --path supplies an artifact that wasn't necessarily packed from the current local tree, so neither
-        // check is meaningful there: git-clean and drift both assume packagePath is derived from Package/src.
+        // check is meaningful there: git-clean and drift both assume packagePath is derived from the
+        // package folder's src/.
         IReadOnlyList<string> deploymentInputPaths = [];
         if (!usingExplicitArtifact)
         {
@@ -200,7 +201,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         // Always unpack the zip actually being imported — whether freshly packed, reused from cache, or
         // supplied via --path — so post-deploy services evaluate real imported content, never an assumed
-        // local Package/src that may not match (e.g. a --path artifact built from a different commit).
+        // local package source that may not match (e.g. a --path artifact built from a different commit).
         var tmpUnpackDir = Directory.CreateTempSubdirectory("flowline-deploy-").FullName;
         try
         {

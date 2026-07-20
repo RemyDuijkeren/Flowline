@@ -189,10 +189,10 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
 
         async Task<bool> IsRepoDirtyAsync(string solutionName)
         {
-            // Scoped to the whole project root, not just Package/src -- status reports on
+            // Scoped to the whole project root, not just the package source -- status reports on
             // the project as a whole, so uncommitted changes anywhere (docs, tests, config)
-            // are relevant here even though deploy's own dirty gate is narrower (Package/ and
-            // packaging project files only, per R15).
+            // are relevant here even though deploy's own dirty gate is narrower (the package
+            // folder and the packaging project files only, per R15).
             var solutionPath = rootFolder;
             try
             {
