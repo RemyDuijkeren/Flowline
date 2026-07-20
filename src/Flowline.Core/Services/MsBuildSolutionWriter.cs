@@ -1,3 +1,6 @@
+using System.Text;
+using System.Text.RegularExpressions;
+using Microsoft.VisualStudio.SolutionPersistence;
 using Microsoft.VisualStudio.SolutionPersistence.Model;
 using Microsoft.VisualStudio.SolutionPersistence.Serializer;
 
@@ -26,6 +29,27 @@ public class MsBuildSolutionWriter
     /// </remarks>
     const string CSharpProjectType = "C#";
 
+    /// <summary>The legacy C# project type GUID, written verbatim by the surgical <c>.sln</c> path.</summary>
+    /// <remarks>
+    /// This is the GUID the library itself emits for a <see cref="CSharpProjectType"/> entry in a
+    /// <c>.sln</c>, so the two paths stay indistinguishable in their output. MSBuild loads a
+    /// <c>.cdsproj</c> like any other project once it carries this.
+    /// </remarks>
+    const string LegacyCSharpProjectTypeGuid = "{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}";
+
+    /// <summary>Matches the bare <c>Global</c> line — the anchor the project block is inserted before.</summary>
+    /// <remarks>
+    /// Anchored on <c>Global</c> rather than the last <c>EndProject</c> because a solution with zero
+    /// projects has no <c>EndProject</c> to anchor against. The trailing <c>[ \t]*</c> keeps
+    /// <c>GlobalSection</c> and <c>EndGlobal</c> from matching.
+    /// </remarks>
+    static readonly Regex s_globalLine = new(@"^Global[ \t]*\r?$", RegexOptions.Multiline);
+
+    /// <summary>Captures a <c>GlobalSection</c> by name, including its <c>EndGlobalSection</c> line.</summary>
+    static Regex SectionRegex(string name) => new(
+        $@"^(?<indent>[ \t]*)GlobalSection\({name}\)[^\r\n]*\r?\n(?<body>.*?)^[ \t]*EndGlobalSection[ \t]*\r?\n?",
+        RegexOptions.Multiline | RegexOptions.Singleline);
+
     /// <summary>
     /// Adds <paramref name="projectPath"/> to the solution file at <paramref name="solutionFilePath"/>,
     /// creating that file when it does not exist yet.
@@ -34,12 +58,18 @@ public class MsBuildSolutionWriter
     /// <param name="projectPath">Path to the project, relative to the folder holding the solution file.</param>
     /// <returns><c>true</c> when an entry was written; <c>false</c> when the solution already referenced the project.</returns>
     /// <remarks>
-    /// Covers the two cases where a full round-trip through the library is safe: any <c>.slnx</c>, and a
-    /// <c>.sln</c> Flowline is creating from nothing. Adding to a <b>pre-existing</b> <c>.sln</c> is
-    /// deliberately not routed here — the library's <c>.sln</c> writer re-derives each project's display
-    /// name from its filename, which silently breaks <c>msbuild -t:&lt;Target&gt;</c> for anyone whose
-    /// solution named a project differently. That case gets a surgical text insert instead, and the
-    /// decision between the two paths lands with it.
+    /// The single entry point, and the decider between two very different write strategies, so callers
+    /// need no knowledge of the split:
+    /// <list type="bullet">
+    /// <item>any <c>.slnx</c>, and a <c>.sln</c> that does not exist yet — full round-trip through the
+    /// library, which is safe because there is either nothing to preserve or a format the library was
+    /// designed to preserve;</item>
+    /// <item>a <c>.sln</c> that <b>does</b> exist — surgical text insert, never the library. Its
+    /// <c>.sln</c> writer discards each project's parsed display name and re-derives it from the
+    /// filename (https://github.com/microsoft/vs-solutionpersistence/issues/122), which silently breaks
+    /// <c>msbuild -t:&lt;Target&gt;</c> for anyone whose solution named a project differently from its
+    /// file. Re-assigning the display name before save does not prevent it — that was tested.</item>
+    /// </list>
     ///
     /// Accepts any project extension. Refusing a <c>.csproj</c> (which <c>dotnet sln add</c> handles fine)
     /// is a command-level concern, not the writer's.
@@ -61,6 +91,30 @@ public class MsBuildSolutionWriter
         // reads as a second project to it. Normalizing here is what makes re-adding a no-op.
         var normalizedPath = MsBuildSolutionReader.NormalizePath(projectPath);
 
+        var isPreExistingSln = File.Exists(solutionFilePath)
+            && string.Equals(Path.GetExtension(solutionFilePath), ".sln", StringComparison.OrdinalIgnoreCase);
+
+        return isPreExistingSln
+            ? await InsertIntoExistingSlnAsync(solutionFilePath, normalizedPath, cancellationToken).ConfigureAwait(false)
+            : await AddViaSolutionModelAsync(serializer, solutionFilePath, normalizedPath, projectPath, cancellationToken)
+                .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Adds the entry by loading (or creating) the library's model and saving it back — a full rewrite of
+    /// the file.
+    /// </summary>
+    /// <remarks>
+    /// Only safe where nothing hand-written is at stake. See <see cref="AddProjectAsync"/> for why a
+    /// pre-existing <c>.sln</c> is routed elsewhere.
+    /// </remarks>
+    static async Task<bool> AddViaSolutionModelAsync(
+        ISolutionSerializer serializer,
+        string solutionFilePath,
+        string normalizedPath,
+        string projectPath,
+        CancellationToken cancellationToken)
+    {
         SolutionModel model;
 
         if (File.Exists(solutionFilePath))
@@ -85,6 +139,153 @@ public class MsBuildSolutionWriter
 
         await serializer.SaveAsync(solutionFilePath, model, cancellationToken).ConfigureAwait(false);
         return true;
+    }
+
+    /// <summary>
+    /// Adds the entry to an existing <c>.sln</c> by splicing text, leaving every other byte untouched.
+    /// </summary>
+    /// <remarks>
+    /// The membership check still goes through the parser rather than a substring search: a raw string
+    /// compare misses the same file spelled with the other separator or different casing, and would then
+    /// write a duplicate entry.
+    /// </remarks>
+    static async Task<bool> InsertIntoExistingSlnAsync(
+        string solutionFilePath,
+        string normalizedPath,
+        CancellationToken cancellationToken)
+    {
+        var model = await MsBuildSolutionReader.OpenAsync(solutionFilePath, cancellationToken).ConfigureAwait(false);
+        if (ContainsProject(model, normalizedPath)) return false;
+
+        // Read as bytes so the file's BOM (or absence of one) survives. Round-tripping through
+        // File.ReadAllText/WriteAllText would strip an existing UTF-8 BOM and show up as a whole-file
+        // diff in git — precisely what this path exists to avoid.
+        var bytes = await File.ReadAllBytesAsync(solutionFilePath, cancellationToken).ConfigureAwait(false);
+        var hasBom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+        var text = new UTF8Encoding(false).GetString(bytes, hasBom ? 3 : 0, bytes.Length - (hasBom ? 3 : 0));
+
+        var updated = InsertProjectEntry(text, normalizedPath, Guid.NewGuid());
+
+        await ReplaceFileAsync(solutionFilePath, updated, hasBom, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>Returns <paramref name="text"/> with a project entry and its configuration rows spliced in.</summary>
+    /// <remarks>
+    /// Pure string work, no IO, so the whole insert is testable and so a failure cannot leave a partial
+    /// file behind. The configuration rows are inserted before the project block even though they sit
+    /// later in the file: both offsets are computed against the original text, and splicing the later one
+    /// first keeps the earlier offset valid.
+    /// </remarks>
+    internal static string InsertProjectEntry(string text, string normalizedPath, Guid projectGuid)
+    {
+        var newline = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        var guid = projectGuid.ToString("B").ToUpperInvariant();
+
+        var withRows = InsertConfigurationRows(text, guid, newline);
+        return InsertProjectBlock(withRows, guid, normalizedPath, newline);
+    }
+
+    /// <summary>Splices the <c>Project(...)</c>/<c>EndProject</c> pair in immediately before <c>Global</c>.</summary>
+    /// <remarks>
+    /// A file with no <c>Global</c> line at all is degraded but valid — it simply declares no solution
+    /// configurations. Rather than fabricating a <c>Global</c> section the user never had, the entry is
+    /// appended at the end: the file stays parseable and gains the project, which is the caller's actual
+    /// goal.
+    /// </remarks>
+    static string InsertProjectBlock(string text, string guid, string normalizedPath, string newline)
+    {
+        // The .sln format stores backslash-separated paths on every host OS.
+        var slnPath = normalizedPath.Replace(Path.DirectorySeparatorChar, '\\').Replace('/', '\\');
+        var displayName = Path.GetFileNameWithoutExtension(normalizedPath);
+        var block =
+            $"Project(\"{LegacyCSharpProjectTypeGuid}\") = \"{displayName}\", \"{slnPath}\", \"{guid}\"{newline}" +
+            $"EndProject{newline}";
+
+        var global = s_globalLine.Match(text);
+        if (global.Success) return text.Insert(global.Index, block);
+
+        var separator = text.Length == 0 || text.EndsWith('\n') ? "" : newline;
+        return text + separator + block;
+    }
+
+    /// <summary>
+    /// Splices <c>ProjectConfigurationPlatforms</c> rows for the new project, one <c>ActiveCfg</c> and one
+    /// <c>Build.0</c> per configuration/platform pair the file already declares.
+    /// </summary>
+    /// <remarks>
+    /// The pairs come from the file's own <c>SolutionConfigurationPlatforms</c> rather than an assumed
+    /// Debug/Release × Any CPU: a solution that only declares <c>Debug|x64</c> must not gain rows for
+    /// configurations it does not have. Without matching rows the project shows in the solution but never
+    /// builds, which is the whole reason for writing the entry.
+    ///
+    /// No declared pairs (no <c>Global</c>, or no <c>SolutionConfigurationPlatforms</c>) means there is
+    /// nothing to map to, so no rows are written and no section is invented.
+    /// </remarks>
+    static string InsertConfigurationRows(string text, string guid, string newline)
+    {
+        var solutionSection = SectionRegex("SolutionConfigurationPlatforms").Match(text);
+        if (!solutionSection.Success) return text;
+
+        var pairs = ReadConfigurationPairs(solutionSection.Groups["body"].Value);
+        if (pairs.Count == 0) return text;
+
+        var sectionIndent = solutionSection.Groups["indent"].Value;
+        // Row indentation is taken from the sibling section's rows so tabs-vs-spaces follows the file.
+        var rowIndent = LeadingWhitespace(solutionSection.Groups["body"].Value) ?? sectionIndent + "\t";
+
+        var rows = new StringBuilder();
+        foreach (var pair in pairs)
+        {
+            rows.Append(rowIndent).Append(guid).Append('.').Append(pair).Append(".ActiveCfg = ").Append(pair).Append(newline);
+            rows.Append(rowIndent).Append(guid).Append('.').Append(pair).Append(".Build.0 = ").Append(pair).Append(newline);
+        }
+
+        var projectSection = SectionRegex("ProjectConfigurationPlatforms").Match(text);
+        if (projectSection.Success)
+        {
+            // Append to the existing section, just past its last row and before EndGlobalSection.
+            var insertAt = projectSection.Groups["body"].Index + projectSection.Groups["body"].Length;
+            return text.Insert(insertAt, rows.ToString());
+        }
+
+        // No section yet: create one directly after SolutionConfigurationPlatforms, which is where both
+        // Visual Studio and the library put it.
+        var newSection =
+            $"{sectionIndent}GlobalSection(ProjectConfigurationPlatforms) = postSolution{newline}" +
+            rows +
+            $"{sectionIndent}EndGlobalSection{newline}";
+
+        return text.Insert(solutionSection.Index + solutionSection.Length, newSection);
+    }
+
+    /// <summary>Reads the left-hand side of each <c>Debug|Any CPU = Debug|Any CPU</c> row in a section body.</summary>
+    static List<string> ReadConfigurationPairs(string body) =>
+        [.. body.Split('\n')
+                .Select(line => line.Trim())
+                .Where(line => line.Length > 0 && line.Contains('='))
+                .Select(line => line[..line.IndexOf('=')].Trim())
+                .Where(pair => pair.Length > 0)];
+
+    /// <summary>The indentation of the first non-blank line, or <c>null</c> when the body holds none.</summary>
+    static string? LeadingWhitespace(string body) =>
+        body.Split('\n')
+            .Select(line => line.TrimEnd('\r'))
+            .Where(line => line.Trim().Length > 0)
+            .Select(line => line[..(line.Length - line.TrimStart(' ', '\t').Length)])
+            .FirstOrDefault();
+
+    /// <summary>Writes <paramref name="content"/> to a sibling temp file, then swaps it into place.</summary>
+    /// <remarks>
+    /// A direct write leaves a window where a crash or Ctrl+C truncates the user's solution file to
+    /// nothing. Writing beside it and moving keeps the replacement close to atomic, and the temp file
+    /// shares the directory so the move never crosses a volume.
+    /// </remarks>
+    static async Task ReplaceFileAsync(string solutionFilePath, string content, bool hasBom, CancellationToken cancellationToken)
+    {
+        var tempPath = solutionFilePath + ".flowline-tmp";
+        await File.WriteAllTextAsync(tempPath, content, new UTF8Encoding(hasBom), cancellationToken).ConfigureAwait(false);
+        File.Move(tempPath, solutionFilePath, overwrite: true);
     }
 
     /// <summary>
