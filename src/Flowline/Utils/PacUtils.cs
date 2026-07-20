@@ -88,7 +88,6 @@ public static class PacUtils
         }
         catch (Exception ex)
         {
-            Console.WriteLine(ex.Message);
             if (ex.Message.Contains("MSI-installed Power Platform CLI"))
             {
                 Console.Error.WriteLine(ex.Message);
