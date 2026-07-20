@@ -1,7 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\Flowline.Attributes\Flowline.Attributes.csproj" />
-  </ItemGroup>
-
-</Project>

@@ -41,8 +41,7 @@ opportunistically, not as a big-bang refactor): `Flowline/Services/`, `Flowline/
 `Flowline/Validation/`, and engine parts of `Flowline/Utils/` (`PacUtils`, `GitUtils`,
 `SolutionChangeSummary`).
 - `tests/Flowline.Tests/` — CLI and command tests
-- `tests/Flowline.Core.Tests/` — core service tests
-- `tests/Flowline.Attributes.Tests/` — attribute contract tests
+- `tests/Flowline.Core.Tests/` — core service tests; also covers `Flowline.Attributes` contracts via the metadata scanner
 - `docs/solutions/` — prior bug fixes, architectural patterns, and workflow solutions
 - `.github/workflows/ci.yml` — authoritative CI pipeline
 
