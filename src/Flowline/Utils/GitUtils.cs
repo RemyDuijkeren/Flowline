@@ -213,21 +213,6 @@ public static class GitUtils
         return string.IsNullOrWhiteSpace(sha) ? null : sha;
     }
 
-    public static async Task CreateTagAsync(string tagName, string? workingDirectory, CancellationToken cancellationToken = default)
-    {
-        var cmd = Cli.Wrap("git");
-        if (workingDirectory != null)
-            cmd = cmd.WithWorkingDirectory(workingDirectory);
-
-        var result = await cmd
-                           .WithArguments(args => args.Add("tag").Add(tagName))
-                           .WithValidation(CommandResultValidation.None)
-                           .ExecuteBufferedAsync(cancellationToken);
-
-        if (result.ExitCode != 0)
-            throw new FlowlineException(ExitCode.GeneralError, $"Failed to create git tag '{tagName}'. Tag may already exist — use --no-tag or remove it with: git tag -d {tagName}");
-    }
-
     public static async Task AssertGitRepoAsync(string rootFolder, SubprocessCapture capture, bool verbose = true, CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(Path.Combine(rootFolder, ".git")))
