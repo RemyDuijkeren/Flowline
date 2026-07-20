@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Core;
 using Flowline.Core.Services;
@@ -23,8 +23,8 @@ public sealed class SlnAddCommandTests : IDisposable
     public SlnAddCommandTests()
     {
         _root = Path.Combine(Path.GetTempPath(), "flowline-sln-add-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(Path.Combine(_root, "Package"));
-        _cdsproj = Path.Combine(_root, "Package", "Package.cdsproj");
+        Directory.CreateDirectory(Path.Combine(_root, "Solution"));
+        _cdsproj = Path.Combine(_root, "Solution", "MySolution.cdsproj");
         File.WriteAllText(_cdsproj, "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
     }
 
@@ -56,7 +56,7 @@ public sealed class SlnAddCommandTests : IDisposable
     [Fact]
     public void ValidateExtension_CsprojArgument_ThrowsPointingAtDotnetSlnAdd()
     {
-        var act = () => SlnAddCommand.ValidateExtension("Plugins/Plugins.csproj");
+        var act = () => SlnAddCommand.ValidateExtension("Plugins/MySolution.Plugins.csproj");
 
         act.Should().Throw<FlowlineException>()
            .Where(e => e.ExitCode == ExitCode.ValidationFailed && e.Message.Contains("dotnet sln add"));
@@ -65,7 +65,7 @@ public sealed class SlnAddCommandTests : IDisposable
     [Fact]
     public async Task CsprojArgument_IsRefusedBeforeAnythingIsWritten()
     {
-        var csproj = Path.Combine(_root, "Plugins", "Plugins.csproj");
+        var csproj = Path.Combine(_root, "Plugins", "MySolution.Plugins.csproj");
         Directory.CreateDirectory(Path.GetDirectoryName(csproj)!);
         await File.WriteAllTextAsync(csproj, "<Project />");
 
@@ -78,9 +78,9 @@ public sealed class SlnAddCommandTests : IDisposable
     }
 
     [Theory]
-    [InlineData("Package/Package.txt")]
-    [InlineData("Package/Package")]
-    [InlineData("Package/Package.vbproj")]
+    [InlineData("Solution/MySolution.txt")]
+    [InlineData("Solution/MySolution")]
+    [InlineData("Solution/MySolution.vbproj")]
     public void ValidateExtension_NonProjectExtension_Throws(string path)
     {
         var act = () => SlnAddCommand.ValidateExtension(path);
@@ -90,8 +90,8 @@ public sealed class SlnAddCommandTests : IDisposable
     }
 
     [Theory]
-    [InlineData("Package/Package.cdsproj")]
-    [InlineData("Package/Package.CDSPROJ")]
+    [InlineData("Solution/MySolution.cdsproj")]
+    [InlineData("Solution/MySolution.CDSPROJ")]
     public void ValidateExtension_Cdsproj_DoesNotThrow(string path)
     {
         var act = () => SlnAddCommand.ValidateExtension(path);
@@ -104,18 +104,18 @@ public sealed class SlnAddCommandTests : IDisposable
     [Fact]
     public void ValidateProjectExists_MissingFile_ThrowsNotFoundNamingThePath()
     {
-        var missing = Path.Combine(_root, "Package", "Nope.cdsproj");
+        var missing = Path.Combine(_root, "Solution", "Nope.cdsproj");
 
-        var act = () => SlnAddCommand.ValidateProjectExists(missing, "Package/Nope.cdsproj");
+        var act = () => SlnAddCommand.ValidateProjectExists(missing, "Solution/Nope.cdsproj");
 
         act.Should().Throw<FlowlineException>()
-           .Where(e => e.ExitCode == ExitCode.NotFound && e.Message.Contains("Package/Nope.cdsproj"));
+           .Where(e => e.ExitCode == ExitCode.NotFound && e.Message.Contains("Solution/Nope.cdsproj"));
     }
 
     [Fact]
     public void ValidateProjectExists_PresentFile_DoesNotThrow()
     {
-        var act = () => SlnAddCommand.ValidateProjectExists(_cdsproj, "Package/Package.cdsproj");
+        var act = () => SlnAddCommand.ValidateProjectExists(_cdsproj, "Solution/MySolution.cdsproj");
 
         act.Should().NotThrow();
     }
@@ -134,7 +134,7 @@ public sealed class SlnAddCommandTests : IDisposable
         Path.GetFileName(result.SolutionFilePath).Should().Be("MySolution.sln");
 
         var content = await File.ReadAllTextAsync(result.SolutionFilePath);
-        content.Should().Contain(@"Package\Package.cdsproj");
+        content.Should().Contain(@"Solution\MySolution.cdsproj");
         // R9: no conversion, no second file, and the hand-written display name survives untouched.
         Directory.EnumerateFiles(_root, "*.slnx").Should().BeEmpty();
         content.Should().Contain("\"MyFriendlyName\"");
@@ -207,28 +207,28 @@ public sealed class SlnAddCommandTests : IDisposable
         // at the repo root. Without the walk-up that invocation would fail outright.
         WriteExistingSln();
 
-        var result = await SlnAddCommand.AddAsync(_reader, _writer, _cdsproj, Path.Combine(_root, "Package"));
+        var result = await SlnAddCommand.AddAsync(_reader, _writer, _cdsproj, Path.Combine(_root, "Solution"));
 
         result.Outcome.Should().Be(SlnAddCommand.Outcome.Added);
         Path.GetFileName(result.SolutionFilePath).Should().Be("MySolution.sln");
         // The entry stays relative to the solution file, not to the folder the user stood in.
-        (await File.ReadAllTextAsync(result.SolutionFilePath)).Should().Contain(@"Package\Package.cdsproj");
+        (await File.ReadAllTextAsync(result.SolutionFilePath)).Should().Contain(@"Solution\MySolution.cdsproj");
     }
 
     [Fact]
     public void FindSolutionFileUpwards_NoSolutionFileInAnyAncestor_ReturnsNull()
     {
-        SlnAddCommand.FindSolutionFileUpwards(_reader, Path.Combine(_root, "Package")).Should().BeNull();
+        SlnAddCommand.FindSolutionFileUpwards(_reader, Path.Combine(_root, "Solution")).Should().BeNull();
     }
 
     [Fact]
     public void FindSolutionFileUpwards_SolutionFileInTheStartFolder_PrefersItOverAnyAbove()
     {
         WriteExistingSln();
-        var nested = Path.Combine(_root, "Package", "Nested.sln");
+        var nested = Path.Combine(_root, "Solution", "Nested.sln");
         File.WriteAllText(nested, "Microsoft Visual Studio Solution File, Format Version 12.00\r\n");
 
-        SlnAddCommand.FindSolutionFileUpwards(_reader, Path.Combine(_root, "Package")).Should().Be(nested);
+        SlnAddCommand.FindSolutionFileUpwards(_reader, Path.Combine(_root, "Solution")).Should().Be(nested);
     }
 
     // ── Standalone operation (KTD6) ───────────────────────────────────────────
@@ -268,9 +268,9 @@ public sealed class SlnAddCommandTests : IDisposable
     public void ToSolutionRelativePath_RewritesTheArgumentRelativeToTheSolutionFolder()
     {
         // The argument is relative to wherever the user is standing; the entry has to be relative to
-        // the solution file, so this must survive being run from inside Package/.
+        // the solution file, so this must survive being run from inside Solution/.
         SlnAddCommand.ToSolutionRelativePath(_cdsproj, _root)
-                     .Should().Be(Path.Combine("Package", "Package.cdsproj"));
+                     .Should().Be(Path.Combine("Solution", "MySolution.cdsproj"));
     }
 
     // ── Exit codes ────────────────────────────────────────────────────────────

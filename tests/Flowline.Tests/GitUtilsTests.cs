@@ -58,6 +58,13 @@ public class GitUtilsTests : IDisposable
         return output.Trim();
     }
 
+    /// <summary>A csproj the plugin pre-filter accepts, so solution-file discovery keeps it as a candidate.</summary>
+    const string PluginProjectXml =
+        """
+        <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net462</TargetFramework></PropertyGroup>
+        <ItemGroup><PackageReference Include="Microsoft.CrmSdk.CoreAssemblies" Version="9.0.2" /></ItemGroup></Project>
+        """;
+
     void CreateAndCommitFile(string relativePath, string content = "content")
     {
         var fullPath = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
@@ -243,23 +250,23 @@ public class GitUtilsTests : IDisposable
     public async Task GetUncommittedChangesInPathAsync_WithMultiplePaths_DetectsChangeInEitherPath()
     {
         CreateAndCommitFile("Solution/src/existing.xml");
-        CreateAndCommitFile("Plugins/Plugins.csproj");
-        File.WriteAllText(Path.Combine(_root, "Plugins", "Plugins.csproj"), "modified");
+        CreateAndCommitFile("Plugins/MySolution.Plugins.csproj");
+        File.WriteAllText(Path.Combine(_root, "Plugins", "MySolution.Plugins.csproj"), "modified");
 
         var result = await GitUtils.GetUncommittedChangesInPathAsync(
-            [Path.Combine(_root, "Solution"), Path.Combine(_root, "Plugins", "Plugins.csproj")], _root);
+            [Path.Combine(_root, "Solution"), Path.Combine(_root, "Plugins", "MySolution.Plugins.csproj")], _root);
 
-        result.Should().ContainSingle().Which.Should().Be("Plugins/Plugins.csproj");
+        result.Should().ContainSingle().Which.Should().Be("Plugins/MySolution.Plugins.csproj");
     }
 
     [Fact]
     public async Task GetUncommittedChangesInPathAsync_WithMultiplePaths_AndNoChangesInAny_ReturnsEmptyList()
     {
         CreateAndCommitFile("Solution/src/existing.xml");
-        CreateAndCommitFile("Plugins/Plugins.csproj");
+        CreateAndCommitFile("Plugins/MySolution.Plugins.csproj");
 
         var result = await GitUtils.GetUncommittedChangesInPathAsync(
-            [Path.Combine(_root, "Solution"), Path.Combine(_root, "Plugins", "Plugins.csproj")], _root);
+            [Path.Combine(_root, "Solution"), Path.Combine(_root, "Plugins", "MySolution.Plugins.csproj")], _root);
 
         result.Should().BeEmpty();
     }
@@ -272,7 +279,7 @@ public class GitUtilsTests : IDisposable
         File.WriteAllText(Path.Combine(_root, "docs", "BRAINSTORM.md"), "modified");
 
         var result = await GitUtils.GetUncommittedChangesInPathAsync(
-            [Path.Combine(_root, "Solution"), Path.Combine(_root, "Plugins", "Plugins.csproj")], _root);
+            [Path.Combine(_root, "Solution"), Path.Combine(_root, "Plugins", "MySolution.Plugins.csproj")], _root);
 
         result.Should().BeEmpty();
     }
@@ -283,11 +290,11 @@ public class GitUtilsTests : IDisposable
         CreateAndCommitFile("Solution/src/first.xml");
         var olderSha = ReadGitOutput("rev-parse", "HEAD");
 
-        CreateAndCommitFile("Plugins/Plugins.csproj");
+        CreateAndCommitFile("Plugins/MySolution.Plugins.csproj");
         var newerSha = ReadGitOutput("rev-parse", "HEAD");
 
         var sha = await GitUtils.GetLastCommitShaForPathAsync(
-            [Path.Combine(_root, "Solution"), Path.Combine(_root, "Plugins", "Plugins.csproj")], _root);
+            [Path.Combine(_root, "Solution"), Path.Combine(_root, "Plugins", "MySolution.Plugins.csproj")], _root);
 
         sha.Should().Be(newerSha);
         sha.Should().NotBe(olderSha);
@@ -299,7 +306,7 @@ public class GitUtilsTests : IDisposable
         CreateAndCommitFile("docs/BRAINSTORM.md");
 
         var sha = await GitUtils.GetLastCommitShaForPathAsync(
-            [Path.Combine(_root, "Solution"), Path.Combine(_root, "Plugins", "Plugins.csproj")], _root);
+            [Path.Combine(_root, "Solution"), Path.Combine(_root, "Plugins", "MySolution.Plugins.csproj")], _root);
 
         sha.Should().BeNull();
     }
@@ -323,13 +330,19 @@ public class GitUtilsTests : IDisposable
     [Fact]
     public async Task DeploymentInputPaths_UncommittedChangeUnderPluginsProjectFile_IsDetected()
     {
-        CreateAndCommitFile("Plugins/Plugins.csproj");
-        File.WriteAllText(Path.Combine(_root, "Plugins", "Plugins.csproj"), "modified");
+        // The scaffolded layout, and it must go through solution-file discovery to be in scope at all —
+        // the project file is named after the solution, so a fixed Plugins/Plugins.csproj finds nothing.
+        CreateAndCommitFile("Plugins/MySolution.Plugins.csproj", PluginProjectXml);
+        CreateAndCommitFile("MySolution.slnx",
+            """<Solution><Project Path="Plugins\MySolution.Plugins.csproj" /></Solution>""");
+        // Still a valid plugin csproj after the edit — discovery's pre-filter reads the file's own text.
+        File.WriteAllText(Path.Combine(_root, "Plugins", "MySolution.Plugins.csproj"),
+            PluginProjectXml.Replace("9.0.2", "9.0.3"));
 
         var changes = await GitUtils.GetUncommittedChangesInPathAsync(
             await DeployCommand.GetDeploymentInputPathsAsync(_root, Path.Combine(_root, "Solution")), _root);
 
-        changes.Should().ContainSingle().Which.Should().Be("Plugins/Plugins.csproj");
+        changes.Should().ContainSingle().Which.Should().Be("Plugins/MySolution.Plugins.csproj");
     }
 
     [Theory]

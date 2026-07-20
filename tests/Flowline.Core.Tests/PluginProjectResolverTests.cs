@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Reflection.Emit;
 using Flowline.Core;
 using Flowline.Core.Models;
@@ -55,13 +55,13 @@ public class PluginProjectResolverTests : IDisposable
     {
         WriteProject("Plugins", "Plugins.csproj", PluginProjectXml());
         WriteProject("Entities", "Entities.csproj", DtoProjectXml());
-        WriteProject("Package", "Package.cdsproj", "<Project />");
+        WriteProject("Solution", "DWE_Base.cdsproj", "<Project />");
 
         var candidates = PluginProjectResolver.EnumerateCandidates(
         [
             SolutionEntry("Plugins", @"Plugins\Plugins.csproj"),
             SolutionEntry("Entities", @"Entities\Entities.csproj"),
-            SolutionEntry("Package", @"Package\Package.cdsproj"),
+            SolutionEntry("DWE_Base", @"Solution\DWE_Base.cdsproj"),
         ], _root);
 
         candidates.Select(c => c.ProjectName).Should().BeEquivalentTo(["Plugins", "Entities"]);

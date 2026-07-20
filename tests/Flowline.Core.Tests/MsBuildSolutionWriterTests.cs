@@ -1,4 +1,4 @@
-using Flowline.Core;
+﻿using Flowline.Core;
 using Flowline.Core.Services;
 using FluentAssertions;
 
@@ -40,11 +40,11 @@ public class MsBuildSolutionWriterTests : IDisposable
     {
         var solution = Path_("DWE_Base.slnx");
 
-        var added = (await _writer.AddProjectAsync(solution, "Package/Package.cdsproj")).Added;
+        var added = (await _writer.AddProjectAsync(solution, "Solution/DWE_Base.cdsproj")).Added;
 
         added.Should().BeTrue();
         var xml = await File.ReadAllTextAsync(solution);
-        xml.Should().Contain("Package.cdsproj");
+        xml.Should().Contain("DWE_Base.cdsproj");
         // Type is mandatory: without it the library cannot resolve a type for .cdsproj at all, and MSBuild
         // would have no way to load the project.
         xml.Should().Contain("Type=\"C#\"");
@@ -55,11 +55,11 @@ public class MsBuildSolutionWriterTests : IDisposable
     {
         var solution = Path_("DWE_Base.sln");
 
-        await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
+        await _writer.AddProjectAsync(solution, "Solution/DWE_Base.cdsproj");
 
         var text = await File.ReadAllTextAsync(solution);
         text.Should().ContainAny(CSharpTypeGuid, LegacyCSharpTypeGuid);
-        text.Should().Contain("Package.cdsproj");
+        text.Should().Contain("DWE_Base.cdsproj");
 
         // Without matching ProjectConfigurationPlatforms rows the project appears in the solution but is
         // never built. One row pair per configuration is the whole point of writing a .sln at all.
@@ -73,27 +73,27 @@ public class MsBuildSolutionWriterTests : IDisposable
     public async Task AddProjectAsync_ProjectAlreadyPresent_ReturnsFalseAndDoesNotDuplicate()
     {
         var solution = Path_("DWE_Base.slnx");
-        await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
+        await _writer.AddProjectAsync(solution, "Solution/DWE_Base.cdsproj");
 
-        var again = await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
+        var again = await _writer.AddProjectAsync(solution, "Solution/DWE_Base.cdsproj");
 
         again.Added.Should().BeFalse();
         again.Created.Should().BeFalse("the first call already made the file");
         var projects = await _reader.ReadProjectsAsync(solution);
-        projects.Should().ContainSingle().Which.Path.Should().Be(Sep("Package/Package.cdsproj"));
+        projects.Should().ContainSingle().Which.Path.Should().Be(Sep("Solution/DWE_Base.cdsproj"));
     }
 
     [Theory]
-    [InlineData("Package\\Package.cdsproj")]
-    [InlineData("Package/Package.cdsproj")]
-    [InlineData("package/package.cdsproj")]
+    [InlineData("Solution\\DWE_Base.cdsproj")]
+    [InlineData("Solution/DWE_Base.cdsproj")]
+    [InlineData("solution/dwe_base.cdsproj")]
     public async Task AddProjectAsync_ExistingEntryUsesOppositeSeparatorOrCase_StillNoOp(string reAddAs)
     {
         // The library's own duplicate check is exact-string, so it would happily write a second entry for
         // the same file spelled differently. Normalization in the writer is what prevents that.
         var solution = Write("DWE_Base.slnx", """
 <Solution>
-  <Project Path="Package/Package.cdsproj" Type="C#" />
+  <Project Path="Solution/DWE_Base.cdsproj" Type="C#" />
 </Solution>
 """);
 
@@ -111,7 +111,7 @@ public class MsBuildSolutionWriterTests : IDisposable
         // "No solution file yet" is the state migrating and hand-assembled projects start from.
         var solution = Path_(fileName);
 
-        var result = await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
+        var result = await _writer.AddProjectAsync(solution, "Solution/DWE_Base.cdsproj");
 
         result.Added.Should().BeTrue();
         // Created is decided inside the writer off the same stat that picks its write path — callers no
@@ -150,20 +150,20 @@ public class MsBuildSolutionWriterTests : IDisposable
 </Solution>
 """);
 
-        await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
+        await _writer.AddProjectAsync(solution, "Solution/DWE_Base.cdsproj");
 
         var xml = await File.ReadAllTextAsync(solution);
         xml.Should().Contain("<!-- keep this comment -->");
         xml.Should().Contain("/Solution Items/");
         xml.Should().Contain("README.md");
         xml.Should().Contain("DWE_Base.Plugins.csproj");
-        xml.Should().Contain("Package.cdsproj");
+        xml.Should().Contain("DWE_Base.cdsproj");
     }
 
     [Fact]
     public async Task AddProjectAsync_UnsupportedExtension_ThrowsConfigInvalid()
     {
-        var act = () => _writer.AddProjectAsync(Path_("notasolution.txt"), "Package/Package.cdsproj");
+        var act = () => _writer.AddProjectAsync(Path_("notasolution.txt"), "Solution/DWE_Base.cdsproj");
 
         (await act.Should().ThrowAsync<FlowlineException>())
             .Which.ExitCode.Should().Be(ExitCode.ConfigInvalid);
@@ -174,7 +174,7 @@ public class MsBuildSolutionWriterTests : IDisposable
     {
         var solution = Write("Broken.slnx", "<Solution><Project Path=");
 
-        var act = () => _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
+        var act = () => _writer.AddProjectAsync(solution, "Solution/DWE_Base.cdsproj");
 
         (await act.Should().ThrowAsync<FlowlineException>())
             .Which.ExitCode.Should().Be(ExitCode.ConfigInvalid);

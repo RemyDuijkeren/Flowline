@@ -1,4 +1,4 @@
-using Flowline.Core.Services;
+﻿using Flowline.Core.Services;
 using FluentAssertions;
 
 namespace Flowline.Core.Tests;
@@ -99,7 +99,7 @@ public class MsBuildSolutionWriterSurgicalTests : IDisposable
         var solution = Write("DWE_Base.sln", "\r\n", HandAuthoredSolution());
         var before = await File.ReadAllTextAsync(solution);
 
-        await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
+        await _writer.AddProjectAsync(solution, "Solution/DWE_Base.cdsproj");
 
         var after = await File.ReadAllTextAsync(solution);
         RemovedLines(before, after).Should().BeEmpty();
@@ -112,7 +112,7 @@ public class MsBuildSolutionWriterSurgicalTests : IDisposable
         // "DWE_Base.Plugins", silently breaking `msbuild -t:MyFriendlyName` for the user.
         var solution = Write("DWE_Base.sln", "\r\n", HandAuthoredSolution());
 
-        await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
+        await _writer.AddProjectAsync(solution, "Solution/DWE_Base.cdsproj");
 
         var text = await File.ReadAllTextAsync(solution);
         text.Should().Contain("= \"MyFriendlyName\", \"Plugins\\DWE_Base.Plugins.csproj\"");
@@ -124,7 +124,7 @@ public class MsBuildSolutionWriterSurgicalTests : IDisposable
     {
         var solution = Write("DWE_Base.sln", "\r\n", HandAuthoredSolution());
 
-        await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
+        await _writer.AddProjectAsync(solution, "Solution/DWE_Base.cdsproj");
 
         var text = await File.ReadAllTextAsync(solution);
         text.Should().Contain("Microsoft Visual Studio Solution File, Format Version 12.00");
@@ -143,15 +143,15 @@ public class MsBuildSolutionWriterSurgicalTests : IDisposable
     {
         var solution = Write("DWE_Base.sln", "\r\n", HandAuthoredSolution());
 
-        await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
+        await _writer.AddProjectAsync(solution, "Solution/DWE_Base.cdsproj");
 
         var lines = Lines(await File.ReadAllTextAsync(solution));
         var globalIndex = Array.FindIndex(lines, l => l == "Global");
         lines[globalIndex - 1].Should().Be("EndProject");
-        lines[globalIndex - 2].Should().Contain("Package.cdsproj");
+        lines[globalIndex - 2].Should().Contain("DWE_Base.cdsproj");
         // The .sln format stores paths with backslashes regardless of host OS.
-        lines[globalIndex - 2].Should().Contain("\"Package\\Package.cdsproj\"");
-        lines[globalIndex - 2].Should().StartWith($"Project(\"{LegacyCSharpTypeGuid}\") = \"Package\"");
+        lines[globalIndex - 2].Should().Contain("\"Solution\\DWE_Base.cdsproj\"");
+        lines[globalIndex - 2].Should().StartWith($"Project(\"{LegacyCSharpTypeGuid}\") = \"DWE_Base\"");
     }
 
     [Fact]
@@ -171,7 +171,7 @@ public class MsBuildSolutionWriterSurgicalTests : IDisposable
             "\tEndGlobalSection",
             "EndGlobal");
 
-        await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
+        await _writer.AddProjectAsync(solution, "Solution/DWE_Base.cdsproj");
 
         var text = await File.ReadAllTextAsync(solution);
 
@@ -210,7 +210,7 @@ public class MsBuildSolutionWriterSurgicalTests : IDisposable
         // Rewriting line endings turns a one-line change into a whole-file diff in git.
         var solution = Write("DWE_Base.sln", newline, HandAuthoredSolution());
 
-        await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
+        await _writer.AddProjectAsync(solution, "Solution/DWE_Base.cdsproj");
 
         var text = await File.ReadAllTextAsync(solution);
         var lineFeeds = text.Count(c => c == '\n');
@@ -232,7 +232,7 @@ public class MsBuildSolutionWriterSurgicalTests : IDisposable
             "\tEndGlobalSection",
             "EndGlobal");
 
-        var added = (await _writer.AddProjectAsync(solution, "Package/Package.cdsproj")).Added;
+        var added = (await _writer.AddProjectAsync(solution, "Solution/DWE_Base.cdsproj")).Added;
 
         added.Should().BeTrue();
         (await _reader.ReadProjectsAsync(solution)).Should().ContainSingle();
@@ -278,7 +278,7 @@ public class MsBuildSolutionWriterSurgicalTests : IDisposable
             "\tEndGlobalSection",
             "EndGlobal");
 
-        await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
+        await _writer.AddProjectAsync(solution, "Solution/DWE_Base.cdsproj");
 
         var lines = Lines(await File.ReadAllTextAsync(solution)).ToList();
         lines.FindIndex(l => l.Contains("ExtensibilityGlobals"))
@@ -293,7 +293,7 @@ public class MsBuildSolutionWriterSurgicalTests : IDisposable
         // Textually plausible is not enough — the round-trip proves the inserted block is real.
         var solution = Write("DWE_Base.sln", "\r\n", HandAuthoredSolution());
 
-        await _writer.AddProjectAsync(solution, "Package/Package.cdsproj");
+        await _writer.AddProjectAsync(solution, "Solution/DWE_Base.cdsproj");
 
         var projects = await _reader.ReadProjectsAsync(solution);
         projects.Should().HaveCount(2);
@@ -303,7 +303,7 @@ public class MsBuildSolutionWriterSurgicalTests : IDisposable
         // file's own text is asserted in KeepsDisplayNameThatDiffersFromFileName.
         projects.Select(p => p.Path).Should().BeEquivalentTo(
             Path.Combine("Plugins", "DWE_Base.Plugins.csproj"),
-            Path.Combine("Package", "Package.cdsproj"));
+            Path.Combine("Solution", "DWE_Base.cdsproj"));
     }
 
     [Fact]
@@ -316,11 +316,11 @@ public class MsBuildSolutionWriterSurgicalTests : IDisposable
             $"Project(\"{LegacyCSharpTypeGuid}\") = \"MyFriendlyName\", \"Plugins\\DWE_Base.Plugins.csproj\", \"{ExistingProjectGuid}\"",
             "EndProject");
 
-        var added = (await _writer.AddProjectAsync(solution, "Package/Package.cdsproj")).Added;
+        var added = (await _writer.AddProjectAsync(solution, "Solution/DWE_Base.cdsproj")).Added;
 
         added.Should().BeTrue();
         var text = await File.ReadAllTextAsync(solution);
-        text.Should().Contain("Package\\Package.cdsproj");
+        text.Should().Contain("Solution\\DWE_Base.cdsproj");
         text.Should().NotContain("ActiveCfg");
         (await _reader.ReadProjectsAsync(solution)).Should().HaveCount(2);
     }

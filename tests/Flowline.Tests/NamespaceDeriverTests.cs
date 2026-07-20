@@ -11,7 +11,11 @@ public class NamespaceDeriverTests : IDisposable
 
     public void Dispose() => Directory.Delete(_tempDir, recursive: true);
 
-    // Helper: create Plugins/Plugins.csproj with given content
+    // Helper: the pre-Flowline conventional project — Plugins/Plugins.csproj with no solution file, so
+    // derivation goes through PluginProjectResolver.ConventionalCandidate. Deliberately NOT renamed to the
+    // scaffolded <SolutionName>.Plugins.csproj: that fallback only ever fires in hand-built or migrated
+    // repos, which are exactly the ones carrying this name. The scaffolded layout is covered by the
+    // CreateSolutionWith tests below.
     void CreateCsproj(string content)
     {
         var pluginsDir = Path.Combine(_tempDir, "Plugins");
@@ -58,12 +62,13 @@ public class NamespaceDeriverTests : IDisposable
     }
 
     [Fact]
-    public async Task Derive_NeitherRootNamespaceNorPackageId_ReturnsFilenameModels()
+    public async Task Derive_ConventionalProjectDeclaringNeither_ReturnsFilenameModels()
     {
         CreateCsproj("<Project><PropertyGroup></PropertyGroup></Project>");
 
         var result = await NamespaceDeriver.DeriveAsync(_tempDir, "MyApp");
 
+        // The conventional fallback's filename is still literally "Plugins".
         result.Should().Be("Plugins.Models");
     }
 
@@ -153,6 +158,19 @@ public class NamespaceDeriverTests : IDisposable
         var result = await NamespaceDeriver.DeriveAsync(_tempDir, "MyApp");
 
         result.Should().Be("Contoso.Plugins.Models");
+    }
+
+    [Fact]
+    public async Task DeriveAsync_ScaffoldedProjectDeclaringNeither_FollowsTheSolutionNamedFilename()
+    {
+        // Clone scaffolds Plugins/<SolutionName>.Plugins.csproj, so rule (3) — the csproj filename —
+        // now yields the solution-prefixed namespace rather than the bare "Plugins".
+        CreateSolutionWith(
+            ("Plugins", "MyApp.Plugins.csproj", "<Project><PropertyGroup><TargetFramework>net462</TargetFramework></PropertyGroup><ItemGroup><PackageReference Include=\"Microsoft.CrmSdk.CoreAssemblies\" /></ItemGroup></Project>"));
+
+        var result = await NamespaceDeriver.DeriveAsync(_tempDir, "MyApp");
+
+        result.Should().Be("MyApp.Plugins.Models");
     }
 
 }

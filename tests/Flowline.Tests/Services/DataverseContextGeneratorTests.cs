@@ -528,7 +528,7 @@ public class DataverseContextGeneratorTests
     public async Task GenerateAsync_WritesContextFileAtExpectedPath()
     {
         var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        var packageSrc = Path.Combine(root, "solutions", "MySolution", "Package", "src");
+        var packageSrc = Path.Combine(root, "Solution", "src");
         Directory.CreateDirectory(packageSrc);
         Directory.CreateDirectory(Path.Combine(packageSrc, "Other"));
 
