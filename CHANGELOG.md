@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **`PreImageAttribute.Name` / `PostImageAttribute.Name`**: get-only duplicates of `Alias` that nothing read. C# forbids setting a read-only property as a named attribute argument, so they could never be assigned in `[PreImage(...)]`/`[PostImage(...)]`, and the metadata scanner only ever read `Alias`. Dataverse's image `name` field is unaffected — it's still written on every registration, defaulting to `"Pre Image"`/`"Post Image"` and following `Alias` when set. Only breaks code that *read* `.Name` off an attribute instance; substitute `.Alias`, which returns the identical value.
+- **`HandlesAttribute.IsCustomMessage`**: never read by anything. It was assigned in the constructor body, and the metadata scanner reads attributes via `CustomAttributeData` (constructor arguments only) — so a ctor-body assignment was never visible to it in the first place. Distinguishing a Custom API message from a built-in one is done by inspecting the constructor argument's type instead, which is unaffected. Only breaks code that *read* `.IsCustomMessage` off an attribute instance.
+- **Unused package references**: `Microsoft.Extensions.Logging.Console` (no `AddConsole` anywhere — logging goes through Serilog) and three `PackageVersion` entries pinning nothing (`Microsoft.CrmSdk.CoreAssemblies`, `Microsoft.CodeAnalysis.CSharp`, `Microsoft.CodeAnalysis.Analyzers`). No behavior change.
+
 ### Added
 
 - **Multiple plugin projects per solution**: `push` now discovers plugin projects by reading the solution file and reflecting each candidate's build output for `IPlugin`/`CodeActivity` types, rather than assuming one project named `Plugins` producing an assembly named `Plugins` at `bin/Release/net462/publish/`. Each discovered project registers independently — its own assembly, plugin types, steps, and Custom APIs — in a single `push`. Project names, folder locations, a custom `<AssemblyName>`, and non-standard build output paths all work as long as the solution file references the project. A project whose build output reflects cleanly and bears neither type is skipped; `--verbose` reports what was skipped and why. `PluginPackageMode` remains one setting per solution.

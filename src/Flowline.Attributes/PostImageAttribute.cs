@@ -67,9 +67,6 @@ namespace Flowline.Attributes
         /// </summary>
         public string Alias { get; set; } = "postimage";
 
-        /// <summary>Same as <see cref="Alias"/>. Used internally by Flowline.</summary>
-        public string Name => Alias;
-
         /// <summary>
         /// Logical names of the columns to include in the snapshot.
         /// Omit to include all columns (use sparingly — fetch only what you need).

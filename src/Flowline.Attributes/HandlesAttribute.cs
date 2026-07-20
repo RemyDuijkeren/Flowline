@@ -47,7 +47,6 @@ namespace Flowline.Attributes
         {
             Message = message.ToString();
             Stage = stage;
-            IsCustomMessage = false;
         }
 
         /// <summary>
@@ -61,7 +60,6 @@ namespace Flowline.Attributes
         {
             Message = message ?? throw new ArgumentNullException(nameof(message));
             Stage = stage;
-            IsCustomMessage = true;
         }
 
         /// <summary>
@@ -75,12 +73,5 @@ namespace Flowline.Attributes
         /// The pipeline stage and execution mode.
         /// </summary>
         public Stage Stage { get; }
-
-        /// <summary>
-        /// <see langword="true"/> when this instance was constructed with a <c>string</c> message
-        /// name (Custom API); <see langword="false"/> when constructed with a <see cref="Message"/>
-        /// enum value.
-        /// </summary>
-        public bool IsCustomMessage { get; }
     }
 }
