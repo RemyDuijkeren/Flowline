@@ -134,7 +134,7 @@ var result = await service.RetrieveMultipleAsync(query, ct);
 var entities = await service.RetrieveAllAsync(query, ct);
 ```
 
-See `src/Flowline.Core/Services/OrganizationServiceExtensions.cs` for the paging extension. Applied in all four query methods in `OrphanCleanupService`.
+See `src/Flowline.Core/Services/DataverseExtensions.cs` for the paging extension. Applied in all four query methods in `OrphanCleanupService`.
 
 **Update (2026-07-03):** `OrphanCleanupService` now implements `IPostDeployService` and threads its deferred-entry state across the two phases via a private mutable instance field (`_deferred`) rather than an explicit parameter/return value passed by the caller. This is safe only because the service is registered `AddSingleton` and Flowline runs one command per process — see [post-deploy-service-di-fanout-protocol.md](post-deploy-service-di-fanout-protocol.md) for the interface shape and the tradeoffs of that design.
 

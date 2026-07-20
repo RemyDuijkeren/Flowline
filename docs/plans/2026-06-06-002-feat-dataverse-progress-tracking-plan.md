@@ -64,7 +64,7 @@ Replace the time-based PAC spinner ("2.46% of max time allotted") in `flowline s
 - `src/Flowline.Core/Services/WebResourceExecutor.cs` (lines 31–50) — existing `console.Progress().StartAsync()` pattern with `ProgressTask.Increment(1)` to follow.
 - `src/Flowline/Commands/FlowlineCommand.cs` — `ConnectToDataverseAsync` protected helper; already used by `PushCommand`.
 - `src/Flowline.Core/Services/DataverseConnector.cs` — produces `IOrganizationServiceAsync2` from PAC's cached auth profiles; no additional auth setup required.
-- `src/Flowline.Core/Services/OrganizationServiceExtensions.cs` — `RetrieveAllAsync` (paginated queries); single-record polling does not need pagination but follows the same `RetrieveMultipleAsync` pattern.
+- `src/Flowline.Core/Services/DataverseExtensions.cs` — `RetrieveAllAsync` (paginated queries); single-record polling does not need pagination but follows the same `RetrieveMultipleAsync` pattern.
 
 ### Institutional Learnings
 
@@ -195,7 +195,7 @@ flowline sync / clone
 **Execution note:** Start with a test that verifies `PollAsync` calls `onProgress` at each poll interval, and a test that verifies early exit when `statecode==3`.
 
 **Patterns to follow:**
-- `src/Flowline.Core/Services/OrganizationServiceExtensions.cs` — `RetrieveMultipleAsync` + `QueryExpression` usage.
+- `src/Flowline.Core/Services/DataverseExtensions.cs` — `RetrieveMultipleAsync` + `QueryExpression` usage.
 - `src/Flowline.Core/Services/WebResourceExecutor.cs` — `SemaphoreSlim` and `Task.WhenAll` patterns (not needed here, but shows how services are structured).
 
 **Test scenarios:**

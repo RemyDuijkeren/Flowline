@@ -4,7 +4,7 @@ using Microsoft.Xrm.Sdk.Query;
 
 namespace Flowline.Core.Services;
 
-public static class OrganizationServiceExtensions
+public static class DataverseExtensions
 {
     /// <summary>
     /// Retrieves all pages of a query, returning a flat list of all matching entities.
@@ -28,5 +28,16 @@ public static class OrganizationServiceExtensions
         } while (page.MoreRecords);
 
         return all;
+    }
+
+    /// <summary>
+    /// Reads an attribute that may have come back wrapped in an <see cref="AliasedValue"/> — as
+    /// linked-entity columns do — unwrapping it when present. Returns default when absent.
+    /// </summary>
+    public static T? GetAliasedValue<T>(this Entity entity, string attributeName)
+    {
+        if (!entity.Attributes.TryGetValue(attributeName, out var value))
+            return default;
+        return value is AliasedValue aliased ? (T?)aliased.Value : (T?)value;
     }
 }

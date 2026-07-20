@@ -413,7 +413,7 @@ The redundant Reader→Planner pass drawn above (Phase 1 and Phase 3 both run th
 
 **Named test requiring rewrite (same trap U5 flags for its planner test):** the currently-shipped `FormEventReaderTests.LoadSnapshotAsync_NoAnnotations_ShouldReturnEmptySnapshotWithoutThrowing` asserts `Assert.Empty(snapshot.Forms)` for a project with no annotations — this assertion is **false** under the broadened design (see the last Test scenario below) and must be rewritten to assert `Forms`/`TrackedLibraryNames` are populated instead, not left in place. Called out explicitly, the same way U5 calls out `Plan_HandlerOnUnreferencedLibraryWithNonMatchingId_IsKeptAndFlaggedUnrecognized`, so an implementer doesn't mistake a still-passing-but-now-wrong test for a green signal.
 
-**Patterns to follow:** `OrganizationServiceExtensions.RetrieveAllAsync` for both queries; `OrphanCleanupService.cs`'s `solutioncomponent`/`solution` join pattern for the solution-scoped form resolution (KTD11) — mirror, don't reinvent; `WebResourceReader.cs`'s `LoadSnapshotAsync` called directly, not reimplemented.
+**Patterns to follow:** `DataverseExtensions.RetrieveAllAsync` for both queries; `OrphanCleanupService.cs`'s `solutioncomponent`/`solution` join pattern for the solution-scoped form resolution (KTD11) — mirror, don't reinvent; `WebResourceReader.cs`'s `LoadSnapshotAsync` called directly, not reimplemented.
 
 **Test scenarios:**
 - Two JS files each with one `flowline:onload` annotation targeting different forms → both present in `Annotations`, both target forms present in `Forms`.

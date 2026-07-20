@@ -27,7 +27,7 @@ public class SolutionReader
         var solution = result.Entities.FirstOrDefault()
             ?? throw new InvalidOperationException($"Solution '{uniqueName}' not found in Dataverse.");
 
-        var prefix = GetAliasedValue<string>(solution, "publisher.customizationprefix")
+        var prefix = solution.GetAliasedValue<string>("publisher.customizationprefix")
             ?? throw new InvalidOperationException($"Could not read publisher prefix for solution '{uniqueName}'.");
 
         return new DataverseSolutionInfo(
@@ -46,12 +46,5 @@ public class SolutionReader
                 $"Dataverse patch solution '{uniqueName}' is not supported. Avoid patches with source-controlled solutions. See https://learn.microsoft.com/en-us/power-platform/alm/update-solutions-alm#create-solution-patches");
 
         return solution;
-    }
-
-    static T? GetAliasedValue<T>(Entity entity, string attributeName)
-    {
-        if (!entity.Attributes.TryGetValue(attributeName, out var value))
-            return default;
-        return value is AliasedValue aliased ? (T?)aliased.Value : (T?)value;
     }
 }

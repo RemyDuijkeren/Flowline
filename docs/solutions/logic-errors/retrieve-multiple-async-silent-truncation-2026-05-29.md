@@ -48,7 +48,7 @@ tags:
 
 Add a `RetrieveAllAsync` extension method on `IOrganizationServiceAsync2` that drives the `MoreRecords` / `PagingCookie` loop and returns a flat `List<Entity>`.
 
-**`src/Flowline.Core/Services/OrganizationServiceExtensions.cs`**
+**`src/Flowline.Core/Services/DataverseExtensions.cs`**
 
 ```csharp
 public static async Task<List<Entity>> RetrieveAllAsync(

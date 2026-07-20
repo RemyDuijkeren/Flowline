@@ -76,7 +76,7 @@ Unmanaged solution imports are additive — Dataverse never removes deleted comp
 - `src/Flowline.Core/Services/PluginReader.cs` — `GetComponentSolutionMembershipAsync`: cross-solution query via `solutioncomponent` + joined `solution.uniquename`; this is the canonical cross-solution check
 - `src/Flowline.Core/Services/WebResourceReader.cs` — `GetWebResourcesForSolutionAsync`: solutioncomponent join by solutionid + componenttype filter; uses `RetrieveAllAsync`
 - `src/Flowline.Core/Services/GenerateReader.cs` — `GetSolutionEntityLogicalNamesAsync`: queries `solutioncomponent` by solutionid + componenttype=1, uses `RetrieveAllAsync`; S_old query mirrors this
-- `src/Flowline.Core/Services/OrganizationServiceExtensions.cs` — `RetrieveAllAsync` paged extension; **mandatory for all solutioncomponent queries**
+- `src/Flowline.Core/Services/DataverseExtensions.cs` — `RetrieveAllAsync` paged extension; **mandatory for all solutioncomponent queries**
 - `src/Flowline/Utils/DriftChecker.cs` — pure static class shape; `DriftWarning` record + `DriftCategory` enum; pattern for `ComponentClassifier`
 - `src/Flowline/Commands/PushCommand.cs` — `--no-delete` flag declaration and `ResolveRunMode` helper; exact shape to mirror
 - `src/Flowline.Core/RunMode.cs` — `RunMode` enum (`Normal`, `NoDelete`, `DryRun`)
@@ -99,7 +99,7 @@ Unmanaged solution imports are additive — Dataverse never removes deleted comp
 
 - **S_new from `Solution.xml` `<RootComponents>` (not `customizations.xml`)**: Research found that `customizations.xml` contains entity metadata definitions, not component references. `Solution.xml`'s `<RootComponent type="N" id="{guid}"/>` entries are the component objectids + type codes. (see origin: Key Decisions — query approach)
 - **Dataverse SDK for all orphan operations**: `OrphanCleanupService` uses `IOrganizationServiceAsync2` directly (Pattern B). PAC CLI has no surface for `solutioncomponent` queries or delete/remove-from-solution operations. `DeployCommand` gets `DataverseConnector` in its constructor — first SDK dependency for this command.
-- **`RetrieveAllAsync` mandatory for all solutioncomponent queries**: Silent truncation at >5000 components creates both phantom orphans and missed orphans. The paged extension already exists in `OrganizationServiceExtensions`. No caller may use raw `RetrieveMultipleAsync` for solutioncomponent.
+- **`RetrieveAllAsync` mandatory for all solutioncomponent queries**: Silent truncation at >5000 components creates both phantom orphans and missed orphans. The paged extension already exists in `DataverseExtensions`. No caller may use raw `RetrieveMultipleAsync` for solutioncomponent.
 - **`--no-delete` reuses `RunMode.NoDelete`**: Consistent with `push --no-delete`. `RunMode` enum already exists in `Flowline.Core`. Suppresses all auto-actions; report still prints with "would be" phrasing.
 - **Dependency-blocked deferral, not failure**: Pre-import catches dependency errors specifically (not all errors). Deferred components are passed to post-import as a typed set. Post-import failures are non-blocking — logged as MANUAL, deploy result not affected.
 - **`componenttype` integers hardcoded in `ComponentClassifier`**: The mapping is a Dataverse invariant that changes only with platform schema upgrades. Hardcode with empirical validation notes; validate against a real org before finalizing values.
@@ -245,7 +245,7 @@ OrphanCleanupService:
 **Patterns to follow:**
 - `PluginReader.GetComponentSolutionMembershipAsync` — cross-solution query shape
 - `PluginService` — constructor, RunMode handling, `Console.Status().FlowlineSpinner()` for async ops
-- `OrganizationServiceExtensions.RetrieveAllAsync` — mandatory for S_old query (never raw `RetrieveMultipleAsync`)
+- `DataverseExtensions.RetrieveAllAsync` — mandatory for S_old query (never raw `RetrieveMultipleAsync`)
 
 **Test scenarios:**
 - Test expectation: none — `IOrganizationServiceAsync2` interactions are not mockable in the current test setup. Behavior validated by AE1–AE8 at integration level.

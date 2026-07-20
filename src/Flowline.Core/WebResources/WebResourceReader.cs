@@ -322,8 +322,8 @@ public class WebResourceReader(IAnsiConsole console)
         var solutionRefs = result.Entities
             .Select(e => new
             {
-                Name = GetAliasedValue<string>(e, "solution.uniquename"),
-                IsManaged = GetAliasedValue<bool>(e, "solution.ismanaged")
+                Name = e.GetAliasedValue<string>("solution.uniquename"),
+                IsManaged = e.GetAliasedValue<bool>("solution.ismanaged")
             })
             .Where(s => !string.IsNullOrWhiteSpace(s.Name))
             .ToList();
@@ -414,10 +414,4 @@ public class WebResourceReader(IAnsiConsole console)
         return new LocalWebResource(name, relativePath, path, Path.GetFileName(name), type, content, dependsOn);
     }
 
-    static T? GetAliasedValue<T>(Entity entity, string attributeName)
-    {
-        if (!entity.Attributes.TryGetValue(attributeName, out var value))
-            return default;
-        return value is AliasedValue aliased ? (T?)aliased.Value : (T?)value;
-    }
 }
