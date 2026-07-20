@@ -126,18 +126,23 @@ The root cause of both is that the layout is welded into `const` fields (`Flowli
 
 **Deferred to Planning:**
 - Whether `clone` should scaffold into `<SolutionName>.Plugins/` and rename, or run `pac plugin init --outputDirectory` against a temporary directory and move the contents. Both satisfy KD2; the first is fewer operations, the second avoids a transient directory at the project root if `clone` fails mid-run.
-- **Whether solution unique names are safe in every place this plan puts them — and the filename is not the hard part.** The name lands in four slots with different rules, and validation exists in none of them today:
+- **RESOLVED — a solution name can be a C# keyword, and that breaks the scaffold.** Verified rather than inferred:
 
-  | Slot | Constraint | Fails on |
-  |---|---|---|
-  | `<Name>.slnx` / `<Name>.Plugins.csproj` | filename | Windows reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9`) — valid alphanumerics, illegal filenames |
-  | `<AssemblyName>`, `<PackageId>` | lenient | little |
-  | **`namespace <Name>.Plugins`** | **C# identifier** | **a C# keyword** — a solution named `event`, `class`, `int`, or `object` produces source that does not compile |
+  **What Dataverse allows.** `solution.uniquename` is `[A-Za-z0-9_]`, first character a letter or underscore, `MaxLength: 65`, enforced server-side via the `InvalidSolutionUniqueName` platform error `0x8004F002` ([web service error codes](https://learn.microsoft.com/power-apps/developer/data-platform/reference/web-service-error-codes#microsoft-dataverse-errors)). **No reserved-word blocklist is documented.** A name cannot start with a digit, so `123Foo` is impossible — but `event`, `class`, `int`, `string`, `object`, `lock` and `params` are all legal solution names. The character set cannot protect us here: C# keywords are a strict subset of what Dataverse accepts.
 
-  The last row is the one to resolve. Dataverse has no reason to reject a solution named `event`, and because KD2's mechanism has `pac plugin init` derive the namespace from the directory name, the failure surfaces as a broken scaffold rather than an actionable error. `Package/Package.cdsproj` was immune because a generic constant cannot collide; deriving from the solution name is what creates the exposure.
+  **What breaks.** Measured on SDK 10 / `pac` 2.9.3:
 
-  Verified: PAC documents `--publisher-name` as `[A-Za-z0-9_]` with a first character of `[A-Za-z_]` ([pac solution reference](https://learn.microsoft.com/power-platform/developer/cli/reference/solution#pac-solution-init)). **No first-party statement of the same rule for solution `uniquename` was found**, so the input alphabet is assumed, not established — confirm it against a real org before relying on it. Planning should decide between validating and failing with an actionable message, or sanitising into a valid identifier, and where that check belongs so `clone` fails before `pac plugin init` writes an uncompilable namespace.
-- Whether per-type resolution (which discovered project is the cdsproj, which are plugin projects, which is WebResources) lives here or is folded into the multi-plugin plan's KD2 reflection pass. Both consume the same reader; the split is an implementation boundary, not a product decision.
+  | Namespace | Result |
+  |---|---|
+  | `event.Plugins` | `error CS1001: Identifier expected` |
+  | `@event.Plugins` | builds |
+  | `DWE_Base.Plugins`, `_123.Plugins` | build |
+
+  Running `pac plugin init` in a directory named `event.Plugins` reports *"Dataverse plug-in class library ... created successfully"*, writes `namespace event.Plugins` unescaped into `Plugin1.cs` and `PluginBase.cs`, and the project does not compile. So KD2's mechanism inherits the failure directly, and the user sees a parser error in generated code they never wrote, after a command that claimed success.
+
+  **Why the cheap fix does not fit.** A verbatim identifier (`@event`) compiles, but applying it means editing `pac`'s generated `.cs` files — and KD2 exists precisely so that nothing Flowline does edits or renames what `pac` produced. Naming the directory `@event.Plugins` would make `pac` emit a valid namespace, but it is a trick with no signpost.
+
+  **Direction for planning:** validate the solution name against the C# keyword list *before* invoking `pac plugin init`, and fail with a message naming the keyword and the collision. Consistent with the refuse-rather-than-guess stance taken on discovery. Only `clone` needs the check — an existing project already has its names. Left to planning: whether the same check belongs on the `.cdsproj`/`.slnx` filenames (Windows reserved device names — `CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9` — are legal Dataverse names and illegal filenames, and unlike the keyword case this one predates the plan).
 
 ---
 
