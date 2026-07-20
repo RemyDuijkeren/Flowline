@@ -186,7 +186,10 @@ public class PluginAssemblyReader(IAnsiConsole console)
             pluginTypes);
     }
 
-    private static List<string> BuildResolverPaths(string dllPath)
+    // internal, not private: PluginProjectResolver's discovery probe loads candidate build output with
+    // the same MetadataLoadContext idiom and must resolve references the same way. One resolver-path
+    // builder, two callers — reimplementing it there would drift.
+    internal static List<string> BuildResolverPaths(string dllPath)
     {
         var runtimeDir = RuntimeEnvironment.GetRuntimeDirectory();
         var paths = new List<string>(Directory.GetFiles(runtimeDir, "*.dll"));

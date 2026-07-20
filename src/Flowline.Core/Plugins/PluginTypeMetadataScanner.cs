@@ -47,6 +47,19 @@ public class PluginTypeMetadataScanner(IAnsiConsole console)
         ["System.Guid"]                             = 12,
     };
 
+    /// <summary>KD2's test on its own: does <paramref name="assembly"/> carry any plugin-bearing type?</summary>
+    /// <remarks>
+    /// Same filter <see cref="ScanPluginTypes"/> applies per type, minus the attribute parsing and
+    /// validation. Discovery uses this to decide whether a built project is a plugin project at all
+    /// (a probe), so it must not throw on a project whose <c>[Step]</c> usage is wrong — that error
+    /// belongs to the real analyze pass, where the user can act on it, not to detection.
+    /// </remarks>
+    public static bool ContainsPluginTypes(Assembly assembly) =>
+        assembly.GetTypes()
+                .Where(t => t is { IsClass: true, IsAbstract: false, IsPublic: true })
+                .Any(t => IsDerivedFrom(t, "Microsoft.Xrm.Sdk.IPlugin") ||
+                          IsDerivedFrom(t, "System.Activities.CodeActivity"));
+
     public List<PluginTypeMetadata> ScanPluginTypes(Assembly assembly)
     {
         var pluginTypes = new List<PluginTypeMetadata>();
@@ -731,7 +744,7 @@ public class PluginTypeMetadataScanner(IAnsiConsole console)
         return [.. elements.Select(e => (string)e.Value!)];
     }
 
-    private bool IsDerivedFrom(Type type, string targetTypeName)
+    private static bool IsDerivedFrom(Type type, string targetTypeName)
     {
         var current = type;
         while (current != null)

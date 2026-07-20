@@ -138,9 +138,11 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         var pushAssemblyOnly = pushScope.HasFlag(PushScope.AssemblyOnly);
         Logger.LogInformation("scope={Scope} mode={RunMode} standalone={Standalone}", pushScope, runMode, standaloneMode);
 
-        var (pluginsPushPath, pluginAssemblyName, reflectedPackageAssemblies) = (pushAssemblyOnly || pushScope.HasFlag(PushScope.Plugins))
+        // A solution can hold more than one plugin project, so this is a list — every confirmed project is
+        // pushed in this one invocation, each registered independently under the same Dataverse solution.
+        var pluginTargets = (pushAssemblyOnly || pushScope.HasFlag(PushScope.Plugins))
             ? await PreparePluginsForPushAsync(standaloneMode, settings, pluginPackageMode, standaloneParams, cancellationToken)
-            : (null, null, null);
+            : [];
         // FormEvents reads its annotations from the same built dist/ folder web resource sync uses, so
         // either scope alone needs it prepared — WebResources still implies FormEvents (unchanged default
         // bundling); FormEvents lets the registration step run on its own, against an already-pushed dist/.
@@ -153,31 +155,31 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
 
         var pushedChanges = false;
 
-        if (pluginsPushPath != null)
+        foreach (var target in pluginTargets)
         {
             // R1/KD1/KD6: a .nupkg alongside the classic .dll (or an explicit --pluginFile .nupkg) routes
             // to the shared package entry point regardless of --scope assemblyonly — there is no separate
             // "assembly only" package variant, since the package path always reconciles steps (KD4).
-            if (IsPackagePush(pluginsPushPath))
+            if (IsPackagePush(target.PushPath))
             {
-                Logger.LogInformation("Pushing plugin package: {Nupkg}", pluginsPushPath);
-                // Standalone mode already reflected this .nupkg to resolve pluginAssemblyName (R2a) — reuse
+                Logger.LogInformation("Pushing plugin package: {Nupkg}", target.PushPath);
+                // Standalone mode already reflected this .nupkg to resolve the assembly name (R2a) — reuse
                 // that list instead of paying for a second AnalyzePackage pass over the same file.
-                pushedChanges |= reflectedPackageAssemblies != null
-                    ? await pluginService.SyncSolutionFromPackageAsync(conn, reflectedPackageAssemblies,
-                        await File.ReadAllBytesAsync(pluginsPushPath, cancellationToken).ConfigureAwait(false),
-                        pluginsPushPath, pluginAssemblyName!, solutionName, runMode, cancellationToken).ConfigureAwait(false)
-                    : await pluginService.SyncSolutionFromPackageAsync(conn, pluginsPushPath, pluginAssemblyName!, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+                pushedChanges |= target.ReflectedAssemblies != null
+                    ? await pluginService.SyncSolutionFromPackageAsync(conn, target.ReflectedAssemblies,
+                        await File.ReadAllBytesAsync(target.PushPath, cancellationToken).ConfigureAwait(false),
+                        target.PushPath, target.AssemblyName, solutionName, runMode, cancellationToken).ConfigureAwait(false)
+                    : await pluginService.SyncSolutionFromPackageAsync(conn, target.PushPath, target.AssemblyName, solutionName, runMode, cancellationToken).ConfigureAwait(false);
             }
             else if (pushAssemblyOnly)
             {
-                Logger.LogInformation("Pushing assembly only: {Dll}", pluginsPushPath);
-                pushedChanges |= await pluginService.SyncAssemblyOnlyAsync(conn, pluginsPushPath, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+                Logger.LogInformation("Pushing assembly only: {Dll}", target.PushPath);
+                pushedChanges |= await pluginService.SyncAssemblyOnlyAsync(conn, target.PushPath, solutionName, runMode, cancellationToken).ConfigureAwait(false);
             }
             else
             {
-                Logger.LogInformation("Pushing plugins: {Dll}", pluginsPushPath);
-                pushedChanges |= await pluginService.SyncSolutionAsync(conn, pluginsPushPath, solutionName, runMode,
+                Logger.LogInformation("Pushing plugins: {Dll}", target.PushPath);
+                pushedChanges |= await pluginService.SyncSolutionAsync(conn, target.PushPath, solutionName, runMode,
                     settings.HasForce("delete-orphans"), settings.HasForce("recreate-assembly"), cancellationToken).ConfigureAwait(false);
             }
         }
@@ -273,48 +275,124 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         return (devEnv, solutionName, pluginPackageMode, profile);
     }
 
-    private async Task<(string? PushPath, string? AssemblyName, List<PluginAssemblyMetadata>? ReflectedAssemblies)> PreparePluginsForPushAsync(
+    /// <summary>One plugin artifact ready to push, with the assembly name Dataverse should see.</summary>
+    /// <param name="ReflectedAssemblies">
+    /// Set only when the artifact was already reflected to resolve <paramref name="AssemblyName"/>
+    /// (standalone <c>.nupkg</c>), so the push can skip a second pass over the same file.
+    /// </param>
+    internal sealed record PluginPushTarget(string PushPath, string AssemblyName, List<PluginAssemblyMetadata>? ReflectedAssemblies = null);
+
+    private async Task<List<PluginPushTarget>> PreparePluginsForPushAsync(
         bool standaloneMode,
         Settings settings,
         PluginPackageMode pluginPackageMode,
         StandaloneParams standaloneParams,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        standaloneMode
+            ? PrepareStandalonePluginForPush(settings, standaloneParams)
+            : await PrepareProjectPluginsForPushAsync(settings, pluginPackageMode, cancellationToken).ConfigureAwait(false);
+
+    // Standalone mode has no solution file and no project context, so none of the discovery below applies:
+    // --pluginFile named the artifact outright and ResolveStandalonePluginFilePath already resolved it.
+    private List<PluginPushTarget> PrepareStandalonePluginForPush(Settings settings, StandaloneParams standaloneParams)
     {
-        string? pluginsDll = standaloneMode ? standaloneParams.DllPath : null;
-        string? releaseOutputRoot = null;
+        var pushPath = standaloneParams.DllPath;
+        if (pushPath == null || !File.Exists(pushPath))
+            throw new FlowlineException(ExitCode.NotFound, $"Plugin file not found: {settings.PluginFile}");
 
-        string? pluginsFolder = null;
-        var didBuild = false;
-
-        if (!standaloneMode)
+        // For a .nupkg the filename typically embeds its NuGet version (e.g. "MyPlugins.1.0.0.nupkg"), so
+        // the filename minus extension does NOT match the assembly name inside the package (R2a) and
+        // SyncSolutionFromPackageAsync's primary-assembly match would fail. Reflect it to get the real
+        // name instead of guessing; the reflected list rides along so the push doesn't re-analyze it.
+        PluginPushTarget target;
+        if (IsPackagePush(pushPath))
         {
-            pluginsFolder = Path.Combine(RootFolder, PluginsName);
-            if (settings.NoBuild)
-                Console.Skip("Build plugins — skipping (--no-build active)");
-            else
-            {
-                didBuild = true;
-                if (await DotNetUtils.BuildSolutionAsync(pluginsFolder, DotnetBuild.Release, _capture, cancellationToken) != 0)
-                    throw new FlowlineException(ExitCode.BuildFailed, "Plugins build failed — fix errors above.");
-            }
-
-            // dotnet pack drops the .nupkg at bin/Release/ directly — a sibling of, not inside, the
-            // net462/publish/ folder the classic .dll lives in (confirmed against a real `pac plugin init`
-            // build). ResolvePluginPushPath searches this whole root, not just the .dll's own folder.
-            releaseOutputRoot = Path.Combine(pluginsFolder, "bin", "Release");
-            pluginsDll = Path.Combine(releaseOutputRoot, "net462", "publish", $"{PluginsName}.dll");
+            var (assemblyName, reflectedAssemblies) = ResolveStandalonePackageAssemblyName(pushPath, Console);
+            target = new PluginPushTarget(pushPath, assemblyName, reflectedAssemblies);
+        }
+        else
+        {
+            target = new PluginPushTarget(pushPath, Path.GetFileNameWithoutExtension(pushPath));
         }
 
-        if (pluginsDll == null || !File.Exists(pluginsDll))
-            throw new FlowlineException(ExitCode.NotFound, standaloneMode
-                ? $"Plugin file not found: {settings.PluginFile}"
-                : $"{PluginsName}.dll not found — build the solution (Release) first, or drop --no-build.");
+        Console.Verbose($"Found {pushPath}");
+        Console.Info($"[bold]{ConsolePath.FormatRelativePath(pushPath)}[/] found");
+
+        return [target];
+    }
+
+    // Project mode discovers plugin projects through the solution file rather than a fixed Plugins/ folder
+    // (R1/KD1), and resolves each one's real assembly name and output path by reflecting what it actually
+    // built (R4/KD3, R2/KD2). Build strategy is per candidate project, not one solution-wide build: a
+    // solution build would also run the WebResources npm target, which `--scope plugins` explicitly didn't
+    // ask for and which PrepareWebResourcesForPushAsync already owns when it is in scope.
+    private async Task<List<PluginPushTarget>> PrepareProjectPluginsForPushAsync(
+        Settings settings,
+        PluginPackageMode pluginPackageMode,
+        CancellationToken cancellationToken)
+    {
+        var reader = new MsBuildSolutionReader();
+        var solutionFile = reader.FindSolutionFile(RootFolder)
+            ?? throw new FlowlineException(ExitCode.NotFound,
+                "No solution file here — Flowline finds plugin projects through it. Run 'flowline clone' first.");
+
+        var projects = await reader.ReadProjectsAsync(solutionFile, cancellationToken).ConfigureAwait(false);
+        var candidates = PluginProjectResolver.EnumerateCandidates(projects, RootFolder);
+        var targets = new List<PluginPushTarget>();
+
+        foreach (var candidate in candidates)
+        {
+            var preFilterSkip = PluginProjectResolver.DescribePreFilterSkip(candidate.ProjectPath);
+            if (preFilterSkip != null)
+            {
+                Console.Verbose($"Skipped {candidate.ProjectName} — {preFilterSkip}");
+                continue;
+            }
+
+            var target = await PrepareProjectPluginForPushAsync(candidate, settings, pluginPackageMode, cancellationToken).ConfigureAwait(false);
+            if (target != null) targets.Add(target);
+        }
+
+        if (targets.Count == 0)
+            throw new FlowlineException(ExitCode.NotFound,
+                "No plugin project found — nothing the solution file references builds an IPlugin or CodeActivity type. " +
+                "Run again with --verbose to see what got skipped.");
+
+        return targets;
+    }
+
+    private async Task<PluginPushTarget?> PrepareProjectPluginForPushAsync(
+        PluginProjectCandidate candidate,
+        Settings settings,
+        PluginPackageMode pluginPackageMode,
+        CancellationToken cancellationToken)
+    {
+        var projectFolder = Path.GetDirectoryName(candidate.ProjectPath)!;
+        var didBuild = false;
+
+        if (settings.NoBuild)
+            Console.Skip($"Build {candidate.ProjectName} — skipping (--no-build active)");
+        else
+        {
+            didBuild = true;
+            if (await DotNetUtils.BuildSolutionAsync(projectFolder, DotnetBuild.Release, _capture, cancellationToken) != 0)
+                throw new FlowlineException(ExitCode.BuildFailed, $"{candidate.ProjectName} build failed — fix errors above.");
+        }
+
+        // R3: no plugin-bearing assembly in the output means this simply isn't a plugin project. Not an
+        // error — but never silent either, or it reads exactly like "my plugin didn't get registered".
+        var pluginsDll = PluginProjectResolver.ResolvePluginAssembly(candidate, note => Console.Verbose(note));
+        if (pluginsDll == null)
+        {
+            Console.Verbose($"Skipped {candidate.ProjectName} — no IPlugin or CodeActivity type in its build output");
+            return null;
+        }
 
         // R1/KD1: a .nupkg anywhere under the build output root routes to the package deployment path
         // automatically under PluginPackageMode.Auto (U2/R2's default); Nupkg requires one and Dll opts
-        // back into the classic path regardless. Standalone mode already has its final path resolved
-        // (ResolveStandalonePluginFilePath).
-        var pluginsPushPath = standaloneMode ? pluginsDll : ResolvePluginPushPath(pluginsDll, releaseOutputRoot!, pluginPackageMode);
+        // back into the classic path regardless. KD4: the mode is one per-solution setting, applied
+        // identically to every discovered project.
+        var pushPath = ResolvePluginPushPath(pluginsDll, candidate.BuildOutputRoot, pluginPackageMode);
 
         // NuGet's Pack step (produces the .nupkg the line above just found) has its own incremental check
         // that isn't aware of the recompiled DLL — if nothing else driving the nuspec changed (e.g. no new
@@ -322,32 +400,21 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         // leaves a previously-packed, now-stale .nupkg in place. Detected using paths already resolved
         // above (no new path assumptions); self-heals with one forced rebuild rather than silently pushing
         // stale content or failing the push outright. Only meaningful right after a build we just ran.
-        if (didBuild && IsPackagePush(pluginsPushPath) && File.GetLastWriteTimeUtc(pluginsPushPath) < File.GetLastWriteTimeUtc(pluginsDll))
+        if (didBuild && IsPackagePush(pushPath) && File.GetLastWriteTimeUtc(pushPath) < File.GetLastWriteTimeUtc(pluginsDll))
         {
-            Console.Warning($"[bold]{ConsolePath.FormatRelativePath(pluginsPushPath)}[/] is older than the assembly just built — " +
+            Console.Warning($"[bold]{ConsolePath.FormatRelativePath(pushPath)}[/] is older than the assembly just built — " +
                 "NuGet's Pack step didn't regenerate it (the package version likely didn't change). Forcing a full rebuild...");
-            if (await DotNetUtils.BuildSolutionAsync(pluginsFolder!, DotnetBuild.Release, _capture, cancellationToken, rebuild: true) != 0)
-                throw new FlowlineException(ExitCode.BuildFailed, "Plugins build failed — fix errors above.");
-            pluginsPushPath = ResolvePluginPushPath(pluginsDll, releaseOutputRoot!, pluginPackageMode);
+            if (await DotNetUtils.BuildSolutionAsync(projectFolder, DotnetBuild.Release, _capture, cancellationToken, rebuild: true) != 0)
+                throw new FlowlineException(ExitCode.BuildFailed, $"{candidate.ProjectName} build failed — fix errors above.");
+            pushPath = ResolvePluginPushPath(pluginsDll, candidate.BuildOutputRoot, pluginPackageMode);
         }
 
-        // Project mode's build output assembly name is deterministic (PluginsName). Standalone mode has
-        // no such project context — for a .nupkg, the file itself typically embeds its NuGet version
-        // (e.g. "MyPlugins.1.0.0.nupkg"), so the filename minus extension does NOT match the actual
-        // reflected assembly name inside the package (R2a) and SyncSolutionFromPackageAsync's primary-
-        // assembly match would fail. Reflect the package here to resolve the real name instead of guessing;
-        // the reflected list is carried back so the caller can skip re-analyzing the same .nupkg.
-        string assemblyName;
-        List<PluginAssemblyMetadata>? reflectedAssemblies = null;
-        if (standaloneMode && IsPackagePush(pluginsPushPath))
-            (assemblyName, reflectedAssemblies) = ResolveStandalonePackageAssemblyName(pluginsPushPath, Console);
-        else
-            assemblyName = standaloneMode ? Path.GetFileNameWithoutExtension(pluginsDll) : PluginsName;
+        Console.Verbose($"Found {pushPath}");
+        Console.Info($"[bold]{ConsolePath.FormatRelativePath(pushPath)}[/] found");
 
-        Console.Verbose($"Found {pluginsPushPath}");
-        Console.Info($"[bold]{ConsolePath.FormatRelativePath(pluginsPushPath)}[/] found");
-
-        return (pluginsPushPath, assemblyName, reflectedAssemblies);
+        // Read off the built artifact, not assumed from the folder or project name — that's what makes a
+        // custom <AssemblyName> resolve (R4).
+        return new PluginPushTarget(pushPath, Path.GetFileNameWithoutExtension(pluginsDll));
     }
 
     private async Task<string?> PrepareWebResourcesForPushAsync(
@@ -496,8 +563,8 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     internal static bool IsPackagePush(string pluginPushPath) =>
         string.Equals(Path.GetExtension(pluginPushPath), ".nupkg", StringComparison.OrdinalIgnoreCase);
 
-    // R2a: standalone mode has no project context to anchor a deterministic assembly name to (unlike
-    // project mode's PluginsName constant) — the .nupkg's own filename typically embeds its NuGet
+    // R2a: standalone mode has no project context to anchor an assembly name to (project mode reads it off
+    // the built assembly it discovered) — the .nupkg's own filename typically embeds its NuGet
     // version and does not match the reflected assembly name inside it. Reflect the package once here
     // to resolve the real name rather than guessing from the filename — the reflected list is also
     // returned so the caller can pass it straight into SyncSolutionFromPackageAsync's pre-reflected
