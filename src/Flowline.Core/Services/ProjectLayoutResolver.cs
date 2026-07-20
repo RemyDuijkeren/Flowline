@@ -81,6 +81,20 @@ public static class ProjectLayoutResolver
         return packageProjectPath;
     }
 
+    /// <summary>Absolute path to the folder holding the <c>.cdsproj</c> and the unpacked solution source.</summary>
+    /// <param name="slnFolder">The Flowline project root — the folder holding the solution file.</param>
+    /// <exception cref="FlowlineException">Whatever <see cref="ResolvePackageProjectAsync"/> throws.</exception>
+    /// <remarks>
+    /// The folder is wherever the project file is, not a folder named <c>Solution</c>: move the package
+    /// project into <c>src/Package/</c>, update the solution file, and sync, deploy and drift follow it.
+    /// Inheriting the throw is deliberate — a command that has to pack the solution has no fallback folder
+    /// to try, and a composed one would send it reading source out of a folder that isn't there.
+    ///
+    /// Only <c>clone</c> is exempt, because it creates the folder rather than finding it.
+    /// </remarks>
+    public static async Task<string> ResolvePackageFolderAsync(string slnFolder, CancellationToken cancellationToken = default) =>
+        Path.GetDirectoryName(await ResolvePackageProjectAsync(slnFolder, cancellationToken).ConfigureAwait(false))!;
+
     /// <summary>Absolute path to the WebResources project, or the conventional one when nothing resolves.</summary>
     /// <param name="slnFolder">The Flowline project root — the folder holding the solution file.</param>
     /// <returns>

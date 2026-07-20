@@ -129,6 +129,30 @@ public class ProjectLayoutResolverTests : IDisposable
             .Which.ExitCode.Should().Be(ExitCode.ConfigInvalid);
     }
 
+    // ── Package folder ───────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ResolvePackageFolderAsync_PackageFolderNotNamedSolution_ResolvesToWhereTheCdsprojIs()
+    {
+        // The whole point: sync, deploy and drift read 'src/' out of this folder, so a project that moved
+        // its package folder has to come back with the folder it moved to, not the one clone scaffolds.
+        WriteProject(Path.Combine("src", "Package", "Contoso.cdsproj"), CdsprojXml);
+        await WriteSlnxAsync(@"src\Package\Contoso.cdsproj");
+
+        (await ProjectLayoutResolver.ResolvePackageFolderAsync(_root))
+            .Should().Be(Path.Combine(_root, "src", "Package"));
+        Directory.Exists(Path.Combine(_root, "Solution")).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ResolvePackageFolderAsync_NoSolutionFile_ThrowsRatherThanGuessingAFolder()
+    {
+        var act = () => ProjectLayoutResolver.ResolvePackageFolderAsync(_root);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Which.ExitCode.Should().Be(ExitCode.NotFound);
+    }
+
     // ── WebResources project ─────────────────────────────────────────────────
 
     [Fact]

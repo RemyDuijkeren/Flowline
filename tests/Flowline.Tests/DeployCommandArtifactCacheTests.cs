@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Flowline.Commands;
 
 namespace Flowline.Tests;
@@ -134,7 +134,7 @@ public class DeployCommandArtifactCacheTests
     {
         var slnFolder = Path.Combine("C:", "repo");
 
-        var paths = await DeployCommand.GetDeploymentInputPathsAsync(slnFolder);
+        var paths = await DeployCommand.GetDeploymentInputPathsAsync(slnFolder, Path.Combine(slnFolder, "Solution"));
 
         paths.Should().BeEquivalentTo(
         [
@@ -149,7 +149,7 @@ public class DeployCommandArtifactCacheTests
     {
         var slnFolder = Path.Combine("C:", "repo");
 
-        var paths = await DeployCommand.GetDeploymentInputPathsAsync(slnFolder);
+        var paths = await DeployCommand.GetDeploymentInputPathsAsync(slnFolder, Path.Combine(slnFolder, "Solution"));
 
         paths.Should().NotContain(p => p.Contains("docs"));
         paths.Should().NotContain(p => p.Contains("tests"));
@@ -195,7 +195,7 @@ public class DeployCommandDeploymentInputPathDiscoveryTests : IDisposable
         var support = WriteProject(Path.Combine("Support", "Support.Plugins.csproj"), PluginProjectXml());
         WriteSolution(@"Sales\Sales.Plugins.csproj", @"Support\Support.Plugins.csproj");
 
-        var paths = await DeployCommand.GetDeploymentInputPathsAsync(_root);
+        var paths = await DeployCommand.GetDeploymentInputPathsAsync(_root, Path.Combine(_root, "Solution"));
 
         // The second project is the point: a change to it used to escape both the git-dirty gate and
         // the cache key, so a deploy could ship an artifact that didn't match the tree.
@@ -210,7 +210,7 @@ public class DeployCommandDeploymentInputPathDiscoveryTests : IDisposable
         var project = WriteProject(Path.Combine("Sales", "AV.Sales.Plugins.csproj"), PluginProjectXml());
         WriteSolution(@"Sales\AV.Sales.Plugins.csproj");
 
-        var paths = await DeployCommand.GetDeploymentInputPathsAsync(_root);
+        var paths = await DeployCommand.GetDeploymentInputPathsAsync(_root, Path.Combine(_root, "Solution"));
 
         paths.Should().Contain(project);
         paths.Should().NotContain(Path.Combine(_root, "Plugins", "Plugins.csproj"));
@@ -225,7 +225,7 @@ public class DeployCommandDeploymentInputPathDiscoveryTests : IDisposable
             """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>""");
         WriteSolution(@"Sales\Sales.Plugins.csproj", @"tests\Sales.Tests.csproj");
 
-        var paths = await DeployCommand.GetDeploymentInputPathsAsync(_root);
+        var paths = await DeployCommand.GetDeploymentInputPathsAsync(_root, Path.Combine(_root, "Solution"));
 
         paths.Should().NotContain(tests);
     }
@@ -233,7 +233,7 @@ public class DeployCommandDeploymentInputPathDiscoveryTests : IDisposable
     [Fact]
     public async Task GetDeploymentInputPathsAsync_NoSolutionFile_DegradesToConventionalList()
     {
-        var paths = await DeployCommand.GetDeploymentInputPathsAsync(_root);
+        var paths = await DeployCommand.GetDeploymentInputPathsAsync(_root, Path.Combine(_root, "Solution"));
 
         paths.Should().BeEquivalentTo(
         [

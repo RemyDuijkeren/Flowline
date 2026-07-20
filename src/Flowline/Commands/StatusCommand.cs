@@ -209,9 +209,14 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
 
         var isDirty = await IsRepoDirtyAsync(solution.UniqueName);
 
+        // Started once here, unwrapped inside the reader below rather than awaited here on purpose. status
+        // is read-only and advisory: a project with no solution file, or one listing two .cdsproj, still has
+        // environment versions worth showing, so the resolver's throw has to land where BuildGridRows
+        // already turns a FlowlineException into a dash — not out here, where it would abort the whole grid.
+        var packageFolder = ProjectLayoutResolver.ResolvePackageFolderAsync(rootFolder, cancellationToken);
+
         var (headers, rows) = StatusGrid.BuildGridRows([solution], results,
-            solutionName => DeployCommand.ReadLocalSolutionVersion(
-                FlowlineCommand<Settings>.PackageFolder(rootFolder)),
+            solutionName => DeployCommand.ReadLocalSolutionVersion(packageFolder.GetAwaiter().GetResult()),
             solutionName => isDirty);
 
         rows = StatusGrid.DetectVersionDrift(StatusGrid.TrimUnusedRevisionSegment(rows));

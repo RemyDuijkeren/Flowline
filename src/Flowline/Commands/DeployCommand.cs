@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.IO.Compression;
 using System.Text.Json;
 using System.Xml;
@@ -66,12 +66,17 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var slnFolder = RootFolder;
         var usingExplicitArtifact = !string.IsNullOrWhiteSpace(settings.Path);
 
+        // Resolved once, up front, and threaded through the rest of the run: every deploy needs the package
+        // folder — for the deployment-input scope, the DTAP gate's local version, the drift check and the
+        // pack — and re-reading the solution file at each of them would let one deploy act on two answers.
+        var packageFolder = await ProjectLayoutResolver.ResolvePackageFolderAsync(slnFolder, cancellationToken);
+
         // --path supplies an artifact that wasn't necessarily packed from the current local tree, so neither
         // check is meaningful there: git-clean and drift both assume packagePath is derived from Package/src.
         IReadOnlyList<string> deploymentInputPaths = [];
         if (!usingExplicitArtifact)
         {
-            deploymentInputPaths = await GetDeploymentInputPathsAsync(slnFolder, cancellationToken);
+            deploymentInputPaths = await GetDeploymentInputPathsAsync(slnFolder, packageFolder, cancellationToken);
             await ValidateGitCleanAsync(deploymentInputPaths, cancellationToken);
         }
 
@@ -99,7 +104,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
             gateVersion = cacheOutcome == CacheOutcome.Hit
                 ? cacheEntry!.Version
-                : ReadLocalSolutionVersion(PackageFolder(slnFolder));
+                : ReadLocalSolutionVersion(packageFolder);
         }
 
         await ValidateDtapGateAsync(sln, gateVersion, targetUrl, settings, cancellationToken);
@@ -122,7 +127,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             }
         }
 
-        await ValidateLocalStateAsync(slnFolder, settings, cancellationToken, checkDrift: !usingExplicitArtifact);
+        await ValidateLocalStateAsync(slnFolder, packageFolder, settings, cancellationToken, checkDrift: !usingExplicitArtifact);
 
         // Managed import only removes components no longer in the solution when Dataverse runs it as an
         // Upgrade (pac's --stage-and-upgrade) — plain import ("Update" semantics) never deletes anything,
@@ -182,7 +187,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             else
             {
                 Logger.LogInformation("Packing: {SolutionName}", sln.UniqueName);
-                packagePath = await PackSolutionAsync(sln, slnFolder, candidatePackagePath, settings, cancellationToken);
+                packagePath = await PackSolutionAsync(sln, packageFolder, candidatePackagePath, settings, cancellationToken);
                 if (currentCommitSha != null)
                     WriteCacheEntry(CacheManifestPath(packagePath), new ArtifactCacheEntry(gateVersion, sln.IncludeManaged, currentCommitSha));
             }
@@ -373,28 +378,24 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     //
     // Takes no solution name: all three project paths now come out of the solution file, so a relocated or
     // renamed project stays in scope without deploy knowing what it is called.
-    internal static async Task<IReadOnlyList<string>> GetDeploymentInputPathsAsync(string slnFolder, CancellationToken ct = default)
+    internal static async Task<IReadOnlyList<string>> GetDeploymentInputPathsAsync(string slnFolder, string packageFolder, CancellationToken ct = default)
     {
         var pluginProjects = await PluginProjectResolver.DiscoverAsync(slnFolder, SkipMissingProject, ct).ConfigureAwait(false);
         var webResourcesProject = await ProjectLayoutResolver.ResolveWebResourcesProjectAsync(slnFolder, ct).ConfigureAwait(false);
 
         return
         [
-            PackageFolder(slnFolder),
+            packageFolder,
             ..pluginProjects.Select(c => c.ProjectPath),
             webResourcesProject
         ];
     }
 
-    private async Task ValidateLocalStateAsync(string slnFolder, Settings settings, CancellationToken ct, bool checkDrift = true)
+    private async Task ValidateLocalStateAsync(string slnFolder, string packageFolder, Settings settings, CancellationToken ct, bool checkDrift = true)
     {
-        // Resolved, not composed: the .cdsproj entry in the solution file is what says the project is set
-        // up, and it carries its own actionable failures.
-        await ProjectLayoutResolver.ResolvePackageProjectAsync(slnFolder, ct);
-
         if (!checkDrift) return;
 
-        var drift = (await PluginWebResourceDriftChecker.CheckAsync(slnFolder, PackageFolder(slnFolder), cancellationToken: ct))
+        var drift = (await PluginWebResourceDriftChecker.CheckAsync(slnFolder, packageFolder, cancellationToken: ct))
             .Where(w => w.Category is DriftCategory.OnlyLocal or DriftCategory.PluginSizeMismatch)
             .ToList();
 
@@ -574,7 +575,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             $"{(solutionIncludeManaged ? "managed" : "unmanaged")} — pass a matching artifact or update the solution's managed setting.");
     }
 
-    private async Task<string> PackSolutionAsync(ProjectSolution sln, string slnFolder, string packagePath, Settings settings, CancellationToken ct)
+    private async Task<string> PackSolutionAsync(ProjectSolution sln, string packageFolder, string packagePath, Settings settings, CancellationToken ct)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(packagePath)!);
 
@@ -587,7 +588,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
                     .WithArguments(args => args
                         .AddIfNotNull(prefixArgs)
                         .Add("solution").Add("pack")
-                        .Add("--folder").Add(Path.Combine(PackageFolder(slnFolder), "src"))
+                        .Add("--folder").Add(Path.Combine(packageFolder, "src"))
                         .Add("--zipFile").Add(packagePath)
                         .Add("--packageType").Add(packageType))
                     .WithValidation(CommandResultValidation.None)

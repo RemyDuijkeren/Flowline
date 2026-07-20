@@ -37,16 +37,6 @@ public class FlowlineCommandTests
     }
 
     [Fact]
-    public void PackageFolder_ReturnsSlnFolderWithSolutionSubfolder()
-    {
-        // The folder name is role-based and identical in every repo — only the .cdsproj inside it
-        // carries the solution's identity.
-        var slnFolder = Path.Combine("repos", "MyProject");
-        FlowlineCommand<FlowlineSettings>.PackageFolder(slnFolder)
-            .Should().Be(Path.Combine("repos", "MyProject", "Solution"));
-    }
-
-    [Fact]
     public void RedactSensitiveArgs_ClientSecret_ReplacesWithAsterisks()
     {
         SubprocessCapture.RedactSensitiveArgs("--client-secret abc123")

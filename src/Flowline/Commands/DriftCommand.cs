@@ -36,7 +36,8 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
         var (projectSln, _) = await GetAndCheckSolutionAsync(null, env.EnvironmentUrl!, includeManaged: null, settings, cancellationToken, bypassCache: true);
 
         var slnFolder = RootFolder;
-        var packageFolder = PackageFolder(slnFolder);
+        // Resolved, not composed: the package folder is wherever the solution file says the .cdsproj lives.
+        var packageFolder = await ProjectLayoutResolver.ResolvePackageFolderAsync(slnFolder, cancellationToken);
 
         // drift has no --no-delete flag of its own — it's always read-only — so suppress the
         // deploy-specific "(--no-delete active)" hint in the printed report entirely. OrphanCleanupService

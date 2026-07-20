@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using CliWrap;
 using Flowline.Config;
 using Flowline.Core;
@@ -72,12 +72,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         var slnFolder = RootFolder;
         var solutionName = projectSln.UniqueName;
 
-        // Clone composes this path on purpose, and it is the only command allowed to. On a first clone
-        // there is no solution file and no .cdsproj yet — clone creates both — so there is nothing to
-        // resolve from. Everything downstream of creation (sync, deploy) reads the path back out of the
-        // solution file via ProjectLayoutResolver instead. Do not "fix" this into a resolver call: it runs
-        // before the thing it would resolve exists.
-        var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{solutionName}.cdsproj");
+        var cdsprojPath = Path.Combine(ScaffoldedPackageFolder(slnFolder), $"{solutionName}.cdsproj");
         var slnFilePath = ResolveSolutionFilePath(slnFolder, solutionName);
         var slnFileName = Path.GetFileName(slnFilePath);
 
@@ -93,9 +88,9 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         Logger.LogInformation("Validating pack: {SolutionName}", projectSln.UniqueName);
         var artifactsFolder = Path.Combine(slnFolder, "artifacts");
         Directory.CreateDirectory(artifactsFolder);
-        if (await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, false, _capture, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
+        if (await PacUtils.PackSolutionAsync(projectSln, ScaffoldedPackageFolder(slnFolder), artifactsFolder, false, _capture, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
         if (projectSln.IncludeManaged &&
-            await PacUtils.PackSolutionAsync(projectSln, PackageFolder(slnFolder), artifactsFolder, true, _capture, cancellationToken) != 0)
+            await PacUtils.PackSolutionAsync(projectSln, ScaffoldedPackageFolder(slnFolder), artifactsFolder, true, _capture, cancellationToken) != 0)
         {
             return (int)ExitCode.BuildFailed;
         }
@@ -112,11 +107,22 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         await ScaffoldAgentsFileAsync(projectSln.UniqueName, slnFileName, cancellationToken);
         await ScaffoldClaudeFileAsync(cancellationToken);
         await new DataverseContextGenerator(Console).GenerateAsync(
-            Path.Combine(PackageFolder(slnFolder), "src"), projectSln.UniqueName, RootFolder, cancellationToken);
+            Path.Combine(ScaffoldedPackageFolder(slnFolder), "src"), projectSln.UniqueName, RootFolder, cancellationToken);
 
         Console.Done("Cloned! Use 'push' and 'sync' to keep it in flow. ヽ(•‿•)ノ");
         return 0;
     }
+
+    /// <summary>The package folder clone creates: <c>Solution/</c> under the project root.</summary>
+    /// <remarks>
+    /// The folder clone <em>authors</em>, not one it discovers, and the only place in Flowline allowed to
+    /// name it. On a first clone there is no solution file and no <c>.cdsproj</c> yet — clone writes both —
+    /// so there is nothing to resolve from. Every command that runs afterwards resolves the folder from the
+    /// <c>.cdsproj</c> the solution file records (<see cref="ProjectLayoutResolver.ResolvePackageFolderAsync"/>),
+    /// which is what lets a project move its package folder and keep working. Do not "fix" these call sites
+    /// into resolver calls: they run before the thing they would resolve exists.
+    /// </remarks>
+    static string ScaffoldedPackageFolder(string slnFolder) => Path.Combine(slnFolder, "Solution");
 
     /// <summary>The C# reserved keywords, which cannot appear unescaped in a namespace declaration.</summary>
     private static readonly HashSet<string> s_csharpKeywords =
@@ -326,7 +332,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
     private void SeedWebResourceDistFromSrc(string slnFolder, string? publisherPrefix, string solutionName, Settings settings)
     {
-        var srcWebResources = Path.Combine(PackageFolder(slnFolder), "src", "WebResources");
+        var srcWebResources = Path.Combine(ScaffoldedPackageFolder(slnFolder), "src", "WebResources");
         var publicFolder = Path.Combine(slnFolder, "WebResources", "public");
 
         if (!Directory.Exists(srcWebResources))
@@ -376,17 +382,17 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             // Unmanaged content is always present once cloned (Both is a superset), so only a
             // switch to managed can leave the local source stale — and only when it doesn't
             // already have the managed layer (e.g. a previous clone/sync already fetched Both).
-            if (projectSln.IncludeManaged && !HasManagedContent(PackageFolder(slnFolder)))
-                await PacUtils.SyncSolutionFromDataverseAsync(projectSln.UniqueName, PackageFolder(slnFolder), environmentUrl, projectSln.IncludeManaged, _capture, cancellationToken);
+            if (projectSln.IncludeManaged && !HasManagedContent(ScaffoldedPackageFolder(slnFolder)))
+                await PacUtils.SyncSolutionFromDataverseAsync(projectSln.UniqueName, ScaffoldedPackageFolder(slnFolder), environmentUrl, projectSln.IncludeManaged, _capture, cancellationToken);
             else
                 Console.Skip("Solution already cloned — skipping");
 
             return;
         }
 
-        if (Directory.Exists(PackageFolder(slnFolder)))
+        if (Directory.Exists(ScaffoldedPackageFolder(slnFolder)))
             throw new FlowlineException(ExitCode.ConfigInvalid,
-                DescribePackageFolderWithoutCdsproj(PackageFolder(slnFolder), Path.GetFileName(cdsprojPath)));
+                DescribePackageFolderWithoutCdsproj(ScaffoldedPackageFolder(slnFolder), Path.GetFileName(cdsprojPath)));
 
         Directory.CreateDirectory(slnFolder);
 
@@ -415,8 +421,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         // under the role-based name and leaves the project file exactly as pac wrote it — the folder answers
         // "what kind of thing lives here", the file answers "which solution", and only the latter escapes
         // the repo.
-        Directory.Move(Path.Combine(slnFolder, projectSln.UniqueName), PackageFolder(slnFolder));
-        DeleteScaffoldedGitignore(PackageFolder(slnFolder)); // superseded by the project-root .gitignore
+        Directory.Move(Path.Combine(slnFolder, projectSln.UniqueName), ScaffoldedPackageFolder(slnFolder));
+        DeleteScaffoldedGitignore(ScaffoldedPackageFolder(slnFolder)); // superseded by the project-root .gitignore
 
         Console.Ok($"Solution [bold]{projectSln.UniqueName}[/] cloned in {FormatDuration(result.RunTime)}");
     }
