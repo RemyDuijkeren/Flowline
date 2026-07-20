@@ -179,8 +179,10 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
                     pushedChanges |= target.ReflectedAssemblies != null
                         ? await pluginService.SyncSolutionFromPackageAsync(conn, target.ReflectedAssemblies,
                             await File.ReadAllBytesAsync(target.PushPath, cancellationToken).ConfigureAwait(false),
-                            target.PushPath, target.AssemblyName, solutionName, runMode, cancellationToken).ConfigureAwait(false)
-                        : await pluginService.SyncSolutionFromPackageAsync(conn, target.PushPath, target.AssemblyName, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+                            target.PushPath, target.AssemblyName, solutionName, runMode, cancellationToken,
+                            pushedAssemblyNames).ConfigureAwait(false)
+                        : await pluginService.SyncSolutionFromPackageAsync(conn, target.PushPath, target.AssemblyName, solutionName, runMode,
+                            cancellationToken, pushedAssemblyNames).ConfigureAwait(false);
                 }
                 else if (pushAssemblyOnly)
                 {
@@ -306,8 +308,10 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     /// the only thing that distinguishes one project's push output from another's.
     /// </param>
     /// <param name="ReflectedAssemblies">
-    /// Set only when the artifact was already reflected to resolve <paramref name="AssemblyName"/>
-    /// (standalone <c>.nupkg</c>), so the push can skip a second pass over the same file.
+    /// Every plugin-bearing assembly inside the artifact, set for every <c>.nupkg</c> target in both
+    /// modes and null for a classic <c>.dll</c> (which is its own single assembly). Reflecting up front
+    /// spares the push a second pass over the same file, and is the only way
+    /// <see cref="CollectPushedAssemblyNames"/> learns a package's non-primary assembly names.
     /// </param>
     internal sealed record PluginPushTarget(
         string PushPath,
@@ -470,10 +474,16 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
 
         // R3: no plugin-bearing assembly in the output means this simply isn't a plugin project. Not an
         // error — but never silent either, or it reads exactly like "my plugin didn't get registered".
-        var pluginsDll = PluginProjectResolver.ResolvePluginAssembly(candidate, note => Console.Verbose(note));
+        // Under --no-build an unbuilt candidate is excluded, not fatal: the solution can reference a net4x
+        // project nobody built this run, which reflection would very likely have dropped anyway. Failing
+        // the whole push over it would take the projects that DID resolve down with it.
+        var pluginsDll = PluginProjectResolver.ResolvePluginAssembly(candidate, note => Console.Verbose(note),
+            requireBuildOutput: !settings.NoBuild);
         if (pluginsDll == null)
         {
-            Console.Verbose($"Skipped {candidate.ProjectName} — no IPlugin or CodeActivity type in its build output");
+            Console.Verbose(PluginProjectResolver.HasBuildOutput(candidate)
+                ? $"Skipped {candidate.ProjectName} — no IPlugin or CodeActivity type in its build output"
+                : $"Skipped {candidate.ProjectName} — nothing built in bin/Release to reflect (--no-build active)");
             return null;
         }
 
@@ -503,8 +513,22 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
 
         // Read off the built artifact, not assumed from the folder or project name — that's what makes a
         // custom <AssemblyName> resolve (R4).
-        return new PluginPushTarget(pushPath, Path.GetFileNameWithoutExtension(pluginsDll), candidate.ProjectName);
+        return BuildProjectPushTarget(pushPath, Path.GetFileNameWithoutExtension(pluginsDll), candidate.ProjectName, Console);
     }
+
+    /// <summary>Builds one project's push target, reflecting a <c>.nupkg</c> once if that's what it packed.</summary>
+    /// <remarks>
+    /// Project mode used to leave <see cref="PluginPushTarget.ReflectedAssemblies"/> null, which cost it
+    /// twice: the push re-analyzed the same <c>.nupkg</c>, and — the part that mattered —
+    /// <see cref="CollectPushedAssemblyNames"/> could never see a package's NON-primary assemblies, so
+    /// every sibling project's orphan sweep read them as having no local source. The assembly name still
+    /// comes off the built <c>.dll</c>, not the package: that is what resolves a custom
+    /// <c>&lt;AssemblyName&gt;</c> (R4), and it is the name the package's primary-assembly match expects.
+    /// </remarks>
+    internal static PluginPushTarget BuildProjectPushTarget(string pushPath, string assemblyName, string projectName, IAnsiConsole console) =>
+        IsPackagePush(pushPath)
+            ? new PluginPushTarget(pushPath, assemblyName, projectName, new PluginAssemblyReader(console).AnalyzePackage(pushPath))
+            : new PluginPushTarget(pushPath, assemblyName, projectName);
 
     private async Task<string?> PrepareWebResourcesForPushAsync(
         bool standaloneMode,

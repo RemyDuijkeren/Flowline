@@ -179,15 +179,18 @@ public static class PluginProjectResolver
     /// </summary>
     /// <param name="candidate">The candidate to resolve, already built.</param>
     /// <param name="reportSkip">Receives one note per output assembly that turned out not to be the plugin assembly.</param>
+    /// <param name="requireBuildOutput">
+    /// Whether an unbuilt candidate is an error. See <see cref="FindOutputAssemblies"/>.
+    /// </param>
     /// <returns>The confirmed assembly path, or <c>null</c> when nothing in the output is plugin-bearing (R3).</returns>
     /// <remarks>
     /// Returning <c>null</c> rather than throwing is R3: a solution project that builds no plugin types is
     /// not an error, it's just not a plugin project. Not finding any build output at all <em>is</em> an
     /// error — see <see cref="FindOutputAssemblies"/>.
     /// </remarks>
-    public static string? ResolvePluginAssembly(PluginProjectCandidate candidate, Action<string> reportSkip)
+    public static string? ResolvePluginAssembly(PluginProjectCandidate candidate, Action<string> reportSkip, bool requireBuildOutput = true)
     {
-        foreach (var dllPath in FindOutputAssemblies(candidate))
+        foreach (var dllPath in FindOutputAssemblies(candidate, requireBuildOutput))
         {
             if (ConfirmsPluginTypes(dllPath, out var failure))
                 return dllPath;
@@ -201,9 +204,22 @@ public static class PluginProjectResolver
     }
 
     /// <summary>Every assembly in a candidate's Release output, best guess at the plugin assembly first.</summary>
+    /// <param name="candidate">The candidate whose output to enumerate.</param>
+    /// <param name="requireBuildOutput">
+    /// Whether an unbuilt candidate is an error (the default) or just an empty result.
+    /// <para>
+    /// After a build ran, empty output is a real problem and must throw. Under <c>--no-build</c> it isn't:
+    /// the solution file can reference a <c>net4x</c> project that simply hasn't been built, and that
+    /// project may not be a plugin project at all — reflection is the only thing that could have said so,
+    /// and there is nothing to reflect. Throwing there kills the whole push over a project it was never
+    /// going to register, so the caller excludes it instead and the "no plugin project found" error still
+    /// fires when nothing resolves.
+    /// </para>
+    /// </param>
     /// <exception cref="FlowlineException">
-    /// <see cref="ExitCode.NotFound"/> when the project has no Release output — reflection needs something
-    /// to read, and "unbuilt" must say so rather than resolve to nothing and look like "not a plugin project".
+    /// <see cref="ExitCode.NotFound"/> when the project has no Release output and
+    /// <paramref name="requireBuildOutput"/> is set — reflection needs something to read, and "unbuilt"
+    /// must say so rather than resolve to nothing and look like "not a plugin project".
     /// </exception>
     /// <remarks>
     /// Ordering carries the whole optimisation: an assembly named after the project file goes first, so the
@@ -211,16 +227,18 @@ public static class PluginProjectResolver
     /// with its own <c>&lt;AssemblyName&gt;</c> simply has no such match and falls back to reflecting in
     /// path order, which still resolves it — just not on the first try.
     /// </remarks>
-    public static IReadOnlyList<string> FindOutputAssemblies(PluginProjectCandidate candidate)
+    public static IReadOnlyList<string> FindOutputAssemblies(PluginProjectCandidate candidate, bool requireBuildOutput = true)
     {
         var dllPaths = Directory.Exists(candidate.BuildOutputRoot)
             ? Directory.GetFiles(candidate.BuildOutputRoot, "*.dll", SearchOption.AllDirectories)
             : [];
 
         if (dllPaths.Length == 0)
-            throw new FlowlineException(ExitCode.NotFound,
-                $"No Release build output for '{candidate.ProjectName}' — build it first, or drop --no-build. " +
-                $"Looked in {ConsolePath.FormatRelativePath(candidate.BuildOutputRoot)}.");
+            return requireBuildOutput
+                ? throw new FlowlineException(ExitCode.NotFound,
+                    $"No Release build output for '{candidate.ProjectName}' — build it first, or drop --no-build. " +
+                    $"Looked in {ConsolePath.FormatRelativePath(candidate.BuildOutputRoot)}.")
+                : [];
 
         var expectedName = Path.GetFileNameWithoutExtension(candidate.ProjectPath);
 
@@ -236,6 +254,15 @@ public static class PluginProjectResolver
                .ThenBy(p => p, StringComparer.OrdinalIgnoreCase)
                .ToList();
     }
+
+    /// <summary>Whether the candidate's Release output holds anything at all to reflect.</summary>
+    /// <remarks>
+    /// Lets a caller that passed <c>requireBuildOutput: false</c> tell the two reasons for a <c>null</c>
+    /// resolve apart — "nothing was built" and "built, but carries no plugin types" are different things
+    /// to tell the user, and only the resolver knows what counts as output.
+    /// </remarks>
+    public static bool HasBuildOutput(PluginProjectCandidate candidate) =>
+        FindOutputAssemblies(candidate, requireBuildOutput: false).Count > 0;
 
     static bool IsUnderPublishFolder(string dllPath) =>
         Path.GetDirectoryName(dllPath) is { } dir &&

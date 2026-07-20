@@ -524,6 +524,57 @@ public class PushCommandTests : IDisposable
         PushCommand.IsPackagePush(Path.Combine(_root, "Plugins.dll")).Should().BeFalse();
     }
 
+    // -- BuildProjectPushTarget: project mode must reflect its own .nupkg --
+    // Project mode used to leave ReflectedAssemblies null, so CollectPushedAssemblyNames could never see
+    // a package's non-primary assemblies — the sibling projects' orphan sweeps then read them as having
+    // no local source. Driven through the production builder with a real .nupkg, not a hand-built target.
+
+    [Fact]
+    public void BuildProjectPushTarget_MultiAssemblyPackage_ShouldReflectEveryAssemblyInIt()
+    {
+        CopyXrmSdkDllNextTo(_root);
+        var primary = BuildPluginDll(_root, "Sales", "Sales.SomePlugin");
+        var secondary = BuildPluginDll(_root, "Sales.Shared", "Sales.Shared.OtherPlugin");
+        var nupkg = Path.Combine(_root, "Sales.1.0.0.nupkg");
+        BuildNupkg(nupkg, primary, secondary);
+
+        var target = PushCommand.BuildProjectPushTarget(nupkg, "Sales", "Plugins.Sales", new Spectre.Console.Testing.TestConsole());
+
+        target.AssemblyName.Should().Be("Sales");
+        target.ReflectedAssemblies.Should().NotBeNull();
+        target.ReflectedAssemblies!.Select(a => a.Name).Should().BeEquivalentTo(["Sales", "Sales.Shared"]);
+    }
+
+    [Fact]
+    public void CollectPushedAssemblyNames_WithAProjectModePackageTarget_ShouldIncludeItsNonPrimaryAssemblies()
+    {
+        // End-to-end for the set Finding 1's fix depends on: a real .nupkg through the real builder,
+        // beside a classic sibling — every name the push owns has to come out.
+        CopyXrmSdkDllNextTo(_root);
+        var primary = BuildPluginDll(_root, "Sales", "Sales.SomePlugin");
+        var secondary = BuildPluginDll(_root, "Sales.Shared", "Sales.Shared.OtherPlugin");
+        var nupkg = Path.Combine(_root, "Sales.1.0.0.nupkg");
+        BuildNupkg(nupkg, primary, secondary);
+
+        var packageTarget = PushCommand.BuildProjectPushTarget(nupkg, "Sales", "Plugins.Sales", new Spectre.Console.Testing.TestConsole());
+
+        PushCommand.CollectPushedAssemblyNames([packageTarget, Target("Plugins.Support", "Support")])
+                   .Should().BeEquivalentTo(["Sales", "Sales.Shared", "Support"]);
+    }
+
+    [Fact]
+    public void BuildProjectPushTarget_ClassicDll_ShouldNotReflectAnything()
+    {
+        // R7: the classic single-assembly shape stays exactly as it was — no reflection, no extra names.
+        var dll = Path.Combine(_root, "Support.dll");
+        File.WriteAllText(dll, "");
+
+        var target = PushCommand.BuildProjectPushTarget(dll, "Support", "Plugins.Support", new Spectre.Console.Testing.TestConsole());
+
+        target.ReflectedAssemblies.Should().BeNull();
+        PushCommand.CollectPushedAssemblyNames([target]).Should().BeEquivalentTo(["Support"]);
+    }
+
     // -- ResolveStandalonePackageAssemblyName (R2a — standalone mode has no project context) --
     // A real .nupkg filename typically embeds its NuGet version (e.g. "MyPlugins.1.0.0.nupkg"), which
     // does not match the reflected assembly name inside it ("MyPlugins") — Path.GetFileNameWithoutExtension

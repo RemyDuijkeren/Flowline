@@ -8,6 +8,17 @@ origin: docs/brainstorms/solution-versioning-requirements.md
 
 # feat: Solution versioning — auto patch bump and git tagging on sync
 
+> **2026-07-20 — the git-tagging half of this plan is dropped. R4, R5 and Phase 2's `--no-tag`
+> flag will not be built, and `GitUtils.CreateTagAsync` has been deleted.**
+>
+> Tagging at HEAD only makes sense against committed code, and a sync leaves the working tree
+> dirty by design. Making the tag meaningful would mean Flowline committing on the user's behalf,
+> which was rejected. That settled a broader rule: **Flowline performs no git write operations —
+> commits, tags and branches are the user's to make.** Flowline reads git state (branch, remote,
+> uncommitted paths) and nothing more.
+>
+> The version-bump half (R1–R3) is unaffected and shipped.
+
 ## Summary
 
 After all existing sync steps succeed, `SyncCommand` reads the current Dataverse solution version via `pac solution online-version`, increments the patch component (or major/minor via `--bump`), writes the new version back to Dataverse, and creates an immutable bare-version git tag at HEAD (e.g., `1.0.6`). `--no-tag` suppresses tagging for a run. MinVer in `Plugins.csproj` is already scaffolded and needs no changes — bare version tags are its default.

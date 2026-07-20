@@ -282,20 +282,26 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
     const int PackageAssemblyCheckMaxAttempts = 5;
     static readonly TimeSpan PackageAssemblyCheckDelay = TimeSpan.FromSeconds(1);
 
+    /// <param name="pushedAssemblyNames">
+    /// Every assembly name this <c>flowline push</c> owns, across all its plugin projects. Same contract
+    /// as <see cref="SyncSolutionAsync(IOrganizationServiceAsync2,string,string,RunMode,bool,bool,CancellationToken,IReadOnlyCollection{string})"/>:
+    /// <c>null</c> means "only this package's own assemblies", the single-project shape.
+    /// </param>
     public async Task<bool> SyncSolutionFromPackageAsync(
         IOrganizationServiceAsync2 service,
         string nupkgPath,
         string projectAssemblyName,
         string solutionName,
         RunMode runMode = RunMode.Normal,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<string>? pushedAssemblyNames = null)
     {
         if (string.IsNullOrWhiteSpace(nupkgPath))
             throw new ArgumentException("nupkgPath is required and cannot be empty.", nameof(nupkgPath));
 
         var assemblies = console.Status().FlowlineSpinner().Start("Analyzing plugin package...", _ => _assemblyReader.AnalyzePackage(nupkgPath));
         var nupkgContent = await File.ReadAllBytesAsync(nupkgPath, cancellationToken).ConfigureAwait(false);
-        return await SyncSolutionFromPackageAsync(service, assemblies, nupkgContent, nupkgPath, projectAssemblyName, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+        return await SyncSolutionFromPackageAsync(service, assemblies, nupkgContent, nupkgPath, projectAssemblyName, solutionName, runMode, cancellationToken, pushedAssemblyNames).ConfigureAwait(false);
     }
 
     // Public so callers that must reflect the package themselves before this call (e.g. standalone push
@@ -309,7 +315,8 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         string projectAssemblyName,
         string solutionName,
         RunMode runMode = RunMode.Normal,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<string>? pushedAssemblyNames = null)
     {
         // R3a: zero-DLL rejection — first check, ahead of detect-and-block and change detection,
         // since neither has anything to operate against without at least one reflected assembly.
@@ -373,13 +380,22 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         var hash = Convert.ToHexString(SHA256.HashData(nupkgContent));
         var storedHash = existingAssembly != null ? ParseStoredHash(existingAssembly.GetAttributeValue<string>("description")) : null;
 
+        // The package path's own multi-assembly protection (AllPluginTypeIds) only covers assemblies
+        // inside THIS package. A sibling plugin project in the same solution — classic .dll or its own
+        // package — is just as live and just as prefix-visible in snapshot.CustomApis, so its plugin type
+        // ids join the same known set. Without this the unlinked-Custom-API sweep reads the sibling's
+        // Custom APIs as unowned and deletes them as part of the normal plan, no --force needed. null
+        // when nothing else is being pushed, which keeps the single-project plan byte-identical (R7).
+        var siblingPluginTypeIds = await SiblingPluginTypeIdsAsync(
+            service, assemblies.Select(a => a.Name), pushedAssemblyNames, cancellationToken).ConfigureAwait(false);
+
         if (existingPackage != null && storedHash == hash)
         {
             // R4/R11 (item 8): package content unchanged — no package write at all, but each assembly's
             // steps are still diffed and synced (or previewed under --dry-run) directly against its own
             // scoped snapshot (drift correction). Never touches WarnOrphanAssembliesAsync/WarnOrphanStepsAsync
             // (R11/KTD16).
-            return await SyncPackageStepsOnlyAsync(service, assemblies, existingPackage.Id, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+            return await SyncPackageStepsOnlyAsync(service, assemblies, existingPackage.Id, solutionName, runMode, siblingPluginTypeIds, cancellationToken).ConfigureAwait(false);
         }
 
         // Snapshot + plan per assembly against CURRENT (pre-update) state — this is the one plan shown
@@ -396,7 +412,7 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
             preSnapshots = await _reader.LoadPackageSnapshotsAsync(service, existingPackage.Id, assemblies, solutionName, cancellationToken).ConfigureAwait(false);
         else
             preSnapshots = assemblies.Select(m => (m, (Entity?)null, (RegistrationSnapshot?)null)).ToList();
-        var preKnownPluginTypeIds = AllPluginTypeIds(preSnapshots);
+        var preKnownPluginTypeIds = UnionPluginTypeIds(AllPluginTypeIds(preSnapshots), siblingPluginTypeIds);
 
         var prePlans = new List<(PluginAssemblyMetadata Metadata, RegistrationPlan Plan)>();
         foreach (var (metadata, assemblyEntity, snapshot) in preSnapshots)
@@ -470,7 +486,7 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         // on PluginTypes.Deletes being empty here so an assembly the pre-update pass already handled
         // isn't reprocessed a second time once Dataverse's own package sync has removed its emptied type.
         // PluginTypes.Deletes itself is never acted on (KD2/KD4/KTD13 — Dataverse handles that removal).
-        var postKnownPluginTypeIds = AllPluginTypeIds(postSnapshots);
+        var postKnownPluginTypeIds = UnionPluginTypeIds(AllPluginTypeIds(postSnapshots), siblingPluginTypeIds);
         foreach (var (metadata, assemblyEntity, snapshot) in postSnapshots)
         {
             if (assemblyEntity == null || snapshot == null)
@@ -496,10 +512,11 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         Guid packageId,
         string solutionName,
         RunMode runMode,
+        IReadOnlySet<Guid>? siblingPluginTypeIds,
         CancellationToken cancellationToken)
     {
         var snapshots = await _reader.LoadPackageSnapshotsAsync(service, packageId, assemblies, solutionName, cancellationToken).ConfigureAwait(false);
-        var knownPluginTypeIds = AllPluginTypeIds(snapshots);
+        var knownPluginTypeIds = UnionPluginTypeIds(AllPluginTypeIds(snapshots), siblingPluginTypeIds);
 
         var plans = new List<(PluginAssemblyMetadata Metadata, RegistrationPlan Plan)>();
         foreach (var (metadata, assemblyEntity, snapshot) in snapshots)
@@ -632,13 +649,28 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
 
     /// <summary>The assembly names in this push other than the one being synced right now.</summary>
     internal static IReadOnlyList<string> SiblingAssemblyNames(string managedAssemblyName, IReadOnlyCollection<string>? pushedAssemblyNames) =>
-        pushedAssemblyNames == null
-            ? []
-            : pushedAssemblyNames.Where(n => !string.IsNullOrWhiteSpace(n)
-                                          && !string.Equals(n, managedAssemblyName, StringComparison.OrdinalIgnoreCase))
-                                 .Distinct(StringComparer.OrdinalIgnoreCase)
-                                 .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
-                                 .ToList();
+        SiblingAssemblyNames([managedAssemblyName], pushedAssemblyNames);
+
+    /// <summary>
+    /// The assembly names in this push other than the ones synced by the pass currently running.
+    /// </summary>
+    /// <remarks>
+    /// The classic path syncs exactly one assembly per pass; a package syncs every assembly it contains
+    /// in one pass, so "the ones being synced right now" is a set, not a name.
+    /// </remarks>
+    internal static IReadOnlyList<string> SiblingAssemblyNames(
+        IEnumerable<string> managedAssemblyNames,
+        IReadOnlyCollection<string>? pushedAssemblyNames)
+    {
+        if (pushedAssemblyNames == null) return [];
+
+        var managed = new HashSet<string>(managedAssemblyNames, StringComparer.OrdinalIgnoreCase);
+
+        return pushedAssemblyNames.Where(n => !string.IsNullOrWhiteSpace(n) && !managed.Contains(n))
+                                  .Distinct(StringComparer.OrdinalIgnoreCase)
+                                  .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                                  .ToList();
+    }
 
     /// <summary>Condition excluding every assembly this push owns from an orphan query.</summary>
     /// <remarks>
@@ -668,13 +700,20 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
     // path already solves with AllPluginTypeIds, reached here through separate projects instead of
     // separate assemblies in one package. null when nothing else is being pushed, which keeps the
     // single-project plan byte-identical to what it was (R7).
-    async Task<IReadOnlySet<Guid>?> SiblingPluginTypeIdsAsync(
+    Task<IReadOnlySet<Guid>?> SiblingPluginTypeIdsAsync(
         IOrganizationServiceAsync2 service,
         string managedAssemblyName,
         IReadOnlyCollection<string>? pushedAssemblyNames,
+        CancellationToken cancellationToken) =>
+        SiblingPluginTypeIdsAsync(service, [managedAssemblyName], pushedAssemblyNames, cancellationToken);
+
+    async Task<IReadOnlySet<Guid>?> SiblingPluginTypeIdsAsync(
+        IOrganizationServiceAsync2 service,
+        IEnumerable<string> managedAssemblyNames,
+        IReadOnlyCollection<string>? pushedAssemblyNames,
         CancellationToken cancellationToken)
     {
-        var siblings = SiblingAssemblyNames(managedAssemblyName, pushedAssemblyNames);
+        var siblings = SiblingAssemblyNames(managedAssemblyNames, pushedAssemblyNames);
         if (siblings.Count == 0) return null;
 
         var query = new QueryExpression("plugintype") { ColumnSet = new ColumnSet("plugintypeid") };
@@ -1417,6 +1456,17 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
     // Custom API (plugintypeid belongs to another assembly in this same package) apart from a genuinely
     // orphaned one. snapshot.CustomApis is queried by publisher prefix, not per-assembly, so without this
     // every assembly's plan would otherwise see every OTHER assembly's Custom API as unowned and delete it.
+    // Returns the original set untouched when there is nothing to add, so a single-project push plans
+    // against exactly the set it always did (R7).
+    static IReadOnlySet<Guid> UnionPluginTypeIds(IReadOnlySet<Guid> ids, IReadOnlySet<Guid>? extra)
+    {
+        if (extra == null || extra.Count == 0) return ids;
+
+        var merged = new HashSet<Guid>(ids);
+        merged.UnionWith(extra);
+        return merged;
+    }
+
     static IReadOnlySet<Guid> AllPluginTypeIds(IEnumerable<(PluginAssemblyMetadata Metadata, Entity? Assembly, RegistrationSnapshot? Snapshot)> snapshots) =>
         snapshots.Where(s => s.Snapshot != null).SelectMany(s => s.Snapshot!.PluginTypes.Values.Select(t => t.Id)).ToHashSet();
 

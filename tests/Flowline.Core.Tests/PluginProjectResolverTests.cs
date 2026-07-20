@@ -196,6 +196,56 @@ public class PluginProjectResolverTests : IDisposable
            .Which.Message.Should().Contain("build it first").And.Contain("Plugins");
     }
 
+    [Fact]
+    public void FindOutputAssemblies_WithUnbuiltProjectAndBuildOutputNotRequired_ShouldReturnEmptyInsteadOfThrowing()
+    {
+        // --no-build: the solution can reference a net4x project nobody built this run, which may not be a
+        // plugin project at all. Throwing would kill the whole push before reflection could exclude it.
+        var candidate = Candidate("SomeLibrary", "SomeLibrary.csproj");
+
+        PluginProjectResolver.FindOutputAssemblies(candidate, requireBuildOutput: false).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ResolvePluginAssembly_WithUnbuiltProjectAndBuildOutputNotRequired_ShouldReturnNull()
+    {
+        var candidate = Candidate("SomeLibrary", "SomeLibrary.csproj");
+
+        PluginProjectResolver.ResolvePluginAssembly(candidate, _ => { }, requireBuildOutput: false).Should().BeNull();
+    }
+
+    [Fact]
+    public void ResolvePluginAssembly_WithOneUnbuiltAndOneBuiltProjectUnderNoBuild_ShouldResolveTheBuiltOne()
+    {
+        // The push shape Finding 3 is about: one candidate has nothing in bin/Release, the other does.
+        // The unbuilt one is excluded; the built one still resolves, so the push proceeds.
+        var unbuilt = Candidate("SomeLibrary", "SomeLibrary.csproj");
+        var built = Candidate("Plugins", "Plugins.csproj");
+        var outputDir = CreateOutput(built, "net462", "publish");
+        var pluginsDll = BuildPluginDll(outputDir, "Plugins", "Acme.AccountPostCreatePlugin");
+        CopyXrmSdkDllNextTo(outputDir);
+
+        var resolved = new[] { unbuilt, built }
+                       .Select(c => PluginProjectResolver.ResolvePluginAssembly(c, _ => { }, requireBuildOutput: false))
+                       .Where(p => p != null)
+                       .ToList();
+
+        resolved.Should().ContainSingle().Which.Should().Be(pluginsDll);
+    }
+
+    [Fact]
+    public void HasBuildOutput_ShouldSeparateNothingBuiltFromBuiltButNotAPluginProject()
+    {
+        // The caller's two --no-build skip messages hang off this: "nothing built" and "built, no plugin
+        // types" are different things to tell the user.
+        var unbuilt = Candidate("SomeLibrary", "SomeLibrary.csproj");
+        var dtoOnly = Candidate("Entities", "Entities.csproj");
+        BuildDependencyDll(CreateOutput(dtoOnly, "net462"), "Entities", "Acme.AccountDto");
+
+        PluginProjectResolver.HasBuildOutput(unbuilt).Should().BeFalse();
+        PluginProjectResolver.HasBuildOutput(dtoOnly).Should().BeTrue();
+    }
+
     // ---- U3: confirmation by reflection ----
 
     [Fact]

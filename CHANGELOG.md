@@ -17,7 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`push --no-build` no longer aborts over an unbuilt solution project**: a solution-referenced `net4x` project with nothing in its `bin/Release` failed the entire push before reflection could rule it out — even when it was never a plugin project. It's now skipped (`--verbose` names it) and the push continues with the projects that did resolve; "no plugin project found" still fires when none do. Unchanged without `--no-build`, where missing build output after a build ran is still a real error.
+
 - **`clone` scaffolds a `.slnx` by default**: the .NET 10 default format, replacing the classic `.sln`. Flowline previously opted out on the assumption that a `.slnx` can't hold a `.cdsproj` — it can (verified on SDK 10.0.302: `dotnet sln list` enumerates the entry and `dotnet build` runs SolutionPackager through to the zip). Only `dotnet sln add` refuses a `.cdsproj`, and Flowline writes that entry itself now. Existing projects are untouched — Flowline reads both formats and never converts one. Pass `--sln` for the old behavior.
+
+### Fixed
+
+- **A plugin package no longer deletes a sibling project's Custom APIs**: with one project pushing a `.nupkg` and another a classic `.dll` — what `PluginPackageMode.Auto` does when only one project enables packaging — the package path's unlinked-Custom-API sweep read the sibling project's live Custom APIs as orphaned and deleted them as part of the normal plan, no `--force delete-orphans` involved. Every plugin project's assemblies are now known to every pass. Single-project and standalone pushes are unaffected.
 
 ## [0.12.0] - 2026-07-17
 
