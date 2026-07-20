@@ -207,7 +207,7 @@ app.Configure(config =>
         sln.SetDescription("Work with the project's solution file (.sln or .slnx).");
 
         sln.AddCommand<SlnAddCommand>("add")
-           .WithDescription("Add a .cdsproj to the project's solution file. 'dotnet sln add' refuses .cdsproj files and exits 0 while doing it, so this writes the entry directly. Creates the solution file when there isn't one. Runs standalone — no Flowline project needed.")
+           .WithDescription("Add a .cdsproj to an existing solution file. 'dotnet sln add' refuses .cdsproj files and exits 0 while doing it, so this writes the entry directly. Doesn't create a solution file — run 'dotnet new sln' first. Runs standalone: no Flowline project needed.")
            .WithExample("sln", "add", "Package/Package.cdsproj");
     });
 });
