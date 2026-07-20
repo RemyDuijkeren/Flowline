@@ -59,44 +59,6 @@ public class WebResourceService(IAnsiConsole console)
         return true;
     }
 
-    public async Task DownloadWebResourcesAsync(
-        IOrganizationServiceAsync2 service,
-        string webresourceRoot,
-        string solutionName,
-        CancellationToken cancellationToken = default)
-    {
-        var snapshot = await console.Status().FlowlineSpinner().StartAsync(
-            $"Loading web resources for {solutionName}...",
-            _ => _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, cancellationToken))
-            .ConfigureAwait(false);
-
-        if (snapshot.DataverseResources.Count == 0)
-        {
-            console.Skip("No web resources in solution — skipping");
-            return;
-        }
-
-        var prefix = $"{snapshot.Solution.PublisherPrefix}_{solutionName}/";
-        var count = 0;
-
-        foreach (var (name, resource) in snapshot.DataverseResources)
-        {
-            if (string.IsNullOrEmpty(resource.Content)) continue;
-
-            var relativePath = name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-                ? name[prefix.Length..]
-                : name;
-
-            var localPath = Path.Combine(webresourceRoot, relativePath.Replace("/", Path.DirectorySeparatorChar.ToString()));
-            Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
-            await File.WriteAllBytesAsync(localPath, Convert.FromBase64String(resource.Content), cancellationToken).ConfigureAwait(false);
-            console.Verbose(name);
-            count++;
-        }
-
-        console.Ok($"[bold]{count}[/] web resource(s) downloaded");
-    }
-
     void WriteSnapshotVerbose(WebResourceSyncSnapshot snapshot)
     {
         console.Verbose(BuildResourceTree($"Dataverse ({snapshot.DataverseResources.Count})", snapshot.DataverseResources.Keys));

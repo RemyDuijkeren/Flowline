@@ -66,7 +66,7 @@ flowchart TB
 
 ### Deferred to Follow-Up Work
 
-- Download direction: `DownloadWebResourcesAsync` strips the auto-prefix when writing files to disk. Verbatim resources downloaded from Dataverse currently land under `{prefix}/…` — whether they should strip to their verbatim path is not addressed in the brainstorm and left for a follow-up.
+- ~~Download direction: `DownloadWebResourcesAsync` strips the auto-prefix when writing files to disk. Verbatim resources downloaded from Dataverse currently land under `{prefix}/…` — whether they should strip to their verbatim path is not addressed in the brainstorm and left for a follow-up.~~ **Moot (2026-07-20).** This note was written against a method that already had no callers: `CloneCommand.CloneWebResourcesFromDataverseAsync` was removed on 2026-05-17 by `2026-05-17-001-refactor-remove-mapping-replace-dotnet-build-plan.md` U3/R6, four weeks earlier. `DownloadWebResourcesAsync` has since been deleted. Clone now seeds from `Package/src/WebResources/` (already unpacked by PAC) rather than fetching from Dataverse, so there is no download direction to define. Should one ever be added, it would target `dist/` and this question would need answering fresh.
 
 ### Outside this product's identity
 

@@ -375,73 +375,13 @@ public class WebResourceServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task DownloadWebResourcesAsync_NoWebResources_ShouldSkip()
-    {
-        await _service.DownloadWebResourcesAsync(_serviceMock, _webresourceRoot, "MySolution");
-
-        Assert.Empty(Directory.EnumerateFiles(_webresourceRoot, "*.*", SearchOption.AllDirectories));
-        Assert.Contains("skipping", _console.Output);
-    }
-
-    [Fact]
-    public async Task DownloadWebResourcesAsync_WithResources_ShouldWriteFilesStrippingPrefix()
-    {
-        SetupWebResources(
-            RemoteWebResource(Guid.NewGuid(), "my_MySolution/scripts/form.js", "console.log('test');"),
-            RemoteWebResource(Guid.NewGuid(), "my_MySolution/styles/main.css", "body {}"));
-
-        await _service.DownloadWebResourcesAsync(_serviceMock, _webresourceRoot, "MySolution");
-
-        Assert.Equal("console.log('test');", File.ReadAllText(Path.Combine(_webresourceRoot, "scripts", "form.js")));
-        Assert.Equal("body {}", File.ReadAllText(Path.Combine(_webresourceRoot, "styles", "main.css")));
-    }
-
-    [Fact]
-    public async Task DownloadWebResourcesAsync_WithResources_ShouldShowSuccessCount()
-    {
-        SetupWebResources(
-            RemoteWebResource(Guid.NewGuid(), "my_MySolution/a.js", "a"),
-            RemoteWebResource(Guid.NewGuid(), "my_MySolution/b.js", "b"));
-
-        await _service.DownloadWebResourcesAsync(_serviceMock, _webresourceRoot, "MySolution");
-
-        Assert.Contains("2", _console.Output);
-    }
-
-    [Fact]
-    public async Task DownloadWebResourcesAsync_NameWithoutPrefix_ShouldFallbackToFullNameAsPath()
-    {
-        SetupWebResources(RemoteWebResource(Guid.NewGuid(), "other_prefix_name.js", "content"));
-
-        await _service.DownloadWebResourcesAsync(_serviceMock, _webresourceRoot, "MySolution");
-
-        Assert.True(File.Exists(Path.Combine(_webresourceRoot, "other_prefix_name.js")));
-    }
-
-    [Fact]
-    public async Task DownloadWebResourcesAsync_NullContent_ShouldSkipFile()
-    {
-        var resource = new Entity("webresource", Guid.NewGuid())
-        {
-            ["name"] = "my_MySolution/empty.js",
-            ["displayname"] = "empty.js",
-            ["webresourcetype"] = new OptionSetValue((int)WebResourceType.Js)
-        };
-        SetupWebResources(resource);
-
-        await _service.DownloadWebResourcesAsync(_serviceMock, _webresourceRoot, "MySolution");
-
-        Assert.Empty(Directory.EnumerateFiles(_webresourceRoot, "*.*", SearchOption.AllDirectories));
-    }
-
-    [Fact]
-    public async Task DownloadWebResourcesAsync_SolutionNotFound_ShouldThrow()
+    public async Task SyncSolutionAsync_SolutionNotFound_ShouldThrow()
     {
         _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "solution"), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection()));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            _service.DownloadWebResourcesAsync(_serviceMock, _webresourceRoot, "MySolution"));
+            _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution"));
     }
 
     // --- Dependency planner (U4) ---
