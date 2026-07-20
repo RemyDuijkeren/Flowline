@@ -126,7 +126,17 @@ The root cause of both is that the layout is welded into `const` fields (`Flowli
 
 **Deferred to Planning:**
 - Whether `clone` should scaffold into `<SolutionName>.Plugins/` and rename, or run `pac plugin init --outputDirectory` against a temporary directory and move the contents. Both satisfy KD2; the first is fewer operations, the second avoids a transient directory at the project root if `clone` fails mid-run.
-- Whether solution unique names require sanitisation before use as project filenames. Dataverse unique names are alphanumeric-plus-underscore and must start with a letter, which is a valid MSBuild project name — so probably not, but worth confirming against a name starting with a digit-bearing prefix before relying on it.
+- **Whether solution unique names are safe in every place this plan puts them — and the filename is not the hard part.** The name lands in four slots with different rules, and validation exists in none of them today:
+
+  | Slot | Constraint | Fails on |
+  |---|---|---|
+  | `<Name>.slnx` / `<Name>.Plugins.csproj` | filename | Windows reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9`) — valid alphanumerics, illegal filenames |
+  | `<AssemblyName>`, `<PackageId>` | lenient | little |
+  | **`namespace <Name>.Plugins`** | **C# identifier** | **a C# keyword** — a solution named `event`, `class`, `int`, or `object` produces source that does not compile |
+
+  The last row is the one to resolve. Dataverse has no reason to reject a solution named `event`, and because KD2's mechanism has `pac plugin init` derive the namespace from the directory name, the failure surfaces as a broken scaffold rather than an actionable error. `Package/Package.cdsproj` was immune because a generic constant cannot collide; deriving from the solution name is what creates the exposure.
+
+  Verified: PAC documents `--publisher-name` as `[A-Za-z0-9_]` with a first character of `[A-Za-z_]` ([pac solution reference](https://learn.microsoft.com/power-platform/developer/cli/reference/solution#pac-solution-init)). **No first-party statement of the same rule for solution `uniquename` was found**, so the input alphabet is assumed, not established — confirm it against a real org before relying on it. Planning should decide between validating and failing with an actionable message, or sanitising into a valid identifier, and where that check belongs so `clone` fails before `pac plugin init` writes an uncompilable namespace.
 - Whether per-type resolution (which discovered project is the cdsproj, which are plugin projects, which is WebResources) lives here or is folded into the multi-plugin plan's KD2 reflection pass. Both consume the same reader; the split is an implementation boundary, not a product decision.
 
 ---

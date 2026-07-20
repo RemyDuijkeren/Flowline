@@ -33,40 +33,35 @@ public class MsBuildSolutionReader
     /// Returning <c>null</c> rather than throwing is deliberate: callers such as
     /// <c>flowline sln add</c> treat "no solution file yet" as a state to create, not an error.
     /// </remarks>
-    public string? FindSolutionFile(string folder)
-    {
-        if (!Directory.Exists(folder)) return null;
+    public string? FindSolutionFile(string folder) => FindAllSolutionFiles(folder).FirstOrDefault();
 
-        foreach (var extension in s_extensionsByPreference)
-        {
-            var match = Directory.EnumerateFiles(folder, $"*{extension}", SearchOption.TopDirectoryOnly)
-                                 .Order(StringComparer.OrdinalIgnoreCase)
-                                 .FirstOrDefault();
-            if (match != null) return match;
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// True when <paramref name="folder"/> holds both a <c>.sln</c> and a <c>.slnx</c> sharing a base name —
-    /// the state <c>dotnet sln migrate</c> leaves behind.
-    /// </summary>
+    /// <summary>Every solution file directly inside <paramref name="folder"/>, most-preferred first.</summary>
     /// <remarks>
-    /// Not an error: <see cref="FindSolutionFile"/> picks the <c>.slnx</c>. Commands surface it so the user
-    /// knows to delete the leftover, because a bare <c>dotnet build</c> in such a folder fails with MSB1011.
+    /// Filtering on the real extension matters: <c>EnumerateFiles("*.sln")</c> can also match a
+    /// <c>.slnx</c> through 8.3 short-name expansion on some Windows volumes, which would make a folder
+    /// holding only a <c>.slnx</c> look like it holds both.
     /// </remarks>
-    public bool HasCoexistingSolutionFiles(string folder)
+    public IReadOnlyList<string> FindAllSolutionFiles(string folder)
     {
-        if (!Directory.Exists(folder)) return false;
+        if (!Directory.Exists(folder)) return [];
 
-        var slnx = Directory.EnumerateFiles(folder, "*.slnx", SearchOption.TopDirectoryOnly);
-        var slnBaseNames = Directory.EnumerateFiles(folder, "*.sln", SearchOption.TopDirectoryOnly)
-                                    .Select(Path.GetFileNameWithoutExtension)
-                                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        return slnx.Any(x => slnBaseNames.Contains(Path.GetFileNameWithoutExtension(x)));
+        return s_extensionsByPreference
+               .SelectMany(ext => Directory.EnumerateFiles(folder, $"*{ext}", SearchOption.TopDirectoryOnly)
+                                           .Where(f => string.Equals(Path.GetExtension(f), ext, StringComparison.OrdinalIgnoreCase))
+                                           .Order(StringComparer.OrdinalIgnoreCase))
+               .ToList();
     }
+
+    /// <summary>True when <paramref name="folder"/> holds more than one solution file.</summary>
+    /// <remarks>
+    /// Not an error: <see cref="FindSolutionFile"/> picks one deterministically. Commands surface it so the
+    /// user knows to remove the extra, because a bare <c>dotnet build</c> in such a folder fails with MSB1011.
+    ///
+    /// Deliberately not limited to a same-base-name pair. <c>dotnet sln migrate</c> produces that pair, but
+    /// <c>App.slnx</c> beside <c>Zeta.sln</c> is just as ambiguous to the build — and writing to whichever
+    /// sorts first while staying silent is the worse outcome.
+    /// </remarks>
+    public bool HasCoexistingSolutionFiles(string folder) => FindAllSolutionFiles(folder).Count > 1;
 
     /// <summary>
     /// Reads every project entry from the solution file at <paramref name="solutionFilePath"/>.
@@ -107,10 +102,9 @@ public class MsBuildSolutionReader
         string projectPath,
         CancellationToken cancellationToken = default)
     {
-        var target = NormalizePath(projectPath);
         var projects = await ReadProjectsAsync(solutionFilePath, cancellationToken).ConfigureAwait(false);
 
-        return projects.FirstOrDefault(p => string.Equals(p.Path, target, StringComparison.OrdinalIgnoreCase));
+        return projects.FirstOrDefault(p => PathEquals(p.Path, projectPath));
     }
 
     /// <summary>
@@ -129,7 +123,7 @@ public class MsBuildSolutionReader
         {
             return await serializer.OpenAsync(solutionFilePath, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is SolutionException or SolutionArgumentException or XmlException)
+        catch (Exception ex) when (ex is SolutionException or SolutionArgumentException or XmlException or IOException or UnauthorizedAccessException)
         {
             // SolutionException derives from FormatException and carries Line/Column; the argument
             // variant surfaces when a parse error stems from model validation (duplicate GUIDs, etc.).
@@ -147,8 +141,24 @@ public class MsBuildSolutionReader
     /// <c>.slnx</c> yields backslashes and <c>.sln</c> yields forward slashes on Windows. Callers compare
     /// these against on-disk locations, so the difference must not escape this class.
     /// </remarks>
-    internal static string NormalizePath(string path) =>
-        path.Replace('\\', Path.DirectorySeparatorChar)
-            .Replace('/', Path.DirectorySeparatorChar)
-            .TrimStart(Path.DirectorySeparatorChar);
+    internal static string NormalizePath(string path)
+    {
+        var normalized = path.Replace('\\', Path.DirectorySeparatorChar)
+                             .Replace('/', Path.DirectorySeparatorChar);
+
+        // Only a relative path may be stripped. Trimming unconditionally silently re-roots an absolute
+        // POSIX path ("/opt/x.csproj" becomes "opt/x.csproj") and mangles a UNC share
+        // (@"\\server\share\P.cdsproj" becomes @"server\share\P.cdsproj").
+        //
+        // IsPathFullyQualified, not IsPathRooted: on Windows a bare leading separator is "rooted"
+        // (drive-relative), but @"\Plugins\X.csproj" still names the same project as "Plugins\X.csproj"
+        // and must normalize to it, or the already-present check misses.
+        return Path.IsPathFullyQualified(normalized)
+            ? normalized
+            : normalized.TrimStart(Path.DirectorySeparatorChar);
+    }
+
+    /// <summary>Compares two project paths the way a solution file means them: separator- and case-insensitively.</summary>
+    internal static bool PathEquals(string a, string b) =>
+        string.Equals(NormalizePath(a), NormalizePath(b), StringComparison.OrdinalIgnoreCase);
 }

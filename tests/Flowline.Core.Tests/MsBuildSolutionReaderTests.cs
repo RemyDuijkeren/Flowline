@@ -234,12 +234,56 @@ EndGlobal
     }
 
     [Fact]
-    public void HasCoexistingSolutionFiles_DifferentBaseNames_ReturnsFalse()
+    public void HasCoexistingSolutionFiles_DifferentBaseNames_StillReturnsTrue()
     {
+        // `dotnet build` can't choose between these any more than it can between a same-name pair,
+        // so staying silent here would mean writing to whichever sorts first without warning.
         Write("One.sln", SlnWithBothProjects);
         Write("Two.slnx", SlnxWithBothProjects);
 
-        _reader.HasCoexistingSolutionFiles(_root).Should().BeFalse();
+        _reader.HasCoexistingSolutionFiles(_root).Should().BeTrue();
+    }
+
+    [Fact]
+    public void HasCoexistingSolutionFiles_TwoFilesOfTheSameFormat_ReturnsTrue()
+    {
+        Write("One.sln", SlnWithBothProjects);
+        Write("Two.sln", SlnWithBothProjects);
+
+        _reader.HasCoexistingSolutionFiles(_root).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("Plugins/X.csproj")]
+    [InlineData("/Plugins/X.csproj")]
+    public void NormalizePath_RelativeInput_StripsAnyLeadingSeparator(string input)
+    {
+        MsBuildSolutionReader.NormalizePath(input)
+            .Should().Be(Sep("Plugins/X.csproj"));
+    }
+
+    [Fact]
+    public void NormalizePath_RootedInput_StaysRooted()
+    {
+        // Stripping unconditionally re-roots an absolute path, turning /opt/x.csproj into opt/x.csproj.
+        var rooted = Path.Combine(Path.GetTempPath(), "x.csproj");
+
+        var normalized = MsBuildSolutionReader.NormalizePath(rooted);
+
+        Path.IsPathRooted(normalized).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ReadProjectsAsync_LockedFile_ThrowsConfigInvalidNotRawIoException()
+    {
+        // The realistic case is the solution file being open in an IDE.
+        var path = Write("Locked.sln", SlnWithBothProjects);
+        using var hold = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        var act = () => _reader.ReadProjectsAsync(path);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Which.ExitCode.Should().Be(ExitCode.ConfigInvalid);
     }
 
     [Fact]

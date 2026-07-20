@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`clone` also scaffolds `CLAUDE.md`**: `AGENTS.md` alone isn't picked up by Claude Code, which only auto-loads `CLAUDE.md` — clone now writes a one-line `CLAUDE.md` (`@AGENTS.md`) alongside it so Claude Code loads the same instructions. Skipped if `CLAUDE.md` already exists.
+- **`flowline sln add <path>`**: wires a `.cdsproj` into the project's solution file. `dotnet sln add` refuses a `.cdsproj` — and exits 0 while doing it, so a script can't detect the failure ([dotnet/sdk#47638](https://github.com/dotnet/sdk/issues/47638)) — so Flowline writes the entry itself. `clone` already does this for projects it creates; the command exists for the ones it didn't, like a repo migrating off spkl, Daxif, or PACX. Runs standalone: no `.flowline`, no git repo, no PAC login. Works with `.sln` and `.slnx`, creates one when there is none, and never converts an existing file.
 - **`clone --sln`**: opts a new project out of `.slnx` and scaffolds the classic `.sln` instead. For repos a teammate, build agent, or CI runner opens on .NET SDK 8 or older — `.slnx` needs 9.0.200+. It's a flag rather than an SDK check on purpose: Flowline ships as a `net10.0` tool, so the machine running `clone` is never the one at risk. Nothing else about the clone changes.
 
 ### Changed

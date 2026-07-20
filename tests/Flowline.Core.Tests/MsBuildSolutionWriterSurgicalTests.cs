@@ -305,4 +305,38 @@ public class MsBuildSolutionWriterSurgicalTests : IDisposable
         text.Should().NotContain("ActiveCfg");
         (await _reader.ReadProjectsAsync(solution)).Should().HaveCount(2);
     }
+
+    [Fact]
+    public async Task AddProjectAsync_NonUtf8Sln_RefusesInsteadOfReplacingCharacters()
+    {
+        // A permissive decoder turns unknown bytes into U+FFFD, and this path writes the decoded text
+        // straight back — so accepting the file would silently destroy the user's characters.
+        var path = Path_("Latin1.sln");
+        var latin1 = System.Text.Encoding.Latin1;
+        var lines = string.Join("\r\n",
+            "Microsoft Visual Studio Solution File, Format Version 12.00",
+            "Project(\"" + LegacyCSharpTypeGuid + "\") = \"Café\", \"Plugins\\Café.csproj\", \"" + ExistingProjectGuid + "\"",
+            "EndProject",
+            "Global",
+            "EndGlobal") + "\r\n";
+        await File.WriteAllBytesAsync(path, latin1.GetBytes(lines));
+        var before = await File.ReadAllBytesAsync(path);
+
+        var act = () => new MsBuildSolutionWriter().AddProjectAsync(path, "Solution/New.cdsproj");
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Which.ExitCode.Should().Be(ExitCode.ConfigInvalid);
+        (await File.ReadAllBytesAsync(path)).Should().Equal(before, "a refused file must be left alone");
+    }
+
+    [Fact]
+    public async Task AddProjectAsync_ExistingSln_LeavesNoTempFileBehind()
+    {
+        var path = Write("Clean.sln", "\r\n", HandAuthoredSolution());
+
+        await new MsBuildSolutionWriter().AddProjectAsync(path, "Solution/New.cdsproj");
+
+        Directory.EnumerateFiles(_root, "*.flowline-tmp").Should().BeEmpty();
+    }
+
 }

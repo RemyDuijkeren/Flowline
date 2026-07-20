@@ -70,8 +70,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
         var slnFolder = RootFolder;
         var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
-        var slnFileName = SolutionFileName(projectSln.UniqueName, settings.UseSlnFormat);
-        var slnFilePath = Path.Combine(slnFolder, slnFileName);
+        var slnFilePath = ResolveSolutionFilePath(slnFolder, projectSln.UniqueName, settings.UseSlnFormat);
+        var slnFileName = Path.GetFileName(slnFilePath);
 
         await CloneSolutionFromDataverseAsync(projectSln, slnFolder, cdsprojPath, sourceEnv.EnvironmentUrl!, settings, cancellationToken);
         await CreateSolutionFileAsync(slnFolder, slnFilePath, cdsprojPath, cancellationToken);
@@ -451,6 +451,18 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     /// </remarks>
     internal static string SolutionFileName(string solutionName, bool useSlnFormat) =>
         $"{solutionName}{(useSlnFormat ? ".sln" : ".slnx")}";
+
+    /// <summary>Picks the solution file clone should write into, reusing one the project already has.</summary>
+    /// <remarks>
+    /// Clone is safe to re-run, so it must not answer a second run by creating a second solution file.
+    /// Naming purely from the format flag would do exactly that: a project cloned with <c>--sln</c> and
+    /// re-cloned without it would gain a <c>.slnx</c> beside the <c>.sln</c> — the same two-formats-in-one-folder
+    /// state that makes a bare <c>dotnet build</c> fail with MSB1011, produced by the tool that warns about it.
+    /// The flag therefore chooses the format only when there is nothing to reuse.
+    /// </remarks>
+    internal static string ResolveSolutionFilePath(string slnFolder, string solutionName, bool useSlnFormat) =>
+        new MsBuildSolutionReader().FindSolutionFile(slnFolder)
+        ?? Path.Combine(slnFolder, SolutionFileName(solutionName, useSlnFormat));
 
     /// <summary>Explains a <c>Package/</c> folder that holds no <c>Package.cdsproj</c>.</summary>
     /// <remarks>

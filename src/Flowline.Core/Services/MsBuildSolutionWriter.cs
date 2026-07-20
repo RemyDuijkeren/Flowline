@@ -137,7 +137,18 @@ public class MsBuildSolutionWriter
                 $"Couldn't add '{projectPath}' to '{Path.GetFileName(solutionFilePath)}' — {ex.Message}", ex);
         }
 
-        await serializer.SaveAsync(solutionFilePath, model, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await serializer.SaveAsync(solutionFilePath, model, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The usual cause is the solution file being open in an IDE, which holds a lock. Without
+            // this the user gets a stack trace for something they can fix by closing a window.
+            throw new FlowlineException(ExitCode.ConfigInvalid,
+                $"Couldn't write '{Path.GetFileName(solutionFilePath)}' — {ex.Message}", ex);
+        }
+
         return true;
     }
 
@@ -162,7 +173,22 @@ public class MsBuildSolutionWriter
         // diff in git — precisely what this path exists to avoid.
         var bytes = await File.ReadAllBytesAsync(solutionFilePath, cancellationToken).ConfigureAwait(false);
         var hasBom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
-        var text = new UTF8Encoding(false).GetString(bytes, hasBom ? 3 : 0, bytes.Length - (hasBom ? 3 : 0));
+
+        string text;
+        try
+        {
+            // Throw rather than substitute. The permissive decoder turns any non-UTF8 byte into U+FFFD,
+            // and this path writes the decoded text straight back — so a legacy ANSI-encoded solution
+            // with a non-ASCII project name would come back with its characters silently destroyed.
+            // Refusing the file leaves it intact and tells the user what is wrong with it.
+            text = new UTF8Encoding(false, throwOnInvalidBytes: true)
+                .GetString(bytes, hasBom ? 3 : 0, bytes.Length - (hasBom ? 3 : 0));
+        }
+        catch (DecoderFallbackException ex)
+        {
+            throw new FlowlineException(ExitCode.ConfigInvalid,
+                $"'{Path.GetFileName(solutionFilePath)}' isn't valid UTF-8 — re-save it as UTF-8 and try again.", ex);
+        }
 
         var updated = InsertProjectEntry(text, normalizedPath, Guid.NewGuid());
 
@@ -283,9 +309,26 @@ public class MsBuildSolutionWriter
     /// </remarks>
     static async Task ReplaceFileAsync(string solutionFilePath, string content, bool hasBom, CancellationToken cancellationToken)
     {
-        var tempPath = solutionFilePath + ".flowline-tmp";
-        await File.WriteAllTextAsync(tempPath, content, new UTF8Encoding(hasBom), cancellationToken).ConfigureAwait(false);
-        File.Move(tempPath, solutionFilePath, overwrite: true);
+        // Unique per write: a fixed name collides when two writes race, and the loser would move the
+        // winner's content over the target.
+        var tempPath = $"{solutionFilePath}.{Guid.NewGuid():N}.flowline-tmp";
+
+        try
+        {
+            await File.WriteAllTextAsync(tempPath, content, new UTF8Encoding(hasBom), cancellationToken).ConfigureAwait(false);
+            File.Move(tempPath, solutionFilePath, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new FlowlineException(ExitCode.ConfigInvalid,
+                $"Couldn't write '{Path.GetFileName(solutionFilePath)}' — {ex.Message}", ex);
+        }
+        finally
+        {
+            // Covers the failed write, the failed move, and cancellation — none of which should leave
+            // a stray file sitting next to the user's solution.
+            if (File.Exists(tempPath)) File.Delete(tempPath);
+        }
     }
 
     /// <summary>
@@ -299,8 +342,7 @@ public class MsBuildSolutionWriter
     /// duplicate case out of exception-driven control flow.
     /// </remarks>
     static bool ContainsProject(SolutionModel model, string normalizedPath) =>
-        model.SolutionProjects.Any(p => string.Equals(
-            MsBuildSolutionReader.NormalizePath(p.FilePath), normalizedPath, StringComparison.OrdinalIgnoreCase));
+        model.SolutionProjects.Any(p => MsBuildSolutionReader.PathEquals(p.FilePath, normalizedPath));
 
     /// <summary>Builds an empty model ready to take projects.</summary>
     /// <remarks>

@@ -158,6 +158,7 @@ export function onCreditLimitChange(executionContext) { ... }
 | [`generate [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/09-Generate-Early-Bound-Types)         | Generate early-bound C# types into `Plugins/Models/` (configurable with `--output`)          |
 | [`status`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#status)                        | Show environment info, Flowline version, and PAC CLI status                                  |
 | [`drift <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#drift)                 | Compare committed source against a live environment; read-only, never deletes or modifies    |
+| [`sln add <path>`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#sln-add)               | Add a `.cdsproj` to the solution file — `dotnet sln add` refuses those. Runs standalone      |
 
 ---
 
