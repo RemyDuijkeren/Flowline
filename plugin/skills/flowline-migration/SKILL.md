@@ -66,5 +66,5 @@ After the user completes the steps above, confirm the migration actually works �
 2. Run the phase-appropriate second check:
    - **Project-mode migration** (Phase 2 done, `.flowline` adopted): `flowline sync`.
    - **Standalone-only migration** (deliberately stopped at Phase 1, no `.flowline`): `pac solution sync` directly — `flowline sync` requires a project and would report `ConfigInvalid` here, which is a mismatch, not a migration failure.
-3. If either check exits `12` (`DirtyWorkingDirectory`) right after scaffolding — none of the wiki guides include a commit step between scaffolding and the first push — treat it as "commit the scaffolded `Package/src/` first," not migration failure.
+3. If either check exits `12` (`DirtyWorkingDirectory`) right after scaffolding — none of the wiki guides include a commit step between scaffolding and the first push — treat it as "commit the scaffolded `Solution/src/` first," not migration failure.
 4. Report success or failure honestly, naming which check failed if only one did. Don't report the migration as done just because the guide's steps were followed — only step 2's result decides that. Re-running this verify step after fixing a failure is safe; it doesn't compound the earlier problem.

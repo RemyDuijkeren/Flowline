@@ -95,12 +95,12 @@ solution files and paths. The full spec is at [`docs/folder-structure.md`](docs/
 ```
 ProjectRoot/
 ├── .flowline                         ← project config
-├── <SolutionName>.slnx               ← .sln with `clone --sln`
-├── Package/                          ← PAC-managed (do not edit manually)
-│   ├── Package.cdsproj               ← solution package project
+├── <SolutionName>.slnx               ← solution file (an existing .sln is reused, never converted)
+├── Solution/                         ← PAC-managed (do not edit manually)
+│   ├── <SolutionName>.cdsproj        ← solution package project
 │   └── src/                          ← unpacked solution XML (git-diffable)
-├── Plugins/                          ← Plugins.csproj (plugins, workflows, custom APIs)
-├── WebResources/                     ← WebResources.csproj + src/ + public/ + dist/
+├── Plugins/                          ← <SolutionName>.Plugins.csproj (plugins, workflows, custom APIs)
+├── WebResources/                     ← <SolutionName>.WebResources.csproj + src/ + public/ + dist/
 ├── artifacts/                        ← packed solution zips (gitignored)
 ├── CHANGES.md
 ├── docs/                             ← not scaffolded; created by clone/sync as needed (DATAVERSE_CONTEXT.md)
@@ -109,10 +109,12 @@ ProjectRoot/
 
 Key rules:
 - Exactly one Dataverse solution lives directly at the project root — never under a `solutions/<Name>/` wrapper
-- The cdsproj is always `Package/Package.cdsproj` — PAC-managed, never edit manually
-- Unpacked solution XML lives in `Package/src/` — committed to source control
-- The plugins project is always named `Plugins` (`Plugins.csproj`)
+- This tree is what `clone` scaffolds, not what the commands require: every command after `clone` locates the three projects by reading the solution file, so any of them can be moved
+- The cdsproj is `Solution/<SolutionName>.cdsproj` — PAC-managed, never edit manually; `pac` writes that filename and Flowline never renames it
+- Unpacked solution XML lives in `Solution/src/` — committed to source control
+- Folders are role-based and fixed (`Solution/`, `Plugins/`, `WebResources/`); project files carry the solution's identity, because that is the name that escapes into Dataverse
 - Web asset build output goes to `WebResources/dist/` — this is what syncs to Dataverse
+- A repo with no solution file at all falls back to the pre-Flowline conventions `Plugins/Plugins.csproj` and `WebResources/WebResources.csproj`
 - A second solution is a separate repo, or (rarer) a nested `solutions/<Name>/` folder of independent Flowline projects — see `docs/folder-structure.md` §4
 
 ## GitHub Wiki
