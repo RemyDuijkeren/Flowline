@@ -144,6 +144,24 @@ The root cause of both is that the layout is welded into `const` fields (`Flowli
 
   **Direction for planning:** validate the solution name against the C# keyword list *before* invoking `pac plugin init`, and fail with a message naming the keyword and the collision. Consistent with the refuse-rather-than-guess stance taken on discovery. Only `clone` needs the check — an existing project already has its names. Left to planning: whether the same check belongs on the `.cdsproj`/`.slnx` filenames (Windows reserved device names — `CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9` — are legal Dataverse names and illegal filenames, and unlike the keyword case this one predates the plan).
 
+- **RESOLVED — an underscore in the solution name is kept verbatim.** `DWE_Base` scaffolds `Plugins/DWE_Base.Plugins.csproj`, `namespace DWE_Base.Plugins`, and `DWE_Base.Plugins.dll`. Nothing is stripped, replaced, or PascalCased.
+
+  This is the same question as the keyword case one level down — how much a tool should edit a name it did not choose — and it lands the other way, because an underscore breaks nothing.
+
+  **Measured.** `namespace DWE_Base.Plugins` builds clean on a default `pac plugin init` project. The only objection is `CA1707: Remove the underscores from namespace name 'DWE_Base'`, and it fires **only** under `<AnalysisMode>All</AnalysisMode>` — the default build emits nothing, and `pac plugin init` scaffolds no analyzer settings. It is a warning, on a rule a team opting into full analysis can suppress in one line.
+
+  **Why verbatim wins:**
+  - *Round-tripping is the point.* The rename exists so `DWE_Base.Plugins.dll` in a 2am stack trace names the solution. Strip to `DWEBase.Plugins` and mapping back is guesswork — nothing records where the underscore was.
+  - *Transformation collides.* `DWE_Base` and `DWEBase` are two distinct, legal Dataverse solutions that both become `DWEBase.Plugins.dll`. That is anonymous assembly identity — the defect this plan exists to remove — reintroduced by the fix for it.
+  - *The underscore carries meaning.* `DWE_Base` reads as publisher `DWE` plus solution `Base`. `DWEBase` loses the boundary.
+  - *Consistency with KD2.* The plan's spine is that `pac` owns project-file names and Flowline owns folders. Editing `pac`'s output was rejected; editing the input handed to `pac` is the same meddling one step earlier, and a transformation rule is something to specify, test and explain forever.
+
+  **The honest cost.** .NET naming convention does say no underscores in identifiers, so `DWE_Base.Plugins` reads as non-idiomatic to a C# developer, and a shop running `AnalysisMode.All` gets a per-file warning until it suppresses CA1707 — friction Flowline introduced by putting the solution name there at all.
+
+  **Rejected middle option:** `DWE.Base.Plugins` (underscore to dot) is idiomatic and satisfies CA1707, but is still lossy (`DWE.Base` and `DWE_Base` both map to it) and invents namespace nesting the user never asked for.
+
+  **If the CA1707 friction proves real**, the fix is for `clone` to write `<NoWarn>CA1707</NoWarn>` into the scaffolded csproj with a comment explaining why — keeping the name faithful and silencing the noise at its source. Deliberately not done pre-emptively: no user has hit it, and a suppression nobody needed is its own small lie about the code.
+
 ---
 
 ## Planning Contract
