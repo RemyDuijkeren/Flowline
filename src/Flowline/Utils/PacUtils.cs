@@ -64,9 +64,6 @@ public static class PacUtils
                 _ => "Unknown"
             };
 
-            //Console.WriteLine($"Detected Power Platform CLI installation type: {installType}");
-            //Console.WriteLine($"Using command: {command}");
-
             var result = await Cli.Wrap(command).WithArguments(args => args
                 .AddIfNotNull(prefixArgs)
                 .Add("help"))
@@ -113,7 +110,6 @@ public static class PacUtils
 
         // 1. Check for 'pac.exe' (explicitly the dotnet tool version)
         var pacExeCheck = await CheckCommandExistsAsync("pac.exe", new[] { "help" }, cancellationToken);
-        //Console.WriteLine($"pac.exe check: {pacExeCheck.Success}, Output: {pacExeCheck.Output}");
         if (pacExeCheck.Success)
         {
             _cachedPacCommand = ("pac.exe", null, true);
@@ -122,7 +118,6 @@ public static class PacUtils
 
         // 2. Check for 'pac' (could be dotnet tool or MSI)
         var pacCheck = await CheckCommandExistsAsync("pac", new[] { "help" }, cancellationToken);
-        //Console.WriteLine($"pac check: {pacCheck.Success}, Output: {pacCheck.Output}");
         if (pacCheck.Success)
         {
             // Check if it is the dotnet tool version (.NET vs .NET Framework)
@@ -136,7 +131,6 @@ public static class PacUtils
 
             // It's the MSI version, we check if 'dnx' is available as a better alternative
             var dnxCheck = await CheckCommandExistsAsync("dnx", new[] { "microsoft.powerapps.cli.tool", "help", "--yes" }, cancellationToken);
-            //Console.WriteLine($"dnx check: {dnxCheck.Success}, Output: {dnxCheck.Output}");
             if (dnxCheck.Success)
             {
                 _cachedPacCommand = ("dnx", new[] { "microsoft.powerapps.cli.tool", "--yes" }, true);
@@ -149,12 +143,10 @@ public static class PacUtils
 
         // 3. Check for 'pac.launcher.exe' (explicitly the MSI version)
         var msiCheck = await CheckCommandExistsAsync("pac.launcher.exe", new[] { "help" }, cancellationToken);
-        //Console.WriteLine($"pac.launcher.exe check: {msiCheck.Success}, Output: {msiCheck.Output}");
         if (msiCheck.Success)
         {
             // Check if 'dnx' is available as a better alternative
             var dnxCheck = await CheckCommandExistsAsync("dnx", new[] { "microsoft.powerapps.cli.tool", "help", "--yes" }, cancellationToken);
-            //Console.WriteLine($"dnx check: {dnxCheck.Success}, Output: {dnxCheck.Output}");
             if (dnxCheck.Success)
             {
                 _cachedPacCommand = ("dnx", new[] { "microsoft.powerapps.cli.tool", "--yes" }, true);
@@ -166,7 +158,6 @@ public static class PacUtils
 
         // 4. Fallback to 'dnx microsoft.powerapps.cli.tool' if nothing else worked
         var dnxOnlyCheck = await CheckCommandExistsAsync("dnx", new[] { "microsoft.powerapps.cli.tool", "help", "--yes" }, cancellationToken);
-        //Console.WriteLine($"dnx check: {dnxOnlyCheck.Success}, Output: {dnxOnlyCheck.Output}");
         if (dnxOnlyCheck.Success)
         {
             _cachedPacCommand = ("dnx", new[] { "microsoft.powerapps.cli.tool", "--yes" }, true);
