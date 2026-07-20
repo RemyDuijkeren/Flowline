@@ -44,7 +44,6 @@
 
     <ItemGroup>
       <PackageReference Include="CliWrap" />
-      <PackageReference Include="Microsoft.Extensions.Logging.Console" />
       <PackageReference Include="Serilog" />
       <PackageReference Include="Serilog.Extensions.Logging" />
       <PackageReference Include="Serilog.Sinks.File" />
