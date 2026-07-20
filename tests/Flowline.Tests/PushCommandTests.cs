@@ -4,6 +4,7 @@ using System.Reflection.Emit;
 using Flowline.Commands;
 using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Models;
 using FluentAssertions;
 using Microsoft.Xrm.Sdk;
 using Spectre.Console.Cli;
@@ -335,6 +336,178 @@ public class PushCommandTests : IDisposable
 
         act.Should().Throw<Flowline.Core.FlowlineException>()
             .WithMessage("*Plugins.1.0.0.nupkg*Plugins.1.0.1.nupkg*");
+    }
+
+    // -- U4: every confirmed project pushes in one invocation (R5, R6, KD4) --
+
+    static PushCommand.PluginPushTarget Target(string projectName, string assemblyName, params string[] extraPackageAssemblies) =>
+        new($@"C:\{projectName}\bin\Release\{assemblyName}.dll",
+            assemblyName,
+            projectName,
+            extraPackageAssemblies.Length == 0
+                ? null
+                : extraPackageAssemblies.Prepend(assemblyName)
+                                        .Select(n => new PluginAssemblyMetadata(n, "1.0.0.0", [], "", "", null, "", []))
+                                        .ToList());
+
+    // KD4/R6: PluginPackageMode is one per-solution setting, so the same mode meets whatever each
+    // project's own build output happens to look like. AE5 is the mixed case — Sales packs a .nupkg,
+    // Support never enabled packaging — and under Auto each still resolves to its own real artifact.
+
+    [Fact]
+    public void ResolvePluginPushPath_TwoProjectsOneNupkgOneDllAutoMode_ShouldResolveEachToItsOwnArtifact()
+    {
+        var (salesRoot, salesDll) = WriteProjectOutput("Sales", "Plugins.Sales", withNupkg: true);
+        var (supportRoot, supportDll) = WriteProjectOutput("Support", "Plugins.Support", withNupkg: false);
+
+        PushCommand.ResolvePluginPushPath(salesDll, salesRoot, PluginPackageMode.Auto)
+                   .Should().Be(Path.Combine(salesRoot, "Plugins.Sales.1.0.0.nupkg"));
+        PushCommand.ResolvePluginPushPath(supportDll, supportRoot, PluginPackageMode.Auto)
+                   .Should().Be(supportDll);
+    }
+
+    [Fact]
+    public void ResolvePluginPushPath_TwoProjectsOneNupkgOneDllDllMode_ShouldResolveBothToTheirDll()
+    {
+        // The solution declared Dll, so the project that does produce a .nupkg follows the solution
+        // rather than its own state — the whole point of KD4's single per-solution setting.
+        var (salesRoot, salesDll) = WriteProjectOutput("Sales", "Plugins.Sales", withNupkg: true);
+        var (supportRoot, supportDll) = WriteProjectOutput("Support", "Plugins.Support", withNupkg: false);
+
+        PushCommand.ResolvePluginPushPath(salesDll, salesRoot, PluginPackageMode.Dll).Should().Be(salesDll);
+        PushCommand.ResolvePluginPushPath(supportDll, supportRoot, PluginPackageMode.Dll).Should().Be(supportDll);
+    }
+
+    [Fact]
+    public void ResolvePluginPushPath_TwoProjectsOneNupkgOneDllNupkgMode_ShouldThrowNamingTheProjectWithoutOne()
+    {
+        var (salesRoot, salesDll) = WriteProjectOutput("Sales", "Plugins.Sales", withNupkg: true);
+        var (supportRoot, supportDll) = WriteProjectOutput("Support", "Plugins.Support", withNupkg: false);
+
+        PushCommand.ResolvePluginPushPath(salesDll, salesRoot, PluginPackageMode.Nupkg)
+                   .Should().Be(Path.Combine(salesRoot, "Plugins.Sales.1.0.0.nupkg"));
+
+        var act = () => PushCommand.ResolvePluginPushPath(supportDll, supportRoot, PluginPackageMode.Nupkg);
+        act.Should().Throw<Flowline.Core.FlowlineException>().WithMessage("*no .nupkg was found*");
+    }
+
+    (string BuildOutputRoot, string Dll) WriteProjectOutput(string projectFolder, string assemblyName, bool withNupkg)
+    {
+        var buildOutputRoot = Path.Combine(_root, projectFolder, "bin", "Release");
+        var publishDir = Path.Combine(buildOutputRoot, "net462", "publish");
+        Directory.CreateDirectory(publishDir);
+
+        var dll = Path.Combine(publishDir, $"{assemblyName}.dll");
+        File.WriteAllText(dll, "");
+        if (withNupkg) File.WriteAllText(Path.Combine(buildOutputRoot, $"{assemblyName}.1.0.0.nupkg"), "");
+
+        return (buildOutputRoot, dll);
+    }
+
+    // -- CollectPushedAssemblyNames: the set every project's orphan sweep must spare --
+
+    [Fact]
+    public void CollectPushedAssemblyNames_WithTwoProjects_ShouldIncludeBothAssemblies()
+    {
+        PushCommand.CollectPushedAssemblyNames([Target("Plugins.Sales", "Sales"), Target("Plugins.Support", "Support")])
+                   .Should().BeEquivalentTo(["Sales", "Support"]);
+    }
+
+    [Fact]
+    public void CollectPushedAssemblyNames_WithSingleProject_ShouldIncludeOnlyThatAssembly()
+    {
+        PushCommand.CollectPushedAssemblyNames([Target("Plugins", "Plugins")]).Should().BeEquivalentTo(["Plugins"]);
+    }
+
+    [Fact]
+    public void CollectPushedAssemblyNames_WithMultiAssemblyPackage_ShouldIncludeItsNonPrimaryAssemblies()
+    {
+        // A .nupkg project alongside a classic one: the classic project's orphan sweep is solution-wide,
+        // so it needs the package's other assemblies by name or it reads them as having no local source.
+        PushCommand.CollectPushedAssemblyNames(
+        [
+            Target("Plugins.Sales", "Sales", "Sales.Shared", "Sales.Workflows"),
+            Target("Plugins.Support", "Support"),
+        ]).Should().BeEquivalentTo(["Sales", "Sales.Shared", "Sales.Workflows", "Support"]);
+    }
+
+    [Fact]
+    public void CollectPushedAssemblyNames_WithTheSameAssemblyNameTwice_ShouldDedupeIgnoringCase()
+    {
+        PushCommand.CollectPushedAssemblyNames([Target("Plugins.A", "Shared"), Target("Plugins.B", "SHARED")])
+                   .Should().ContainSingle();
+    }
+
+    // -- Per-project output: attributable at N=2, untouched at N=1 (R7) --
+
+    [Fact]
+    public void DescribePluginPushHeader_WithSingleProject_ShouldReturnNull()
+    {
+        // R7 regression guard: a one-project solution must print exactly what it printed before U4.
+        PushCommand.DescribePluginPushHeader([Target("Plugins", "Plugins")], 0).Should().BeNull();
+    }
+
+    [Fact]
+    public void DescribePluginPushHeader_WithTwoProjects_ShouldNameEachProject()
+    {
+        PushCommand.PluginPushTarget[] targets = [Target("Plugins.Sales", "Sales"), Target("Plugins.Support", "Support")];
+
+        PushCommand.DescribePluginPushHeader(targets, 0).Should().Be("[bold]Plugins.Sales[/] — pushing");
+        PushCommand.DescribePluginPushHeader(targets, 1).Should().Be("[bold]Plugins.Support[/] — pushing");
+    }
+
+    // -- Per-project failure: names which one, and what the org holds now --
+
+    [Fact]
+    public void DescribePluginPushFailure_WithSingleProject_ShouldReturnNull()
+    {
+        // R7: nothing to attribute, so the original exception reaches the user unwrapped.
+        PushCommand.DescribePluginPushFailure([Target("Plugins", "Plugins")], 0, "Build failed.").Should().BeNull();
+    }
+
+    [Fact]
+    public void DescribePluginPushFailure_WithSecondOfTwoFailing_ShouldNameItAndWhatAlreadyLanded()
+    {
+        PushCommand.PluginPushTarget[] targets = [Target("Plugins.Sales", "Sales"), Target("Plugins.Support", "Support")];
+
+        var message = PushCommand.DescribePluginPushFailure(targets, 1, "Assembly registration failed.");
+
+        message.Should().Be("'Plugins.Support' failed to push: Assembly registration failed. " +
+                            "Already in the org: Plugins.Sales. Fix 'Plugins.Support', then push again.");
+    }
+
+    [Fact]
+    public void DescribePluginPushFailure_WithFirstOfThreeFailing_ShouldReportTheOnesNeverAttempted()
+    {
+        // The others aren't skipped silently — the message says they weren't tried, which is a different
+        // state from "pushed" and the user has to be able to tell them apart.
+        PushCommand.PluginPushTarget[] targets =
+            [Target("Plugins.Sales", "Sales"), Target("Plugins.Support", "Support"), Target("Plugins.Ops", "Ops")];
+
+        var message = PushCommand.DescribePluginPushFailure(targets, 0, "Assembly registration failed.");
+
+        message.Should().Be("'Plugins.Sales' failed to push: Assembly registration failed. " +
+                            "Not attempted: Plugins.Support, Plugins.Ops. Fix 'Plugins.Sales', then push again.");
+    }
+
+    [Fact]
+    public void DescribePluginPushFailure_WithMiddleOfThreeFailing_ShouldReportBothPushedAndNotAttempted()
+    {
+        PushCommand.PluginPushTarget[] targets =
+            [Target("Plugins.Sales", "Sales"), Target("Plugins.Support", "Support"), Target("Plugins.Ops", "Ops")];
+
+        PushCommand.DescribePluginPushFailure(targets, 1, "Assembly registration failed.")
+                   .Should().Contain("Already in the org: Plugins.Sales.")
+                   .And.Contain("Not attempted: Plugins.Ops.");
+    }
+
+    [Fact]
+    public void DescribePluginPushFailure_WithUnpunctuatedReason_ShouldCloseTheSentence()
+    {
+        PushCommand.PluginPushTarget[] targets = [Target("Plugins.Sales", "Sales"), Target("Plugins.Support", "Support")];
+
+        PushCommand.DescribePluginPushFailure(targets, 0, "Connection reset by peer")
+                   .Should().Contain("Connection reset by peer. Not attempted:");
     }
 
     // -- IsPackagePush (KD6 — shared routing decision for project mode and standalone) --

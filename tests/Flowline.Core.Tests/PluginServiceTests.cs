@@ -5,6 +5,7 @@ using Flowline.Core.Console;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Core.Plugins;
+using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
@@ -556,6 +557,106 @@ public class PluginServiceTests
         await _serviceMock.Received().DeleteAsync("pluginassembly", assemblyId, Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().DeleteAsync("sdkmessageprocessingstep", orphanStepId, Arg.Any<CancellationToken>());
     }
+
+    // -- U4/R5: sibling plugin projects in one push are not each other's orphans --
+
+    [Fact]
+    public void ExcludePushedAssemblies_WithNoPushedNames_ShouldUseNotEqualOnTheSyncedAssembly()
+    {
+        // R7 regression guard: a single-plugin-project solution must issue the query it always did.
+        var condition = PluginService.ExcludePushedAssemblies("name", "Plugins", null);
+
+        condition.AttributeName.Should().Be("name");
+        condition.Operator.Should().Be(ConditionOperator.NotEqual);
+        condition.Values.Should().Equal(["Plugins"]);
+    }
+
+    [Fact]
+    public void ExcludePushedAssemblies_WithOnlyTheSyncedAssemblyPushed_ShouldStillUseNotEqual()
+    {
+        var condition = PluginService.ExcludePushedAssemblies("name", "Plugins", ["Plugins"]);
+
+        condition.Operator.Should().Be(ConditionOperator.NotEqual);
+        condition.Values.Should().Equal(["Plugins"]);
+    }
+
+    [Fact]
+    public void ExcludePushedAssemblies_WithSiblingProjects_ShouldExcludeEveryPushedAssembly()
+    {
+        var condition = PluginService.ExcludePushedAssemblies("name", "Sales", ["Sales", "Support"]);
+
+        condition.Operator.Should().Be(ConditionOperator.NotIn);
+        condition.Values.Should().BeEquivalentTo(["Sales", "Support"]);
+    }
+
+    [Fact]
+    public void SiblingAssemblyNames_WithTheSyncedAssemblyOnly_ShouldBeEmpty() =>
+        PluginService.SiblingAssemblyNames("Sales", ["Sales", "SALES"]).Should().BeEmpty();
+
+    [Fact]
+    public async Task SyncSolutionAsync_WithSiblingProjectInThePush_ShouldNotQueryItsAssemblyAsAnOrphan()
+    {
+        // Without this, pushing Sales flags Support's assembly as "no local source" and, under
+        // --force delete-orphans, cascade-deletes it — then Support's own push recreates it and
+        // deletes Sales'. The exclusion is server-side, so the query is the behaviour.
+        SetupAssembly(ExistingAssembly(Guid.NewGuid()));
+        SetupPluginTypes();
+        SetupSteps();
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(name: "Sales"), "MySolution", RunMode.Normal,
+            forceDeleteOrphans: true, forceRecreateAssembly: false, pushedAssemblyNames: ["Sales", "Support"]);
+
+        var orphanQuery = _serviceMock.ReceivedCalls()
+            .Select(c => c.GetArguments().OfType<QueryExpression>().FirstOrDefault())
+            .OfType<QueryExpression>()
+            .Single(q => q.EntityName == "pluginassembly"
+                      && q.Criteria.Conditions.Any(c => c.Operator is ConditionOperator.NotEqual or ConditionOperator.NotIn));
+
+        orphanQuery.Criteria.Conditions.Single().Values.Should().BeEquivalentTo(["Sales", "Support"]);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_WithSiblingProjectInThePush_ShouldStillFlagAnAssemblyNoProjectProduces()
+    {
+        // The sibling exclusion narrows the orphan set; it must not switch cleanup off. An assembly in
+        // the solution that no discovered project builds is still an orphan under the existing rules.
+        SetupAssembly(ExistingAssembly(Guid.NewGuid()));
+        SetupPluginTypes();
+        SetupSteps();
+        SetupOrphanAssembly(Guid.NewGuid(), "Legacy");
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(name: "Sales"), "MySolution", RunMode.Normal,
+            forceDeleteOrphans: false, forceRecreateAssembly: false, pushedAssemblyNames: ["Sales", "Support"]);
+
+        _console.Output.Should().Contain("Legacy.dll").And.Contain("--force delete-orphans");
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_WithoutSiblingProjects_ShouldNotQueryPluginTypesOfOtherAssemblies()
+    {
+        // R7: the single-project push makes no extra round-trip and plans exactly as it did before U4.
+        SetupAssembly(ExistingAssembly(Guid.NewGuid()));
+        SetupPluginTypes();
+        SetupSteps();
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(name: "Plugins"), "MySolution");
+
+        _serviceMock.ReceivedCalls()
+            .Select(c => c.GetArguments().OfType<QueryExpression>().FirstOrDefault())
+            .OfType<QueryExpression>()
+            .Should().NotContain(q => q.EntityName == "plugintype"
+                                   && q.LinkEntities.Any(l => l.LinkToEntityName == "pluginassembly"));
+    }
+
+    private void SetupOrphanAssembly(Guid assemblyId, string assemblyName) =>
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly"
+                                          && q.Criteria.Conditions.Any(c => c.Operator == ConditionOperator.NotEqual || c.Operator == ConditionOperator.NotIn)),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(new List<Entity>
+            {
+                new Entity("pluginassembly", assemblyId) { ["name"] = assemblyName }
+            })));
 
     // -- Deletion of obsolete types --
 

@@ -155,32 +155,57 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
 
         var pushedChanges = false;
 
-        foreach (var target in pluginTargets)
+        // Every project's assemblies, resolved once before the first sync runs: each pass has to know the
+        // whole set up front or it reads the others as orphans (see PluginService.ExcludePushedAssemblies).
+        var pushedAssemblyNames = CollectPushedAssemblyNames(pluginTargets);
+
+        for (var i = 0; i < pluginTargets.Count; i++)
         {
-            // R1/KD1/KD6: a .nupkg alongside the classic .dll (or an explicit --pluginFile .nupkg) routes
-            // to the shared package entry point regardless of --scope assemblyonly — there is no separate
-            // "assembly only" package variant, since the package path always reconciles steps (KD4).
-            if (IsPackagePush(target.PushPath))
+            var target = pluginTargets[i];
+
+            if (DescribePluginPushHeader(pluginTargets, i) is { } header)
+                Console.Info(header);
+
+            try
             {
-                Logger.LogInformation("Pushing plugin package: {Nupkg}", target.PushPath);
-                // Standalone mode already reflected this .nupkg to resolve the assembly name (R2a) — reuse
-                // that list instead of paying for a second AnalyzePackage pass over the same file.
-                pushedChanges |= target.ReflectedAssemblies != null
-                    ? await pluginService.SyncSolutionFromPackageAsync(conn, target.ReflectedAssemblies,
-                        await File.ReadAllBytesAsync(target.PushPath, cancellationToken).ConfigureAwait(false),
-                        target.PushPath, target.AssemblyName, solutionName, runMode, cancellationToken).ConfigureAwait(false)
-                    : await pluginService.SyncSolutionFromPackageAsync(conn, target.PushPath, target.AssemblyName, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+                // R1/KD1/KD6: a .nupkg alongside the classic .dll (or an explicit --pluginFile .nupkg) routes
+                // to the shared package entry point regardless of --scope assemblyonly — there is no separate
+                // "assembly only" package variant, since the package path always reconciles steps (KD4).
+                if (IsPackagePush(target.PushPath))
+                {
+                    Logger.LogInformation("Pushing plugin package: {Nupkg}", target.PushPath);
+                    // Standalone mode already reflected this .nupkg to resolve the assembly name (R2a) — reuse
+                    // that list instead of paying for a second AnalyzePackage pass over the same file.
+                    pushedChanges |= target.ReflectedAssemblies != null
+                        ? await pluginService.SyncSolutionFromPackageAsync(conn, target.ReflectedAssemblies,
+                            await File.ReadAllBytesAsync(target.PushPath, cancellationToken).ConfigureAwait(false),
+                            target.PushPath, target.AssemblyName, solutionName, runMode, cancellationToken).ConfigureAwait(false)
+                        : await pluginService.SyncSolutionFromPackageAsync(conn, target.PushPath, target.AssemblyName, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+                }
+                else if (pushAssemblyOnly)
+                {
+                    Logger.LogInformation("Pushing assembly only: {Dll}", target.PushPath);
+                    pushedChanges |= await pluginService.SyncAssemblyOnlyAsync(conn, target.PushPath, solutionName, runMode, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    Logger.LogInformation("Pushing plugins: {Dll}", target.PushPath);
+                    pushedChanges |= await pluginService.SyncSolutionAsync(conn, target.PushPath, solutionName, runMode,
+                        settings.HasForce("delete-orphans"), settings.HasForce("recreate-assembly"), cancellationToken,
+                        pushedAssemblyNames).ConfigureAwait(false);
+                }
             }
-            else if (pushAssemblyOnly)
+            // Rethrow, not recover: the only thing added is which project it was and what the org holds
+            // now, which the failure itself cannot know. The global handler prints Message and not the
+            // inner chain, so the original reason is carried in the new message rather than nested out of
+            // sight. Cancellation is left alone — Program.cs maps it to ExitCode.Cancelled.
+            catch (Exception ex) when (ex is not OperationCanceledException
+                                    && DescribePluginPushFailure(pluginTargets, i, ex.Message) != null)
             {
-                Logger.LogInformation("Pushing assembly only: {Dll}", target.PushPath);
-                pushedChanges |= await pluginService.SyncAssemblyOnlyAsync(conn, target.PushPath, solutionName, runMode, cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                Logger.LogInformation("Pushing plugins: {Dll}", target.PushPath);
-                pushedChanges |= await pluginService.SyncSolutionAsync(conn, target.PushPath, solutionName, runMode,
-                    settings.HasForce("delete-orphans"), settings.HasForce("recreate-assembly"), cancellationToken).ConfigureAwait(false);
+                Logger.LogError(ex, "Plugin project push failed: {Project}", target.ProjectName);
+                throw new FlowlineException(
+                    ex is FlowlineException fe ? fe.ExitCode : ExitCode.GeneralError,
+                    DescribePluginPushFailure(pluginTargets, i, ex.Message)!, ex);
             }
         }
 
@@ -276,11 +301,72 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     }
 
     /// <summary>One plugin artifact ready to push, with the assembly name Dataverse should see.</summary>
+    /// <param name="ProjectName">
+    /// The solution-file project this came from — what the user has to go fix when the push fails, and
+    /// the only thing that distinguishes one project's push output from another's.
+    /// </param>
     /// <param name="ReflectedAssemblies">
     /// Set only when the artifact was already reflected to resolve <paramref name="AssemblyName"/>
     /// (standalone <c>.nupkg</c>), so the push can skip a second pass over the same file.
     /// </param>
-    internal sealed record PluginPushTarget(string PushPath, string AssemblyName, List<PluginAssemblyMetadata>? ReflectedAssemblies = null);
+    internal sealed record PluginPushTarget(
+        string PushPath,
+        string AssemblyName,
+        string ProjectName,
+        List<PluginAssemblyMetadata>? ReflectedAssemblies = null);
+
+    /// <summary>Every assembly name this push owns, so no project's sync treats another's as an orphan.</summary>
+    /// <remarks>
+    /// Includes a package's non-primary assemblies when they're already known: a multi-assembly
+    /// <c>.nupkg</c> in one project and a classic <c>.dll</c> in another is a reachable shape, and the
+    /// classic project's orphan sweep is the one that would otherwise flag the package's extra assemblies.
+    /// </remarks>
+    internal static IReadOnlyCollection<string> CollectPushedAssemblyNames(IReadOnlyList<PluginPushTarget> targets) =>
+        targets.SelectMany(t => (t.ReflectedAssemblies ?? []).Select(a => a.Name).Prepend(t.AssemblyName))
+               .Where(n => !string.IsNullOrWhiteSpace(n))
+               .Distinct(StringComparer.OrdinalIgnoreCase)
+               .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+               .ToList();
+
+    /// <summary>Section header naming the project about to push, or <c>null</c> when there's only one.</summary>
+    /// <remarks>
+    /// With one project the header is pure noise — the sync's own output already names the one assembly,
+    /// and N=1 must read exactly as it did (R7). With more, every line below it repeats verbatim per
+    /// project ("Solution found", "Registration plan ready: ..."), so without a header the user cannot
+    /// tell whose output they're reading.
+    /// </remarks>
+    internal static string? DescribePluginPushHeader(IReadOnlyList<PluginPushTarget> targets, int index) =>
+        targets.Count <= 1 ? null : $"[bold]{targets[index].ProjectName}[/] — pushing";
+
+    /// <summary>
+    /// Failure message for one project in a multi-project push: what broke, and what the org holds now.
+    /// </summary>
+    /// <remarks>
+    /// Fail-fast, not continue-and-collect. Push writes to a live org, so once one project fails the run
+    /// is already in a partial state; carrying on would deepen it while the user watches, and a second
+    /// failure downstream of the first is far more likely to be a consequence than new information. So
+    /// the run stops — but "stopped" is only safe if it's legible, hence naming the failed project, what
+    /// already landed, and what was never tried. <c>null</c> for a single-project push: there is nothing
+    /// to attribute, and the original exception reaches the user unchanged (R7).
+    /// </remarks>
+    internal static string? DescribePluginPushFailure(IReadOnlyList<PluginPushTarget> targets, int failedIndex, string reason)
+    {
+        if (targets.Count <= 1) return null;
+
+        var failed = targets[failedIndex].ProjectName;
+        var pushed = targets.Take(failedIndex).Select(t => t.ProjectName).ToList();
+        var notAttempted = targets.Skip(failedIndex + 1).Select(t => t.ProjectName).ToList();
+
+        var sentences = new List<string> { $"'{failed}' failed to push: {EndSentence(reason)}" };
+        if (pushed.Count > 0) sentences.Add($"Already in the org: {string.Join(", ", pushed)}.");
+        if (notAttempted.Count > 0) sentences.Add($"Not attempted: {string.Join(", ", notAttempted)}.");
+        sentences.Add($"Fix '{failed}', then push again.");
+
+        return string.Join(" ", sentences);
+    }
+
+    static string EndSentence(string text) =>
+        text.Length > 0 && ".!?".Contains(text[^1]) ? text : text + ".";
 
     private async Task<List<PluginPushTarget>> PreparePluginsForPushAsync(
         bool standaloneMode,
@@ -304,15 +390,18 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         // the filename minus extension does NOT match the assembly name inside the package (R2a) and
         // SyncSolutionFromPackageAsync's primary-assembly match would fail. Reflect it to get the real
         // name instead of guessing; the reflected list rides along so the push doesn't re-analyze it.
+        // No solution file, so no project name to report — the artifact the user named is the identity.
+        var projectName = Path.GetFileName(pushPath);
+
         PluginPushTarget target;
         if (IsPackagePush(pushPath))
         {
             var (assemblyName, reflectedAssemblies) = ResolveStandalonePackageAssemblyName(pushPath, Console);
-            target = new PluginPushTarget(pushPath, assemblyName, reflectedAssemblies);
+            target = new PluginPushTarget(pushPath, assemblyName, projectName, reflectedAssemblies);
         }
         else
         {
-            target = new PluginPushTarget(pushPath, Path.GetFileNameWithoutExtension(pushPath));
+            target = new PluginPushTarget(pushPath, Path.GetFileNameWithoutExtension(pushPath), projectName);
         }
 
         Console.Verbose($"Found {pushPath}");
@@ -414,7 +503,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
 
         // Read off the built artifact, not assumed from the folder or project name — that's what makes a
         // custom <AssemblyName> resolve (R4).
-        return new PluginPushTarget(pushPath, Path.GetFileNameWithoutExtension(pluginsDll));
+        return new PluginPushTarget(pushPath, Path.GetFileNameWithoutExtension(pluginsDll), candidate.ProjectName);
     }
 
     private async Task<string?> PrepareWebResourcesForPushAsync(

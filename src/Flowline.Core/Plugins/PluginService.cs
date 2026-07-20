@@ -94,6 +94,11 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         return true;
     }
 
+    /// <param name="pushedAssemblyNames">
+    /// Every assembly name this <c>flowline push</c> owns, across all its plugin projects — nothing in
+    /// this set counts as an orphan. <c>null</c> means "only the assembly being pushed here", the
+    /// single-project shape. See <see cref="ExcludePushedAssemblies"/> for why this can't be one name.
+    /// </param>
     public async Task<bool> SyncSolutionAsync(
         IOrganizationServiceAsync2 service,
         string dllPath,
@@ -101,13 +106,14 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         RunMode runMode = RunMode.Normal,
         bool forceDeleteOrphans = false,
         bool forceRecreateAssembly = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<string>? pushedAssemblyNames = null)
     {
         if (string.IsNullOrWhiteSpace(dllPath))
             throw new ArgumentException("dllPath is required and cannot be empty.", nameof(dllPath));
 
         var metadata = console.Status().FlowlineSpinner().Start("Analyzing plugin assembly...", ctx => _assemblyReader.Analyze(dllPath));
-        return await SyncSolutionAsync(service, metadata, solutionName, runMode, forceDeleteOrphans, forceRecreateAssembly, cancellationToken).ConfigureAwait(false);
+        return await SyncSolutionAsync(service, metadata, solutionName, runMode, forceDeleteOrphans, forceRecreateAssembly, cancellationToken, pushedAssemblyNames).ConfigureAwait(false);
     }
 
     internal async Task<bool> SyncSolutionAsync(
@@ -117,7 +123,8 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         RunMode runMode = RunMode.Normal,
         bool forceDeleteOrphans = false,
         bool forceRecreateAssembly = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<string>? pushedAssemblyNames = null)
     {
         if (string.IsNullOrWhiteSpace(solutionName))
             throw new ArgumentException("solutionName is required and cannot be empty.", nameof(solutionName));
@@ -137,8 +144,8 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
             ? $"Assembly [bold]{metadata.Name}[/] ({metadata.Version}) found but needs content update"
             : $"Assembly [bold]{metadata.Name}[/] ({metadata.Version}) found");
 
-        await WarnOrphanAssembliesAsync(service, metadata.Name, solutionName, forceDeleteOrphans, runMode, cancellationToken).ConfigureAwait(false);
-        await WarnOrphanStepsAsync(service, metadata.Name, solutionName, forceDeleteOrphans, runMode, cancellationToken).ConfigureAwait(false);
+        await WarnOrphanAssembliesAsync(service, metadata.Name, pushedAssemblyNames, solutionName, forceDeleteOrphans, runMode, cancellationToken).ConfigureAwait(false);
+        await WarnOrphanStepsAsync(service, metadata.Name, pushedAssemblyNames, solutionName, forceDeleteOrphans, runMode, cancellationToken).ConfigureAwait(false);
 
         // Phase 2: Load snapshot (all Dataverse state in parallel)
         var snapshot = await console.Status().FlowlineSpinner()
@@ -148,7 +155,8 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         console.Info("Plugin registrations found");
 
         // Phase 3: Plan registration (pure, synchronous)
-        var plan = _planner.Plan(snapshot, metadata, assembly, solutionName);
+        var siblingPluginTypeIds = await SiblingPluginTypeIdsAsync(service, metadata.Name, pushedAssemblyNames, cancellationToken).ConfigureAwait(false);
+        var plan = _planner.Plan(snapshot, metadata, assembly, solutionName, siblingPluginTypeIds);
         console.Info(plan.TotalChanges > 0
             ? $"Registration plan ready: {plan.TotalChanges} changes ({plan.TotalUpserts} upserts, {plan.TotalDeletes} deletes)"
             : "Registration plan ready: no changes required");
@@ -622,9 +630,65 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         await service.UpdateAsync(entity, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>The assembly names in this push other than the one being synced right now.</summary>
+    internal static IReadOnlyList<string> SiblingAssemblyNames(string managedAssemblyName, IReadOnlyCollection<string>? pushedAssemblyNames) =>
+        pushedAssemblyNames == null
+            ? []
+            : pushedAssemblyNames.Where(n => !string.IsNullOrWhiteSpace(n)
+                                          && !string.Equals(n, managedAssemblyName, StringComparison.OrdinalIgnoreCase))
+                                 .Distinct(StringComparer.OrdinalIgnoreCase)
+                                 .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                                 .ToList();
+
+    /// <summary>Condition excluding every assembly this push owns from an orphan query.</summary>
+    /// <remarks>
+    /// A solution can hold more than one plugin project, and each is synced in its own pass. Excluding
+    /// only the assembly of the pass currently running would classify every sibling project's assembly
+    /// as "in environment — no local source", and under <c>--force delete-orphans</c> cascade-delete it —
+    /// then the next pass would recreate it and delete the first one's. One name stays <c>NotEqual</c> so
+    /// a single-project push issues exactly the query it always did (R7).
+    /// </remarks>
+    internal static ConditionExpression ExcludePushedAssemblies(
+        string attributeName,
+        string managedAssemblyName,
+        IReadOnlyCollection<string>? pushedAssemblyNames)
+    {
+        var siblings = SiblingAssemblyNames(managedAssemblyName, pushedAssemblyNames);
+
+        return siblings.Count == 0
+            ? new ConditionExpression(attributeName, ConditionOperator.NotEqual, managedAssemblyName)
+            : new ConditionExpression(attributeName, ConditionOperator.NotIn,
+                siblings.Prepend(managedAssemblyName).Cast<object>().ToArray());
+    }
+
+    // Plugin type ids owned by the OTHER plugin projects in this same push. snapshot.CustomApis is
+    // queried by publisher prefix rather than per assembly, so PluginPlanner's "unlinked Custom API"
+    // sweep would otherwise read a sibling project's live Custom API as unowned and delete it — and that
+    // sweep runs as part of the normal plan, ungated by --force delete-orphans. Same hazard the package
+    // path already solves with AllPluginTypeIds, reached here through separate projects instead of
+    // separate assemblies in one package. null when nothing else is being pushed, which keeps the
+    // single-project plan byte-identical to what it was (R7).
+    async Task<IReadOnlySet<Guid>?> SiblingPluginTypeIdsAsync(
+        IOrganizationServiceAsync2 service,
+        string managedAssemblyName,
+        IReadOnlyCollection<string>? pushedAssemblyNames,
+        CancellationToken cancellationToken)
+    {
+        var siblings = SiblingAssemblyNames(managedAssemblyName, pushedAssemblyNames);
+        if (siblings.Count == 0) return null;
+
+        var query = new QueryExpression("plugintype") { ColumnSet = new ColumnSet("plugintypeid") };
+        var assemblyLink = query.AddLink("pluginassembly", "pluginassemblyid", "pluginassemblyid", JoinOperator.Inner);
+        assemblyLink.LinkCriteria.AddCondition("name", ConditionOperator.In, siblings.Cast<object>().ToArray());
+
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
+        return result.Entities.Select(e => e.Id).ToHashSet();
+    }
+
     async Task WarnOrphanAssembliesAsync(
         IOrganizationServiceAsync2 service,
         string managedAssemblyName,
+        IReadOnlyCollection<string>? pushedAssemblyNames,
         string solutionName,
         bool forceDeleteOrphans,
         RunMode runMode,
@@ -633,7 +697,7 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         var query = new QueryExpression("pluginassembly")
         {
             ColumnSet = new ColumnSet("pluginassemblyid", "name"),
-            Criteria = { Conditions = { new ConditionExpression("name", ConditionOperator.NotEqual, managedAssemblyName) } }
+            Criteria = { Conditions = { ExcludePushedAssemblies("name", managedAssemblyName, pushedAssemblyNames) } }
         };
         var componentLink = query.AddLink("solutioncomponent", "pluginassemblyid", "objectid", JoinOperator.Inner);
         componentLink.LinkCriteria.AddCondition("componenttype", ConditionOperator.Equal, 91); // 91 = PluginAssembly
@@ -707,6 +771,7 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
     async Task WarnOrphanStepsAsync(
         IOrganizationServiceAsync2 service,
         string managedAssemblyName,
+        IReadOnlyCollection<string>? pushedAssemblyNames,
         string solutionName,
         bool forceDeleteOrphans,
         RunMode runMode,
@@ -726,7 +791,7 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         var asmLink = typeLink.AddLink("pluginassembly", "pluginassemblyid", "pluginassemblyid", JoinOperator.Inner);
         asmLink.Columns = new ColumnSet("name");
         asmLink.EntityAlias = "asm";
-        asmLink.LinkCriteria.AddCondition("name", ConditionOperator.NotEqual, managedAssemblyName);
+        asmLink.LinkCriteria.AddCondition(ExcludePushedAssemblies("name", managedAssemblyName, pushedAssemblyNames));
 
         var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
         if (result.Entities.Count == 0) return;
