@@ -106,7 +106,7 @@ over unmanaged.
 - **2026-07-04** — Orphan cleanup (AE1–AE8) real-org testing — open, unit tests only so far
 - **2026-07-04** — WebResource-dependencies (`// flowline:depends`, RESX auto-link) integration tested against a real push ✓
 - **2026-07-14** — `push` NuGet package (`pluginpackage`/Dependent Assemblies) support: auto-detects `.nupkg` build output, per-assembly reflection and step registration for multi-DLL packages, orphan-cleanup redirect to the parent package ✓
-- **2026-07-20** — v1.0 release (moved from 2026-07-01)
+- **2026-08-01** — v1.0 release (moved from 2026-07-01, then 2026-07-20). Scope now includes the solution-file wiring, multi-plugin discovery, and project-layout/naming plans, which together set the scaffolded layout v1.0 commits to.
 
 ## Deferred
 
