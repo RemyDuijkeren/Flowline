@@ -296,7 +296,8 @@ public class FormEventReader(IAnsiConsole console)
     {
         var query = new QueryExpression("systemform")
         {
-            ColumnSet = new ColumnSet("name", "formxml"),
+            // Caller reads only .Count — no columns needed, and formxml is large.
+            ColumnSet = new ColumnSet(false),
             Criteria =
             {
                 Conditions =
