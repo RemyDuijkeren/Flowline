@@ -232,6 +232,196 @@ public class CloneCommandTests
         }
     }
 
+    // ── Solution file format (R7 / KD4 / KD7) ───────────────────────────────
+    // .slnx is the .NET 10 default and holds a .cdsproj fine. The opt-out exists for the machines
+    // clone cannot see — a teammate or build agent below SDK 9.0.200 opening the committed repo.
+
+    [Fact]
+    public void SolutionFileName_ByDefault_IsSlnx()
+    {
+        CloneCommand.SolutionFileName("CrO7982", useSlnFormat: false).Should().Be("CrO7982.slnx");
+    }
+
+    [Fact]
+    public void SolutionFileName_WithOptOut_IsSln()
+    {
+        CloneCommand.SolutionFileName("CrO7982", useSlnFormat: true).Should().Be("CrO7982.sln");
+    }
+
+    [Fact]
+    public void Settings_SlnFlag_DefaultsToSlnx()
+    {
+        // The flag is opt-in, so an untouched Settings must land on .slnx — the whole point of R7.
+        var settings = new CloneCommand.Settings();
+
+        settings.UseSlnFormat.Should().BeFalse();
+        CloneCommand.SolutionFileName("CrO7982", settings.UseSlnFormat).Should().Be("CrO7982.slnx");
+    }
+
+    /// <summary>
+    /// Scaffolds the three projects clone wires into a solution file, in the given format.
+    /// </summary>
+    /// <remarks>
+    /// The .cdsproj goes through clone's own seam; the two .csproj entries go straight through the
+    /// writer, because clone hands those to <c>dotnet sln add</c> and the suite has no process fake.
+    /// The writer is what <c>dotnet sln add</c> would have produced either way — an entry with the
+    /// C# type — so what the assertions compare is still the finished solution file.
+    /// </remarks>
+    static async Task<(string Root, string SlnFilePath)> ScaffoldSolutionAsync(bool useSlnFormat, string solutionName = "CrO7982")
+    {
+        var (root, _, cdsprojPath) = CreateProject(solutionName);
+        var slnFilePath = Path.Combine(root, CloneCommand.SolutionFileName(solutionName, useSlnFormat));
+
+        var writer = new MsBuildSolutionWriter();
+        await CloneCommand.AddPackageProjectAsync(writer, root, slnFilePath, cdsprojPath);
+
+        foreach (var name in new[] { "Plugins", "WebResources" })
+        {
+            Directory.CreateDirectory(Path.Combine(root, name));
+            File.WriteAllText(Path.Combine(root, name, $"{name}.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
+            await writer.AddProjectAsync(slnFilePath, Path.Combine(name, $"{name}.csproj"));
+        }
+
+        return (root, slnFilePath);
+    }
+
+    [Fact]
+    public async Task Clone_ByDefault_WritesASlnxHoldingAllThreeProjects()
+    {
+        var (root, slnFilePath) = await ScaffoldSolutionAsync(useSlnFormat: false);
+        try
+        {
+            Path.GetFileName(slnFilePath).Should().Be("CrO7982.slnx");
+            File.Exists(slnFilePath).Should().BeTrue();
+
+            var projects = await new MsBuildSolutionReader().ReadProjectsAsync(slnFilePath);
+
+            projects.Select(p => p.Path).Should().BeEquivalentTo(
+                Path.Combine("Package", "Package.cdsproj"),
+                Path.Combine("Plugins", "Plugins.csproj"),
+                Path.Combine("WebResources", "WebResources.csproj"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Clone_WithSlnOptOut_WritesASlnHoldingTheSameThreeProjects()
+    {
+        var (root, slnFilePath) = await ScaffoldSolutionAsync(useSlnFormat: true);
+        try
+        {
+            Path.GetFileName(slnFilePath).Should().Be("CrO7982.sln");
+            Directory.EnumerateFiles(root, "*.slnx").Should().BeEmpty("the opt-out replaces the format, it doesn't add a second file");
+
+            var projects = await new MsBuildSolutionReader().ReadProjectsAsync(slnFilePath);
+
+            projects.Select(p => p.Path).Should().BeEquivalentTo(
+                Path.Combine("Package", "Package.cdsproj"),
+                Path.Combine("Plugins", "Plugins.csproj"),
+                Path.Combine("WebResources", "WebResources.csproj"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Clone_WithSlnOptOut_GivesEveryProjectItsConfigurationRows()
+    {
+        // A .sln entry without matching ProjectConfigurationPlatforms rows shows in the solution and
+        // never builds — which for the .cdsproj means SolutionPackager silently never runs.
+        var (root, slnFilePath) = await ScaffoldSolutionAsync(useSlnFormat: true);
+        try
+        {
+            var content = await File.ReadAllTextAsync(slnFilePath);
+
+            foreach (var configuration in new[] { "Debug|Any CPU", "Release|Any CPU" })
+            {
+                CountOccurrences(content, $"{configuration}.ActiveCfg = {configuration}").Should().Be(3);
+                CountOccurrences(content, $"{configuration}.Build.0 = {configuration}").Should().Be(3);
+            }
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Clone_EitherFormat_TypesTheCdsprojAsACSharpProject(bool useSlnFormat)
+    {
+        // Without the C# project type the .cdsproj entry is inert in both formats: MSBuild will not
+        // load it, so nothing packs. This is KD6 holding across the format switch.
+        var (root, slnFilePath) = await ScaffoldSolutionAsync(useSlnFormat);
+        try
+        {
+            var cdsproj = await new MsBuildSolutionReader()
+                .FindProjectAsync(slnFilePath, Path.Combine("Package", "Package.cdsproj"));
+
+            cdsproj.Should().NotBeNull();
+            cdsproj!.IsCdsProject.Should().BeTrue();
+
+            var content = await File.ReadAllTextAsync(slnFilePath);
+            if (useSlnFormat)
+                content.Should().Contain("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}");
+            else
+                content.Should().MatchRegex(@"Package\.cdsproj""[^>]*Type=""C#""");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Clone_OptOut_ChangesTheSolutionFileFormatAndNothingElse()
+    {
+        var (slnxRoot, slnxPath) = await ScaffoldSolutionAsync(useSlnFormat: false);
+        var (slnRoot, slnPath) = await ScaffoldSolutionAsync(useSlnFormat: true);
+        try
+        {
+            // Every scaffolded file apart from the solution file itself is identical.
+            static IEnumerable<string> ScaffoldedFiles(string root, string slnFilePath) =>
+                Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
+                         .Where(f => f != slnFilePath)
+                         .Select(f => Path.GetRelativePath(root, f))
+                         .Order(StringComparer.Ordinal);
+
+            ScaffoldedFiles(slnRoot, slnPath).Should().BeEquivalentTo(ScaffoldedFiles(slnxRoot, slnxPath));
+
+            // And both solution files describe the same membership.
+            var reader = new MsBuildSolutionReader();
+            var fromSlnx = await reader.ReadProjectsAsync(slnxPath);
+            var fromSln = await reader.ReadProjectsAsync(slnPath);
+
+            fromSln.Select(p => p.Path).Should().BeEquivalentTo(fromSlnx.Select(p => p.Path));
+            fromSln.Select(p => p.Name).Should().BeEquivalentTo(fromSlnx.Select(p => p.Name));
+        }
+        finally
+        {
+            Directory.Delete(slnxRoot, recursive: true);
+            Directory.Delete(slnRoot, recursive: true);
+        }
+    }
+
+    static int CountOccurrences(string haystack, string needle)
+    {
+        var count = 0;
+        for (var i = haystack.IndexOf(needle, StringComparison.Ordinal); i >= 0;
+             i = haystack.IndexOf(needle, i + needle.Length, StringComparison.Ordinal))
+        {
+            count++;
+        }
+
+        return count;
+    }
+
     // ── ValidateForce / HasForce ────────────────────────────────────────────
 
     [Fact]

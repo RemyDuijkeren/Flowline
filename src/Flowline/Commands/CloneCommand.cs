@@ -43,6 +43,10 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         [Description("Include managed artifacts (--managed false resets to default)")]
         [DefaultValue(true)]
         public FlagValue<bool> IncludeManaged { get; set; } = null!;
+
+        [CommandOption("--sln")]
+        [Description("Create a .sln instead of a .slnx. Use it when a teammate, build agent, or CI runner opens this repo on .NET SDK 8 or older — .slnx needs 9.0.200+.")]
+        public bool UseSlnFormat { get; set; } = false;
     }
 
     readonly MsBuildSolutionWriter _solutionWriter = new();
@@ -66,11 +70,12 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
         var slnFolder = RootFolder;
         var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
-        var slnFilePath = Path.Combine(slnFolder, $"{projectSln.UniqueName}.sln");
+        var slnFileName = SolutionFileName(projectSln.UniqueName, settings.UseSlnFormat);
+        var slnFilePath = Path.Combine(slnFolder, slnFileName);
 
         await CloneSolutionFromDataverseAsync(projectSln, slnFolder, cdsprojPath, sourceEnv.EnvironmentUrl!, settings, cancellationToken);
         await CreateSolutionFileAsync(slnFolder, slnFilePath, cdsprojPath, cancellationToken);
-        await SetupPluginsProjectAsync(slnFolder, settings, cancellationToken);
+        await SetupPluginsProjectAsync(slnFolder, slnFilePath, settings, cancellationToken);
         await SetupWebResourcesProjectAsync(slnFolder, slnFilePath, settings, cancellationToken);
         SeedWebResourceDistFromSrc(slnFolder, solutionInfo.PublisherPrefix, projectSln.UniqueName, settings);
 
@@ -96,7 +101,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             return (int)ExitCode.BuildFailed;
         }
 
-        await ScaffoldAgentsFileAsync(projectSln.UniqueName, cancellationToken);
+        await ScaffoldAgentsFileAsync(projectSln.UniqueName, slnFileName, cancellationToken);
         await ScaffoldClaudeFileAsync(cancellationToken);
         await new DataverseContextGenerator(Console).GenerateAsync(
             Path.Combine(PackageFolder(slnFolder), "src"), projectSln.UniqueName, RootFolder, cancellationToken);
@@ -140,7 +145,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             File.Delete(path);
     }
 
-    private async Task ScaffoldAgentsFileAsync(string solutionName, CancellationToken cancellationToken)
+    private async Task ScaffoldAgentsFileAsync(string solutionName, string slnFileName, CancellationToken cancellationToken)
     {
         var agentsPath = Path.Combine(RootFolder, "AGENTS.md");
         if (File.Exists(agentsPath))
@@ -189,7 +194,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             ```
             .flowline                            ← environment URLs + solution config
             .gitignore                           ← root gitignore (bin/obj/node_modules/artifacts/dist)
-            {{solutionName}}.sln
+            {{slnFileName}}
             Package/Package.cdsproj              ← solution package project (PAC-managed, do not edit)
             Package/src/                         ← unpacked solution XML (git-diffable)
             Plugins/Plugins.csproj               ← plugin source, decorated with [Step] attributes
@@ -431,6 +436,22 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         return (created, added);
     }
 
+    /// <summary>The solution file clone scaffolds, named for the Dataverse solution.</summary>
+    /// <remarks>
+    /// <c>.slnx</c> by default, matching what <c>dotnet new sln</c> has produced since .NET 10. It holds a
+    /// <c>.cdsproj</c> fine — verified on SDK 10.0.302: <c>dotnet sln list</c> enumerates the entry and
+    /// <c>dotnet build</c> runs SolutionPackager through to the zip. Only <c>dotnet sln add</c> refuses one,
+    /// and Flowline no longer asks it to.
+    ///
+    /// The opt-out is a flag rather than an SDK probe on purpose. Flowline ships as a <c>net10.0</c> global
+    /// tool, so whoever runs clone is already far above the 9.0.200 floor <c>.slnx</c> needs — probing their
+    /// machine would answer a question nobody asked. The exposure sits on machines that never run Flowline:
+    /// a teammate, a client's build agent, a CI runner pinned to an older SDK, opening the repo the
+    /// consultant committed. Clone cannot see those, so the consultant names the format.
+    /// </remarks>
+    internal static string SolutionFileName(string solutionName, bool useSlnFormat) =>
+        $"{solutionName}{(useSlnFormat ? ".sln" : ".slnx")}";
+
     /// <summary>Explains a <c>Package/</c> folder that holds no <c>Package.cdsproj</c>.</summary>
     /// <remarks>
     /// Reachable only between the two moves that normalize what pac wrote — the folder rename and the
@@ -446,7 +467,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             : $"{PackageName}/ is here but {PackageName}.cdsproj isn't. Move {PackageName}/ aside and run clone again.";
     }
 
-    private async Task SetupPluginsProjectAsync(string slnFolder, Settings settings, CancellationToken cancellationToken)
+    private async Task SetupPluginsProjectAsync(string slnFolder, string slnFilePath, Settings settings, CancellationToken cancellationToken)
     {
         var pluginsFolder = Path.Combine(slnFolder, PluginsName);
         var pluginsCsproj = Path.Combine(pluginsFolder, $"{PluginsName}.csproj");
@@ -495,10 +516,14 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
                          .WithCapture(_capture)
                          .ExecuteAsync(cancellationToken);
 
-                // Add Plugins.csproj to the solution
+                // Add Plugins.csproj to the solution. Named explicitly rather than left to the working
+                // directory: `dotnet sln` picks the folder's one solution file, and a root can now hold a
+                // .sln and a .slnx side by side (what `dotnet sln migrate` leaves behind), where that
+                // guess fails outright. `dotnet sln add` takes a .csproj into either format — verified.
                 await Cli.Wrap("dotnet")
                          .WithArguments(args => args
                                                 .Add("sln")
+                                                .Add(slnFilePath)
                                                 .Add("add")
                                                 .Add(pluginsCsproj))
                          .WithWorkingDirectory(slnFolder)

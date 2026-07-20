@@ -96,7 +96,7 @@ solution files and paths. The full spec is at [`docs/folder-structure.md`](docs/
 ```
 ProjectRoot/
 ├── .flowline                         ← project config
-├── <SolutionName>.sln
+├── <SolutionName>.slnx               ← .sln with `clone --sln`
 ├── Package/                          ← PAC-managed (do not edit manually)
 │   ├── Package.cdsproj               ← solution package project
 │   └── src/                          ← unpacked solution XML (git-diffable)

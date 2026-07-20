@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`clone` also scaffolds `CLAUDE.md`**: `AGENTS.md` alone isn't picked up by Claude Code, which only auto-loads `CLAUDE.md` — clone now writes a one-line `CLAUDE.md` (`@AGENTS.md`) alongside it so Claude Code loads the same instructions. Skipped if `CLAUDE.md` already exists.
+- **`clone --sln`**: opts a new project out of `.slnx` and scaffolds the classic `.sln` instead. For repos a teammate, build agent, or CI runner opens on .NET SDK 8 or older — `.slnx` needs 9.0.200+. It's a flag rather than an SDK check on purpose: Flowline ships as a `net10.0` tool, so the machine running `clone` is never the one at risk. Nothing else about the clone changes.
+
+### Changed
+
+- **`clone` scaffolds a `.slnx` by default**: the .NET 10 default format, replacing the classic `.sln`. Flowline previously opted out on the assumption that a `.slnx` can't hold a `.cdsproj` — it can (verified on SDK 10.0.302: `dotnet sln list` enumerates the entry and `dotnet build` runs SolutionPackager through to the zip). Only `dotnet sln add` refuses a `.cdsproj`, and Flowline writes that entry itself now. Existing projects are untouched — Flowline reads both formats and never converts one. Pass `--sln` for the old behavior.
 
 ## [0.12.0] - 2026-07-17
 
