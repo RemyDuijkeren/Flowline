@@ -1836,13 +1836,13 @@ public class PluginPlannerTests
         Assert.DoesNotContain("NamespaceB.TypeB", snapshotAScoped.PluginTypes.Keys);
     }
 
-    // Regression guard: PluginReader.GetRegisteredCustomApisAsync queries by publisher prefix only (not
-    // per-assembly, since a Custom API's plugintypeid doesn't narrow to one physical DLL the way steps do)
-    // — so a package's per-assembly snapshot.CustomApis legitimately contains a sibling assembly's still-live
-    // Custom API. Without knownPackageAssemblyPluginTypeIds, Plan's "unlinked Custom API" sweep can't tell
-    // that apart from a genuinely orphaned one and deletes it on every push (P0 found via adversarial review).
+    // PluginReader.GetRegisteredCustomApisAsync queries by publisher prefix only (not per-assembly, since
+    // a Custom API's plugintypeid doesn't narrow to one physical DLL the way steps do) — so a package's
+    // per-assembly snapshot.CustomApis legitimately contains a sibling assembly's still-live Custom API.
+    // Positive attribution protects it whether or not the package's own type ids are supplied: the
+    // difference is only which reason the sweep records, never whether it deletes.
     [Fact]
-    public void Plan_CustomApiOwnedBySiblingAssembly_DeletedWithoutSiblingIds_PreservedWhenPassed()
+    public void Plan_CustomApiOwnedBySiblingAssembly_PreservedWithOrWithoutPackageTypeIds()
     {
         var typeIdA = Guid.NewGuid();
         var typeIdB = Guid.NewGuid();
@@ -1859,13 +1859,201 @@ public class PluginPlannerTests
         var metadataA = new PluginAssemblyMetadata("AssemblyA", "AssemblyA, Version=1.0.0.0", [1], "hashA", "1.0.0.0", null, "neutral",
             [new PluginTypeMetadata("TypeA", "NamespaceA.TypeA", [], [], false)]);
 
-        // Without sibling awareness, the sweep can't distinguish "owned by assembly B" from "orphaned" —
-        // this is the bug this test pins the boundary of (classic single-assembly path stays unfixed/out
-        // of scope; only package-path callers that pass sibling ids get the correct behavior below).
-        var planWithoutSiblingIds = _planner.Plan(snapshotA, metadataA, assemblyA, "MySolution");
-        Assert.Contains(planWithoutSiblingIds.CustomApis.Deletes, d => d.Id == siblingApiId);
+        var planWithoutPackageIds = _planner.Plan(snapshotA, metadataA, assemblyA, "MySolution");
+        Assert.DoesNotContain(planWithoutPackageIds.CustomApis.Deletes, d => d.Id == siblingApiId);
 
-        var planWithSiblingIds = _planner.Plan(snapshotA, metadataA, assemblyA, "MySolution", knownPackageAssemblyPluginTypeIds: new HashSet<Guid> { typeIdB });
-        Assert.DoesNotContain(planWithSiblingIds.CustomApis.Deletes, d => d.Id == siblingApiId);
+        var planWithPackageIds = _planner.Plan(snapshotA, metadataA, assemblyA, "MySolution", packageAssemblyPluginTypeIds: new HashSet<Guid> { typeIdB });
+        Assert.DoesNotContain(planWithPackageIds.CustomApis.Deletes, d => d.Id == siblingApiId);
+    }
+
+    [Fact]
+    public void Plan_MultiAssemblyPackage_EachAssemblyDeletesItsOwnRemovedApi_AndOnlyItsOwn()
+    {
+        // "Ours" for a package spans every assembly in it (AllPluginTypeIds) — but authority to delete
+        // still sits with the pass that owns the plugin type, because only that pass knows whether its
+        // own source still declares the API. A's pass must not touch B's live API, and vice versa.
+        var typeIdA = Guid.NewGuid();
+        var typeIdB = Guid.NewGuid();
+        var removedApiAId = Guid.NewGuid();
+        var liveApiBId = Guid.NewGuid();
+
+        var assemblyA = new Entity("pluginassembly", Guid.NewGuid()) { ["name"] = "AssemblyA" };
+        var assemblyB = new Entity("pluginassembly", Guid.NewGuid()) { ["name"] = "AssemblyB" };
+
+        // Prefix-wide: both snapshots contain both APIs. Only PluginTypes is assembly-scoped (KTD15).
+        var liveApiBEntity = CustomApiEntity(liveApiBId, "abc_LiveApiB", typeIdB);
+        liveApiBEntity["displayname"] = "Live Api B";
+        liveApiBEntity["bindingtype"] = new OptionSetValue(0);
+        liveApiBEntity["isfunction"] = false;
+        liveApiBEntity["isprivate"] = false;
+        liveApiBEntity["allowedcustomprocessingsteptype"] = new OptionSetValue(0);
+
+        List<Entity> allApis = [CustomApiEntity(removedApiAId, "abc_RemovedApiA", typeIdA), liveApiBEntity];
+        var componentTypes = new Dictionary<Guid, int> { [liveApiBId] = 400, [removedApiAId] = 400 };
+
+        var snapshotA = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase) { ["NamespaceA.TypeA"] = new Entity("plugintype", typeIdA) { ["typename"] = "NamespaceA.TypeA" } },
+            customApis: allApis, prefix: "abc", componentTypeById: componentTypes);
+        var snapshotB = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase) { ["NamespaceB.TypeB"] = new Entity("plugintype", typeIdB) { ["typename"] = "NamespaceB.TypeB" } },
+            customApis: allApis, prefix: "abc", componentTypeById: componentTypes);
+
+        var packageTypeIds = new HashSet<Guid> { typeIdA, typeIdB };
+
+        // A dropped [CustomApi] from TypeA; B still declares LiveApiB.
+        var metadataA = new PluginAssemblyMetadata("AssemblyA", "AssemblyA, Version=1.0.0.0", [1], "hashA", "1.0.0.0", null, "neutral",
+            [new PluginTypeMetadata("TypeA", "NamespaceA.TypeA", [], [], false)]);
+        var liveApiB = new CustomApiMetadata("LiveApiB", "Live Api B", null, 0, null, false, false, 0, null, "NamespaceB.TypeB", [], []);
+        var metadataB = new PluginAssemblyMetadata("AssemblyB", "AssemblyB, Version=1.0.0.0", [1], "hashB", "1.0.0.0", null, "neutral",
+            [new PluginTypeMetadata("TypeB", "NamespaceB.TypeB", [], [liveApiB], false, IsCustomApi: true)]);
+
+        var planA = _planner.Plan(snapshotA, metadataA, assemblyA, "MySolution", packageTypeIds);
+        var planB = _planner.Plan(snapshotB, metadataB, assemblyB, "MySolution", packageTypeIds);
+
+        Assert.Contains(planA.CustomApis.Deletes, d => d.Id == removedApiAId);
+        Assert.DoesNotContain(planA.CustomApis.Deletes, d => d.Id == liveApiBId);
+        Assert.Empty(planB.CustomApis.Deletes);
+    }
+
+    // -- Custom API sweep: positive attribution --
+    //
+    // customapi.plugintypeid points DOWN at an implementation (the reverse of
+    // sdkmessageprocessingstep.plugintypeid, which points UP at its owner), and
+    // PluginReader.GetRegisteredCustomApisAsync can only filter by publisher prefix. So the sweep's
+    // input is every Custom API this publisher ever created, and "no plugin type behind it" does not
+    // mean "orphaned". Delete only what is positively attributable to this push.
+
+    static Entity CustomApiEntity(Guid id, string uniqueName, Guid? pluginTypeId)
+    {
+        var api = new Entity("customapi", id) { ["uniquename"] = uniqueName };
+        if (pluginTypeId != null)
+            api["plugintypeid"] = new EntityReference("plugintype", pluginTypeId.Value);
+        return api;
+    }
+
+    [Theory]
+    [InlineData(true)]  // plugintypeid attribute absent entirely
+    [InlineData(false)] // plugintypeid present but Guid.Empty
+    public void Plan_CustomApiWithNoPluginType_NotDeletedOnNormalPush_DeletedUnderForceDeleteOrphans(bool attributeAbsent)
+    {
+        var apiId = Guid.NewGuid();
+        var api = CustomApiEntity(apiId, "abc_ContractAwaitingAnImplementation", attributeAbsent ? null : Guid.Empty);
+        var snapshot = Snapshot(customApis: [api], prefix: "abc");
+
+        var normal = _planner.Plan(snapshot, Metadata(), _assembly, "MySolution");
+        Assert.DoesNotContain(normal.CustomApis.Deletes, d => d.Id == apiId);
+
+        var forced = _planner.Plan(snapshot, Metadata(), _assembly, "MySolution", forceDeleteOrphans: true);
+        Assert.Contains(forced.CustomApis.Deletes, d => d.Id == apiId);
+    }
+
+    [Fact]
+    public void Plan_CustomApiOwnedByAnotherRepoUnderSamePrefix_NeverDeleted_EvenUnderForce()
+    {
+        // Same publisher prefix, a plugin type this push has never heard of — another repo's project.
+        var foreignApiId = Guid.NewGuid();
+        var snapshot = Snapshot(
+            customApis: [CustomApiEntity(foreignApiId, "abc_ForeignApi", Guid.NewGuid())],
+            prefix: "abc");
+
+        var normal = _planner.Plan(snapshot, Metadata(), _assembly, "MySolution");
+        Assert.DoesNotContain(normal.CustomApis.Deletes, d => d.Id == foreignApiId);
+
+        var forced = _planner.Plan(snapshot, Metadata(), _assembly, "MySolution", forceDeleteOrphans: true);
+        Assert.DoesNotContain(forced.CustomApis.Deletes, d => d.Id == foreignApiId);
+    }
+
+    [Fact]
+    public void Plan_CustomApiOwnedBySibling_SurvivesEvenWhenSiblingTypeIdsAreNotSupplied()
+    {
+        // Previously the protection was passing the sibling's plugin type ids in. Under positive
+        // attribution that input is irrelevant — an unattributable API is never a delete candidate.
+        var siblingApiId = Guid.NewGuid();
+        var typeIdA = Guid.NewGuid();
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["NamespaceA.TypeA"] = new Entity("plugintype", typeIdA) { ["typename"] = "NamespaceA.TypeA" }
+            },
+            customApis: [CustomApiEntity(siblingApiId, "abc_SiblingApi", Guid.NewGuid())],
+            prefix: "abc");
+
+        var metadataA = Metadata(new PluginTypeMetadata("TypeA", "NamespaceA.TypeA", [], [], false));
+
+        var plan = _planner.Plan(snapshot, metadataA, _assembly, "MySolution");
+
+        Assert.DoesNotContain(plan.CustomApis.Deletes, d => d.Id == siblingApiId);
+    }
+
+    [Fact]
+    public void Plan_CustomApiOnOurTypeThatDroppedTheAttribute_StillDeletedOnNormalPush()
+    {
+        // The one case positive attribution keeps: the plugin type is ours and still in source, but the
+        // class no longer declares [CustomApi], so PlanCustomApi never covers the live record.
+        var typeId = Guid.NewGuid();
+        var apiId  = Guid.NewGuid();
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            customApis: [CustomApiEntity(apiId, "abc_DroppedApi", typeId)],
+            prefix: "abc");
+
+        // IsCustomApi: false — the attribute was removed, so this plans as a plain plugin type.
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [], false)), _assembly, "MySolution");
+
+        Assert.Contains(plan.CustomApis.Deletes, d => d.Id == apiId);
+    }
+
+    [Fact]
+    public void Plan_CustomApiStillDeclaredInSource_NotSweptAsWellAsNotDuplicated()
+    {
+        var typeId = Guid.NewGuid();
+        var apiId  = Guid.NewGuid();
+
+        var liveApi = CustomApiEntity(apiId, "abc_MyApi", typeId);
+        liveApi["displayname"] = "My Api";
+        liveApi["description"] = "desc";
+        liveApi["bindingtype"] = new OptionSetValue(0);
+        liveApi["isfunction"] = false;
+        liveApi["isprivate"] = false;
+        liveApi["allowedcustomprocessingsteptype"] = new OptionSetValue(0);
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            customApis: [liveApi],
+            prefix: "abc",
+            componentTypeById: new Dictionary<Guid, int> { [apiId] = 400 });
+
+        var customApi = new CustomApiMetadata("MyApi", "My Api", "desc", 0, null, false, false, 0, null, "MyNamespace.MyPlugin", [], []);
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [customApi], false, IsCustomApi: true)), _assembly, "MySolution");
+
+        Assert.Empty(plan.CustomApis.Deletes);
+    }
+
+    [Fact]
+    public void Plan_ObsoleteCustomApi_DeletedExactlyOnce_NotDoubledBySweep()
+    {
+        // PlanCustomApi's obsolete branch already deletes this; the sweep must not add a second action.
+        var typeId = Guid.NewGuid();
+        var apiId  = Guid.NewGuid();
+
+        var snapshot = Snapshot(
+            pluginTypes: new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MyNamespace.MyPlugin"] = new Entity("plugintype", typeId) { ["typename"] = "MyNamespace.MyPlugin" }
+            },
+            customApis: [CustomApiEntity(apiId, "abc_ObsoleteApi", typeId)],
+            prefix: "abc");
+
+        var plan = _planner.Plan(snapshot, Metadata(new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [], false, IsCustomApi: true)), _assembly, "MySolution");
+
+        Assert.Single(plan.CustomApis.Deletes, d => d.Id == apiId);
     }
 }

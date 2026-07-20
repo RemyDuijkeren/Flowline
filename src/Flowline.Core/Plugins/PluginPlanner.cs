@@ -26,18 +26,30 @@ public class PluginPlanner(IAnsiConsole console)
         ["UpdateMultiple"]        = "Targets",
     };
 
-    // knownPackageAssemblyPluginTypeIds: for a multi-assembly package (U4/KD5), snapshot.CustomApis is
+    // packageAssemblyPluginTypeIds: for a multi-assembly package (U4/KD5), snapshot.CustomApis is
     // queried by publisher prefix only (not per-assembly, since a custom API's plugintypeid doesn't
     // narrow to one physical DLL the way steps/images do) — so a sibling assembly's still-live Custom
-    // API shows up in every assembly's snapshot. Without this, the "unlinked Custom API" sweep below
-    // would see a sibling's API as unowned (its plugintypeid isn't among snapshot.PluginTypes, which is
-    // correctly assembly-scoped per KTD15) and delete it on every push. Callers planning a single
-    // classic assembly pass null; package callers pass the union of every sibling assembly's known
-    // plugin type ids so the sweep can tell "orphaned" apart from "owned by a sibling I'm not planning".
-    public RegistrationPlan Plan(RegistrationSnapshot snapshot, PluginAssemblyMetadata metadata, Entity assembly, string solutionName, IReadOnlySet<Guid>? knownPackageAssemblyPluginTypeIds = null)
+    // API shows up in every assembly's snapshot. Package callers pass the union of every assembly in
+    // that package (AllPluginTypeIds). Callers planning a single classic assembly pass null.
+    //
+    // It is a DISCRIMINATOR, NOT AN AUTHORISATION — it decides which "left alone" reason gets
+    // reported, never whether something may be deleted. Deletion is authorised only by
+    // snapshot.PluginTypes: the assembly this pass is planning. Widening the delete-authorising set to
+    // the whole package re-enters the bug this design exists to remove, from the other side —
+    // assembly A would see assembly B's still-live API as owned-by-the-package but absent from A's
+    // source, and delete it. Each pass deletes its own; no pass ever deletes on another's behalf.
+    //
+    // forceDeleteOrphans: gates the one sweep case Flowline cannot attribute — a Custom API with no
+    // plugintypeid at all. Same gate WarnOrphanAssembliesAsync/WarnOrphanStepsAsync sit behind.
+    public RegistrationPlan Plan(RegistrationSnapshot snapshot, PluginAssemblyMetadata metadata, Entity assembly, string solutionName, IReadOnlySet<Guid>? packageAssemblyPluginTypeIds = null, bool forceDeleteOrphans = false)
     {
         var plan = new RegistrationPlan();
         var resolvedCustomApiNames = ResolveCustomApiNames(snapshot, metadata);
+
+        // Plugin types PlanCustomApi is called for below — those already get the full upsert/obsolete
+        // treatment for every Custom API pointing at them, so the sweep at the end must leave them
+        // alone or it would plan a second, duplicate delete for the same record.
+        var plannedCustomApiTypeIds = new HashSet<Guid>();
 
         foreach (var asmPluginType in metadata.Plugins)
         {
@@ -68,6 +80,7 @@ public class PluginPlanner(IAnsiConsole console)
 
             if (asmPluginType.IsCustomApi)
             {
+                plannedCustomApiTypeIds.Add(dvPluginType.Id);
                 var (customApiPlan, requestParamPlan, responsePropPlan, groups) = PlanCustomApi(snapshot, dvPluginType, asmPluginType.CustomApis, solutionName, resolvedCustomApiNames, asmPluginType.Name);
                 plan.CustomApis.Add(customApiPlan);
                 plan.RequestParams.Add(requestParamPlan);
@@ -93,6 +106,7 @@ public class PluginPlanner(IAnsiConsole console)
 
             // Try both paths — only the one with registered items will produce actions
             var typeShortName = obsoletePluginType.Key[(obsoletePluginType.Key.LastIndexOf('.') + 1)..];
+            plannedCustomApiTypeIds.Add(obsoletePluginType.Value.Id);
             var (customApiPlan, requestParamPlan, responsePropPlan, apiGroups) = PlanCustomApi(snapshot, obsoletePluginType.Value, [], solutionName, resolvedCustomApiNames, typeShortName);
             plan.CustomApis.Add(customApiPlan);
             plan.RequestParams.Add(requestParamPlan);
@@ -123,21 +137,42 @@ public class PluginPlanner(IAnsiConsole console)
             }
         }
 
-        // Unlinked Custom APIs — plugintypeid is null/empty or references a plugin type not in the snapshot.
-        // No PlanCustomApi call ever covers these, so they'd persist forever without this sweep.
-        var knownPluginTypeIds = snapshot.PluginTypes.Values.Select(t => t.Id).ToHashSet();
-        if (knownPackageAssemblyPluginTypeIds != null)
-            knownPluginTypeIds.UnionWith(knownPackageAssemblyPluginTypeIds);
-        foreach (var unlinkedApi in snapshot.CustomApis.Where(a =>
+        // -- Custom API sweep: delete only on positive attribution --
+        //
+        // READ THIS BEFORE WIDENING ANY ID SET HERE. This sweep has twice been "fixed" by adding more
+        // plugin type ids to a known-set; both times the actual defect was the direction of ownership.
+        //
+        // The schema, which is what makes this checkable:
+        //   sdkmessageprocessingstep.plugintypeid -> plugintype  — the step is OWNED BY the type. The
+        //     reference points UP at its owner; deleting the type cascades the step away. The type is
+        //     assembly-scoped, so "ours" is well defined and "type gone" really does mean "step dead".
+        //   customapi.plugintypeid -> plugintype  — the API REFERENCES the type as its implementation.
+        //     The reference points DOWN. The Custom API is the parent, the plugin type is a detail, and
+        //     a Custom API can exist with no plugintypeid at all.
+        //
+        // So "its plugin type is gone" does NOT mean "the API is orphaned" — losing an implementation
+        // does not orphan a contract. And a Custom API has no assembly-shaped handle, so
+        // PluginReader.GetRegisteredCustomApisAsync can only filter `uniquename BeginsWith "<prefix>_"`:
+        // this sweep's input is every Custom API this publisher ever created, other projects and other
+        // repos included. A Custom API is also a public API surface with external callers, so the bar
+        // for deleting one is HIGHER than for a step, not lower.
+        //
+        // Therefore: delete only what this push can positively attribute to itself. Anything else is
+        // left alone (reported under --verbose), and "no implementation at all" — which may be a
+        // contract still waiting for one — goes behind --force delete-orphans, the same gate
+        // WarnOrphanAssembliesAsync/WarnOrphanStepsAsync use for every other unknown.
+        var ourPluginTypeIds = snapshot.PluginTypes.Values.Select(t => t.Id).ToHashSet();
+        var pushPluginTypeIds = new HashSet<Guid>(ourPluginTypeIds);
+        if (packageAssemblyPluginTypeIds != null)
+            pushPluginTypeIds.UnionWith(packageAssemblyPluginTypeIds);
+        var declaredCustomApiNames = resolvedCustomApiNames.Values.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var ourApiNoLongerInSource in snapshot.CustomApis.Where(IsOursAndNoLongerDeclaredInSource))
         {
-            var typeId = a.GetAttributeValue<EntityReference>("plugintypeid")?.Id;
-            return typeId == null || typeId == Guid.Empty || !knownPluginTypeIds.Contains(typeId.Value);
-        }))
-        {
-            var apiName = unlinkedApi.GetAttributeValue<string>("uniquename") ?? unlinkedApi.Id.ToString();
-            var del    = new DeleteAction(apiName, "customapi", unlinkedApi.Id);
-            var pParam = PlanRequestParameters(snapshot, snapshot.PublisherPrefix, unlinkedApi.Id, apiName, [], solutionName);
-            var pProp  = PlanResponseProperties(snapshot, snapshot.PublisherPrefix, unlinkedApi.Id, apiName, [], solutionName);
+            var apiName = ourApiNoLongerInSource.GetAttributeValue<string>("uniquename") ?? ourApiNoLongerInSource.Id.ToString();
+            var del    = new DeleteAction(apiName, "customapi", ourApiNoLongerInSource.Id);
+            var pParam = PlanRequestParameters(snapshot, snapshot.PublisherPrefix, ourApiNoLongerInSource.Id, apiName, [], solutionName);
+            var pProp  = PlanResponseProperties(snapshot, snapshot.PublisherPrefix, ourApiNoLongerInSource.Id, apiName, [], solutionName);
             plan.CustomApis.Deletes.Add(del);
             plan.RequestParams.Add(pParam);
             plan.ResponseProps.Add(pProp);
@@ -148,6 +183,44 @@ public class PluginPlanner(IAnsiConsole console)
         AddCrossSolutionWarnings(plan, snapshot, solutionName);
 
         return plan;
+
+        // The whole rule, in one place. Named for the test it performs — "ours, and source no longer
+        // declares it" — not for a null check on plugintypeid, because a missing plugintypeid is the
+        // weakest signal here, not the strongest.
+        bool IsOursAndNoLongerDeclaredInSource(Entity api)
+        {
+            var apiName = api.GetAttributeValue<string>("uniquename") ?? api.Id.ToString();
+            var typeId  = api.GetAttributeValue<EntityReference>("plugintypeid")?.Id;
+
+            if (typeId is not { } implementationTypeId || implementationTypeId == Guid.Empty)
+            {
+                // No implementation at all. Might be a contract waiting for one, so it never goes on a
+                // normal push — same --force gate as every other thing we cannot attribute.
+                if (forceDeleteOrphans) return true;
+
+                console.Verbose($"Custom API '{apiName}' left alone — nothing implements it, so Flowline can't tell whose it is. Use --force delete-orphans to delete.");
+                return false;
+            }
+
+            // Implemented by a plugin type outside this push. The prefix-wide query means this is
+            // routine, not suspicious: it is another project's or another repo's API.
+            if (!pushPluginTypeIds.Contains(implementationTypeId))
+            {
+                console.Verbose($"Custom API '{apiName}' left alone — its plugin type isn't one this push owns, so it belongs to another project.");
+                return false;
+            }
+
+            // Owned by another assembly in this same package. That assembly's own pass is the only one
+            // that can tell "still declared in source" from "removed", so this pass stays out of it.
+            if (!ourPluginTypeIds.Contains(implementationTypeId)) return false;
+
+            // Ours, and PlanCustomApi above already planned it (upsert, or an obsolete-delete).
+            if (plannedCustomApiTypeIds.Contains(implementationTypeId)) return false;
+
+            // Ours, still declared in source under this name — the class simply isn't planned as a
+            // Custom API this pass (e.g. it kept the plugin type but the name moved).
+            return !declaredCustomApiNames.Contains(apiName);
+        }
     }
 
     static void AddCrossSolutionWarnings(RegistrationPlan plan, RegistrationSnapshot snapshot, string solutionName)

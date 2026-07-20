@@ -2152,28 +2152,19 @@ public class PluginServiceTests
         Assert.DoesNotContain("abc_SiblingApi", _console.Output);
     }
 
-    // -- Package path + sibling plugin projects (the mixed .nupkg/.dll push) --
+    // -- Package path + Custom APIs this push does not own --
     //
-    // PluginPackageMode.Auto routes a project that packed a .nupkg to the package path and one that
-    // didn't to the classic path, so both run against the same solution in one push. snapshot.CustomApis
-    // is queried publisher-prefix-wide, so the package path sees the classic sibling's live Custom APIs
-    // and owns none of them — without the sibling's plugin type ids in the known set it plans them as
-    // unlinked and deletes them, as part of the normal plan, no --force required.
-
-    // The plugintype query SiblingPluginTypeIdsAsync issues: joined through pluginassembly, so it never
-    // collides with SetupPluginTypes/SetupPluginTypesForAssembly (both LinkEntities.Count == 0).
-    private void SetupSiblingPluginTypes(params Guid[] pluginTypeIds)
-    {
-        var entities = pluginTypeIds.Select(id => new Entity("plugintype", id)).ToList();
-        _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "plugintype" && q.LinkEntities.Count > 0),
-                Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new EntityCollection(entities)));
-    }
+    // snapshot.CustomApis is queried publisher-prefix-wide, so a package push sees every Custom API the
+    // publisher ever created: sibling projects in the same push, other repos, anything. A Custom API
+    // REFERENCES a plugin type as its implementation (customapi.plugintypeid points down), so an API
+    // whose plugin type this push doesn't own is not evidence of an orphan — it is evidence the API
+    // isn't ours. It is never deleted. These tests previously passed because the sibling's plugin type
+    // ids were fed into the planner; they now pass because attribution is required at all.
 
     // Existing package, unchanged hash: the drift-correction path, where a plan's deletes execute for
     // real. One package project ("MyPlugin") and one classic sibling project ("SupportPlugins") whose
-    // Custom API is live in the prefix-wide snapshot.
+    // Custom API is live in the prefix-wide snapshot. Nothing tells the planner about the sibling's
+    // plugin types — that input no longer exists.
     private Guid ArrangeMixedPushWithClassicSiblingCustomApi()
     {
         var assemblyId = Guid.NewGuid();
@@ -2190,7 +2181,6 @@ public class PluginServiceTests
             ["uniquename"] = "abc_SiblingApi",
             ["plugintypeid"] = new EntityReference("plugintype", siblingTypeId)
         });
-        SetupSiblingPluginTypes(siblingTypeId);
 
         return siblingApiId;
     }
@@ -2207,8 +2197,7 @@ public class PluginServiceTests
         var siblingApiId = ArrangeMixedPushWithClassicSiblingCustomApi();
 
         var result = await _service.SyncSolutionFromPackageAsync(
-            _serviceMock, MixedPushPackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution",
-            RunMode.Normal, CancellationToken.None, pushedAssemblyNames: ["MyPlugin", "SupportPlugins"]);
+            _serviceMock, MixedPushPackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
 
         Assert.False(result);
         await _serviceMock.DidNotReceive().DeleteAsync("customapi", siblingApiId, Arg.Any<CancellationToken>());
@@ -2216,35 +2205,32 @@ public class PluginServiceTests
     }
 
     [Fact]
-    public async Task SyncSolutionFromPackageAsync_WithoutOtherProjectsInThePush_StillDeletesAnUnlinkedCustomApi()
+    public async Task ACustomApiThisPushDoesNotOwnIsNeverDeleted_EvenUnderForceDeleteOrphans()
     {
-        // R7 regression guard AND proof the test above bites: with nothing else being pushed, a Custom API
-        // pointing at a plugin type this package doesn't own is genuinely orphaned, and the single-project
-        // push must plan exactly as it always did — including issuing no sibling lookup at all.
-        var orphanApiId = ArrangeMixedPushWithClassicSiblingCustomApi();
-
-        var result = await _service.SyncSolutionFromPackageAsync(
-            _serviceMock, MixedPushPackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
-
-        Assert.True(result);
-        await _serviceMock.Received(1).DeleteAsync("customapi", orphanApiId, Arg.Any<CancellationToken>());
-        await _serviceMock.DidNotReceive().RetrieveMultipleAsync(
-            Arg.Is<QueryExpression>(q => q.EntityName == "plugintype" && q.LinkEntities.Count > 0), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task SyncSolutionFromPackageAsync_WithOnlyItsOwnAssembliesInThePush_IssuesNoSiblingLookup()
-    {
-        // A single-project package push still passes pushedAssemblyNames — the package's own assemblies.
-        // Those are not siblings, so the plan must stay byte-identical to the null case above (R7).
-        var orphanApiId = ArrangeMixedPushWithClassicSiblingCustomApi();
+        // The invariant, stated as the test name because that is what gets read at failure time:
+        // no attribution, no delete — and --force does not buy attribution. This is the case that
+        // used to delete another project's live public API on an ordinary push.
+        var foreignApiId = ArrangeMixedPushWithClassicSiblingCustomApi();
 
         var result = await _service.SyncSolutionFromPackageAsync(
             _serviceMock, MixedPushPackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution",
-            RunMode.Normal, CancellationToken.None, pushedAssemblyNames: ["MyPlugin"]);
+            RunMode.Normal, forceDeleteOrphans: true);
 
-        Assert.True(result);
-        await _serviceMock.Received(1).DeleteAsync("customapi", orphanApiId, Arg.Any<CancellationToken>());
+        Assert.False(result);
+        await _serviceMock.DidNotReceive().DeleteAsync("customapi", foreignApiId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_NeverQueriesPluginTypesByAssemblyName()
+    {
+        // The removed SiblingPluginTypeIdsAsync lookup: a plugintype query joined through pluginassembly.
+        // Positive attribution needs no such widening query, and reintroducing one is the exact shape of
+        // the mistake this design removes.
+        ArrangeMixedPushWithClassicSiblingCustomApi();
+
+        await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, MixedPushPackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
+
         await _serviceMock.DidNotReceive().RetrieveMultipleAsync(
             Arg.Is<QueryExpression>(q => q.EntityName == "plugintype" && q.LinkEntities.Count > 0), Arg.Any<CancellationToken>());
     }
@@ -2268,11 +2254,9 @@ public class PluginServiceTests
             ["uniquename"] = "abc_SiblingApi",
             ["plugintypeid"] = new EntityReference("plugintype", siblingTypeId)
         });
-        SetupSiblingPluginTypes(siblingTypeId);
 
         var result = await _service.SyncSolutionFromPackageAsync(
-            _serviceMock, MixedPushPackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution",
-            RunMode.Normal, CancellationToken.None, pushedAssemblyNames: ["MyPlugin", "SupportPlugins"]);
+            _serviceMock, MixedPushPackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
 
         Assert.True(result);
         await _serviceMock.DidNotReceive().DeleteAsync("customapi", siblingApiId, Arg.Any<CancellationToken>());

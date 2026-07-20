@@ -155,8 +155,7 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         console.Info("Plugin registrations found");
 
         // Phase 3: Plan registration (pure, synchronous)
-        var siblingPluginTypeIds = await SiblingPluginTypeIdsAsync(service, metadata.Name, pushedAssemblyNames, cancellationToken).ConfigureAwait(false);
-        var plan = _planner.Plan(snapshot, metadata, assembly, solutionName, siblingPluginTypeIds);
+        var plan = _planner.Plan(snapshot, metadata, assembly, solutionName, forceDeleteOrphans: forceDeleteOrphans);
         console.Info(plan.TotalChanges > 0
             ? $"Registration plan ready: {plan.TotalChanges} changes ({plan.TotalUpserts} upserts, {plan.TotalDeletes} deletes)"
             : "Registration plan ready: no changes required");
@@ -282,26 +281,21 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
     const int PackageAssemblyCheckMaxAttempts = 5;
     static readonly TimeSpan PackageAssemblyCheckDelay = TimeSpan.FromSeconds(1);
 
-    /// <param name="pushedAssemblyNames">
-    /// Every assembly name this <c>flowline push</c> owns, across all its plugin projects. Same contract
-    /// as <see cref="SyncSolutionAsync(IOrganizationServiceAsync2,string,string,RunMode,bool,bool,CancellationToken,IReadOnlyCollection{string})"/>:
-    /// <c>null</c> means "only this package's own assemblies", the single-project shape.
-    /// </param>
     public async Task<bool> SyncSolutionFromPackageAsync(
         IOrganizationServiceAsync2 service,
         string nupkgPath,
         string projectAssemblyName,
         string solutionName,
         RunMode runMode = RunMode.Normal,
-        CancellationToken cancellationToken = default,
-        IReadOnlyCollection<string>? pushedAssemblyNames = null)
+        bool forceDeleteOrphans = false,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(nupkgPath))
             throw new ArgumentException("nupkgPath is required and cannot be empty.", nameof(nupkgPath));
 
         var assemblies = console.Status().FlowlineSpinner().Start("Analyzing plugin package...", _ => _assemblyReader.AnalyzePackage(nupkgPath));
         var nupkgContent = await File.ReadAllBytesAsync(nupkgPath, cancellationToken).ConfigureAwait(false);
-        return await SyncSolutionFromPackageAsync(service, assemblies, nupkgContent, nupkgPath, projectAssemblyName, solutionName, runMode, cancellationToken, pushedAssemblyNames).ConfigureAwait(false);
+        return await SyncSolutionFromPackageAsync(service, assemblies, nupkgContent, nupkgPath, projectAssemblyName, solutionName, runMode, forceDeleteOrphans, cancellationToken).ConfigureAwait(false);
     }
 
     // Public so callers that must reflect the package themselves before this call (e.g. standalone push
@@ -315,8 +309,8 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         string projectAssemblyName,
         string solutionName,
         RunMode runMode = RunMode.Normal,
-        CancellationToken cancellationToken = default,
-        IReadOnlyCollection<string>? pushedAssemblyNames = null)
+        bool forceDeleteOrphans = false,
+        CancellationToken cancellationToken = default)
     {
         // R3a: zero-DLL rejection — first check, ahead of detect-and-block and change detection,
         // since neither has anything to operate against without at least one reflected assembly.
@@ -380,22 +374,13 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         var hash = Convert.ToHexString(SHA256.HashData(nupkgContent));
         var storedHash = existingAssembly != null ? ParseStoredHash(existingAssembly.GetAttributeValue<string>("description")) : null;
 
-        // The package path's own multi-assembly protection (AllPluginTypeIds) only covers assemblies
-        // inside THIS package. A sibling plugin project in the same solution — classic .dll or its own
-        // package — is just as live and just as prefix-visible in snapshot.CustomApis, so its plugin type
-        // ids join the same known set. Without this the unlinked-Custom-API sweep reads the sibling's
-        // Custom APIs as unowned and deletes them as part of the normal plan, no --force needed. null
-        // when nothing else is being pushed, which keeps the single-project plan byte-identical (R7).
-        var siblingPluginTypeIds = await SiblingPluginTypeIdsAsync(
-            service, assemblies.Select(a => a.Name), pushedAssemblyNames, cancellationToken).ConfigureAwait(false);
-
         if (existingPackage != null && storedHash == hash)
         {
             // R4/R11 (item 8): package content unchanged — no package write at all, but each assembly's
             // steps are still diffed and synced (or previewed under --dry-run) directly against its own
             // scoped snapshot (drift correction). Never touches WarnOrphanAssembliesAsync/WarnOrphanStepsAsync
             // (R11/KTD16).
-            return await SyncPackageStepsOnlyAsync(service, assemblies, existingPackage.Id, solutionName, runMode, siblingPluginTypeIds, cancellationToken).ConfigureAwait(false);
+            return await SyncPackageStepsOnlyAsync(service, assemblies, existingPackage.Id, solutionName, runMode, forceDeleteOrphans, cancellationToken).ConfigureAwait(false);
         }
 
         // Snapshot + plan per assembly against CURRENT (pre-update) state — this is the one plan shown
@@ -412,35 +397,23 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
             preSnapshots = await _reader.LoadPackageSnapshotsAsync(service, existingPackage.Id, assemblies, solutionName, cancellationToken).ConfigureAwait(false);
         else
             preSnapshots = assemblies.Select(m => (m, (Entity?)null, (RegistrationSnapshot?)null)).ToList();
-        var preKnownPluginTypeIds = UnionPluginTypeIds(AllPluginTypeIds(preSnapshots), siblingPluginTypeIds);
+        var preKnownPluginTypeIds = AllPluginTypeIds(preSnapshots);
 
         var prePlans = new List<(PluginAssemblyMetadata Metadata, RegistrationPlan Plan)>();
         foreach (var (metadata, assemblyEntity, snapshot) in preSnapshots)
         {
             if (assemblyEntity != null && snapshot != null)
             {
-                prePlans.Add((metadata, _planner.Plan(snapshot, metadata, assemblyEntity, solutionName, preKnownPluginTypeIds)));
+                prePlans.Add((metadata, _planner.Plan(snapshot, metadata, assemblyEntity, solutionName, preKnownPluginTypeIds, forceDeleteOrphans)));
                 continue;
             }
 
+            // A not-yet-registered assembly owns no plugin types at all, so its snapshot attributes
+            // nothing — the Custom API sweep leaves every prefix-visible API alone by construction.
             var planAssembly = new Entity("pluginassembly") { Id = Guid.NewGuid() };
             var planSnapshot = await _reader.LoadSnapshotAsync(service, planAssembly.Id, metadata, solutionName, cancellationToken).ConfigureAwait(false);
 
-            // snapshot.CustomApis is queried prefix-wide (KTD15/16), so a not-yet-registered assembly's
-            // snapshot still contains every OTHER assembly's live Custom APIs. It owns none of them yet
-            // (nothing exists under its dummy id), so extend the known-plugin-type-ids set with every
-            // type those APIs already belong to — otherwise the unlinked-API sweep mistakes an unrelated,
-            // live Custom API for one this brand-new assembly should delete (display-only; this dummy
-            // plan's PluginTypes.Deletes is always empty, so it never drives a real delete regardless).
-            var dummyKnownPluginTypeIds = new HashSet<Guid>(preKnownPluginTypeIds);
-            foreach (var api in planSnapshot.CustomApis)
-            {
-                var typeId = api.GetAttributeValue<EntityReference>("plugintypeid")?.Id;
-                if (typeId is { } id && id != Guid.Empty)
-                    dummyKnownPluginTypeIds.Add(id);
-            }
-
-            prePlans.Add((metadata, _planner.Plan(planSnapshot, metadata, planAssembly, solutionName, dummyKnownPluginTypeIds)));
+            prePlans.Add((metadata, _planner.Plan(planSnapshot, metadata, planAssembly, solutionName, preKnownPluginTypeIds, forceDeleteOrphans)));
         }
 
         foreach (var (metadata, plan) in prePlans)
@@ -486,13 +459,13 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         // on PluginTypes.Deletes being empty here so an assembly the pre-update pass already handled
         // isn't reprocessed a second time once Dataverse's own package sync has removed its emptied type.
         // PluginTypes.Deletes itself is never acted on (KD2/KD4/KTD13 — Dataverse handles that removal).
-        var postKnownPluginTypeIds = UnionPluginTypeIds(AllPluginTypeIds(postSnapshots), siblingPluginTypeIds);
+        var postKnownPluginTypeIds = AllPluginTypeIds(postSnapshots);
         foreach (var (metadata, assemblyEntity, snapshot) in postSnapshots)
         {
             if (assemblyEntity == null || snapshot == null)
                 throw new InvalidOperationException($"Assembly '{metadata.Name}' was not found under package '{packageUniqueName}' after the content update.");
 
-            var plan = _planner.Plan(snapshot, metadata, assemblyEntity, solutionName, postKnownPluginTypeIds);
+            var plan = _planner.Plan(snapshot, metadata, assemblyEntity, solutionName, postKnownPluginTypeIds, forceDeleteOrphans);
             if (plan.PluginTypes.Deletes.Count == 0)
                 await _executor.ExecuteDeletesAsync(service, plan.NonPluginTypeDeletes(), solutionName, runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
             await _executor.ExecuteUpsertsAsync(service, plan, solutionName, cancellationToken).ConfigureAwait(false);
@@ -512,18 +485,18 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         Guid packageId,
         string solutionName,
         RunMode runMode,
-        IReadOnlySet<Guid>? siblingPluginTypeIds,
+        bool forceDeleteOrphans,
         CancellationToken cancellationToken)
     {
         var snapshots = await _reader.LoadPackageSnapshotsAsync(service, packageId, assemblies, solutionName, cancellationToken).ConfigureAwait(false);
-        var knownPluginTypeIds = UnionPluginTypeIds(AllPluginTypeIds(snapshots), siblingPluginTypeIds);
+        var knownPluginTypeIds = AllPluginTypeIds(snapshots);
 
         var plans = new List<(PluginAssemblyMetadata Metadata, RegistrationPlan Plan)>();
         foreach (var (metadata, assemblyEntity, snapshot) in snapshots)
         {
             if (assemblyEntity == null || snapshot == null) continue;
 
-            var plan = _planner.Plan(snapshot, metadata, assemblyEntity, solutionName, knownPluginTypeIds);
+            var plan = _planner.Plan(snapshot, metadata, assemblyEntity, solutionName, knownPluginTypeIds, forceDeleteOrphans);
             if (plan.TotalChanges == 0) continue;
 
             plans.Add((metadata, plan));
@@ -691,37 +664,6 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
             ? new ConditionExpression(attributeName, ConditionOperator.NotEqual, managedAssemblyName)
             : new ConditionExpression(attributeName, ConditionOperator.NotIn,
                 siblings.Prepend(managedAssemblyName).Cast<object>().ToArray());
-    }
-
-    // Plugin type ids owned by the OTHER plugin projects in this same push. snapshot.CustomApis is
-    // queried by publisher prefix rather than per assembly, so PluginPlanner's "unlinked Custom API"
-    // sweep would otherwise read a sibling project's live Custom API as unowned and delete it — and that
-    // sweep runs as part of the normal plan, ungated by --force delete-orphans. Same hazard the package
-    // path already solves with AllPluginTypeIds, reached here through separate projects instead of
-    // separate assemblies in one package. null when nothing else is being pushed, which keeps the
-    // single-project plan byte-identical to what it was (R7).
-    Task<IReadOnlySet<Guid>?> SiblingPluginTypeIdsAsync(
-        IOrganizationServiceAsync2 service,
-        string managedAssemblyName,
-        IReadOnlyCollection<string>? pushedAssemblyNames,
-        CancellationToken cancellationToken) =>
-        SiblingPluginTypeIdsAsync(service, [managedAssemblyName], pushedAssemblyNames, cancellationToken);
-
-    async Task<IReadOnlySet<Guid>?> SiblingPluginTypeIdsAsync(
-        IOrganizationServiceAsync2 service,
-        IEnumerable<string> managedAssemblyNames,
-        IReadOnlyCollection<string>? pushedAssemblyNames,
-        CancellationToken cancellationToken)
-    {
-        var siblings = SiblingAssemblyNames(managedAssemblyNames, pushedAssemblyNames);
-        if (siblings.Count == 0) return null;
-
-        var query = new QueryExpression("plugintype") { ColumnSet = new ColumnSet("plugintypeid") };
-        var assemblyLink = query.AddLink("pluginassembly", "pluginassemblyid", "pluginassemblyid", JoinOperator.Inner);
-        assemblyLink.LinkCriteria.AddCondition("name", ConditionOperator.In, siblings.Cast<object>().ToArray());
-
-        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
-        return result.Entities.Select(e => e.Id).ToHashSet();
     }
 
     async Task WarnOrphanAssembliesAsync(
@@ -1224,22 +1166,23 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
             }
         }
 
-        // --- Unlinked Custom APIs (no plugin type) ---
-        var unlinkedApiGroups = plan.CustomApiGroups.Where(g => g.PluginTypeName == null).ToList();
-        if (unlinkedApiGroups.Count > 0)
+        // --- Custom APIs planned without a plugin type of their own to sit under (see the sweep in
+        // PluginPlanner.Plan — these are ours, and source no longer declares them).
+        var sweptApiGroups = plan.CustomApiGroups.Where(g => g.PluginTypeName == null).ToList();
+        if (sweptApiGroups.Count > 0)
         {
-            var unlinkedNode = tree.AddNode("[dim]Custom APIs (unlinked)[/]");
-            foreach (var group in unlinkedApiGroups.OrderBy(g => g.ApiName, StringComparer.OrdinalIgnoreCase))
+            var sweptNode = tree.AddNode("[dim]Custom APIs (no source left)[/]");
+            foreach (var group in sweptApiGroups.OrderBy(g => g.ApiName, StringComparer.OrdinalIgnoreCase))
             {
                 IHasTreeNodes apiNode;
                 if (group.Api.Deletes.Count == 1 && group.Api.Upserts.Count == 0)
                 {
                     var d = group.Api.Deletes[0];
-                    apiNode = unlinkedNode.AddNode($"{Sym(true, false)} [dim]api[/] {Safe(d.Name)} — {Verb(true, false)}");
+                    apiNode = sweptNode.AddNode($"{Sym(true, false)} [dim]api[/] {Safe(d.Name)} — {Verb(true, false)}");
                 }
                 else
                 {
-                    apiNode = unlinkedNode.AddNode($"[dim]{Safe(group.ApiName)}[/]");
+                    apiNode = sweptNode.AddNode($"[dim]{Safe(group.ApiName)}[/]");
                     foreach (var d in group.Api.Deletes)
                         apiNode.AddNode($"{Sym(true, false)} [dim]api[/] {Safe(d.Name)} — {Verb(true, false)}");
                 }
@@ -1375,7 +1318,9 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         AddUnlinkedNodes(tree, "Unlinked images", snapshot.Images,
             e => e.GetAttributeValue<EntityReference>("sdkmessageprocessingstepid"),
             snapshot.Steps.Select(e => e.Id).ToHashSet());
-        AddUnlinkedNodes(tree, "Unlinked Custom APIs", snapshot.CustomApis,
+        // Not "unlinked" — snapshot.CustomApis is publisher-wide, so most entries here are simply
+        // other projects' APIs. Informational only; nothing on this branch drives a delete.
+        AddUnlinkedNodes(tree, "Custom APIs not implemented by this assembly", snapshot.CustomApis,
             e => e.GetAttributeValue<EntityReference>("plugintypeid"),
             snapshot.PluginTypes.Values.Select(e => e.Id).ToHashSet());
 
@@ -1452,21 +1397,11 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
     }
 
     // Union of every loaded assembly's own PluginTypes ids across one package's snapshot batch — passed
-    // to PluginPlanner.Plan so its "unlinked Custom API" sweep can tell a sibling assembly's still-live
-    // Custom API (plugintypeid belongs to another assembly in this same package) apart from a genuinely
-    // orphaned one. snapshot.CustomApis is queried by publisher prefix, not per-assembly, so without this
-    // every assembly's plan would otherwise see every OTHER assembly's Custom API as unowned and delete it.
-    // Returns the original set untouched when there is nothing to add, so a single-project push plans
-    // against exactly the set it always did (R7).
-    static IReadOnlySet<Guid> UnionPluginTypeIds(IReadOnlySet<Guid> ids, IReadOnlySet<Guid>? extra)
-    {
-        if (extra == null || extra.Count == 0) return ids;
-
-        var merged = new HashSet<Guid>(ids);
-        merged.UnionWith(extra);
-        return merged;
-    }
-
+    // to PluginPlanner.Plan as "what this push owns". For a package that union is genuinely own-scope:
+    // all N assemblies ship and are versioned together. It never authorises a delete on its own — see
+    // the Custom API sweep in PluginPlanner.Plan, which only ever deletes against the planning
+    // assembly's OWN plugin types and uses this set to recognise "a sibling assembly in my package
+    // owns this, its pass handles it".
     static IReadOnlySet<Guid> AllPluginTypeIds(IEnumerable<(PluginAssemblyMetadata Metadata, Entity? Assembly, RegistrationSnapshot? Snapshot)> snapshots) =>
         snapshots.Where(s => s.Snapshot != null).SelectMany(s => s.Snapshot!.PluginTypes.Values.Select(t => t.Id)).ToHashSet();
 
