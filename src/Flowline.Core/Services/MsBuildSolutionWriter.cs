@@ -268,10 +268,16 @@ public class MsBuildSolutionWriter
     ///
     /// The two sides of each row mean different things and must not be the same string. The left is the
     /// <b>solution</b> configuration, copied verbatim from what the file declares. The right is the
-    /// <b>project</b> configuration to build for it — and a <c>.cdsproj</c> builds Any CPU, so pointing it
-    /// at <c>Debug|x64</c> names a project configuration that may not resolve. Verified against
+    /// <b>project</b> configuration to build for it, and a <c>.cdsproj</c> builds Any CPU. Verified against
     /// <c>dotnet sln add</c> on SDK 10: for a solution declaring <c>Debug|x64</c> it writes
     /// <c>{guid}.Debug|x64.ActiveCfg = Debug|Any CPU</c>.
+    ///
+    /// What repeating the solution platform on the right actually costs, measured against a real
+    /// <c>pac solution init</c> project: the build still <i>succeeds</i> — MSBuild honours
+    /// <c>Platform=x64</c> and a <c>.cdsproj</c> compiles nothing that could reject it — but the packed
+    /// zip lands in <c>bin\x64\Debug\</c> instead of <c>bin\Debug\</c>. So this is about matching the
+    /// first-party layout every doc and script expects, not about preventing a build failure. Recorded
+    /// because "the build breaks" is the intuitive guess and it is wrong.
     ///
     /// Two deliberate divergences from <c>dotnet sln add</c>:
     /// <list type="bullet">
