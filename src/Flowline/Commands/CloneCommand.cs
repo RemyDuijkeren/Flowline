@@ -4,6 +4,7 @@ using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Models;
+using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Services;
 using Flowline.Utils;
@@ -44,6 +45,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         public FlagValue<bool> IncludeManaged { get; set; } = null!;
     }
 
+    readonly MsBuildSolutionWriter _solutionWriter = new();
+
     protected override bool RequiresProject => false;
     protected override string[] ValidForceSpecifiers => FlowlineSettings.ConfigOnlyValidSpecifiers;
 
@@ -66,7 +69,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         var slnFilePath = Path.Combine(slnFolder, $"{projectSln.UniqueName}.sln");
 
         await CloneSolutionFromDataverseAsync(projectSln, slnFolder, cdsprojPath, sourceEnv.EnvironmentUrl!, settings, cancellationToken);
-        await CreateSolutionFileAsync(projectSln, slnFolder, slnFilePath, cdsprojPath, settings, cancellationToken);
+        await CreateSolutionFileAsync(slnFolder, slnFilePath, cdsprojPath, cancellationToken);
         await SetupPluginsProjectAsync(slnFolder, settings, cancellationToken);
         await SetupWebResourcesProjectAsync(slnFolder, slnFilePath, settings, cancellationToken);
         SeedWebResourceDistFromSrc(slnFolder, solutionInfo.PublisherPrefix, projectSln.UniqueName, settings);
@@ -337,8 +340,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         }
 
         if (Directory.Exists(PackageFolder(slnFolder)))
-            throw new FlowlineException(ExitCode.ConfigInvalid,
-                $"{PackageName}/ exists but {PackageName}.cdsproj is missing. Delete {PackageName} and re-clone.");
+            throw new FlowlineException(ExitCode.ConfigInvalid, DescribePackageFolderWithoutCdsproj(PackageFolder(slnFolder)));
 
         Directory.CreateDirectory(slnFolder);
 
@@ -384,69 +386,64 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
                Directory.EnumerateFiles(srcFolder, "*_managed.xml", SearchOption.AllDirectories).Any();
     }
 
-    private async Task CreateSolutionFileAsync(ProjectSolution projectSln, string slnFolder, string slnFilePath, string cdsprojPath, Settings settings,
-        CancellationToken cancellationToken)
+    private async Task CreateSolutionFileAsync(string slnFolder, string slnFilePath, string cdsprojPath, CancellationToken cancellationToken)
     {
-        // Create Solution file if it doesn't exist (use sln for now because slnx can't handle .cdsproj yet)
-        if (File.Exists(slnFilePath))
-        {
+        var (created, added) = await AddPackageProjectAsync(_solutionWriter, slnFolder, slnFilePath, cdsprojPath, cancellationToken);
+
+        if (created)
+            Console.Ok("Solution file created");
+        else
             Console.Skip("Solution file already there — skipping");
-            return;
-        }
 
-        var result = await Cli.Wrap("dotnet")
-                              .WithArguments(args => args
-                                                     .Add("new")
-                                                     .Add("sln")
-                                                     .Add("--name").Add(projectSln.UniqueName)
-                                                     .Add("--format").Add("sln"))
-                              .WithWorkingDirectory(slnFolder)
-                              .WithCapture(_capture)
-                              .ExecuteAsync(cancellationToken)
-                              .Task.FlowlineSpinner();
-
-        if (!result.IsSuccess || !File.Exists(slnFilePath))
-            throw new FlowlineException(ExitCode.BuildFailed, "Couldn't create the solution file.");
-
-        Console.Ok("Solution file created");
-
-        // NOTE: 'dotnet sln add' doesn't support .cdsproj directly.
-        // We'll rename it to .csproj, add it, then rename it back and fix the .sln file.
-        var csprojPath = Path.ChangeExtension(cdsprojPath, ".csproj");
-        if (File.Exists(cdsprojPath))
+        if (added)
         {
-            Console.Verbose($"Renaming '{cdsprojPath}' to '{csprojPath}'");
-            File.Move(cdsprojPath, csprojPath);
+            Console.Ok($"[bold]{PackageName}.cdsproj[/] added to solution file");
+            Console.Verbose(slnFilePath);
         }
-
-        await Cli.Wrap("dotnet")
-                 .WithArguments(args => args
-                                        .Add("sln")
-                                        .Add("add")
-                                        .Add(csprojPath))
-                 .WithWorkingDirectory(slnFolder)
-                 .WithCapture(_capture)
-                 .ExecuteAsync(cancellationToken)
-                 .Task.FlowlineSpinner();
-
-        // Rename back to .cdsproj
-        if (File.Exists(csprojPath))
+        else
         {
-            Console.Verbose($"Renaming '{csprojPath}' back to '{cdsprojPath}'");
-            File.Move(csprojPath, cdsprojPath);
+            Console.Skip($"{PackageName}.cdsproj already in the solution file — skipping");
         }
+    }
 
-        // Fix the XML in the .sln file
-        if (File.Exists(slnFilePath))
-        {
-            Console.Verbose("Fixing XML in .sln file...");
-            var slnContent = await File.ReadAllTextAsync(slnFilePath, cancellationToken);
-            slnContent = slnContent.Replace(Path.GetFileName(csprojPath), Path.GetFileName(cdsprojPath));
-            await File.WriteAllTextAsync(slnFilePath, slnContent, cancellationToken);
-        }
+    /// <summary>
+    /// Writes the package project's entry into the solution file, creating that file when it is absent.
+    /// </summary>
+    /// <returns>Whether the solution file was created, and whether an entry was written.</returns>
+    /// <remarks>
+    /// The writer handles the <c>.cdsproj</c> that <c>dotnet sln add</c> refuses
+    /// (https://github.com/dotnet/sdk/issues/47638), so nothing renames the project file to fool the SDK
+    /// any more. That rename used to leave a <c>Package.csproj</c> behind whenever clone was interrupted
+    /// mid-flight — a state clone's own guard then read as a broken package folder.
+    ///
+    /// Separate from the console output so the whole create-and-write path is testable without a clone.
+    /// </remarks>
+    internal static async Task<(bool Created, bool Added)> AddPackageProjectAsync(
+        MsBuildSolutionWriter writer,
+        string slnFolder,
+        string slnFilePath,
+        string cdsprojPath,
+        CancellationToken cancellationToken = default)
+    {
+        var created = !File.Exists(slnFilePath);
+        var added = await writer.AddProjectAsync(slnFilePath, Path.GetRelativePath(slnFolder, cdsprojPath), cancellationToken);
 
-        Console.Ok($"[bold]{PackageName}.cdsproj[/] added to solution file");
-        Console.Verbose(slnFilePath);
+        return (created, added);
+    }
+
+    /// <summary>Explains a <c>Package/</c> folder that holds no <c>Package.cdsproj</c>.</summary>
+    /// <remarks>
+    /// Reachable only between the two moves that normalize what pac wrote — the folder rename and the
+    /// <c>.cdsproj</c> rename — so the usual cause is a stray project file one rename away from correct.
+    /// Naming that file beats telling the user to delete the folder pac just spent minutes filling.
+    /// </remarks>
+    internal static string DescribePackageFolderWithoutCdsproj(string packageFolder)
+    {
+        var stray = Directory.EnumerateFiles(packageFolder, "*.cdsproj", SearchOption.TopDirectoryOnly).FirstOrDefault();
+
+        return stray != null
+            ? $"{PackageName}/ holds {Path.GetFileName(stray)}, not {PackageName}.cdsproj. Rename it and run clone again."
+            : $"{PackageName}/ is here but {PackageName}.cdsproj isn't. Move {PackageName}/ aside and run clone again.";
     }
 
     private async Task SetupPluginsProjectAsync(string slnFolder, Settings settings, CancellationToken cancellationToken)
