@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
@@ -68,20 +68,23 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         // Check for uncommitted changes
         var srcPath = Path.Combine(packageFolder, "src");
+        // Rendered from the resolved path, never spelled out: a user who has relocated the package folder
+        // must not be told to look in 'Solution/src' when the check ran somewhere else entirely.
+        var srcDisplay = ConsolePath.FormatRelativePath(srcPath, RootFolder);
         var preSyncSummary = await SolutionChangeSummary.ComputeAsync(srcPath, RootFolder, _capture, cancellationToken);
         Logger.LogInformation("Diff: {TotalFiles} files changed", preSyncSummary.TotalFiles);
         if (preSyncSummary.TotalFiles > 0)
         {
             if (settings.HasForce("dirty"))
             {
-                Console.Warning("Uncommitted changes in 'Solution/src/' — overwriting.");
+                Console.Warning($"Uncommitted changes in '{srcDisplay}' — overwriting.");
                 preSyncSummary.WriteFlat(Console, RuntimeOptions, "[dim]  ");
             }
             else
             {
-                Console.Warning("Found uncommitted changes in 'Solution/src/'.");
+                Console.Warning($"Found uncommitted changes in '{srcDisplay}'.");
                 preSyncSummary.WriteFlat(Console, RuntimeOptions, "[dim]  ");
-                throw new FlowlineException(ExitCode.DirtyWorkingDirectory, "Uncommitted changes in 'Solution/src/' — Commit or stash changes first, or re-run with --force dirty.");
+                throw new FlowlineException(ExitCode.DirtyWorkingDirectory, $"Uncommitted changes in '{srcDisplay}' — Commit or stash changes first, or re-run with --force dirty.");
             }
         }
 
