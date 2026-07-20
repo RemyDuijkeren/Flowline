@@ -162,7 +162,7 @@ app.Configure(config =>
     config.AddCommand<SyncCommand>("sync")
           .WithDescription("Export solution from DEV, bump build version, and unpack to source-controlled XML. Run after testing changes in DEV. Requires no uncommitted changes in Package/src/.")
           .WithExample("sync")
-          .WithExample("sync", "--managed --bump minor");
+          .WithExample("sync", "--managed", "--bump", "minor");
 
     // Deploy (pack and import solution into environment)
     config.AddCommand<DeployCommand>("deploy")
