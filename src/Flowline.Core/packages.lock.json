@@ -57,6 +57,12 @@
           "System.ServiceModel.Primitives": "8.1.2"
         }
       },
+      "Microsoft.VisualStudio.SolutionPersistence": {
+        "type": "Direct",
+        "requested": "[1.0.52, )",
+        "resolved": "1.0.52",
+        "contentHash": "oNv2JtYXhpdJrX63nibx1JT3uCESOBQ1LAk7Dtz/sr0+laW0KRM6eKp4CZ3MHDR2siIkKsY8MmUkeP5DKkQQ5w=="
+      },
       "MinVer": {
         "type": "Direct",
         "requested": "[7.0.0, )",

@@ -372,6 +372,7 @@
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )",
           "Microsoft.Identity.Client.Extensions.Msal": "[4.85.2, )",
           "Microsoft.PowerPlatform.Dataverse.Client": "[1.2.26, )",
+          "Microsoft.VisualStudio.SolutionPersistence": "[1.0.52, )",
           "Spectre.Console": "[0.57.2, )",
           "System.Reflection.MetadataLoadContext": "[10.0.9, )",
           "System.Security.Cryptography.Xml": "[10.0.9, )"
@@ -450,6 +451,12 @@
           "System.ServiceModel.Http": "8.1.2",
           "System.ServiceModel.Primitives": "8.1.2"
         }
+      },
+      "Microsoft.VisualStudio.SolutionPersistence": {
+        "type": "CentralTransitive",
+        "requested": "[1.0.52, )",
+        "resolved": "1.0.52",
+        "contentHash": "oNv2JtYXhpdJrX63nibx1JT3uCESOBQ1LAk7Dtz/sr0+laW0KRM6eKp4CZ3MHDR2siIkKsY8MmUkeP5DKkQQ5w=="
       },
       "Serilog": {
         "type": "CentralTransitive",
