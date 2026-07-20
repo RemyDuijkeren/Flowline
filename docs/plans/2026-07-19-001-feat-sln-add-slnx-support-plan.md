@@ -69,7 +69,7 @@ Separately, `.slnx` has become the default for `dotnet new sln` in .NET 10, and 
 **Solution file format**
 
 - R6. `flowline sln add` and the build-target resolution in R12 read both `.sln` and `.slnx`, via a shared reader that also exposes the solution's project list. The reader is a reusable component, not inline resolution at each call site, because the two discovery plans consume it (KD8).
-- R7. `clone` creates a `.slnx` for new projects, and accepts an explicit opt-out that produces a `.sln` instead, for teams whose build agents or teammates run below SDK 9.0.200.
+- R7. `clone` creates a `.slnx` for new projects. **Changed during review:** the explicit `.sln` opt-out this requirement called for was removed at the maintainer's direction — a project that already has a `.sln` keeps it, which covers the case the opt-out existed for without adding a flag. KD7's reasoning about the SDK floor being a downstream-consumer risk still holds; what changed is that reusing an existing solution file answers it, so no flag is needed.
 - R8. A written `.cdsproj` entry declares `Type="C#"`.
 - R9. A project with an existing `.sln` keeps working unchanged — Flowline never converts it, prompts about it, or warns about it.
 - R9a. The `.sln`-membership language in `docs/plans/2026-07-15-001-feat-multi-plugin-project-support-plan.md` (KD1, KD5, R1, R8, AE2, AE3) is restated as "solution file (`.sln` or `.slnx`)". With KD8 fixing this plan first, that restatement is a wording change rather than a fix for a live gap.

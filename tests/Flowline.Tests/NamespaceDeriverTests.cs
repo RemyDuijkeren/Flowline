@@ -98,4 +98,61 @@ public class NamespaceDeriverTests : IDisposable
 
         result.Should().Be("MyApp.Models");
     }
+    /// <summary>Writes a project plus a solution file listing both, so discovery has real candidates.</summary>
+    void CreateSolutionWith(params (string Folder, string File, string Content)[] projects)
+    {
+        foreach (var (folder, file, content) in projects)
+        {
+            Directory.CreateDirectory(Path.Combine(_tempDir, folder));
+            File.WriteAllText(Path.Combine(_tempDir, folder, file), content);
+        }
+
+        var entries = projects.Select(p => $"  <Project Path=\"{p.Folder}/{p.File}\" />");
+        File.WriteAllText(
+            Path.Combine(_tempDir, "App.slnx"),
+            "<Solution>" + Environment.NewLine + string.Join(Environment.NewLine, entries) + Environment.NewLine + "</Solution>");
+    }
+
+    [Fact]
+    public async Task DeriveAsync_LibrarySortsBeforeThePluginProject_StillTakesTheOneDeclaringANamespace()
+    {
+        // "Common/" sorts before "Plugins/", and the pre-filter lets a marker-free project through when a
+        // Directory.Build.props could be supplying its SDK reference — so path order alone would generate
+        // models under Contoso.Common.Models and break every file referencing them.
+        File.WriteAllText(Path.Combine(_tempDir, "Directory.Build.props"), "<Project />");
+        CreateSolutionWith(
+            ("Common", "Contoso.Common.csproj", "<Project><PropertyGroup><TargetFramework>net462</TargetFramework></PropertyGroup><ItemGroup><PackageReference Include=\"Microsoft.CrmSdk.CoreAssemblies\" /></ItemGroup></Project>"),
+            ("Plugins", "Contoso.Plugins.csproj", "<Project><PropertyGroup><TargetFramework>net462</TargetFramework><RootNamespace>Contoso.Plugins</RootNamespace></PropertyGroup></Project>"));
+
+        var result = await NamespaceDeriver.DeriveAsync(_tempDir, "MyApp");
+
+        result.Should().Be("Contoso.Plugins.Models");
+    }
+
+    [Fact]
+    public async Task DeriveAsync_NoCandidateDeclaresANamespace_FallsBackToPathOrder()
+    {
+        // Nothing to prefer, so the deterministic choice stands rather than inventing a tie-break.
+        CreateSolutionWith(
+            ("Common", "Contoso.Common.csproj", "<Project><PropertyGroup><TargetFramework>net462</TargetFramework></PropertyGroup><ItemGroup><PackageReference Include=\"Microsoft.CrmSdk.CoreAssemblies\" /></ItemGroup></Project>"),
+            ("Plugins", "Contoso.Plugins.csproj", "<Project><PropertyGroup><TargetFramework>net462</TargetFramework></PropertyGroup><ItemGroup><PackageReference Include=\"Microsoft.CrmSdk.CoreAssemblies\" /></ItemGroup></Project>"));
+
+        var result = await NamespaceDeriver.DeriveAsync(_tempDir, "MyApp");
+
+        result.Should().Be("Contoso.Common.Models");
+    }
+
+    [Fact]
+    public async Task DeriveAsync_ScaffoldedProjectDeclaringOnlyPackageId_IsPreferred()
+    {
+        // pac plugin init always writes PackageId, so it is the marker a scaffolded project carries.
+        CreateSolutionWith(
+            ("Common", "Contoso.Common.csproj", "<Project><PropertyGroup><TargetFramework>net462</TargetFramework></PropertyGroup><ItemGroup><PackageReference Include=\"Microsoft.CrmSdk.CoreAssemblies\" /></ItemGroup></Project>"),
+            ("Plugins", "Contoso.Plugins.csproj", "<Project><PropertyGroup><TargetFramework>net462</TargetFramework><PackageId>Contoso.Plugins</PackageId></PropertyGroup><ItemGroup><PackageReference Include=\"Microsoft.CrmSdk.CoreAssemblies\" /></ItemGroup></Project>"));
+
+        var result = await NamespaceDeriver.DeriveAsync(_tempDir, "MyApp");
+
+        result.Should().Be("Contoso.Plugins.Models");
+    }
+
 }

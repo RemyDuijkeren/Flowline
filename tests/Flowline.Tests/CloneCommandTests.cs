@@ -239,13 +239,7 @@ public class CloneCommandTests
     [Fact]
     public void SolutionFileName_ByDefault_IsSlnx()
     {
-        CloneCommand.SolutionFileName("CrO7982", useSlnFormat: false).Should().Be("CrO7982.slnx");
-    }
-
-    [Fact]
-    public void SolutionFileName_WithOptOut_IsSln()
-    {
-        CloneCommand.SolutionFileName("CrO7982", useSlnFormat: true).Should().Be("CrO7982.sln");
+        CloneCommand.SolutionFileName("CrO7982").Should().Be("CrO7982.slnx");
     }
 
     [Fact]
@@ -254,8 +248,7 @@ public class CloneCommandTests
         // The flag is opt-in, so an untouched Settings must land on .slnx — the whole point of R7.
         var settings = new CloneCommand.Settings();
 
-        settings.UseSlnFormat.Should().BeFalse();
-        CloneCommand.SolutionFileName("CrO7982", settings.UseSlnFormat).Should().Be("CrO7982.slnx");
+        CloneCommand.SolutionFileName("CrO7982").Should().Be("CrO7982.slnx");
     }
 
     /// <summary>
@@ -267,10 +260,27 @@ public class CloneCommandTests
     /// The writer is what <c>dotnet sln add</c> would have produced either way — an entry with the
     /// C# type — so what the assertions compare is still the finished solution file.
     /// </remarks>
-    static async Task<(string Root, string SlnFilePath)> ScaffoldSolutionAsync(bool useSlnFormat, string solutionName = "CrO7982")
+    static async Task<(string Root, string SlnFilePath)> ScaffoldSolutionAsync(
+        string solutionName = "CrO7982", string? existingSolutionFileName = null)
     {
         var (root, _, cdsprojPath) = CreateProject(solutionName);
-        var slnFilePath = Path.Combine(root, CloneCommand.SolutionFileName(solutionName, useSlnFormat));
+
+        // A pre-placed solution file stands in for a project that already had one. Clone reuses whatever
+        // is there rather than creating a second file, so this is how the .sln path is still exercised
+        // now that nothing asks clone to create one.
+        if (existingSolutionFileName != null)
+            File.WriteAllText(Path.Combine(root, existingSolutionFileName), string.Join(Environment.NewLine,
+                "Microsoft Visual Studio Solution File, Format Version 12.00",
+                "Global",
+                "	GlobalSection(SolutionConfigurationPlatforms) = preSolution",
+                "		Debug|Any CPU = Debug|Any CPU",
+                "		Release|Any CPU = Release|Any CPU",
+                "	EndGlobalSection",
+                "	GlobalSection(ProjectConfigurationPlatforms) = postSolution",
+                "	EndGlobalSection",
+                "EndGlobal") + Environment.NewLine);
+
+        var slnFilePath = CloneCommand.ResolveSolutionFilePath(root, solutionName);
 
         var writer = new MsBuildSolutionWriter();
         await CloneCommand.AddPackageProjectAsync(writer, root, slnFilePath, cdsprojPath);
@@ -288,7 +298,7 @@ public class CloneCommandTests
     [Fact]
     public async Task Clone_ByDefault_WritesASlnxHoldingAllThreeProjects()
     {
-        var (root, slnFilePath) = await ScaffoldSolutionAsync(useSlnFormat: false);
+        var (root, slnFilePath) = await ScaffoldSolutionAsync();
         try
         {
             Path.GetFileName(slnFilePath).Should().Be("CrO7982.slnx");
@@ -310,7 +320,7 @@ public class CloneCommandTests
     [Fact]
     public async Task Clone_WithSlnOptOut_WritesASlnHoldingTheSameThreeProjects()
     {
-        var (root, slnFilePath) = await ScaffoldSolutionAsync(useSlnFormat: true);
+        var (root, slnFilePath) = await ScaffoldSolutionAsync(existingSolutionFileName: "CrO7982.sln");
         try
         {
             Path.GetFileName(slnFilePath).Should().Be("CrO7982.sln");
@@ -330,11 +340,11 @@ public class CloneCommandTests
     }
 
     [Fact]
-    public async Task Clone_WithSlnOptOut_GivesEveryProjectItsConfigurationRows()
+    public async Task Clone_IntoAnExistingSln_GivesEveryProjectItsConfigurationRows()
     {
         // A .sln entry without matching ProjectConfigurationPlatforms rows shows in the solution and
         // never builds — which for the .cdsproj means SolutionPackager silently never runs.
-        var (root, slnFilePath) = await ScaffoldSolutionAsync(useSlnFormat: true);
+        var (root, slnFilePath) = await ScaffoldSolutionAsync(existingSolutionFileName: "CrO7982.sln");
         try
         {
             var content = await File.ReadAllTextAsync(slnFilePath);
@@ -352,13 +362,13 @@ public class CloneCommandTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Clone_EitherFormat_TypesTheCdsprojAsACSharpProject(bool useSlnFormat)
+    [InlineData(null)]
+    [InlineData("CrO7982.sln")]
+    public async Task Clone_EitherFormat_TypesTheCdsprojAsACSharpProject(string? existingSolutionFileName)
     {
         // Without the C# project type the .cdsproj entry is inert in both formats: MSBuild will not
         // load it, so nothing packs. This is KD6 holding across the format switch.
-        var (root, slnFilePath) = await ScaffoldSolutionAsync(useSlnFormat);
+        var (root, slnFilePath) = await ScaffoldSolutionAsync(existingSolutionFileName: existingSolutionFileName);
         try
         {
             var cdsproj = await new MsBuildSolutionReader()
@@ -368,7 +378,7 @@ public class CloneCommandTests
             cdsproj!.IsCdsProject.Should().BeTrue();
 
             var content = await File.ReadAllTextAsync(slnFilePath);
-            if (useSlnFormat)
+            if (existingSolutionFileName != null)
                 content.Should().Contain("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}");
             else
                 content.Should().MatchRegex(@"Package\.cdsproj""[^>]*Type=""C#""");
@@ -380,10 +390,10 @@ public class CloneCommandTests
     }
 
     [Fact]
-    public async Task Clone_OptOut_ChangesTheSolutionFileFormatAndNothingElse()
+    public async Task Clone_IntoAnExistingSln_ChangesTheSolutionFileFormatAndNothingElse()
     {
-        var (slnxRoot, slnxPath) = await ScaffoldSolutionAsync(useSlnFormat: false);
-        var (slnRoot, slnPath) = await ScaffoldSolutionAsync(useSlnFormat: true);
+        var (slnxRoot, slnxPath) = await ScaffoldSolutionAsync();
+        var (slnRoot, slnPath) = await ScaffoldSolutionAsync(existingSolutionFileName: "CrO7982.sln");
         try
         {
             // Every scaffolded file apart from the solution file itself is identical.

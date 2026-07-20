@@ -43,10 +43,6 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         [Description("Include managed artifacts (--managed false resets to default)")]
         [DefaultValue(true)]
         public FlagValue<bool> IncludeManaged { get; set; } = null!;
-
-        [CommandOption("--sln")]
-        [Description("Create a .sln instead of a .slnx. Use it when a teammate, build agent, or CI runner opens this repo on .NET SDK 8 or older — .slnx needs 9.0.200+.")]
-        public bool UseSlnFormat { get; set; } = false;
     }
 
     readonly MsBuildSolutionWriter _solutionWriter = new();
@@ -70,7 +66,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
         var slnFolder = RootFolder;
         var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
-        var slnFilePath = ResolveSolutionFilePath(slnFolder, projectSln.UniqueName, settings.UseSlnFormat);
+        var slnFilePath = ResolveSolutionFilePath(slnFolder, projectSln.UniqueName);
         var slnFileName = Path.GetFileName(slnFilePath);
 
         await CloneSolutionFromDataverseAsync(projectSln, slnFolder, cdsprojPath, sourceEnv.EnvironmentUrl!, settings, cancellationToken);
@@ -434,33 +430,26 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         CancellationToken cancellationToken = default) =>
         writer.AddProjectAsync(slnFilePath, Path.GetRelativePath(slnFolder, cdsprojPath), cancellationToken);
 
-    /// <summary>The solution file clone scaffolds, named for the Dataverse solution.</summary>
+    /// <summary>The solution file name clone gives a project that has none yet.</summary>
     /// <remarks>
-    /// <c>.slnx</c> by default, matching what <c>dotnet new sln</c> has produced since .NET 10. It holds a
-    /// <c>.cdsproj</c> fine — verified on SDK 10.0.302: <c>dotnet sln list</c> enumerates the entry and
-    /// <c>dotnet build</c> runs SolutionPackager through to the zip. Only <c>dotnet sln add</c> refuses one,
-    /// and Flowline no longer asks it to.
-    ///
-    /// The opt-out is a flag rather than an SDK probe on purpose. Flowline ships as a <c>net10.0</c> global
-    /// tool, so whoever runs clone is already far above the 9.0.200 floor <c>.slnx</c> needs — probing their
-    /// machine would answer a question nobody asked. The exposure sits on machines that never run Flowline:
-    /// a teammate, a client's build agent, a CI runner pinned to an older SDK, opening the repo the
-    /// consultant committed. Clone cannot see those, so the consultant names the format.
+    /// <c>.slnx</c> is the .NET 10 default and holds a <c>.cdsproj</c> fine — verified on SDK 10.0.302
+    /// against a real <c>pac solution init</c> project: <c>dotnet sln list</c> enumerates the entry and
+    /// <c>dotnet build</c> runs SolutionPackager through to the zip. Flowline reads both formats, so an
+    /// existing <c>.sln</c> keeps working and is never converted.
     /// </remarks>
-    internal static string SolutionFileName(string solutionName, bool useSlnFormat) =>
-        $"{solutionName}{(useSlnFormat ? ".sln" : ".slnx")}";
+    internal static string SolutionFileName(string solutionName) => $"{solutionName}.slnx";
 
-    /// <summary>Picks the solution file clone should write into, reusing one the project already has.</summary>
+    /// <summary>Picks the solution file clone writes into, reusing one the project already has.</summary>
     /// <remarks>
     /// Clone is safe to re-run, so it must not answer a second run by creating a second solution file.
-    /// Naming purely from the format flag would do exactly that: a project cloned with <c>--sln</c> and
-    /// re-cloned without it would gain a <c>.slnx</c> beside the <c>.sln</c> — the same two-formats-in-one-folder
-    /// state that makes a bare <c>dotnet build</c> fail with MSB1011, produced by the tool that warns about it.
-    /// The flag therefore chooses the format only when there is nothing to reuse.
+    /// A project that already has a <c>.sln</c> keeps it; only a project with no solution file at all gets
+    /// a new one. Without this, re-cloning would drop a <c>.slnx</c> beside the existing <c>.sln</c> — the
+    /// two-formats-in-one-folder state that makes a bare <c>dotnet build</c> fail with MSB1011, produced
+    /// by the tool that warns about it.
     /// </remarks>
-    internal static string ResolveSolutionFilePath(string slnFolder, string solutionName, bool useSlnFormat) =>
+    internal static string ResolveSolutionFilePath(string slnFolder, string solutionName) =>
         new MsBuildSolutionReader().FindSolutionFile(slnFolder)
-        ?? Path.Combine(slnFolder, SolutionFileName(solutionName, useSlnFormat));
+        ?? Path.Combine(slnFolder, SolutionFileName(solutionName));
 
     /// <summary>Explains a <c>Package/</c> folder that holds no <c>Package.cdsproj</c>.</summary>
     /// <remarks>

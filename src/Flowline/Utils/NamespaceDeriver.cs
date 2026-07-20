@@ -15,15 +15,23 @@ public static class NamespaceDeriver
     /// <remarks>
     /// Which project supplies the namespace comes from solution-file discovery, not a fixed
     /// <c>Plugins/Plugins.csproj</c> — a project with any other name used to fall straight through to (4)
-    /// and silently generate models under the wrong namespace. A solution with several plugin projects
-    /// takes the first in path order: generated early-bound models are one shared set, so there is one
-    /// namespace to pick, and picking deterministically beats picking by folder name. With no solution
-    /// file the conventional project is still the one read, so an unscaffolded repo derives as before.
+    /// and silently generate models under the wrong namespace. With no solution file the conventional
+    /// project is still the one read, so an unscaffolded repo derives as before.
+    ///
+    /// With several candidates, the one that declares a namespace wins over the one that sorts first.
+    /// Discovery here is pre-filter-only — <c>generate</c> does not build, so reflection cannot confirm
+    /// which candidate is really the plugin project, and the pre-filter deliberately lets a project
+    /// through when a <c>Directory.Build.props</c> could be supplying its SDK reference. That means a
+    /// plain library can be a candidate, and <c>Common/</c> sorts ahead of <c>Plugins/</c>. Declaring
+    /// <c>&lt;RootNamespace&gt;</c> or <c>&lt;PackageId&gt;</c> is the available evidence of intent —
+    /// <c>pac plugin init</c> always writes <c>PackageId</c>, and a library usually declares neither —
+    /// so it beats alphabetical order, which is evidence of nothing.
     /// </remarks>
     public static async Task<string> DeriveAsync(string slnFolder, string solutionName, CancellationToken cancellationToken = default)
     {
         var candidates = await PluginProjectResolver.DiscoverAsync(slnFolder, SkipMissingProject, cancellationToken).ConfigureAwait(false);
-        var csprojPath = candidates.Select(c => c.ProjectPath).FirstOrDefault(File.Exists);
+        var present = candidates.Select(c => c.ProjectPath).Where(File.Exists).ToList();
+        var csprojPath = present.FirstOrDefault(DeclaresANamespace) ?? present.FirstOrDefault();
 
         if (csprojPath == null)
             return $"{solutionName}.Models";
@@ -50,6 +58,28 @@ public static class NamespaceDeriver
         {
             // XML parse failure → fall back to solution name
             return $"{solutionName}.Models";
+        }
+    }
+
+    /// <summary>True when the project states a namespace of its own, rather than leaving it to its filename.</summary>
+    /// <remarks>
+    /// Deliberately reads only the project's own file. Resolving an inherited <c>RootNamespace</c> would
+    /// mean walking the <c>Directory.Build.props</c> chain — the MSBuild evaluation discovery exists to
+    /// avoid — and an inherited value is shared by every project under it, so it says nothing about which
+    /// candidate is the plugin project. A parse failure is not a namespace declaration; the caller's own
+    /// try/catch reports it if that project ends up being the one chosen.
+    /// </remarks>
+    static bool DeclaresANamespace(string csprojPath)
+    {
+        try
+        {
+            var doc = XDocument.Load(csprojPath);
+            return !string.IsNullOrWhiteSpace(doc.Descendants("RootNamespace").FirstOrDefault()?.Value)
+                || !string.IsNullOrWhiteSpace(doc.Descendants("PackageId").FirstOrDefault()?.Value);
+        }
+        catch
+        {
+            return false;
         }
     }
 

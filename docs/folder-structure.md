@@ -27,7 +27,7 @@ ProjectRoot/
 ├── .flowline (Project configuration)
 ├── .gitignore
 ├── AGENTS.md / CLAUDE.md              <-- agent instructions (scaffolded by clone)
-├── <SolutionName>.slnx                <-- Root solution file (.sln with clone --sln)
+├── <SolutionName>.slnx                <-- Root solution file (an existing .sln is kept as-is)
 ├── Package/                           <-- PAC-managed — do not edit manually
 │   ├── Package.cdsproj                <-- Solution package project
 │   └── src/                           <-- Unpacked solution XML (pac clone / sync)
@@ -49,7 +49,7 @@ ProjectRoot/
 #### 2. Component Breakdown
 
 - **Root solution file**: Located directly at the project root (`<SolutionName>.slnx`). This allows developers to open a single file in Visual Studio or JetBrains Rider to manage the cdsproj, `Plugins`, and `WebResources` projects simultaneously.
-    - **`.slnx` by default, `.sln` on request.** `clone` writes a `.slnx` — the .NET 10 default, and it holds a `.cdsproj` fine (verified on SDK 10.0.302: `dotnet sln list` enumerates the entry and `dotnet build` runs SolutionPackager through to the zip). `clone --sln` writes the classic format instead, for repos a teammate, build agent, or CI runner opens on SDK 8 or older — `.slnx` needs 9.0.200+. Flowline reads both formats either way, and never converts an existing one.
+    - **`.slnx` for a new project; an existing `.sln` is left alone.** `clone` writes a `.slnx` — the .NET 10 default, and it holds a `.cdsproj` fine (verified on SDK 10.0.302: `dotnet sln list` enumerates the entry and `dotnet build` runs SolutionPackager through to the zip). Flowline reads both formats, so a project that already has a `.sln` keeps it and clone writes into it; only a project with no solution file at all gets a new one. Nothing converts a `.sln` to a `.slnx` — `dotnet sln migrate` is the tool for that, if you want it. Note `.slnx` needs SDK 9.0.200+ to build, which matters for a teammate or CI runner opening the repo, not for the machine that ran `clone`.
     - **`dotnet sln add` can't add a `.cdsproj` — it refuses, and exits 0 while doing it** ([dotnet/sdk#47638](https://github.com/dotnet/sdk/issues/47638)). Flowline writes that entry itself, in either format. `flowline sln add <path>` does the same for a project that didn't come from `clone`. Nothing renames the project file.
     - **The solution file is the authoritative list of the project's own projects.** All three — `Package.cdsproj`, `Plugins.csproj`, `WebResources.csproj` — are registered in it. Keep them there: an IDE maintains this file automatically, and it is the intended long-term source for locating project folders (see §3, *Convention over configuration*).
 - **`Package/Package.cdsproj`**: PAC-managed — do not edit manually. Contains the unpacked XML source files in `Package/src/` (from `pac solution clone`). This project acts as the "orchestrator" that packages the metadata and the output of the other projects into the final Dataverse solution `.zip`.
