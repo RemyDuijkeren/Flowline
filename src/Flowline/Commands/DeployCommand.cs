@@ -71,7 +71,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         IReadOnlyList<string> deploymentInputPaths = [];
         if (!usingExplicitArtifact)
         {
-            deploymentInputPaths = await GetDeploymentInputPathsAsync(slnFolder, cancellationToken);
+            deploymentInputPaths = await GetDeploymentInputPathsAsync(slnFolder, sln.UniqueName, cancellationToken);
             await ValidateGitCleanAsync(deploymentInputPaths, cancellationToken);
         }
 
@@ -122,7 +122,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             }
         }
 
-        await ValidateLocalStateAsync(slnFolder, settings, cancellationToken, checkDrift: !usingExplicitArtifact);
+        await ValidateLocalStateAsync(slnFolder, sln.UniqueName, settings, cancellationToken, checkDrift: !usingExplicitArtifact);
 
         // Managed import only removes components no longer in the solution when Dataverse runs it as an
         // Upgrade (pac's --stage-and-upgrade) — plain import ("Update" semantics) never deletes anything,
@@ -370,7 +370,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     // solution file references (KTD12 — this is the .sln-membership discovery the fixed Plugins/ path
     // deferred to), and the WebResources project file. The plugin pre-filter is what keeps this narrow —
     // an unrelated csproj in the solution stays out of the cache key, so it can't invalidate a deploy.
-    internal static async Task<IReadOnlyList<string>> GetDeploymentInputPathsAsync(string slnFolder, CancellationToken ct = default)
+    internal static async Task<IReadOnlyList<string>> GetDeploymentInputPathsAsync(string slnFolder, string solutionName, CancellationToken ct = default)
     {
         var pluginProjects = await PluginProjectResolver.DiscoverAsync(slnFolder, SkipMissingProject, ct).ConfigureAwait(false);
 
@@ -378,13 +378,13 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         [
             PackageFolder(slnFolder),
             ..pluginProjects.Select(c => c.ProjectPath),
-            Path.Combine(slnFolder, WebResourcesName, $"{WebResourcesName}.csproj")
+            Path.Combine(slnFolder, WebResourcesName, CloneCommand.WebResourcesProjectFileName(solutionName))
         ];
     }
 
-    private async Task ValidateLocalStateAsync(string slnFolder, Settings settings, CancellationToken ct, bool checkDrift = true)
+    private async Task ValidateLocalStateAsync(string slnFolder, string solutionName, Settings settings, CancellationToken ct, bool checkDrift = true)
     {
-        var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
+        var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{solutionName}.cdsproj");
         if (!File.Exists(cdsprojPath))
             throw new FlowlineException(ExitCode.NotFound,
                 $"No solution found at '{cdsprojPath}' — run 'clone' first.");
@@ -689,7 +689,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         catch (Exception ex) when (ex is XmlException or IOException or UnauthorizedAccessException)
         {
             throw new FlowlineException(ExitCode.ConfigInvalid,
-                $"Solution.xml at '{solutionXmlPath}' is malformed or unreadable — restore 'Package/' from git or re-run 'flowline clone'.", ex);
+                $"Solution.xml at '{solutionXmlPath}' is malformed or unreadable — restore 'Solution/' from git or re-run 'flowline clone'.", ex);
         }
 
         return ParseSolutionManifest(doc).Version;

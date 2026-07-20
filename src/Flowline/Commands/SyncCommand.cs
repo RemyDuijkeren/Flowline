@@ -58,7 +58,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         // Validate that we have an initialized project
         var slnFolder = RootFolder;
-        var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
+        var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{projectSln.UniqueName}.cdsproj");
         if (!File.Exists(cdsprojPath))
             throw new FlowlineException(ExitCode.NotFound, $"No solution found at '{cdsprojPath}' — run 'clone' first");
 

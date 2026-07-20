@@ -61,18 +61,24 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         var (sourceEnv, projectSln, solutionInfo) = await FindUnmanagedSourceAsync(settings, cancellationToken);
         Logger.LogInformation("source={EnvironmentUrl} solution={SolutionName}", sourceEnv.EnvironmentUrl, projectSln.UniqueName);
 
+        // Before anything is written: the solution name becomes a C# namespace in the scaffolded plugin
+        // project, and a keyword there produces source that doesn't compile.
+        if (DescribeCSharpKeywordCollision(projectSln.UniqueName) is { } keywordCollision)
+            throw new FlowlineException(ExitCode.ValidationFailed, keywordCollision);
+
         Config.Save();
         Console.Verbose($"Project configuration saved to {ProjectConfig.s_configFileName}");
 
         var slnFolder = RootFolder;
-        var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{PackageName}.cdsproj");
-        var slnFilePath = ResolveSolutionFilePath(slnFolder, projectSln.UniqueName);
+        var solutionName = projectSln.UniqueName;
+        var cdsprojPath = Path.Combine(PackageFolder(slnFolder), $"{solutionName}.cdsproj");
+        var slnFilePath = ResolveSolutionFilePath(slnFolder, solutionName);
         var slnFileName = Path.GetFileName(slnFilePath);
 
         await CloneSolutionFromDataverseAsync(projectSln, slnFolder, cdsprojPath, sourceEnv.EnvironmentUrl!, settings, cancellationToken);
         await CreateSolutionFileAsync(slnFolder, slnFilePath, cdsprojPath, cancellationToken);
-        await SetupPluginsProjectAsync(slnFolder, slnFilePath, settings, cancellationToken);
-        await SetupWebResourcesProjectAsync(slnFolder, slnFilePath, settings, cancellationToken);
+        await SetupPluginsProjectAsync(slnFolder, slnFilePath, solutionName, settings, cancellationToken);
+        await SetupWebResourcesProjectAsync(slnFolder, slnFilePath, solutionName, settings, cancellationToken);
         SeedWebResourceDistFromSrc(slnFolder, solutionInfo.PublisherPrefix, projectSln.UniqueName, settings);
 
         ScaffoldRootGitignore();
@@ -105,6 +111,38 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         Console.Done("Cloned! Use 'push' and 'sync' to keep it in flow. ヽ(•‿•)ノ");
         return 0;
     }
+
+    /// <summary>The C# reserved keywords, which cannot appear unescaped in a namespace declaration.</summary>
+    private static readonly HashSet<string> s_csharpKeywords =
+    [
+        "abstract", "as", "base", "bool", "break", "byte", "case", "catch", "char", "checked", "class",
+        "const", "continue", "decimal", "default", "delegate", "do", "double", "else", "enum", "event",
+        "explicit", "extern", "false", "finally", "fixed", "float", "for", "foreach", "goto", "if",
+        "implicit", "in", "int", "interface", "internal", "is", "lock", "long", "namespace", "new", "null",
+        "object", "operator", "out", "override", "params", "private", "protected", "public", "readonly",
+        "ref", "return", "sbyte", "sealed", "short", "sizeof", "stackalloc", "static", "string", "struct",
+        "switch", "this", "throw", "true", "try", "typeof", "uint", "ulong", "unchecked", "unsafe",
+        "ushort", "using", "virtual", "void", "volatile", "while",
+    ];
+
+    /// <summary>Why this solution name can't become a plugin namespace, or <c>null</c> if it can.</summary>
+    /// <remarks>
+    /// A Dataverse <c>uniquename</c> is <c>[A-Za-z0-9_]</c> starting with a letter or underscore, with no
+    /// reserved-word list — so <c>event</c>, <c>class</c> and <c>int</c> are all legal solution names, and
+    /// C# keywords are a strict subset of what the platform accepts.
+    ///
+    /// <c>pac plugin init</c> in a directory named <c>event.Plugins</c> reports success and writes
+    /// <c>namespace event.Plugins</c> into its generated files, which fails to compile with CS1001. Clone
+    /// refuses up front instead: a verbatim identifier (<c>@event</c>) would compile, but applying it means
+    /// editing pac's generated source, and leaving pac's output untouched is the whole mechanism. Only
+    /// clone checks — an existing project already has its names.
+    ///
+    /// Case-sensitive on purpose: <c>Event</c> is a perfectly good namespace.
+    /// </remarks>
+    internal static string? DescribeCSharpKeywordCollision(string solutionName) =>
+        s_csharpKeywords.Contains(solutionName)
+            ? $"Solution name '{solutionName}' is a C# keyword, so the plugin namespace '{solutionName}.Plugins' won't compile. Rename the solution in Dataverse, then clone again."
+            : null;
 
     private static readonly string[] s_gitignorePatterns =
     [
@@ -341,7 +379,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         }
 
         if (Directory.Exists(PackageFolder(slnFolder)))
-            throw new FlowlineException(ExitCode.ConfigInvalid, DescribePackageFolderWithoutCdsproj(PackageFolder(slnFolder)));
+            throw new FlowlineException(ExitCode.ConfigInvalid,
+                DescribePackageFolderWithoutCdsproj(PackageFolder(slnFolder), Path.GetFileName(cdsprojPath)));
 
         Directory.CreateDirectory(slnFolder);
 
@@ -366,11 +405,11 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         if (!result.IsSuccess)
             throw new FlowlineException(ExitCode.GeneralError, "Clone failed — check the environment and your PAC login.");
 
-        // PAC creates slnFolder/{SolutionName}/ — rename it to Package/ and rename the .cdsproj
+        // pac writes slnFolder/{SolutionName}/{SolutionName}.cdsproj plus src/. Flowline places that folder
+        // under the role-based name and leaves the project file exactly as pac wrote it — the folder answers
+        // "what kind of thing lives here", the file answers "which solution", and only the latter escapes
+        // the repo.
         Directory.Move(Path.Combine(slnFolder, projectSln.UniqueName), PackageFolder(slnFolder));
-        File.Move(
-            Path.Combine(PackageFolder(slnFolder), $"{projectSln.UniqueName}.cdsproj"),
-            cdsprojPath);
         DeleteScaffoldedGitignore(PackageFolder(slnFolder)); // superseded by the project-root .gitignore
 
         Console.Ok($"Solution [bold]{projectSln.UniqueName}[/] cloned in {FormatDuration(result.RunTime)}");
@@ -396,14 +435,15 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         else
             Console.Skip("Solution file already there — skipping");
 
+        var cdsprojFileName = Path.GetFileName(cdsprojPath);
         if (added)
         {
-            Console.Ok($"[bold]{PackageName}.cdsproj[/] added to solution file");
+            Console.Ok($"[bold]{cdsprojFileName}[/] added to solution file");
             Console.Verbose(slnFilePath);
         }
         else
         {
-            Console.Skip($"{PackageName}.cdsproj already in the solution file — skipping");
+            Console.Skip($"{cdsprojFileName} already in the solution file — skipping");
         }
     }
 
@@ -451,36 +491,57 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         new MsBuildSolutionReader().FindSolutionFile(slnFolder)
         ?? Path.Combine(slnFolder, SolutionFileName(solutionName));
 
-    /// <summary>Explains a <c>Package/</c> folder that holds no <c>Package.cdsproj</c>.</summary>
+    /// <summary>Explains a <c>Solution/</c> folder that holds no <c>&lt;SolutionName&gt;.cdsproj</c>.</summary>
     /// <remarks>
-    /// Reachable only between the two moves that normalize what pac wrote — the folder rename and the
-    /// <c>.cdsproj</c> rename — so the usual cause is a stray project file one rename away from correct.
-    /// Naming that file beats telling the user to delete the folder pac just spent minutes filling.
+    /// Clone no longer renames the project file, so the stray case now means a folder holding a different
+    /// solution's project — someone else's clone, or a solution renamed in Dataverse. Naming the file that
+    /// is there beats telling the user to delete a folder pac just spent minutes filling.
     /// </remarks>
-    internal static string DescribePackageFolderWithoutCdsproj(string packageFolder)
+    internal static string DescribePackageFolderWithoutCdsproj(string packageFolder, string cdsprojFileName)
     {
         var stray = Directory.EnumerateFiles(packageFolder, "*.cdsproj", SearchOption.TopDirectoryOnly).FirstOrDefault();
 
         return stray != null
-            ? $"{PackageName}/ holds {Path.GetFileName(stray)}, not {PackageName}.cdsproj. Rename it and run clone again."
-            : $"{PackageName}/ is here but {PackageName}.cdsproj isn't. Move {PackageName}/ aside and run clone again.";
+            ? $"{PackageName}/ holds {Path.GetFileName(stray)}, not {cdsprojFileName}. Rename it and run clone again."
+            : $"{PackageName}/ is here but {cdsprojFileName} isn't. Move {PackageName}/ aside and run clone again.";
     }
 
-    private async Task SetupPluginsProjectAsync(string slnFolder, string slnFilePath, Settings settings, CancellationToken cancellationToken)
+    /// <summary>The plugin project file clone scaffolds for a solution.</summary>
+    /// <remarks>
+    /// Solution-identity naming exists for what leaves the repo: this file's name is what
+    /// <c>&lt;AssemblyName&gt;</c> falls back to, so it is what Dataverse's assembly list, the plugin package,
+    /// and every trace log and stack trace end up saying. Inside the repo, <c>Plugins/</c> was never ambiguous.
+    ///
+    /// The solution name goes in verbatim — an underscore is kept, not stripped or PascalCased, because
+    /// <c>DWE_Base</c> and <c>DWEBase</c> are two distinct legal solutions and collapsing them reintroduces
+    /// the anonymous identity the name exists to remove.
+    /// </remarks>
+    internal static string PluginsProjectFileName(string solutionName) => $"{solutionName}.{PluginsName}.csproj";
+
+    private async Task SetupPluginsProjectAsync(string slnFolder, string slnFilePath, string solutionName, Settings settings, CancellationToken cancellationToken)
     {
         var pluginsFolder = Path.Combine(slnFolder, PluginsName);
-        var pluginsCsproj = Path.Combine(pluginsFolder, $"{PluginsName}.csproj");
+        var pluginsCsproj = Path.Combine(pluginsFolder, PluginsProjectFileName(solutionName));
         if (File.Exists(pluginsCsproj))
         {
             Console.Skip("Plugins project already there — skipping");
             return;
         }
 
+        // pac plugin init takes no --name: it reads PackageId and the generated namespaces off its working
+        // directory, and writes neither <AssemblyName> nor <RootNamespace>, so both follow the .csproj
+        // filename. Init therefore runs in <SolutionName>.Plugins/ and only the *folder* is renamed —
+        // renaming the file too would drop the assembly back to "Plugins" while PackageId and the namespaces
+        // stayed prefixed, leaving three identities disagreeing with nothing to signal it.
+        var initFolder = Path.Combine(slnFolder, $"{solutionName}.{PluginsName}");
+        if (Directory.Exists(pluginsFolder))
+            throw new FlowlineException(ExitCode.ConfigInvalid,
+                $"{PluginsName}/ is here but {Path.GetFileName(pluginsCsproj)} isn't. Move {PluginsName}/ aside and run clone again.");
+
         await Console.Status().FlowlineSpinner().StartAsync(
             "Setting up Plugins project...", async ctx =>
             {
-                // Create Plugins project
-                Directory.CreateDirectory(pluginsFolder);
+                Directory.CreateDirectory(initFolder);
 
                 var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
                 await Cli.Wrap(cmdName)
@@ -488,10 +549,13 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
                                                 .AddIfNotNull(prefixArgs)
                                                 .Add("plugin")
                                                 .Add("init")) // --skip-signing
-                         .WithWorkingDirectory(pluginsFolder)
+                         .WithWorkingDirectory(initFolder)
                          .WithCapture(_capture)
                          .ExecuteAsync(cancellationToken);
-                DeleteScaffoldedGitignore(pluginsFolder); // superseded by the project-root .gitignore
+                DeleteScaffoldedGitignore(initFolder); // superseded by the project-root .gitignore
+
+                Directory.Move(initFolder, pluginsFolder);
+                Console.Verbose($"Moved {Path.GetFileName(initFolder)} to {PluginsName}");
 
                 // Add Flowline.Attributes NuGet package
                 await Cli.Wrap("dotnet")
@@ -533,11 +597,20 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         Console.Ok("Plugins project ready");
     }
 
-    private async Task SetupWebResourcesProjectAsync(string slnFolder, string slnFilePath, Settings settings, CancellationToken cancellationToken)
+    /// <summary>The WebResources project file clone scaffolds for a solution.</summary>
+    /// <remarks>
+    /// The prefix here is symmetry, and nothing more. This project is <c>Microsoft.Build.NoTargets</c> — it
+    /// compiles nothing and produces no assembly, so no name escapes the repo the way the plugin assembly's
+    /// does. It takes the prefix so the naming rule has no exception, and so a solution-named node is easy
+    /// to pick out with several projects open. The template itself is untouched.
+    /// </remarks>
+    internal static string WebResourcesProjectFileName(string solutionName) => $"{solutionName}.{WebResourcesName}.csproj";
+
+    private async Task SetupWebResourcesProjectAsync(string slnFolder, string slnFilePath, string solutionName, Settings settings, CancellationToken cancellationToken)
     {
         // Create WebResources project if it doesn't exist
         var webresourcesFolder = Path.Combine(slnFolder, WebResourcesName);
-        var webresourcesCsproj = Path.Combine(webresourcesFolder, $"{WebResourcesName}.csproj");
+        var webresourcesCsproj = Path.Combine(webresourcesFolder, WebResourcesProjectFileName(solutionName));
         if (File.Exists(webresourcesCsproj))
         {
             Console.Skip("WebResources project already there — skipping");

@@ -160,7 +160,7 @@ app.Configure(config =>
 
     // Sync changes to local repo (export solution and unpack)
     config.AddCommand<SyncCommand>("sync")
-          .WithDescription("Export solution from DEV, bump build version, and unpack to source-controlled XML. Run after testing changes in DEV. Requires no uncommitted changes in Package/src/.")
+          .WithDescription("Export solution from DEV, bump build version, and unpack to source-controlled XML. Run after testing changes in DEV. Requires no uncommitted changes in Solution/src/.")
           .WithExample("sync")
           .WithExample("sync", "--managed", "--bump", "minor");
 
@@ -207,7 +207,7 @@ app.Configure(config =>
 
         sln.AddCommand<SlnAddCommand>("add")
            .WithDescription("Add a .cdsproj to an existing solution file. 'dotnet sln add' refuses .cdsproj files and exits 0 while doing it, so this writes the entry directly. Doesn't create a solution file — run 'dotnet new sln' first. Runs standalone: no Flowline project needed.")
-           .WithExample("sln", "add", "Package/Package.cdsproj");
+           .WithExample("sln", "add", "Solution/MySolution.cdsproj");
     });
 });
 

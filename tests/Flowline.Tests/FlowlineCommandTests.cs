@@ -37,11 +37,13 @@ public class FlowlineCommandTests
     }
 
     [Fact]
-    public void PackageFolder_ReturnsSlnFolderWithPackageSubfolder()
+    public void PackageFolder_ReturnsSlnFolderWithSolutionSubfolder()
     {
-        var slnFolder = Path.Combine("solutions", "MySolution");
+        // The folder name is role-based and identical in every repo — only the .cdsproj inside it
+        // carries the solution's identity.
+        var slnFolder = Path.Combine("repos", "MyProject");
         FlowlineCommand<FlowlineSettings>.PackageFolder(slnFolder)
-            .Should().Be(Path.Combine("solutions", "MySolution", "Package"));
+            .Should().Be(Path.Combine("repos", "MyProject", "Solution"));
     }
 
     [Fact]

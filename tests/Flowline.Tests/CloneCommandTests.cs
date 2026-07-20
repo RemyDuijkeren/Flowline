@@ -8,7 +8,7 @@ namespace Flowline.Tests;
 public class CloneCommandTests
 {
     // ── HasManagedContent ───────────────────────────────────────────────────
-    // Detects whether Package/src already has the managed layer (PAC's "{name}_managed.xml"
+    // Detects whether Solution/src already has the managed layer (PAC's "{name}_managed.xml"
     // sibling files, written only when unpacked with --packagetype Both), so clone's re-sync
     // branch can skip when a solution already cloned as managed is re-run unchanged.
 
@@ -18,7 +18,7 @@ public class CloneCommandTests
         var root = CreateTempRoot();
         try
         {
-            var packageFolder = Path.Combine(root, "Package");
+            var packageFolder = Path.Combine(root, "Solution");
             Directory.CreateDirectory(packageFolder);
 
             var result = CloneCommand.HasManagedContent(packageFolder);
@@ -37,11 +37,11 @@ public class CloneCommandTests
         var root = CreateTempRoot();
         try
         {
-            var srcFolder = Path.Combine(root, "Package", "src", "Entities", "Account", "FormXml", "main");
+            var srcFolder = Path.Combine(root, "Solution", "src", "Entities", "Account", "FormXml", "main");
             Directory.CreateDirectory(srcFolder);
             File.WriteAllText(Path.Combine(srcFolder, "{guid}.xml"), "<form />");
 
-            var result = CloneCommand.HasManagedContent(Path.Combine(root, "Package"));
+            var result = CloneCommand.HasManagedContent(Path.Combine(root, "Solution"));
 
             result.Should().BeFalse();
         }
@@ -57,12 +57,12 @@ public class CloneCommandTests
         var root = CreateTempRoot();
         try
         {
-            var srcFolder = Path.Combine(root, "Package", "src", "Entities", "Account", "FormXml", "main");
+            var srcFolder = Path.Combine(root, "Solution", "src", "Entities", "Account", "FormXml", "main");
             Directory.CreateDirectory(srcFolder);
             File.WriteAllText(Path.Combine(srcFolder, "{guid}.xml"), "<form />");
             File.WriteAllText(Path.Combine(srcFolder, "{guid}_managed.xml"), "<form />");
 
-            var result = CloneCommand.HasManagedContent(Path.Combine(root, "Package"));
+            var result = CloneCommand.HasManagedContent(Path.Combine(root, "Solution"));
 
             result.Should().BeTrue();
         }
@@ -88,10 +88,11 @@ public class CloneCommandTests
     static (string Root, string SlnPath, string CdsprojPath) CreateProject(string solutionName = "CrO7982")
     {
         var root = CreateTempRoot();
-        var packageFolder = Path.Combine(root, "Package");
+        var packageFolder = Path.Combine(root, "Solution");
         Directory.CreateDirectory(packageFolder);
 
-        var cdsprojPath = Path.Combine(packageFolder, "Package.cdsproj");
+        // pac names the .cdsproj after the solution and clone never renames it.
+        var cdsprojPath = Path.Combine(packageFolder, $"{solutionName}.cdsproj");
         File.WriteAllText(cdsprojPath, "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
 
         return (root, Path.Combine(root, $"{solutionName}.sln"), cdsprojPath);
@@ -109,13 +110,13 @@ public class CloneCommandTests
             added.Should().BeTrue();
 
             var content = await File.ReadAllTextAsync(slnPath);
-            content.Should().Contain(@"Package\Package.cdsproj");
+            content.Should().Contain(@"Solution\CrO7982.cdsproj");
             // The C# project type GUID is what makes MSBuild load a .cdsproj at all — without it the
             // entry is inert and the SolutionPackager step never runs.
             content.Should().Contain("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}");
 
             var projects = await new MsBuildSolutionReader().ReadProjectsAsync(slnPath);
-            projects.Should().ContainSingle(p => p.Path == Path.Combine("Package", "Package.cdsproj"));
+            projects.Should().ContainSingle(p => p.Path == Path.Combine("Solution", "CrO7982.cdsproj"));
         }
         finally
         {
@@ -131,7 +132,7 @@ public class CloneCommandTests
         {
             await CloneCommand.AddPackageProjectAsync(new MsBuildSolutionWriter(), root, slnPath, cdsprojPath);
 
-            var packageFolder = Path.Combine(root, "Package");
+            var packageFolder = Path.Combine(root, "Solution");
             File.Exists(cdsprojPath).Should().BeTrue("the project keeps its own name throughout");
             Directory.EnumerateFiles(packageFolder, "*.csproj").Should().BeEmpty();
         }
@@ -177,7 +178,7 @@ public class CloneCommandTests
             File.Exists(cdsprojPath).Should().BeTrue();
             File.Exists(slnPath).Should().BeFalse();
 
-            // Clone's guard only fires when Package.cdsproj is missing, so the re-run walks straight past
+            // Clone's guard only fires when the .cdsproj is missing, so the re-run walks straight past
             // it — no delete-and-re-clone demand — and finishes the wiring the interrupted run started.
             var (created, added) = await CloneCommand.AddPackageProjectAsync(new MsBuildSolutionWriter(), root, slnPath, cdsprojPath);
 
@@ -196,14 +197,15 @@ public class CloneCommandTests
         var root = CreateTempRoot();
         try
         {
-            // What an interruption between pac's folder rename and the .cdsproj rename leaves behind.
-            var packageFolder = Path.Combine(root, "Package");
+            // A Solution/ folder holding another solution's project — a solution renamed in Dataverse,
+            // or someone else's clone left in place.
+            var packageFolder = Path.Combine(root, "Solution");
             Directory.CreateDirectory(packageFolder);
-            File.WriteAllText(Path.Combine(packageFolder, "CrO7982.cdsproj"), "<Project />");
+            File.WriteAllText(Path.Combine(packageFolder, "OtherSolution.cdsproj"), "<Project />");
 
-            var message = CloneCommand.DescribePackageFolderWithoutCdsproj(packageFolder);
+            var message = CloneCommand.DescribePackageFolderWithoutCdsproj(packageFolder, "CrO7982.cdsproj");
 
-            message.Should().Contain("CrO7982.cdsproj").And.Contain("Rename");
+            message.Should().Contain("OtherSolution.cdsproj").And.Contain("CrO7982.cdsproj").And.Contain("Rename");
             message.Should().NotContain("Delete", "a one-file rename fixes this — deleting the folder throws away a finished clone");
         }
         finally
@@ -218,12 +220,12 @@ public class CloneCommandTests
         var root = CreateTempRoot();
         try
         {
-            var packageFolder = Path.Combine(root, "Package");
+            var packageFolder = Path.Combine(root, "Solution");
             Directory.CreateDirectory(packageFolder);
 
-            var message = CloneCommand.DescribePackageFolderWithoutCdsproj(packageFolder);
+            var message = CloneCommand.DescribePackageFolderWithoutCdsproj(packageFolder, "CrO7982.cdsproj");
 
-            message.Should().Contain("Package.cdsproj");
+            message.Should().Contain("CrO7982.cdsproj");
             message.Should().NotContain("Delete");
         }
         finally
@@ -285,11 +287,15 @@ public class CloneCommandTests
         var writer = new MsBuildSolutionWriter();
         await CloneCommand.AddPackageProjectAsync(writer, root, slnFilePath, cdsprojPath);
 
-        foreach (var name in new[] { "Plugins", "WebResources" })
+        foreach (var (folder, fileName) in new[]
+                 {
+                     ("Plugins", CloneCommand.PluginsProjectFileName(solutionName)),
+                     ("WebResources", CloneCommand.WebResourcesProjectFileName(solutionName)),
+                 })
         {
-            Directory.CreateDirectory(Path.Combine(root, name));
-            File.WriteAllText(Path.Combine(root, name, $"{name}.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
-            await writer.AddProjectAsync(slnFilePath, Path.Combine(name, $"{name}.csproj"));
+            Directory.CreateDirectory(Path.Combine(root, folder));
+            File.WriteAllText(Path.Combine(root, folder, fileName), "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
+            await writer.AddProjectAsync(slnFilePath, Path.Combine(folder, fileName));
         }
 
         return (root, slnFilePath);
@@ -307,9 +313,9 @@ public class CloneCommandTests
             var projects = await new MsBuildSolutionReader().ReadProjectsAsync(slnFilePath);
 
             projects.Select(p => p.Path).Should().BeEquivalentTo(
-                Path.Combine("Package", "Package.cdsproj"),
-                Path.Combine("Plugins", "Plugins.csproj"),
-                Path.Combine("WebResources", "WebResources.csproj"));
+                Path.Combine("Solution", "CrO7982.cdsproj"),
+                Path.Combine("Plugins", "CrO7982.Plugins.csproj"),
+                Path.Combine("WebResources", "CrO7982.WebResources.csproj"));
         }
         finally
         {
@@ -329,9 +335,9 @@ public class CloneCommandTests
             var projects = await new MsBuildSolutionReader().ReadProjectsAsync(slnFilePath);
 
             projects.Select(p => p.Path).Should().BeEquivalentTo(
-                Path.Combine("Package", "Package.cdsproj"),
-                Path.Combine("Plugins", "Plugins.csproj"),
-                Path.Combine("WebResources", "WebResources.csproj"));
+                Path.Combine("Solution", "CrO7982.cdsproj"),
+                Path.Combine("Plugins", "CrO7982.Plugins.csproj"),
+                Path.Combine("WebResources", "CrO7982.WebResources.csproj"));
         }
         finally
         {
@@ -372,7 +378,7 @@ public class CloneCommandTests
         try
         {
             var cdsproj = await new MsBuildSolutionReader()
-                .FindProjectAsync(slnFilePath, Path.Combine("Package", "Package.cdsproj"));
+                .FindProjectAsync(slnFilePath, Path.Combine("Solution", "CrO7982.cdsproj"));
 
             cdsproj.Should().NotBeNull();
             cdsproj!.IsCdsProject.Should().BeTrue();
@@ -381,7 +387,7 @@ public class CloneCommandTests
             if (existingSolutionFileName != null)
                 content.Should().Contain("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}");
             else
-                content.Should().MatchRegex(@"Package\.cdsproj""[^>]*Type=""C#""");
+                content.Should().MatchRegex(@"CrO7982\.cdsproj""[^>]*Type=""C#""");
         }
         finally
         {
@@ -430,6 +436,88 @@ public class CloneCommandTests
         }
 
         return count;
+    }
+
+    // ── Project file naming (U1-U3 / KD1-KD4) ───────────────────────────────
+    // Flowline owns the folder names — role-based, identical in every repo. pac owns the project file
+    // names — identity-based, because that name is what escapes the repo into Dataverse.
+
+    [Theory]
+    [InlineData("CrO7982", "CrO7982.Plugins.csproj")]
+    [InlineData("DWE_Base", "DWE_Base.Plugins.csproj")]
+    public void PluginsProjectFileName_TakesTheSolutionNameVerbatim(string solutionName, string expected)
+    {
+        // The underscore is kept: DWE_Base and DWEBase are two distinct legal solutions, and stripping
+        // it collapses them onto one assembly name — the anonymity this naming exists to remove.
+        CloneCommand.PluginsProjectFileName(solutionName).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("CrO7982", "CrO7982.WebResources.csproj")]
+    [InlineData("DWE_Base", "DWE_Base.WebResources.csproj")]
+    public void WebResourcesProjectFileName_TakesTheSolutionNameVerbatim(string solutionName, string expected)
+    {
+        CloneCommand.WebResourcesProjectFileName(solutionName).Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task Clone_ScaffoldsRoleNamedFoldersHoldingSolutionNamedProjects()
+    {
+        var (root, slnFilePath) = await ScaffoldSolutionAsync("DWE_Base");
+        try
+        {
+            // Folders are the same in every repo...
+            Directory.Exists(Path.Combine(root, "Solution")).Should().BeTrue();
+            Directory.Exists(Path.Combine(root, "Plugins")).Should().BeTrue();
+            Directory.Exists(Path.Combine(root, "DWE_Base.Plugins")).Should().BeFalse("only the folder is renamed after init, and it lands on the role name");
+            Directory.Exists(Path.Combine(root, "Package")).Should().BeFalse();
+
+            // ...and the project files inside them carry the solution's identity.
+            File.Exists(Path.Combine(root, "Solution", "DWE_Base.cdsproj")).Should().BeTrue();
+            File.Exists(Path.Combine(root, "Plugins", "DWE_Base.Plugins.csproj")).Should().BeTrue();
+            File.Exists(Path.Combine(root, "WebResources", "DWE_Base.WebResources.csproj")).Should().BeTrue();
+
+            var projects = await new MsBuildSolutionReader().ReadProjectsAsync(slnFilePath);
+            projects.Select(p => p.Path).Should().BeEquivalentTo(
+                Path.Combine("Solution", "DWE_Base.cdsproj"),
+                Path.Combine("Plugins", "DWE_Base.Plugins.csproj"),
+                Path.Combine("WebResources", "DWE_Base.WebResources.csproj"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    // ── Solution names that break the scaffold (U2) ─────────────────────────
+    // A Dataverse uniquename is [A-Za-z0-9_] with no reserved-word list, so C# keywords are legal
+    // solution names. pac plugin init in a directory named event.Plugins reports success and writes
+    // `namespace event.Plugins`, which fails CS1001. Clone refuses before pac runs.
+
+    [Theory]
+    [InlineData("event")]
+    [InlineData("class")]
+    [InlineData("int")]
+    [InlineData("object")]
+    [InlineData("lock")]
+    [InlineData("params")]
+    public void DescribeCSharpKeywordCollision_KeywordSolutionName_NamesTheKeywordAndTheNamespace(string solutionName)
+    {
+        var message = CloneCommand.DescribeCSharpKeywordCollision(solutionName);
+
+        message.Should().NotBeNull();
+        message.Should().Contain($"'{solutionName}'").And.Contain($"{solutionName}.Plugins");
+    }
+
+    [Theory]
+    [InlineData("CrO7982")]
+    [InlineData("DWE_Base")]     // an underscore breaks nothing — no sanitisation
+    [InlineData("_123")]         // legal Dataverse name, legal C# identifier
+    [InlineData("Event")]        // identifiers are case-sensitive, so this is not the keyword
+    [InlineData("MyEventStore")]
+    public void DescribeCSharpKeywordCollision_UsableSolutionName_ReturnsNull(string solutionName)
+    {
+        CloneCommand.DescribeCSharpKeywordCollision(solutionName).Should().BeNull();
     }
 
     // ── ValidateForce / HasForce ────────────────────────────────────────────

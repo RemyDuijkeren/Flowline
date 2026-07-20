@@ -22,7 +22,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     where TSettings : FlowlineSettings
 {
     protected readonly SubprocessCapture _capture = capture;
-    protected const string PackageName = "Package";
+    protected const string PackageName = "Solution";
     protected const string WebResourcesName = "WebResources";
     protected const string PluginsName = "Plugins";
 
