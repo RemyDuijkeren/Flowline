@@ -91,20 +91,67 @@ public class WebResourcesProjectResolverTests : IDisposable
         resolved.Should().Be(webResources);
     }
 
-    // ── the deliberate KD3 judgment call: single candidate, zero signals ─────
+    // ── the ≥1-signal floor: a zero-signal sole survivor is NOT the WebResources project ─────
 
     [Fact]
-    public void Resolve_SingleCandidateWithZeroSignals_ResolvesByEliminationAlone()
+    public void Resolve_SingleCandidateWithZeroSignals_ThrowsConfigInvalid()
     {
         // No NoTargets, no dist/, no package.json, no assets, no annotation, no WebResources-named folder —
-        // every signal is absent, and it still resolves. Deliberate per KD3: with plugin/PCF/test already
-        // excluded, a lone survivor is the WebResources project by elimination, not by score.
-        var onlySurvivor = WriteFile(Path.Combine("Assets", "Assets.csproj"), PlainCsprojXml);
+        // a plain library that merely survived elimination. Returning it (the old KD3 behavior) pointed the
+        // deploy drift gate at a dist/ that never exists and silently reverted un-synced web resources. A
+        // real WebResources project always carries a signal, so require ≥1 and throw instead (Fix 1).
+        WriteFile(Path.Combine("Assets", "Assets.csproj"), PlainCsprojXml);
         var projects = new List<MsBuildSolutionProject> { CsProjectEntry(@"Assets\Assets.csproj", "Assets") };
+
+        var act = () => WebResourcesProjectResolver.Resolve(projects, _root, NoPlugins, SolutionFileName);
+
+        act.Should().Throw<FlowlineException>()
+           .Which.ExitCode.Should().Be(ExitCode.ConfigInvalid);
+        act.Should().Throw<FlowlineException>()
+           .WithMessage("*no WebResources project*");
+    }
+
+    // ── Fix 2: strong signal rescues a WebResources project the plugin pre-filter swept in ─────
+
+    [Fact]
+    public void Resolve_WebResourcesInPluginPreFilterSet_StrongSignalRescuesIt()
+    {
+        // A WebResources project with no own <TargetFramework> + a root Directory.Build.props lands in the
+        // over-inclusive plugin pre-filter set (pluginProjectPaths). Its NoTargets SDK is a strong signal,
+        // so the resolver keeps it rather than excluding it as a plugin (Fix 2). A real plugin carries no
+        // such signal, so the rescue can't misfire.
+        var webResources = WriteFile(Path.Combine("WebResources", "Contoso.WebResources.csproj"),
+            """<Project Sdk="Microsoft.Build.NoTargets/3.7.134" />""");
+        WriteFile("Directory.Build.props",
+            "<Project><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>");
+        var projects = new List<MsBuildSolutionProject>
+        {
+            CsProjectEntry(@"WebResources\Contoso.WebResources.csproj", "Contoso.WebResources"),
+        };
+        // Simulate the pre-filter having classified it as a plugin candidate.
+        var pluginPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { webResources };
+
+        var resolved = WebResourcesProjectResolver.Resolve(projects, _root, pluginPaths, SolutionFileName);
+
+        resolved.Should().Be(webResources);
+    }
+
+    // ── Fix 3: {SolutionName}.WebResources isn't a test project just because the name contains "test" ─────
+
+    [Fact]
+    public void Resolve_SolutionNameContainsTest_WebResourcesProjectNotExcludedAsTest()
+    {
+        // Solution named "Latest" → WebResources project "Latest.WebResources.csproj". The old substring
+        // check excluded it because the name contains "test"; the suffix/word match keeps it (Fix 3).
+        var webResources = WriteFile(Path.Combine("WebResources", "Latest.WebResources.csproj"), NoTargetsXml);
+        var projects = new List<MsBuildSolutionProject>
+        {
+            CsProjectEntry(@"WebResources\Latest.WebResources.csproj", "Latest.WebResources"),
+        };
 
         var resolved = WebResourcesProjectResolver.Resolve(projects, _root, NoPlugins, SolutionFileName);
 
-        resolved.Should().Be(onlySurvivor);
+        resolved.Should().Be(webResources);
     }
 
     // ── AE3: ClientHooks shape — no NoTargets, no WebResources folder name ───

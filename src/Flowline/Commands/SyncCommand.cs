@@ -67,6 +67,12 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         var layout = await SolutionFileLayout.LoadAsync(slnFolder, cancellationToken);
         var dataverseSolutionFolder = layout.DataverseSolutionFolder;
 
+        // Resolve WebResources (and, through its exclusion set, the plugin projects) up front — BEFORE any
+        // mutating call (SetSolutionVersionAsync bumps the live Dev version, SyncSolutionFromDataverseAsync
+        // overwrites local source). A bad WebResources layout then fails as a clean precondition instead of
+        // aborting mid-sync with Dev already mutated. The Lazy caches the result for the drift check below.
+        _ = layout.WebResourcesProjectPath;
+
         // Check for uncommitted changes
         var srcPath = Path.Combine(dataverseSolutionFolder, "src");
         // Rendered from the resolved path, never spelled out: a user who has relocated the Dataverse solution

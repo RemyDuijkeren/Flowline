@@ -537,10 +537,20 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (standaloneMode) return standaloneParams.WebResourcesPath;
 
         // The solution file identifies the WebResources project, so its folder follows it wherever it moved.
-        // A WebResources project is required (R5), so this throws with the fix in it rather than degrading
-        // to a conventional folder that may not exist.
+        // A plugin-only / migrated repo may have no resolvable WebResources project though — push plugins
+        // anyway (user decision B, push only): catch the resolution failure, skip web resources, continue.
+        // Sanctioned advisory catch, like status. Sync and deploy keep the strict throw.
         var layout = await SolutionFileLayout.LoadAsync(RootFolder, cancellationToken);
-        var webResourcesFolder = Path.GetDirectoryName(layout.WebResourcesProjectPath)!;
+        string webResourcesFolder;
+        try
+        {
+            webResourcesFolder = Path.GetDirectoryName(layout.WebResourcesProjectPath)!;
+        }
+        catch (FlowlineException)
+        {
+            Console.Skip("No WebResources project — skipping web resources.");
+            return null;
+        }
         var webResourcesSyncFolder = Path.Combine(webResourcesFolder, "dist");
 
         if (settings.NoBuild)
