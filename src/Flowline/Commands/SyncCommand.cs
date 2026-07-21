@@ -137,7 +137,10 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         else if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, _capture, cancellationToken) != 0)
             return (int)ExitCode.BuildFailed;
 
-        // Check for drift between local solution (Plugins/WebResources) and Dataverse (/src)
+        // Check for drift between local solution (Plugins/WebResources) and Dataverse (/src). A null
+        // WebResources project is a legitimate state — warn loudly and let the checker skip that half.
+        if (layout.WebResourcesProjectPath is null)
+            Console.Warning("No WebResources project — skipping web-resource drift check.");
         var driftWarnings = await PluginWebResourceDriftChecker.CheckAsync(slnFolder, layout, dataverseSolutionFolder, slnInfo.PublisherPrefix, cancellationToken);
         Logger.LogInformation("Drift: {DriftCount} warnings", driftWarnings.Count);
         if (driftWarnings.Count == 0)

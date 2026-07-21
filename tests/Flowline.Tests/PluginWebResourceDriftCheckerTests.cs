@@ -285,6 +285,33 @@ public class PluginWebResourceDriftCheckerTests : IDisposable
             w.Category == DriftCategory.OrphanAssembly && w.RelativePath == "Plugins.dll");
     }
 
+    // ── null WebResources project: skip web-resource drift, still check plugins, don't throw ─────
+
+    [Fact]
+    public async Task Check_NoWebResourcesProject_SkipsWebResourceDrift_StillChecksPlugins()
+    {
+        // A plugin-only solution: no WebResources project referenced, so WebResourcesProjectPath resolves to
+        // null. CheckAsync must skip the web-resource half (even with a populated dist/ on disk) and still
+        // report plugin drift — never throw. The single loud warning is the command caller's job, not here.
+        WritePluginProject(Path.Combine("Plugins", "Test.Plugins.csproj"));
+        File.WriteAllText(Path.Combine(_root, "Test.slnx"),
+            """<Solution><Project Path="Plugins\Test.Plugins.csproj" /></Solution>""");
+
+        // A dist/ that would drift if it were checked — proves the web-resource half is genuinely skipped.
+        WriteFile(Path.Combine("WebResources", "dist", "local.js"), "local");
+        WriteBinaryFile(Path.Combine("Solution", "src", "PluginAssemblies", "Test.Plugins.dll"), 50_000);
+        WriteBinaryFile(Path.Combine("Plugins", "bin", "Release", "Test.Plugins.dll"), 50_000 + 15_000);
+
+        var layout = await SolutionFileLayout.LoadAsync(_root);
+        layout.WebResourcesProjectPath.Should().BeNull();
+
+        var warnings = await PluginWebResourceDriftChecker.CheckAsync(_root, layout, _pkg);
+
+        warnings.Should().ContainSingle(w =>
+            w.Category == DriftCategory.PluginSizeMismatch && w.RelativePath == "Test.Plugins.dll");
+        warnings.Should().NotContain(w => w.RelativePath.Contains("local.js"));
+    }
+
     [Fact]
     public async Task Check_NoSolutionFile_ThrowsRatherThanFallingBackToConventionalPluginsFolder()
     {

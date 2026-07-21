@@ -24,8 +24,8 @@ namespace Flowline.Core.Services;
 /// <b>Per-type resolution is lazy.</b> <see cref="LoadAsync"/> reads and parses the file once (and throws
 /// there if it is missing — R6, the one precondition every command shares), but each project type is
 /// resolved and verified only when its property is first read, then cached. So a command touches only the
-/// validation it needs: <c>generate</c> reads <see cref="PluginProjects"/> and never triggers the required
-/// WebResources check (R5), while <c>deploy</c> reads all three and validates the whole layout. Coupling a
+/// validation it needs: <c>generate</c> reads <see cref="PluginProjects"/> and never triggers the
+/// WebResources resolution (R5), while <c>deploy</c> reads all three and validates the whole layout. Coupling a
 /// codegen command to a WebResources misconfiguration it never uses would be the wrong kind of loud.
 /// </remarks>
 public sealed class SolutionFileLayout
@@ -35,7 +35,7 @@ public sealed class SolutionFileLayout
     readonly string _solutionFileName;
     readonly Lazy<string> _dataverseSolutionProjectPath;
     readonly Lazy<IReadOnlyList<PluginProjectCandidate>> _pluginProjects;
-    readonly Lazy<string> _webResourcesProjectPath;
+    readonly Lazy<string?> _webResourcesProjectPath;
 
     /// <summary>Absolute path to the <c>.cdsproj</c> the solution file records. Resolved on first access (R7).</summary>
     public string DataverseSolutionProjectPath => _dataverseSolutionProjectPath.Value;
@@ -46,14 +46,14 @@ public sealed class SolutionFileLayout
     /// <summary>Every plugin-project candidate that survives the pre-filter (KTD4) — zero is a valid state.</summary>
     public IReadOnlyList<PluginProjectCandidate> PluginProjects => _pluginProjects.Value;
 
-    /// <summary>Absolute path to the WebResources project. Resolved on first access.</summary>
+    /// <summary>Absolute path to the WebResources project, or <c>null</c> when none is confidently identified. Resolved on first access.</summary>
     /// <remarks>
-    /// Required (R5): a valid solution file always has one, so reading this throws rather than returning a
-    /// conventional path that may not exist — see <see cref="WebResourcesProjectResolver"/> for the rule.
-    /// Its exclusion set is the resolved plugin projects, so reading this resolves <see cref="PluginProjects"/>
-    /// too.
+    /// <c>null</c> is a legitimate (if unusual) state — no confident WebResources project (a plugin-only or
+    /// migrated repo); consumers skip web-resource work with a loud warning. A genuine tie still throws on
+    /// access — see <see cref="WebResourcesProjectResolver"/> for the rule. Its exclusion set is the
+    /// resolved plugin projects, so reading this resolves <see cref="PluginProjects"/> too.
     /// </remarks>
-    public string WebResourcesProjectPath => _webResourcesProjectPath.Value;
+    public string? WebResourcesProjectPath => _webResourcesProjectPath.Value;
 
     SolutionFileLayout(IReadOnlyList<MsBuildSolutionProject> projects, string slnFolder, string solutionFileName)
     {
@@ -73,7 +73,7 @@ public sealed class SolutionFileLayout
                   .Where(c => PluginProjectResolver.DescribePreFilterSkip(c.ProjectPath) == null)
                   .ToList());
 
-        _webResourcesProjectPath = new Lazy<string>(() =>
+        _webResourcesProjectPath = new Lazy<string?>(() =>
         {
             var pluginPaths = new HashSet<string>(PluginProjects.Select(p => p.ProjectPath), StringComparer.OrdinalIgnoreCase);
             return WebResourcesProjectResolver.Resolve(_projects, _slnFolder, pluginPaths, _solutionFileName);

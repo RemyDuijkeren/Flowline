@@ -37,21 +37,21 @@ public class WebResourcesProjectResolverTests : IDisposable
     const string PcfCsprojXml = """<Project ToolsVersion="15.0"><PropertyGroup><TargetFramework>net462</TargetFramework></PropertyGroup><ItemGroup><PackageReference Include="Microsoft.PowerApps.MSBuild.Pcf" Version="1.*" /></ItemGroup></Project>""";
     const string TestSdkXml = """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup><ItemGroup><PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.*" /></ItemGroup></Project>""";
 
-    // ── AE7: zero candidates ──────────────────────────────────────────────────
+    // ── AE7: zero candidates → null (a legitimate state, not an error) ────────
 
     [Fact]
-    public void Resolve_NoCandidates_ThrowsConfigInvalid()
+    public void Resolve_NoCandidates_ReturnsNull()
     {
+        // No candidate survives elimination (plugin-only repo). A confident WebResources project always
+        // carries a signal and is rescued into the candidate set, so "none" genuinely means nothing to
+        // handle — return null and let consumers skip web-resource work with a loud warning, not throw.
         var plugins = WriteFile(Path.Combine("Plugins", "Contoso.Plugins.csproj"), PlainCsprojXml);
         var projects = new List<MsBuildSolutionProject> { CsProjectEntry(@"Plugins\Contoso.Plugins.csproj", "Contoso.Plugins") };
         var pluginPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { plugins };
 
-        var act = () => WebResourcesProjectResolver.Resolve(projects, _root, pluginPaths, SolutionFileName);
+        var resolved = WebResourcesProjectResolver.Resolve(projects, _root, pluginPaths, SolutionFileName);
 
-        act.Should().Throw<FlowlineException>()
-           .Which.ExitCode.Should().Be(ExitCode.ConfigInvalid);
-        act.Should().Throw<FlowlineException>()
-           .WithMessage("*no WebResources project*");
+        resolved.Should().BeNull();
     }
 
     // ── AE8: two tied candidates ──────────────────────────────────────────────
@@ -94,21 +94,19 @@ public class WebResourcesProjectResolverTests : IDisposable
     // ── the ≥1-signal floor: a zero-signal sole survivor is NOT the WebResources project ─────
 
     [Fact]
-    public void Resolve_SingleCandidateWithZeroSignals_ThrowsConfigInvalid()
+    public void Resolve_SingleCandidateWithZeroSignals_ReturnsNull()
     {
         // No NoTargets, no dist/, no package.json, no assets, no annotation, no WebResources-named folder —
         // a plain library that merely survived elimination. Returning it (the old KD3 behavior) pointed the
         // deploy drift gate at a dist/ that never exists and silently reverted un-synced web resources. A
-        // real WebResources project always carries a signal, so require ≥1 and throw instead (Fix 1).
+        // real WebResources project always carries a signal, so a zero-signal survivor resolves to null —
+        // "none confidently identified" — and consumers skip web-resource work with a loud warning.
         WriteFile(Path.Combine("Assets", "Assets.csproj"), PlainCsprojXml);
         var projects = new List<MsBuildSolutionProject> { CsProjectEntry(@"Assets\Assets.csproj", "Assets") };
 
-        var act = () => WebResourcesProjectResolver.Resolve(projects, _root, NoPlugins, SolutionFileName);
+        var resolved = WebResourcesProjectResolver.Resolve(projects, _root, NoPlugins, SolutionFileName);
 
-        act.Should().Throw<FlowlineException>()
-           .Which.ExitCode.Should().Be(ExitCode.ConfigInvalid);
-        act.Should().Throw<FlowlineException>()
-           .WithMessage("*no WebResources project*");
+        resolved.Should().BeNull();
     }
 
     // ── Fix 2: strong signal rescues a WebResources project the plugin pre-filter swept in ─────

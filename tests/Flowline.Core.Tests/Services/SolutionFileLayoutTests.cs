@@ -42,10 +42,9 @@ public class SolutionFileLayoutTests : IDisposable
 
     // R4 (one parse per load) is not asserted at runtime here — LoadAsync's public shape takes no
     // injectable reader, so there is no seam to count reads through without changing the contract. Verified
-    // by construction instead: SolutionFileLayout.cs calls reader.FindSolutionFile once (line 77) and
-    // reader.ReadProjectsAsync once (line 82), and every classification step below that reads from the
-    // resulting in-memory `projects` list rather than touching disk again. This test proves the *outcome*
-    // (all three types resolve), not the read count.
+    // by construction instead: LoadAsync calls reader.FindSolutionFile and reader.ReadProjectsAsync once
+    // each, and every classification below reads the resulting in-memory `projects` list rather than
+    // touching disk again. This test proves the *outcome* (all three types resolve), not the read count.
     [Fact]
     public async Task LoadAsync_ScaffoldedRepo_ResolvesAllThreeProjectTypesFromOneRead()
     {
@@ -142,10 +141,11 @@ public class SolutionFileLayoutTests : IDisposable
     }
 
     [Fact]
-    public async Task PluginProjects_ReadAlone_DoesNotTriggerTheRequiredWebResourcesCheck()
+    public async Task WebResourcesProjectPath_NoWebResourcesProject_ResolvesToNull()
     {
-        // The point of lazy resolution: a plugins-only consumer (generate) must not fail over a missing
-        // WebResources project it never uses. cdsproj + plugin present, no WebResources project at all.
+        // No confident WebResources project is a legitimate (if unusual) state — a plugins-only / migrated
+        // repo. cdsproj + plugin present, no WebResources project at all: the property resolves to null (not
+        // throws), and consumers skip web-resource work with a loud warning.
         WriteProject(Path.Combine("Solution", "DWE_Base.cdsproj"), CdsprojXml);
         WriteProject(Path.Combine("Plugins", "DWE_Base.Plugins.csproj"), PluginXml);
         await WriteSlnxAsync(@"Solution\DWE_Base.cdsproj", @"Plugins\DWE_Base.Plugins.csproj");
@@ -153,8 +153,7 @@ public class SolutionFileLayoutTests : IDisposable
         var layout = await SolutionFileLayout.LoadAsync(_root);
 
         layout.PluginProjects.Should().ContainSingle();                 // resolves fine
-        var readWebResources = () => layout.WebResourcesProjectPath;
-        readWebResources.Should().Throw<FlowlineException>();            // only this property enforces R5
+        layout.WebResourcesProjectPath.Should().BeNull();               // absence is null, not a throw
     }
 
     // ── DataverseSolutionFolder follows a relocated .cdsproj ─────────────────

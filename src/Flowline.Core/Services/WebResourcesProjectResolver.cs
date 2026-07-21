@@ -28,9 +28,16 @@ namespace Flowline.Core.Services;
 /// compile or a <c>dist/</c> folder is strong (2 each); a build-tooling or convention signal is medium (1
 /// each). The resolver takes the unique top score, but the winner must score <b>at least 1</b> — a real
 /// WebResources project always carries a signal, so a zero-signal winner (a plain library that merely
-/// survived elimination) throws <see cref="ExitCode.ConfigInvalid"/> rather than being returned as the
-/// WebResources project and silently driving the deploy drift gate off a <c>dist/</c> that doesn't exist.
-/// Two-plus candidates tied at the top score throw rather than guess (KD4) — never an alphabetical pick.
+/// survived elimination) resolves to <c>null</c> rather than being returned as the WebResources project
+/// and silently driving the deploy drift gate off a <c>dist/</c> that doesn't exist.
+///
+/// <b>No confident WebResources project is a legitimate state.</b> Zero candidates after elimination, or a
+/// zero-signal survivor, resolve to <c>null</c> — consumers skip the web-resource work with a loud warning
+/// rather than failing. This stays safe because a real WebResources project always carries a signal and is
+/// rescued into the candidate set (<see cref="HasStrongWebResourceSignal"/>), so <c>null</c> genuinely
+/// means there is nothing to handle. The one hard error left is a <b>tie</b>: two-plus candidates at the
+/// top score throw <see cref="ExitCode.ConfigInvalid"/> rather than guess (KD4) — skipping there would risk
+/// reverting un-synced resources from the real one.
 /// </remarks>
 internal static class WebResourcesProjectResolver
 {
@@ -64,13 +71,16 @@ internal static class WebResourcesProjectResolver
     /// every other path comparison in this codebase — <see cref="MsBuildSolutionReader.PathEquals"/>).
     /// </param>
     /// <param name="solutionFileName">The solution file's own name, for error messages.</param>
+    /// <returns>
+    /// Absolute path to the WebResources project, or <c>null</c> when none is confidently identified (zero
+    /// candidates after elimination, or a zero-signal survivor). <c>null</c> is a legitimate state —
+    /// consumers skip web-resource work with a loud warning.
+    /// </returns>
     /// <exception cref="FlowlineException">
-    /// <see cref="ExitCode.ConfigInvalid"/> when no candidate survives elimination (R5 — a WebResources
-    /// project is required), when the surviving winner carries no positive signal (a zero-signal false
-    /// positive, not a real WebResources project), or when two-plus tie at the top score (R9 — never
-    /// resolved by picking).
+    /// <see cref="ExitCode.ConfigInvalid"/> only when two-plus candidates tie at the top score (R9 — never
+    /// resolved by picking); the user has two and skipping would risk reverting the real one.
     /// </exception>
-    internal static string Resolve(
+    internal static string? Resolve(
         IReadOnlyList<MsBuildSolutionProject> projects,
         string slnFolder,
         IReadOnlySet<string> pluginProjectPaths,
@@ -89,10 +99,10 @@ internal static class WebResourcesProjectResolver
             .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        // No candidate survives elimination — a legitimate (if unusual) state (a plugin-only / migrated
+        // repo). Return null so consumers skip web-resource work with a loud warning rather than failing.
         if (candidates.Count == 0)
-            throw new FlowlineException(ExitCode.ConfigInvalid,
-                $"'{solutionFileName}' has no WebResources project — Flowline always scaffolds one, even if " +
-                "there's nothing to push yet. Add one and wire it in with 'dotnet sln add', or run 'clone' again.");
+            return null;
 
         var scored = candidates.Select(path => (Path: path, Score: ScoreSignals(path))).ToList();
         var topScore = scored.Max(c => c.Score);
@@ -107,12 +117,9 @@ internal static class WebResourcesProjectResolver
         // Require a positive signal: a WebResources project always carries one (NoTargets SDK, suppressed
         // compile, dist/, an npm build, or a Flowline annotation). A zero-signal winner is a non-WebResources
         // false positive — returning it would point the deploy drift gate at a dist/ that never exists and
-        // silently revert un-synced web resources, so throw instead of guessing.
+        // silently revert un-synced web resources, so treat it as "none" (null) rather than guessing.
         if (topScore < MediumWeight)
-            throw new FlowlineException(ExitCode.ConfigInvalid,
-                $"'{solutionFileName}' has no WebResources project — '{Path.GetFileName(top[0])}' survived elimination " +
-                "but carries no WebResources signal (no NoTargets SDK, dist/, npm build, or flowline annotation). " +
-                "Add the real WebResources project and wire it in with 'dotnet sln add', or run 'clone' again.");
+            return null;
 
         return top[0];
     }

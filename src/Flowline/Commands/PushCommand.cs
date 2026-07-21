@@ -538,19 +538,15 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
 
         // The solution file identifies the WebResources project, so its folder follows it wherever it moved.
         // A plugin-only / migrated repo may have no resolvable WebResources project though — push plugins
-        // anyway (user decision B, push only): catch the resolution failure, skip web resources, continue.
-        // Sanctioned advisory catch, like status. Sync and deploy keep the strict throw.
+        // anyway (user decision B, push only): null means none is confidently identified, so skip web
+        // resources and continue. A genuine tie still throws (propagates) rather than being swallowed.
         var layout = await SolutionFileLayout.LoadAsync(RootFolder, cancellationToken);
-        string webResourcesFolder;
-        try
+        if (layout.WebResourcesProjectPath is null)
         {
-            webResourcesFolder = Path.GetDirectoryName(layout.WebResourcesProjectPath)!;
-        }
-        catch (FlowlineException)
-        {
-            Console.Skip("No WebResources project — skipping web resources.");
+            Console.Warning("No WebResources project found — skipping web resources. Plugins are still pushed.");
             return null;
         }
+        var webResourcesFolder = Path.GetDirectoryName(layout.WebResourcesProjectPath)!;
         var webResourcesSyncFolder = Path.Combine(webResourcesFolder, "dist");
 
         if (settings.NoBuild)

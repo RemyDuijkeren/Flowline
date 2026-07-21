@@ -19,8 +19,9 @@ public static class PluginWebResourceDriftChecker
     /// and sync both already hold one by the time they call this, so reloading here would read the solution
     /// file a second time per run. Plugin build output comes from <see cref="SolutionFileLayout.PluginProjects"/>
     /// — every plugin project the solution references gets checked, whatever it is named — and the
-    /// WebResources folder from <see cref="SolutionFileLayout.WebResourcesProjectPath"/>. No await left once
-    /// the caller hands over an already-loaded layout, so this returns synchronously.
+    /// WebResources folder from <see cref="SolutionFileLayout.WebResourcesProjectPath"/> — null when none is
+    /// confidently identified, in which case only plugin checks run. No await left once the caller hands
+    /// over an already-loaded layout, so this returns synchronously.
     /// </remarks>
     public static Task<List<DriftWarning>> CheckAsync(string slnFolder, SolutionFileLayout layout, string dataverseSolutionFolder, string? publisherPrefix = null, CancellationToken cancellationToken = default)
     {
@@ -29,10 +30,12 @@ public static class PluginWebResourceDriftChecker
                              .Where(Directory.Exists)
                              .ToList();
 
-        var webResourcesProject = layout.WebResourcesProjectPath;
-
         var warnings = new List<DriftWarning>();
-        warnings.AddRange(CheckWebResources(slnFolder, Path.GetDirectoryName(webResourcesProject)!, dataverseSolutionFolder, publisherPrefix, cancellationToken));
+        // Null WebResources project is a legitimate state — skip the web-resource half, run plugin checks
+        // only. The single loud warning is emitted by the command caller (push, sync, deploy), not here, so
+        // it fires once per command instead of once per checker call.
+        if (layout.WebResourcesProjectPath is { } webResourcesProject)
+            warnings.AddRange(CheckWebResources(slnFolder, Path.GetDirectoryName(webResourcesProject)!, dataverseSolutionFolder, publisherPrefix, cancellationToken));
         warnings.AddRange(CheckPlugins(releaseFolders, dataverseSolutionFolder));
         warnings.AddRange(CheckOrphanAssemblies(releaseFolders, dataverseSolutionFolder));
         return Task.FromResult(warnings);

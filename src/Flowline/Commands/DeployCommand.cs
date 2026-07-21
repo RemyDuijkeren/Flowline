@@ -388,13 +388,19 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     [
         dataverseSolutionFolder,
         ..layout.PluginProjects.Select(c => c.ProjectPath),
-        layout.WebResourcesProjectPath
+        // Omitted when null: no WebResources project is a real absence, not a scope gap.
+        ..layout.WebResourcesProjectPath is { } wr ? new[] { wr } : Array.Empty<string>()
     ];
 
     private async Task ValidateLocalStateAsync(string slnFolder, SolutionFileLayout? layout, string? dataverseSolutionFolder, Settings settings, CancellationToken ct, bool checkDrift = true)
     {
         // checkDrift is false exactly on the --path route, the one route that leaves layout/dataverseSolutionFolder null.
         if (!checkDrift) return;
+
+        // Safety-critical: a null WebResources project means the web-resource half of drift is skipped. Say
+        // so loudly — a solution that does have web resources would deploy without them being validated.
+        if (layout!.WebResourcesProjectPath is null)
+            Console.Warning("No WebResources project resolved — skipping the web-resource drift check. If this solution has web resources, a deploy will not validate them.");
 
         var drift = (await PluginWebResourceDriftChecker.CheckAsync(slnFolder, layout!, dataverseSolutionFolder!, cancellationToken: ct))
             .Where(w => w.Category is DriftCategory.OnlyLocal or DriftCategory.PluginSizeMismatch)
