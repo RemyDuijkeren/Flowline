@@ -91,8 +91,8 @@ public class SlnAddCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
     /// <param name="SolutionFilePath">The solution file that was written to.</param>
     /// <param name="CreatedSolutionFile">
     /// Whether the writer had to create the file. Always <c>false</c> here, because
-    /// <see cref="FindSolutionFileUpwards"/> has already proved the file exists — carried through from the
-    /// writer rather than hardcoded, so the two can never drift apart.
+    /// <see cref="AddAsync"/> has already proved the file exists via <see cref="MsBuildSolutionReader.FindSolutionFile"/> —
+    /// carried through from the writer rather than hardcoded, so the two can never drift apart.
     /// </param>
     /// <param name="Outcome">Whether an entry was written or the project was already referenced.</param>
     internal readonly record struct AddResult(string SolutionFilePath, bool CreatedSolutionFile, Outcome Outcome);
@@ -106,7 +106,7 @@ public class SlnAddCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
     /// re-implementation of the same composition, which is exactly where a wiring bug would hide.
     /// </remarks>
     /// <exception cref="FlowlineException">
-    /// <see cref="ExitCode.NotFound"/> when no solution file exists at or above <paramref name="startFolder"/>.
+    /// <see cref="ExitCode.NotFound"/> when no solution file exists in <paramref name="startFolder"/>.
     /// </exception>
     internal static async Task<AddResult> AddAsync(
         MsBuildSolutionReader reader,
@@ -115,33 +115,15 @@ public class SlnAddCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
         string startFolder,
         CancellationToken cancellationToken = default)
     {
-        var solutionFilePath = FindSolutionFileUpwards(reader, startFolder)
+        var solutionFilePath = reader.FindSolutionFile(startFolder)
             ?? throw new FlowlineException(ExitCode.NotFound,
-                $"No .sln or .slnx in '{startFolder}' or any folder above it. 'sln add' adds to a solution file, it doesn't make one — run 'dotnet new sln' first.");
+                $"No .sln or .slnx in '{startFolder}'. 'sln add' adds to a solution file, it doesn't make one — run 'dotnet new sln' first.");
 
         var solutionFolder = Path.GetDirectoryName(solutionFilePath)!;
         var entryPath = ToSolutionRelativePath(projectFullPath, solutionFolder);
         var result = await writer.AddProjectAsync(solutionFilePath, entryPath, cancellationToken);
 
         return new AddResult(solutionFilePath, result.Created, result.Added ? Outcome.Added : Outcome.AlreadyPresent);
-    }
-
-    /// <summary>The nearest solution file at or above <paramref name="startFolder"/>, or <c>null</c> when there is none.</summary>
-    /// <remarks>
-    /// Walks up rather than looking only in the current folder because the natural place to run this is
-    /// from inside the folder holding the <c>.cdsproj</c> being added — while the solution file
-    /// lives at the repo root. Same shape as <c>FlowlineCommand.FindProjectRoot</c>, which walks up for
-    /// <c>.flowline</c>; nearest-wins, so a nested project's own solution file beats the one above it.
-    /// </remarks>
-    internal static string? FindSolutionFileUpwards(MsBuildSolutionReader reader, string startFolder)
-    {
-        var dir = startFolder;
-        while (dir != null)
-        {
-            if (reader.FindSolutionFile(dir) is { } found) return found;
-            dir = Directory.GetParent(dir)?.FullName;
-        }
-        return null;
     }
 
     /// <summary>Refuses anything that is not a <c>.cdsproj</c>.</summary>

@@ -198,37 +198,51 @@ public sealed class SlnAddCommandTests : IDisposable
             .Which.Message.Should().Contain(_root).And.Contain("dotnet new sln");
     }
 
-    // ── Walking up to the solution file ───────────────────────────────────────
+    // ── Not walking up to a parent solution file ──────────────────────────────
+    //
+    // dotnet sln add only ever looks in the exact folder it's told to — never above it. Flowline used to
+    // walk up looking for the nearest .sln/.slnx, which meant running the command from an arbitrary
+    // subfolder (e.g. one outside any Flowline project) could silently find and rewrite an unrelated
+    // solution file sitting in a parent directory. Matching dotnet's behavior removes that hazard.
 
     [Fact]
-    public async Task AddAsync_RunFromASubfolder_WalksUpToTheSolutionFileAtTheRoot()
+    public async Task AddAsync_NoSolutionFileInTheExactFolder_ThrowsNotFoundEvenWhenOneExistsAbove()
     {
-        // The natural place to run this is next to the .cdsproj being added, while the solution file sits
-        // at the repo root. Without the walk-up that invocation would fail outright.
+        // A solution file one level up must not be found — only the exact folder counts.
         WriteExistingSln();
+        var subfolder = Path.Combine(_root, "Solution");
 
-        var result = await SlnAddCommand.AddAsync(_reader, _writer, _cdsproj, Path.Combine(_root, "Solution"));
+        var act = () => SlnAddCommand.AddAsync(_reader, _writer, _cdsproj, subfolder);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Which.ExitCode.Should().Be(ExitCode.NotFound);
+    }
+
+    [Fact]
+    public async Task AddAsync_NoSolutionFileInTheExactFolder_DoesNotTouchAnySolutionFileAbove()
+    {
+        WriteExistingSln();
+        var subfolder = Path.Combine(_root, "Solution");
+        var before = await File.ReadAllTextAsync(Path.Combine(_root, "MySolution.sln"));
+
+        var act = () => SlnAddCommand.AddAsync(_reader, _writer, _cdsproj, subfolder);
+        await act.Should().ThrowAsync<FlowlineException>();
+
+        (await File.ReadAllTextAsync(Path.Combine(_root, "MySolution.sln"))).Should().Be(before,
+            "a solution file outside the exact folder must never be modified");
+    }
+
+    [Fact]
+    public async Task AddAsync_SolutionFileInTheExactFolder_Succeeds()
+    {
+        var subfolder = Path.Combine(_root, "Solution");
+        File.WriteAllText(Path.Combine(subfolder, "Nested.sln"),
+            "Microsoft Visual Studio Solution File, Format Version 12.00\r\n");
+
+        var result = await SlnAddCommand.AddAsync(_reader, _writer, _cdsproj, subfolder);
 
         result.Outcome.Should().Be(SlnAddCommand.Outcome.Added);
-        Path.GetFileName(result.SolutionFilePath).Should().Be("MySolution.sln");
-        // The entry stays relative to the solution file, not to the folder the user stood in.
-        (await File.ReadAllTextAsync(result.SolutionFilePath)).Should().Contain(@"Solution\MySolution.cdsproj");
-    }
-
-    [Fact]
-    public void FindSolutionFileUpwards_NoSolutionFileInAnyAncestor_ReturnsNull()
-    {
-        SlnAddCommand.FindSolutionFileUpwards(_reader, Path.Combine(_root, "Solution")).Should().BeNull();
-    }
-
-    [Fact]
-    public void FindSolutionFileUpwards_SolutionFileInTheStartFolder_PrefersItOverAnyAbove()
-    {
-        WriteExistingSln();
-        var nested = Path.Combine(_root, "Solution", "Nested.sln");
-        File.WriteAllText(nested, "Microsoft Visual Studio Solution File, Format Version 12.00\r\n");
-
-        SlnAddCommand.FindSolutionFileUpwards(_reader, Path.Combine(_root, "Solution")).Should().Be(nested);
+        Path.GetFileName(result.SolutionFilePath).Should().Be("Nested.sln");
     }
 
     // ── Standalone operation (KTD6) ───────────────────────────────────────────
