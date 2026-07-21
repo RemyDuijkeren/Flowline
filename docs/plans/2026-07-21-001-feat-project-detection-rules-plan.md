@@ -2,12 +2,12 @@
 artifact_contract: ce-unified-plan/v1
 artifact_readiness: implementation-ready
 execution: code
-title: SolutionLayout — one place that reads the solution file and resolves every project
+title: SolutionFileLayout — one place that reads the solution file and resolves every project
 date: 2026-07-21
 plan_id: 2026-07-21-001
 ---
 
-# SolutionLayout — one place that reads the solution file and resolves every project
+# SolutionFileLayout — one place that reads the solution file and resolves every project
 
 ## Goal Capsule
 
@@ -20,7 +20,7 @@ solution file. Instead, three resolvers each open it separately and each applies
 the package resolver fails loud on ambiguity, the WebResources one degrades silently — and the file
 is parsed three-plus times per command.
 
-This plan introduces **`SolutionLayout`**: the solution-file analog of `ProjectConfig`. It reads the
+This plan introduces **`SolutionFileLayout`**: the solution-file analog of `ProjectConfig`. It reads the
 solution file once, classifies every project, verifies the layout, and is the single place the rest
 of Flowline asks "where is the package project / plugins / WebResources project". Per-type detection
 lives in helper resolvers it composes, so the rules are stated once, consistently, and tested in
@@ -65,16 +65,16 @@ tiebreak.
 ### Requirements
 
 **The central class**
-- **R1.** A new `SolutionLayout` type is the single entry point for resolving projects and paths from
+- **R1.** A new `SolutionFileLayout` type is the single entry point for resolving projects and paths from
   the solution file — the `.sln`/`.slnx` analog of `ProjectConfig`. It reads the file once and
   exposes the package project + folder, the plugin projects, and the WebResources project.
-- **R2.** Per-type detection lives in helper resolvers `SolutionLayout` composes
+- **R2.** Per-type detection lives in helper resolvers `SolutionFileLayout` composes
   (`DataverseSolutionProjectResolver`, `PluginProjectsResolver`, `WebResourcesProjectResolver`, and a
   draft `PcfProjectResolver`), so each rule set is stated once and unit-tested without a command.
 - **R3.** Classification is text-and-folder only — no MSBuild evaluation, no build (R-plugin-reflect
   below is the one exception, and only `push` triggers it). Cheap and over-inclusive, like the
   current plugin pre-filter.
-- **R4.** The solution file is read and parsed **once** per `SolutionLayout` load; consumers that
+- **R4.** The solution file is read and parsed **once** per `SolutionFileLayout` load; consumers that
   need several project types get them from one instance, not three reads.
 
 **Policy reversals**
@@ -87,7 +87,7 @@ tiebreak.
   no-config case. The conventional fallbacks (`Plugins/Plugins.csproj`,
   `WebResources/WebResources.csproj`) are **removed**. The one accepted invalid state is *during*
   `clone`, while it scaffolds the structure before the solution file exists — clone composes literals
-  and never calls `SolutionLayout`.
+  and never calls `SolutionFileLayout`.
 
 **Per-type rules**
 - **R7.** Dataverse solution: exactly one `.cdsproj`. Zero or two+ → `ConfigInvalid`; referenced but
@@ -110,7 +110,7 @@ tiebreak.
 ### Acceptance Examples
 
 - **AE1. Scaffolded repo.** `WebResources/DWE_Base.WebResources.csproj` (NoTargets, `dist/`, `.ts`
-  sources), `Plugins/DWE_Base.Plugins.csproj`, `Solution/DWE_Base.cdsproj`. `SolutionLayout` resolves
+  sources), `Plugins/DWE_Base.Plugins.csproj`, `Solution/DWE_Base.cdsproj`. `SolutionFileLayout` resolves
   all three from one read. Covers R1, R4.
 - **AE2. Relocated + renamed WebResources folder.** Moved to `src/WebAssets/`, still NoTargets, still
   has `dist/`+assets. Folder-name signal misses; SDK+content carry it. Resolved. Covers R9.
@@ -131,7 +131,7 @@ tiebreak.
 - **AE10. No solution file.** Any resolve throws `ConfigInvalid` naming stand-alone mode as the way to
   push without one. No fallback path returned. Covers R6.
 - **AE11. Mid-clone.** `clone` scaffolds `Solution/`, `Plugins/`, `WebResources/` before the solution
-  file lists them, composing literals and never calling `SolutionLayout` — the one accepted invalid
+  file lists them, composing literals and never calling `SolutionFileLayout` — the one accepted invalid
   state. Covers R6.
 
 ### Scope Boundaries
@@ -145,12 +145,14 @@ tiebreak.
 
 ## Key Decisions
 
-- **KD1 — `SolutionLayout` is the facade; resolvers are the parts.** `SolutionLayout.LoadAsync(slnFolder)`
+- **KD1 — `SolutionFileLayout` is the facade; resolvers are the parts.** `SolutionFileLayout.LoadAsync(slnFolder)`
   reads the file once, runs the per-type resolvers over the shared project list, verifies (R5/R7/R9),
   and exposes `PackageProjectPath`, `PackageFolder`, `PluginProjects`, `WebResourcesProject`. Consumers
-  replace their three separate resolver calls with one load + property reads. Name is provisional — it
-  parallels `ProjectConfig` for `.flowline`; alternatives `SolutionFileConfig` / `MsBuildSolutionFile`
-  noted, decide at implementation. Verification lives in the class, not scattered across callers.
+  replace their three separate resolver calls with one load + property reads. Name is settled:
+  `SolutionFileLayout` — `Layout` names the resolved topology it produces (not the mutable serialized
+  state `ProjectConfig` holds via Load/Save), and `SolutionFile` disambiguates from the Dataverse
+  solution, since the codebase reserves unqualified "Solution" for that (`SolutionReader`,
+  `Config.Solution`, `ProjectSolution`). Verification lives in the class, not scattered across callers.
 - **KD2 — Helper resolvers are internal and pure over a project list.** Each takes the parsed
   `IReadOnlyList<MsBuildSolutionProject>` + folder and returns its verdict, so it is unit-tested with
   fixtures and no command. `DataverseSolutionProjectResolver` and `WebResourcesProjectResolver` are new
@@ -205,7 +207,7 @@ tiebreak.
   non-clone command run in a repo with no solution file — which R6 makes an error pointing at
   stand-alone mode. `folder-structure.md` §6 (old-layout repos) is unaffected: those have a solution
   file referencing their projects.
-- **KD8 — Rename the "Package" concept to "Dataverse solution project" (pending final sign-off).** The
+- **KD8 — Rename the "Package" concept to "Dataverse solution project" (CONFIRMED: `DataverseSolutionProject`).** The
   `Package*` names (`PackageFolder`, `ResolvePackageProjectAsync`, `packageFolder`, `PackageSrcRoot`,
   the deleted `PackageName`) are legacy from the old `Package/` folder and `Package.cdsproj` filename,
   both since renamed. The name is now doubly wrong: it describes neither the folder (`Solution/`) nor
@@ -217,7 +219,7 @@ tiebreak.
   (project/`.cdsproj`), `DataverseSolutionFolder` (was `PackageFolder`), `DataverseSolutionSource`
   (was `PackageSrcRoot` / `src/`), `DataverseSolutionProjectResolver` (already in KD2). Chosen over
   bare `SolutionProject` because unqualified "solution" in this very plan means the MSBuild
-  `.sln`/`.slnx` (`SolutionLayout`, `MsBuildSolutionProject`), so the "Dataverse" qualifier is what
+  `.sln`/`.slnx` (`SolutionFileLayout`, `MsBuildSolutionProject`), so the "Dataverse" qualifier is what
   keeps the two apart. Final form is the product owner's call — this KD records the recommendation and
   the CONCEPTS.md term to define.
 
@@ -227,15 +229,14 @@ tiebreak.
   mediums, or a single remaining candidate" is the starting rule.
 - Whether `PluginProjectResolver` is renamed to `PluginProjectsResolver` or kept and merely called by
   the facade — decide by which produces the smaller, clearer diff.
-- The final `SolutionLayout` class name (KD1) and the `DataverseSolutionProject` rename form (KD8).
 
 ## Implementation Units
 
-### U1. `SolutionLayout` facade + one-read classification
+### U1. `SolutionFileLayout` facade + one-read classification
 
 **Goal:** one class reads the solution file once and exposes all project types; no solution file throws (R6).
 **Requirements:** R1, R2, R3, R4, R6.
-**Files:** new `src/Flowline.Core/Services/SolutionLayout.cs`; new tests.
+**Files:** new `src/Flowline.Core/Services/SolutionFileLayout.cs`; new tests.
 **Approach:** `LoadAsync` finds and parses the file (throws if absent), runs the resolvers over the shared list, verifies, and caches the results on the instance. Start by delegating to the existing resolver bodies so the facade lands before their internals change.
 **Verification:** one parse per load (assert via a counting reader or by construction); absent solution file throws with the stand-alone hint.
 
@@ -257,19 +258,19 @@ tiebreak.
 **Test scenarios:** AE5, AE6.
 **Verification:** both real reference PCF shapes are excluded.
 
-### U4. Wire consumers to `SolutionLayout`; remove the fallbacks
+### U4. Wire consumers to `SolutionFileLayout`; remove the fallbacks
 
-**Goal:** every command resolves through `SolutionLayout`; no conventional fallback remains.
+**Goal:** every command resolves through `SolutionFileLayout`; no conventional fallback remains.
 **Requirements:** R1, R4, R6, KD7.
 **Files:** `DeployCommand`, `SyncCommand`, `PushCommand`, `StatusCommand`, `GenerateCommand`, `DriftCommand`, `PluginWebResourceDriftChecker`, `NamespaceDeriver`.
-**Approach:** replace the three separate resolver calls per command with one `SolutionLayout.LoadAsync`. Delete `ConventionalCandidate` / `ConventionalWebResourcesProject`. Confirm clone still scaffolds with literals only.
+**Approach:** replace the three separate resolver calls per command with one `SolutionFileLayout.LoadAsync`. Delete `ConventionalCandidate` / `ConventionalWebResourcesProject`. Confirm clone still scaffolds with literals only.
 **Verification:** full suite green; a no-solution-file repo errors (not falls back) on every non-clone command; clone still works end to end.
 
 ### U5. Docs, audit, and the future note
 
 **Goal:** the detection rules and the future gaps are written where the next reader finds them.
 **Requirements:** R5, R6, R10, R11, KD5, KD6.
-**Files:** `docs/folder-structure.md` (§3 discovery, §6 old-layout — reconcile the 122-vs-132 contradiction the review found), `CONCEPTS.md` (define `SolutionLayout`; rename the "Package folder" glossary entry to "Dataverse solution project" per KD8), wiki `08-WebResources-Project.md`; a `docs/solutions/` entry recording the three-detection audit and the SolutionLayout consolidation.
+**Files:** `docs/folder-structure.md` (§3 discovery, §6 old-layout — reconcile the 122-vs-132 contradiction the review found), `CONCEPTS.md` (define `SolutionFileLayout`; rename the "Package folder" glossary entry to "Dataverse solution project" per KD8), wiki `08-WebResources-Project.md`; a `docs/solutions/` entry recording the three-detection audit and the SolutionFileLayout consolidation.
 **Note:** the KD8 rename (`Package*` → `DataverseSolution*`) is a mechanical sweep touching many files; land it as its own unit/commit so it does not obscure the detection logic in review.
 **Approach:** state the per-type rules and the loud/quiet policy; record the marker/config last resort (R11) without building it; record PCF as excluded-and-drafted (KD5) and Portals/Code Apps as future (KD6).
 **Verification:** doc claims cite source `file:line`; no claim the code doesn't back.
@@ -277,7 +278,7 @@ tiebreak.
 ## Verification Contract
 
 - `dotnet build Flowline.slnx` clean; `dotnet test Flowline.slnx` green with no new skips.
-- One solution-file parse per `SolutionLayout` load.
+- One solution-file parse per `SolutionFileLayout` load.
 - The ClientHooks shape (no NoTargets, no WebResources folder name) resolves as the WebResources project.
 - A relocated/converted WebResources project the old substring missed now makes the deploy drift gate
   throw instead of silently passing (closes review finding A at the source).
@@ -288,7 +289,7 @@ tiebreak.
 
 ## Definition of Done
 
-- `SolutionLayout` is the one place that reads the solution file and resolves projects; the three
+- `SolutionFileLayout` is the one place that reads the solution file and resolves projects; the three
   ad-hoc resolvers are gone or moved under it.
 - WebResources detection meets the standard the package and plugin resolvers already hold: loud when
   it can't decide, and — per R5 — an error when the required project is absent.
