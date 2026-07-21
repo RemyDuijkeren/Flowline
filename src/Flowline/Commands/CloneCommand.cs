@@ -118,7 +118,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     /// The folder clone <em>authors</em>, not one it discovers, and the only place in Flowline allowed to
     /// name it. On a first clone there is no solution file and no <c>.cdsproj</c> yet — clone writes both —
     /// so there is nothing to resolve from. Every command that runs afterwards resolves the folder from the
-    /// <c>.cdsproj</c> the solution file records (<see cref="ProjectLayoutResolver.ResolvePackageFolderAsync"/>),
+    /// <c>.cdsproj</c> the solution file records (<see cref="Flowline.Core.Services.SolutionFileLayout.DataverseSolutionFolder"/>),
     /// which is what lets a project move its package folder and keep working. Do not "fix" these call sites
     /// into resolver calls: they run before the thing they would resolve exists.
     /// </remarks>

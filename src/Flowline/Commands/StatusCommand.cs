@@ -209,14 +209,24 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
 
         var isDirty = await IsRepoDirtyAsync(solution.UniqueName);
 
-        // Started once here, unwrapped inside the reader below rather than awaited here on purpose. status
-        // is read-only and advisory: a project with no solution file, or one listing two .cdsproj, still has
-        // environment versions worth showing, so the resolver's throw has to land where BuildGridRows
-        // already turns a FlowlineException into a dash — not out here, where it would abort the whole grid.
-        var packageFolder = ProjectLayoutResolver.ResolvePackageFolderAsync(rootFolder, cancellationToken);
+        // status is read-only and advisory: a project with no solution file, or one listing two .cdsproj,
+        // still has environment versions worth showing, so a broken/missing layout renders a dash below
+        // rather than aborting the whole grid — the one sanctioned catch of a FlowlineException outside
+        // BuildGridRows' own (R6's "error" is for action commands, not this read-only view).
+        string? packageFolder = null;
+        try
+        {
+            var layout = await SolutionFileLayout.LoadAsync(rootFolder, cancellationToken);
+            packageFolder = layout.DataverseSolutionFolder;
+        }
+        catch (FlowlineException)
+        {
+            // No solution file, or an invalid one (e.g. two .cdsproj) — packageFolder stays null and
+            // BuildGridRows renders a dash for the repo column.
+        }
 
         var (headers, rows) = StatusGrid.BuildGridRows([solution], results,
-            solutionName => DeployCommand.ReadLocalSolutionVersion(packageFolder.GetAwaiter().GetResult()),
+            solutionName => packageFolder is null ? null : DeployCommand.ReadLocalSolutionVersion(packageFolder),
             solutionName => isDirty);
 
         rows = StatusGrid.DetectVersionDrift(StatusGrid.TrimUnusedRevisionSegment(rows));

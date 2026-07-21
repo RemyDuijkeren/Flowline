@@ -62,9 +62,10 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         // The solution file says which project packs the solution, and its folder is where the unpacked
         // source lives — sync never composes either. Resolution throws with the fix in it when there's no
-        // solution file, no .cdsproj entry, or the entry points at nothing. Resolved once: five reads of
-        // the solution file in one run could in principle disagree with each other mid-sync.
-        var packageFolder = await ProjectLayoutResolver.ResolvePackageFolderAsync(slnFolder, cancellationToken);
+        // solution file, no .cdsproj entry, or the entry points at nothing. Loaded once and threaded through
+        // the drift check below, so one sync never parses the solution file twice and acts on two answers.
+        var layout = await SolutionFileLayout.LoadAsync(slnFolder, cancellationToken);
+        var packageFolder = layout.DataverseSolutionFolder;
 
         // Check for uncommitted changes
         var srcPath = Path.Combine(packageFolder, "src");
@@ -131,7 +132,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             return (int)ExitCode.BuildFailed;
 
         // Check for drift between local solution (Plugins/WebResources) and Dataverse (/src)
-        var driftWarnings = await PluginWebResourceDriftChecker.CheckAsync(slnFolder, packageFolder, slnInfo.PublisherPrefix, cancellationToken);
+        var driftWarnings = await PluginWebResourceDriftChecker.CheckAsync(slnFolder, layout, packageFolder, slnInfo.PublisherPrefix, cancellationToken);
         Logger.LogInformation("Drift: {DriftCount} warnings", driftWarnings.Count);
         if (driftWarnings.Count == 0)
         {

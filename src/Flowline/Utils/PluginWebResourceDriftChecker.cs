@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using Flowline.Core.Plugins;
 using Flowline.Core.Services;
 
 namespace Flowline.Utils;
@@ -16,25 +15,27 @@ public static class PluginWebResourceDriftChecker
     /// Compares local build output against the unpacked solution under <paramref name="packageFolder"/>.
     /// </summary>
     /// <remarks>
-    /// Async only because plugin build output is located through the solution file now, not a fixed
-    /// <c>Plugins/bin/Release</c> — every plugin project the solution references gets checked, whatever it
-    /// is named. With no solution file, <see cref="PluginProjectResolver.DiscoverAsync"/> hands back the
-    /// conventional folder, so a partially-set-up repo drifts exactly as it did before.
+    /// Takes the already-resolved <paramref name="layout"/> rather than loading one itself (R4) — deploy
+    /// and sync both already hold one by the time they call this, so reloading here would read the solution
+    /// file a second time per run. Plugin build output comes from <see cref="SolutionFileLayout.PluginProjects"/>
+    /// — every plugin project the solution references gets checked, whatever it is named — and the
+    /// WebResources folder from <see cref="SolutionFileLayout.WebResourcesProjectPath"/>. No await left once
+    /// the caller hands over an already-loaded layout, so this returns synchronously.
     /// </remarks>
-    public static async Task<List<DriftWarning>> CheckAsync(string slnFolder, string packageFolder, string? publisherPrefix = null, CancellationToken cancellationToken = default)
+    public static Task<List<DriftWarning>> CheckAsync(string slnFolder, SolutionFileLayout layout, string packageFolder, string? publisherPrefix = null, CancellationToken cancellationToken = default)
     {
-        var releaseFolders = (await PluginProjectResolver.DiscoverAsync(slnFolder, SkipMissingProject, cancellationToken).ConfigureAwait(false))
+        var releaseFolders = layout.PluginProjects
                              .Select(c => c.BuildOutputRoot)
                              .Where(Directory.Exists)
                              .ToList();
 
-        var webResourcesProject = await ProjectLayoutResolver.ResolveWebResourcesProjectAsync(slnFolder, cancellationToken).ConfigureAwait(false);
+        var webResourcesProject = layout.WebResourcesProjectPath;
 
         var warnings = new List<DriftWarning>();
         warnings.AddRange(CheckWebResources(slnFolder, Path.GetDirectoryName(webResourcesProject)!, packageFolder, publisherPrefix, cancellationToken));
         warnings.AddRange(CheckPlugins(releaseFolders, packageFolder));
         warnings.AddRange(CheckOrphanAssemblies(releaseFolders, packageFolder));
-        return warnings;
+        return Task.FromResult(warnings);
     }
 
     static IEnumerable<DriftWarning> CheckWebResources(string slnFolder, string webResourcesFolder, string packageFolder, string? publisherPrefix, CancellationToken cancellationToken = default)
@@ -146,12 +147,4 @@ public static class PluginWebResourceDriftChecker
         }
         return result;
     }
-
-    /// <summary>Ignore a solution entry whose project is gone, rather than failing this path over it.</summary>
-    /// <remarks>
-    /// Scoping and advisory work only — none of it builds the project. `push` keeps the throw, so a broken
-    /// solution file is still reported loudly by the command that actually cares.
-    /// </remarks>
-    static void SkipMissingProject(string _) { }
-
 }

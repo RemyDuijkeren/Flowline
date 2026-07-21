@@ -87,65 +87,6 @@ public static class PluginProjectResolver
         return candidates.OrderBy(c => c.ProjectPath, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
-    /// <summary>The plugin projects of a Flowline project folder, for consumers that only need the list.</summary>
-    /// <param name="slnFolder">The Flowline project root — the folder holding the solution file.</param>
-    /// <returns>
-    /// Solution-referenced projects that survive <see cref="DescribePreFilterSkip"/>, or the single
-    /// conventional <c>Plugins/</c> candidate when the folder holds no solution file.
-    /// </returns>
-    /// <remarks>
-    /// One entry point for every consumer that needs "which projects are the plugin projects" without
-    /// running a build — the drift check, the deploy input-path scope, and namespace derivation. Push does
-    /// not use it: push reports each pre-filter drop under <c>--verbose</c> and must fail loudly when the
-    /// solution file is missing, so it drives <see cref="EnumerateCandidates"/> itself.
-    ///
-    /// The no-solution-file fallback is what keeps a partially-set-up repo working. Those consumers all run
-    /// on paths that must survive a folder Flowline has not finished scaffolding, and a drift check that
-    /// throws is worse than one that checks the conventional folder. The fallback candidate is returned
-    /// unbuilt and unverified — callers already guard on the paths existing, which is exactly the behaviour
-    /// they had before discovery landed.
-    ///
-    /// A solution file referencing a project that isn't on disk — a deleted project folder whose solution
-    /// entry outlived it — is reported and skipped here rather than thrown, because none of these consumers
-    /// is about to build that project. Push, which is, keeps the throw. Blocking a production deploy over a
-    /// stale entry for a project the deploy never touches is the wrong trade; push failing on it is the
-    /// right one.
-    /// </remarks>
-    public static async Task<IReadOnlyList<PluginProjectCandidate>> DiscoverAsync(
-        string slnFolder,
-        Action<string>? reportMissingProject = null,
-        CancellationToken cancellationToken = default)
-    {
-        var reader = new MsBuildSolutionReader();
-        var solutionFile = reader.FindSolutionFile(slnFolder);
-
-        if (solutionFile == null)
-            return [ConventionalCandidate(slnFolder)];
-
-        var projects = await reader.ReadProjectsAsync(solutionFile, cancellationToken).ConfigureAwait(false);
-
-        return EnumerateCandidates(projects, slnFolder, reportMissingProject ?? (_ => { }))
-               .Where(c => DescribePreFilterSkip(c.ProjectPath) == null)
-               .ToList();
-    }
-
-    /// <summary>The pre-Flowline layout: a project named <c>Plugins</c> in a folder named <c>Plugins</c>.</summary>
-    /// <remarks>
-    /// The only place in the codebase allowed to compose a plugin path from a fixed project name, and only
-    /// as the no-solution-file fallback. <c>PluginPathConventionTests</c> enforces that.
-    ///
-    /// Deliberately NOT updated to <c>&lt;SolutionName&gt;.Plugins.csproj</c> when scaffolding moved to
-    /// solution-identity names (U2). Clone writes the solution file before it writes the plugin project, so
-    /// a Flowline-scaffolded repo always has a solution file and never reaches this line — the only repos
-    /// that do are hand-built or migrated ones following the old spkl/Daxif convention, and
-    /// <c>Plugins/Plugins.csproj</c> is precisely what those have. Renaming it to match the new scaffold
-    /// would point the fallback at a file that, by construction, only exists in repos that don't need it.
-    /// </remarks>
-    internal static PluginProjectCandidate ConventionalCandidate(string slnFolder) =>
-        new(Path.Combine(slnFolder, "Plugins", "Plugins.csproj"),
-            "Plugins",
-            Path.Combine(slnFolder, "Plugins", "bin", "Release"));
-
     /// <summary>Cheap pre-filter (KTD4): why this candidate can't be a plugin project, or <c>null</c> if it might be.</summary>
     /// <remarks>
     /// Building every solution project just to reflect and discard it is wasteful, so obvious

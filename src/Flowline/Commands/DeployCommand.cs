@@ -8,7 +8,6 @@ using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Models;
-using Flowline.Core.Plugins;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Services;
@@ -70,11 +69,12 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         // folder — not the git-clean scope, the DTAP gate's local version, the drift check, or the pack.
         // Resolve it only when a route needs it, so `deploy --path <zip>` still works in a repo without a
         // solution file (a CI checkout carrying only the artifact), the way it did before discovery replaced
-        // the on-disk cdsproj check. On the packed route it's resolved once and threaded through, so one
-        // deploy never reads the solution file twice and acts on two answers.
-        var packageFolder = usingExplicitArtifact
+        // the on-disk cdsproj check. On the packed route the layout is loaded once and threaded through
+        // every read below, so one deploy never parses the solution file twice and acts on two answers.
+        var layout = usingExplicitArtifact
             ? null
-            : await ProjectLayoutResolver.ResolvePackageFolderAsync(slnFolder, cancellationToken);
+            : await SolutionFileLayout.LoadAsync(slnFolder, cancellationToken);
+        var packageFolder = layout?.DataverseSolutionFolder;
 
         // --path supplies an artifact that wasn't necessarily packed from the current local tree, so neither
         // check is meaningful there: git-clean and drift both assume packagePath is derived from the
@@ -82,7 +82,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         IReadOnlyList<string> deploymentInputPaths = [];
         if (!usingExplicitArtifact)
         {
-            deploymentInputPaths = await GetDeploymentInputPathsAsync(slnFolder, packageFolder!, cancellationToken); // non-null on the packed route
+            deploymentInputPaths = GetDeploymentInputPaths(layout!, packageFolder!); // non-null on the packed route
             await ValidateGitCleanAsync(deploymentInputPaths, cancellationToken);
         }
 
@@ -133,7 +133,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             }
         }
 
-        await ValidateLocalStateAsync(slnFolder, packageFolder, settings, cancellationToken, checkDrift: !usingExplicitArtifact);
+        await ValidateLocalStateAsync(slnFolder, layout, packageFolder, settings, cancellationToken, checkDrift: !usingExplicitArtifact);
 
         // Managed import only removes components no longer in the solution when Dataverse runs it as an
         // Upgrade (pac's --stage-and-upgrade) — plain import ("Update" semantics) never deletes anything,
@@ -375,34 +375,28 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
     // R15: the SAME path list scopes both the clean-check and the artifact-cache commit-sha lookup, so the
     // two can never diverge — resolved once per run in ExecuteFlowlineAsync and handed to both, which also
-    // keeps the solution file read to one per deploy.
+    // keeps the solution file read to one per deploy (R4).
     //
     // Deliberately narrow to what actually affects the packed artifact: Solution/, every plugin project the
-    // solution file references (KTD12 — this is the .sln-membership discovery the fixed Plugins/ path
-    // deferred to), and the WebResources project file. The plugin pre-filter is what keeps this narrow —
-    // an unrelated csproj in the solution stays out of the cache key, so it can't invalidate a deploy.
+    // solution file references, and the WebResources project file. The plugin pre-filter is what keeps this
+    // narrow — an unrelated csproj in the solution stays out of the cache key, so it can't invalidate a deploy.
     //
-    // Takes no solution name: all three project paths now come out of the solution file, so a relocated or
-    // renamed project stays in scope without deploy knowing what it is called.
-    internal static async Task<IReadOnlyList<string>> GetDeploymentInputPathsAsync(string slnFolder, string packageFolder, CancellationToken ct = default)
-    {
-        var pluginProjects = await PluginProjectResolver.DiscoverAsync(slnFolder, SkipMissingProject, ct).ConfigureAwait(false);
-        var webResourcesProject = await ProjectLayoutResolver.ResolveWebResourcesProjectAsync(slnFolder, ct).ConfigureAwait(false);
+    // Takes no solution name: all three project paths come out of the already-loaded layout, so a relocated
+    // or renamed project stays in scope without deploy knowing what it is called. Synchronous — the layout
+    // is already resolved by the time this runs, so there is no I/O left to await.
+    internal static IReadOnlyList<string> GetDeploymentInputPaths(SolutionFileLayout layout, string packageFolder) =>
+    [
+        packageFolder,
+        ..layout.PluginProjects.Select(c => c.ProjectPath),
+        layout.WebResourcesProjectPath
+    ];
 
-        return
-        [
-            packageFolder,
-            ..pluginProjects.Select(c => c.ProjectPath),
-            webResourcesProject
-        ];
-    }
-
-    private async Task ValidateLocalStateAsync(string slnFolder, string? packageFolder, Settings settings, CancellationToken ct, bool checkDrift = true)
+    private async Task ValidateLocalStateAsync(string slnFolder, SolutionFileLayout? layout, string? packageFolder, Settings settings, CancellationToken ct, bool checkDrift = true)
     {
-        // checkDrift is false exactly on the --path route, the one route that leaves packageFolder null.
+        // checkDrift is false exactly on the --path route, the one route that leaves layout/packageFolder null.
         if (!checkDrift) return;
 
-        var drift = (await PluginWebResourceDriftChecker.CheckAsync(slnFolder, packageFolder!, cancellationToken: ct))
+        var drift = (await PluginWebResourceDriftChecker.CheckAsync(slnFolder, layout!, packageFolder!, cancellationToken: ct))
             .Where(w => w.Category is DriftCategory.OnlyLocal or DriftCategory.PluginSizeMismatch)
             .ToList();
 
@@ -760,12 +754,4 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             return ParseSolutionManifest(doc);
         }
     }
-
-    /// <summary>Ignore a solution entry whose project is gone, rather than failing this path over it.</summary>
-    /// <remarks>
-    /// Scoping and advisory work only — none of it builds the project. `push` keeps the throw, so a broken
-    /// solution file is still reported loudly by the command that actually cares.
-    /// </remarks>
-    static void SkipMissingProject(string _) { }
-
 }

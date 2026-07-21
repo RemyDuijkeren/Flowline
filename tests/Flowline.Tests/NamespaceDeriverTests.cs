@@ -1,3 +1,4 @@
+using Flowline.Core;
 using Flowline.Utils;
 using FluentAssertions;
 
@@ -11,24 +12,26 @@ public class NamespaceDeriverTests : IDisposable
 
     public void Dispose() => Directory.Delete(_tempDir, recursive: true);
 
-    // Helper: the pre-Flowline conventional project — Plugins/Plugins.csproj with no solution file, so
-    // derivation goes through PluginProjectResolver.ConventionalCandidate. Deliberately NOT renamed to the
-    // scaffolded <SolutionName>.Plugins.csproj: that fallback only ever fires in hand-built or migrated
-    // repos, which are exactly the ones carrying this name. The scaffolded layout is covered by the
-    // CreateSolutionWith tests below.
+    // Helper: Plugins/Plugins.csproj, referenced by a solution file so discovery (R6 — no solution file is
+    // an error, not a fallback) has something to find. A root Directory.Build.props defers the plugin
+    // pre-filter to reflection regardless of the project's own text, so these fixtures can stay minimal and
+    // test DeriveAsync's own RootNamespace/PackageId/filename precedence rather than the pre-filter.
     void CreateCsproj(string content)
     {
         var pluginsDir = Path.Combine(_tempDir, "Plugins");
         Directory.CreateDirectory(pluginsDir);
         File.WriteAllText(Path.Combine(pluginsDir, "Plugins.csproj"), content);
+        File.WriteAllText(Path.Combine(_tempDir, "Directory.Build.props"), "<Project />");
+        File.WriteAllText(Path.Combine(_tempDir, "App.slnx"), """<Solution><Project Path="Plugins/Plugins.csproj" /></Solution>""");
     }
 
     [Fact]
-    public async Task Derive_NoCsproj_ReturnsSolutionNameModels()
+    public async Task Derive_NoSolutionFile_ThrowsRatherThanFallingBackToSolutionName()
     {
-        var result = await NamespaceDeriver.DeriveAsync(_tempDir, "MyApp");
+        // R6: no solution file is an error everywhere but clone — there is nothing left to fall back to.
+        var act = async () => await NamespaceDeriver.DeriveAsync(_tempDir, "MyApp");
 
-        result.Should().Be("MyApp.Models");
+        (await act.Should().ThrowAsync<FlowlineException>()).Which.ExitCode.Should().Be(ExitCode.NotFound);
     }
 
     [Fact]
@@ -68,7 +71,7 @@ public class NamespaceDeriverTests : IDisposable
 
         var result = await NamespaceDeriver.DeriveAsync(_tempDir, "MyApp");
 
-        // The conventional fallback's filename is still literally "Plugins".
+        // The sole solution-referenced candidate's filename is still literally "Plugins".
         result.Should().Be("Plugins.Models");
     }
 
@@ -95,9 +98,7 @@ public class NamespaceDeriverTests : IDisposable
     [Fact]
     public async Task Derive_InvalidXmlCsproj_ReturnsSolutionNameModels()
     {
-        var pluginsDir = Path.Combine(_tempDir, "Plugins");
-        Directory.CreateDirectory(pluginsDir);
-        File.WriteAllText(Path.Combine(pluginsDir, "Plugins.csproj"), "not xml <<<");
+        CreateCsproj("not xml <<<");
 
         var result = await NamespaceDeriver.DeriveAsync(_tempDir, "MyApp");
 
@@ -162,8 +163,11 @@ public class NamespaceDeriverTests : IDisposable
     }
 
     [Fact]
-    public async Task ResolvePrimaryProjectAsync_NoPluginProjectOnDisk_ReturnsNull()
+    public async Task ResolvePrimaryProjectAsync_SolutionWithNoPluginProjects_ReturnsNull()
     {
+        // Zero plugin projects is a legitimate state (R8), not an error — must return null, not throw.
+        File.WriteAllText(Path.Combine(_tempDir, "App.slnx"), "<Solution />");
+
         var result = await NamespaceDeriver.ResolvePrimaryProjectAsync(_tempDir);
 
         result.Should().BeNull();

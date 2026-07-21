@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Flowline.Commands;
+using Flowline.Core.Services;
 
 namespace Flowline.Tests;
 
@@ -64,6 +65,27 @@ public class GitUtilsTests : IDisposable
         <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net462</TargetFramework></PropertyGroup>
         <ItemGroup><PackageReference Include="Microsoft.CrmSdk.CoreAssemblies" Version="9.0.2" /></ItemGroup></Project>
         """;
+
+    const string WebResourcesProjectRelPath = "WebResources/WebResources.csproj";
+
+    /// <summary>A plain marker-free csproj — resolves as the WebResources project by elimination alone
+    /// as long as it's the only non-plugin/PCF/test candidate (WebResourcesProjectResolver).</summary>
+    const string WebResourcesProjectXml =
+        """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>""";
+
+    /// <summary>
+    /// Commits a WebResources project (required, R5) plus a solution file referencing it and every given
+    /// plugin project path, so <see cref="SolutionFileLayout.LoadAsync"/> has a real layout to resolve —
+    /// committed, not left dirty, so it never shows up as a "change" in the assertions below.
+    /// </summary>
+    void CreateSolutionWithWebResourcesProject(params string[] additionalPluginProjectRelPaths)
+    {
+        CreateAndCommitFile(WebResourcesProjectRelPath, WebResourcesProjectXml);
+        var entries = string.Concat(
+            new[] { WebResourcesProjectRelPath }.Concat(additionalPluginProjectRelPaths)
+                .Select(p => $"""<Project Path="{p}" />"""));
+        CreateAndCommitFile("MySolution.slnx", $"<Solution>{entries}</Solution>");
+    }
 
     void CreateAndCommitFile(string relativePath, string content = "content")
     {
@@ -318,11 +340,13 @@ public class GitUtilsTests : IDisposable
     [Fact]
     public async Task DeploymentInputPaths_UncommittedChangeUnderSolutionFolder_IsDetected()
     {
+        CreateSolutionWithWebResourcesProject();
         CreateAndCommitFile("Solution/src/Other/Solution.xml");
         File.WriteAllText(Path.Combine(_root, "Solution", "src", "Other", "Solution.xml"), "modified");
 
+        var layout = await SolutionFileLayout.LoadAsync(_root);
         var changes = await GitUtils.GetUncommittedChangesInPathAsync(
-            await DeployCommand.GetDeploymentInputPathsAsync(_root, Path.Combine(_root, "Solution")), _root);
+            DeployCommand.GetDeploymentInputPaths(layout, Path.Combine(_root, "Solution")), _root);
 
         changes.Should().ContainSingle().Which.Should().Be("Solution/src/Other/Solution.xml");
     }
@@ -333,14 +357,14 @@ public class GitUtilsTests : IDisposable
         // The scaffolded layout, and it must go through solution-file discovery to be in scope at all —
         // the project file is named after the solution, so a fixed Plugins/Plugins.csproj finds nothing.
         CreateAndCommitFile("Plugins/MySolution.Plugins.csproj", PluginProjectXml);
-        CreateAndCommitFile("MySolution.slnx",
-            """<Solution><Project Path="Plugins\MySolution.Plugins.csproj" /></Solution>""");
+        CreateSolutionWithWebResourcesProject("Plugins/MySolution.Plugins.csproj");
         // Still a valid plugin csproj after the edit — discovery's pre-filter reads the file's own text.
         File.WriteAllText(Path.Combine(_root, "Plugins", "MySolution.Plugins.csproj"),
             PluginProjectXml.Replace("9.0.2", "9.0.3"));
 
+        var layout = await SolutionFileLayout.LoadAsync(_root);
         var changes = await GitUtils.GetUncommittedChangesInPathAsync(
-            await DeployCommand.GetDeploymentInputPathsAsync(_root, Path.Combine(_root, "Solution")), _root);
+            DeployCommand.GetDeploymentInputPaths(layout, Path.Combine(_root, "Solution")), _root);
 
         changes.Should().ContainSingle().Which.Should().Be("Plugins/MySolution.Plugins.csproj");
     }
@@ -353,11 +377,13 @@ public class GitUtilsTests : IDisposable
     [InlineData("CLAUDE.md")]
     public async Task DeploymentInputPaths_UncommittedChangeOutsideScope_IsIgnored(string relativePath)
     {
+        CreateSolutionWithWebResourcesProject();
         CreateAndCommitFile(relativePath);
         File.WriteAllText(Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar)), "modified");
 
+        var layout = await SolutionFileLayout.LoadAsync(_root);
         var changes = await GitUtils.GetUncommittedChangesInPathAsync(
-            await DeployCommand.GetDeploymentInputPathsAsync(_root, Path.Combine(_root, "Solution")), _root);
+            DeployCommand.GetDeploymentInputPaths(layout, Path.Combine(_root, "Solution")), _root);
 
         changes.Should().BeEmpty();
     }
@@ -365,14 +391,18 @@ public class GitUtilsTests : IDisposable
     [Fact]
     public async Task DeploymentInputPaths_CacheKeyChangesWhenSolutionFolderChanges_ButNotWhenDocsChange()
     {
+        CreateSolutionWithWebResourcesProject();
+        var layout = await SolutionFileLayout.LoadAsync(_root);
+        var inputPaths = DeployCommand.GetDeploymentInputPaths(layout, Path.Combine(_root, "Solution"));
+
         CreateAndCommitFile("Solution/src/Other/Solution.xml");
-        var initialSha = await GitUtils.GetLastCommitShaForPathAsync(await DeployCommand.GetDeploymentInputPathsAsync(_root, Path.Combine(_root, "Solution")), _root);
+        var initialSha = await GitUtils.GetLastCommitShaForPathAsync(inputPaths, _root);
 
         CreateAndCommitFile("docs/BRAINSTORM.md");
-        var afterDocsSha = await GitUtils.GetLastCommitShaForPathAsync(await DeployCommand.GetDeploymentInputPathsAsync(_root, Path.Combine(_root, "Solution")), _root);
+        var afterDocsSha = await GitUtils.GetLastCommitShaForPathAsync(inputPaths, _root);
 
         CreateAndCommitFile("Solution/src/Other/Customizations.xml");
-        var afterSolutionChangeSha = await GitUtils.GetLastCommitShaForPathAsync(await DeployCommand.GetDeploymentInputPathsAsync(_root, Path.Combine(_root, "Solution")), _root);
+        var afterSolutionChangeSha = await GitUtils.GetLastCommitShaForPathAsync(inputPaths, _root);
 
         afterDocsSha.Should().Be(initialSha); // docs-only commit must not invalidate the cache key
         afterSolutionChangeSha.Should().NotBe(initialSha); // a Solution/ change must invalidate it

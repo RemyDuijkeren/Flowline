@@ -1,4 +1,6 @@
 using FluentAssertions;
+using Flowline.Core;
+using Flowline.Core.Services;
 using Flowline.Utils;
 
 namespace Flowline.Tests;
@@ -8,11 +10,20 @@ public class PluginWebResourceDriftCheckerTests : IDisposable
     readonly string _root;
     readonly string _pkg;
 
+    const string WebResourcesProjectRelPath = @"WebResources\WebResources.csproj";
+
     public PluginWebResourceDriftCheckerTests()
     {
         _root = Path.Combine(Path.GetTempPath(), $"PluginWebResourceDriftCheckerTests_{Guid.NewGuid():N}");
         _pkg = Path.Combine(_root, "Solution");
         Directory.CreateDirectory(_root);
+
+        // A WebResources project is required (R5), so every test needs one on disk and referenced by a
+        // solution file (R6) — a plain marker-free csproj resolves as the WebResources project by
+        // elimination alone as long as it's the only non-plugin/PCF/test candidate (WebResourcesProjectResolver).
+        WriteFile(WebResourcesProjectRelPath,
+            """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>""");
+        WriteSolution();
     }
 
     public void Dispose() => Directory.Delete(_root, recursive: true);
@@ -33,13 +44,17 @@ public class PluginWebResourceDriftCheckerTests : IDisposable
         File.WriteAllBytes(full, new byte[sizeBytes]);
     }
 
-    Task<List<DriftWarning>> Check(string? publisherPrefix = null) =>
-        PluginWebResourceDriftChecker.CheckAsync(_root, _pkg, publisherPrefix);
-
-    /// <summary>Writes a .slnx at the root referencing each given project path, as `clone` would.</summary>
-    void WriteSolution(params string[] relativeProjectPaths)
+    async Task<List<DriftWarning>> Check(string? publisherPrefix = null)
     {
-        var projects = string.Concat(relativeProjectPaths.Select(p => $"""<Project Path="{p}" />"""));
+        var layout = await SolutionFileLayout.LoadAsync(_root);
+        return await PluginWebResourceDriftChecker.CheckAsync(_root, layout, _pkg, publisherPrefix);
+    }
+
+    /// <summary>Writes a .slnx at the root referencing the WebResources project plus each given plugin project path, as `clone` would.</summary>
+    void WriteSolution(params string[] relativePluginProjectPaths)
+    {
+        var allPaths = new[] { WebResourcesProjectRelPath }.Concat(relativePluginProjectPaths);
+        var projects = string.Concat(allPaths.Select(p => $"""<Project Path="{p}" />"""));
         File.WriteAllText(Path.Combine(_root, "Test.slnx"), $"<Solution>{projects}</Solution>");
     }
 
@@ -271,15 +286,15 @@ public class PluginWebResourceDriftCheckerTests : IDisposable
     }
 
     [Fact]
-    public async Task Check_NoSolutionFile_FallsBackToConventionalPluginsFolder()
+    public async Task Check_NoSolutionFile_ThrowsRatherThanFallingBackToConventionalPluginsFolder()
     {
-        // A partially-set-up repo: no solution file, but a built conventional Plugins project.
+        // R6: no solution file is an error now, not a fallback to the conventional Plugins/ folder.
+        File.Delete(Path.Combine(_root, "Test.slnx"));
         WriteBinaryFile(Path.Combine("Solution", "src", "PluginAssemblies", "MyPlugin.dll"), 50_000);
         WriteBinaryFile(Path.Combine("Plugins", "bin", "Release", "MyPlugin.dll"), 50_000 + 15_000);
 
         var act = async () => await Check();
 
-        await act.Should().NotThrowAsync();
-        (await Check()).Should().ContainSingle(w => w.Category == DriftCategory.PluginSizeMismatch);
+        (await act.Should().ThrowAsync<FlowlineException>()).Which.ExitCode.Should().Be(ExitCode.NotFound);
     }
 }

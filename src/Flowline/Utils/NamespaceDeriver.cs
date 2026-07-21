@@ -1,5 +1,5 @@
 using System.Xml.Linq;
-using Flowline.Core.Plugins;
+using Flowline.Core.Services;
 
 namespace Flowline.Utils;
 
@@ -15,8 +15,8 @@ public static class NamespaceDeriver
     /// <remarks>
     /// Which project supplies the namespace comes from solution-file discovery, not a fixed
     /// <c>Plugins/Plugins.csproj</c> — a project with any other name used to fall straight through to (4)
-    /// and silently generate models under the wrong namespace. With no solution file the conventional
-    /// project is still the one read, so an unscaffolded repo derives as before.
+    /// and silently generate models under the wrong namespace. A repo with no solution file has nothing to
+    /// discover from and throws (R6) rather than falling back to the conventional project.
     ///
     /// With several candidates, the one that declares a namespace wins over the one that sorts first.
     /// Discovery here is pre-filter-only — <c>generate</c> does not build, so reflection cannot confirm
@@ -71,8 +71,8 @@ public static class NamespaceDeriver
     /// </remarks>
     public static async Task<string?> ResolvePrimaryProjectAsync(string slnFolder, CancellationToken cancellationToken = default)
     {
-        var candidates = await PluginProjectResolver.DiscoverAsync(slnFolder, SkipMissingProject, cancellationToken).ConfigureAwait(false);
-        var present = candidates.Select(c => c.ProjectPath).Where(File.Exists).ToList();
+        var layout = await SolutionFileLayout.LoadAsync(slnFolder, cancellationToken).ConfigureAwait(false);
+        var present = layout.PluginProjects.Select(c => c.ProjectPath).Where(File.Exists).ToList();
         return present.FirstOrDefault(DeclaresANamespace) ?? present.FirstOrDefault();
     }
 
@@ -97,12 +97,4 @@ public static class NamespaceDeriver
             return false;
         }
     }
-
-    /// <summary>Ignore a solution entry whose project is gone, rather than failing this path over it.</summary>
-    /// <remarks>
-    /// Scoping and advisory work only — none of it builds the project. `push` keeps the throw, so a broken
-    /// solution file is still reported loudly by the command that actually cares.
-    /// </remarks>
-    static void SkipMissingProject(string _) { }
-
 }
