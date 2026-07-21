@@ -97,7 +97,7 @@ public sealed class SolutionFileLayout
         var reader = new MsBuildSolutionReader();
         var solutionFile = reader.FindSolutionFile(slnFolder)
                            ?? throw new FlowlineException(ExitCode.NotFound,
-                               $"No solution file in {ConsolePath.FormatRelativePath(slnFolder)} — the solution file is Flowline's " +
+                               $"No solution file in {ConsolePath.FormatRelativePath(slnFolder, markup: false)} — the solution file is Flowline's " +
                                $"config, so every command but 'clone' needs one. {PluginProjectResolver.StandaloneEscapeHatch}");
 
         var projects = await reader.ReadProjectsAsync(solutionFile, cancellationToken).ConfigureAwait(false);

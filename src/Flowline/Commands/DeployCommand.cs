@@ -257,20 +257,29 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         }
     }
 
-    private string ResolveTargetUrl(Settings settings)
+    private string ResolveTargetUrl(Settings settings) => ResolveTargetUrl(settings.Target, Config!);
+
+    internal static string ResolveTargetUrl(string target, ProjectConfig config)
     {
-        var url = settings.Target.ToLowerInvariant() switch
+        var url = target.ToLowerInvariant() switch
         {
-            "prod" => Config!.ProdUrl,
-            "uat"  => Config!.UatUrl,
-            "test" => Config!.TestUrl,
-            "dev"  => Config!.DevUrl,
-            _      => settings.Target
+            "prod" => config.ProdUrl,
+            "uat"  => config.UatUrl,
+            "test" => config.TestUrl,
+            "dev"  => config.DevUrl,
+            _      => target
         };
 
         if (string.IsNullOrWhiteSpace(url))
             throw new FlowlineException(ExitCode.ConfigInvalid,
-                $"Can't resolve '{settings.Target}' — provide an explicit URL or check your .flowline config.");
+                $"Can't resolve '{target}' — provide an explicit URL or check your .flowline config.");
+
+        // Anything that isn't prod/uat/test/dev falls through as a literal URL above — reject garbage here
+        // rather than letting it reach MSAL as a token scope, which fails with an opaque AADSTS error.
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed) ||
+            (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps))
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"'{target}' isn't a known target (prod, uat, test, dev) or a valid URL.");
 
         return url;
     }
@@ -701,7 +710,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         {
             throw new FlowlineException(ExitCode.ConfigInvalid,
                 $"Solution.xml at '{solutionXmlPath}' is malformed or unreadable — restore " +
-                $"'{ConsolePath.FormatRelativePath(dataverseSolutionFolder)}' from git or re-run 'flowline clone'.", ex);
+                $"'{ConsolePath.FormatRelativePath(dataverseSolutionFolder, markup: false)}' from git or re-run 'flowline clone'.", ex);
         }
 
         return ParseSolutionManifest(doc).Version;

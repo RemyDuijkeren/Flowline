@@ -44,7 +44,7 @@ internal static class DataverseSolutionProjectResolver
         if (!File.Exists(dataverseSolutionProjectPath))
             throw new FlowlineException(ExitCode.NotFound,
                 $"'{solutionFileName}' references '{candidates[0].Name}' at " +
-                $"{ConsolePath.FormatRelativePath(dataverseSolutionProjectPath)}, but it isn't there. " +
+                $"{ConsolePath.FormatRelativePath(dataverseSolutionProjectPath, markup: false)}, but it isn't there. " +
                 "Restore it, or remove it from the solution file and run 'clone' again.");
 
         return dataverseSolutionProjectPath;

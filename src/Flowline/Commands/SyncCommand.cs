@@ -91,7 +91,8 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             {
                 Console.Warning($"Found uncommitted changes in '{srcDisplay}'.");
                 preSyncSummary.WriteFlat(Console, RuntimeOptions, "[dim]  ");
-                throw new FlowlineException(ExitCode.DirtyWorkingDirectory, $"Uncommitted changes in '{srcDisplay}' — Commit or stash changes first, or re-run with --force dirty.");
+                var srcDisplayPlain = ConsolePath.FormatRelativePath(srcPath, RootFolder, markup: false);
+                throw new FlowlineException(ExitCode.DirtyWorkingDirectory, $"Uncommitted changes in '{srcDisplayPlain}' — Commit or stash changes first, or re-run with --force dirty.");
             }
         }
 

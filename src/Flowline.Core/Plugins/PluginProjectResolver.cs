@@ -67,7 +67,7 @@ public static class PluginProjectResolver
 
             if (!File.Exists(projectPath))
             {
-                var message = $"The solution file references '{project.Name}' at {ConsolePath.FormatRelativePath(projectPath)}, " +
+                var message = $"The solution file references '{project.Name}' at {ConsolePath.FormatRelativePath(projectPath, markup: false)}, " +
                               "but it isn't there. Restore the project, or remove it from the solution file.";
 
                 if (reportMissingProject == null)
@@ -247,7 +247,7 @@ public static class PluginProjectResolver
             throw new FlowlineException(ExitCode.NotFound,
                 $"No Release build output for '{candidate.ProjectName}' — nothing to reflect, so Flowline can't tell " +
                 "whether it's a plugin project. Build it first, or drop --no-build. " +
-                $"Looked in {ConsolePath.FormatRelativePath(candidate.BuildOutputRoot)}. {StandaloneEscapeHatch}");
+                $"Looked in {ConsolePath.FormatRelativePath(candidate.BuildOutputRoot, markup: false)}. {StandaloneEscapeHatch}");
 
         var expectedName = Path.GetFileNameWithoutExtension(candidate.ProjectPath);
 
