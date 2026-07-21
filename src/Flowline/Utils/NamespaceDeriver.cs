@@ -29,9 +29,7 @@ public static class NamespaceDeriver
     /// </remarks>
     public static async Task<string> DeriveAsync(string slnFolder, string solutionName, CancellationToken cancellationToken = default)
     {
-        var candidates = await PluginProjectResolver.DiscoverAsync(slnFolder, SkipMissingProject, cancellationToken).ConfigureAwait(false);
-        var present = candidates.Select(c => c.ProjectPath).Where(File.Exists).ToList();
-        var csprojPath = present.FirstOrDefault(DeclaresANamespace) ?? present.FirstOrDefault();
+        var csprojPath = await ResolvePrimaryProjectAsync(slnFolder, cancellationToken).ConfigureAwait(false);
 
         if (csprojPath == null)
             return $"{solutionName}.Models";
@@ -59,6 +57,23 @@ public static class NamespaceDeriver
             // XML parse failure → fall back to solution name
             return $"{solutionName}.Models";
         }
+    }
+
+    /// <summary>
+    /// The plugin project the generated models follow — the one declaring a namespace, else the first by
+    /// path — or <c>null</c> when the folder has no plugin project on disk.
+    /// </summary>
+    /// <remarks>
+    /// Shared by namespace derivation and <c>generate</c>'s default output folder so both land on the same
+    /// project. Deriving the namespace from a relocated <c>src/Plugins/</c> while writing models to a
+    /// composed <c>Plugins/Models/</c> would split the two apart — the models would carry the right
+    /// namespace and sit in a folder nothing compiles.
+    /// </remarks>
+    public static async Task<string?> ResolvePrimaryProjectAsync(string slnFolder, CancellationToken cancellationToken = default)
+    {
+        var candidates = await PluginProjectResolver.DiscoverAsync(slnFolder, SkipMissingProject, cancellationToken).ConfigureAwait(false);
+        var present = candidates.Select(c => c.ProjectPath).Where(File.Exists).ToList();
+        return present.FirstOrDefault(DeclaresANamespace) ?? present.FirstOrDefault();
     }
 
     /// <summary>True when the project states a namespace of its own, rather than leaving it to its filename.</summary>

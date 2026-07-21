@@ -564,11 +564,24 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     {
         var pluginsFolder = Path.Combine(slnFolder, "Plugins");
         var pluginsCsproj = Path.Combine(pluginsFolder, PluginsProjectFileName(solutionName));
-        if (File.Exists(pluginsCsproj))
+
+        // Any plugin project already in the folder means clone has nothing to add: a fresh scaffold, a
+        // resumed clone, or the pre-rename Plugins/Plugins.csproj layout (§6) all land here. Skip rather
+        // than re-scaffold — every other command discovers the project through the solution file, and
+        // re-running init would clobber the user's source. Never tell them to move a folder holding it.
+        if (Directory.Exists(pluginsFolder) && Directory.EnumerateFiles(pluginsFolder, "*.csproj").Any())
         {
             Console.Skip("Plugins project already there — skipping");
             return;
         }
+
+        // A Plugins/ folder with no project is an unrelated collision. pac plugin init needs a clean
+        // target, so refuse rather than init into it — but the fix is to clear the empty folder, not to
+        // move source that isn't there.
+        if (Directory.Exists(pluginsFolder))
+            throw new FlowlineException(ExitCode.ConfigInvalid,
+                "A 'Plugins' folder is here but holds no project — Flowline scaffolds the plugin project there. " +
+                "Remove or rename the empty folder, then run clone again.");
 
         // pac plugin init takes no --name: it reads PackageId and the generated namespaces off its working
         // directory, and writes neither <AssemblyName> nor <RootNamespace>, so both follow the .csproj
@@ -576,9 +589,6 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         // renaming the file too would drop the assembly back to "Plugins" while PackageId and the namespaces
         // stayed prefixed, leaving three identities disagreeing with nothing to signal it.
         var initFolder = Path.Combine(slnFolder, $"{solutionName}.Plugins");
-        if (Directory.Exists(pluginsFolder))
-            throw new FlowlineException(ExitCode.ConfigInvalid,
-                $"Plugins/ is here but {Path.GetFileName(pluginsCsproj)} isn't. Move Plugins/ aside and run clone again.");
 
         await Console.Status().FlowlineSpinner().StartAsync(
             "Setting up Plugins project...", async ctx =>

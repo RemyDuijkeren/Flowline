@@ -148,6 +148,28 @@ public class NamespaceDeriverTests : IDisposable
     }
 
     [Fact]
+    public async Task ResolvePrimaryProjectAsync_RelocatedPluginProject_ReturnsItsPath()
+    {
+        // generate's default output folder is derived from this path, so a plugin project moved out of
+        // Plugins/ must resolve to its new location — otherwise the models land beside the old folder while
+        // the namespace follows the new one.
+        CreateSolutionWith(
+            ("src/Plugins", "MyApp.Plugins.csproj", "<Project><PropertyGroup><TargetFramework>net462</TargetFramework><PackageId>MyApp.Plugins</PackageId></PropertyGroup><ItemGroup><PackageReference Include=\"Microsoft.CrmSdk.CoreAssemblies\" /></ItemGroup></Project>"));
+
+        var result = await NamespaceDeriver.ResolvePrimaryProjectAsync(_tempDir);
+
+        result.Should().Be(Path.GetFullPath(Path.Combine(_tempDir, "src", "Plugins", "MyApp.Plugins.csproj")));
+    }
+
+    [Fact]
+    public async Task ResolvePrimaryProjectAsync_NoPluginProjectOnDisk_ReturnsNull()
+    {
+        var result = await NamespaceDeriver.ResolvePrimaryProjectAsync(_tempDir);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
     public async Task DeriveAsync_ScaffoldedProjectDeclaringOnlyPackageId_IsPreferred()
     {
         // pac plugin init always writes PackageId, so it is the marker a scaffolded project carries.

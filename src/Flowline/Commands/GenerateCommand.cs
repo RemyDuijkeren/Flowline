@@ -171,6 +171,10 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
 
             var slnFolder = RootFolder;
 
+            // The one plugin project the namespace and the default output folder both key off, resolved
+            // once so they can't disagree about which project the models belong to.
+            var primaryPluginProject = await NamespaceDeriver.ResolvePrimaryProjectAsync(slnFolder, cancellationToken);
+
             // Derive namespace if not yet set (R4)
             modelNamespace = projectSln.Generate?.Namespace ?? string.Empty;
             if (string.IsNullOrEmpty(modelNamespace))
@@ -180,13 +184,18 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
                 Console.Verbose($"Derived namespace: {modelNamespace}");
             }
 
-            // Resolve output path: --output flag > saved OutputPath > convention
+            // Resolve output path: --output flag > saved OutputPath > beside the plugin project (Models/).
+            // The default follows the resolved project, so a relocated Plugins/ takes its Models/ with it
+            // instead of stranding them in a composed Plugins/Models/ that nothing compiles. Only when no
+            // plugin project is on disk does it fall back to the conventional Plugins/Models.
             var savedOutputPath = projectSln.Generate?.OutputPath;
             modelsFolder = !string.IsNullOrWhiteSpace(settings.Output)
                 ? Path.GetFullPath(settings.Output)
                 : !string.IsNullOrWhiteSpace(savedOutputPath)
                     ? Path.GetFullPath(Path.Combine(RootFolder, savedOutputPath))
-                    : Path.Combine(slnFolder, "Plugins", "Models");
+                    : primaryPluginProject != null
+                        ? Path.Combine(Path.GetDirectoryName(primaryPluginProject)!, "Models")
+                        : Path.Combine(slnFolder, "Plugins", "Models");
 
             extraTables = projectSln.Generate?.ExtraTables ?? [];
 

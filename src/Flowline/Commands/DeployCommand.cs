@@ -66,10 +66,15 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var slnFolder = RootFolder;
         var usingExplicitArtifact = !string.IsNullOrWhiteSpace(settings.Path);
 
-        // Resolved once, up front, and threaded through the rest of the run: every deploy needs the package
-        // folder — for the deployment-input scope, the DTAP gate's local version, the drift check and the
-        // pack — and re-reading the solution file at each of them would let one deploy act on two answers.
-        var packageFolder = await ProjectLayoutResolver.ResolvePackageFolderAsync(slnFolder, cancellationToken);
+        // --path supplies a prebuilt artifact packed elsewhere, so nothing on that route reads the package
+        // folder — not the git-clean scope, the DTAP gate's local version, the drift check, or the pack.
+        // Resolve it only when a route needs it, so `deploy --path <zip>` still works in a repo without a
+        // solution file (a CI checkout carrying only the artifact), the way it did before discovery replaced
+        // the on-disk cdsproj check. On the packed route it's resolved once and threaded through, so one
+        // deploy never reads the solution file twice and acts on two answers.
+        var packageFolder = usingExplicitArtifact
+            ? null
+            : await ProjectLayoutResolver.ResolvePackageFolderAsync(slnFolder, cancellationToken);
 
         // --path supplies an artifact that wasn't necessarily packed from the current local tree, so neither
         // check is meaningful there: git-clean and drift both assume packagePath is derived from the
@@ -77,7 +82,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         IReadOnlyList<string> deploymentInputPaths = [];
         if (!usingExplicitArtifact)
         {
-            deploymentInputPaths = await GetDeploymentInputPathsAsync(slnFolder, packageFolder, cancellationToken);
+            deploymentInputPaths = await GetDeploymentInputPathsAsync(slnFolder, packageFolder!, cancellationToken); // non-null on the packed route
             await ValidateGitCleanAsync(deploymentInputPaths, cancellationToken);
         }
 
@@ -105,7 +110,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
             gateVersion = cacheOutcome == CacheOutcome.Hit
                 ? cacheEntry!.Version
-                : ReadLocalSolutionVersion(packageFolder);
+                : ReadLocalSolutionVersion(packageFolder!); // non-null on the packed route
         }
 
         await ValidateDtapGateAsync(sln, gateVersion, targetUrl, settings, cancellationToken);
@@ -188,7 +193,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             else
             {
                 Logger.LogInformation("Packing: {SolutionName}", sln.UniqueName);
-                packagePath = await PackSolutionAsync(sln, packageFolder, candidatePackagePath, settings, cancellationToken);
+                packagePath = await PackSolutionAsync(sln, packageFolder!, candidatePackagePath, settings, cancellationToken); // non-null on the packed route
                 if (currentCommitSha != null)
                     WriteCacheEntry(CacheManifestPath(packagePath), new ArtifactCacheEntry(gateVersion, sln.IncludeManaged, currentCommitSha));
             }
@@ -392,11 +397,12 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         ];
     }
 
-    private async Task ValidateLocalStateAsync(string slnFolder, string packageFolder, Settings settings, CancellationToken ct, bool checkDrift = true)
+    private async Task ValidateLocalStateAsync(string slnFolder, string? packageFolder, Settings settings, CancellationToken ct, bool checkDrift = true)
     {
+        // checkDrift is false exactly on the --path route, the one route that leaves packageFolder null.
         if (!checkDrift) return;
 
-        var drift = (await PluginWebResourceDriftChecker.CheckAsync(slnFolder, packageFolder, cancellationToken: ct))
+        var drift = (await PluginWebResourceDriftChecker.CheckAsync(slnFolder, packageFolder!, cancellationToken: ct))
             .Where(w => w.Category is DriftCategory.OnlyLocal or DriftCategory.PluginSizeMismatch)
             .ToList();
 
