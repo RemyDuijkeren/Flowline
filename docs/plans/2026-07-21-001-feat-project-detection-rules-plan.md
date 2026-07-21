@@ -78,10 +78,16 @@ tiebreak.
   need several project types get them from one instance, not three reads.
 
 **Policy reversals**
-- **R5.** A WebResources project is **required**. A valid solution file that yields no WebResources
-  project is a `ConfigInvalid` error — Flowline always scaffolds one (empty is fine; nothing to push
-  is fine). *Missing plugins is the opposite:* zero plugin projects is a legitimate, common state and
-  never an error.
+- **R5.** A WebResources project is **expected but not required** — a *soft* rule. *(Softened during
+  the code-review pass. The original R5 threw `ConfigInvalid` when no WebResources project resolved;
+  that was too hard — a user may legitimately remove it.)* When no WebResources project is confidently
+  identified (zero candidates, or a lone survivor carrying no signal), the property resolves to `null`
+  and every consumer **skips the web-resource work with a loud warning** rather than failing — because
+  the strong-signal rescue guarantees a *real* WebResources project always resolves to a path, so
+  `null` means there is genuinely nothing to handle, and the loud warning is what replaces the silent
+  skip that previously caused data loss. A genuine **tie** (two+ plausible WebResources projects) stays
+  a hard `ConfigInvalid` — skipping would risk reverting un-synced resources from the real one.
+  *Missing plugins is likewise legitimate:* zero plugin projects is a common state and never an error.
 - **R6.** **No solution file is an error** (`ConfigInvalid`/`NotFound` with the fix in the message) —
   the solution file is the config, and stand-alone mode (`push --pluginFile`) covers the
   no-config case. The conventional fallbacks (`Plugins/Plugins.csproj`,
@@ -123,8 +129,8 @@ tiebreak.
   only the WebResources project resolves. Covers R10.
 - **AE6. PCF wrapped as `.csproj`.** A `.csproj` carrying `Microsoft.PowerApps.MSBuild.Pcf` is excluded
   even with web assets. Covers R10.
-- **AE7. No WebResources project.** Valid solution file, plugins only, no WebResources project → throws
-  `ConfigInvalid` telling the user to scaffold/add one. Covers R5.
+- **AE7. No WebResources project.** Valid solution file, plugins only, no WebResources project →
+  resolves to `null`; consumers skip web-resource work with a loud warning, no throw. Covers R5.
 - **AE8. Two WebResources projects.** Throws `ConfigInvalid` naming both. Covers R9.
 - **AE9. No plugins.** Valid solution file with a package + WebResources project and zero plugin
   projects → resolves fine, no error; `push` has nothing to register. Covers R5, R8.
@@ -182,9 +188,13 @@ tiebreak.
   With R5 (exactly one expected) and the exclusions applied, a single remaining candidate is the
   WebResources project even on weak signals (elimination). Signals decide only when more than one
   candidate remains; if they can't decide, throw (R9) rather than pick.
-- **KD4 — Loud on can't-decide, and "none" is now an error for WebResources (R5).** Two+ confident →
-  throw. Ambiguous → throw. Zero → throw (R5 reversed the old "quiet none"). Plugins keep the quiet
-  zero (R8). This is the policy the package resolver already holds, applied everywhere.
+- **KD4 — Loud on can't-decide, quiet-with-a-warning on genuinely-none (R5, softened).** Two+ confident
+  candidates (a tie) → **throw** — the user has two, skipping would risk reverting the real one's
+  un-synced resources. But zero candidates, or a lone survivor with no signal, → **`null`**, and
+  consumers skip web-resource work with a **loud warning** (not a throw). *(The original KD4 threw on
+  "none" too; the review softened it — a WebResources project is expected, not required, and the loud
+  warning is the safety net, safe because the strong-signal rescue means a real one never resolves to
+  null.)* Plugins keep the quiet zero (R8).
 - **KD5 — PCF: exclude now, draft the detection, verify when built.** `PcfProjectResolver` ships as a
   draft: extension `.pcfproj`, or a `.csproj` with `Microsoft.PowerApps.MSBuild.Pcf` / a sibling
   `ControlManifest.Input.xml`. Used only to *exclude* from WebResources for now. When PCF becomes a

@@ -58,20 +58,20 @@ Per-project resolution is lazy and cached (`Lazy<T>` per property, `SolutionFile
 
 ### Make the weak rule as strong as the strong ones: elimination first, signals only to rank
 
-`WebResourcesProjectResolver.Resolve` (`src/Flowline.Core/Services/WebResourcesProjectResolver.cs:67-105`) treats WebResources detection as a required, by-elimination problem rather than a positive-match problem:
+`WebResourcesProjectResolver.Resolve` (`src/Flowline.Core/Services/WebResourcesProjectResolver.cs:73-118`) treats WebResources detection as a by-elimination-plus-signal problem rather than a positive-match-on-a-substring problem:
 
 1. Start from every solution-referenced, on-disk `.csproj`.
-2. Exclude plugin projects (already resolved upstream — not re-derived here).
+2. Exclude plugin projects — but keep one that carries a *strong* WebResources signal even if the over-inclusive plugin pre-filter swept it up (so a WebResources project inheriting its framework from a `Directory.Build.props` isn't lost).
 3. Exclude PCF projects (see below).
-4. Exclude test projects (filename contains `test`, or references a test SDK).
-5. If exactly one candidate survives, it **is** the WebResources project — no signal needs to fire, because a WebResources project is now required (exactly one is expected) and nothing else in the solution file could be it.
-6. If more than one survives, score each on weighted content signals (`ScoreSignals`, `WebResourcesProjectResolver.cs:114-143`) and take the unique top score:
+4. Exclude test projects (filename *ends with* `Test`/`Tests`, or references a test SDK — a substring match wrongly excluded a `TestApp.WebResources` project).
+5. Score each survivor on weighted content signals (`ScoreSignals`) and take the unique top score:
    - a `flowline:` annotation comment in a `.ts`/`.js` file — very strong (positive proof the source is Flowline-managed, not just any JS project)
    - a suppressed compile target or the `NoTargets` SDK, or a `dist/` folder — strong
    - a `package.json` build script, a bundler config, a `WebResources`-named folder, or web asset files — medium
-7. Two-plus candidates tied at the top score (including a 0-0 tie) throw `ConfigInvalid` naming them, never a silent pick (`WebResourcesProjectResolver.cs:98-102`).
+6. The winner must carry at least one signal. Zero candidates, or a lone survivor scoring zero, resolves to **`null`** — no confident WebResources project.
+7. Two-plus candidates tied at the top score throw `ConfigInvalid` naming them, never a silent pick.
 
-The elimination step is what makes the weak substring check unnecessary as the *primary* signal — with PCF, plugins, and tests already excluded and a WebResources project required, the sole survivor is correct by construction on the common case, and signals exist only to break a tie once more than one candidate exists.
+The elimination step plus the signal floor is what makes the old weak substring check unnecessary — with PCF, plugins, and tests excluded, a single signalled survivor is correct by construction, and a signalless survivor is treated as "no confident WebResources project" rather than blindly returned.
 
 ### Give the exclusion its own resolver, even in draft form
 
@@ -83,7 +83,7 @@ The pattern generalizes: when a detection rule needs "and definitely not X" as o
 
 Two related policies flipped as part of this change, and both needed to be stated as decisions, not just code diffs:
 
-- **A required project's absence is now loud.** WebResources used to silently degrade to a conventional path that might not exist; it now throws `ConfigInvalid` on zero candidates, matching the policy the Dataverse solution project resolver already had. Plugins keep the opposite policy — zero plugin projects is legitimate and common, never an error — because "required" and "optional" are properties of the *type*, not a house style to apply uniformly.
+- **An expected project's absence is now loud, but not fatal.** WebResources used to silently degrade to a conventional path that might not exist. It now resolves to `null` when no confident WebResources project is found, and each command *skips the web-resource work with a loud warning* — a WebResources project is expected but not required (a plugin-only or migrated repo is legitimate), and the loud warning is what replaces the silent skip that could otherwise revert un-synced resources on deploy. This is safe because a *real* WebResources project always carries a signal and is rescued from the plugin set, so `null` genuinely means there is nothing to handle. The one hard failure kept is a *tie* — two-plus plausible WebResources projects — because skipping there would ignore resources the user demonstrably has. (An earlier iteration made absence a hard `ConfigInvalid`; that was softened during review — "expected" turned out to be the right strength, not "required".)
 - **No solution file at all is now an error, not a fallback.** The solution file is Flowline's config; the previous conventional fallbacks (`Plugins/Plugins.csproj`, `WebResources/WebResources.csproj`) let a command run against guessed paths in a repo with no config at all. `SolutionFileLayout.LoadAsync` now throws `NotFound` pointing at stand-alone mode (`flowline push --pluginFile <dll>`) as the way to push without a solution file (`SolutionFileLayout.cs:95-105`). This only affects a non-`clone` command run against a repo with genuinely no solution file — `clone` itself scaffolds by composing literal paths and never calls `SolutionFileLayout`, and a project still on the older flat `Package/` folder naming (rather than `Solution/`) is unaffected, since it still has a solution file referencing its projects.
 
 ## Anti-pattern
