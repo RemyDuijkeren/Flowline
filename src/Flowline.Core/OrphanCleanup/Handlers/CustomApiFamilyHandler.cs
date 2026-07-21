@@ -94,7 +94,7 @@ public sealed class CustomApiFamilyHandler(IAnsiConsole console) : IOrphanHandle
         // CustomApi source has no GUID anywhere — uniquename is the only local identity (see
         // ComponentClassifier.ScanCustomApiNames) — so a recreated CustomApi (same uniquename, new
         // customapiid) must not be reported, even though its objectid differs from before.
-        var localNames = ComponentClassifier.ScanCustomApiNames(context.PackageSrcRoot);
+        var localNames = ComponentClassifier.ScanCustomApiNames(context.DataverseSolutionSrcRoot);
 
         var componentTypeById = new Dictionary<Guid, int>();
         foreach (var candidate in candidates)

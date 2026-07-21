@@ -175,19 +175,20 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
     // pipeline type (it still carries PackagePath, which this comparison never reads), so the engine
     // itself shouldn't be coupled to its shape.
     public Task<CompareResult> CompareAsync(PostDeployContext context, CancellationToken ct, string? noDeleteHint = "(--no-delete active)") =>
-        CompareAsync(context.PackageSrcRoot, context.Service, context.Solution.Name, context.Solution.EnvironmentUrl, context.Mode, ct, noDeleteHint);
+        CompareAsync(context.DataverseSolutionSrcRoot, context.Service, context.Solution.Name, context.Solution.EnvironmentUrl, context.Mode, ct, noDeleteHint);
 
     // Convenience overload for callers with no packed/mutating context of their own (e.g. DriftCommand) —
-    // takes a packageFolder (parent of src) rather than packageSrcRoot, matching ComponentClassifier.
-    // ParseLocalSource's own parameter, and always runs in RunMode.NoDelete since these callers never mutate.
+    // takes a dataverseSolutionFolder (parent of src) rather than dataverseSolutionSrcRoot, matching
+    // ComponentClassifier.ParseLocalSource's own parameter, and always runs in RunMode.NoDelete since these
+    // callers never mutate.
     public Task<CompareResult> CompareAsync(
-        string packageFolder,
+        string dataverseSolutionFolder,
         IOrganizationServiceAsync2 service,
         string solutionName,
         string environmentUrl,
         CancellationToken ct,
         string? noDeleteHint = null) =>
-        CompareAsync(Path.Combine(packageFolder, "src"), service, solutionName, environmentUrl, RunMode.NoDelete, ct, noDeleteHint);
+        CompareAsync(Path.Combine(dataverseSolutionFolder, "src"), service, solutionName, environmentUrl, RunMode.NoDelete, ct, noDeleteHint);
 
     // Comparison-only half of the pre-import step (KTD5): parses committed source, queries live
     // solutioncomponents, resolves sNewIds via all existing special-casing (schemaName, entity,
@@ -198,10 +199,10 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
     // read-only) suppress or replace the deploy-specific "(--no-delete active)" phrasing in the printed
     // report.
     //
-    // Takes packageSrcRoot/service/solutionName/environmentUrl/mode directly rather than a PostDeployContext
+    // Takes dataverseSolutionSrcRoot/service/solutionName/environmentUrl/mode directly rather than a PostDeployContext
     // — this is the real comparison engine both public overloads above delegate to, and its dependencies
     // should be exactly what it needs, not a deploy-pipeline type carrying fields (like PackagePath) it
-    // never reads (KTD12). Owns parsing packageSrcRoot itself (via ComponentClassifier.ParseLocalSource)
+    // never reads (KTD12). Owns parsing dataverseSolutionSrcRoot itself (via ComponentClassifier.ParseLocalSource)
     // rather than reading pre-parsed LocalComponents/EntityLogicalNames/NamedComponents.
     //
     // Returns a CompareResult rather than a bare entry list so a caller can tell "compared and found
@@ -211,7 +212,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
     // with no local components or no live components at all should not report the same "no drift" as
     // one that was actually compared and matched.
     public async Task<CompareResult> CompareAsync(
-        string packageSrcRoot,
+        string dataverseSolutionSrcRoot,
         IOrganizationServiceAsync2 service,
         string solutionName,
         string environmentUrl,
@@ -219,7 +220,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         CancellationToken ct,
         string? noDeleteHint = "(--no-delete active)")
     {
-        var (sNew, entityLogicalNames, namedComponents) = ComponentClassifier.ParseLocalSource(packageSrcRoot);
+        var (sNew, entityLogicalNames, namedComponents) = ComponentClassifier.ParseLocalSource(dataverseSolutionSrcRoot);
 
         var sOld = await console.Status().FlowlineSpinner()
             .StartAsync($"Querying orphan components in [bold]{solutionName}[/]...",
@@ -282,7 +283,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
             return new CompareResult([]);
         }
 
-        var detectionContext = new DetectionContext(packageSrcRoot, service, solutionName, environmentUrl, mode, entityLogicalNames);
+        var detectionContext = new DetectionContext(dataverseSolutionSrcRoot, service, solutionName, environmentUrl, mode, entityLogicalNames);
         var entries = await DispatchToHandlersAsync(detectionContext, namedComponents, orphans, ct).ConfigureAwait(false);
 
         PrintReport(entries, mode, solutionName, environmentUrl, noDeleteHint);
@@ -319,7 +320,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         // FamilyOrder dispatch needs orphans; the generic-fallback preview needs namedComponents) that
         // aren't part of DetectionContext's shape.
         var service            = detectionContext.Service;
-        var packageSrcRoot     = detectionContext.PackageSrcRoot;
+        var dataverseSolutionSrcRoot = detectionContext.DataverseSolutionSrcRoot;
         var solutionName       = detectionContext.SolutionName;
         var entityLogicalNames = detectionContext.EntityLogicalNames;
 
@@ -407,7 +408,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         var unclaimed = orphans.Where(c => !claimedIds.Contains(c.ObjectId)).ToList();
         if (unclaimed.Count > 0)
         {
-            var localIdentifiers = BuildLocalIdentifierHarvest(packageSrcRoot, entityLogicalNames, namedComponents);
+            var localIdentifiers = BuildLocalIdentifierHarvest(dataverseSolutionSrcRoot, entityLogicalNames, namedComponents);
             await LogUnsupportedOrphansAsync(service, unclaimed, localIdentifiers, ct).ConfigureAwait(false);
         }
 
@@ -468,7 +469,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         // Re-parses committed source (cheap — one small XML file plus a folder scan) rather than
         // threading the CompareAsync-time parse across the pre/post-import boundary — this is the same
         // tradeoff RunPreImportAsync/RunPostImportAsync already make for querying live state twice.
-        var (sNew, _, _) = ComponentClassifier.ParseLocalSource(context.PackageSrcRoot);
+        var (sNew, _, _) = ComponentClassifier.ParseLocalSource(context.DataverseSolutionSrcRoot);
 
         if (candidates.Count == 0 || mode == RunMode.NoDelete)
             return 0;
@@ -695,7 +696,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
     // enrich LogUnsupportedOrphansAsync's verbose preview (R6) — membership here is informational only
     // and never promotes a type into the actionable report.
     static HashSet<string> BuildLocalIdentifierHarvest(
-        string packageSrcRoot,
+        string dataverseSolutionSrcRoot,
         IReadOnlyList<string> entityLogicalNames,
         IReadOnlyList<(int ComponentType, string SchemaName)> namedComponents)
     {
@@ -706,13 +707,13 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
 
         harvest.UnionWith(entityLogicalNames);
 
-        var customApiNames = ComponentClassifier.ScanCustomApiNames(packageSrcRoot);
+        var customApiNames = ComponentClassifier.ScanCustomApiNames(dataverseSolutionSrcRoot);
         harvest.UnionWith(customApiNames.ApiUniqueNames);
         harvest.UnionWith(customApiNames.RequestParameterNames);
         harvest.UnionWith(customApiNames.ResponsePropertyNames);
 
-        harvest.UnionWith(ComponentClassifier.ScanBotSchemaNames(packageSrcRoot));
-        harvest.UnionWith(ComponentClassifier.ScanConnectionReferenceLogicalNames(packageSrcRoot));
+        harvest.UnionWith(ComponentClassifier.ScanBotSchemaNames(dataverseSolutionSrcRoot));
+        harvest.UnionWith(ComponentClassifier.ScanConnectionReferenceLogicalNames(dataverseSolutionSrcRoot));
 
         return harvest;
     }

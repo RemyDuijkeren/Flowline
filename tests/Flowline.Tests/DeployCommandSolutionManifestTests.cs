@@ -53,21 +53,21 @@ public class DeployCommandSolutionManifestTests
     [Fact]
     public void ReadLocalSolutionVersion_Throws_WhenSolutionXmlIsMalformed()
     {
-        var packageFolderPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        var otherFolder = Path.Combine(packageFolderPath, "src", "Other");
+        var dataverseSolutionFolderPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        var otherFolder = Path.Combine(dataverseSolutionFolderPath, "src", "Other");
         Directory.CreateDirectory(otherFolder);
         File.WriteAllText(Path.Combine(otherFolder, "Solution.xml"), "<not><valid</xml");
 
         try
         {
-            var act = () => DeployCommand.ReadLocalSolutionVersion(packageFolderPath);
+            var act = () => DeployCommand.ReadLocalSolutionVersion(dataverseSolutionFolderPath);
 
             act.Should().Throw<FlowlineException>()
                 .Which.ExitCode.Should().Be(ExitCode.ConfigInvalid);
         }
         finally
         {
-            Directory.Delete(packageFolderPath, recursive: true);
+            Directory.Delete(dataverseSolutionFolderPath, recursive: true);
         }
     }
 

@@ -37,7 +37,7 @@ public class RoleHandlerTests
     }
 
     DetectionContext Ctx() => new(
-        PackageSrcRoot: "irrelevant",
+        DataverseSolutionSrcRoot: "irrelevant",
         Service: _serviceMock,
         SolutionName: "MySolution",
         EnvironmentUrl: "https://example.crm.dynamics.com",

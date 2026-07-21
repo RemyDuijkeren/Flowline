@@ -172,7 +172,7 @@ public class DeployCommandDtapGateTests
     [Fact]
     public void ReadLocalSolutionVersion_ReturnsVersion_WhenXmlIsValid()
     {
-        using var tmp = new TempPackageFolder("""
+        using var tmp = new TempDataverseSolutionFolder("""
             <?xml version="1.0" encoding="utf-8"?>
             <ImportExportXml>
               <SolutionManifest>
@@ -181,7 +181,7 @@ public class DeployCommandDtapGateTests
             </ImportExportXml>
             """);
 
-        var version = DeployCommand.ReadLocalSolutionVersion(tmp.PackageFolderPath);
+        var version = DeployCommand.ReadLocalSolutionVersion(tmp.DataverseSolutionFolderPath);
 
         version.Should().Be("1.2.0.0");
     }
@@ -207,7 +207,7 @@ public class DeployCommandDtapGateTests
     [Fact]
     public void ReadLocalSolutionVersion_Throws_WhenVersionElementIsEmpty()
     {
-        using var tmp = new TempPackageFolder("""
+        using var tmp = new TempDataverseSolutionFolder("""
             <?xml version="1.0" encoding="utf-8"?>
             <ImportExportXml>
               <SolutionManifest>
@@ -216,14 +216,14 @@ public class DeployCommandDtapGateTests
             </ImportExportXml>
             """);
 
-        var act = () => DeployCommand.ReadLocalSolutionVersion(tmp.PackageFolderPath);
+        var act = () => DeployCommand.ReadLocalSolutionVersion(tmp.DataverseSolutionFolderPath);
         act.Should().Throw<FlowlineException>();
     }
 
     [Fact]
     public void ReadLocalSolutionVersion_Throws_WhenVersionElementAbsent()
     {
-        using var tmp = new TempPackageFolder("""
+        using var tmp = new TempDataverseSolutionFolder("""
             <?xml version="1.0" encoding="utf-8"?>
             <ImportExportXml>
               <SolutionManifest>
@@ -231,7 +231,7 @@ public class DeployCommandDtapGateTests
             </ImportExportXml>
             """);
 
-        var act = () => DeployCommand.ReadLocalSolutionVersion(tmp.PackageFolderPath);
+        var act = () => DeployCommand.ReadLocalSolutionVersion(tmp.DataverseSolutionFolderPath);
         act.Should().Throw<FlowlineException>();
     }
 
@@ -293,18 +293,18 @@ public class DeployCommandDtapGateTests
         act.Should().Throw<FlowlineException>();
     }
 
-    private sealed class TempPackageFolder : IDisposable
+    private sealed class TempDataverseSolutionFolder : IDisposable
     {
-        public string PackageFolderPath { get; }
+        public string DataverseSolutionFolderPath { get; }
 
-        public TempPackageFolder(string solutionXmlContent)
+        public TempDataverseSolutionFolder(string solutionXmlContent)
         {
-            PackageFolderPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-            var otherDir = Path.Combine(PackageFolderPath, "src", "Other");
+            DataverseSolutionFolderPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            var otherDir = Path.Combine(DataverseSolutionFolderPath, "src", "Other");
             Directory.CreateDirectory(otherDir);
             File.WriteAllText(Path.Combine(otherDir, "Solution.xml"), solutionXmlContent);
         }
 
-        public void Dispose() => Directory.Delete(PackageFolderPath, recursive: true);
+        public void Dispose() => Directory.Delete(DataverseSolutionFolderPath, recursive: true);
     }
 }

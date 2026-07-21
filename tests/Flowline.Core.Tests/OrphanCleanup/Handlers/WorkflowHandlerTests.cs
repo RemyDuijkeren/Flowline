@@ -30,7 +30,7 @@ public class WorkflowHandlerTests
     }
 
     DetectionContext Ctx(RunMode mode = RunMode.Normal) => new(
-        PackageSrcRoot: "irrelevant",
+        DataverseSolutionSrcRoot: "irrelevant",
         Service: _serviceMock,
         SolutionName: "TestSolution",
         EnvironmentUrl: "https://example.crm.dynamics.com",

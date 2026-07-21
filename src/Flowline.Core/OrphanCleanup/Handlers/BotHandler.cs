@@ -73,7 +73,7 @@ public sealed class BotHandler(IAnsiConsole console) : IOrphanHandler
 
         // Bot has no GUID anywhere in local source — schemaname (bots/<schemaname>/bot.xml) is the only
         // local identity (see ComponentClassifier.ScanBotSchemaNames).
-        var localSchemaNames = ComponentClassifier.ScanBotSchemaNames(context.PackageSrcRoot);
+        var localSchemaNames = ComponentClassifier.ScanBotSchemaNames(context.DataverseSolutionSrcRoot);
 
         var componentTypeById = new Dictionary<Guid, int>();
         foreach (var candidate in candidates)

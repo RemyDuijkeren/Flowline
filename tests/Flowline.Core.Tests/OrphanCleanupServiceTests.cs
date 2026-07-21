@@ -16,9 +16,9 @@ public class OrphanCleanupServiceTests : IDisposable
     readonly IOrganizationServiceAsync2 _serviceMock;
     readonly TestConsole _console;
     readonly OrphanCleanupService _service;
-    readonly string _packageSrcRoot;
+    readonly string _dataverseSolutionSrcRoot;
     readonly string _webResourcesDir;
-    readonly List<string> _autoCreatedPackageFolders = [];
+    readonly List<string> _autoCreatedDataverseSolutionFolders = [];
 
     public OrphanCleanupServiceTests()
     {
@@ -41,8 +41,8 @@ public class OrphanCleanupServiceTests : IDisposable
             new EntityFamilyHandler(_console),
         ];
         _service = new OrphanCleanupService(_console, handlers);
-        _packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        _webResourcesDir = Path.Combine(_packageSrcRoot, "WebResources");
+        _dataverseSolutionSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        _webResourcesDir = Path.Combine(_dataverseSolutionSrcRoot, "WebResources");
         Directory.CreateDirectory(_webResourcesDir);
 
         // Default: any unconfigured RetrieveMultipleAsync (e.g. bulk name-resolution queries) returns
@@ -59,12 +59,12 @@ public class OrphanCleanupServiceTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_packageSrcRoot))
-            Directory.Delete(_packageSrcRoot, true);
+        if (Directory.Exists(_dataverseSolutionSrcRoot))
+            Directory.Delete(_dataverseSolutionSrcRoot, true);
 
-        foreach (var packageFolder in _autoCreatedPackageFolders)
-            if (Directory.Exists(packageFolder))
-                Directory.Delete(packageFolder, true);
+        foreach (var dataverseSolutionFolder in _autoCreatedDataverseSolutionFolders)
+            if (Directory.Exists(dataverseSolutionFolder))
+                Directory.Delete(dataverseSolutionFolder, true);
     }
 
     [Theory]
@@ -79,31 +79,31 @@ public class OrphanCleanupServiceTests : IDisposable
     }
 
     // PostDeployContext no longer carries LocalComponents/EntityLogicalNames/NamedComponents (KTD12) —
-    // OrphanCleanupService.CompareAsync parses PackageSrcRoot itself now. Ctx() keeps the same test-facing
+    // OrphanCleanupService.CompareAsync parses DataverseSolutionSrcRoot itself now. Ctx() keeps the same test-facing
     // shape every existing call site already uses by writing a synthetic Solution.xml fixture that
     // round-trips back to the same (localComponents, entityLogicalNames, namedComponents) via
     // ComponentClassifier.ParseSolutionXmlComponents, rather than requiring 59 call sites to be rewritten
-    // into hand-built fixtures. When packageSrcRoot isn't explicitly overridden, a fresh temp folder is
-    // created per call and cleaned up in Dispose(); when a test passes its own real packageSrcRoot (e.g.
+    // into hand-built fixtures. When dataverseSolutionSrcRoot isn't explicitly overridden, a fresh temp folder is
+    // created per call and cleaned up in Dispose(); when a test passes its own real dataverseSolutionSrcRoot (e.g.
     // for CustomApi/Bot/annotation fixtures), the fixture is written into that existing folder instead.
     PostDeployContext Ctx(
         string solutionName,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> localComponents,
         RunMode mode = RunMode.Normal,
         IReadOnlyList<string>? entityLogicalNames = null,
-        string? packageSrcRoot = null,
+        string? dataverseSolutionSrcRoot = null,
         IReadOnlyList<(int ComponentType, string SchemaName)>? namedComponents = null)
     {
         string srcRoot;
-        if (packageSrcRoot != null)
+        if (dataverseSolutionSrcRoot != null)
         {
-            srcRoot = packageSrcRoot;
+            srcRoot = dataverseSolutionSrcRoot;
         }
         else
         {
-            var packageFolder = Path.Combine(Path.GetTempPath(), $"flowline-test-{Guid.NewGuid():N}");
-            _autoCreatedPackageFolders.Add(packageFolder);
-            srcRoot = Path.Combine(packageFolder, "src");
+            var dataverseSolutionFolder = Path.Combine(Path.GetTempPath(), $"flowline-test-{Guid.NewGuid():N}");
+            _autoCreatedDataverseSolutionFolders.Add(dataverseSolutionFolder);
+            srcRoot = Path.Combine(dataverseSolutionFolder, "src");
         }
 
         WriteSolutionXmlFixture(srcRoot, localComponents, entityLogicalNames ?? [], namedComponents ?? []);
@@ -113,12 +113,12 @@ public class OrphanCleanupServiceTests : IDisposable
     }
 
     static void WriteSolutionXmlFixture(
-        string packageSrcRoot,
+        string dataverseSolutionSrcRoot,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> components,
         IReadOnlyList<string> entityLogicalNames,
         IReadOnlyList<(int ComponentType, string SchemaName)> namedComponents)
     {
-        var otherDir = Path.Combine(packageSrcRoot, "Other");
+        var otherDir = Path.Combine(dataverseSolutionSrcRoot, "Other");
         Directory.CreateDirectory(otherDir);
 
         var rootComponents = new List<string>();
@@ -181,7 +181,7 @@ public class OrphanCleanupServiceTests : IDisposable
         File.WriteAllText(Path.Combine(_webResourcesDir, "form.js"),
             "// flowline:depends av_ext/shared.js\nconsole.log('hi');");
 
-        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: _packageSrcRoot), default);
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], dataverseSolutionSrcRoot: _dataverseSolutionSrcRoot), default);
 
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
@@ -195,7 +195,7 @@ public class OrphanCleanupServiceTests : IDisposable
         File.WriteAllText(Path.Combine(_webResourcesDir, "form.js"),
             "// flowline:depends av_ext/shared.js\ncode();");
 
-        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: _packageSrcRoot), default);
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], dataverseSolutionSrcRoot: _dataverseSolutionSrcRoot), default);
 
         Assert.Contains("av_ext/shared.js", _console.Output);
         Assert.Contains("preserved", _console.Output);
@@ -210,7 +210,7 @@ public class OrphanCleanupServiceTests : IDisposable
         // No annotations referencing unref.js
         File.WriteAllText(Path.Combine(_webResourcesDir, "form.js"), "// no deps\ncode();");
 
-        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: _packageSrcRoot), default);
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], dataverseSolutionSrcRoot: _dataverseSolutionSrcRoot), default);
 
         await _serviceMock.Received(1).DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
@@ -223,7 +223,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupWebResourceNames((orphanId, "av_ext/lib.js"));
         File.WriteAllText(Path.Combine(_webResourcesDir, "form.js"), "code(); // no annotations");
 
-        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: _packageSrcRoot), default);
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], dataverseSolutionSrcRoot: _dataverseSolutionSrcRoot), default);
 
         await _serviceMock.Received(1).DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
@@ -239,7 +239,7 @@ public class OrphanCleanupServiceTests : IDisposable
         File.WriteAllText(Path.Combine(_webResourcesDir, "b.js"),
             "// flowline:depends av_ext/shared.js\ncode();");
 
-        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: _packageSrcRoot), default);
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], dataverseSolutionSrcRoot: _dataverseSolutionSrcRoot), default);
 
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
@@ -439,13 +439,13 @@ public class OrphanCleanupServiceTests : IDisposable
                 new Entity("customapi", liveId) { ["name"] = "av_AatYourService" }
             ])));
 
-        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        Directory.CreateDirectory(Path.Combine(packageSrcRoot, "customapis", "av_AatYourService"));
+        var dataverseSolutionSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(Path.Combine(dataverseSolutionSrcRoot, "customapis", "av_AatYourService"));
 
         try
         {
             await _service.RunPreImportAsync(
-                Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: packageSrcRoot), default);
+                Ctx("MySolution", [(Guid.NewGuid(), 0)], dataverseSolutionSrcRoot: dataverseSolutionSrcRoot), default);
 
             // Unlike WebResource, CustomApi's componenttype isn't AutoDelete-classified, so this doesn't
             // hit the early "No orphan components" return — it's claimed and resolved by
@@ -456,7 +456,7 @@ public class OrphanCleanupServiceTests : IDisposable
         }
         finally
         {
-            Directory.Delete(packageSrcRoot, true);
+            Directory.Delete(dataverseSolutionSrcRoot, true);
         }
     }
 
@@ -536,13 +536,13 @@ public class OrphanCleanupServiceTests : IDisposable
                 new Entity("bot", orphanId) { ["schemaname"] = "msdyn_salesCopilot" }
             ])));
 
-        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        Directory.CreateDirectory(Path.Combine(packageSrcRoot, "bots", "msdyn_salesCopilot"));
+        var dataverseSolutionSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(Path.Combine(dataverseSolutionSrcRoot, "bots", "msdyn_salesCopilot"));
 
         try
         {
             await _service.RunPreImportAsync(
-                Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: packageSrcRoot), default);
+                Ctx("MySolution", [(Guid.NewGuid(), 0)], dataverseSolutionSrcRoot: dataverseSolutionSrcRoot), default);
 
             // Like CustomApi, Bot's componenttype isn't AutoDelete-classified, so this doesn't hit the
             // early "No orphan components" return — it clears entity-side detection and gets filtered
@@ -552,7 +552,7 @@ public class OrphanCleanupServiceTests : IDisposable
         }
         finally
         {
-            Directory.Delete(packageSrcRoot, true);
+            Directory.Delete(dataverseSolutionSrcRoot, true);
         }
     }
 
@@ -572,13 +572,13 @@ public class OrphanCleanupServiceTests : IDisposable
                 new Entity("bot", orphanId) { ["schemaname"] = "msdyn_salesCopilot", ["name"] = "Sales Copilot Power Virtual Agents Bot" }
             ])));
 
-        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        Directory.CreateDirectory(Path.Combine(packageSrcRoot, "bots", "av_SomeOtherBot")); // no match
+        var dataverseSolutionSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(Path.Combine(dataverseSolutionSrcRoot, "bots", "av_SomeOtherBot")); // no match
 
         try
         {
             await _service.RunPreImportAsync(
-                Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: packageSrcRoot), default);
+                Ctx("MySolution", [(Guid.NewGuid(), 0)], dataverseSolutionSrcRoot: dataverseSolutionSrcRoot), default);
 
             Assert.Contains($"Bot 'msdyn_salesCopilot' ({orphanId})", _console.Output);
             Assert.DoesNotContain("Sales Copilot Power Virtual Agents Bot", _console.Output);
@@ -586,14 +586,14 @@ public class OrphanCleanupServiceTests : IDisposable
         }
         finally
         {
-            Directory.Delete(packageSrcRoot, true);
+            Directory.Delete(dataverseSolutionSrcRoot, true);
         }
     }
 
     [Fact]
     public async Task RunPreImportAsync_BotsFolderAbsent_NoFalseSuppressionAllBotOrphansReported()
     {
-        // No Package/src/bots dir at all (default nonexistent packageSrcRoot) — ScanBotSchemaNames
+        // No Package/src/bots dir at all (default nonexistent dataverseSolutionSrcRoot) — ScanBotSchemaNames
         // returns an empty scan result, so the Bot orphan is still reported rather than suppressed.
         var orphanId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (orphanId, 10082));
@@ -664,9 +664,9 @@ public class OrphanCleanupServiceTests : IDisposable
     // -- ConnectionReference orphan detection: entity-side query (KTD2/R2), inline Customizations.xml
     // <connectionreferences> section verification (not deploymentSettings.json — optional, can go stale) --
 
-    static void WriteConnectionReferencesXml(string packageSrcRoot, params string[] logicalNames)
+    static void WriteConnectionReferencesXml(string dataverseSolutionSrcRoot, params string[] logicalNames)
     {
-        var otherDir = Path.Combine(packageSrcRoot, "Other");
+        var otherDir = Path.Combine(dataverseSolutionSrcRoot, "Other");
         Directory.CreateDirectory(otherDir);
         var refsXml = string.Concat(logicalNames.Select(n => $"<connectionreference connectionreferencelogicalname=\"{n}\"><connectorid>/providers/Microsoft.PowerApps/apis/shared_x</connectorid></connectionreference>"));
         File.WriteAllText(Path.Combine(otherDir, "Customizations.xml"),
@@ -687,20 +687,20 @@ public class OrphanCleanupServiceTests : IDisposable
                 new Entity("connectionreference", orphanId) { ["connectionreferencelogicalname"] = "av_sharepoint" }
             ])));
 
-        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        WriteConnectionReferencesXml(packageSrcRoot, "av_sharepoint");
+        var dataverseSolutionSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        WriteConnectionReferencesXml(dataverseSolutionSrcRoot, "av_sharepoint");
 
         try
         {
             await _service.RunPreImportAsync(
-                Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: packageSrcRoot), default);
+                Ctx("MySolution", [(Guid.NewGuid(), 0)], dataverseSolutionSrcRoot: dataverseSolutionSrcRoot), default);
 
             Assert.DoesNotContain(orphanId.ToString(), _console.Output);
             Assert.Contains("0 to delete, 0 to remove from solution, 0 manual", _console.Output);
         }
         finally
         {
-            Directory.Delete(packageSrcRoot, true);
+            Directory.Delete(dataverseSolutionSrcRoot, true);
         }
     }
 
@@ -718,20 +718,20 @@ public class OrphanCleanupServiceTests : IDisposable
                 new Entity("connectionreference", orphanId) { ["connectionreferencelogicalname"] = "av_sharepoint" }
             ])));
 
-        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        WriteConnectionReferencesXml(packageSrcRoot, "av_dataverse"); // different logical name — no match
+        var dataverseSolutionSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        WriteConnectionReferencesXml(dataverseSolutionSrcRoot, "av_dataverse"); // different logical name — no match
 
         try
         {
             await _service.RunPreImportAsync(
-                Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: packageSrcRoot), default);
+                Ctx("MySolution", [(Guid.NewGuid(), 0)], dataverseSolutionSrcRoot: dataverseSolutionSrcRoot), default);
 
             Assert.Contains($"ConnectionReference 'av_sharepoint' ({orphanId})", _console.Output);
             Assert.Contains("remove manually via maker portal", _console.Output);
         }
         finally
         {
-            Directory.Delete(packageSrcRoot, true);
+            Directory.Delete(dataverseSolutionSrcRoot, true);
         }
     }
 
@@ -749,22 +749,22 @@ public class OrphanCleanupServiceTests : IDisposable
                 new Entity("connectionreference", orphanId) { ["connectionreferencelogicalname"] = "av_sharepoint" }
             ])));
 
-        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        var otherDir = Path.Combine(packageSrcRoot, "Other");
+        var dataverseSolutionSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        var otherDir = Path.Combine(dataverseSolutionSrcRoot, "Other");
         Directory.CreateDirectory(otherDir);
         File.WriteAllText(Path.Combine(otherDir, "Customizations.xml"), "<ImportExportXml><connectionreferences /></ImportExportXml>");
 
         try
         {
             await _service.RunPreImportAsync(
-                Ctx("MySolution", [(Guid.NewGuid(), 0)], packageSrcRoot: packageSrcRoot), default);
+                Ctx("MySolution", [(Guid.NewGuid(), 0)], dataverseSolutionSrcRoot: dataverseSolutionSrcRoot), default);
 
             Assert.Contains($"ConnectionReference 'av_sharepoint' ({orphanId})", _console.Output);
             Assert.Contains("remove manually via maker portal", _console.Output);
         }
         finally
         {
-            Directory.Delete(packageSrcRoot, true);
+            Directory.Delete(dataverseSolutionSrcRoot, true);
         }
     }
 
@@ -782,7 +782,7 @@ public class OrphanCleanupServiceTests : IDisposable
                 new Entity("connectionreference", orphanId) { ["connectionreferencelogicalname"] = "av_sharepoint" }
             ])));
 
-        // No packageSrcRoot given — defaults to a nonexistent directory, so Other/Customizations.xml is absent.
+        // No dataverseSolutionSrcRoot given — defaults to a nonexistent directory, so Other/Customizations.xml is absent.
         await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
 
         Assert.Contains($"ConnectionReference 'av_sharepoint' ({orphanId})", _console.Output);
@@ -807,7 +807,7 @@ public class OrphanCleanupServiceTests : IDisposable
     {
         var orphanId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (orphanId, 61));
-        // No Package/src/WebResources dir at the default (nonexistent) packageSrcRoot — if exemption
+        // No Package/src/WebResources dir at the default (nonexistent) dataverseSolutionSrcRoot — if exemption
         // ran, it would try to query and the mock would return an empty collection, potentially still
         // deleting. The point is: no WebResources dir → no name query, normal orphan flow.
 
@@ -1016,9 +1016,9 @@ public class OrphanCleanupServiceTests : IDisposable
             .Returns(Task.FromResult<OrganizationResponse>(response));
     }
 
-    static void WriteEntityXml(string packageSrcRoot, string folderName, params string[] attributeLogicalNames)
+    static void WriteEntityXml(string dataverseSolutionSrcRoot, string folderName, params string[] attributeLogicalNames)
     {
-        var entityDir = Path.Combine(packageSrcRoot, "Entities", folderName);
+        var entityDir = Path.Combine(dataverseSolutionSrcRoot, "Entities", folderName);
         Directory.CreateDirectory(entityDir);
         var attributesXml = string.Concat(attributeLogicalNames.Select(n => $"<attribute PhysicalName=\"{n}\"><LogicalName>{n}</LogicalName></attribute>"));
         File.WriteAllText(Path.Combine(entityDir, "Entity.xml"),
@@ -1056,22 +1056,22 @@ public class OrphanCleanupServiceTests : IDisposable
     {
         var attributeId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (attributeId, 2)); // 2 = Attribute
-        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        WriteEntityXml(packageSrcRoot, "Account", "av_taxid");
+        var dataverseSolutionSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        WriteEntityXml(dataverseSolutionSrcRoot, "Account", "av_taxid");
         SetupAttributeMetadata("account", (attributeId, "av_taxid"));
         SetupEntityMetadataId("account", Guid.NewGuid());
 
         try
         {
             await _service.RunPreImportAsync(
-                Ctx("MySolution", [(Guid.NewGuid(), 0)], entityLogicalNames: ["account"], packageSrcRoot: packageSrcRoot), default);
+                Ctx("MySolution", [(Guid.NewGuid(), 0)], entityLogicalNames: ["account"], dataverseSolutionSrcRoot: dataverseSolutionSrcRoot), default);
 
             Assert.DoesNotContain(attributeId.ToString(), _console.Output);
             Assert.DoesNotContain("can't be removed automatically", _console.Output);
         }
         finally
         {
-            Directory.Delete(packageSrcRoot, true);
+            Directory.Delete(dataverseSolutionSrcRoot, true);
         }
     }
 
@@ -1080,21 +1080,21 @@ public class OrphanCleanupServiceTests : IDisposable
     {
         var attributeId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (attributeId, 2)); // 2 = Attribute
-        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        WriteEntityXml(packageSrcRoot, "Account"); // no attributes declared locally
+        var dataverseSolutionSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        WriteEntityXml(dataverseSolutionSrcRoot, "Account"); // no attributes declared locally
         SetupAttributeMetadata("account", (attributeId, "av_removedfield"));
         SetupEntityMetadataId("account", Guid.NewGuid());
 
         try
         {
             await _service.RunPreImportAsync(
-                Ctx("MySolution", [(Guid.NewGuid(), 0)], entityLogicalNames: ["account"], packageSrcRoot: packageSrcRoot), default);
+                Ctx("MySolution", [(Guid.NewGuid(), 0)], entityLogicalNames: ["account"], dataverseSolutionSrcRoot: dataverseSolutionSrcRoot), default);
 
             Assert.Contains("Attribute 'account.av_removedfield'", _console.Output);
         }
         finally
         {
-            Directory.Delete(packageSrcRoot, true);
+            Directory.Delete(dataverseSolutionSrcRoot, true);
         }
     }
 
@@ -1106,15 +1106,15 @@ public class OrphanCleanupServiceTests : IDisposable
         // can't catch that on its own, so assert the constructed request carries a real Guid[].
         var attributeId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (attributeId, 2)); // 2 = Attribute
-        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        WriteEntityXml(packageSrcRoot, "Account");
+        var dataverseSolutionSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        WriteEntityXml(dataverseSolutionSrcRoot, "Account");
         SetupAttributeMetadata("account", (attributeId, "av_removedfield"));
         SetupEntityMetadataId("account", Guid.NewGuid());
 
         try
         {
             await _service.RunPreImportAsync(
-                Ctx("MySolution", [(Guid.NewGuid(), 0)], entityLogicalNames: ["account"], packageSrcRoot: packageSrcRoot), default);
+                Ctx("MySolution", [(Guid.NewGuid(), 0)], entityLogicalNames: ["account"], dataverseSolutionSrcRoot: dataverseSolutionSrcRoot), default);
 
             var call = _serviceMock.ReceivedCalls()
                 .Select(c => c.GetArguments()[0])
@@ -1126,7 +1126,7 @@ public class OrphanCleanupServiceTests : IDisposable
         }
         finally
         {
-            Directory.Delete(packageSrcRoot, true);
+            Directory.Delete(dataverseSolutionSrcRoot, true);
         }
     }
 
@@ -1624,16 +1624,16 @@ public class OrphanCleanupServiceTests : IDisposable
         Assert.Empty(result.Entries);
     }
 
-    // -- CompareAsync(packageFolder, ...) convenience overload — parses committed source itself,
+    // -- CompareAsync(dataverseSolutionFolder, ...) convenience overload — parses committed source itself,
     // for callers (DriftCommand) with no packed/mutating context of their own --
 
     [Fact]
-    public async Task CompareAsync_PackageFolderOverload_ParsesLocalSourceAndDelegatesToContextOverload()
+    public async Task CompareAsync_DataverseSolutionFolderOverload_ParsesLocalSourceAndDelegatesToContextOverload()
     {
         var declaredId = Guid.NewGuid();
         var unexpectedId = Guid.NewGuid();
-        var packageFolder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        var otherDir = Path.Combine(packageFolder, "src", "Other");
+        var dataverseSolutionFolder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        var otherDir = Path.Combine(dataverseSolutionFolder, "src", "Other");
         Directory.CreateDirectory(otherDir);
         File.WriteAllText(Path.Combine(otherDir, "Solution.xml"), $$"""
             <?xml version="1.0" encoding="utf-8"?>
@@ -1652,7 +1652,7 @@ public class OrphanCleanupServiceTests : IDisposable
         {
             SetupSolutionComponents("MySolution", (declaredId, 91), (unexpectedId, 91));
 
-            var result = await _service.CompareAsync(packageFolder, _serviceMock, "MySolution", "https://example.crm.dynamics.com", default);
+            var result = await _service.CompareAsync(dataverseSolutionFolder, _serviceMock, "MySolution", "https://example.crm.dynamics.com", default);
 
             // Parses the fixture's Solution.xml itself (no pre-parsed LocalComponents passed in) and
             // reaches the same classification the context-based overload would: declaredId matched,
@@ -1663,7 +1663,7 @@ public class OrphanCleanupServiceTests : IDisposable
         }
         finally
         {
-            Directory.Delete(packageFolder, true);
+            Directory.Delete(dataverseSolutionFolder, true);
         }
     }
 }

@@ -72,7 +72,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         var slnFolder = RootFolder;
         var solutionName = projectSln.UniqueName;
 
-        var cdsprojPath = Path.Combine(ScaffoldedPackageFolder(slnFolder), $"{solutionName}.cdsproj");
+        var cdsprojPath = Path.Combine(ScaffoldedDataverseSolutionFolder(slnFolder), $"{solutionName}.cdsproj");
         var slnFilePath = ResolveSolutionFilePath(slnFolder, solutionName);
         var slnFileName = Path.GetFileName(slnFilePath);
 
@@ -88,9 +88,9 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         Logger.LogInformation("Validating pack: {SolutionName}", projectSln.UniqueName);
         var artifactsFolder = Path.Combine(slnFolder, "artifacts");
         Directory.CreateDirectory(artifactsFolder);
-        if (await PacUtils.PackSolutionAsync(projectSln, ScaffoldedPackageFolder(slnFolder), artifactsFolder, false, _capture, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
+        if (await PacUtils.PackSolutionAsync(projectSln, ScaffoldedDataverseSolutionFolder(slnFolder), artifactsFolder, false, _capture, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
         if (projectSln.IncludeManaged &&
-            await PacUtils.PackSolutionAsync(projectSln, ScaffoldedPackageFolder(slnFolder), artifactsFolder, true, _capture, cancellationToken) != 0)
+            await PacUtils.PackSolutionAsync(projectSln, ScaffoldedDataverseSolutionFolder(slnFolder), artifactsFolder, true, _capture, cancellationToken) != 0)
         {
             return (int)ExitCode.BuildFailed;
         }
@@ -107,22 +107,22 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         await ScaffoldAgentsFileAsync(projectSln.UniqueName, slnFileName, cancellationToken);
         await ScaffoldClaudeFileAsync(cancellationToken);
         await new DataverseContextGenerator(Console).GenerateAsync(
-            Path.Combine(ScaffoldedPackageFolder(slnFolder), "src"), projectSln.UniqueName, RootFolder, cancellationToken);
+            Path.Combine(ScaffoldedDataverseSolutionFolder(slnFolder), "src"), projectSln.UniqueName, RootFolder, cancellationToken);
 
         Console.Done("Cloned! Use 'push' and 'sync' to keep it in flow. ヽ(•‿•)ノ");
         return 0;
     }
 
-    /// <summary>The package folder clone creates: <c>Solution/</c> under the project root.</summary>
+    /// <summary>The Dataverse solution folder clone creates: <c>Solution/</c> under the project root.</summary>
     /// <remarks>
     /// The folder clone <em>authors</em>, not one it discovers, and the only place in Flowline allowed to
     /// name it. On a first clone there is no solution file and no <c>.cdsproj</c> yet — clone writes both —
     /// so there is nothing to resolve from. Every command that runs afterwards resolves the folder from the
     /// <c>.cdsproj</c> the solution file records (<see cref="Flowline.Core.Services.SolutionFileLayout.DataverseSolutionFolder"/>),
-    /// which is what lets a project move its package folder and keep working. Do not "fix" these call sites
-    /// into resolver calls: they run before the thing they would resolve exists.
+    /// which is what lets a project move its Dataverse solution folder and keep working. Do not "fix" these
+    /// call sites into resolver calls: they run before the thing they would resolve exists.
     /// </remarks>
-    static string ScaffoldedPackageFolder(string slnFolder) => Path.Combine(slnFolder, "Solution");
+    static string ScaffoldedDataverseSolutionFolder(string slnFolder) => Path.Combine(slnFolder, "Solution");
 
     /// <summary>The C# reserved keywords, which cannot appear unescaped in a namespace declaration.</summary>
     private static readonly HashSet<string> s_csharpKeywords =
@@ -200,7 +200,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             return;
         }
 
-        var content = BuildAgentsFileContent(solutionName, slnFileName, Path.GetFileName(ScaffoldedPackageFolder(RootFolder)));
+        var content = BuildAgentsFileContent(solutionName, slnFileName, Path.GetFileName(ScaffoldedDataverseSolutionFolder(RootFolder)));
 
         await File.WriteAllTextAsync(agentsPath, content, cancellationToken);
         Console.Ok("AGENTS.md created.");
@@ -216,7 +216,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     ///
     /// Pure and separate from the write so the rendered text is testable without a clone.
     /// </remarks>
-    internal static string BuildAgentsFileContent(string solutionName, string slnFileName, string packageFolderName)
+    internal static string BuildAgentsFileContent(string solutionName, string slnFileName, string dataverseSolutionFolderName)
     {
         // Padded here rather than hand-aligned, because every project path carries the solution name.
         (string Path, string Note)[] structureRows =
@@ -224,8 +224,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             (".flowline", "environment URLs + solution config"),
             (".gitignore", "root gitignore (bin/obj/node_modules/artifacts/dist)"),
             (slnFileName, "solution file — the authoritative list of this project's projects"),
-            ($"{packageFolderName}/{solutionName}.cdsproj", "solution package project (PAC-managed, do not edit)"),
-            ($"{packageFolderName}/src/", "unpacked solution XML (git-diffable)"),
+            ($"{dataverseSolutionFolderName}/{solutionName}.cdsproj", "solution package project (PAC-managed, do not edit)"),
+            ($"{dataverseSolutionFolderName}/src/", "unpacked solution XML (git-diffable)"),
             ($"Plugins/{PluginsProjectFileName(solutionName)}", "plugin source, decorated with [Step] attributes"),
             ("Plugins/Models/", "early-bound C# types (from flowline generate)"),
             ($"WebResources/{WebResourcesProjectFileName(solutionName)}", "web resource assets"),
@@ -268,7 +268,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
             - Never run `pac solution` commands directly — Flowline wraps them correctly.
             - Always run `flowline push` before `flowline sync` when plugin code changed.
-            - `flowline sync` requires no uncommitted changes in `{{packageFolderName}}/src/` (exit code 12 if dirty).
+            - `flowline sync` requires no uncommitted changes in `{{dataverseSolutionFolderName}}/src/` (exit code 12 if dirty).
             - `flowline deploy` requires no uncommitted changes under the target solution's folder (exit code 12 if dirty).
             - DEV is the source of truth. Sync captures its state; never hand-edit unpacked XML.
             - `clone`, `push`, and `sync` require an unmanaged solution in DEV — they fail on managed environments.
@@ -362,7 +362,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
     private void SeedWebResourceDistFromSrc(string slnFolder, string? publisherPrefix, string solutionName, Settings settings)
     {
-        var srcWebResources = Path.Combine(ScaffoldedPackageFolder(slnFolder), "src", "WebResources");
+        var srcWebResources = Path.Combine(ScaffoldedDataverseSolutionFolder(slnFolder), "src", "WebResources");
         var publicFolder = Path.Combine(slnFolder, "WebResources", "public");
 
         if (!Directory.Exists(srcWebResources))
@@ -412,17 +412,17 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             // Unmanaged content is always present once cloned (Both is a superset), so only a
             // switch to managed can leave the local source stale — and only when it doesn't
             // already have the managed layer (e.g. a previous clone/sync already fetched Both).
-            if (projectSln.IncludeManaged && !HasManagedContent(ScaffoldedPackageFolder(slnFolder)))
-                await PacUtils.SyncSolutionFromDataverseAsync(projectSln.UniqueName, ScaffoldedPackageFolder(slnFolder), environmentUrl, projectSln.IncludeManaged, _capture, cancellationToken);
+            if (projectSln.IncludeManaged && !HasManagedContent(ScaffoldedDataverseSolutionFolder(slnFolder)))
+                await PacUtils.SyncSolutionFromDataverseAsync(projectSln.UniqueName, ScaffoldedDataverseSolutionFolder(slnFolder), environmentUrl, projectSln.IncludeManaged, _capture, cancellationToken);
             else
                 Console.Skip("Solution already cloned — skipping");
 
             return;
         }
 
-        if (Directory.Exists(ScaffoldedPackageFolder(slnFolder)))
+        if (Directory.Exists(ScaffoldedDataverseSolutionFolder(slnFolder)))
             throw new FlowlineException(ExitCode.ConfigInvalid,
-                DescribePackageFolderWithoutCdsproj(ScaffoldedPackageFolder(slnFolder), Path.GetFileName(cdsprojPath)));
+                DescribeDataverseSolutionFolderWithoutCdsproj(ScaffoldedDataverseSolutionFolder(slnFolder), Path.GetFileName(cdsprojPath)));
 
         Directory.CreateDirectory(slnFolder);
 
@@ -451,8 +451,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         // under the role-based name and leaves the project file exactly as pac wrote it — the folder answers
         // "what kind of thing lives here", the file answers "which solution", and only the latter escapes
         // the repo.
-        Directory.Move(Path.Combine(slnFolder, projectSln.UniqueName), ScaffoldedPackageFolder(slnFolder));
-        DeleteScaffoldedGitignore(ScaffoldedPackageFolder(slnFolder)); // superseded by the project-root .gitignore
+        Directory.Move(Path.Combine(slnFolder, projectSln.UniqueName), ScaffoldedDataverseSolutionFolder(slnFolder));
+        DeleteScaffoldedGitignore(ScaffoldedDataverseSolutionFolder(slnFolder)); // superseded by the project-root .gitignore
 
         Console.Ok($"Solution [bold]{projectSln.UniqueName}[/] cloned in {FormatDuration(result.RunTime)}");
     }
@@ -461,9 +461,9 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     // "{name}_managed.xml" file alongside the plain one only when unpacked with --packagetype Both —
     // its presence is a reliable, on-disk signal that the managed layer was already fetched, without
     // needing to track our own "what did we last sync" state (which could go stale if a prior fetch failed).
-    internal static bool HasManagedContent(string packageFolder)
+    internal static bool HasManagedContent(string dataverseSolutionFolder)
     {
-        var srcFolder = Path.Combine(packageFolder, "src");
+        var srcFolder = Path.Combine(dataverseSolutionFolder, "src");
         return Directory.Exists(srcFolder) &&
                Directory.EnumerateFiles(srcFolder, "*_managed.xml", SearchOption.AllDirectories).Any();
     }
@@ -537,11 +537,11 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     /// solution's project — someone else's clone, or a solution renamed in Dataverse. Naming the file that
     /// is there beats telling the user to delete a folder pac just spent minutes filling.
     /// </remarks>
-    internal static string DescribePackageFolderWithoutCdsproj(string packageFolder, string cdsprojFileName)
+    internal static string DescribeDataverseSolutionFolderWithoutCdsproj(string dataverseSolutionFolder, string cdsprojFileName)
     {
-        var stray = Directory.EnumerateFiles(packageFolder, "*.cdsproj", SearchOption.TopDirectoryOnly).FirstOrDefault();
+        var stray = Directory.EnumerateFiles(dataverseSolutionFolder, "*.cdsproj", SearchOption.TopDirectoryOnly).FirstOrDefault();
 
-        var folderName = Path.GetFileName(packageFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        var folderName = Path.GetFileName(dataverseSolutionFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 
         return stray != null
             ? $"{folderName}/ holds {Path.GetFileName(stray)}, not {cdsprojFileName}. Rename it and run clone again."

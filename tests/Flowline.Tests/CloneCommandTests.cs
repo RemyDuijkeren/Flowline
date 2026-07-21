@@ -18,10 +18,10 @@ public class CloneCommandTests
         var root = CreateTempRoot();
         try
         {
-            var packageFolder = Path.Combine(root, "Solution");
-            Directory.CreateDirectory(packageFolder);
+            var dataverseSolutionFolder = Path.Combine(root, "Solution");
+            Directory.CreateDirectory(dataverseSolutionFolder);
 
-            var result = CloneCommand.HasManagedContent(packageFolder);
+            var result = CloneCommand.HasManagedContent(dataverseSolutionFolder);
 
             result.Should().BeFalse();
         }
@@ -88,11 +88,11 @@ public class CloneCommandTests
     static (string Root, string SlnPath, string CdsprojPath) CreateProject(string solutionName = "CrO7982")
     {
         var root = CreateTempRoot();
-        var packageFolder = Path.Combine(root, "Solution");
-        Directory.CreateDirectory(packageFolder);
+        var dataverseSolutionFolder = Path.Combine(root, "Solution");
+        Directory.CreateDirectory(dataverseSolutionFolder);
 
         // pac names the .cdsproj after the solution and clone never renames it.
-        var cdsprojPath = Path.Combine(packageFolder, $"{solutionName}.cdsproj");
+        var cdsprojPath = Path.Combine(dataverseSolutionFolder, $"{solutionName}.cdsproj");
         File.WriteAllText(cdsprojPath, "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
 
         return (root, Path.Combine(root, $"{solutionName}.sln"), cdsprojPath);
@@ -132,9 +132,9 @@ public class CloneCommandTests
         {
             await CloneCommand.AddPackageProjectAsync(new MsBuildSolutionWriter(), root, slnPath, cdsprojPath);
 
-            var packageFolder = Path.Combine(root, "Solution");
+            var dataverseSolutionFolder = Path.Combine(root, "Solution");
             File.Exists(cdsprojPath).Should().BeTrue("the project keeps its own name throughout");
-            Directory.EnumerateFiles(packageFolder, "*.csproj").Should().BeEmpty();
+            Directory.EnumerateFiles(dataverseSolutionFolder, "*.csproj").Should().BeEmpty();
         }
         finally
         {
@@ -173,8 +173,8 @@ public class CloneCommandTests
         var (root, slnPath, cdsprojPath) = CreateProject();
         try
         {
-            // Interruption partway through solution-file setup: the package folder and its project are
-            // already on disk, and there is no solution file yet.
+            // Interruption partway through solution-file setup: the Dataverse solution folder and its
+            // project are already on disk, and there is no solution file yet.
             File.Exists(cdsprojPath).Should().BeTrue();
             File.Exists(slnPath).Should().BeFalse();
 
@@ -192,18 +192,18 @@ public class CloneCommandTests
     }
 
     [Fact]
-    public void DescribePackageFolderWithoutCdsproj_StrayProjectFile_NamesItAndAsksForARename()
+    public void DescribeDataverseSolutionFolderWithoutCdsproj_StrayProjectFile_NamesItAndAsksForARename()
     {
         var root = CreateTempRoot();
         try
         {
             // A Solution/ folder holding another solution's project — a solution renamed in Dataverse,
             // or someone else's clone left in place.
-            var packageFolder = Path.Combine(root, "Solution");
-            Directory.CreateDirectory(packageFolder);
-            File.WriteAllText(Path.Combine(packageFolder, "OtherSolution.cdsproj"), "<Project />");
+            var dataverseSolutionFolder = Path.Combine(root, "Solution");
+            Directory.CreateDirectory(dataverseSolutionFolder);
+            File.WriteAllText(Path.Combine(dataverseSolutionFolder, "OtherSolution.cdsproj"), "<Project />");
 
-            var message = CloneCommand.DescribePackageFolderWithoutCdsproj(packageFolder, "CrO7982.cdsproj");
+            var message = CloneCommand.DescribeDataverseSolutionFolderWithoutCdsproj(dataverseSolutionFolder, "CrO7982.cdsproj");
 
             message.Should().Contain("OtherSolution.cdsproj").And.Contain("CrO7982.cdsproj").And.Contain("Rename");
             message.Should().NotContain("Delete", "a one-file rename fixes this — deleting the folder throws away a finished clone");
@@ -215,15 +215,15 @@ public class CloneCommandTests
     }
 
     [Fact]
-    public void DescribePackageFolderWithoutCdsproj_NoProjectFileAtAll_StillAvoidsDeleteAdvice()
+    public void DescribeDataverseSolutionFolderWithoutCdsproj_NoProjectFileAtAll_StillAvoidsDeleteAdvice()
     {
         var root = CreateTempRoot();
         try
         {
-            var packageFolder = Path.Combine(root, "Solution");
-            Directory.CreateDirectory(packageFolder);
+            var dataverseSolutionFolder = Path.Combine(root, "Solution");
+            Directory.CreateDirectory(dataverseSolutionFolder);
 
-            var message = CloneCommand.DescribePackageFolderWithoutCdsproj(packageFolder, "CrO7982.cdsproj");
+            var message = CloneCommand.DescribeDataverseSolutionFolderWithoutCdsproj(dataverseSolutionFolder, "CrO7982.cdsproj");
 
             message.Should().Contain("CrO7982.cdsproj");
             message.Should().NotContain("Delete");
@@ -570,7 +570,7 @@ public class CloneCommandTests
     }
 
     [Fact]
-    public void BuildAgentsFileContent_NeverMentionsTheOldPackageFolder()
+    public void BuildAgentsFileContent_NeverMentionsTheOldDataverseSolutionFolder()
     {
         var content = CloneCommand.BuildAgentsFileContent("CrO7982", "CrO7982.slnx", "Solution");
 
@@ -581,10 +581,10 @@ public class CloneCommandTests
     }
 
     [Fact]
-    public void BuildAgentsFileContent_FollowsARelocatedPackageFolder()
+    public void BuildAgentsFileContent_FollowsARelocatedDataverseSolutionFolder()
     {
-        // The folder resolves from the solution file, so a project that moved its package folder must
-        // not be handed instructions naming the folder clone would have created.
+        // The folder resolves from the solution file, so a project that moved its Dataverse solution
+        // folder must not be handed instructions naming the folder clone would have created.
         var content = CloneCommand.BuildAgentsFileContent("CrO7982", "CrO7982.slnx", "Dataverse");
 
         content.Should().Contain("Dataverse/CrO7982.cdsproj")

@@ -7,9 +7,9 @@ namespace Flowline.Core.OrphanCleanup;
 // OrphanCleanupService.CompareAsync's doc comment on KTD12) — a handler's dependencies should be
 // exactly what it needs, not a deploy-pipeline type carrying fields (like PackagePath) it never reads.
 // EntityLogicalNames is required by U8's ResolveAttributeInfoAsync-driven attribute check, which today
-// takes it as an explicit parameter rather than deriving it from PackageSrcRoot alone.
+// takes it as an explicit parameter rather than deriving it from DataverseSolutionSrcRoot alone.
 public sealed record DetectionContext(
-    string PackageSrcRoot,
+    string DataverseSolutionSrcRoot,
     IOrganizationServiceAsync2 Service,
     string SolutionName,
     string EnvironmentUrl,

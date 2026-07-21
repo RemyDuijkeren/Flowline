@@ -213,20 +213,20 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
         // still has environment versions worth showing, so a broken/missing layout renders a dash below
         // rather than aborting the whole grid — the one sanctioned catch of a FlowlineException outside
         // BuildGridRows' own (R6's "error" is for action commands, not this read-only view).
-        string? packageFolder = null;
+        string? dataverseSolutionFolder = null;
         try
         {
             var layout = await SolutionFileLayout.LoadAsync(rootFolder, cancellationToken);
-            packageFolder = layout.DataverseSolutionFolder;
+            dataverseSolutionFolder = layout.DataverseSolutionFolder;
         }
         catch (FlowlineException)
         {
-            // No solution file, or an invalid one (e.g. two .cdsproj) — packageFolder stays null and
+            // No solution file, or an invalid one (e.g. two .cdsproj) — dataverseSolutionFolder stays null and
             // BuildGridRows renders a dash for the repo column.
         }
 
         var (headers, rows) = StatusGrid.BuildGridRows([solution], results,
-            solutionName => packageFolder is null ? null : DeployCommand.ReadLocalSolutionVersion(packageFolder),
+            solutionName => dataverseSolutionFolder is null ? null : DeployCommand.ReadLocalSolutionVersion(dataverseSolutionFolder),
             solutionName => isDirty);
 
         rows = StatusGrid.DetectVersionDrift(StatusGrid.TrimUnusedRevisionSegment(rows));

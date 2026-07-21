@@ -130,9 +130,9 @@ public static class ComponentClassifier
     /// top-level RootComponents: Entities/&lt;name&gt;/FormXml/**/{guid}.xml (Form) and
     /// Entities/&lt;name&gt;/SavedQueries/{guid}.xml (View).
     /// </summary>
-    public static IReadOnlyList<(Guid ObjectId, int ComponentType)> ScanEntitySubcomponents(string packageSrcRoot)
+    public static IReadOnlyList<(Guid ObjectId, int ComponentType)> ScanEntitySubcomponents(string dataverseSolutionSrcRoot)
     {
-        var entitiesRoot = Path.Combine(packageSrcRoot, "Entities");
+        var entitiesRoot = Path.Combine(dataverseSolutionSrcRoot, "Entities");
         if (!Directory.Exists(entitiesRoot)) return [];
 
         var result = new List<(Guid, int)>();
@@ -161,18 +161,18 @@ public static class ComponentClassifier
     /// <summary>
     /// Parses committed source under a solution's unpacked src root into S_new candidates: Solution.xml
     /// RootComponents (<see cref="ParseSolutionXmlComponents"/>) plus entity subcomponents unpacked
-    /// under Entities/** (<see cref="ScanEntitySubcomponents"/>). Takes <c>packageSrcRoot</c> (the src
+    /// under Entities/** (<see cref="ScanEntitySubcomponents"/>). Takes <c>dataverseSolutionSrcRoot</c> (the src
     /// folder itself), matching every other local-source scan on this class (<see cref="ScanEntitySubcomponents"/>,
     /// <see cref="ScanCustomApiNames"/>, etc.) — not its parent. Wrapped with the same
     /// <see cref="FlowlineException"/> translation every caller needs, so callers get identical error
     /// messages and exit codes.
     /// </summary>
-    public static (IReadOnlyList<(Guid ObjectId, int ComponentType)> Components, IReadOnlyList<string> EntityLogicalNames, IReadOnlyList<(int ComponentType, string SchemaName)> NamedComponents) ParseLocalSource(string packageSrcRoot)
+    public static (IReadOnlyList<(Guid ObjectId, int ComponentType)> Components, IReadOnlyList<string> EntityLogicalNames, IReadOnlyList<(int ComponentType, string SchemaName)> NamedComponents) ParseLocalSource(string dataverseSolutionSrcRoot)
     {
         try
         {
-            var parsed = ParseSolutionXmlComponents(Path.Combine(packageSrcRoot, "Other", "Solution.xml"));
-            var subcomponents = ScanEntitySubcomponents(packageSrcRoot);
+            var parsed = ParseSolutionXmlComponents(Path.Combine(dataverseSolutionSrcRoot, "Other", "Solution.xml"));
+            var subcomponents = ScanEntitySubcomponents(dataverseSolutionSrcRoot);
             return (parsed.Components.Concat(subcomponents).ToList(), parsed.EntityLogicalNames, parsed.NamedComponents);
         }
         catch (FileNotFoundException ex)
@@ -193,9 +193,9 @@ public static class ComponentClassifier
     /// LogicalName (via a live metadata lookup) before this can confirm whether it's still in source.
     /// Returns an empty set if the entity folder or Entity.xml is absent.
     /// </summary>
-    public static HashSet<string> ScanEntityAttributeLogicalNames(string packageSrcRoot, string entityLogicalName)
+    public static HashSet<string> ScanEntityAttributeLogicalNames(string dataverseSolutionSrcRoot, string entityLogicalName)
     {
-        var entitiesRoot = Path.Combine(packageSrcRoot, "Entities");
+        var entitiesRoot = Path.Combine(dataverseSolutionSrcRoot, "Entities");
         if (!Directory.Exists(entitiesRoot)) return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         var entityDir = Directory.EnumerateDirectories(entitiesRoot)
@@ -224,12 +224,12 @@ public static class ComponentClassifier
     /// Used to cross-check live CustomApi orphan candidates by name before reporting them — a recreated
     /// CustomApi (same uniquename, new customapiid) is not actually orphaned.
     /// </summary>
-    public static CustomApiNames ScanCustomApiNames(string packageSrcRoot)
+    public static CustomApiNames ScanCustomApiNames(string dataverseSolutionSrcRoot)
     {
         const string requestParams  = "customapirequestparameters";
         const string responseProps = "customapiresponseproperties";
 
-        var (apiNames, children) = ScanShapeFolder(packageSrcRoot, "customapis", requestParams, responseProps);
+        var (apiNames, children) = ScanShapeFolder(dataverseSolutionSrcRoot, "customapis", requestParams, responseProps);
 
         return new CustomApiNames(apiNames, children[requestParams], children[responseProps]);
     }
@@ -240,9 +240,9 @@ public static class ComponentClassifier
     /// schemaname (new botid) is not actually orphaned. Bot has no request/response-property equivalent,
     /// so unlike ScanCustomApiNames there's only a top-level set, no child collections.
     /// </summary>
-    public static HashSet<string> ScanBotSchemaNames(string packageSrcRoot)
+    public static HashSet<string> ScanBotSchemaNames(string dataverseSolutionSrcRoot)
     {
-        var (top, _) = ScanShapeFolder(packageSrcRoot, "bots");
+        var (top, _) = ScanShapeFolder(dataverseSolutionSrcRoot, "bots");
         return top;
     }
 
@@ -254,11 +254,11 @@ public static class ComponentClassifier
     /// alongside. Used to cross-check live ConnectionReference orphan candidates before reporting them.
     /// Returns an empty set if the file or section is missing or empty — never throws.
     /// </summary>
-    public static HashSet<string> ScanConnectionReferenceLogicalNames(string packageSrcRoot)
+    public static HashSet<string> ScanConnectionReferenceLogicalNames(string dataverseSolutionSrcRoot)
     {
         var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        var customizationsXmlPath = Path.Combine(packageSrcRoot, "Other", "Customizations.xml");
+        var customizationsXmlPath = Path.Combine(dataverseSolutionSrcRoot, "Other", "Customizations.xml");
         if (!File.Exists(customizationsXmlPath)) return result;
 
         XDocument doc;
@@ -299,7 +299,7 @@ public static class ComponentClassifier
     /// an empty <c>Children</c> dictionary and just use <c>Top</c>.
     /// </summary>
     internal static (HashSet<string> Top, Dictionary<string, HashSet<string>> Children) ScanShapeFolder(
-        string packageSrcRoot, string folderName, params string[] childCollectionFolders)
+        string dataverseSolutionSrcRoot, string folderName, params string[] childCollectionFolders)
     {
         var top      = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var children = childCollectionFolders.ToDictionary(
@@ -307,7 +307,7 @@ public static class ComponentClassifier
             _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase),
             StringComparer.OrdinalIgnoreCase);
 
-        var root = Path.Combine(packageSrcRoot, folderName);
+        var root = Path.Combine(dataverseSolutionSrcRoot, folderName);
         if (!Directory.Exists(root))
             return (top, children);
 

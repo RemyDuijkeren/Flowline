@@ -16,7 +16,7 @@ public class ConnectionReferenceHandlerTests : IDisposable
     readonly IOrganizationServiceAsync2 _serviceMock;
     readonly TestConsole _console;
     readonly ConnectionReferenceHandler _handler;
-    readonly string _packageSrcRoot;
+    readonly string _dataverseSolutionSrcRoot;
 
     public ConnectionReferenceHandlerTests()
     {
@@ -24,8 +24,8 @@ public class ConnectionReferenceHandlerTests : IDisposable
         _console = new TestConsole();
         _console.Profile.Width = 400; // avoid word-wrap splitting longer assertion substrings across lines
         _handler = new ConnectionReferenceHandler(_console);
-        _packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        Directory.CreateDirectory(_packageSrcRoot);
+        _dataverseSolutionSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(_dataverseSolutionSrcRoot);
 
         // Default: any unconfigured RetrieveMultipleAsync returns empty rather than NSubstitute's null
         // default — real Dataverse never returns a null EntityCollection (mirrors OrphanCleanupServiceTests).
@@ -35,12 +35,12 @@ public class ConnectionReferenceHandlerTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_packageSrcRoot))
-            Directory.Delete(_packageSrcRoot, true);
+        if (Directory.Exists(_dataverseSolutionSrcRoot))
+            Directory.Delete(_dataverseSolutionSrcRoot, true);
     }
 
     DetectionContext Ctx(RunMode mode = RunMode.Normal) =>
-        new(_packageSrcRoot, _serviceMock, "MySolution", "https://example.crm.dynamics.com", mode, []);
+        new(_dataverseSolutionSrcRoot, _serviceMock, "MySolution", "https://example.crm.dynamics.com", mode, []);
 
     void SetupConnectionReferenceRow(Guid id, string? logicalName)
     {
@@ -53,9 +53,9 @@ public class ConnectionReferenceHandlerTests : IDisposable
             .Returns(Task.FromResult(new EntityCollection([entity])));
     }
 
-    static void WriteConnectionReferencesXml(string packageSrcRoot, params string[] logicalNames)
+    static void WriteConnectionReferencesXml(string dataverseSolutionSrcRoot, params string[] logicalNames)
     {
-        var otherDir = Path.Combine(packageSrcRoot, "Other");
+        var otherDir = Path.Combine(dataverseSolutionSrcRoot, "Other");
         Directory.CreateDirectory(otherDir);
         var refsXml = string.Concat(logicalNames.Select(n => $"<connectionreference connectionreferencelogicalname=\"{n}\"><connectorid>/providers/Microsoft.PowerApps/apis/shared_x</connectorid></connectionreference>"));
         File.WriteAllText(Path.Combine(otherDir, "Customizations.xml"),
@@ -87,7 +87,7 @@ public class ConnectionReferenceHandlerTests : IDisposable
     {
         var liveId = Guid.NewGuid();
         SetupConnectionReferenceRow(liveId, "av_sharepoint");
-        WriteConnectionReferencesXml(_packageSrcRoot, "av_sharepoint");
+        WriteConnectionReferencesXml(_dataverseSolutionSrcRoot, "av_sharepoint");
 
         var findings = (await _handler.DetectAsync(Ctx(), [(liveId, 10064)], default)).Findings;
 
@@ -250,7 +250,7 @@ public class ConnectionReferenceHandlerTests : IDisposable
         // the table at all — it must not be claimed, so it can fall through to generic fallback.
         var liveId = Guid.NewGuid();
         var unresolvedId = Guid.NewGuid();
-        WriteConnectionReferencesXml(_packageSrcRoot, "av_sharepoint");
+        WriteConnectionReferencesXml(_dataverseSolutionSrcRoot, "av_sharepoint");
 
         _serviceMock.RetrieveMultipleAsync(
                 Arg.Is<QueryExpression>(q => q.EntityName == "connectionreference"),

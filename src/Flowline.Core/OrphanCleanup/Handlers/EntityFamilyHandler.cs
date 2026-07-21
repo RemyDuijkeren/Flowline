@@ -99,7 +99,7 @@ public sealed class EntityFamilyHandler(IAnsiConsole console) : IOrphanHandler
 
             if (!localAttributesByEntity.TryGetValue(info.EntityLogicalName, out var localAttributes))
                 localAttributesByEntity[info.EntityLogicalName] = localAttributes =
-                    ComponentClassifier.ScanEntityAttributeLogicalNames(context.PackageSrcRoot, info.EntityLogicalName);
+                    ComponentClassifier.ScanEntityAttributeLogicalNames(context.DataverseSolutionSrcRoot, info.EntityLogicalName);
 
             if (localAttributes.Contains(info.AttributeLogicalName))
                 continue; // still declared in Entity.xml — false positive, not an orphan (still claimed above)

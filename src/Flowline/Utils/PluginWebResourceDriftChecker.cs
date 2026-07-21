@@ -12,7 +12,7 @@ public static class PluginWebResourceDriftChecker
     private const long PluginSizeThresholdBytes = 10 * 1024; // 10 KB
 
     /// <summary>
-    /// Compares local build output against the unpacked solution under <paramref name="packageFolder"/>.
+    /// Compares local build output against the unpacked solution under <paramref name="dataverseSolutionFolder"/>.
     /// </summary>
     /// <remarks>
     /// Takes the already-resolved <paramref name="layout"/> rather than loading one itself (R4) — deploy
@@ -22,7 +22,7 @@ public static class PluginWebResourceDriftChecker
     /// WebResources folder from <see cref="SolutionFileLayout.WebResourcesProjectPath"/>. No await left once
     /// the caller hands over an already-loaded layout, so this returns synchronously.
     /// </remarks>
-    public static Task<List<DriftWarning>> CheckAsync(string slnFolder, SolutionFileLayout layout, string packageFolder, string? publisherPrefix = null, CancellationToken cancellationToken = default)
+    public static Task<List<DriftWarning>> CheckAsync(string slnFolder, SolutionFileLayout layout, string dataverseSolutionFolder, string? publisherPrefix = null, CancellationToken cancellationToken = default)
     {
         var releaseFolders = layout.PluginProjects
                              .Select(c => c.BuildOutputRoot)
@@ -32,16 +32,16 @@ public static class PluginWebResourceDriftChecker
         var webResourcesProject = layout.WebResourcesProjectPath;
 
         var warnings = new List<DriftWarning>();
-        warnings.AddRange(CheckWebResources(slnFolder, Path.GetDirectoryName(webResourcesProject)!, packageFolder, publisherPrefix, cancellationToken));
-        warnings.AddRange(CheckPlugins(releaseFolders, packageFolder));
-        warnings.AddRange(CheckOrphanAssemblies(releaseFolders, packageFolder));
+        warnings.AddRange(CheckWebResources(slnFolder, Path.GetDirectoryName(webResourcesProject)!, dataverseSolutionFolder, publisherPrefix, cancellationToken));
+        warnings.AddRange(CheckPlugins(releaseFolders, dataverseSolutionFolder));
+        warnings.AddRange(CheckOrphanAssemblies(releaseFolders, dataverseSolutionFolder));
         return Task.FromResult(warnings);
     }
 
-    static IEnumerable<DriftWarning> CheckWebResources(string slnFolder, string webResourcesFolder, string packageFolder, string? publisherPrefix, CancellationToken cancellationToken = default)
+    static IEnumerable<DriftWarning> CheckWebResources(string slnFolder, string webResourcesFolder, string dataverseSolutionFolder, string? publisherPrefix, CancellationToken cancellationToken = default)
     {
         var distFolder = Path.Combine(webResourcesFolder, "dist");
-        var srcWebFolder = Path.Combine(packageFolder, "src", "WebResources");
+        var srcWebFolder = Path.Combine(dataverseSolutionFolder, "src", "WebResources");
 
         if (!Directory.Exists(distFolder) || !Directory.EnumerateFiles(distFolder, "*.*", SearchOption.AllDirectories).Any())
             yield break;
@@ -85,9 +85,9 @@ public static class PluginWebResourceDriftChecker
         return result;
     }
 
-    static IEnumerable<DriftWarning> CheckPlugins(IReadOnlyList<string> releaseFolders, string packageFolder)
+    static IEnumerable<DriftWarning> CheckPlugins(IReadOnlyList<string> releaseFolders, string dataverseSolutionFolder)
     {
-        var pluginAssembliesFolder = Path.Combine(packageFolder, "src", "PluginAssemblies");
+        var pluginAssembliesFolder = Path.Combine(dataverseSolutionFolder, "src", "PluginAssemblies");
 
         if (releaseFolders.Count == 0 || !Directory.Exists(pluginAssembliesFolder))
             yield break;
@@ -107,9 +107,9 @@ public static class PluginWebResourceDriftChecker
         }
     }
 
-    static IEnumerable<DriftWarning> CheckOrphanAssemblies(IReadOnlyList<string> releaseFolders, string packageFolder)
+    static IEnumerable<DriftWarning> CheckOrphanAssemblies(IReadOnlyList<string> releaseFolders, string dataverseSolutionFolder)
     {
-        var pluginAssembliesFolder = Path.Combine(packageFolder, "src", "PluginAssemblies");
+        var pluginAssembliesFolder = Path.Combine(dataverseSolutionFolder, "src", "PluginAssemblies");
 
         if (!Directory.Exists(pluginAssembliesFolder) || releaseFolders.Count == 0)
             yield break;

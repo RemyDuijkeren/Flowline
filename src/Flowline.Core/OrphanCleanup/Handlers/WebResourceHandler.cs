@@ -53,7 +53,7 @@ public sealed class WebResourceHandler(IAnsiConsole console) : IOrphanHandler
         // Scans the package source under WebResources — the content this deploy is actually packing and
         // importing — never WebResources/dist. Deploy promotes whatever's committed there; reading a
         // separate local build artifact here would check content that may not match what's shipping.
-        var annotationRefs = WebResourceAnnotationParser.CollectAllReferences(Path.Combine(context.PackageSrcRoot, "WebResources"));
+        var annotationRefs = WebResourceAnnotationParser.CollectAllReferences(Path.Combine(context.DataverseSolutionSrcRoot, "WebResources"));
 
         var findings = new List<HandlerFinding>();
         foreach (var candidate in webResourceCandidates)

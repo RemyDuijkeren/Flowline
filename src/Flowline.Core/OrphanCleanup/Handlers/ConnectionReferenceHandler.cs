@@ -66,7 +66,7 @@ public sealed class ConnectionReferenceHandler(IAnsiConsole console) : IOrphanHa
         // ConnectionReference has no dedicated folder like Bot's bots/<schemaname>/bot.xml — it's
         // declared inline in Other/Customizations.xml's <connectionreferences> section (see
         // ComponentClassifier.ScanConnectionReferenceLogicalNames).
-        var localLogicalNames = ComponentClassifier.ScanConnectionReferenceLogicalNames(context.PackageSrcRoot);
+        var localLogicalNames = ComponentClassifier.ScanConnectionReferenceLogicalNames(context.DataverseSolutionSrcRoot);
 
         var componentTypeById = new Dictionary<Guid, int>();
         foreach (var candidate in candidates)

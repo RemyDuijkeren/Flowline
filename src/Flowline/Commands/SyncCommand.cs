@@ -65,12 +65,12 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         // solution file, no .cdsproj entry, or the entry points at nothing. Loaded once and threaded through
         // the drift check below, so one sync never parses the solution file twice and acts on two answers.
         var layout = await SolutionFileLayout.LoadAsync(slnFolder, cancellationToken);
-        var packageFolder = layout.DataverseSolutionFolder;
+        var dataverseSolutionFolder = layout.DataverseSolutionFolder;
 
         // Check for uncommitted changes
-        var srcPath = Path.Combine(packageFolder, "src");
-        // Rendered from the resolved path, never spelled out: a user who has relocated the package folder
-        // must not be told to look in 'Solution/src' when the check ran somewhere else entirely.
+        var srcPath = Path.Combine(dataverseSolutionFolder, "src");
+        // Rendered from the resolved path, never spelled out: a user who has relocated the Dataverse solution
+        // folder must not be told to look in 'Solution/src' when the check ran somewhere else entirely.
         var srcDisplay = ConsolePath.FormatRelativePath(srcPath, RootFolder);
         var preSyncSummary = await SolutionChangeSummary.ComputeAsync(srcPath, RootFolder, _capture, cancellationToken);
         Logger.LogInformation("Diff: {TotalFiles} files changed", preSyncSummary.TotalFiles);
@@ -112,14 +112,14 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             Console.Ok($"Version bumped: {tagVersion}");
 
         // Sync solution from Dataverse
-        await PacUtils.SyncSolutionFromDataverseAsync(projectSln.UniqueName, packageFolder, devEnv.EnvironmentUrl!, projectSln.IncludeManaged, _capture, cancellationToken);
+        await PacUtils.SyncSolutionFromDataverseAsync(projectSln.UniqueName, dataverseSolutionFolder, devEnv.EnvironmentUrl!, projectSln.IncludeManaged, _capture, cancellationToken);
 
         // Pack the solution in pac to validate it
         Logger.LogInformation("Validating pack: {SolutionName}", projectSln.UniqueName);
         var artifactsFolder = Path.Combine(slnFolder, "artifacts");
-        if (await PacUtils.PackSolutionAsync(projectSln, packageFolder, artifactsFolder, false, _capture, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
+        if (await PacUtils.PackSolutionAsync(projectSln, dataverseSolutionFolder, artifactsFolder, false, _capture, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
         if (projectSln.IncludeManaged &&
-            await PacUtils.PackSolutionAsync(projectSln, packageFolder, artifactsFolder, true, _capture, cancellationToken) != 0)
+            await PacUtils.PackSolutionAsync(projectSln, dataverseSolutionFolder, artifactsFolder, true, _capture, cancellationToken) != 0)
         {
             return (int)ExitCode.BuildFailed;
         }
@@ -132,7 +132,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             return (int)ExitCode.BuildFailed;
 
         // Check for drift between local solution (Plugins/WebResources) and Dataverse (/src)
-        var driftWarnings = await PluginWebResourceDriftChecker.CheckAsync(slnFolder, layout, packageFolder, slnInfo.PublisherPrefix, cancellationToken);
+        var driftWarnings = await PluginWebResourceDriftChecker.CheckAsync(slnFolder, layout, dataverseSolutionFolder, slnInfo.PublisherPrefix, cancellationToken);
         Logger.LogInformation("Drift: {DriftCount} warnings", driftWarnings.Count);
         if (driftWarnings.Count == 0)
         {

@@ -65,8 +65,8 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var slnFolder = RootFolder;
         var usingExplicitArtifact = !string.IsNullOrWhiteSpace(settings.Path);
 
-        // --path supplies a prebuilt artifact packed elsewhere, so nothing on that route reads the package
-        // folder — not the git-clean scope, the DTAP gate's local version, the drift check, or the pack.
+        // --path supplies a prebuilt artifact packed elsewhere, so nothing on that route reads the Dataverse
+        // solution folder — not the git-clean scope, the DTAP gate's local version, the drift check, or the pack.
         // Resolve it only when a route needs it, so `deploy --path <zip>` still works in a repo without a
         // solution file (a CI checkout carrying only the artifact), the way it did before discovery replaced
         // the on-disk cdsproj check. On the packed route the layout is loaded once and threaded through
@@ -74,15 +74,15 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var layout = usingExplicitArtifact
             ? null
             : await SolutionFileLayout.LoadAsync(slnFolder, cancellationToken);
-        var packageFolder = layout?.DataverseSolutionFolder;
+        var dataverseSolutionFolder = layout?.DataverseSolutionFolder;
 
         // --path supplies an artifact that wasn't necessarily packed from the current local tree, so neither
         // check is meaningful there: git-clean and drift both assume packagePath is derived from the
-        // package folder's src/.
+        // Dataverse solution folder's src/.
         IReadOnlyList<string> deploymentInputPaths = [];
         if (!usingExplicitArtifact)
         {
-            deploymentInputPaths = GetDeploymentInputPaths(layout!, packageFolder!); // non-null on the packed route
+            deploymentInputPaths = GetDeploymentInputPaths(layout!, dataverseSolutionFolder!); // non-null on the packed route
             await ValidateGitCleanAsync(deploymentInputPaths, cancellationToken);
         }
 
@@ -110,7 +110,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
             gateVersion = cacheOutcome == CacheOutcome.Hit
                 ? cacheEntry!.Version
-                : ReadLocalSolutionVersion(packageFolder!); // non-null on the packed route
+                : ReadLocalSolutionVersion(dataverseSolutionFolder!); // non-null on the packed route
         }
 
         await ValidateDtapGateAsync(sln, gateVersion, targetUrl, settings, cancellationToken);
@@ -133,7 +133,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             }
         }
 
-        await ValidateLocalStateAsync(slnFolder, layout, packageFolder, settings, cancellationToken, checkDrift: !usingExplicitArtifact);
+        await ValidateLocalStateAsync(slnFolder, layout, dataverseSolutionFolder, settings, cancellationToken, checkDrift: !usingExplicitArtifact);
 
         // Managed import only removes components no longer in the solution when Dataverse runs it as an
         // Upgrade (pac's --stage-and-upgrade) — plain import ("Update" semantics) never deletes anything,
@@ -193,7 +193,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             else
             {
                 Logger.LogInformation("Packing: {SolutionName}", sln.UniqueName);
-                packagePath = await PackSolutionAsync(sln, packageFolder!, candidatePackagePath, settings, cancellationToken); // non-null on the packed route
+                packagePath = await PackSolutionAsync(sln, dataverseSolutionFolder!, candidatePackagePath, settings, cancellationToken); // non-null on the packed route
                 if (currentCommitSha != null)
                     WriteCacheEntry(CacheManifestPath(packagePath), new ArtifactCacheEntry(gateVersion, sln.IncludeManaged, currentCommitSha));
             }
@@ -384,19 +384,19 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     // Takes no solution name: all three project paths come out of the already-loaded layout, so a relocated
     // or renamed project stays in scope without deploy knowing what it is called. Synchronous — the layout
     // is already resolved by the time this runs, so there is no I/O left to await.
-    internal static IReadOnlyList<string> GetDeploymentInputPaths(SolutionFileLayout layout, string packageFolder) =>
+    internal static IReadOnlyList<string> GetDeploymentInputPaths(SolutionFileLayout layout, string dataverseSolutionFolder) =>
     [
-        packageFolder,
+        dataverseSolutionFolder,
         ..layout.PluginProjects.Select(c => c.ProjectPath),
         layout.WebResourcesProjectPath
     ];
 
-    private async Task ValidateLocalStateAsync(string slnFolder, SolutionFileLayout? layout, string? packageFolder, Settings settings, CancellationToken ct, bool checkDrift = true)
+    private async Task ValidateLocalStateAsync(string slnFolder, SolutionFileLayout? layout, string? dataverseSolutionFolder, Settings settings, CancellationToken ct, bool checkDrift = true)
     {
-        // checkDrift is false exactly on the --path route, the one route that leaves layout/packageFolder null.
+        // checkDrift is false exactly on the --path route, the one route that leaves layout/dataverseSolutionFolder null.
         if (!checkDrift) return;
 
-        var drift = (await PluginWebResourceDriftChecker.CheckAsync(slnFolder, layout!, packageFolder!, cancellationToken: ct))
+        var drift = (await PluginWebResourceDriftChecker.CheckAsync(slnFolder, layout!, dataverseSolutionFolder!, cancellationToken: ct))
             .Where(w => w.Category is DriftCategory.OnlyLocal or DriftCategory.PluginSizeMismatch)
             .ToList();
 
@@ -576,7 +576,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             $"{(solutionIncludeManaged ? "managed" : "unmanaged")} — pass a matching artifact or update the solution's managed setting.");
     }
 
-    private async Task<string> PackSolutionAsync(ProjectSolution sln, string packageFolder, string packagePath, Settings settings, CancellationToken ct)
+    private async Task<string> PackSolutionAsync(ProjectSolution sln, string dataverseSolutionFolder, string packagePath, Settings settings, CancellationToken ct)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(packagePath)!);
 
@@ -589,7 +589,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
                     .WithArguments(args => args
                         .AddIfNotNull(prefixArgs)
                         .Add("solution").Add("pack")
-                        .Add("--folder").Add(Path.Combine(packageFolder, "src"))
+                        .Add("--folder").Add(Path.Combine(dataverseSolutionFolder, "src"))
                         .Add("--zipFile").Add(packagePath)
                         .Add("--packageType").Add(packageType))
                     .WithValidation(CommandResultValidation.None)
@@ -680,9 +680,9 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
                       .FirstOrDefault(c => !string.IsNullOrEmpty(c.Url));
     }
 
-    internal static string ReadLocalSolutionVersion(string packageFolderPath)
+    internal static string ReadLocalSolutionVersion(string dataverseSolutionFolder)
     {
-        var solutionXmlPath = Path.Combine(packageFolderPath, "src", "Other", "Solution.xml");
+        var solutionXmlPath = Path.Combine(dataverseSolutionFolder, "src", "Other", "Solution.xml");
         if (!File.Exists(solutionXmlPath))
             throw new FlowlineException(ExitCode.NotFound, $"Solution.xml not found at '{solutionXmlPath}' — run 'clone' first.");
 
@@ -695,7 +695,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         {
             throw new FlowlineException(ExitCode.ConfigInvalid,
                 $"Solution.xml at '{solutionXmlPath}' is malformed or unreadable — restore " +
-                $"'{ConsolePath.FormatRelativePath(packageFolderPath)}' from git or re-run 'flowline clone'.", ex);
+                $"'{ConsolePath.FormatRelativePath(dataverseSolutionFolder)}' from git or re-run 'flowline clone'.", ex);
         }
 
         return ParseSolutionManifest(doc).Version;

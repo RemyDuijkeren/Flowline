@@ -16,7 +16,7 @@ public class CustomApiFamilyHandlerTests : IDisposable
     readonly IOrganizationServiceAsync2 _serviceMock;
     readonly TestConsole _console;
     readonly CustomApiFamilyHandler _handler;
-    readonly string _packageSrcRoot;
+    readonly string _dataverseSolutionSrcRoot;
 
     public CustomApiFamilyHandlerTests()
     {
@@ -24,8 +24,8 @@ public class CustomApiFamilyHandlerTests : IDisposable
         _console = new TestConsole();
         _console.Profile.Width = 400; // avoid word-wrap splitting longer assertion substrings across lines
         _handler = new CustomApiFamilyHandler(_console);
-        _packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        Directory.CreateDirectory(_packageSrcRoot);
+        _dataverseSolutionSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(_dataverseSolutionSrcRoot);
 
         // Default: any unconfigured RetrieveMultipleAsync returns empty rather than NSubstitute's null
         // default — real Dataverse never returns a null EntityCollection (mirrors OrphanCleanupServiceTests).
@@ -35,12 +35,12 @@ public class CustomApiFamilyHandlerTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_packageSrcRoot))
-            Directory.Delete(_packageSrcRoot, true);
+        if (Directory.Exists(_dataverseSolutionSrcRoot))
+            Directory.Delete(_dataverseSolutionSrcRoot, true);
     }
 
     DetectionContext Ctx(RunMode mode = RunMode.Normal) =>
-        new(_packageSrcRoot, _serviceMock, "MySolution", "https://example.crm.dynamics.com", mode, []);
+        new(_dataverseSolutionSrcRoot, _serviceMock, "MySolution", "https://example.crm.dynamics.com", mode, []);
 
     void SetupTableNames(string entityLogicalName, params (Guid Id, string Name)[] rows)
     {
@@ -79,7 +79,7 @@ public class CustomApiFamilyHandlerTests : IDisposable
         // reported as an orphan even though its objectid differs from before.
         var liveId = Guid.NewGuid();
         SetupTableNames("customapi", (liveId, "av_AatYourService"));
-        Directory.CreateDirectory(Path.Combine(_packageSrcRoot, "customapis", "av_AatYourService"));
+        Directory.CreateDirectory(Path.Combine(_dataverseSolutionSrcRoot, "customapis", "av_AatYourService"));
 
         var findings = (await _handler.DetectAsync(Ctx(), [(liveId, 10036)], default)).Findings;
 
@@ -235,7 +235,7 @@ public class CustomApiFamilyHandlerTests : IDisposable
         var liveId = Guid.NewGuid();
         var unresolvedId = Guid.NewGuid();
         SetupTableNames("customapi", (liveId, "av_AatYourService"));
-        Directory.CreateDirectory(Path.Combine(_packageSrcRoot, "customapis", "av_AatYourService"));
+        Directory.CreateDirectory(Path.Combine(_dataverseSolutionSrcRoot, "customapis", "av_AatYourService"));
 
         var result = await _handler.DetectAsync(Ctx(), [(liveId, 10036), (unresolvedId, 10036)], default);
 

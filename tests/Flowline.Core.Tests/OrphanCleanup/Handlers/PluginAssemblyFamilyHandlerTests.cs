@@ -37,8 +37,8 @@ public class PluginAssemblyFamilyHandlerTests
     DetectionContext Ctx(RunMode mode = RunMode.Normal) =>
         new("unused-package-src-root", _serviceMock, "MySolution", "https://example.crm.dynamics.com", mode, []);
 
-    DetectionContext Ctx(string packageSrcRoot, RunMode mode = RunMode.Normal) =>
-        new(packageSrcRoot, _serviceMock, "MySolution", "https://example.crm.dynamics.com", mode, []);
+    DetectionContext Ctx(string dataverseSolutionSrcRoot, RunMode mode = RunMode.Normal) =>
+        new(dataverseSolutionSrcRoot, _serviceMock, "MySolution", "https://example.crm.dynamics.com", mode, []);
 
     // Creates a customapis/<name>/ directory (the shape ComponentClassifier.ScanCustomApiNames scans) so
     // a test can simulate a CustomApi still declared in local source.

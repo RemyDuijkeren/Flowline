@@ -94,7 +94,7 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         // Only candidates already present in this run's `candidates` batch are touched inside this
         // call — a CustomApi/param/prop this live query finds but which ISN'T already an orphan
         // candidate is still validly declared locally and must be left alone.
-        var localCustomApiNames = ComponentClassifier.ScanCustomApiNames(context.PackageSrcRoot);
+        var localCustomApiNames = ComponentClassifier.ScanCustomApiNames(context.DataverseSolutionSrcRoot);
         var (childCleanupFindings, childCleanupDegraded) = packageIds.Count > 0
             ? await ResolvePackageChildCleanupFindingsAsync(context.Service, packageIds.Keys, candidates, claimedIds, localCustomApiNames, console, ct).ConfigureAwait(false)
             : ([], false);

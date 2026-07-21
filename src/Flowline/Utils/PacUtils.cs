@@ -166,7 +166,7 @@ public static class PacUtils
         throw new Exception("Power Platform CLI isn't available.");
     }
 
-    public static async Task<int> PackSolutionAsync(ProjectSolution projectSln, string packageFolder, string artifactsFolder, bool managed, SubprocessCapture capture, CancellationToken cancellationToken)
+    public static async Task<int> PackSolutionAsync(ProjectSolution projectSln, string dataverseSolutionFolder, string artifactsFolder, bool managed, SubprocessCapture capture, CancellationToken cancellationToken)
     {
         var packageType = managed ? "Managed" : "Unmanaged";
         var suffix = managed ? "_managed" : "_unmanaged";
@@ -183,7 +183,7 @@ public static class PacUtils
                           args.AddIfNotNull(prefixArgs)
                               .Add("solution")
                               .Add("pack")
-                              .Add("--folder").Add(Path.Combine(packageFolder, "src"))
+                              .Add("--folder").Add(Path.Combine(dataverseSolutionFolder, "src"))
                               .Add("--zipFile").Add(zipFile)
                               .Add("--packageType").Add(packageType))
                       .WithValidation(CommandResultValidation.None),
@@ -205,7 +205,7 @@ public static class PacUtils
     }
 
     public static async Task SyncSolutionFromDataverseAsync(
-        string solutionName, string packageFolder, string environmentUrl,
+        string solutionName, string dataverseSolutionFolder, string environmentUrl,
         bool includeManaged, SubprocessCapture capture, CancellationToken cancellationToken)
     {
         var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
@@ -216,7 +216,7 @@ public static class PacUtils
                           args.AddIfNotNull(prefixArgs)
                               .Add("solution")
                               .Add("sync")
-                              .Add("--solution-folder").Add(packageFolder)
+                              .Add("--solution-folder").Add(dataverseSolutionFolder)
                               .Add("--environment").Add(environmentUrl)
                               .Add("--packagetype").Add(includeManaged ? "Both" : "Unmanaged")
                               .Add("--async"))

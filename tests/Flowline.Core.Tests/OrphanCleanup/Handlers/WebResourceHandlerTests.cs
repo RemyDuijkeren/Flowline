@@ -20,7 +20,7 @@ public class WebResourceHandlerTests : IDisposable
     readonly IOrganizationServiceAsync2 _serviceMock;
     readonly TestConsole _console;
     readonly WebResourceHandler _handler;
-    readonly string _packageSrcRoot;
+    readonly string _dataverseSolutionSrcRoot;
     readonly string _webResourcesDir;
 
     public WebResourceHandlerTests()
@@ -29,8 +29,8 @@ public class WebResourceHandlerTests : IDisposable
         _console = new TestConsole();
         _console.Profile.Width = 400; // avoid word-wrap splitting longer assertion substrings across lines
         _handler = new WebResourceHandler(_console);
-        _packageSrcRoot = Path.Combine(Path.GetTempPath(), $"flowline-test-{Guid.NewGuid():N}");
-        _webResourcesDir = Path.Combine(_packageSrcRoot, "WebResources");
+        _dataverseSolutionSrcRoot = Path.Combine(Path.GetTempPath(), $"flowline-test-{Guid.NewGuid():N}");
+        _webResourcesDir = Path.Combine(_dataverseSolutionSrcRoot, "WebResources");
         Directory.CreateDirectory(_webResourcesDir);
 
         // Default: any unconfigured RetrieveMultipleAsync returns empty rather than NSubstitute's null
@@ -41,8 +41,8 @@ public class WebResourceHandlerTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_packageSrcRoot))
-            Directory.Delete(_packageSrcRoot, true);
+        if (Directory.Exists(_dataverseSolutionSrcRoot))
+            Directory.Delete(_dataverseSolutionSrcRoot, true);
     }
 
     void SetupWebResourceNames(params (Guid Id, string Name)[] webResources)
@@ -58,8 +58,8 @@ public class WebResourceHandlerTests : IDisposable
             .Returns(Task.FromResult(new EntityCollection(entities)));
     }
 
-    DetectionContext Ctx(string? packageSrcRoot = null) => new(
-        packageSrcRoot ?? _packageSrcRoot,
+    DetectionContext Ctx(string? dataverseSolutionSrcRoot = null) => new(
+        dataverseSolutionSrcRoot ?? _dataverseSolutionSrcRoot,
         _serviceMock,
         "MySolution",
         "https://example.crm.dynamics.com",
@@ -146,28 +146,28 @@ public class WebResourceHandlerTests : IDisposable
     {
         var orphanId = Guid.NewGuid();
         SetupWebResourceNames((orphanId, "av_ext/lib.js"));
-        var packageSrcRootWithoutWebResourcesDir = Path.Combine(Path.GetTempPath(), $"flowline-test-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(packageSrcRootWithoutWebResourcesDir);
+        var dataverseSolutionSrcRootWithoutWebResourcesDir = Path.Combine(Path.GetTempPath(), $"flowline-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dataverseSolutionSrcRootWithoutWebResourcesDir);
         try
         {
-            var findings = (await _handler.DetectAsync(Ctx(packageSrcRootWithoutWebResourcesDir), [(orphanId, WebResourceComponentType)], default)).Findings;
+            var findings = (await _handler.DetectAsync(Ctx(dataverseSolutionSrcRootWithoutWebResourcesDir), [(orphanId, WebResourceComponentType)], default)).Findings;
 
             var finding = Assert.Single(findings);
             Assert.Equal(orphanId, finding.ObjectId);
         }
         finally
         {
-            Directory.Delete(packageSrcRootWithoutWebResourcesDir, true);
+            Directory.Delete(dataverseSolutionSrcRootWithoutWebResourcesDir, true);
         }
     }
 
     [Fact]
-    public async Task DetectAsync_ExemptionReadsFromPackageSrcWebResources_NotDistBuildOutput()
+    public async Task DetectAsync_ExemptionReadsFromDataverseSolutionSrcWebResources_NotDistBuildOutput()
     {
         // Real folder shape: solutions/<Name>/WebResources/dist (build output, a sibling of Package,
         // unrelated by nesting to Package/src/WebResources). A reference sitting only in that separate
         // dist location must not exempt the orphan — the handler must only ever scan
-        // context.PackageSrcRoot/WebResources.
+        // context.DataverseSolutionSrcRoot/WebResources.
         var orphanId = Guid.NewGuid();
         SetupWebResourceNames((orphanId, "av_ext/shared.js"));
         var distDir = Path.Combine(Path.GetTempPath(), $"flowline-test-{Guid.NewGuid():N}", "WebResources", "dist");
@@ -176,7 +176,7 @@ public class WebResourceHandlerTests : IDisposable
         {
             File.WriteAllText(Path.Combine(distDir, "bundle.js"),
                 "// flowline:depends av_ext/shared.js\ncode();");
-            // No such reference under _webResourcesDir (packageSrcRoot/WebResources) itself.
+            // No such reference under _webResourcesDir (dataverseSolutionSrcRoot/WebResources) itself.
 
             var findings = (await _handler.DetectAsync(Ctx(), [(orphanId, WebResourceComponentType)], default)).Findings;
 

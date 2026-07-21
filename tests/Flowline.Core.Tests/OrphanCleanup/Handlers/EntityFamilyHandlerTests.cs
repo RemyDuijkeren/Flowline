@@ -25,17 +25,17 @@ public class EntityFamilyHandlerTests
         _handler = new EntityFamilyHandler(_console);
     }
 
-    DetectionContext Ctx(string packageSrcRoot = "irrelevant", IReadOnlyList<string>? entityLogicalNames = null) => new(
-        PackageSrcRoot: packageSrcRoot,
+    DetectionContext Ctx(string dataverseSolutionSrcRoot = "irrelevant", IReadOnlyList<string>? entityLogicalNames = null) => new(
+        DataverseSolutionSrcRoot: dataverseSolutionSrcRoot,
         Service: _serviceMock,
         SolutionName: "TestSolution",
         EnvironmentUrl: "https://example.crm.dynamics.com",
         Mode: RunMode.Normal,
         EntityLogicalNames: entityLogicalNames ?? []);
 
-    static void WriteEntityXml(string packageSrcRoot, string folderName, params string[] attributeLogicalNames)
+    static void WriteEntityXml(string dataverseSolutionSrcRoot, string folderName, params string[] attributeLogicalNames)
     {
-        var entityDir = Path.Combine(packageSrcRoot, "Entities", folderName);
+        var entityDir = Path.Combine(dataverseSolutionSrcRoot, "Entities", folderName);
         Directory.CreateDirectory(entityDir);
         var attributesXml = string.Concat(attributeLogicalNames.Select(n => $"<attribute PhysicalName=\"{n}\"><LogicalName>{n}</LogicalName></attribute>"));
         File.WriteAllText(Path.Combine(entityDir, "Entity.xml"),
@@ -92,14 +92,14 @@ public class EntityFamilyHandlerTests
     public async Task DetectAsync_OrphanedAttributeNotInEntityXml_ReturnsManualPrio3WithResolvedName()
     {
         var attributeId = Guid.NewGuid();
-        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        WriteEntityXml(packageSrcRoot, "Account"); // no attributes declared locally
+        var dataverseSolutionSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        WriteEntityXml(dataverseSolutionSrcRoot, "Account"); // no attributes declared locally
         SetupAttributeMetadata("account", (attributeId, "av_removedfield"));
 
         try
         {
             var findings = (await _handler.DetectAsync(
-                Ctx(packageSrcRoot, entityLogicalNames: ["account"]), [(attributeId, 2)], CancellationToken.None)).Findings;
+                Ctx(dataverseSolutionSrcRoot, entityLogicalNames: ["account"]), [(attributeId, 2)], CancellationToken.None)).Findings;
 
             var finding = Assert.Single(findings);
             Assert.Equal(2, finding.ComponentType);
@@ -109,7 +109,7 @@ public class EntityFamilyHandlerTests
         }
         finally
         {
-            Directory.Delete(packageSrcRoot, true);
+            Directory.Delete(dataverseSolutionSrcRoot, true);
         }
     }
 
@@ -117,14 +117,14 @@ public class EntityFamilyHandlerTests
     public async Task DetectAsync_AttributeStillInEntityXml_Suppressed()
     {
         var attributeId = Guid.NewGuid();
-        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        WriteEntityXml(packageSrcRoot, "Account", "av_taxid");
+        var dataverseSolutionSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        WriteEntityXml(dataverseSolutionSrcRoot, "Account", "av_taxid");
         SetupAttributeMetadata("account", (attributeId, "av_taxid"));
 
         try
         {
             var result = await _handler.DetectAsync(
-                Ctx(packageSrcRoot, entityLogicalNames: ["account"]), [(attributeId, 2)], CancellationToken.None);
+                Ctx(dataverseSolutionSrcRoot, entityLogicalNames: ["account"]), [(attributeId, 2)], CancellationToken.None);
 
             Assert.Empty(result.Findings);
             // ClaimedIds still includes the suppressed attribute — it's recognized as this handler's
@@ -134,7 +134,7 @@ public class EntityFamilyHandlerTests
         }
         finally
         {
-            Directory.Delete(packageSrcRoot, true);
+            Directory.Delete(dataverseSolutionSrcRoot, true);
         }
     }
 
@@ -160,8 +160,8 @@ public class EntityFamilyHandlerTests
         // configured entityLogicalNames scope) — matches today's behavior of reporting bare rather than
         // suppressing, since ResolveAttributeInfoAsync never actually verified this one.
         var attributeId = Guid.NewGuid();
-        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        Directory.CreateDirectory(packageSrcRoot);
+        var dataverseSolutionSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(dataverseSolutionSrcRoot);
         // Metadata query resolves the "account" entity but returns no attributes at all, so this
         // attribute's MetadataId never appears in attributeInfo — it stays unresolved.
         SetupAttributeMetadata("account"); // no attributes at all
@@ -169,14 +169,14 @@ public class EntityFamilyHandlerTests
         try
         {
             var findings = (await _handler.DetectAsync(
-                Ctx(packageSrcRoot, entityLogicalNames: ["account"]), [(attributeId, 2)], CancellationToken.None)).Findings;
+                Ctx(dataverseSolutionSrcRoot, entityLogicalNames: ["account"]), [(attributeId, 2)], CancellationToken.None)).Findings;
 
             var finding = Assert.Single(findings);
             Assert.Equal($"Attribute {attributeId}", finding.DisplayName);
         }
         finally
         {
-            Directory.Delete(packageSrcRoot, true);
+            Directory.Delete(dataverseSolutionSrcRoot, true);
         }
     }
 
@@ -205,14 +205,14 @@ public class EntityFamilyHandlerTests
         // 2 candidates are always recognized as this handler's own regardless of Findings membership.
         var entityId = Guid.NewGuid();
         var attributeId = Guid.NewGuid();
-        var packageSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        WriteEntityXml(packageSrcRoot, "Account", "av_taxid");
+        var dataverseSolutionSrcRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        WriteEntityXml(dataverseSolutionSrcRoot, "Account", "av_taxid");
         SetupAttributeMetadata("account", (attributeId, "av_taxid"));
 
         try
         {
             var result = await _handler.DetectAsync(
-                Ctx(packageSrcRoot, entityLogicalNames: ["account"]),
+                Ctx(dataverseSolutionSrcRoot, entityLogicalNames: ["account"]),
                 [(entityId, 1), (attributeId, 2)],
                 CancellationToken.None);
 
@@ -222,7 +222,7 @@ public class EntityFamilyHandlerTests
         }
         finally
         {
-            Directory.Delete(packageSrcRoot, true);
+            Directory.Delete(dataverseSolutionSrcRoot, true);
         }
     }
 }
