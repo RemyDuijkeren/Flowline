@@ -157,10 +157,18 @@ tiebreak.
   (splitting today's `ProjectLayoutResolver`); `PluginProjectsResolver` is today's
   `PluginProjectResolver` logic moved under the facade.
 - **KD3 — WebResources: elimination first, weighted signals to rank.** Candidates are solution
-  `.csproj` that are not the package project, not a plugin project (net4x + Xrm.Sdk/CrmSdk marker —
-  cheap, no build), not PCF (R10), not a test project (name `test`, or a test SDK reference). Among
-  those, confidence is the sum of:
-  - a `.ts`/`.js` file carrying a **Flowline annotation** (very strong — positive proof of intent)
+  `.csproj` that are not the Dataverse solution project, not a plugin project (net4x + Xrm.Sdk/CrmSdk
+  marker — cheap, no build), not PCF (R10), not a test project (name `test`, or a test SDK reference).
+
+  **The strongest rule is arithmetic: exactly one surviving candidate is the WebResources project with
+  high confidence** — a greenfield Flowline project scaffolds exactly one, and Portals/Code Apps (KD6)
+  are added *later*, so their presence would create a *second* candidate and move detection onto the
+  multi-candidate path. The signals below only decide *between* candidates when more than one survives;
+  with one, take it. Confidence is the sum of:
+  - a `.ts`/`.js` file carrying a **Flowline annotation** — the `flowline:` comment marker the web
+    resource pipeline already parses (`// flowline:onload …`, plus the `//!` and `/*!` forms and
+    `flowline:depends`; `FormEventAnnotationParser.cs:28-29`). Very strong — positive proof this source
+    is Flowline-managed web resources, not an arbitrary JS project.
   - an empty/suppressed compile (`<Target Name="CoreCompile" />`, or `Sdk=…NoTargets`) (strong)
   - `Sdk="Microsoft.Build.NoTargets…"`, attribute-anchored not substring (strong)
   - a `dist/` folder (strong; absent before first `npm build`, so positive-only, never disqualifying)
@@ -180,29 +188,46 @@ tiebreak.
   `ControlManifest.Input.xml`. Used only to *exclude* from WebResources for now. When PCF becomes a
   first-class Flowline project type, its detection gets its own verification pass against real controls
   — the draft is a starting point, not a settled contract.
-- **KD6 — Future: Power Apps Portals and Code Apps will break elimination.** Both are TS/JS/React
-  projects built with Rollup/webpack/vite + `package.json` — structurally indistinguishable from a
-  WebResources project by content signals, and they are *not* excluded today. While Flowline supports
-  neither, elimination is safe (they don't appear in a Flowline solution). When either is added, the
-  WebResources content signals (`package.json`, bundler config, JS/TS assets) will false-positive on
-  them, so they need their own resolver and exclusion at that point. Recorded here so the assumption is
-  visible, not silent.
+- **KD6 — Future: Power Apps Portals and Code Apps will break elimination — but only in multi-candidate
+  repos.** Both are TS/JS/React projects built with Rollup/webpack/vite + `package.json` — structurally
+  indistinguishable from a WebResources project by content signals, and *not* excluded today. The risk
+  is confined by KD3's arithmetic rule: they are added to a solution *after* the WebResources project
+  exists, so their only effect is to create a **second** web-like candidate. As long as a repo has one
+  web-like candidate, detection is safe; the false-positive can only arise once a Portal/Code App sits
+  *beside* a WebResources project, which is exactly the multi-candidate path. So the required future
+  work is a positive Portal/Code-App exclusion that fires on the multi-candidate path — the single
+  candidate case never needs it. Recorded so the assumption (these are added later) is visible, not
+  silent; it is the product owner's stated assumption, safe because its failure mode is bounded to
+  multi-candidate repos.
 - **KD7 — Removing the fallbacks is safe because clone never used them.** The conventional fallbacks
   served the no-solution-file case. Clone scaffolds with literals (`ScaffoldedPackageFolder`,
   `SetupPluginsProjectAsync`) and never calls the resolvers, so removing the fallbacks only affects a
   non-clone command run in a repo with no solution file — which R6 makes an error pointing at
   stand-alone mode. `folder-structure.md` §6 (old-layout repos) is unaffected: those have a solution
   file referencing their projects.
+- **KD8 — Rename the "Package" concept to "Dataverse solution project" (pending final sign-off).** The
+  `Package*` names (`PackageFolder`, `ResolvePackageProjectAsync`, `packageFolder`, `PackageSrcRoot`,
+  the deleted `PackageName`) are legacy from the old `Package/` folder and `Package.cdsproj` filename,
+  both since renamed. The name is now doubly wrong: it describes neither the folder (`Solution/`) nor
+  the concept, and it collides with the Dataverse **plugin package** (`.nupkg`, `IsPackagePush`,
+  `SyncSolutionFromPackageAsync`) — a genuinely different thing. Microsoft's own term, grounded in the
+  `pac solution` reference ("Commands for working with **Dataverse solution projects**";
+  `pac solution init` "Initializes a directory with a new **Dataverse solution project**"), is
+  **Dataverse solution project** for the `.cdsproj`. Recommended rename: `DataverseSolutionProject`
+  (project/`.cdsproj`), `DataverseSolutionFolder` (was `PackageFolder`), `DataverseSolutionSource`
+  (was `PackageSrcRoot` / `src/`), `DataverseSolutionProjectResolver` (already in KD2). Chosen over
+  bare `SolutionProject` because unqualified "solution" in this very plan means the MSBuild
+  `.sln`/`.slnx` (`SolutionLayout`, `MsBuildSolutionProject`), so the "Dataverse" qualifier is what
+  keeps the two apart. Final form is the product owner's call — this KD records the recommendation and
+  the CONCEPTS.md term to define.
 
 ## Deferred to Implementation
 
 - Per-signal weights and the confidence bar in KD3 — tune against the AE fixtures; "any strong, or two
   mediums, or a single remaining candidate" is the starting rule.
-- The exact **Flowline annotation** syntax scanned for in `.ts`/`.js` (KD3) — align with whatever the
-  web-resource form-event wiring already annotates; confirm the marker before matching on it.
 - Whether `PluginProjectResolver` is renamed to `PluginProjectsResolver` or kept and merely called by
   the facade — decide by which produces the smaller, clearer diff.
-- The final class name (KD1).
+- The final `SolutionLayout` class name (KD1) and the `DataverseSolutionProject` rename form (KD8).
 
 ## Implementation Units
 
@@ -244,7 +269,8 @@ tiebreak.
 
 **Goal:** the detection rules and the future gaps are written where the next reader finds them.
 **Requirements:** R5, R6, R10, R11, KD5, KD6.
-**Files:** `docs/folder-structure.md` (§3 discovery, §6 old-layout — reconcile the 122-vs-132 contradiction the review found), `CONCEPTS.md` (SolutionLayout as a defined term), wiki `08-WebResources-Project.md`; a `docs/solutions/` entry recording the three-detection audit and the SolutionLayout consolidation.
+**Files:** `docs/folder-structure.md` (§3 discovery, §6 old-layout — reconcile the 122-vs-132 contradiction the review found), `CONCEPTS.md` (define `SolutionLayout`; rename the "Package folder" glossary entry to "Dataverse solution project" per KD8), wiki `08-WebResources-Project.md`; a `docs/solutions/` entry recording the three-detection audit and the SolutionLayout consolidation.
+**Note:** the KD8 rename (`Package*` → `DataverseSolution*`) is a mechanical sweep touching many files; land it as its own unit/commit so it does not obscure the detection logic in review.
 **Approach:** state the per-type rules and the loud/quiet policy; record the marker/config last resort (R11) without building it; record PCF as excluded-and-drafted (KD5) and Portals/Code Apps as future (KD6).
 **Verification:** doc claims cite source `file:line`; no claim the code doesn't back.
 
