@@ -470,7 +470,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
     private async Task CreateSolutionFileAsync(string slnFolder, string slnFilePath, string cdsprojPath, CancellationToken cancellationToken)
     {
-        var (created, added) = await AddPackageProjectAsync(_solutionWriter, slnFolder, slnFilePath, cdsprojPath, cancellationToken);
+        var (created, added) = await AddDataverseSolutionProjectAsync(_solutionWriter, slnFolder, slnFilePath, cdsprojPath, cancellationToken);
 
         if (created)
             Console.Ok("Solution file created");
@@ -490,7 +490,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     }
 
     /// <summary>
-    /// Writes the package project's entry into the solution file, creating that file when it is absent.
+    /// Writes the Dataverse solution project's entry into the solution file, creating that file when it is absent.
     /// </summary>
     /// <returns>Whether the solution file was created, and whether an entry was written.</returns>
     /// <remarks>
@@ -502,7 +502,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     ///
     /// Separate from the console output so the whole create-and-write path is testable without a clone.
     /// </remarks>
-    internal static Task<SolutionWriteResult> AddPackageProjectAsync(
+    internal static Task<SolutionWriteResult> AddDataverseSolutionProjectAsync(
         MsBuildSolutionWriter writer,
         string slnFolder,
         string slnFilePath,

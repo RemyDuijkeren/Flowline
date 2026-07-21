@@ -114,7 +114,7 @@ Key rules:
 - Unpacked solution XML lives in `Solution/src/` — committed to source control
 - Folders are role-based and fixed (`Solution/`, `Plugins/`, `WebResources/`); project files carry the solution's identity, because that is the name that escapes into Dataverse
 - Web asset build output goes to `WebResources/dist/` — this is what syncs to Dataverse
-- A repo with no solution file at all falls back to the pre-Flowline conventions `Plugins/Plugins.csproj` and `WebResources/WebResources.csproj`
+- A repo with no solution file at all is an error, not a fallback: every command but `clone` needs the solution file, so a folder without one throws `NotFound` naming stand-alone mode (`flowline push --pluginFile <dll>`) as the way to push without one
 - A second solution is a separate repo, or (rarer) a nested `solutions/<Name>/` folder of independent Flowline projects — see `docs/folder-structure.md` §4
 
 ## GitHub Wiki

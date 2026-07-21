@@ -99,12 +99,12 @@ public class CloneCommandTests
     }
 
     [Fact]
-    public async Task AddPackageProjectAsync_NoSolutionFile_WritesTheCdsprojEntryWithCSharpType()
+    public async Task AddDataverseSolutionProjectAsync_NoSolutionFile_WritesTheCdsprojEntryWithCSharpType()
     {
         var (root, slnPath, cdsprojPath) = CreateProject();
         try
         {
-            var (created, added) = await CloneCommand.AddPackageProjectAsync(new MsBuildSolutionWriter(), root, slnPath, cdsprojPath);
+            var (created, added) = await CloneCommand.AddDataverseSolutionProjectAsync(new MsBuildSolutionWriter(), root, slnPath, cdsprojPath);
 
             created.Should().BeTrue();
             added.Should().BeTrue();
@@ -125,12 +125,12 @@ public class CloneCommandTests
     }
 
     [Fact]
-    public async Task AddPackageProjectAsync_NeverLeavesACsprojBesideTheCdsproj()
+    public async Task AddDataverseSolutionProjectAsync_NeverLeavesACsprojBesideTheCdsproj()
     {
         var (root, slnPath, cdsprojPath) = CreateProject();
         try
         {
-            await CloneCommand.AddPackageProjectAsync(new MsBuildSolutionWriter(), root, slnPath, cdsprojPath);
+            await CloneCommand.AddDataverseSolutionProjectAsync(new MsBuildSolutionWriter(), root, slnPath, cdsprojPath);
 
             var dataverseSolutionFolder = Path.Combine(root, "Solution");
             File.Exists(cdsprojPath).Should().BeTrue("the project keeps its own name throughout");
@@ -143,15 +143,15 @@ public class CloneCommandTests
     }
 
     [Fact]
-    public async Task AddPackageProjectAsync_EntryAlreadyPresent_DoesNotDuplicateIt()
+    public async Task AddDataverseSolutionProjectAsync_EntryAlreadyPresent_DoesNotDuplicateIt()
     {
         var (root, slnPath, cdsprojPath) = CreateProject();
         try
         {
             var writer = new MsBuildSolutionWriter();
-            await CloneCommand.AddPackageProjectAsync(writer, root, slnPath, cdsprojPath);
+            await CloneCommand.AddDataverseSolutionProjectAsync(writer, root, slnPath, cdsprojPath);
 
-            var (created, added) = await CloneCommand.AddPackageProjectAsync(writer, root, slnPath, cdsprojPath);
+            var (created, added) = await CloneCommand.AddDataverseSolutionProjectAsync(writer, root, slnPath, cdsprojPath);
 
             created.Should().BeFalse();
             added.Should().BeFalse();
@@ -180,7 +180,7 @@ public class CloneCommandTests
 
             // Clone's guard only fires when the .cdsproj is missing, so the re-run walks straight past
             // it — no delete-and-re-clone demand — and finishes the wiring the interrupted run started.
-            var (created, added) = await CloneCommand.AddPackageProjectAsync(new MsBuildSolutionWriter(), root, slnPath, cdsprojPath);
+            var (created, added) = await CloneCommand.AddDataverseSolutionProjectAsync(new MsBuildSolutionWriter(), root, slnPath, cdsprojPath);
 
             created.Should().BeTrue();
             added.Should().BeTrue();
@@ -285,7 +285,7 @@ public class CloneCommandTests
         var slnFilePath = CloneCommand.ResolveSolutionFilePath(root, solutionName);
 
         var writer = new MsBuildSolutionWriter();
-        await CloneCommand.AddPackageProjectAsync(writer, root, slnFilePath, cdsprojPath);
+        await CloneCommand.AddDataverseSolutionProjectAsync(writer, root, slnFilePath, cdsprojPath);
 
         foreach (var (folder, fileName) in new[]
                  {
