@@ -1,5 +1,4 @@
 using Flowline.Core.Console;
-using Flowline.Core.Models;
 using Flowline.Core.Plugins;
 
 namespace Flowline.Core.Services;
@@ -15,21 +14,14 @@ namespace Flowline.Core.Services;
 /// it exactly once per <see cref="LoadAsync"/> and classifies every project from that one in-memory list,
 /// so a command that needs several project types gets them from one instance instead of three parses.
 ///
-/// Per-type classification still lives in the resolvers this class composes
-/// (<see cref="PluginProjectResolver"/> for plugins; the <c>.cdsproj</c> and WebResources rules below, on
-/// their way to becoming their own resolvers) — this class only reuses their list-based logic instead of
-/// their file-reading entry points, so the rules are stated once and this facade adds nothing but the
-/// single read and the caching.
+/// Per-type classification lives in the resolvers this class composes: <see cref="DataverseSolutionProjectResolver"/>
+/// for the <c>.cdsproj</c>, <see cref="PluginProjectResolver"/> for plugins, and
+/// <see cref="WebResourcesProjectResolver"/> for WebResources — this class only reuses their list-based
+/// logic instead of their file-reading entry points, so the rules are stated once and this facade adds
+/// nothing but the single read and the caching.
 /// </remarks>
 public sealed class SolutionFileLayout
 {
-    /// <summary>The SDK that identifies a Flowline WebResources project.</summary>
-    /// <remarks>
-    /// Kept identical to <see cref="ProjectLayoutResolver"/>'s rule for this unit — hardening WebResources
-    /// detection (elimination + weighted signals) is a later unit's job, not this facade's.
-    /// </remarks>
-    const string WebResourcesSdk = "Microsoft.Build.NoTargets";
-
     /// <summary>Absolute path to the <c>.cdsproj</c> the solution file records.</summary>
     public string DataverseSolutionProjectPath { get; }
 
@@ -39,11 +31,11 @@ public sealed class SolutionFileLayout
     /// <summary>Every plugin-project candidate that survives the pre-filter (KTD4) — zero is a valid state.</summary>
     public IReadOnlyList<PluginProjectCandidate> PluginProjects { get; }
 
-    /// <summary>Absolute path to the WebResources project, or the conventional path when nothing resolves.</summary>
+    /// <summary>Absolute path to the WebResources project.</summary>
     /// <remarks>
-    /// Unchanged behaviour for this unit: a later unit makes this required (R5) and tightens detection
-    /// (R9). Here it stays a best-effort path that is not guaranteed to exist, exactly like
-    /// <see cref="ProjectLayoutResolver.ResolveWebResourcesProjectAsync"/> today.
+    /// Required (R5): a valid solution file always has one, so <see cref="LoadAsync"/> throws rather than
+    /// returning a conventional path that may not exist — see <see cref="WebResourcesProjectResolver"/> for
+    /// the detection rule.
     /// </remarks>
     public string WebResourcesProjectPath { get; }
 
@@ -63,8 +55,9 @@ public sealed class SolutionFileLayout
     /// <exception cref="FlowlineException">
     /// <see cref="ExitCode.NotFound"/> when the folder holds no solution file — the solution file is the
     /// config, so there is nothing to fall back to; stand-alone mode is the way to push without one.
-    /// Also thrown, and <see cref="ExitCode.ConfigInvalid"/>, for the <c>.cdsproj</c> failures documented on
-    /// the private resolver below.
+    /// Also thrown, and <see cref="ExitCode.ConfigInvalid"/>, for the <c>.cdsproj</c> failures
+    /// (<see cref="DataverseSolutionProjectResolver"/>) and the WebResources failures
+    /// (<see cref="WebResourcesProjectResolver"/>) below.
     /// </exception>
     /// <remarks>
     /// <c>FindSolutionFile</c> and <c>ReadProjectsAsync</c> each run exactly once here, and every
@@ -82,7 +75,9 @@ public sealed class SolutionFileLayout
         var projects = await reader.ReadProjectsAsync(solutionFile, cancellationToken).ConfigureAwait(false);
         var solutionFileName = Path.GetFileName(solutionFile);
 
-        var dataverseSolutionProjectPath = ResolveDataverseSolutionProject(projects, slnFolder, solutionFileName);
+        // Order matters: cdsproj first, so a missing/duplicate solution project throws before WebResources
+        // detection ever runs. Plugins next, so their resolved paths can feed WebResources' exclusion set.
+        var dataverseSolutionProjectPath = DataverseSolutionProjectResolver.Resolve(projects, slnFolder, solutionFileName);
 
         // Advisory, like every non-push consumer of plugin discovery: a project the solution file
         // references but that isn't on disk is dropped rather than thrown, because resolving the layout is
@@ -92,77 +87,11 @@ public sealed class SolutionFileLayout
                               .Where(c => PluginProjectResolver.DescribePreFilterSkip(c.ProjectPath) == null)
                               .ToList();
 
-        var webResourcesProjectPath = ResolveWebResourcesProject(projects, slnFolder);
+        var pluginProjectPaths = new HashSet<string>(
+            pluginProjects.Select(p => p.ProjectPath), StringComparer.OrdinalIgnoreCase);
+
+        var webResourcesProjectPath = WebResourcesProjectResolver.Resolve(projects, slnFolder, pluginProjectPaths, solutionFileName);
 
         return new SolutionFileLayout(dataverseSolutionProjectPath, pluginProjects, webResourcesProjectPath);
-    }
-
-    /// <summary>The exactly-one-<c>.cdsproj</c> rule (R7), operating on an already-parsed project list.</summary>
-    /// <remarks>
-    /// Same verdicts as <see cref="ProjectLayoutResolver.ResolvePackageProjectAsync"/>: zero or two-plus
-    /// <c>.cdsproj</c> entries is <see cref="ExitCode.ConfigInvalid"/>, a referenced-but-missing one is
-    /// <see cref="ExitCode.NotFound"/>. Copied rather than called because that method re-reads the solution
-    /// file, which is exactly what this class exists to stop doing.
-    /// </remarks>
-    static string ResolveDataverseSolutionProject(
-        IReadOnlyList<MsBuildSolutionProject> projects, string slnFolder, string solutionFileName)
-    {
-        var candidates = projects.Where(p => p.IsCdsProject)
-                                  .OrderBy(p => p.Path, StringComparer.OrdinalIgnoreCase)
-                                  .ToList();
-
-        if (candidates.Count == 0)
-            throw new FlowlineException(ExitCode.ConfigInvalid,
-                $"'{solutionFileName}' lists no .cdsproj, so Flowline can't tell which project packs the solution. " +
-                "Add it with 'flowline sln add', or run 'clone' again.");
-
-        if (candidates.Count > 1)
-            throw new FlowlineException(ExitCode.ConfigInvalid,
-                $"'{solutionFileName}' lists {candidates.Count} .cdsproj projects " +
-                $"({string.Join(", ", candidates.Select(p => p.Name))}) — a Flowline project holds one solution. " +
-                "Remove the extras from the solution file.");
-
-        var dataverseSolutionProjectPath = Path.GetFullPath(Path.Combine(slnFolder, candidates[0].Path));
-
-        if (!File.Exists(dataverseSolutionProjectPath))
-            throw new FlowlineException(ExitCode.NotFound,
-                $"'{solutionFileName}' references '{candidates[0].Name}' at " +
-                $"{ConsolePath.FormatRelativePath(dataverseSolutionProjectPath)}, but it isn't there. " +
-                "Restore it, or remove it from the solution file and run 'clone' again.");
-
-        return dataverseSolutionProjectPath;
-    }
-
-    /// <summary>The current (un-hardened) WebResources rule, operating on an already-parsed project list.</summary>
-    /// <remarks>
-    /// Deliberately identical to <see cref="ProjectLayoutResolver.ResolveWebResourcesProjectAsync"/>'s
-    /// substring-on-SDK check and conventional-path fallback — this unit only stops it from re-reading the
-    /// solution file. Making it required and replacing the substring with elimination and weighted signals
-    /// is a later unit (R5/R9).
-    /// </remarks>
-    static string ResolveWebResourcesProject(IReadOnlyList<MsBuildSolutionProject> projects, string slnFolder) =>
-        projects.Where(p => p.IsCsProject)
-                .Select(p => Path.GetFullPath(Path.Combine(slnFolder, p.Path)))
-                .Where(File.Exists)
-                .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
-                .FirstOrDefault(DeclaresWebResourcesSdk)
-        ?? ConventionalWebResourcesProject(slnFolder);
-
-    /// <summary>The pre-Flowline layout: a project named <c>WebResources</c> in a folder named <c>WebResources</c>.</summary>
-    static string ConventionalWebResourcesProject(string slnFolder) =>
-        Path.Combine(slnFolder, "WebResources", "WebResources.csproj");
-
-    // An unreadable candidate (locked by the IDE, deleted between the File.Exists check and here) reads as
-    // "not the WebResources project", not a failure — this whole resolution step is best-effort for now.
-    static bool DeclaresWebResourcesSdk(string projectPath)
-    {
-        try
-        {
-            return File.ReadAllText(projectPath).Contains(WebResourcesSdk, StringComparison.OrdinalIgnoreCase);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
     }
 }

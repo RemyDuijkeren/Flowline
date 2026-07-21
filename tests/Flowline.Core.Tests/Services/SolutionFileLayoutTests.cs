@@ -141,7 +141,8 @@ public class SolutionFileLayoutTests : IDisposable
     public async Task LoadAsync_RelocatedDataverseSolutionFolder_ResolvesToWhereTheCdsprojIs()
     {
         var cdsproj = WriteProject(Path.Combine("src", "Package", "Contoso.cdsproj"), CdsprojXml);
-        await WriteSlnxAsync(@"src\Package\Contoso.cdsproj");
+        WriteProject(Path.Combine("WebResources", "Contoso.WebResources.csproj"), WebResourcesXml);
+        await WriteSlnxAsync(@"src\Package\Contoso.cdsproj", @"WebResources\Contoso.WebResources.csproj");
 
         var layout = await SolutionFileLayout.LoadAsync(_root);
 
