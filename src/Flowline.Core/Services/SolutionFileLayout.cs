@@ -1,4 +1,5 @@
 using Flowline.Core.Console;
+using Flowline.Core.Models;
 using Flowline.Core.Plugins;
 
 namespace Flowline.Core.Services;
@@ -19,50 +20,77 @@ namespace Flowline.Core.Services;
 /// <see cref="WebResourcesProjectResolver"/> for WebResources — this class only reuses their list-based
 /// logic instead of their file-reading entry points, so the rules are stated once and this facade adds
 /// nothing but the single read and the caching.
+///
+/// <b>Per-type resolution is lazy.</b> <see cref="LoadAsync"/> reads and parses the file once (and throws
+/// there if it is missing — R6, the one precondition every command shares), but each project type is
+/// resolved and verified only when its property is first read, then cached. So a command touches only the
+/// validation it needs: <c>generate</c> reads <see cref="PluginProjects"/> and never triggers the required
+/// WebResources check (R5), while <c>deploy</c> reads all three and validates the whole layout. Coupling a
+/// codegen command to a WebResources misconfiguration it never uses would be the wrong kind of loud.
 /// </remarks>
 public sealed class SolutionFileLayout
 {
-    /// <summary>Absolute path to the <c>.cdsproj</c> the solution file records.</summary>
-    public string DataverseSolutionProjectPath { get; }
+    readonly IReadOnlyList<MsBuildSolutionProject> _projects;
+    readonly string _slnFolder;
+    readonly string _solutionFileName;
+    readonly Lazy<string> _dataverseSolutionProjectPath;
+    readonly Lazy<IReadOnlyList<PluginProjectCandidate>> _pluginProjects;
+    readonly Lazy<string> _webResourcesProjectPath;
+
+    /// <summary>Absolute path to the <c>.cdsproj</c> the solution file records. Resolved on first access (R7).</summary>
+    public string DataverseSolutionProjectPath => _dataverseSolutionProjectPath.Value;
 
     /// <summary>Absolute path to the folder holding the <c>.cdsproj</c> and the unpacked solution source.</summary>
-    public string DataverseSolutionFolder { get; }
+    public string DataverseSolutionFolder => Path.GetDirectoryName(DataverseSolutionProjectPath)!;
 
     /// <summary>Every plugin-project candidate that survives the pre-filter (KTD4) — zero is a valid state.</summary>
-    public IReadOnlyList<PluginProjectCandidate> PluginProjects { get; }
+    public IReadOnlyList<PluginProjectCandidate> PluginProjects => _pluginProjects.Value;
 
-    /// <summary>Absolute path to the WebResources project.</summary>
+    /// <summary>Absolute path to the WebResources project. Resolved on first access.</summary>
     /// <remarks>
-    /// Required (R5): a valid solution file always has one, so <see cref="LoadAsync"/> throws rather than
-    /// returning a conventional path that may not exist — see <see cref="WebResourcesProjectResolver"/> for
-    /// the detection rule.
+    /// Required (R5): a valid solution file always has one, so reading this throws rather than returning a
+    /// conventional path that may not exist — see <see cref="WebResourcesProjectResolver"/> for the rule.
+    /// Its exclusion set is the resolved plugin projects, so reading this resolves <see cref="PluginProjects"/>
+    /// too.
     /// </remarks>
-    public string WebResourcesProjectPath { get; }
+    public string WebResourcesProjectPath => _webResourcesProjectPath.Value;
 
-    SolutionFileLayout(
-        string dataverseSolutionProjectPath,
-        IReadOnlyList<PluginProjectCandidate> pluginProjects,
-        string webResourcesProjectPath)
+    SolutionFileLayout(IReadOnlyList<MsBuildSolutionProject> projects, string slnFolder, string solutionFileName)
     {
-        DataverseSolutionProjectPath = dataverseSolutionProjectPath;
-        DataverseSolutionFolder = Path.GetDirectoryName(dataverseSolutionProjectPath)!;
-        PluginProjects = pluginProjects;
-        WebResourcesProjectPath = webResourcesProjectPath;
+        _projects = projects;
+        _slnFolder = slnFolder;
+        _solutionFileName = solutionFileName;
+
+        _dataverseSolutionProjectPath = new Lazy<string>(
+            () => DataverseSolutionProjectResolver.Resolve(_projects, _slnFolder, _solutionFileName));
+
+        // Advisory, like every non-push consumer of plugin discovery: a project the solution file
+        // references but that isn't on disk is dropped rather than thrown, because resolving the layout is
+        // not about to build anything.
+        _pluginProjects = new Lazy<IReadOnlyList<PluginProjectCandidate>>(
+            () => PluginProjectResolver
+                  .EnumerateCandidates(_projects, _slnFolder, reportMissingProject: _ => { })
+                  .Where(c => PluginProjectResolver.DescribePreFilterSkip(c.ProjectPath) == null)
+                  .ToList());
+
+        _webResourcesProjectPath = new Lazy<string>(() =>
+        {
+            var pluginPaths = new HashSet<string>(PluginProjects.Select(p => p.ProjectPath), StringComparer.OrdinalIgnoreCase);
+            return WebResourcesProjectResolver.Resolve(_projects, _slnFolder, pluginPaths, _solutionFileName);
+        });
     }
 
-    /// <summary>Reads the solution file at <paramref name="slnFolder"/> and classifies every project it lists.</summary>
+    /// <summary>Reads the solution file at <paramref name="slnFolder"/> once; classifies each project on demand.</summary>
     /// <param name="slnFolder">The Flowline project root — the folder holding the solution file.</param>
     /// <exception cref="FlowlineException">
     /// <see cref="ExitCode.NotFound"/> when the folder holds no solution file — the solution file is the
-    /// config, so there is nothing to fall back to; stand-alone mode is the way to push without one.
-    /// Also thrown, and <see cref="ExitCode.ConfigInvalid"/>, for the <c>.cdsproj</c> failures
-    /// (<see cref="DataverseSolutionProjectResolver"/>) and the WebResources failures
-    /// (<see cref="WebResourcesProjectResolver"/>) below.
+    /// config, so there is nothing to fall back to; stand-alone mode is the way to push without one. The
+    /// per-type failures (<see cref="DataverseSolutionProjectResolver"/>, <see cref="WebResourcesProjectResolver"/>)
+    /// surface when their properties are read, not here.
     /// </exception>
     /// <remarks>
-    /// <c>FindSolutionFile</c> and <c>ReadProjectsAsync</c> each run exactly once here, and every
-    /// classification step below reads from the same <paramref name="projects"/> list rather than touching
-    /// disk again — that single read is the point of this class existing (R4).
+    /// <c>FindSolutionFile</c> and <c>ReadProjectsAsync</c> each run exactly once here; every later
+    /// classification reads the same in-memory list rather than touching disk again (R4).
     /// </remarks>
     public static async Task<SolutionFileLayout> LoadAsync(string slnFolder, CancellationToken cancellationToken = default)
     {
@@ -73,25 +101,6 @@ public sealed class SolutionFileLayout
                                $"config, so every command but 'clone' needs one. {PluginProjectResolver.StandaloneEscapeHatch}");
 
         var projects = await reader.ReadProjectsAsync(solutionFile, cancellationToken).ConfigureAwait(false);
-        var solutionFileName = Path.GetFileName(solutionFile);
-
-        // Order matters: cdsproj first, so a missing/duplicate solution project throws before WebResources
-        // detection ever runs. Plugins next, so their resolved paths can feed WebResources' exclusion set.
-        var dataverseSolutionProjectPath = DataverseSolutionProjectResolver.Resolve(projects, slnFolder, solutionFileName);
-
-        // Advisory, like every non-push consumer of plugin discovery: a project the solution file
-        // references but that isn't on disk is dropped rather than thrown, because resolving the layout is
-        // not about to build anything.
-        var pluginProjects = PluginProjectResolver
-                              .EnumerateCandidates(projects, slnFolder, reportMissingProject: _ => { })
-                              .Where(c => PluginProjectResolver.DescribePreFilterSkip(c.ProjectPath) == null)
-                              .ToList();
-
-        var pluginProjectPaths = new HashSet<string>(
-            pluginProjects.Select(p => p.ProjectPath), StringComparer.OrdinalIgnoreCase);
-
-        var webResourcesProjectPath = WebResourcesProjectResolver.Resolve(projects, slnFolder, pluginProjectPaths, solutionFileName);
-
-        return new SolutionFileLayout(dataverseSolutionProjectPath, pluginProjects, webResourcesProjectPath);
+        return new SolutionFileLayout(projects, slnFolder, Path.GetFileName(solutionFile));
     }
 }

@@ -94,45 +94,67 @@ public class SolutionFileLayoutTests : IDisposable
 
     // ── R7: exactly one .cdsproj ──────────────────────────────────────────────
 
+    // Per-type failures surface when the property is read, not from LoadAsync — resolution is lazy so a
+    // command only triggers the validation for the project types it actually uses.
+
     [Fact]
-    public async Task LoadAsync_TwoCdsprojEntries_ThrowsConfigInvalidNamingBoth()
+    public async Task DataverseSolutionProjectPath_TwoCdsprojEntries_ThrowsConfigInvalidNamingBoth()
     {
         WriteProject(Path.Combine("Solution", "A.cdsproj"), CdsprojXml);
         WriteProject(Path.Combine("Other", "B.cdsproj"), CdsprojXml);
         await WriteSlnxAsync(@"Solution\A.cdsproj", @"Other\B.cdsproj");
 
-        var act = () => SolutionFileLayout.LoadAsync(_root);
+        var layout = await SolutionFileLayout.LoadAsync(_root);
+        var act = () => layout.DataverseSolutionProjectPath;
 
-        var thrown = (await act.Should().ThrowAsync<FlowlineException>()).Which;
+        var thrown = act.Should().Throw<FlowlineException>().Which;
         thrown.ExitCode.Should().Be(ExitCode.ConfigInvalid);
         thrown.Message.Should().Contain("A").And.Contain("B");
     }
 
     [Fact]
-    public async Task LoadAsync_NoCdsprojEntry_ThrowsConfigInvalid()
+    public async Task DataverseSolutionProjectPath_NoCdsprojEntry_ThrowsConfigInvalid()
     {
         WriteProject(Path.Combine("Plugins", "DWE_Base.Plugins.csproj"), PluginXml);
         await WriteSlnxAsync(@"Plugins\DWE_Base.Plugins.csproj");
 
-        var act = () => SolutionFileLayout.LoadAsync(_root);
+        var layout = await SolutionFileLayout.LoadAsync(_root);
+        var act = () => layout.DataverseSolutionProjectPath;
 
-        (await act.Should().ThrowAsync<FlowlineException>())
+        act.Should().Throw<FlowlineException>()
             .Which.ExitCode.Should().Be(ExitCode.ConfigInvalid);
-        (await act.Should().ThrowAsync<FlowlineException>())
+        act.Should().Throw<FlowlineException>()
             .WithMessage("*no .cdsproj*sln add*");
     }
 
     [Fact]
-    public async Task LoadAsync_CdsprojEntryPointsAtNothing_ThrowsNotFoundNamingThePath()
+    public async Task DataverseSolutionProjectPath_CdsprojEntryPointsAtNothing_ThrowsNotFoundNamingThePath()
     {
         await WriteSlnxAsync(@"Solution\DWE_Base.cdsproj");
 
-        var act = () => SolutionFileLayout.LoadAsync(_root);
+        var layout = await SolutionFileLayout.LoadAsync(_root);
+        var act = () => layout.DataverseSolutionProjectPath;
 
-        (await act.Should().ThrowAsync<FlowlineException>())
+        act.Should().Throw<FlowlineException>()
             .Which.ExitCode.Should().Be(ExitCode.NotFound);
-        (await act.Should().ThrowAsync<FlowlineException>())
+        act.Should().Throw<FlowlineException>()
             .WithMessage("*DWE_Base*isn't there*");
+    }
+
+    [Fact]
+    public async Task PluginProjects_ReadAlone_DoesNotTriggerTheRequiredWebResourcesCheck()
+    {
+        // The point of lazy resolution: a plugins-only consumer (generate) must not fail over a missing
+        // WebResources project it never uses. cdsproj + plugin present, no WebResources project at all.
+        WriteProject(Path.Combine("Solution", "DWE_Base.cdsproj"), CdsprojXml);
+        WriteProject(Path.Combine("Plugins", "DWE_Base.Plugins.csproj"), PluginXml);
+        await WriteSlnxAsync(@"Solution\DWE_Base.cdsproj", @"Plugins\DWE_Base.Plugins.csproj");
+
+        var layout = await SolutionFileLayout.LoadAsync(_root);
+
+        layout.PluginProjects.Should().ContainSingle();                 // resolves fine
+        var readWebResources = () => layout.WebResourcesProjectPath;
+        readWebResources.Should().Throw<FlowlineException>();            // only this property enforces R5
     }
 
     // ── DataverseSolutionFolder follows a relocated .cdsproj ─────────────────
