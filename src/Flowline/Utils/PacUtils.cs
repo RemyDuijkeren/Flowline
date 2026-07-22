@@ -352,8 +352,10 @@ public static class PacUtils
             $"pac admin backup failed (likely a missing System Administrator / environment-admin role): {output.Trim()}. Use --no-backup to bypass.");
     }
 
-    internal static string BuildBackupLabel(string solutionName, DateTime utcNow) =>
-        $"flowline-deploy-{solutionName}-{utcNow:yyyyMMddTHHmmssZ}";
+    // U4/KTD3: dryRun distinguishes a preview-only backup from a real deploy's, so the two are
+    // identifiable later in the admin center's Manual Backups tab.
+    internal static string BuildBackupLabel(string solutionName, DateTime utcNow, bool dryRun = false) =>
+        $"flowline-{(dryRun ? "dryrun" : "deploy")}-{solutionName}-{utcNow:yyyyMMddTHHmmssZ}";
 
     public static async Task<List<EnvironmentInfo>> GetEnvironmentsAsync(SubprocessCapture capture, CancellationToken cancellationToken = default)
     {

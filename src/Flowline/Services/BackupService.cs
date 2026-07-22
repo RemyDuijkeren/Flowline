@@ -1,5 +1,6 @@
 using Flowline.Core;
 using Flowline.Core.Console;
+using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Spectre.Console;
@@ -10,7 +11,7 @@ public class BackupService(IAnsiConsole console, SubprocessCapture capture) : IP
 {
     public async Task RunPreImportAsync(PostDeployContext context, CancellationToken ct)
     {
-        var label = PacUtils.BuildBackupLabel(context.Solution.Name, DateTime.UtcNow);
+        var label = PacUtils.BuildBackupLabel(context.Solution.Name, DateTime.UtcNow, context.Mode == RunMode.DryRun);
         await PacUtils.BackupEnvironmentAsync(context.Solution.EnvironmentUrl, label, capture, ct);
         console.Ok($"Environment backed up ({label}).");
     }

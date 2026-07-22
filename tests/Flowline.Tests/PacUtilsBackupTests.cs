@@ -25,6 +25,26 @@ public class BuildBackupLabelTests
 
         label.Should().Be("flowline-deploy-Contoso Sales-20260703T214530Z");
     }
+
+    [Fact]
+    public void BuildBackupLabel_DryRun_UsesDistinctPrefix()
+    {
+        var utcNow = new DateTime(2026, 7, 3, 21, 45, 30, DateTimeKind.Utc);
+
+        var label = PacUtils.BuildBackupLabel("ContosoCustomizations", utcNow, dryRun: true);
+
+        label.Should().Be("flowline-dryrun-ContosoCustomizations-20260703T214530Z");
+    }
+
+    [Fact]
+    public void BuildBackupLabel_DryRun_PreservesSpacesInSolutionName()
+    {
+        var utcNow = new DateTime(2026, 7, 3, 21, 45, 30, DateTimeKind.Utc);
+
+        var label = PacUtils.BuildBackupLabel("Contoso Sales", utcNow, dryRun: true);
+
+        label.Should().Be("flowline-dryrun-Contoso Sales-20260703T214530Z");
+    }
 }
 
 public class EnsureBackupSucceededTests
