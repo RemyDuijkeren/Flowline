@@ -4,11 +4,10 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Flowline.Core.OrphanCleanup;
 
 // Single source of truth for the eight IOrphanHandler DI registrations, shared by Program.cs's
-// production container and HandlerRegistryTests' arity guard test (code review: that test previously
-// hand-copied this same list into its own ServiceCollection, so a drift between the two — e.g. a future
-// handler added to one but not the other — went uncaught). Order here has no effect on execution/report
-// sequencing (KTD1 owns that via OrphanCleanupService.FamilyOrder) — this list only decides what's
-// registered, not what order it runs in.
+// production container and HandlerRegistryTests' arity guard test — a hand-copied list in the test
+// could drift from this one (e.g. a future handler added to only one), which would go uncaught. Order
+// here has no effect on execution/report sequencing (OrphanCleanupService.FamilyOrder owns that) — this
+// list only decides what's registered, not what order it runs in.
 public static class OrphanHandlerRegistration
 {
     public static void RegisterOrphanHandlers(IServiceCollection services)

@@ -7,13 +7,11 @@ using Spectre.Console;
 
 namespace Flowline.Core.OrphanCleanup.Handlers;
 
-// U6: migrates Bot's entity-detected orphan detection out of OrphanCleanupService.
-// Bot's componenttype is env-specific (same shape CustomApiFamilyHandler documents for its own family) —
-// a candidate can only be identified as a Bot by querying the "bot" table directly, so
-// match and detect are the same batched async call (see the Planning Contract's HTD note). KTD4: this
-// handler owns its own query and try/catch against "bot" only — a ConnectionReferenceHandler failure
-// (or vice versa) can never affect this handler's detection, since each is now a fully separate handler
-// instance rather than a shared Task.WhenAll batch.
+// Bot's componenttype is env-specific (same shape CustomApiFamilyHandler documents for its own family)
+// — a candidate can only be identified as a Bot by querying the "bot" table directly, so match and
+// detect are the same batched async call. This handler owns its own query and try/catch against "bot"
+// only — a ConnectionReferenceHandler failure (or vice versa) can never affect this handler's
+// detection.
 public sealed class BotHandler(IAnsiConsole console) : IOrphanHandler
 {
     public HandlerStatus Status => HandlerStatus.Active;
@@ -30,32 +28,25 @@ public sealed class BotHandler(IAnsiConsole console) : IOrphanHandler
         List<Entity> rows;
         try
         {
-            // Code-review fault-isolation fix: the 2000-id guard now runs inside this try so an
-            // oversized batch degrades the same way any other query fault does (warn + skip), rather
-            // than throwing uncaught before the try even starts.
+            // The 2000-id guard runs inside this try so an oversized batch degrades the same way any
+            // other query fault does (warn + skip), rather than throwing uncaught.
             if (idList.Count > 2000)
                 throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {idList.Count} IDs (max 2000). Solution has too many orphan candidates for Bot detection.");
 
             var idArray = idList.Select(id => (object)id).ToArray();
             var query = new QueryExpression("bot")
             {
-                // schemaname is Bot's identity attribute (KTD3 note in OrphanCleanupService's
-                // ResolvedTypeNameAttributes) — "name" is a separate, unrelated display string.
-                // publishedon ("Date and time when the Copilot was last published", nullable — Microsoft
-                // Dataverse "Copilot (bot)" table reference) distinguishes Published/live (non-null) from
-                // never-published/draft (null) for KTD8's Prio rule. Not componentstate: that attribute
-                // tracks solution-layer publish state (customization published to the unmanaged layer),
-                // which is ~always Published for any component that made it into a solution at all — it
-                // doesn't vary with the Copilot's own authoring lifecycle the way publishedon does.
+                // schemaname is Bot's identity attribute — "name" is a separate, unrelated display
+                // string. publishedon distinguishes Published/live (non-null) from never-published/draft
+                // (null) for the Prio rule below — unlike componentstate, which tracks solution-layer
+                // publish state and doesn't vary with the Copilot's own authoring lifecycle.
                 ColumnSet = new ColumnSet("schemaname", "publishedon"),
                 Criteria  = { Conditions = { new ConditionExpression("botid", ConditionOperator.In, idArray) } }
             };
             rows = await context.Service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
         }
-        // KTD6: a business fault (the bot table genuinely has no matching rows, e.g. Copilot Studio not
-        // provisioned in this org) is not evidence any candidate was deleted — resolves quietly to "no
-        // candidates claimed", same as an infrastructure fault (network/auth/throttle), which additionally
-        // warns since it's a real failure the operator should see.
+        // A business fault (e.g. Copilot Studio not provisioned) is not evidence of deletion — resolves
+        // quietly to "no candidates claimed", unlike an infrastructure fault, which additionally warns.
         catch (FaultException<OrganizationServiceFault>)
         {
             return new HandlerDetectionResult([], new HashSet<Guid>());
@@ -66,9 +57,8 @@ public sealed class BotHandler(IAnsiConsole console) : IOrphanHandler
             return new HandlerDetectionResult([], new HashSet<Guid>());
         }
 
-        // Every row the "bot" table query returned is claimed — regardless of whether its schemaname
-        // came back null (KTD5 skip) or it's still declared locally (suppressed below) — a row existing
-        // in the table at all is enough evidence this candidate is a Bot.
+        // A row existing in the table at all is enough evidence this candidate is a Bot — claimed
+        // regardless of schemaname or local-declaration status.
         var claimedIds = rows.Select(r => r.Id).ToHashSet();
 
         // Bot has no GUID anywhere in local source — schemaname (bots/<schemaname>/bot.xml) is the only
@@ -82,14 +72,14 @@ public sealed class BotHandler(IAnsiConsole console) : IOrphanHandler
         var findings = new List<HandlerFinding>();
         foreach (var row in rows)
         {
-            // KTD5: no resolved schemaname means local-source verification never actually ran for this
+            // No resolved schemaname means local-source verification never actually ran for this
             // candidate — not evidence of removal. Skip rather than default to "orphaned".
             var schemaName = row.GetAttributeValue<string>("schemaname");
             if (string.IsNullOrEmpty(schemaName)) continue;
             if (localSchemaNames.Contains(schemaName)) continue; // still declared locally — not orphaned
 
-            // KTD8: Published/live (publishedon set) -> Prio2; never-published/draft (publishedon null)
-            // -> Prio3.
+            // Published/live (publishedon set) -> Prio2; never-published/draft (publishedon null) ->
+            // Prio3.
             var publishedOn = row.GetAttributeValue<DateTime?>("publishedon");
             var priority = publishedOn.HasValue ? OrphanPriority.Prio2 : OrphanPriority.Prio3;
 
@@ -97,7 +87,7 @@ public sealed class BotHandler(IAnsiConsole console) : IOrphanHandler
                 ObjectId: row.Id,
                 ComponentType: componentTypeById.GetValueOrDefault(row.Id),
                 DisplayName: $"Bot '{schemaName}' ({row.Id})",
-                // Manual per KTD8 — Bot can't be deleted automatically, same as today.
+                // Bot can't be deleted automatically.
                 Action: OrphanAction.Manual,
                 Priority: priority,
                 SequenceHint: 0,

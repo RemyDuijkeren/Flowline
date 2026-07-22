@@ -9,24 +9,18 @@ using Spectre.Console;
 
 namespace Flowline.Core.OrphanCleanup.Handlers;
 
-// U2: migrates PluginAssembly (91) / PluginType (90) / Step (92) / StepImage (93) detection,
-// classification, and ordering from OrphanCleanupService's NameResolvableTypes and its old ExecutionOrder
-// array (the latter removed during U9's orchestrator rewrite) into a handler, preserving today's exact
-// Auto/Delete behavior and name resolution, plus the new Prio1/Prio2/Prio3 axis (KTD8). Ships Active per
-// KTD2 — this family already has a verified local-source check today (R14).
+// Detects PluginAssembly (91) / PluginType (90) / Step (92) / StepImage (93), classifies each into
+// Prio1/Prio2/Prio3, and ships Active.
 //
-// Code-review fault-isolation fix: this was a Pass-1 (componenttype-gated) handler with zero try/catch —
-// a transient Dataverse fault on either live query (name resolution or enabled-state) propagated uncaught
-// through DispatchToHandlersAsync, aborting the whole deploy before Pass 2 ever ran. Both queries now
-// catch and degrade the same way the entity-detected handlers (Bot/ConnectionReference/CustomApi) already
-// do — FaultException<OrganizationServiceFault> quietly skips (KTD6), anything else warns and skips —
-// falling back to each query's existing "unresolved" display/Prio path rather than a new fallback shape.
+// Both live queries (name resolution and enabled-state) catch and degrade rather than propagate — a
+// transient Dataverse fault must not abort the whole deploy. FaultException quietly skips, anything
+// else warns and skips, falling back to each query's "unresolved" display/Prio path.
 public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanHandler
 {
     public HandlerStatus Status => HandlerStatus.Active;
 
-    // Migrated from OrphanCleanupService.NameResolvableTypes' 91/90/92/93 rows — same
-    // entityLogicalName/idAttribute/nameAttribute triples used for live display-name resolution.
+    // Same entityLogicalName/idAttribute/nameAttribute triples as OrphanCleanupService.NameResolvableTypes'
+    // 91/90/92/93 rows, used for live display-name resolution.
     static readonly Dictionary<int, (string EntityLogicalName, string IdAttribute, string NameAttribute)> Lookups = new()
     {
         [91] = ("pluginassembly", "pluginassemblyid", "name"),
@@ -35,10 +29,8 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         [93] = ("sdkmessageprocessingstepimage", "sdkmessageprocessingstepimageid", "name"),
     };
 
-    // Migrated from OrphanCleanupService's old ExecutionOrder array's [93, 92, 90, 91] subset (removed
-    // during U9's orchestrator rewrite), re-expressed as a per-family SequenceHint (KTD1) — deepest child
-    // executes first (StepImage = 0) through shallowest parent last (PluginAssembly = 3), preserving
-    // today's exact deletion order.
+    // Per-family SequenceHint — deepest child executes first (StepImage = 0) through shallowest parent
+    // last (PluginAssembly = 3).
     static readonly Dictionary<int, int> SequenceHints = new()
     {
         [93] = 0, // StepImage
@@ -55,15 +47,10 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         [93] = "SdkMessageProcessingStepImage",
     };
 
-    // Live-verified gap fix: the redirected pluginpackage-delete finding stays in this handler's own
-    // family (SequenceHints[91] = 3), but a CustomApi bound to one of the redirected assembly's plugin
-    // types is normally detected by the separate CustomApiFamilyHandler, whose whole family runs later
-    // in FamilyOrder — so it would always execute AFTER the package delete, not before. Dataverse
-    // rejects a pluginpackage delete while a CustomApi still references it ("referenced by N other
-    // components"), the same way it rejects a plugintype delete/update with active steps (KD4) — these
-    // hints pull the CustomApi cleanup into this family's own ordering instead, both below the package's
-    // slot 3. Values only need to stay < 3; ties with Step(1)/PluginType(2) are harmless since neither
-    // family has an ordering dependency on the other.
+    // The redirected pluginpackage-delete finding stays in this family (SequenceHints[91] = 3), but a
+    // bound CustomApi is normally detected later by CustomApiFamilyHandler, so it would execute AFTER
+    // the package delete. Dataverse rejects a pluginpackage delete while a CustomApi still references it
+    // — these hints pull the CustomApi cleanup into this family's own ordering instead, below slot 3.
     const int CustomApiChildSequenceHint = 1; // CustomApiRequestParameter / CustomApiResponseProperty
     const int CustomApiParentSequenceHint = 2; // CustomApi itself
 
@@ -75,42 +62,35 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         var claimed = candidates.Where(c => Lookups.ContainsKey(c.ComponentType)).ToList();
         if (claimed.Count == 0) return new HandlerDetectionResult([], new HashSet<Guid>());
 
-        // Every candidate matching this family's componenttype gate is claimed, regardless of the
-        // Prio branch it ends up in below — this handler never suppresses a claimed candidate out of
-        // Findings.
+        // Every candidate matching this family's gate is claimed regardless of Prio — never suppressed
+        // out of Findings.
         var claimedIds = claimed.Select(c => c.ObjectId).ToHashSet();
 
         var names = await ResolveNamesAsync(context.Service, claimed, console, ct).ConfigureAwait(false);
 
-        // R10/KD3/KTD10: a pluginassembly owned by a pluginpackage can't be deleted directly
-        // ("Unable to delete plug-in assembly as it is part of plugin package") — live-check each
-        // PluginAssembly candidate's packageid so BuildAllFindings can redirect it to a
-        // pluginpackage-delete finding instead of one that fails at execute time.
+        // A pluginassembly owned by a pluginpackage can't be deleted directly — live-check packageid so
+        // BuildAllFindings can redirect to a pluginpackage-delete finding instead of one that fails at
+        // execute time.
         var assemblyIds = claimed.Where(c => c.ComponentType == 91).Select(c => c.ObjectId).ToList();
         var packageIds = assemblyIds.Count > 0
             ? await ResolvePackageIdsAsync(context.Service, assemblyIds, console, ct).ConfigureAwait(false)
             : new Dictionary<Guid, EntityReference>();
 
-        // Only candidates already present in this run's `candidates` batch are touched inside this
-        // call — a CustomApi/param/prop this live query finds but which ISN'T already an orphan
-        // candidate is still validly declared locally and must be left alone.
+        // Only candidates already in this run's batch are touched — a CustomApi/param/prop this query
+        // finds that ISN'T already an orphan candidate is still validly declared locally.
         var localCustomApiNames = ComponentClassifier.ScanCustomApiNames(context.DataverseSolutionSrcRoot);
         var (childCleanupFindings, childCleanupDegraded) = packageIds.Count > 0
             ? await ResolvePackageChildCleanupFindingsAsync(context.Service, packageIds.Keys, candidates, claimedIds, localCustomApiNames, console, ct).ConfigureAwait(false)
             : ([], false);
 
-        // Live-verified gap fix: a transient fault partway through ResolvePackageChildCleanupFindingsAsync
-        // (which batches its queries across every currently-redirected package at once) must not leave the
-        // package-delete finding built below as if cleanup were confirmed complete — that would reintroduce
-        // the exact ordering hazard this whole fix exists to close. When degraded, every currently-redirected
-        // package is skipped entirely this run (no finding at all, not even the un-redirected fallback,
-        // which is guaranteed to fail per KD3) — the assembly is still an orphan candidate, so it's picked
-        // up cleanly again next run once the lookup succeeds.
+        // A transient fault partway through ResolvePackageChildCleanupFindingsAsync must not leave the
+        // package-delete finding as if cleanup were confirmed complete — when degraded, every
+        // currently-redirected package is skipped entirely this run and picked up again once the lookup
+        // succeeds.
         var skipRedirectedFindingsThisRun = childCleanupDegraded;
 
-        // KTD8 Prio1: RunMode.NoDelete is the only signal knowable at classify time — see the plan's
-        // Timing note on why the reactively-deferred/still-blocking-at-post-import case is out of
-        // scope this round (this handler does not implement it).
+        // RunMode.NoDelete is the only signal knowable at classify time — the
+        // reactively-deferred/still-blocking-at-post-import case is not implemented by this handler.
         if (context.Mode == RunMode.NoDelete)
             return new HandlerDetectionResult(
                 BuildAllFindings(claimed, names, packageIds, _ => OrphanPriority.Prio1, skipRedirectedFindingsThisRun)
@@ -118,8 +98,8 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
                     .ToList(),
                 claimedIds);
 
-        // KTD8 Prio2 names exactly PluginType and Step ("the live PluginType/Step is Enabled") —
-        // StepImage and PluginAssembly have no Enabled concept of their own and default to Prio3.
+        // Prio2 applies only to PluginType and Step ("the live PluginType/Step is Enabled") — StepImage
+        // and PluginAssembly have no Enabled concept of their own and default to Prio3.
         var stepIds = claimed.Where(c => c.ComponentType == 92).Select(c => c.ObjectId).ToList();
         var typeIds = claimed.Where(c => c.ComponentType == 90).Select(c => c.ObjectId).ToList();
 
@@ -143,10 +123,9 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         return new HandlerDetectionResult(findings, claimedIds);
     }
 
-    // Builds one HandlerFinding per candidate, redirecting any PluginAssembly (91) candidate whose
-    // packageid resolved to a finding against the parent pluginpackage instead (R10/KD3/KTD10).
-    // Candidates with no resolved packageid (not package-owned, or the live lookup degraded) keep
-    // today's exact unchanged assembly-delete finding via BuildFinding.
+    // Builds one HandlerFinding per candidate, redirecting PluginAssembly candidates with a resolved
+    // packageid to the parent pluginpackage instead. Unresolved candidates keep the unchanged
+    // assembly-delete finding via BuildFinding.
     static List<HandlerFinding> BuildAllFindings(
         List<(Guid ObjectId, int ComponentType)> claimed,
         Dictionary<Guid, string> names,
@@ -163,14 +142,12 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
 
             if (candidate.ComponentType == 91 && packageIds.TryGetValue(candidate.ObjectId, out var packageRef))
             {
-                // Live-verified gap fix: a degraded child-cleanup lookup this run means we can't confirm
-                // the CustomApi/steps blocking this package were found and scheduled for deletion first —
-                // skip entirely (not even the un-redirected fallback, which KD3 confirms always fails for
-                // a package-owned assembly) rather than attempt a delete likely to fail or, worse, succeed
-                // while still-referencing children were never actually cleaned up.
+                // A degraded child-cleanup lookup means we can't confirm blocking CustomApi/steps were
+                // scheduled for deletion first — skip entirely rather than risk a delete that fails or
+                // leaves referencing children uncleaned.
                 if (skipRedirectedFindings) continue;
 
-                // KD5: multiple orphaned assemblies sharing the same parent package collapse to one
+                // Multiple orphaned assemblies sharing the same parent package collapse to one
                 // package-delete finding, not one per assembly.
                 if (!emittedPackageIds.Add(packageRef.Id)) continue;
 
@@ -200,10 +177,9 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         return new HandlerFinding(candidate.ObjectId, candidate.ComponentType, displayName, OrphanAction.Delete, priority, SequenceHints[candidate.ComponentType], OrphanTiming.PreImportEligible);
     }
 
-    // R10/KD3/KTD10: batched live check of packageid on each PluginAssembly candidate, following the
-    // same fault-tolerant shape as ResolveNamesAsync/QueryEnabledStateAsync — a transient query failure
-    // degrades every candidate in this batch back to today's un-redirected assembly-delete finding
-    // rather than aborting detection for the whole family.
+    // Batched live check of packageid on each PluginAssembly candidate — a transient failure degrades
+    // every candidate in this batch to the un-redirected assembly-delete finding rather than aborting
+    // detection for the whole family.
     static async Task<Dictionary<Guid, EntityReference>> ResolvePackageIdsAsync(
         IOrganizationServiceAsync2 service,
         IReadOnlyList<Guid> assemblyIds,
@@ -247,14 +223,13 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
     // ColumnSet(false) id-only queries, which EntityNameLookup doesn't support.
     const int ConditionOperatorInLimit = 2000;
 
-    // Live-verified gap fix (see class-level comment on CustomApiChildSequenceHint): pulls any CustomApi
-    // — and its own RequestParameter/ResponseProperty children — bound to a redirected assembly's plugin
-    // types into this family's own findings, ordered ahead of the package-delete slot, instead of leaving
-    // them to CustomApiFamilyHandler's separate, later-executing family pass.
+    // Pulls any CustomApi (and its RequestParameter/ResponseProperty children) bound to a redirected
+    // assembly's plugin types into this family's own findings, ordered ahead of the package-delete slot
+    // instead of leaving them to CustomApiFamilyHandler's later-executing pass. See
+    // CustomApiChildSequenceHint.
     //
-    // Returns whether any query degraded (faulted) alongside the findings — the caller must not treat a
-    // degraded run as "cleanup confirmed complete" (see DetectAsync's skipRedirectedFindingsThisRun),
-    // since a transient failure here means this run couldn't confirm what still blocks the package delete.
+    // Returns whether any query degraded alongside the findings — the caller must not treat a degraded
+    // run as "cleanup confirmed complete" (see DetectAsync's skipRedirectedFindingsThisRun).
     static async Task<(List<HandlerFinding> Findings, bool Degraded)> ResolvePackageChildCleanupFindingsAsync(
         IOrganizationServiceAsync2 service,
         IReadOnlyCollection<Guid> redirectedAssemblyIds,
@@ -330,12 +305,10 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         var candidateComponentTypes = candidates.ToDictionary(c => c.ObjectId, c => c.ComponentType);
         var findings = new List<HandlerFinding>();
 
-        // Live-verified gap fix: CustomApi (and its request-param/response-prop children) has no GUID
-        // anywhere in local source — uniquename is the only local identity (mirrors CustomApiFamilyHandler's
-        // own ScanCustomApiNames-based check). A CustomApi recreated with a new id under an unchanged,
-        // still-locally-declared uniquename must not be claimed here just because its current id happens to
-        // be present in this run's raw orphan-candidate batch — the equivalent normal path (CustomApiFamilyHandler)
-        // already protects this exact case, but never gets the chance to once this handler claims the id first.
+        // CustomApi (and its children) has no GUID in local source — uniquename is the only local
+        // identity. A CustomApi recreated with a new id under an unchanged uniquename must not be
+        // claimed here; CustomApiFamilyHandler's normal path already protects this case but never runs
+        // once this handler claims the id first.
         void AddIfOrphaned(IEnumerable<Guid> ids, string entityLogicalName, string displayLabel, int sequenceHint, IReadOnlySet<string> localNames)
         {
             foreach (var id in ids)
@@ -363,8 +336,6 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         return (findings, degraded);
     }
 
-    // Same display format as OrphanCleanupService's old TypeName helper produced for this family
-    // (removed during U9's orchestrator rewrite).
     static string TypeName(int componentType, Guid objectId, string? detail) =>
         detail != null ? $"{TypeLabels[componentType]} '{detail}' ({objectId})" : $"{TypeLabels[componentType]} {objectId}";
 
@@ -385,10 +356,8 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
                 foreach (var (id, name) in names)
                     result[id] = name;
             }
-            // KTD6: a business fault (the table genuinely has no matching rows) is not evidence any
-            // candidate was deleted — this group's names simply stay unresolved, same as an
-            // infrastructure fault, which additionally warns. Either way BuildFinding's existing
-            // unresolved-name fallback (bare-id TypeName) already covers it — no new fallback shape.
+            // A business fault (no matching rows) is not evidence of deletion — names simply stay
+            // unresolved, same as an infrastructure fault (which additionally warns).
             catch (FaultException<OrganizationServiceFault>)
             {
             }
@@ -401,9 +370,8 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         return result;
     }
 
-    // Single sdkmessageprocessingstep query resolves both Step's own statecode (Prio2 when Enabled —
-    // statecode 0, per the SdkMessageProcessingStep table reference) and PluginType's has-any-enabled-
-    // step check, since PluginType itself carries no statecode of its own.
+    // Single query resolves both Step's own statecode (Prio2 when Enabled) and PluginType's
+    // has-any-enabled-step check, since PluginType carries no statecode of its own.
     static async Task<(Dictionary<Guid, bool> StepEnabled, HashSet<Guid> TypeHasEnabledStep)> QueryEnabledStateAsync(
         IOrganizationServiceAsync2 service,
         IReadOnlyList<Guid> stepIds,
@@ -428,9 +396,8 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         {
             entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
         }
-        // Unresolved enabled-state is not evidence of anything — BuildFinding's priority switch already
-        // defaults Step/PluginType to Prio3 when neither dictionary has an entry, the same safe fallback
-        // an empty result set (record already gone) produces today.
+        // Unresolved enabled-state defaults Step/PluginType to Prio3, same as an empty result set
+        // (record already gone).
         catch (FaultException<OrganizationServiceFault>)
         {
             return (new Dictionary<Guid, bool>(), new HashSet<Guid>());

@@ -5,17 +5,12 @@ using Spectre.Console;
 
 namespace Flowline.Core.OrphanCleanup.Handlers;
 
-// Migrates Role (20) detection (U7) out of OrphanCleanupService's NameResolvableTypes[20]-driven lookup.
-// Role needs no new local-source scanner: its id is declared directly in Solution.xml's RootComponent
-// and mirrored in the unpacked Roles/<name>.xml file, so the existing plain id-in-LocalComponents match
-// (which happens centrally in the orchestrator's raw-candidate diff, before a candidate ever reaches
-// this handler) already resolves it correctly — this handler only wraps the name lookup for display.
-// Auto/Manual is static Manual (R2) — a Role needs human review before removal via the maker portal,
-// same as today. Prio is a constant Prio3 (KTD8) — roles don't execute logic, so they can never be
-// Prio1/Prio2.
+// Role (20) needs no local-source scanner of its own — its id is declared directly in Solution.xml and
+// resolved by the orchestrator's raw-candidate diff before reaching this handler, so this handler only
+// wraps the name lookup for display. Auto/Manual is static Manual (human review before removal); Prio
+// is a constant Prio3 (roles don't execute logic).
 //
-// Code-review fault-isolation fix: name resolution is now caught (KTD6) — a failed lookup degrades to
-// the same bare-id display the unresolved-name path below already produces.
+// Name resolution is caught — a failed lookup degrades to the bare-id display fallback below.
 public sealed class RoleHandler(IAnsiConsole console) : IOrphanHandler
 {
     const int RoleComponentType = 20;

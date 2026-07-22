@@ -6,16 +6,11 @@ using Spectre.Console;
 
 namespace Flowline.Core.OrphanCleanup.Handlers;
 
-// Migrates WebResource (61) detection and the // flowline:depends annotation exemption (U3) out of
-// OrphanCleanupService's old dedicated exemption step (removed during U9's orchestrator rewrite).
-// Auto/Manual is static Auto — every finding carries OrphanAction.Delete (R2); the orchestrator (U9)
-// still owns the cross-solution Delete-vs-RemoveFromSolution override, same as it does for every other
-// Auto handler's findings, since that check spans handlers and isn't this family's concern. Prio is a
-// constant Prio3 (KTD8) — a WebResource never executes business logic, so it can never be Prio1/Prio2.
+// Handles WebResource (61) detection and the // flowline:depends annotation exemption. Auto/Manual is
+// static Auto; the orchestrator still owns the cross-solution Delete-vs-RemoveFromSolution override.
+// Prio is a constant Prio3 — a WebResource never executes business logic.
 //
-// Code-review fault-isolation fix: name resolution is now caught the same way the entity-detected
-// handlers already catch their queries (KTD6) — a failed lookup degrades to the same bare-id display the
-// unresolved-name path below already produces, rather than propagating uncaught.
+// Name resolution is caught — a failed lookup degrades to the bare-id display fallback below.
 public sealed class WebResourceHandler(IAnsiConsole console) : IOrphanHandler
 {
     const int WebResourceComponentType = 61;
@@ -61,9 +56,7 @@ public sealed class WebResourceHandler(IAnsiConsole console) : IOrphanHandler
             var hasName = names.TryGetValue(candidate.ObjectId, out var name);
 
             // Still referenced via // flowline:depends elsewhere in the committed WebResources — exempt
-            // it from the orphan report, announcing the suppression here since this handler is the only
-            // place that resolves the name needed to print it (previously re-queried by the orchestrator
-            // for the same purpose — see U9/this-pass cleanup).
+            // it from the orphan report.
             if (hasName && annotationRefs.Contains(name!))
             {
                 console.Skip($"'{name}' preserved — referenced in // flowline:depends annotation.");

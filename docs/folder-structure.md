@@ -1,37 +1,10 @@
 ### Flowline CLI Folder Structure
 
-To support a scalable and developer-friendly environment for Dataverse development, Flowline CLI uses the following folder structure. Every Flowline project holds exactly one Dataverse solution at its root — no wrapper folder, no `src/` nesting — keeping the layout as flat as the common case actually is.
-
-#### 0. What Changed (and Why)
-
-Flowline started out modeling *multiple* Dataverse solutions per project: `.flowline` held a `"Solutions": [...]` array, and each solution lived in its own `solutions/<Name>/` subfolder (`solutions/Cr07982/Package/`, `solutions/Cr07982/Plugins/`, and so on). As of this change, Flowline is a **single-solution tool**: exactly one Dataverse solution per project root, full stop.
-
-Why: not one real Flowline project ever populated that array with more than one entry. The multi-solution wrapper was speculative generality that added a directory level and selection logic to every command, for a capability nobody used. Microsoft's own Power Platform ALM guidance backs the default too: a single-solution strategy is "recommended for small-medium scale implementations, scenarios where future modularization is unlikely" — which describes Flowline's solo/small-team consultant audience exactly.
-
-What concretely changed:
-
-- **Folder layout** — `Package/`, `Plugins/`, `WebResources/`, `artifacts/`, and the `.sln` moved from `solutions/<Name>/` up to the project root. See the layout diagram below.
-- **`.flowline` config schema** — `"Solutions": [ { "Name": ..., ... } ]` (an array) became `"Solution": { "UniqueName": ..., ... }` (a single object), plus a new required `"SchemaVersion": 1`. See §5 below for the exact before/after shape.
-- **Command surface** — `flowline deploy`'s `--solution <name>` flag and `flowline sync`/`flowline drift`'s positional `[solution]` argument are gone; they had nothing left to select once only one solution exists. `flowline push`/`flowline generate` keep their positional argument (still needed for standalone mode), but it's now checked against the one configured solution rather than used to pick among several.
-- **`flowline status`** always renders exactly one row instead of a multi-solution grid.
-- **No automated migration** — a project on the old layout doesn't silently break or misbehave; it fails closed with a clear `ConfigInvalid` error (see §5 for the manual cutover).
-
-Still need more than one Dataverse solution in the same environment? See §4 below — it's a documented pattern, not a built-in Flowline feature.
-
-A later change renamed the Dataverse solution folder and gave the three project files the solution's own name:
-
-- **`Package/` became `Solution/`**, flat — the `.cdsproj` and `src/` sit directly inside it.
-- **Project files carry the solution name**: `Solution/<SolutionName>.cdsproj`, `Plugins/<SolutionName>.Plugins.csproj`, `WebResources/<SolutionName>.WebResources.csproj`. Folders answer *what kind of thing lives here*, and are the same in every Flowline repo; project files answer *which solution is this*, and that is the name Dataverse, trace logs, and stack traces end up showing.
-- **Nothing `pac` writes is renamed.** `clone` places `pac`'s output rather than rewriting it — see §2.
-- **Folder names stopped being constants.** Every command after `clone` resolves all three projects from solution-file membership, so any of them can be moved.
-
-There is no migration for a project on the older `Package/` shape, and none is needed — see §6.
+Flowline uses a flat, single-solution layout: one Dataverse solution per project root, no wrapper folder, no `src/` nesting.
 
 #### 1. Folder Hierarchy Overview
 
-The solution's own solution file lives directly at the project root, alongside `Solution/`, `Plugins/`, `WebResources/`, and `artifacts/`.
-
-This is what `clone` scaffolds. It is not what the other commands require — they read the solution file (§3).
+This is what `flowline clone` scaffolds:
 
 ```text
 ProjectRoot/
@@ -57,77 +30,39 @@ ProjectRoot/
 └── tests/                             <-- Not scaffolded by clone; recognized if present
 ```
 
+Other Flowline commands don't require this exact layout — they find each project by reading the solution file (see §5).
+
 #### 2. Component Breakdown
 
-- **Root solution file**: Located directly at the project root (`<SolutionName>.slnx`). This allows developers to open a single file in Visual Studio or JetBrains Rider to manage the cdsproj, `Plugins`, and `WebResources` projects simultaneously.
-    - **`.slnx` for a new project; an existing `.sln` is left alone.** `clone` writes a `.slnx` — the .NET 10 default, and it holds a `.cdsproj` fine (verified on SDK 10.0.302: `dotnet sln list` enumerates the entry and `dotnet build` runs SolutionPackager through to the zip). Flowline reads both formats, so a project that already has a `.sln` keeps it and clone writes into it; only a project with no solution file at all gets a new one. Nothing converts a `.sln` to a `.slnx` — `dotnet sln migrate` is the tool for that, if you want it. Note `.slnx` needs SDK 9.0.200+ to build, which matters for a teammate or CI runner opening the repo, not for the machine that ran `clone`.
-    - **`dotnet sln add` can't add a `.cdsproj` — it refuses, and exits 0 while doing it** ([dotnet/sdk#47638](https://github.com/dotnet/sdk/issues/47638)). Flowline writes that entry itself, in either format. `flowline sln add <path>` does the same for a project that didn't come from `clone`. Nothing renames the project file.
-    - **The solution file is the authoritative list of the project's own projects.** All three — the `.cdsproj`, the plugins `.csproj`, the WebResources `.csproj` — are registered in it, and every command after `clone` locates them by reading it. Keep them there: an IDE maintains this file automatically (see §3, *Convention over configuration*).
-- **`Solution/<SolutionName>.cdsproj`**: PAC-managed — do not edit manually. Contains the unpacked XML source files in `Solution/src/` (from `pac solution clone`). This project acts as the "orchestrator" that packages the metadata and the output of the other projects into the final Dataverse solution `.zip`.
-    - **`clone` places `pac`'s output, it doesn't rename it.** `pac solution clone` writes `<SolutionName>/<SolutionName>.cdsproj` plus `src/`; `clone` moves that whole directory to `Solution/` and leaves the project file under the name `pac` gave it.
-    - **Exactly one `.cdsproj`, and it must be in the solution file.** A solution file listing none fails with `ConfigInvalid` and points at `flowline sln add`; listing two also fails rather than picking one, since guessing would sync and deploy the wrong solution silently. An entry naming a file that isn't on disk fails with `NotFound`.
-- **`Plugins/<SolutionName>.Plugins.csproj`**: The home for all server-side logic, including Plugins, Workflow Activities, Custom Actions, and Custom APIs. One project keeps dependency management and deployment simple, and is what `clone` scaffolds.
-    - **The project file carries the solution name because that name leaves the repo.** No `<AssemblyName>` is set, so it falls back to the `.csproj` filename — `<SolutionName>.Plugins.dll` is what Dataverse's assembly list, the plugin package, the trace logs, and every stack trace end up saying. `Plugins.dll` identifies nothing.
-    - **The folder is renamed, never the file.** `pac plugin init` takes no `--name` and reads `<PackageId>` and its generated `namespace` declarations off its working directory, so `clone` runs it in `<SolutionName>.Plugins/` and then renames only that directory to `Plugins/`. Renaming the file too would drop the assembly name back to `Plugins` while `PackageId` and the namespaces stayed prefixed.
-    - **The solution name goes in verbatim.** `DWE_Base` scaffolds `DWE_Base.Plugins.csproj`, `namespace DWE_Base.Plugins`, and `DWE_Base.Plugins.dll` — the underscore is not stripped or PascalCased, because `DWE_Base` and `DWEBase` are two distinct legal solutions and collapsing them reintroduces the anonymous assembly identity the name exists to remove. The one cost: `CA1707` fires on the underscore under `<AnalysisMode>All</AnalysisMode>`, which `pac plugin init` does not scaffold.
-    - **A solution named after a C# keyword is refused.** Dataverse allows `event`, `class` and `int` as solution unique names; `namespace event.Plugins` doesn't compile. `clone` checks before it writes anything and tells you to rename the solution — rather than reporting success and leaving you a parser error in generated code you never wrote.
-    - **The name is a scaffold default, not a requirement.** `push` finds plugin projects by reading the solution file and reflecting each candidate's build output for `IPlugin`/`CodeActivity` types — so a project can be named and located however you like, as long as the solution file references it. A project that reflects to neither type is not a plugin project and is skipped; run with `--verbose` to see what was skipped and why.
-    - **More than one plugin project is supported.** Each registers independently — its own assembly, plugin types, steps, and Custom APIs — under the same Dataverse solution, in a single `push`. Splitting by business area is the usual reason. `PluginPackageMode` stays one setting for the whole solution and applies to every project.
-    - **Build output is discovered, not assumed.** A custom `<AssemblyName>`, a missing `publish/` subfolder, or `AppendTargetFrameworkToOutputPath=false` all resolve — `push` looks at what the project actually built rather than composing a path from its name.
-    - **`Models/`**: Early-bound C# types generated by `flowline generate`. The folder is fully replaced on each run — stale files from removed entities are cleaned up automatically. Commit this folder to source control so team members can build without running `generate` themselves.
-- **`WebResources/`**: A dedicated folder for web assets and its corresponding `.NET` project (`<SolutionName>.WebResources.csproj`). This allows web assets to be part of the solution and easily managed through the build pipeline.
-    - **The prefix here is symmetry, nothing more.** This project is `Microsoft.Build.NoTargets` — it compiles nothing and produces no assembly, so unlike the plugins project no name escapes the repo. It takes the solution name so the naming rule has no exception, and so the node is easy to pick out with several projects open.
-    - **Found by SDK, not by filename.** Flowline picks the solution-file-referenced `.csproj` that declares `Microsoft.Build.NoTargets` — so this project can be named anything and live anywhere. No plugin project can be mistaken for it: a plugin project has to compile.
-    - **`src/`**: Contains the source files for web development (e.g., TypeScript, SCSS, ES6 JavaScript).
-    - **`public/`**: Stores static assets that don't need processing, like images or legacy scripts.
-    - **`dist/`**: The target folder for build processes (e.g., `npm run build`). This folder contains the final artifacts that will be synchronized with Dataverse. Regenerated on every build, so it's excluded via the root `.gitignore`.
-- **`artifacts/`**: The packed solution `.zip` files produced by `clone`, `sync`, and `deploy`. Fully reproducible from `Solution/src/` at any time, so it's excluded via the root `.gitignore` too — otherwise the regenerated zip would show up as a perpetual uncommitted change. `deploy`'s dirty-working-directory check and its artifact-cache key are both scoped to the deployment-affecting inputs — the Dataverse solution folder, every plugin project the solution file references, and the WebResources project file — not the whole project root, so uncommitted work under `docs/`, `tests/`, `CHANGES.md`, or agent instruction files never blocks a deploy or invalidates a reusable artifact. One list feeds both checks, so the two can't drift apart, and all three paths come out of the solution file — a relocated or renamed project stays in scope without `deploy` knowing what it's called.
-- **`CHANGES.md`**: Version history, at the project root — the near-universal `CHANGELOG.md`-at-root convention.
-- **`docs/`**: A recognized root-level folder, not scaffolded with placeholder content by `flowline clone` — creating and populating it is left to the user, whenever needed. The one exception: `clone`/`sync` still create `docs/` as needed to write `DATAVERSE_CONTEXT.md`, domain/schema reference material distinct from the changelog.
-- **`tests/`**: A recognized root-level folder for a user-added test project, not scaffolded by `clone`.
-- **Root `.gitignore`**: One file at the project root covers the whole project: `bin/`, `obj/`, `dist/`, `[Aa]rtifacts/`, `node_modules/`, `.vs/`, `.vscode/`, `.idea/`, `*.binlog`, `*.user`, `*.suo`, `.env*` (keeping `.env.example`), and the local `appsettings` overrides. `clone` scaffolds and maintains it, and deletes the per-project `.gitignore` files that `pac solution clone`/`pac plugin init` generate on their own, since those are superseded by the root file.
+- **Root solution file (`<SolutionName>.slnx` or `.sln`)**: Registers the `.cdsproj`, the plugins project, and the WebResources project, so they can all be opened together in Rider or Visual Studio (VS Code can't load a `.cdsproj`). `clone` writes a `.slnx` for new projects; an existing `.sln` is left as-is.
+- **`Solution/<SolutionName>.cdsproj`**: PAC-managed — do not edit manually. Holds the unpacked solution XML in `Solution/src/` (from `pac solution clone`). Packages the solution `.zip` from this project's metadata plus the Plugins and WebResources build output.
+- **`Plugins/<SolutionName>.Plugins.csproj`**: Server-side logic — Plugins, Workflow Activities, Custom APIs. The project file is named after the solution because that name becomes the assembly name Dataverse shows in its plugin list, trace logs, and stack traces.
+    - **`Models/`**: Early-bound C# types from `flowline generate`. Regenerated (and cleaned up) on every run — commit it so teammates don't need to run `generate` themselves.
+- **`WebResources/<SolutionName>.WebResources.csproj`**: Web assets (JS/TS, CSS, HTML) and their build project. Compiles nothing itself — it just orchestrates the web asset build.
+    - **`src/`**: Source files (TypeScript, SCSS, etc.).
+    - **`public/`**: Static assets that don't need processing.
+    - **`dist/`**: Build output, synced to Dataverse. Gitignored — regenerated on every build.
+- **`artifacts/`**: Packed solution `.zip` files from `clone`, `sync`, and `deploy`. Gitignored — fully reproducible from `Solution/src/`.
+- **`CHANGES.md`**: Version history at the project root.
+- **`docs/`**: Not scaffolded with placeholder content — `clone`/`sync` create it only to write `DATAVERSE_CONTEXT.md` (domain/schema reference notes).
+- **`tests/`**: Recognized if present; not scaffolded by `clone`.
+- **`.gitignore`**: Covers `bin/`, `obj/`, `dist/`, `artifacts/`, `node_modules/`, IDE folders, and local secrets/overrides. Maintained by `clone`.
 
-#### 3. Design Principles
+#### 3. Why This Layout
 
-- **Single-Solution Focus**: Flowline is responsible for exactly one Dataverse solution's worth of artifacts per project root — matching the solo/small-team consultant persona this tool targets, and Microsoft's own Power Platform ALM guidance ("recommended for small-medium scale implementations, scenarios where future modularization is unlikely").
-- **Standardized Developer Experience**: Using a root `.sln` file mirrors industry best practices and provides a familiar environment for .NET developers — no wrapper folder to look past.
-- **Flat by default**: No `src/` nesting even as Flowline gains support for multiple plugin projects per solution — at the realistic project count for a Dataverse solution (a handful of projects, not dozens), a `src`/`tests` split earns its keep only at a much larger scale than this tool's common case.
-- **Role-based folders, identity-based project files**: A folder answers *what kind of thing lives here* — the same answer in every Flowline repo, so `Solution/`, `Plugins/`, `WebResources/` everywhere, and one layout to teach. A project file answers *which solution is this*, which differs per repo and escapes into Dataverse. Identity goes only where it escapes.
-- **CLI Compatibility**: Flowline CLI locates the `.cdsproj` and the other projects through the solution file, making commands like `push`, `sync`, `generate`, and `deploy` robust whether or not the layout is the scaffolded one.
-- **Convention over configuration — the solution file is the configuration**: Flowline has no per-project setting for where the Dataverse solution, plugins or WebResources projects live, and is not intended to grow one. All three are registered in the root `.sln`/`.slnx`, which the developer's IDE already maintains; that file is the single authoritative record of what the project contains and where it sits. Adding a `Paths` block to `.flowline` would restate what the solution file already states, and create a second thing to keep in sync.
-    - *One read, one place to ask.* `SolutionFileLayout` reads the solution file exactly once per load and resolves every project from that one in-memory list (`src/Flowline.Core/Services/SolutionFileLayout.cs:31-105`). Resolution is lazy per project type and cached, so a command pays only for the validation the projects it actually reads require — `generate` reading `PluginProjects` never triggers the WebResources check below (`SolutionFileLayout.cs:24-29`).
-    - *Plugin projects.* `push` resolves them from solution-file membership plus `IPlugin`/`CodeActivity` reflection, and finds each project's real build output. Drift checking, deploy's change-scope, and namespace derivation all read the same discovery.
-    - *The Dataverse solution project.* Resolved from the single `.cdsproj` entry (`src/Flowline.Core/Services/DataverseSolutionProjectResolver.cs:25-51`) — zero or two-plus entries is `ConfigInvalid`, a referenced-but-missing one is `NotFound`. The Dataverse solution folder is simply wherever that file is — move `Solution/` to `src/Package/`, update the solution file, and sync, deploy, drift and status all follow it. Only `clone` is exempt: it creates the folder rather than finding it, so it is the one place allowed to name it.
-    - *The WebResources project.* Expected but not required — a soft rule. Identified among the solution's non-plugin, non-PCF, non-test `.csproj` files by elimination plus weighted content signals: a Flowline `flowline:` annotation in a `.ts`/`.js` file (strongest), a suppressed compile or `Microsoft.Build.NoTargets` SDK, a `dist/` folder, a `package.json` build script, a bundler config, web assets, or a `WebResources`-named folder — the unique top score wins, and the winner must carry at least one signal (`src/Flowline.Core/Services/WebResourcesProjectResolver.cs:73-118`). A project carrying a strong signal is kept even if the over-inclusive plugin pre-filter swept it up, so a WebResources project inheriting its framework from a `Directory.Build.props` still resolves. A `.pcfproj`, or a `.csproj` carrying the PCF SDK reference or a sibling `ControlManifest.Input.xml`, is excluded before scoring — never mistaken for it (`src/Flowline.Core/Plugins/PcfProjectResolver.cs:32-48`). When no confident WebResources project is identified — zero candidates, or a lone survivor with no signal — the resolver returns `null` and every command **skips the web-resource work with a loud warning** rather than failing (a plugin-only or migrated repo is legitimate). Two-plus tied at the top score is `ConfigInvalid` naming them — the user has two, and skipping would risk reverting the real one's un-synced resources.
-    - *No solution file at all is now an error, not a fallback.* Every command but `clone` needs the solution file — it *is* the config. A folder without one throws `ConfigInvalid`/`NotFound` naming stand-alone mode (`flowline push --pluginFile <dll>`) as the way to push without one (`SolutionFileLayout.cs:98-101`). The conventional fallback paths this section used to describe (`Plugins/Plugins.csproj`, `WebResources/WebResources.csproj`) are removed: a repo with no solution file must either run `clone` or use stand-alone mode.
+- **One solution per project root** — matches the solo/small-team consultant use case Flowline targets, and Microsoft's own ALM guidance for smaller-scale implementations.
+- **Flat, no `src/` nesting** — a Dataverse solution rarely has more than a handful of projects, so extra nesting doesn't pay for itself.
+- **Folders describe roles, project files carry identity** — `Solution/`, `Plugins/`, `WebResources/` mean the same thing in every Flowline repo; the project file names carry the solution's own name, since that's what shows up inside Dataverse.
 
 #### 4. Multiple Solutions in One Environment
 
-Flowline's built-in project model supports exactly one solution per project root. Microsoft's Power Platform ALM guidance still recognizes a legitimate case beyond that — multiple solutions in the same development environment, for "distinct and independent functional areas that don't share components." Two patterns cover it, both documentation-only (no dedicated Flowline tooling):
+Flowline only manages one solution per project root. If you need more than one solution in the same Dataverse environment:
 
-- **Separate repo per solution** (the default answer, no caveats). Each solution gets its own repo, its own `.flowline`, its own git history.
-- **A `solutions/<Name>/` folder inside one repo**, containing multiple independent, self-contained Flowline projects — each with its own `.flowline`, `Solution/`, `Plugins*/`, `WebResources/` at its own root, one level under `solutions/`. This already works with zero code changes: Flowline's project-root discovery walks upward from the current directory to the nearest `.flowline`, so running any Flowline command from inside `solutions/SolutionB/` just works, unaware of any sibling. Shared git history and shared `AGENTS.md`/`CLAUDE.md` context are the benefit over a separate repo.
+- **Separate repo per solution** (recommended, no caveats) — each solution gets its own repo, `.flowline`, and git history.
+- **A `solutions/<Name>/` folder in one repo** — each subfolder is its own independent Flowline project (own `.flowline`, `Solution/`, `Plugins/`, `WebResources/`). Works out of the box since Flowline finds its project root by walking up to the nearest `.flowline`. Trade-off: shared history and agent instructions, but no shared environment config — each `.flowline` needs its own `ProdUrl`/`DevUrl`/auth.
 
-**Known limitation, both patterns:** neither shares environment config (`ProdUrl`/`DevUrl`/auth) across sibling `.flowline` files — each carries its own copy.
+#### 5. Non-Scaffolded Layouts
 
-#### 5. Migrating an Existing Project to the Root Layout
+Flowline finds each project through the solution file, not by fixed folder or file names — so renamed or relocated folders keep working as long as the solution file still references them. A repo with no solution file at all is an error on every command except `clone`; use stand-alone mode (`flowline push --pluginFile <dll>`) instead.
 
-Projects created before this layout change used a `solutions/<Name>/` wrapper folder and an array-shaped `.flowline` (`"Solutions": [...]`). There is no automated migration — cut over manually:
-
-1. Move every file and folder out of `solutions/<Name>/` (its `Package/`, `Plugins/`, `WebResources/`, `artifacts/`, `.sln`, and any `DATAVERSE_CONTEXT.md`) up into the project root, then delete the now-empty `solutions/` folder. Move `DATAVERSE_CONTEXT.md` into `docs/` rather than the project root — it belongs alongside domain/schema reference material, not at the same level as `CHANGES.md`.
-2. Edit `.flowline`: add `"SchemaVersion": 1` and replace the `"Solutions": [ { "Name": ..., ... } ]` array with a single `"Solution": { "UniqueName": ..., ... }` object — the array's one entry becomes the object, and `Name` becomes `UniqueName`.
-3. Run `flowline status` to confirm the project loads cleanly against the new layout.
-
-#### 6. Projects Still on the `Package/` Layout
-
-A project scaffolded before the `Solution/` rename keeps working, and there is no migration command — as long as it still has a solution file referencing its projects. `SolutionFileLayout` finds the Dataverse solution project through the `.cdsproj` entry in the solution file and treats *that file's folder* as the Dataverse solution folder — so `Package/Package.cdsproj` resolves exactly like `Solution/<SolutionName>.cdsproj`. Same for the other two: a `Plugins/Plugins.csproj` the solution file references is discovered like any other plugin project, and a `WebResources/WebResources.csproj` is one candidate among the solution's non-plugin/non-PCF/non-test `.csproj` files, identified by elimination and content signals (§3) rather than by name.
-
-Renaming to the current layout is therefore cosmetic, and worth it only for the assembly name. Rename the folder and the project file, update the solution file, and re-run `flowline status`:
-
-- `Package/` → `Solution/`, `Package.cdsproj` → `<SolutionName>.cdsproj`
-- `Plugins/Plugins.csproj` → `Plugins/<SolutionName>.Plugins.csproj`
-- `WebResources/WebResources.csproj` → `WebResources/<SolutionName>.WebResources.csproj`
-
-Renaming the plugins project changes the built assembly's name, which is the point — but Dataverse identifies assemblies *by name*, so the next `push` against an org already carrying the old one registers the renamed assembly as a new one and leaves the old assembly and its steps behind as orphans. `push` reports them; clearing them is behind `--force delete-orphans`. Steps and Custom APIs re-derive from the source attributes, so nothing is lost in the move.
-
-**Two different failures get confused with this section — neither is about the `Package/`-vs-`Solution/` rename above.** A repo with *no solution file at all* — not even the old `Package/` layout, since that still has one — is a `ConfigInvalid`/`NotFound` error on every command but `clone`, naming stand-alone mode (`flowline push --pluginFile <dll>`) as the way to push without one; there is no fallback to a conventional path anymore (`src/Flowline.Core/Services/SolutionFileLayout.cs:98-101`). Separately, a project still on Flowline's old *pre-single-solution* `.flowline` format (the `Solutions` array from §0/§5, predating the `Package/`-to-`Solution/` rename this section covers) fails closed at config-load time — before the solution file is even read — with its own `ConfigInvalid` error telling you to delete `.flowline` and the old `solutions/<Name>/` folder and start again with `flowline clone <solution>` (`src/Flowline/Config/ProjectConfig.cs:220-223`).
+Renaming an existing plugins project to match the standard naming changes the built assembly's name. Dataverse identifies assemblies by name, so the next `push` registers it as a new assembly and leaves the old one (and its steps) behind as an orphan — `push` reports these, and `--force delete-orphans` clears them.

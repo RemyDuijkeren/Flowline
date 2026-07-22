@@ -8,15 +8,14 @@ using Spectre.Console;
 
 namespace Flowline.Core.OrphanCleanup.Handlers;
 
-// U4: migrates Workflow (29) detection and per-instance Prio out of OrphanCleanupService.
-// TryDeactivateWorkflowAsync's deactivate-before-delete mechanic stays in the orchestrator's execution
-// step (U9) — it's an execution-time action, not a classification decision. This handler only reads
-// the live statecode to decide Prio (KTD8): Activated -> Prio2 (still silently running deleted logic),
-// Deactivated -> Prio3 (default/safe to clean up). It does not execute, delete, or deactivate anything.
+// Handles Workflow (29) detection and per-instance Prio. TryDeactivateWorkflowAsync's
+// deactivate-before-delete mechanic stays in the orchestrator's execution step — it's an execution-time
+// action, not a classification decision. This handler only reads the live statecode to decide Prio:
+// Activated -> Prio2 (still silently running deleted logic), Deactivated -> Prio3 (default/safe to
+// clean up). It does not execute, delete, or deactivate anything.
 //
-// Code-review fault-isolation fix: the live query is now caught (KTD6) — a failed query degrades to an
-// empty byId map, which the loop below already treats identically to "record already gone" (Prio3
-// default, bare id) — no new fallback shape.
+// The live query is caught — a failed query degrades to an empty byId map, which the loop below already
+// treats identically to "record already gone" (Prio3 default, bare id).
 public sealed class WorkflowHandler(IAnsiConsole console) : IOrphanHandler
 {
     const int WorkflowComponentType = 29;
@@ -69,9 +68,8 @@ public sealed class WorkflowHandler(IAnsiConsole console) : IOrphanHandler
         var findings = new List<HandlerFinding>(workflowIds.Count);
         foreach (var id in workflowIds)
         {
-            // Unresolved (record already gone by the time this handler queries it) defaults to Prio3,
-            // same as the "Prio3 (default)" fallback every KTD8 handler row uses when its Prio2
-            // condition doesn't apply — we can't confirm it's still live, so it's not treated as risky.
+            // Unresolved (record already gone by the time this handler queries it) defaults to Prio3 —
+            // we can't confirm it's still live, so it's not treated as risky.
             string? name = null;
             var priority = OrphanPriority.Prio3;
 

@@ -7,12 +7,11 @@ using Spectre.Console;
 
 namespace Flowline.Core.OrphanCleanup.Handlers;
 
-// U6: migrates ConnectionReference's entity-detected orphan detection out of OrphanCleanupService.
 // ConnectionReference's componenttype is env-specific, same shape as CustomApi/Bot — a candidate can
 // only be identified as a ConnectionReference by querying the "connectionreference" table directly, so
-// match and detect are the same batched async call (see the Planning Contract's HTD note). KTD4: this
-// handler owns its own query and try/catch against "connectionreference" only — a BotHandler failure
-// (or vice versa) can never affect this handler's detection.
+// match and detect are the same batched async call. This handler owns its own query and try/catch
+// against "connectionreference" only — a BotHandler failure (or vice versa) can never affect this
+// handler's detection.
 public sealed class ConnectionReferenceHandler(IAnsiConsole console) : IOrphanHandler
 {
     public HandlerStatus Status => HandlerStatus.Active;
@@ -29,9 +28,8 @@ public sealed class ConnectionReferenceHandler(IAnsiConsole console) : IOrphanHa
         List<Entity> rows;
         try
         {
-            // Code-review fault-isolation fix: the 2000-id guard now runs inside this try so an
-            // oversized batch degrades the same way any other query fault does (warn + skip), rather
-            // than throwing uncaught before the try even starts.
+            // The 2000-id guard runs inside this try so an oversized batch degrades the same way any
+            // other query fault does (warn + skip), rather than throwing uncaught.
             if (idList.Count > 2000)
                 throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {idList.Count} IDs (max 2000). Solution has too many orphan candidates for ConnectionReference detection.");
 
@@ -43,10 +41,8 @@ public sealed class ConnectionReferenceHandler(IAnsiConsole console) : IOrphanHa
             };
             rows = await context.Service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
         }
-        // KTD6: a business fault (the connectionreference table genuinely has no matching rows) is not
-        // evidence any candidate was deleted — resolves quietly to "no candidates claimed", same as an
-        // infrastructure fault (network/auth/throttle), which additionally warns since it's a real
-        // failure the operator should see.
+        // A business fault (no matching rows) is not evidence of deletion — resolves quietly to "no
+        // candidates claimed", unlike an infrastructure fault, which additionally warns.
         catch (FaultException<OrganizationServiceFault>)
         {
             return new HandlerDetectionResult([], new HashSet<Guid>());
@@ -57,10 +53,8 @@ public sealed class ConnectionReferenceHandler(IAnsiConsole console) : IOrphanHa
             return new HandlerDetectionResult([], new HashSet<Guid>());
         }
 
-        // Every row the "connectionreference" table query returned is claimed — regardless of whether
-        // its logical name came back null (KTD5 skip) or it's still declared locally (suppressed
-        // below) — a row existing in the table at all is enough evidence this candidate is a
-        // ConnectionReference.
+        // A row existing in the table at all is enough evidence this candidate is a ConnectionReference —
+        // claimed regardless of logical-name or local-declaration status.
         var claimedIds = rows.Select(r => r.Id).ToHashSet();
 
         // ConnectionReference has no dedicated folder like Bot's bots/<schemaname>/bot.xml — it's
@@ -75,9 +69,8 @@ public sealed class ConnectionReferenceHandler(IAnsiConsole console) : IOrphanHa
         var findings = new List<HandlerFinding>();
         foreach (var row in rows)
         {
-            // KTD5: no resolved connectionreferencelogicalname means local-source verification never
-            // actually ran for this candidate — not evidence of removal. Skip rather than default to
-            // "orphaned".
+            // No resolved connectionreferencelogicalname means local-source verification never actually
+            // ran for this candidate — not evidence of removal. Skip rather than default to "orphaned".
             var logicalName = row.GetAttributeValue<string>("connectionreferencelogicalname");
             if (string.IsNullOrEmpty(logicalName)) continue;
             if (localLogicalNames.Contains(logicalName)) continue; // still declared locally — not orphaned
@@ -86,10 +79,10 @@ public sealed class ConnectionReferenceHandler(IAnsiConsole console) : IOrphanHa
                 ObjectId: row.Id,
                 ComponentType: componentTypeById.GetValueOrDefault(row.Id),
                 DisplayName: $"ConnectionReference '{logicalName}' ({row.Id})",
-                // Manual per KTD8 — ConnectionReference can't be deleted automatically, same as today.
+                // ConnectionReference can't be deleted automatically.
                 Action: OrphanAction.Manual,
-                // Prio2 always (KTD8) — a live connection reference remains usable by anything still
-                // holding its logical name.
+                // Prio2 always — a live connection reference remains usable by anything still holding
+                // its logical name.
                 Priority: OrphanPriority.Prio2,
                 SequenceHint: 0,
                 Timing: OrphanTiming.PreImportEligible,

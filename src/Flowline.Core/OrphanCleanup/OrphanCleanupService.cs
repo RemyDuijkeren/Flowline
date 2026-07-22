@@ -15,11 +15,9 @@ namespace Flowline.Core.OrphanCleanup;
 
 public enum OrphanAction { Delete, RemoveFromSolution, Manual }
 
-// EntityName, Priority, SequenceHint, and Timing all default so every pre-existing 4-arg call site
-// (OrphanEntry(ObjectId, ComponentType, DisplayName, Action)) keeps compiling unchanged. Priority/
-// SequenceHint/Timing are the handler-architecture bridge (see HandlerFinding, U9): a handler's
-// per-instance Prio (R3), its family-scoped ordering hint (R11, KTD1), and its declared pre/post-import
-// timing (R12) all survive from HandlerFinding into the entry the orchestrator executes and prints.
+// EntityName, Priority, SequenceHint, and Timing default so pre-existing 4-arg call sites keep
+// compiling. They carry a handler's classification and ordering decision (from HandlerFinding) into the
+// entry the orchestrator executes and prints.
 public sealed record OrphanEntry(
     Guid ObjectId,
     int ComponentType,
@@ -30,18 +28,14 @@ public sealed record OrphanEntry(
     int SequenceHint = 0,
     OrphanTiming Timing = OrphanTiming.PreImportEligible);
 
-// Skipped distinguishes "the comparison ran and found nothing" (false) from "an empty-input guard
-// short-circuited before any comparison happened" (true) — callers that need a trustworthy read-only
-// signal (e.g. DriftCommand) must not treat those two cases as equivalent.
+// Skipped distinguishes "ran and found nothing" (false) from "an empty-input guard short-circuited
+// before comparing" (true) — a read-only caller like DriftCommand must not conflate the two.
 public sealed record CompareResult(IReadOnlyList<OrphanEntry> Entries, bool Skipped = false);
 
 public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandler> handlers) : IPostDeployService
 {
-    // KTD1: explicit, centrally-declared cross-family order — NOT DI-registration order (a future
-    // unrelated edit to Program.cs's AddSingleton<IOrphanHandler, _> call sequence must not silently
-    // reorder execution/report sequencing). Mirrors the role the old flat ExecutionOrder/
-    // CustomApiEntityOrder arrays played as sole source of truth for cross-family sequencing. Adding a
-    // future handler means appending to this one visible list, matching KTD2's roster order exactly.
+    // Explicit, centrally-declared cross-family order, independent of Program.cs's DI-registration order
+    // — adding a handler means appending it here.
     static readonly Type[] FamilyOrder =
     [
         typeof(PluginAssemblyFamilyHandler),
@@ -64,11 +58,9 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         return idx >= 0 ? idx : FamilyOrder.Length; // unlisted handler (future addition not yet in FamilyOrder) sorts last
     }
 
-    // The three handlers that can only tell whether a candidate is theirs by querying their own backing
-    // table (KTD4/HTD note) — DispatchToHandlersAsync gives all three the identical still-unclaimed batch
-    // left after the componenttype-gated handlers run, rather than progressively narrowing it relative to
-    // each other, so one handler's claim or query failure never silently skips another's independent
-    // attempt against the same candidate.
+    // Handlers that can only identify a candidate by querying their own backing table.
+    // DispatchToHandlersAsync gives all three the identical still-unclaimed batch — not progressively
+    // narrowed relative to each other — so one handler's failure can't suppress another's attempt.
     static readonly HashSet<Type> EntityDetectedHandlerTypes =
     [
         typeof(CustomApiFamilyHandler),
@@ -79,18 +71,14 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
     // Threads dependency-deferred entries from RunPreImportAsync to RunPostImportAsync on the same instance.
     IReadOnlyList<OrphanEntry> _deferred = [];
 
-    // U11 (R12): threads declared-PostImportOnly entries from RunPreImportAsync to RunPostImportAsync on
-    // the same instance — mirrors _deferred's role but for entries never attempted pre-import at all
-    // (distinct from _deferred's entries, which were attempted and reactively deferred only after a
-    // dependency fault, per R13/KTD10). Merged with _deferred in RunPostImportAsync before the single
+    // Threads declared-PostImportOnly entries to RunPostImportAsync — entries never attempted pre-import,
+    // unlike _deferred (attempted, then deferred on a fault). Merged with _deferred before the single
     // ExecuteInOrderAsync call.
     IReadOnlyList<OrphanEntry> _postImportOnly = [];
 
-    // Execution-time fallback for componenttype-gated Auto handlers: their findings leave EntityName
-    // null (see e.g. PluginAssemblyFamilyHandler.BuildFinding), so PerformActionAsync resolves the
-    // delete target's table name from ComponentType here instead. Entity-detected handlers (CustomApi
-    // family, Bot, ConnectionReference) set EntityName explicitly since their componenttype is
-    // env-specific and can't be mapped through a fixed table like this one.
+    // Fallback table-name lookup for componenttype-gated Auto handlers, whose findings leave EntityName
+    // null. Entity-detected handlers (CustomApi family, Bot, ConnectionReference) set EntityName
+    // explicitly since their componenttype is env-specific.
     static readonly Dictionary<int, string> EntityNames = new()
     {
         [91] = "pluginassembly",
@@ -101,12 +89,10 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         [29] = "workflow",
     };
 
-    // Manual-orphan display labels for solutioncomponent.componenttype, verified against the
-    // "Solution Component" table reference (learn.microsoft.com/power-apps/developer/data-platform/
-    // reference/entities/solutioncomponent). Not exhaustive — covers types plausible in a manual-cleanup
-    // report. Types outside this map (e.g. env-specific 10000+ codes not in the public componenttype
-    // choice set) are reported as unrecognized rather than guessed at. Still used by the generic-fallback
-    // path (LogUnsupportedOrphansAsync) for any candidate no handler claims.
+    // Manual-orphan display labels for solutioncomponent.componenttype (learn.microsoft.com/power-apps/
+    // developer/data-platform/reference/entities/solutioncomponent). Not exhaustive — unmapped types
+    // (e.g. env-specific 10000+ codes) are reported as unrecognized rather than guessed at. Used by
+    // LogUnsupportedOrphansAsync for any candidate no handler claims.
     static readonly Dictionary<int, string> ManualTypeLabels = new()
     {
         [1]   = "Entity",
@@ -150,37 +136,29 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         if (context.Mode == RunMode.NoDelete)
             return;
 
-        // R12: entries declared PostImportOnly by their handler are excluded from the pre-import
-        // execution pass entirely — never attempted, never subject to TryExecuteEntryAsync's reactive
-        // dependency-deferral (R13, untouched) — and threaded to RunPostImportAsync via _postImportOnly
-        // instead, mirroring _deferred's existing instance-field pattern.
+        // PostImportOnly entries skip the pre-import execution pass entirely and are threaded to
+        // RunPostImportAsync via _postImportOnly instead.
         var preImportEntries = result.Entries.Where(e => e.Timing == OrphanTiming.PreImportEligible).ToList();
         _postImportOnly = result.Entries.Where(e => e.Timing == OrphanTiming.PostImportOnly).ToList();
 
         _deferred = await ExecuteInOrderAsync(context.Service, context.Solution.Name, preImportEntries, isPostImport: false, ct).ConfigureAwait(false);
     }
 
-    // Derives the printed NoDelete-report reason from the raw facts on DeploySolutionInfo rather than
-    // being handed a pre-rendered string by the caller — DeployCommand knows IncludeManaged/ExistsInTarget,
-    // but presentation of what that means for this report belongs to the service that owns the report.
+    // Derives the report reason from DeploySolutionInfo rather than a caller-supplied string —
+    // presentation belongs to the service that owns the report.
     internal static string BuildNoDeleteHint(DeploySolutionInfo solution) =>
         !solution.IncludeManaged ? "(--no-delete active)"
         : solution.ExistsInTarget ? "(managed — previewing what the upgrade import will remove)"
         : "(managed — first install, cleanup runs on a later upgrade deploy)";
 
-    // Thin wrapper for RunPreImportAsync's caller (DeployCommand), which already has a PostDeployContext
-    // built for the whole IPostDeployService fan-out (it also carries RunMode from --no-delete and a real
-    // PackagePath from its own packing step). Unpacks it and delegates to the primitives-based overload
-    // below, which is where the actual comparison logic lives (KTD12) — PostDeployContext is a deploy-
-    // pipeline type (it still carries PackagePath, which this comparison never reads), so the engine
-    // itself shouldn't be coupled to its shape.
+    // Thin wrapper for DeployCommand, which already has a PostDeployContext for the IPostDeployService
+    // fan-out. Delegates to the primitives overload below so the engine isn't coupled to deploy-only
+    // fields like PackagePath.
     public Task<CompareResult> CompareAsync(PostDeployContext context, CancellationToken ct, string? noDeleteHint = "(--no-delete active)") =>
         CompareAsync(context.DataverseSolutionSrcRoot, context.Service, context.Solution.Name, context.Solution.EnvironmentUrl, context.Mode, ct, noDeleteHint);
 
-    // Convenience overload for callers with no packed/mutating context of their own (e.g. DriftCommand) —
-    // takes a dataverseSolutionFolder (parent of src) rather than dataverseSolutionSrcRoot, matching
-    // ComponentClassifier.ParseLocalSource's own parameter, and always runs in RunMode.NoDelete since these
-    // callers never mutate.
+    // Convenience overload for read-only callers with no context of their own (e.g. DriftCommand) —
+    // takes dataverseSolutionFolder (parent of src) and always runs RunMode.NoDelete.
     public Task<CompareResult> CompareAsync(
         string dataverseSolutionFolder,
         IOrganizationServiceAsync2 service,
@@ -190,27 +168,18 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         string? noDeleteHint = null) =>
         CompareAsync(Path.Combine(dataverseSolutionFolder, "src"), service, solutionName, environmentUrl, RunMode.NoDelete, ct, noDeleteHint);
 
-    // Comparison-only half of the pre-import step (KTD5): parses committed source, queries live
-    // solutioncomponents, resolves sNewIds via all existing special-casing (schemaName, entity,
-    // OptionSet), dispatches raw orphan candidates to the U1-U8 handler set (U9), classifies orphans, and
-    // prints the report — stopping before ExecuteInOrderAsync (the mutating delete/remove step), so this
-    // is callable from a read-only context (used today by DriftCommand) without mutating anything.
-    // `noDeleteHint` lets a caller that has no `--no-delete` flag of its own (DriftCommand is always
-    // read-only) suppress or replace the deploy-specific "(--no-delete active)" phrasing in the printed
-    // report.
+    // Comparison-only half of the pre-import step: parses committed source, resolves sNewIds
+    // (schemaName/entity/OptionSet special-casing), dispatches candidates to the handler set, and prints
+    // the report — stopping before ExecuteInOrderAsync so it's safely callable read-only (used by
+    // DriftCommand). `noDeleteHint` lets a caller without its own `--no-delete` flag replace the
+    // deploy-specific report phrasing.
     //
-    // Takes dataverseSolutionSrcRoot/service/solutionName/environmentUrl/mode directly rather than a PostDeployContext
-    // — this is the real comparison engine both public overloads above delegate to, and its dependencies
-    // should be exactly what it needs, not a deploy-pipeline type carrying fields (like PackagePath) it
-    // never reads (KTD12). Owns parsing dataverseSolutionSrcRoot itself (via ComponentClassifier.ParseLocalSource)
-    // rather than reading pre-parsed LocalComponents/EntityLogicalNames/NamedComponents.
+    // Takes primitives rather than a PostDeployContext — this is the real comparison engine both
+    // overloads above delegate to, and shouldn't be coupled to deploy-only fields like PackagePath.
     //
-    // Returns a CompareResult rather than a bare entry list so a caller can tell "compared and found
-    // nothing" (Skipped: false, Entries: []) apart from "the comparison itself didn't run" (Skipped:
-    // true) — the two empty-input guards below are a skip, not a verified-clean result. RunPreImportAsync
-    // doesn't need this distinction (it only ever acts on Entries), but DriftCommand does: a solution
-    // with no local components or no live components at all should not report the same "no drift" as
-    // one that was actually compared and matched.
+    // Returns CompareResult rather than a bare list so a caller can tell "compared, found nothing"
+    // (Skipped: false) apart from "didn't run at all" (Skipped: true, the two empty-input guards below)
+    // — DriftCommand needs that distinction to avoid reporting a false "no drift".
     public async Task<CompareResult> CompareAsync(
         string dataverseSolutionSrcRoot,
         IOrganizationServiceAsync2 service,
@@ -257,11 +226,9 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
             sNewIds.UnionWith(resolvedNamedIds);
         }
 
-        // OptionSet (9) roots are also schemaName-declared in Solution.xml, but OptionSet is metadata,
-        // not a data-table row — NameResolvableTypes' QueryExpression pattern can't resolve it, so
-        // ResolveNamedComponentIdsAsync silently skips it. Resolve it via a metadata request instead
-        // (RetrieveOptionSetRequest) and fold it into sNewIds the same way, before the orphan diff runs
-        // (KTD1) — a still-declared OptionSet must never become an orphan candidate at all.
+        // OptionSet roots are also schemaName-declared, but OptionSet is metadata, not a data-table row,
+        // so ResolveNamedComponentIdsAsync can't resolve it. Resolve via RetrieveOptionSetRequest
+        // instead and fold into sNewIds before the orphan diff runs.
         var optionSetSchemaNames = namedComponents
             .Where(c => c.ComponentType == OptionSetComponentType)
             .Select(c => c.SchemaName)
@@ -291,34 +258,20 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         return new CompareResult(entries);
     }
 
-    // U9: replaces the old inline per-type branching (autoOrphans/unknownOrphans/entityDetectedTypes
-    // split) with dispatch to the U1-U8 handler set. Handlers run once each, in FamilyOrder (KTD1),
-    // always against the candidates still unclaimed by an earlier handler in that order — this covers
-    // both dispatch shapes the Planning Contract describes uniformly: a componenttype-gated handler
-    // (PluginAssembly family, WebResource, Workflow, Role, Entity family) simply ignores candidates
-    // outside its own componenttype gate no matter how large the batch it's handed, while an
-    // entity-detected handler (CustomApi family, Bot, ConnectionReference) receives the same
-    // "still-unclaimed-so-far" batch as its one batched query — since a real candidate can only ever be a
-    // row in one of these tables, this is behaviorally identical to handing every entity-detected handler
-    // an identical fixed "remainder after componenttype-gated dispatch" batch, without the orchestrator
-    // needing to special-case which shape a given handler is.
+    // Dispatches to each handler once, in FamilyOrder, against candidates still unclaimed by an earlier
+    // handler — covering both dispatch shapes uniformly: componenttype-gated handlers just ignore
+    // non-matching candidates regardless of batch size, while entity-detected handlers (CustomApi
+    // family, Bot, ConnectionReference) get the same still-unclaimed batch as their one query.
     //
-    // A candidate absent from a handler's Findings is either recognized-but-clean (in ClaimedIds — e.g.
-    // still locally declared, or a WebResource exempted via annotation) and silently dropped, or
-    // unrecognized by every handler (never in any ClaimedIds) and routed to the generic-fallback verbose
-    // preview (R8) — computed as the candidate set minus the union of every handler's ClaimedIds, never
-    // minus the union of Findings (that earlier shape would leak a spurious "not tracked yet" line for a
-    // recognized-but-clean candidate that doesn't exist in today's behavior).
+    // A candidate absent from Findings is either recognized-but-clean (in ClaimedIds) and silently
+    // dropped, or unclaimed by every handler and routed to the generic-fallback preview — computed from
+    // ClaimedIds, not Findings, so a recognized-but-clean candidate never leaks into the fallback.
     async Task<List<OrphanEntry>> DispatchToHandlersAsync(
         DetectionContext detectionContext,
         IReadOnlyList<(int ComponentType, string SchemaName)> namedComponents,
         List<(Guid ObjectId, int ComponentType)> orphans,
         CancellationToken ct)
     {
-        // Caller (CompareAsync) already has every piece DetectionContext needs and builds it once — this
-        // method's own dependencies are the context plus the two locally-computed collections (KTD1's
-        // FamilyOrder dispatch needs orphans; the generic-fallback preview needs namedComponents) that
-        // aren't part of DetectionContext's shape.
         var service            = detectionContext.Service;
         var dataverseSolutionSrcRoot = detectionContext.DataverseSolutionSrcRoot;
         var solutionName       = detectionContext.SolutionName;
@@ -328,11 +281,9 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         var findings         = new List<HandlerFinding>();
         var familyIndexById  = new Dictionary<Guid, int>();
 
-        // Split into a detect-only step and a merge-into-shared-state step so Pass 2 below can fan the
-        // three entity-detected handlers' DetectAsync calls out concurrently via Task.WhenAll while still
-        // merging their results into claimedIds/findings/familyIndexById single-threaded afterward — those
-        // are plain HashSet/List/Dictionary, not thread-safe, so no merge may happen inside a concurrent
-        // handler's own async continuation.
+        // Split into detect and merge so Pass 2 can fan the three entity-detected handlers out
+        // concurrently via Task.WhenAll, then merge into claimedIds/findings/familyIndexById
+        // single-threaded — those collections aren't thread-safe.
         async Task<HandlerDetectionResult> DetectHandlerAsync(int index, IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates) =>
             await _orderedHandlers[index].DetectAsync(detectionContext, candidates, ct).ConfigureAwait(false);
 
@@ -351,8 +302,8 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
             }
             else
             {
-                // KTD3: no handler ships Preview this round (KTD2) — this branch exists so a future
-                // Preview handler is field-tested with zero action risk, per R7, without a code change here.
+                // No handler ships Preview today — this branch exists so a future Preview handler is
+                // field-tested with zero action risk, without a code change here.
                 foreach (var finding in result.Findings)
                     console.Verbose($"[Preview: {handler.GetType().Name}] {finding.DisplayName}");
             }
@@ -364,11 +315,9 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
             MergeResult(index, result);
         }
 
-        // Pass 1: componenttype-gated handlers (PluginAssembly family, WebResource, Workflow, Role,
-        // Entity family — KTD2) each match by componenttype alone, so their gates never overlap; each
-        // runs against whatever the prior one left unclaimed purely as an optimization (skips a handler
-        // a needless empty-candidate call once nothing is left), not because correctness depends on the
-        // shrinking.
+        // Pass 1: componenttype-gated handlers match by componenttype alone, so their gates never
+        // overlap — shrinking the batch as handlers claim from it is just an optimization, not required
+        // for correctness.
         for (var i = 0; i < _orderedHandlers.Count; i++)
         {
             if (EntityDetectedHandlerTypes.Contains(_orderedHandlers[i].GetType())) continue;
@@ -376,24 +325,13 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
             await RunHandlerAsync(i, remaining).ConfigureAwait(false);
         }
 
-        // Pass 2: entity-detected handlers (CustomApi family, Bot, ConnectionReference — KTD4) each
-        // independently query their own backing table against the SAME still-unclaimed batch left after
-        // pass 1 — not a batch progressively narrowed relative to EACH OTHER. A real candidate can only
-        // ever be a row in one of these three tables, but KTD4's isolation guarantee (one handler's own
-        // query failure or claim must never suppress another's independent attempt) only holds if every
-        // entity-detected handler actually gets to run its own query against the identical batch, exactly
-        // like the old shared Task.WhenAll batch did — narrowing the batch as each handler claims from it
-        // would silently skip a later handler's query whenever an earlier one claimed the same candidate
-        // first, which is observable (e.g. a live diagnostic warning) even though the claim itself was
-        // correct.
+        // Pass 2: entity-detected handlers each independently query their own table against the SAME
+        // still-unclaimed batch — not narrowed relative to each other, so one handler's failure or claim
+        // can never suppress another's independent attempt.
         //
-        // The three handlers' own queries have no data dependency on each other, so they dispatch
-        // concurrently via Task.WhenAll (matching pre-refactor latency — this was one shared Task.WhenAll
-        // batch before U9's orchestrator rewrite serialized it into three sequential waves). Results are
-        // merged single-threaded afterward, in _orderedHandlers' declared order (KTD1) rather than
-        // task-completion order — Task.WhenAll(IEnumerable<Task<T>>) already returns its result array in
-        // input order, so zipping entityDetectedIndices with entityDetectedResults below preserves that
-        // order for familyIndexById/findings.
+        // Their queries have no data dependency on each other, so they dispatch concurrently via
+        // Task.WhenAll and merge single-threaded afterward in declared order — Task.WhenAll preserves
+        // input order, so zipping indices with results keeps that order for familyIndexById/findings.
         var remainderForEntityDetected = orphans.Where(c => !claimedIds.Contains(c.ObjectId)).ToList();
         var entityDetectedIndices = Enumerable.Range(0, _orderedHandlers.Count)
             .Where(i => EntityDetectedHandlerTypes.Contains(_orderedHandlers[i].GetType()))
@@ -412,20 +350,16 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
             await LogUnsupportedOrphansAsync(service, unclaimed, localIdentifiers, ct).ConfigureAwait(false);
         }
 
-        // Execution-time cross-solution-membership Delete-vs-RemoveFromSolution override — spans
-        // handlers (a handler only ever proposes Delete; whether another solution still needs the
-        // component is an orchestrator-level concern), so it's re-applied here on top of every Auto
-        // handler's findings, same as today. Only Delete-action findings are ever candidates for the
-        // override — Manual findings (Role, EntityFamily, Bot, ConnectionReference) never reach it,
-        // matching today's exact scope.
+        // Delete-vs-RemoveFromSolution override spans handlers (a handler only ever proposes Delete;
+        // cross-solution membership is an orchestrator concern), applied here on top of every Auto
+        // handler's findings. Manual findings never reach it.
         var deleteCandidateIds = findings.Where(f => f.Action == OrphanAction.Delete).Select(f => f.ObjectId).ToList();
         var crossSolution = deleteCandidateIds.Count > 0
             ? await GetCrossSolutionMembershipAsync(service, deleteCandidateIds, ct).ConfigureAwait(false)
             : [];
 
-        // Sorted once here (KTD1: cross-family via FamilyOrder/familyIndexById, then per-family via each
-        // finding's own SequenceHint) — ExecuteInOrderAsync and PrintReport both just consume this list's
-        // order downstream rather than re-deriving it themselves.
+        // Sorted once here — cross-family via FamilyOrder/familyIndexById, then per-family via
+        // SequenceHint — so downstream consumers just use this order.
         return findings
             .OrderBy(f => familyIndexById[f.ObjectId])
             .ThenBy(f => f.SequenceHint)
@@ -450,25 +384,15 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         var solutionName = context.Solution.Name;
         var mode         = context.Mode;
 
-        // U11 (R12): merges reactively-deferred entries (_deferred — attempted pre-import, faulted on a
-        // dependency, retried here per R13/KTD10) with declared-PostImportOnly entries (_postImportOnly —
-        // never attempted pre-import at all) into one candidate list up front. Both sets were classified
-        // from the same CompareAsync-time live-state snapshot, and live state can equally have moved on
-        // for either kind by the time this runs (e.g. cross-solution membership changed as a side effect
-        // of the import) — so both need the same "still present / not re-declared locally / cross-solution
-        // override" re-validation below before executing, and both converge on the single
-        // ExecuteInOrderAsync call at the end (KTD10 — one code path decides execution order). The two
-        // sets are concatenated, not re-sorted by family/SequenceHint: _deferred already preserves its own
-        // DispatchToHandlersAsync-derived order (see ExecuteInOrderAsync's comment), and _postImportOnly
-        // is itself a filtered, order-preserving subset of that same sorted list — cross-cutting order
-        // between the two sets was never established by any SequenceHint (family-scoped only, per KTD1),
-        // and any real ordering surprise here still falls back to the existing warn-and-report-failed path
-        // TryExecuteEntryAsync already uses for any post-import fault.
+        // Merges _deferred (attempted pre-import, faulted on a dependency) with _postImportOnly (never
+        // attempted) into one list — both need the same still-present/cross-solution re-validation below
+        // since live state may have moved on, and both converge on the single ExecuteInOrderAsync call.
+        // Concatenated, not re-sorted: each set already preserves its own DispatchToHandlersAsync-derived
+        // order.
         var candidates = _deferred.Concat(_postImportOnly).ToList();
 
-        // Re-parses committed source (cheap — one small XML file plus a folder scan) rather than
-        // threading the CompareAsync-time parse across the pre/post-import boundary — this is the same
-        // tradeoff RunPreImportAsync/RunPostImportAsync already make for querying live state twice.
+        // Re-parses committed source (cheap) rather than threading the CompareAsync-time parse across
+        // the pre/post-import boundary — same tradeoff as querying live state twice.
         var (sNew, _, _) = ComponentClassifier.ParseLocalSource(context.DataverseSolutionSrcRoot);
 
         if (candidates.Count == 0 || mode == RunMode.NoDelete)
@@ -533,13 +457,10 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
 
     const int OptionSetComponentType = 9;
 
-    // OptionSet's own metadata-request resolution path (see the call site in CompareAsync) — kept
-    // separate from ResolveNamedComponentIdsAsync's NameResolvableTypes/QueryExpression pattern since
-    // OptionSet has no backing data table to query. Unlike ResolveEntityMetadataIdsAsync, a failed
-    // request here (e.g. a genuinely-deleted global choice) is caught per-name so it doesn't block
-    // resolution of the others — RetrieveOptionSetRequest throws for a name that no longer exists,
-    // whereas RetrieveEntityRequest's precondition (the parsed entityLogicalNames) never includes deleted
-    // entities in the first place.
+    // OptionSet's own metadata-resolution path — separate from ResolveNamedComponentIdsAsync since
+    // OptionSet has no backing table. Unlike ResolveEntityMetadataIdsAsync, failures are caught per-name
+    // (RetrieveOptionSetRequest throws for a genuinely-deleted global choice) so one bad name doesn't
+    // block the rest.
     async Task<HashSet<Guid>> ResolveOptionSetMetadataIdsAsync(
         IOrganizationServiceAsync2 service,
         IEnumerable<string> schemaNames,
@@ -556,10 +477,8 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
                 var response = (RetrieveOptionSetResponse)await service.ExecuteAsync(request, ct).ConfigureAwait(false);
                 return response.OptionSetMetadata?.MetadataId;
             }
-            // A genuinely-deleted global choice faults at the organization-service level — the same
-            // "well-formed Dataverse business-logic response" shape TryExecuteEntryAsync already treats
-            // as expected elsewhere in this file. Anything else (network, auth, throttling) is a real
-            // failure the operator should see, not silently equivalent to "not found".
+            // A genuinely-deleted global choice faults at the org-service level — treated as expected.
+            // Anything else is a real failure the operator should see.
             catch (FaultException<OrganizationServiceFault>)
             {
                 return null;
@@ -579,13 +498,10 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         return metadataIds.Where(id => id.HasValue).Select(id => id!.Value).ToHashSet();
     }
 
-    // Resolves non-entity schemaName-recorded RootComponents (e.g. WebResource) to their live id, by
-    // querying each type's NameResolvableTypes-mapped table for name-attribute IN (schemaNames). A type
-    // not present in NameResolvableTypes is skipped — same as before this method existed, it's just not
-    // folded into sNewIds — rather than guessed at. This is a pre-diff step (KTD1 — a still-declared
-    // component must never become an orphan candidate at all) and stays in the orchestrator regardless of
-    // which handler would eventually claim the component as an orphan; it has nothing to do with the
-    // handler dispatch below.
+    // Resolves non-entity schemaName-recorded RootComponents (e.g. WebResource) to their live id via each
+    // type's NameResolvableTypes-mapped table. A type absent from NameResolvableTypes is skipped, not
+    // guessed at. Pre-diff step — stays in the orchestrator regardless of which handler would eventually
+    // claim the component.
     static async Task<HashSet<Guid>> ResolveNamedComponentIdsAsync(
         IOrganizationServiceAsync2 service,
         IReadOnlyList<(int ComponentType, string SchemaName)> namedComponents,
@@ -616,14 +532,11 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         return result;
     }
 
-    // componenttype → backing table, keyed by the componenttype value, resolvable via a single bulk
-    // QueryExpression per type. Still needed by two pre-diff/fallback concerns unaffected by the handler
-    // dispatch: ResolveNamedComponentIdsAsync's schemaName pre-diff resolution (any of these ten types
-    // could in principle be schemaName-declared in Solution.xml) and ResolveGroupNamesAsync's generic-
+    // componenttype → backing table. Still needed by two concerns outside the handler dispatch:
+    // ResolveNamedComponentIdsAsync's schemaName pre-diff resolution, and ResolveGroupNamesAsync's
     // fallback name resolution for a candidate no handler claims (e.g. Form/View/ConnectionRole, which
-    // have no handler in the R14 roster). The six entries also migrated into their owning handler
-    // (PluginAssemblyFamilyHandler, WebResourceHandler, WorkflowHandler, RoleHandler) keep their own copy
-    // there — this table is not superseded, it now serves the two concerns above only.
+    // have no handler). Six entries also have their own copy in their owning handler — not redundant,
+    // this table serves the two concerns above only.
     static readonly Dictionary<int, (string EntityLogicalName, string IdAttribute, string NameAttribute)> NameResolvableTypes = new()
     {
         [91] = ("pluginassembly", "pluginassemblyid", "name"),
@@ -638,11 +551,8 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         [63] = ("connectionrole", "connectionroleid", "name"),
     };
 
-    // Resolves componenttype → display name via solutioncomponentdefinition, Dataverse's own lookup
-    // table for component types (documented for the Web API as GET solutioncomponentdefinitions?
-    // $select=name,solutioncomponenttype — see Power Pages CLI solution docs). Used ONLY for the
-    // generic-fallback verbose preview below — it identifies a type, it does not verify one, so it must
-    // never feed into the actionable report.
+    // Resolves componenttype → display name via solutioncomponentdefinition. Verbose-fallback preview
+    // only — it identifies a type, not verifies one, so it must never feed the actionable report.
     static async Task<Dictionary<int, string>> ResolveComponentTypeNamesAsync(
         IOrganizationServiceAsync2 service,
         IEnumerable<int> componentTypes,
@@ -679,22 +589,18 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
     }
 
     // solutioncomponentdefinition.name for env-specific types is literally the backing table's
-    // LogicalName (confirmed against a real org: connectionreference/bot resolve to those exact
-    // strings) — so the resolved label doubles as the entity to query for the record's own name.
-    // Verbose-preview only, same caveat as ResolveComponentTypeNamesAsync above. Bot/ConnectionReference
-    // now have their own handlers, but a real record can still land here if a handler's own live query
-    // failed with an infrastructure fault (KTD6) and its candidates fell through unclaimed.
+    // LogicalName (confirmed: connectionreference/bot resolve to those exact strings), so the resolved
+    // label doubles as the entity to query for the record's own name. Verbose-preview only, same caveat
+    // as ResolveComponentTypeNamesAsync above.
     static readonly Dictionary<string, (string IdAttribute, string NameAttribute)> ResolvedTypeNameAttributes = new(StringComparer.OrdinalIgnoreCase)
     {
         ["connectionreference"] = ("connectionreferenceid", "connectionreferencelogicalname"),
         ["bot"]                 = ("botid", "name"),
     };
 
-    // KTD5: flat, case-insensitive identifier set drawn only from local shapes already scanned for
-    // known-shape types (R7 — never an unscoped, whole-repo string search). Built once per
-    // DispatchToHandlersAsync call (itself called exactly once per CompareAsync run) and used only to
-    // enrich LogUnsupportedOrphansAsync's verbose preview (R6) — membership here is informational only
-    // and never promotes a type into the actionable report.
+    // Case-insensitive identifier set from local shapes already scanned for known types — never an
+    // unscoped repo search. Used only to enrich LogUnsupportedOrphansAsync's verbose preview; membership
+    // here never promotes a type into the actionable report.
     static HashSet<string> BuildLocalIdentifierHarvest(
         string dataverseSolutionSrcRoot,
         IReadOnlyList<string> entityLogicalNames,
@@ -718,12 +624,9 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         return harvest;
     }
 
-    // Verbose-only preview of orphan candidates no handler claimed (R8) — the generic-fallback path.
-    // Resolves the type's own label (ManualTypeLabels, falling back to solutioncomponentdefinition for
-    // env-specific codes) and the individual record's name where a lookup exists, plus what the
-    // no-handler-exists logic would have proposed — purely informational. R6: when the resolved name
-    // matches localIdentifiers (KTD5), the line also notes a possible local match — this never changes
-    // control flow, the orphan still doesn't reach entries/the report.
+    // Verbose-only preview of orphan candidates no handler claimed. Resolves the type's label and the
+    // record's name where possible, purely informational — a local-identifier match note never changes
+    // control flow.
     async Task LogUnsupportedOrphansAsync(
         IOrganizationServiceAsync2 service,
         List<(Guid ObjectId, int ComponentType)> unsupportedOrphans,
@@ -756,9 +659,8 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         }
     }
 
-    // Shared by every "group orphans by componentType, resolve display names via NameResolvableTypes"
-    // loop still remaining after the handler dispatch (the unsupported-type verbose preview) — a type
-    // with no NameResolvableTypes entry resolves to an empty map rather than a query.
+    // Shared by every componentType-group name-resolution loop remaining after handler dispatch — a type
+    // with no NameResolvableTypes entry resolves to an empty map.
     static Task<Dictionary<Guid, string>> ResolveGroupNamesAsync(
         IOrganizationServiceAsync2 service,
         int componentType,
@@ -795,9 +697,8 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         return result;
     }
 
-    // Dataverse dual-writes every component added to a custom unmanaged solution into "Default" as
-    // well, so "Default" membership is not a reason to keep an otherwise-orphaned component around.
-    // Excluding it here mirrors PluginPlanner.AddCrossSolutionWarnings.
+    // Dataverse dual-writes every component into "Default" too, so Default membership doesn't count as a
+    // reason to keep an orphan. Mirrors PluginPlanner.AddCrossSolutionWarnings.
     static List<string> OtherRelevantSolutions(Dictionary<Guid, List<string>> crossSolution, Guid objectId, string solutionName) =>
         crossSolution.TryGetValue(objectId, out var sols)
             ? sols.Where(s => !string.Equals(s, solutionName, StringComparison.OrdinalIgnoreCase)
@@ -870,15 +771,9 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         return entities.Select(e => e.GetAttributeValue<Guid>("objectid")).Where(id => id != Guid.Empty).ToHashSet();
     }
 
-    // KTD10: generalized to execute in the order the entries list already carries (assigned once by
-    // DispatchToHandlersAsync per KTD1 — cross-family via FamilyOrder, then per-family via SequenceHint)
-    // rather than re-deriving order from the old static ExecutionOrder/CustomApiEntityOrder arrays.
-    // RunPostImportAsync's reEntries preserve that same relative order (they're built by filtering
-    // _deferred concatenated with _postImportOnly — U11, R12 — each of which is itself an
-    // order-preserving subset of this method's own attempt loop / DispatchToHandlersAsync's sorted list,
-    // in that order), so no re-sort is needed here either way. The IsDependencyError-triggered reactive
-    // deferral in TryExecuteEntryAsync is untouched (R13) — this generalization only changes what decides
-    // the *attempt* order, never the fault-handling/deferral behavior.
+    // Executes in the order entries already carry (assigned by DispatchToHandlersAsync).
+    // RunPostImportAsync's reEntries preserve that same order, so no re-sort is needed here. The
+    // reactive dependency-deferral only changes attempt order, never fault-handling behavior.
     async Task<IReadOnlyList<OrphanEntry>> ExecuteInOrderAsync(
         IOrganizationServiceAsync2 service,
         string solutionName,
@@ -894,10 +789,9 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         return deferred.AsReadOnly();
     }
 
-    // Untouched by U9 (R13/KTD10) — the IsDependencyError-triggered reactive deferral (attempt, catch
-    // dependency fault, defer, retry post-import) and the Workflow deactivate-before-delete step are both
-    // orthogonal to the handler-dispatch refactor. WorkflowHandler only classifies (statecode -> Prio);
-    // this method still owns actually deactivating a Workflow before deleting it, exactly as before.
+    // Dependency-fault deferral and the Workflow deactivate-before-delete step are both orthogonal to
+    // handler dispatch — WorkflowHandler only classifies (statecode -> Prio); this method owns
+    // deactivation.
     async Task TryExecuteEntryAsync(
         IOrganizationServiceAsync2 service,
         string solutionName,
@@ -972,13 +866,9 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         }
     }
 
-    // U10 (R1/R6): automated entries within their existing DispatchToHandlersAsync order (KTD1) are
-    // additionally grouped by Prio — Prio1 first, since these block deployment — layered on top of
-    // today's Action grouping rather than replacing it. Manual entries and the summary line are
-    // unaffected: R7 excludes Preview findings from this report entirely (they never reach `entries`,
-    // see DispatchToHandlersAsync's console.Verbose branch), and generic-fallback candidates never
-    // carry a Prio at all (R8), so every automated entry here is guaranteed a real Prio1/2/3 by
-    // construction — PriorityOrder's trailing None slot only guards against that invariant breaking.
+    // Automated entries are additionally grouped by Prio — Prio1 first, since these block deployment —
+    // on top of Action grouping. Every automated entry is guaranteed a real Prio1/2/3 by construction, so
+    // the trailing None slot only guards against that invariant breaking.
     static readonly OrphanPriority[] PriorityOrder =
         [OrphanPriority.Prio1, OrphanPriority.Prio2, OrphanPriority.Prio3, OrphanPriority.None];
 
@@ -1046,8 +936,8 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         _                               => "white"
     };
 
-    // KTD9: no default arm — an enum addition to OrphanPriority without a matching case here is a
-    // compile error (CS8509), not a silently-dropped report group.
+    // No default arm — an enum addition to OrphanPriority without a matching case here is a compile
+    // error (CS8509), not a silently-dropped report group.
     static string PriorityLabel(OrphanPriority priority) => priority switch
     {
         OrphanPriority.Prio1 => "Prio1 — blocks deployment",
