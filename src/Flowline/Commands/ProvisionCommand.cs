@@ -59,13 +59,14 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
         var targetUrl = $"https://{urlParts.Organization}-{suffix.ToLower()}.{urlParts.Host}/";
         Logger.LogInformation("source={ProdUrl} target={TargetUrl} role={Role}", prodEnv.EnvironmentUrl, targetUrl, settings.Role);
 
-        string? url = settings.Role switch
+        var environmentRole = settings.Role switch
         {
-            Role.Dev  => Config!.GetOrUpdateDevUrl(targetUrl, settings),
-            Role.Test => Config!.GetOrUpdateTestUrl(targetUrl, settings),
-            Role.Uat  => Config!.GetOrUpdateUatUrl(targetUrl, settings),
-            _ => null
+            Role.Dev  => EnvironmentRole.Dev,
+            Role.Test => EnvironmentRole.Test,
+            Role.Uat  => EnvironmentRole.Uat,
+            _ => throw new ArgumentOutOfRangeException(nameof(settings.Role))
         };
+        string? url = GetOrUpdateUrl(environmentRole, targetUrl, settings);
 
         if (url == null)
         {

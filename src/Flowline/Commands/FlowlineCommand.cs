@@ -129,6 +129,18 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         Console.Ok("Prerequisites all good, let's go!");
     }
 
+    // Single source of truth for choosing between the four ProjectConfig.GetOrUpdate*Url wrappers —
+    // ProvisionCommand's Role enum has no Prod member, so it converts to EnvironmentRole before calling
+    // this rather than duplicating its own switch.
+    protected string? GetOrUpdateUrl(EnvironmentRole role, string? inputUrl, TSettings settings) => role switch
+    {
+        EnvironmentRole.Prod => Config!.GetOrUpdateProdUrl(inputUrl, settings),
+        EnvironmentRole.Uat  => Config!.GetOrUpdateUatUrl(inputUrl, settings),
+        EnvironmentRole.Test => Config!.GetOrUpdateTestUrl(inputUrl, settings),
+        EnvironmentRole.Dev  => Config!.GetOrUpdateDevUrl(inputUrl, settings),
+        _ => throw new ArgumentOutOfRangeException(nameof(role))
+    };
+
     protected async Task<(EnvironmentInfo Info, PacProfile Profile)> GetAndCheckEnvironmentInfoAsync(
         EnvironmentRole role, string? inputUrl, TSettings settings, CancellationToken cancellationToken, PacProfile? resolvedProfile = null)
     {
@@ -149,14 +161,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
             _ => throw new ArgumentOutOfRangeException(nameof(role))
         };
 
-        var url = role switch
-        {
-            EnvironmentRole.Prod => Config!.GetOrUpdateProdUrl(inputUrl, settings),
-            EnvironmentRole.Uat  => Config!.GetOrUpdateUatUrl(inputUrl, settings),
-            EnvironmentRole.Test => Config!.GetOrUpdateTestUrl(inputUrl, settings),
-            EnvironmentRole.Dev  => Config!.GetOrUpdateDevUrl(inputUrl, settings),
-            _ => throw new ArgumentOutOfRangeException(nameof(role))
-        };
+        var url = GetOrUpdateUrl(role, inputUrl, settings);
 
         if (string.IsNullOrEmpty(url))
             throw new FlowlineException(ExitCode.ConfigInvalid, $"{label} URL is required — use {flag} <URL>.");
