@@ -3,37 +3,34 @@ using Acornima.Ast;
 
 namespace Flowline.Core.FormEvents.Support;
 
-// Replaces regex-based function-existence checking (the old FormXmlEventSerializer.ResolveFunction)
-// with a real structural JS parse (Acornima, no execution) - see KTD13/KTD4. A regex can be fooled by
-// a comment or string literal that merely looks like an export ("// exports.onLoad = oldThing"); a
-// structural parse never tokenizes comment/string content as executable statements.
+// Resolves a form event handler's function name via a real structural JS parse (Acornima, no
+// execution), not regex — a regex can be fooled by a comment or string literal that merely looks like
+// an export ("// exports.onLoad = oldThing"); a structural parse never tokenizes comment/string content
+// as executable statements.
 public static class FormEventFunctionResolver
 {
-    // R7/R7a: resolves a form event handler's function name against a built web resource's actual
-    // export surface.
-    //   Namespace: the file's real global namespace is read structurally from its own IIFE invocation
-    //   (Rollup's `})(this.Foo.Bar = this.Foo.Bar || {});` closing call) via ActualNamespace, not
-    //   guessed from the filename - a project can set Rollup's namespacePrefix (or build with any other
-    //   tool) and produce a multi-segment or otherwise-unpredictable global path; the built file itself
-    //   is the only reliable source of truth for what path its exports actually land on. autoNamespace
-    //   (filename-derived) is used only as a fallback for verbatim-mode files with no such wrapper.
-    //   isExplicit=false (R4 default, requestedFunctionName is the auto-derived onLoad/onSave guess):
-    //     try "<namespace>.<requestedFunctionName>" (Rollup-style exports.X= shape), then bare
-    //     "<requestedFunctionName>" (verbatim shape). Found:false drives R7's hard fail; Confident is
-    //     not meaningful for this branch.
-    //   isExplicit=true (R7a, the user wrote the name): a dotted name's prefix must match THIS file's
-    //     own namespace - a Handler's libraryName is always the file the annotation lives in, so a
-    //     function it references can only ever live in that same file's own export surface, never a
-    //     different file's. A mismatched prefix (wrong namespace, typo, or a reference into an
-    //     unrelated file) is a hard fail even when the tail happens to match a same-named export in
-    //     this file. Once the prefix matches, only the final segment is verified against the parsed
-    //     export surface; a bare name is matched the same namespaced-then-bare way as the defaulted
-    //     branch. Confident reports whether Acornima fully traced a *known* export shape for this file
-    //     (an "exports.X =" assignment anywhere in the tree, or a verbatim top-level function/const-
-    //     arrow declaration) - i.e. whether a reported absence is a positive determination rather than
-    //     a shape the walk couldn't fully enumerate (e.g. a namespace object assembled across multiple
-    //     statements). Found:true always implies Confident:true, since a match can only come from one
-    //     of those two known, fully-enumerated shapes.
+    // Resolves a form event handler's function name against a built web resource's actual export
+    // surface.
+    //
+    // Namespace: the file's real global namespace is read structurally from its own IIFE invocation
+    // (Rollup's `})(this.Foo.Bar = this.Foo.Bar || {});` closing call) via FindActualNamespace, not
+    // guessed from the filename — a project can configure a multi-segment or otherwise-unpredictable
+    // global path, so the built file is the only reliable source of truth. autoNamespace
+    // (filename-derived) is only a fallback for verbatim-mode files with no such wrapper.
+    //
+    // isExplicit=false (requestedFunctionName is the auto-derived onLoad/onSave guess): try
+    // "<namespace>.<requestedFunctionName>" (Rollup-style exports.X=), then bare
+    // "<requestedFunctionName>" (verbatim). Found:false drives a hard fail; Confident isn't meaningful
+    // for this branch.
+    //
+    // isExplicit=true (the user wrote the name): a dotted name's prefix must match THIS file's own
+    // namespace — a Handler's libraryName is always the file the annotation lives in, so its function
+    // can only live in that file's own export surface. A mismatched prefix is a hard fail even if the
+    // tail matches a same-named export elsewhere. Confident reports whether Acornima fully traced a
+    // *known* export shape for this file (an "exports.X =" assignment, or a verbatim top-level
+    // function/const-arrow declaration) — i.e. whether an absence is a positive determination or just an
+    // unenumerable shape (e.g. a namespace object assembled across multiple statements). Found:true
+    // always implies Confident:true.
     public static (string? FunctionName, bool Found, bool Confident) Resolve(
         string builtJsContent, string requestedFunctionName, string autoNamespace, bool isExplicit)
     {
@@ -92,13 +89,11 @@ public static class FormEventFunctionResolver
         return (null, false, confident);
     }
 
-    // Reads the file's real global namespace off its own closing IIFE invocation - Rollup (and any
-    // other bundler using the same UMD-ish pattern) always assigns the shared namespace object as the
-    // sole call argument: `})(this.Foo.Bar = this.Foo.Bar || {});`. Walking the assignment's left-hand
-    // member-expression chain back to `this` yields the exact dotted path the exports were attached to,
-    // however many segments a project's bundler configuration adds - no guessing from the filename, and
-    // no reading the project's build config. Returns null when no such top-level pattern is found (e.g.
-    // verbatim-mode files with no IIFE wrapper at all), letting the caller fall back to autoNamespace.
+    // Reads the file's real global namespace off its own closing IIFE invocation — Rollup (and similar
+    // UMD-ish bundlers) always assign the shared namespace object as the sole call argument:
+    // `})(this.Foo.Bar = this.Foo.Bar || {});`. Walking the assignment's left-hand member-expression
+    // chain back to `this` yields the exact dotted path, however many segments. Returns null when no
+    // such pattern exists (e.g. verbatim-mode files), letting the caller fall back to autoNamespace.
     static string? FindActualNamespace(Program program)
     {
         foreach (var statement in program.Body)
@@ -124,9 +119,9 @@ public static class FormEventFunctionResolver
         return null;
     }
 
-    // Shape A (KTD4): `exports.<Name> = ...` assignment nodes, found anywhere in the tree - this is the
-    // shape Rollup's IIFE output produces, nested inside the closure's function body, not at Program
-    // top level. Walked recursively via ChildNodes since nesting depth is not fixed.
+    // Shape A: `exports.<Name> = ...` assignment nodes, found anywhere in the tree — this is the shape
+    // Rollup's IIFE output produces, nested inside the closure's function body, not at Program top
+    // level. Walked recursively via ChildNodes since nesting depth is not fixed.
     static void CollectExportAssignments(Node root, Dictionary<string, string> result)
     {
         if (root is ExpressionStatement { Expression: AssignmentExpression { Operator: Operator.Assignment } assignment } &&

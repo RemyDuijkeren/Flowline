@@ -1,6 +1,4 @@
-using System.ServiceModel;
 using Microsoft.Xrm.Sdk;
-using Flowline.Core.Console;
 using Spectre.Console;
 
 namespace Flowline.Core.OrphanCleanup.Handlers;
@@ -29,20 +27,9 @@ public sealed class RoleHandler(IAnsiConsole console) : IOrphanHandler
         // one, so ClaimedIds equals the full roleCandidates set.
         var claimedIds = roleCandidates.Select(c => c.ObjectId).ToHashSet();
 
-        Dictionary<Guid, string> names;
-        try
-        {
-            names = await EntityNameLookup.GetEntityNamesAsync(context.Service, "role", "roleid", "name", roleCandidates.Select(c => c.ObjectId), ct).ConfigureAwait(false);
-        }
-        catch (FaultException<OrganizationServiceFault>)
-        {
-            names = [];
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            console.Warning($"Role name resolution failed ({Markup.Escape(ex.Message)}) — display falls back to bare id this run.");
-            names = [];
-        }
+        var names = await DataverseFaultTolerance.TryQueryAsync(
+            () => EntityNameLookup.GetEntityNamesAsync(context.Service, "role", "roleid", "name", roleCandidates.Select(c => c.ObjectId), ct),
+            [], console, msg => $"Role name resolution failed ({msg}) — display falls back to bare id this run.");
 
         var findings = new List<HandlerFinding>();
         foreach (var candidate in roleCandidates)

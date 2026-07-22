@@ -1,6 +1,19 @@
 # Standalone `push --pluginFile` against a PluginPackage-registered assembly crashes with a raw FaultException
 
-- **Status**: not fixed — needs a precondition check in `PluginService`, not a one-line fix.
+- **Status**: fixed. Root cause was broader than "standalone" — any single-plugin-project push
+  bypasses `PushCommand`'s multi-target exception wrapping (`DescribePluginPushFailure` returns
+  `null` when `targets.Count <= 1`), so any non-`FlowlineException` thrown for a single target
+  reached `Program.cs`'s raw-dump `default` case regardless of standalone vs. project mode. Fixed by
+  adding a `packageid` precondition check — throwing `FlowlineException` directly — to all three
+  classic-assembly write paths (`PluginService.GetOrRegisterAssemblyAsync`,
+  `PluginService.SyncAssemblyOnlyAsync`), and by widening + fixing the existing mirror-image check in
+  `SyncSolutionFromPackageAsync` (previously only checked the package's primary assembly and threw a
+  plain `InvalidOperationException`; now checks every assembly in the package and throws
+  `FlowlineException`). See `PluginServiceTests.cs`:
+  `SyncSolutionAsync_ExistingPackageOwnedAssembly_ThrowsBeforeAnyDataverseWrite`,
+  `SyncAssemblyOnlyAsync_ExistingPackageOwnedAssembly_ThrowsBeforeAnyDataverseWrite`,
+  `SyncSolutionFromPackageAsync_ExistingClassicAssembly_ThrowsBeforeAnyDataverseWrite`,
+  `SyncSolutionFromPackageAsync_SecondaryAssemblyIsClassic_ThrowsBeforeAnyDataverseWrite`.
 - **Severity**: medium.
 - **Found**: 2026-07-21, during the initial clone/push/sync/sln-add/deploy test pass against `Cr07982`.
 

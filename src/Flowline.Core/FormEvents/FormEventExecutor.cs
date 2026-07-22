@@ -12,14 +12,12 @@ using Spectre.Console;
 
 namespace Flowline.Core.FormEvents;
 
-// U6: applies a FormEventSyncPlan (U5) — confirms unrecognized handlers, writes formxml, publishes per entity.
+// Applies a FormEventSyncPlan — confirms unrecognized handlers, writes formxml, publishes per entity.
 //
-// Deviation from the plan's literal `ExecuteAsync(service, plan, force, ct)` signature: FormEventFormPlan
+// ExecuteAsync also takes the originating FormEventSnapshot alongside the plan: FormEventFormPlan
 // carries FormId/EntityLogicalName/FormName/Event/desired sets but not the raw current formxml string
-// needed to mutate via FormXmlEventSerializer. Rather than extend FormEventFormPlan (already committed by
-// U5, and depended on by FormEventPlannerTests), ExecuteAsync also takes the originating FormEventSnapshot
-// so it can look up DataverseForm.FormXml by (EntityLogicalName, FormName) — the same dictionary key the
-// planner itself uses to build the plan.
+// needed to mutate via FormXmlEventSerializer, so this looks up DataverseForm.FormXml by
+// (EntityLogicalName, FormName) — the same dictionary key the planner itself uses to build the plan.
 public class FormEventExecutor(IAnsiConsole console)
 {
     const int MaxParallelism = 8;
@@ -47,8 +45,8 @@ public class FormEventExecutor(IAnsiConsole console)
         if (plan.Forms.Count == 0)
             return;
 
-        // R18b: preview everything the confirmation gate below would ask about — computed, never applied.
-        // No UpdateAsync/PublishXml, no prompt, regardless of interactivity. Reachable only for the
+        // Preview everything the confirmation gate below would ask about — computed, never applied. No
+        // UpdateAsync/PublishXml, no prompt, regardless of interactivity. Reachable only for the
         // registration pass — FormEventService.SyncAsync short-circuits before this point when
         // dryRun && cleanupOnly — so BuildFormXml is always called unnarrowed (cleanupOnly: false) here,
         // reflecting the eventual full outcome rather than a phase-specific slice.
@@ -103,21 +101,21 @@ public class FormEventExecutor(IAnsiConsole console)
         console.Ok(counts);
     }
 
-    // Shared by the confirmation gate (R18) and the dry-run preview (R18b) so both list exactly the same
-    // unrecognized handlers, in the same shape, and never drift apart.
+    // Shared by the confirmation gate and the dry-run preview so both list exactly the same unrecognized
+    // handlers, in the same shape, and never drift apart.
     static List<(FormEventFormPlan Form, UnrecognizedHandler Unrecognized)> CollectUnrecognized(FormEventSyncPlan plan) =>
         plan.Forms.SelectMany(f => f.UnrecognizedHandlers.Select(u => (Form: f, Unrecognized: u))).ToList();
 
-    // R18a: every surfaced handler shows the annotation the user could add instead of removing it. No
-    // mention of "confirming below" here — this line also renders in the non-interactive throw message
-    // (nothing "below" it — it's failing, not prompting) and the dry-run preview (which never prompts at
-    // all); callers that DO follow with a confirm prompt add that context themselves.
+    // Every surfaced handler shows the annotation the user could add instead of removing it. No mention
+    // of "confirming below" here — this line also renders in the non-interactive throw message (nothing
+    // "below" it — it's failing, not prompting) and the dry-run preview (which never prompts at all);
+    // callers that DO follow with a confirm prompt add that context themselves.
     static string FormatUnrecognizedHandlerLine(FormEventFormPlan form, UnrecognizedHandler unrecognized) =>
         $"'{form.FormName}' ({form.EntityLogicalName}): {unrecognized.Handler.FunctionName} ({unrecognized.Handler.LibraryName})"
         + $"{Environment.NewLine}      — to keep this, add to the file:"
         + $"{Environment.NewLine}        {unrecognized.ProposedAnnotation}";
 
-    // R18b: same per-handler detail as ResolveUnrecognizedHandling's prompt, plus the full change report —
+    // Same per-handler detail as ResolveUnrecognizedHandling's prompt, plus the full change report —
     // computed against the pristine current formxml via the same BuildFormXml the real write uses, so the
     // preview can never drift from what applying it would actually do. Nothing written.
     void PrintDryRunPreview(FormEventSnapshot snapshot, FormEventSyncPlan plan, bool force)
@@ -203,8 +201,8 @@ public class FormEventExecutor(IAnsiConsole console)
             line($"    - {c.Entity}/{c.Form}: {c.Library.Name}");
     }
 
-    // Single confirmation for the whole push (not one per handler, per KTD6) — the result gates whether
-    // every unrecognized handler across every form is removed (confirmed/forced) or kept (declined/no
+    // Single confirmation for the whole push, not one per handler — the result gates whether every
+    // unrecognized handler across every form is removed (confirmed/forced) or kept (declined/no
     // unrecognized handlers at all). Everything else in the plan (new handlers, recognized-handler
     // updates, library changes, other forms) is unaffected by this decision.
     bool ResolveUnrecognizedHandling(FormEventSyncPlan plan, bool force)
@@ -253,13 +251,13 @@ public class FormEventExecutor(IAnsiConsole console)
         using var gate = new SemaphoreSlim(MaxParallelism);
         // Dataverse serializes PublishXml org-wide — a second concurrent publish fails with "Cannot start
         // another [Publish] because there is a previous [Publish] running at this moment" (confirmed live).
-        // Updates stay parallel across entities (KTD9); only the publish call itself is serialized.
+        // Updates stay parallel across entities; only the publish call itself is serialized.
         using var publishGate = new SemaphoreSlim(1);
 
         // One task per entity: update all of that entity's forms (bounded parallel, shared gate across
         // every entity), then publish that entity as soon as its own updates are done — not batched to the
-        // end of the whole run (KTD9). Entities run independently, so a slow/failing entity never delays
-        // another entity's publish.
+        // end of the whole run. Entities run independently, so a slow/failing entity never delays another
+        // entity's publish.
         var entityTasks = plan.Forms
             .GroupBy(f => f.EntityLogicalName)
             .Select(async entityGroup =>
@@ -357,13 +355,12 @@ public class FormEventExecutor(IAnsiConsole console)
     }
 
     // formGroup holds every FormEventFormPlan for one FormId (one entry per touched event, or — for
-    // onchange — per touched (event, attribute) pair) — each entry's desired handlers are applied to the
-    // same xdoc, and libraries are unioned across entries and applied
-    // once (SetLibraries replaces the full <formLibraries> section, so applying it per-plan in sequence
-    // would drop an earlier plan's libraries). The returned change lists are the single source of truth for
-    // both what gets written (empty means nothing changed) and what gets reported (verbose detail, dry-run
-    // preview, and the always-visible summary) — computing them once here means the report can never drift
-    // from what applying it actually does.
+    // onchange — per touched (event, attribute) pair). Each entry's desired handlers are applied to the
+    // same xdoc; libraries are unioned across entries and applied once (SetLibraries replaces the full
+    // <formLibraries> section, so applying it per-plan in sequence would drop an earlier plan's
+    // libraries). The returned change lists are the single source of truth for both what gets written
+    // (empty means nothing changed) and what gets reported, so the report can never drift from what
+    // applying it actually does.
     static (string FormXml, string? RowVersion, List<HandlerChange> HandlerChanges, List<LibraryChange> LibraryChanges) BuildFormXml(
         FormEventSnapshot snapshot, IGrouping<Guid, FormEventFormPlan> formGroup, bool removeUnrecognized, bool cleanupOnly)
     {
@@ -377,7 +374,7 @@ public class FormEventExecutor(IAnsiConsole console)
         var unionLibraries = new HashSet<FormLibrary>();
         foreach (var formPlan in formGroup)
         {
-            // Planner already folded UnrecognizedHandlers into DesiredHandlers (kept by default, R18) —
+            // Planner already folded UnrecognizedHandlers into DesiredHandlers (kept by default) —
             // removing them here is the only place that decision is undone, once confirmed.
             var unrecognizedHandlers = formPlan.UnrecognizedHandlers.Select(u => u.Handler).ToHashSet();
             IEnumerable<FormEventHandler> desired = removeUnrecognized
@@ -389,9 +386,9 @@ public class FormEventExecutor(IAnsiConsole console)
             // onchange attribute) never touches this one. formPlan.Attribute is non-null only for OnChange.
             var currentHandlers = FormXmlEventSerializer.GetHandlers(xdoc, formPlan.Event, formPlan.Attribute);
 
-            // cleanupOnly (KTD12's phase-1 cleanup pass, U7): removals only, never additions or in-place
-            // updates — a clean separation of concerns where cleanup only ever shrinks the current set, and
-            // registration is the only phase that adds or modifies (parameter-only changes included).
+            // cleanupOnly: removals only, never additions or in-place updates — a clean separation of
+            // concerns where cleanup only ever shrinks the current set, and registration is the only phase
+            // that adds or modifies (parameter-only changes included).
             // Sourced from currentHandlers (not desired): a wanted-but-not-yet-updatable handler survives
             // with its exact current value untouched, rather than being excluded — excluding it here would
             // make SetHandlers (which replaces the whole set) drop it entirely instead of leaving it as-is.
@@ -403,12 +400,11 @@ public class FormEventExecutor(IAnsiConsole console)
                 desired = currentHandlers.Where(desiredIdentities.Contains);
             }
 
-            // Order-preserving de-duplication (KTD2/KTD8's fix): the planner's computed handler order must
-            // reach SetHandlers below, not get discarded by a set conversion first. Distinct() keeps each
-            // identity's first occurrence and its position — unlike ToHashSet(), which has no ordering
-            // contract at all. FormEventHandlerDiffer stays scoped to content-equality (KTD8), so it gets
-            // its own throwaway set conversion here — a pure reorder never confuses it into reporting a
-            // false "updated" handler.
+            // Order-preserving de-duplication: the planner's computed handler order must reach SetHandlers
+            // below, not get discarded by a set conversion first. Distinct() keeps each identity's first
+            // occurrence and its position — unlike ToHashSet(), which has no ordering contract at all.
+            // FormEventHandlerDiffer stays scoped to content-equality, so it gets its own throwaway set
+            // conversion here — a pure reorder never confuses it into reporting a false "updated" handler.
             var desiredOrdered = desired.Distinct().ToList();
             var (added, updated, removed) = FormEventHandlerDiffer.DiffDetailed(desiredOrdered.ToHashSet(), currentHandlers.ToHashSet());
             handlerChanges.AddRange(added.Select(h => new HandlerChange(formPlan.EntityLogicalName, formPlan.FormName, formPlan.Event, formPlan.Attribute, ChangeKind.Added, h)));

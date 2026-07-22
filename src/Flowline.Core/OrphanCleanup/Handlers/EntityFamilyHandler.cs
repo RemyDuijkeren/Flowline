@@ -1,11 +1,8 @@
-using System.ServiceModel;
 using Microsoft.PowerPlatform.Dataverse.Client;
-using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Metadata;
 using Microsoft.Xrm.Sdk.Metadata.Query;
 using Microsoft.Xrm.Sdk.Query;
-using Flowline.Core.Console;
 using Spectre.Console;
 
 namespace Flowline.Core.OrphanCleanup.Handlers;
@@ -61,23 +58,9 @@ public sealed class EntityFamilyHandler(IAnsiConsole console) : IOrphanHandler
             return new HandlerDetectionResult(findings, claimedIds);
         }
 
-        // A failed metadata query is caught — attributeInfo degrades to empty, which the loop below
-        // already treats identically to "unresolved" (bare-id "Attribute {id}" fallback).
-        Dictionary<Guid, (string EntityLogicalName, string AttributeLogicalName)> attributeInfo;
-        try
-        {
-            attributeInfo = await ResolveAttributeInfoAsync(
-                context.Service, context.EntityLogicalNames, attributeOrphans.Select(o => o.ObjectId), ct).ConfigureAwait(false);
-        }
-        catch (FaultException<OrganizationServiceFault>)
-        {
-            attributeInfo = [];
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            console.Warning($"Attribute metadata resolution failed ({Markup.Escape(ex.Message)}) — falling back to bare id display this run.");
-            attributeInfo = [];
-        }
+        var attributeInfo = await DataverseFaultTolerance.TryQueryAsync(
+            () => ResolveAttributeInfoAsync(context.Service, context.EntityLogicalNames, attributeOrphans.Select(o => o.ObjectId), ct),
+            [], console, msg => $"Attribute metadata resolution failed ({msg}) — falling back to bare id display this run.");
         var localAttributesByEntity = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var (id, componentType) in attributeOrphans)

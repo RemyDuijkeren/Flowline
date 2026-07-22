@@ -2,7 +2,7 @@ using Flowline.Core.Models;
 
 namespace Flowline.Core.FormEvents.Support;
 
-// FormEventHandler's Equals/GetHashCode are identity-only (FunctionName+LibraryName, R12 dedup key) so a
+// FormEventHandler's Equals/GetHashCode are identity-only (FunctionName+LibraryName) so a
 // Parameters-only change lands in both a desired and current set by identity — a plain set comparison
 // (Except/SetEquals) can't tell "updated" from "unchanged". Shared by FormEventPlanner (equality check)
 // and FormEventExecutor (dry-run added/updated/removed summary) so both compute this the same way.

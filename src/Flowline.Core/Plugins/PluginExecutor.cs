@@ -41,55 +41,28 @@ public class PluginExecutor(IAnsiConsole console)
         // Do not change back to parallel without good reason and testing.
 
         // Level 3 — delete leaf items first
-        foreach (var a in plan.Images.Deletes)
-        {
-            await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
-            progressTask?.Increment(1);
-            console.Info($"Image '{a.Name}' not in source — deleted");
-        }
-        if (plan.Images.Deletes.Count > 0) console.Info($"[green]{plan.Images.Deletes.Count} image(s) deleted[/]");
-
-        foreach (var a in plan.ResponseProps.Deletes)
-        {
-            await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
-            progressTask?.Increment(1);
-            console.Info($"Response Property '{a.Name}' not in source — deleted");
-        }
-        if (plan.ResponseProps.Deletes.Count > 0) console.Info($"[green]{plan.ResponseProps.Deletes.Count} response property record(s) deleted[/]");
-
-        foreach (var a in plan.RequestParams.Deletes)
-        {
-            await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
-            progressTask?.Increment(1);
-            console.Info($"Request Parameter '{a.Name}' not in source — deleted");
-        }
-        if (plan.RequestParams.Deletes.Count > 0) console.Info($"[green]{plan.RequestParams.Deletes.Count} request parameter(s) deleted[/]");
+        await RunDeleteLevelAsync(service, plan.Images.Deletes, "Image", "image(s)", cancellationToken, progressTask).ConfigureAwait(false);
+        await RunDeleteLevelAsync(service, plan.ResponseProps.Deletes, "Response Property", "response property record(s)", cancellationToken, progressTask).ConfigureAwait(false);
+        await RunDeleteLevelAsync(service, plan.RequestParams.Deletes, "Request Parameter", "request parameter(s)", cancellationToken, progressTask).ConfigureAwait(false);
 
         // Level 2 — steps and custom APIs
-        foreach (var a in plan.Steps.Deletes)
-        {
-            await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
-            progressTask?.Increment(1);
-            console.Info($"Step '{a.Name}' not in source — deleted");
-        }
-        if (plan.Steps.Deletes.Count > 0) console.Info($"[green]{plan.Steps.Deletes.Count} plugin step(s) deleted[/]");
-
-        foreach (var a in plan.CustomApis.Deletes)
-        {
-            await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
-            progressTask?.Increment(1);
-            console.Info($"Custom API '{a.Name}' not in source — deleted");
-        }
-        if (plan.CustomApis.Deletes.Count > 0) console.Info($"[green]{plan.CustomApis.Deletes.Count} Custom API(s) deleted[/]");
+        await RunDeleteLevelAsync(service, plan.Steps.Deletes, "Step", "plugin step(s)", cancellationToken, progressTask).ConfigureAwait(false);
+        await RunDeleteLevelAsync(service, plan.CustomApis.Deletes, "Custom API", "Custom API(s)", cancellationToken, progressTask).ConfigureAwait(false);
 
         // Level 1 — plugin types
-        foreach (var a in plan.PluginTypes.Deletes)
+        await RunDeleteLevelAsync(service, plan.PluginTypes.Deletes, "Plugin Type", "plugin type(s)", cancellationToken, progressTask).ConfigureAwait(false);
+    }
+
+    async Task RunDeleteLevelAsync(
+        IOrganizationServiceAsync2 service, IReadOnlyList<DeleteAction> items, string label, string plural, CancellationToken cancellationToken, ProgressTask? progressTask)
+    {
+        foreach (var a in items)
         {
             await service.DeleteAsync(a.EntityLogicalName, a.Id, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            console.Info($"Plugin Type '{a.Name}' not in source — deleted");
+            console.Info($"{label} '{a.Name}' not in source — deleted");
         }
-        if (plan.PluginTypes.Deletes.Count > 0) console.Info($"[green]{plan.PluginTypes.Deletes.Count} plugin type(s) deleted[/]");
+        if (items.Count > 0) console.Info($"[green]{items.Count} {plural} deleted[/]");
     }
 
     async Task RunUpsertsAsync(
@@ -104,55 +77,28 @@ public class PluginExecutor(IAnsiConsole console)
         // separate requests (Create+AddSolutionComponent) but it is not worth the extra complexity for these low numbers.
 
         // Level 1 — plugin types
-        foreach (var a in plan.PluginTypes.Upserts)
-        {
-            await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
-            progressTask?.Increment(1);
-            console.Info($"Plugin type '{a.Name}' upserted");
-        }
-        if (plan.PluginTypes.Upserts.Count > 0) console.Info($"[green]{plan.PluginTypes.Upserts.Count} plugin type(s) synced[/]");
+        await RunUpsertLevelAsync(service, plan.PluginTypes.Upserts, "Plugin type", "plugin type(s)", solutionName, cancellationToken, progressTask).ConfigureAwait(false);
 
         // Level 2 — steps and custom APIs
-        foreach (var a in plan.Steps.Upserts)
-        {
-            await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
-            progressTask?.Increment(1);
-            console.Info($"Step '{a.Name}' upserted");
-        }
-        if (plan.Steps.Upserts.Count > 0) console.Info($"[green]{plan.Steps.Upserts.Count} plugin step(s) synced[/]");
-
-        foreach (var a in plan.CustomApis.Upserts)
-        {
-            await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
-            progressTask?.Increment(1);
-            console.Info($"Custom API '{a.Name}' upserted");
-        }
-        if (plan.CustomApis.Upserts.Count > 0) console.Info($"[green]{plan.CustomApis.Upserts.Count} Custom API(s) synced[/]");
+        await RunUpsertLevelAsync(service, plan.Steps.Upserts, "Step", "plugin step(s)", solutionName, cancellationToken, progressTask).ConfigureAwait(false);
+        await RunUpsertLevelAsync(service, plan.CustomApis.Upserts, "Custom API", "Custom API(s)", solutionName, cancellationToken, progressTask).ConfigureAwait(false);
 
         // Level 3 — leaf items
-        foreach (var a in plan.Images.Upserts)
-        {
-            await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
-            progressTask?.Increment(1);
-            console.Info($"Image '{a.Name}' upserted");
-        }
-        if (plan.Images.Upserts.Count > 0) console.Info($"[green]{plan.Images.Upserts.Count} image(s) synced[/]");
+        await RunUpsertLevelAsync(service, plan.Images.Upserts, "Image", "image(s)", solutionName, cancellationToken, progressTask).ConfigureAwait(false);
+        await RunUpsertLevelAsync(service, plan.ResponseProps.Upserts, "Response property", "response property record(s)", solutionName, cancellationToken, progressTask).ConfigureAwait(false);
+        await RunUpsertLevelAsync(service, plan.RequestParams.Upserts, "Request Parameter", "request parameter(s)", solutionName, cancellationToken, progressTask).ConfigureAwait(false);
+    }
 
-        foreach (var a in plan.ResponseProps.Upserts)
+    async Task RunUpsertLevelAsync(
+        IOrganizationServiceAsync2 service, IReadOnlyList<UpsertAction> items, string label, string plural, string solutionName, CancellationToken cancellationToken, ProgressTask? progressTask)
+    {
+        foreach (var a in items)
         {
             await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
             progressTask?.Increment(1);
-            console.Info($"Response property '{a.Name}' upserted");
+            console.Info($"{label} '{a.Name}' upserted");
         }
-        if (plan.ResponseProps.Upserts.Count > 0) console.Info($"[green]{plan.ResponseProps.Upserts.Count} response property record(s) synced[/]");
-
-        foreach (var a in plan.RequestParams.Upserts)
-        {
-            await UpsertAsync(service, a, solutionName, cancellationToken).ConfigureAwait(false);
-            progressTask?.Increment(1);
-            console.Info($"Request Parameter '{a.Name}' upserted");
-        }
-        if (plan.RequestParams.Upserts.Count > 0) console.Info($"[green]{plan.RequestParams.Upserts.Count} request parameter(s) synced[/]");
+        if (items.Count > 0) console.Info($"[green]{items.Count} {plural} synced[/]");
     }
 
     async Task RunAddSolutionComponentsAsync(IOrganizationServiceAsync2 service, RegistrationPlan plan, CancellationToken cancellationToken, ProgressTask? progressTask)

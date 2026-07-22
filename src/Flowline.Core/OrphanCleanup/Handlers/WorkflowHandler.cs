@@ -1,8 +1,6 @@
-using System.ServiceModel;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
-using Flowline.Core.Console;
 using Flowline.Core.Services;
 using Spectre.Console;
 
@@ -49,20 +47,9 @@ public sealed class WorkflowHandler(IAnsiConsole console) : IOrphanHandler
             Criteria  = { Conditions = { new ConditionExpression("workflowid", ConditionOperator.In, workflowIds.Select(id => (object)id).ToArray()) } }
         };
 
-        List<Entity> entities;
-        try
-        {
-            entities = await context.Service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
-        }
-        catch (FaultException<OrganizationServiceFault>)
-        {
-            entities = [];
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            console.Warning($"Workflow orphan detection failed ({Markup.Escape(ex.Message)}) — defaulting to Prio3 this run.");
-            entities = [];
-        }
+        var entities = await DataverseFaultTolerance.TryQueryAsync(
+            () => context.Service.RetrieveAllAsync(query, ct),
+            [], console, msg => $"Workflow orphan detection failed ({msg}) — defaulting to Prio3 this run.");
         var byId = entities.ToDictionary(e => e.Id);
 
         var findings = new List<HandlerFinding>(workflowIds.Count);

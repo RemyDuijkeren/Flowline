@@ -3,10 +3,10 @@ using Flowline.Core.Models;
 
 namespace Flowline.Core.FormEvents.Support;
 
-// U3: on a name-lookup miss (FormEventReader's globalMatches.Count == 0 branch), combines three advisory
+// On a name-lookup miss (FormEventReader's globalMatches.Count == 0 branch), combines three advisory
 // signals into a single tiered suggestion appended to the existing failure message — self-tag match
-// (strongest: the form's own previously-written handler fingerprint), rename-cache lookup (probable), and
-// sole-surviving-form-on-entity (weakest, clearly hedged). R5: this NEVER resolves a form or lets
+// (strongest: the form's own previously-written handler fingerprint), rename-cache lookup (probable),
+// and sole-surviving-form-on-entity (weakest, clearly hedged). This NEVER resolves a form or lets
 // registration succeed — FormEventReader still throws regardless of what (if anything) is returned here.
 public static class FormEventRenameAdvisor
 {
@@ -81,7 +81,7 @@ public static class FormEventRenameAdvisor
                 // Unlike FormEventPlanner's XDocument.Parse (only ever run on cleanly, uniquely resolved
                 // forms), this runs over every live candidate on the entity — including ones this feature
                 // never validated formxml for. A malformed/empty formxml here must degrade this candidate
-                // out of self-tag consideration, not crash the whole advisory pass (R5: never worsen the
+                // out of self-tag consideration, not crash the whole advisory pass (never worsen the
                 // outcome of an already-failing push).
                 XDocument xdoc;
                 try { xdoc = XDocument.Parse(candidate.FormXml); }
@@ -95,7 +95,7 @@ public static class FormEventRenameAdvisor
         return null;
     }
 
-    // R6: names the candidate and shows the exact annotation text to change — one line per sharing
+    // Names the candidate and shows the exact annotation text to change — one line per sharing
     // annotation, since each event (onLoad/onSave) sharing this (entity, form) pair carries its own
     // function/library. Mirrors FormEventExecutor.FormatUnrecognizedHandlerLine's "state the problem,
     // then show the exact fix" two-line shape.
@@ -122,10 +122,10 @@ public static class FormEventRenameAdvisor
 
     // Mirrors FormEventPlanner.BuildProposedAnnotation's shape, but reconstructed from the annotation as
     // originally written (FunctionName/Parameters may be null/defaulted) rather than a resolved Handler.
-    // KTD6: Attribute is non-null for onchange/tabstatechange/onreadystatecomplete alike, so a null check
+    // Attribute is non-null for onchange/tabstatechange/onreadystatecomplete alike, so a null check
     // already distinguishes them from onload/onsave without listing each attribute-scoped FormEventType —
-    // a rename suggestion for a Tab/IFRAME-scoped annotation now correctly includes its scope token instead
-    // of rendering text that wouldn't parse back through the mandatory-scope-token regex (R2).
+    // a rename suggestion for a Tab/IFRAME-scoped annotation now correctly includes its scope token
+    // instead of rendering text that wouldn't parse back through the mandatory-scope-token regex.
     static string BuildSuggestedAnnotation(string entity, string candidateName, ResolvedFormEventAnnotation resolved)
     {
         var directive = resolved.Annotation.Event.ToString().ToLowerInvariant();

@@ -26,10 +26,9 @@ public class FormEventReader(IAnsiConsole console)
     // Mirrors GenerateReader/OrphanCleanupService's cap for concurrent Dataverse metadata/query fan-out.
     const int MaxConcurrentRequests = 20;
 
-    // suppressWarnings: KTD12 runs this reader twice per push (cleanup pass, then registration pass) —
-    // both re-scan the same local JS files and would otherwise print the exact same warning twice. Only
-    // the registration (second, fuller) pass shows these, matching the existing "up to date"/dry-run-preview
-    // dedup convention in FormEventService.SyncAsync.
+    // suppressWarnings: this reader runs twice per push (cleanup pass, then registration pass) — both
+    // re-scan the same local JS files and would otherwise print the exact same warning twice. Only the
+    // registration (second, fuller) pass shows these.
     public async Task<FormEventSnapshot> LoadSnapshotAsync(
         IOrganizationServiceAsync2 service,
         string webresourceRoot,
@@ -44,19 +43,19 @@ public class FormEventReader(IAnsiConsole console)
         // stray temp JSON per call for no benefit (nothing ever reads it back).
         var cache = formEventCachePath is null ? null : new FormEventIdentityCache(formEventCachePath);
 
-        // Deliberate second call to the same reader WebResourceService already uses elsewhere in the
-        // same push — cheap, and keeps this reader independent of a shared snapshot being threaded in.
-        // Always suppresses that reader's own warnings (extensionless type fallback, LCID/RESX matching):
-        // WebResourceService.SyncSolutionAsync's own load already owns reporting those, in both the
-        // cleanup and registration passes here — this method's own suppressWarnings param is unrelated,
-        // it only dedupes this reader's/planner's own annotation warnings between those two passes.
+        // Deliberate second call to the same reader WebResourceService already uses elsewhere in the same
+        // push — cheap, and keeps this reader independent of a shared snapshot being threaded in. Always
+        // suppresses that reader's own warnings (extensionless type fallback, LCID/RESX matching):
+        // WebResourceService.SyncSolutionAsync's own load already owns reporting those — this method's
+        // own suppressWarnings param is unrelated, it only dedupes this reader's/planner's own annotation
+        // warnings.
         var webResourceReader = new WebResourceReader(console);
         var webResourceSnapshot = await webResourceReader
             .LoadSnapshotAsync(service, webresourceRoot, solutionName, cancellationToken, suppressWarnings: true)
             .ConfigureAwait(false);
 
-        // R15: every JS web resource tracked by this project, not just files that currently carry an
-        // annotation — this is what R15 enforcement (U5) filters Handler.libraryName ownership against.
+        // Every JS web resource tracked by this project, not just files that currently carry an
+        // annotation — this is what Handler.libraryName ownership is filtered against.
         var trackedLibraryNames = webResourceSnapshot.LocalResources.Values
             .Where(r => r.Type == WebResourceType.Js)
             .Select(r => r.Name)
@@ -68,7 +67,7 @@ public class FormEventReader(IAnsiConsole console)
         // at a time, bounded so a project with many entities/forms doesn't fan out unbounded requests.
         using var gate = new SemaphoreSlim(MaxConcurrentRequests, MaxConcurrentRequests);
 
-        // Forward direction (KTD3): logical name -> ObjectTypeCode, for entities referenced by annotations.
+        // Forward direction: logical name -> ObjectTypeCode, for entities referenced by annotations.
         var entities = resolvedAnnotations.Select(a => a.Annotation.Entity).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var objectTypeCodeResults = await Task.WhenAll(entities.Select(async entity =>
         {
@@ -78,19 +77,18 @@ public class FormEventReader(IAnsiConsole console)
         })).ConfigureAwait(false);
         var objectTypeCodes = objectTypeCodeResults.ToDictionary(r => r.Entity, r => r.Code, StringComparer.OrdinalIgnoreCase);
 
-        // R14: every systemform that's a component of this solution, not just forms named by a current
+        // Every systemform that's a component of this solution, not just forms named by a current
         // annotation. Filters directly on solutioncomponent.solutionid using the id WebResourceReader
         // already resolved above — no second join to solution by uniquename needed (mirrors
         // WebResourceReader.GetWebResourcesForSolutionAsync's single-link shape).
         var solutionFormEntities = await QuerySolutionScopedFormsAsync(service, webResourceSnapshot.Solution.Id, cancellationToken).ConfigureAwait(false);
 
         // Confirmed live: systemform.objecttypecode, read back from a result row, is the entity's LOGICAL
-        // NAME as a string (e.g. "contact") — not a numeric ObjectTypeCode at all. This contradicts KTD3's
-        // finding, which is about the numeric type QueryExpression FILTER values need for this attribute
-        // (still true, still used by ResolveObjectTypeCodeAsync's forward-direction lookup above), not the
-        // CLR type/value actually returned when reading a row. Dataverse's EntityName attribute type
-        // auto-resolves to the logical name for API consumers — no reverse ObjectTypeCode -> logical-name
-        // lookup needed at all.
+        // NAME as a string (e.g. "contact") — not a numeric ObjectTypeCode. That's distinct from the
+        // numeric filter value QueryExpression conditions need for this same attribute (still used by
+        // ResolveObjectTypeCodeAsync's forward-direction lookup above) — Dataverse's EntityName attribute
+        // type auto-resolves to the logical name for API consumers, so no reverse ObjectTypeCode ->
+        // logical-name lookup is needed.
         var solutionForms = new List<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)>();
         foreach (var formEntity in solutionFormEntities)
         {
@@ -115,9 +113,9 @@ public class FormEventReader(IAnsiConsole console)
 
         var resolvedForms = new Dictionary<(string Entity, string Form), DataverseForm>(FormKeyComparer.Instance);
         var ambiguousCounts = new Dictionary<(string Entity, string Form), int>(FormKeyComparer.Instance);
-        // U2: every successful resolution recorded, not just ones a current annotation references — gives
-        // a later rename-detection unit (U3) data for a form that was renamed away from too. Batched into
-        // one cache write below rather than one per form, so a large solution's cache file isn't
+        // Every successful resolution recorded, not just ones a current annotation references — gives
+        // later rename detection data for a form that was renamed away from too. Batched into one cache
+        // write below rather than one per form, so a large solution's cache file isn't
         // read-modified-written once per resolved form.
         var cacheResolutions = new List<(string Entity, string Name, Guid FormId)>();
 
@@ -159,8 +157,8 @@ public class FormEventReader(IAnsiConsole console)
             if (ambiguousCounts.TryGetValue(pair, out var count))
                 return (Pair: pair, Error: $"form '{form}' for entity '{entity}' is ambiguous — {count} systemform records matched.");
 
-            // Not found within the solution-scoped set — fall back to an unscoped lookup so R8 ("doesn't
-            // exist at all") and R8a ("exists, but isn't a component of this solution") get distinct messages.
+            // Not found within the solution-scoped set — fall back to an unscoped lookup so "doesn't
+            // exist at all" and "exists, but isn't a component of this solution" get distinct messages.
             await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             List<Entity> globalMatches;
             try { globalMatches = await QueryFormsAsync(service, objectTypeCode, form, cancellationToken).ConfigureAwait(false); }
@@ -211,9 +209,9 @@ public class FormEventReader(IAnsiConsole console)
         return new FormEventSnapshot(validAnnotations.AsReadOnly(), trackedLibraryNames, resolvedForms.AsReadOnly());
     }
 
-    // U3: R6 — on a name-lookup miss, ask FormEventRenameAdvisor for an evidence-gated suggestion and
-    // append it (never replace, never resolve) to today's plain "not found" message. When the advisor
-    // finds nothing, this returns byte-for-byte the original message (R6's negative case).
+    // On a name-lookup miss, ask FormEventRenameAdvisor for an evidence-gated suggestion and append it
+    // (never replace, never resolve) to today's plain "not found" message. When the advisor finds
+    // nothing, this returns byte-for-byte the original message.
     static string BuildFormNotFoundMessage(
         string entity, string form,
         List<ResolvedFormEventAnnotation> resolvedAnnotations,
@@ -252,10 +250,10 @@ public class FormEventReader(IAnsiConsole console)
             var parsed = FormEventAnnotationParser.ParseAnnotations(content.Split('\n'));
 
             // A line that clearly intends to be a flowline:on... annotation but fails the strict grammar
-            // (e.g. a form name missing entirely, a multi-word form name with no quotes / mismatched quotes
-            // — R3 accepts single or double, but not unquoted or mixed — or, for onchange, a missing
-            // attribute token) would otherwise register nothing with no indication why. Surfaced here rather
-            // than an ordinary "not a match at all" comment, which stays silently ignored.
+            // (e.g. a form name missing entirely, a multi-word form name with no quotes / mismatched
+            // quotes — single or double are accepted, but not unquoted or mixed — or, for onchange, a
+            // missing attribute token) would otherwise register nothing with no indication why. Surfaced
+            // here rather than an ordinary "not a match at all" comment, which stays silently ignored.
             if (!suppressWarnings)
                 foreach (var line in parsed.MalformedLines)
                     console.Warning($"{Markup.Escape(resource.RelativePath)}: malformed flowline annotation, ignored — check quoting on multi-word form names, and that onchange includes an attribute: {Markup.Escape(line)}");
@@ -285,8 +283,8 @@ public class FormEventReader(IAnsiConsole console)
         catch (FaultException<OrganizationServiceFault>)
         {
             // A genuinely nonexistent entity logical name faults rather than returning null metadata —
-            // same "not found" outcome as a null EntityMetadata, so R8's per-annotation isolation holds
-            // for this failure mode too, not just the already-handled null-metadata case.
+            // same "not found" outcome as a null EntityMetadata, so per-annotation isolation holds for
+            // this failure mode too, not just the already-handled null-metadata case.
             return null;
         }
     }
@@ -312,7 +310,7 @@ public class FormEventReader(IAnsiConsole console)
         return await service.RetrieveAllAsync(query, cancellationToken).ConfigureAwait(false);
     }
 
-    // R14: rooted at systemform (not solutioncomponent) since name/formxml/objecttypecode are systemform's
+    // Rooted at systemform (not solutioncomponent) since name/formxml/objecttypecode are systemform's
     // own columns. Single link to solutioncomponent filtered by solutionid — mirrors
     // WebResourceReader.GetWebResourcesForSolutionAsync, which resolves the solution once and filters
     // directly by its id rather than joining to solution by uniquename a second time.

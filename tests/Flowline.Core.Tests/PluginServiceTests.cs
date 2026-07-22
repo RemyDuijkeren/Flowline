@@ -262,6 +262,21 @@ public class PluginServiceTests
     }
 
     [Fact]
+    public async Task SyncSolutionAsync_ExistingPackageOwnedAssembly_ThrowsBeforeAnyDataverseWrite()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId));
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, Metadata(), "MySolution"));
+
+        Assert.Contains("MyPlugin", ex.Message);
+        Assert.Contains("package", ex.Message, StringComparison.OrdinalIgnoreCase);
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<OrganizationRequest>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task SyncSolutionAsync_ExistingAssembly_UpdatesVersion()
     {
         var assemblyId = Guid.NewGuid();
@@ -1437,6 +1452,20 @@ public class PluginServiceTests
     }
 
     [Fact]
+    public async Task SyncAssemblyOnlyAsync_ExistingPackageOwnedAssembly_ThrowsBeforeAnyDataverseWrite()
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId));
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
+            _service.SyncAssemblyOnlyAsync(_serviceMock, Metadata(), "MySolution"));
+
+        Assert.Contains("MyPlugin", ex.Message);
+        Assert.Contains("package", ex.Message, StringComparison.OrdinalIgnoreCase);
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task SyncAssemblyOnlyAsync_HashUnchanged_Skips()
     {
         var assemblyId = Guid.NewGuid();
@@ -1525,10 +1554,10 @@ public class PluginServiceTests
         return e;
     }
 
-    private static Entity ClassicAssemblyNoPackage(Guid id)
+    private static Entity ClassicAssemblyNoPackage(Guid id, string name = "MyPlugin")
     {
         var e = new Entity("pluginassembly", id);
-        e["name"] = "MyPlugin";
+        e["name"] = name;
         e["version"] = "1.0.0.0";
         return e;
     }
@@ -1695,10 +1724,34 @@ public class PluginServiceTests
         var assemblyId = Guid.NewGuid();
         SetupAssembly(ClassicAssemblyNoPackage(assemblyId));
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
             _service.SyncSolutionFromPackageAsync(_serviceMock, PackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution"));
 
         Assert.Contains("MyPlugin", ex.Message);
+        Assert.Contains("classic", ex.Message, StringComparison.OrdinalIgnoreCase);
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<OrganizationRequest>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_SecondaryAssemblyIsClassic_ThrowsBeforeAnyDataverseWrite()
+    {
+        var secondaryId = Guid.NewGuid();
+        SetupAssembly(); // primary "MyPlugin" not registered yet -> no conflict for the primary itself
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(new List<Entity> { ClassicAssemblyNoPackage(secondaryId, "SecondaryPlugin") })));
+
+        var assemblies = new List<PluginAssemblyMetadata>
+        {
+            new("MyPlugin", "MyPlugin, Version=1.0.0.0", new byte[] { 9, 9, 9 }, "dll-hash-unused", "1.0.0.0", null, "neutral", []),
+            new("SecondaryPlugin", "SecondaryPlugin, Version=1.0.0.0", new byte[] { 9, 9, 9 }, "dll-hash-unused", "1.0.0.0", null, "neutral", [])
+        };
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
+            _service.SyncSolutionFromPackageAsync(_serviceMock, assemblies, NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution"));
+
+        Assert.Contains("SecondaryPlugin", ex.Message);
         Assert.Contains("classic", ex.Message, StringComparison.OrdinalIgnoreCase);
         await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<OrganizationRequest>(), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());

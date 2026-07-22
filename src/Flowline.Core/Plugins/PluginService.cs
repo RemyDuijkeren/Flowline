@@ -54,7 +54,7 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         var query = new QueryExpression("pluginassembly")
         {
             TopCount = 1,
-            ColumnSet = new ColumnSet("pluginassemblyid", "name", "version", "publickeytoken", "culture", "description"),
+            ColumnSet = new ColumnSet("pluginassemblyid", "name", "version", "publickeytoken", "culture", "description", "packageid"),
             Criteria = { Conditions = { new ConditionExpression("name", ConditionOperator.Equal, metadata.Name) } }
         };
         var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
@@ -62,6 +62,11 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
 
         if (existing == null)
             throw new InvalidOperationException($"Assembly '{metadata.Name}' not found in Dataverse — run push without --scope assemblyonly to register it first.");
+
+        if (existing.GetAttributeValue<EntityReference>("packageid") != null)
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"Assembly '{metadata.Name}' is already registered in Dataverse as part of a plugin " +
+                "package — push the .nupkg package instead of the raw assembly. Automated migration is not supported.");
 
         var identityChanges = DetectIdentityChanges(existing, metadata);
         logger.LogDebug("Assembly '{MetadataNamee}' identity changes: {Joinin}", metadata.Name, string.Join(", ", identityChanges ?? Enumerable.Empty<string>()));
@@ -334,20 +339,30 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         // R9: detect-and-block — reuses the classic-path lookup pattern (GetOrRegisterAssemblyAsync),
         // extended with packageid so an empty packageid means a genuinely classic (non-package) assembly.
         // When packageid IS populated, this same record is the package's primary assembly (KTD2) —
-        // reused below for change detection instead of a second query.
+        // reused below for change detection instead of a second query. Checked across every assembly
+        // in the package (KD5: a package can carry more than one plugin-bearing DLL), not just the
+        // primary — a classically-registered secondary assembly hits the same Dataverse fault at the
+        // content write below (WritePackageContentAsync) if left unchecked.
         var assemblyQuery = new QueryExpression("pluginassembly")
         {
-            TopCount = 1,
             ColumnSet = new ColumnSet("pluginassemblyid", "name", "version", "publickeytoken", "culture", "description", "packageid"),
-            Criteria = { Conditions = { new ConditionExpression("name", ConditionOperator.Equal, projectAssemblyName) } }
+            Criteria = { Conditions = { new ConditionExpression("name", ConditionOperator.In, assemblies.Select(a => (object)a.Name).ToArray()) } }
         };
         var assemblyResult = await service.RetrieveMultipleAsync(assemblyQuery, cancellationToken).ConfigureAwait(false);
-        var existingAssembly = assemblyResult.Entities.FirstOrDefault();
 
-        if (existingAssembly != null && existingAssembly.GetAttributeValue<EntityReference>("packageid") == null)
-            throw new InvalidOperationException(
-                $"Assembly '{projectAssemblyName}' is already registered in Dataverse as a classic (non-package) assembly — " +
-                $"remove it manually before pushing this project as a plugin package. Automated migration is not supported.");
+        var classicConflicts = assemblyResult.Entities
+            .Where(e => e.GetAttributeValue<EntityReference>("packageid") == null)
+            .Select(e => e.GetAttributeValue<string>("name"))
+            .ToList();
+
+        if (classicConflicts.Count > 0)
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"Assembl{(classicConflicts.Count == 1 ? "y" : "ies")} {string.Join(", ", classicConflicts.Select(n => $"'{n}'"))} " +
+                "already registered in Dataverse as classic (non-package) — remove manually before pushing this project as a plugin package. " +
+                "Automated migration is not supported.");
+
+        var existingAssembly = assemblyResult.Entities.FirstOrDefault(e =>
+            string.Equals(e.GetAttributeValue<string>("name"), projectAssemblyName, StringComparison.OrdinalIgnoreCase));
 
         // Phase 0: solution existence/support check + live publisher prefix (KTD11) — same resolution
         // the classic path already uses, just captured here instead of discarded.
@@ -824,7 +839,7 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
         var query = new QueryExpression("pluginassembly")
         {
             TopCount = 1,
-            ColumnSet = new ColumnSet("pluginassemblyid", "name", "version", "publickeytoken", "culture", "description"),
+            ColumnSet = new ColumnSet("pluginassemblyid", "name", "version", "publickeytoken", "culture", "description", "packageid"),
             Criteria =
             {
                 Conditions = { new ConditionExpression("name", ConditionOperator.Equal, metadata.Name) }
@@ -833,6 +848,11 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
 
         var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
         var existing = result.Entities.FirstOrDefault();
+
+        if (existing != null && existing.GetAttributeValue<EntityReference>("packageid") != null)
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"Assembly '{metadata.Name}' is already registered in Dataverse as part of a plugin " +
+                "package — push the .nupkg package instead of the raw assembly. Automated migration is not supported.");
 
         if (existing == null)
         {

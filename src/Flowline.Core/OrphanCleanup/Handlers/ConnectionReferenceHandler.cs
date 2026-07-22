@@ -1,7 +1,5 @@
-using System.ServiceModel;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
-using Flowline.Core.Console;
 using Flowline.Core.Services;
 using Spectre.Console;
 
@@ -9,9 +7,9 @@ namespace Flowline.Core.OrphanCleanup.Handlers;
 
 // ConnectionReference's componenttype is env-specific, same shape as CustomApi/Bot — a candidate can
 // only be identified as a ConnectionReference by querying the "connectionreference" table directly, so
-// match and detect are the same batched async call. This handler owns its own query and try/catch
-// against "connectionreference" only — a BotHandler failure (or vice versa) can never affect this
-// handler's detection.
+// match and detect are the same batched async call. This handler owns its own query against
+// "connectionreference" only — a BotHandler failure (or vice versa) can never affect this handler's
+// detection.
 public sealed class ConnectionReferenceHandler(IAnsiConsole console) : IOrphanHandler
 {
     public HandlerStatus Status => HandlerStatus.Active;
@@ -25,10 +23,9 @@ public sealed class ConnectionReferenceHandler(IAnsiConsole console) : IOrphanHa
 
         var idList = candidates.Select(c => c.ObjectId).Distinct().ToList();
 
-        List<Entity> rows;
-        try
+        var rows = await DataverseFaultTolerance.TryQueryAsync(async () =>
         {
-            // The 2000-id guard runs inside this try so an oversized batch degrades the same way any
+            // The 2000-id guard runs inside this query so an oversized batch degrades the same way any
             // other query fault does (warn + skip), rather than throwing uncaught.
             if (idList.Count > 2000)
                 throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {idList.Count} IDs (max 2000). Solution has too many orphan candidates for ConnectionReference detection.");
@@ -39,19 +36,8 @@ public sealed class ConnectionReferenceHandler(IAnsiConsole console) : IOrphanHa
                 ColumnSet = new ColumnSet("connectionreferencelogicalname"),
                 Criteria  = { Conditions = { new ConditionExpression("connectionreferenceid", ConditionOperator.In, idArray) } }
             };
-            rows = await context.Service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
-        }
-        // A business fault (no matching rows) is not evidence of deletion — resolves quietly to "no
-        // candidates claimed", unlike an infrastructure fault, which additionally warns.
-        catch (FaultException<OrganizationServiceFault>)
-        {
-            return new HandlerDetectionResult([], new HashSet<Guid>());
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            console.Warning($"ConnectionReference orphan detection failed ({Markup.Escape(ex.Message)}) — its candidates are skipped this run.");
-            return new HandlerDetectionResult([], new HashSet<Guid>());
-        }
+            return await context.Service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
+        }, [], console, msg => $"ConnectionReference orphan detection failed ({msg}) — its candidates are skipped this run.");
 
         // A row existing in the table at all is enough evidence this candidate is a ConnectionReference —
         // claimed regardless of logical-name or local-declaration status.

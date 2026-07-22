@@ -5,23 +5,23 @@ using Spectre.Console;
 
 namespace Flowline.Core.FormEvents;
 
-// U7: wires FormEventReader → FormEventPlanner → FormEventExecutor behind two entry points, mirroring
+// Wires FormEventReader → FormEventPlanner → FormEventExecutor behind two entry points, mirroring
 // WebResourceService's orchestration shape (status spinner load → pure plan → execute).
 //
-// KTD12: a single pass can't serve both directions of the dependency-fault problem — a web resource about
-// to be deleted must have its form references cleared FIRST (cleanup), while a form referencing a
-// brand-new web resource must be registered AFTER that resource exists (registration). So the pipeline runs
-// twice per push: CleanupOrphanedAsync before WebResourceService.SyncSolutionAsync, RegisterAsync after.
-// Each call re-reads the snapshot rather than sharing state between the two — Phase 3 (registration) must
-// see formxml as of after Phase 1's (cleanup's) own write landed, not a stale pre-cleanup snapshot (R11).
+// A single pass can't serve both directions of the dependency-fault problem — a web resource about to
+// be deleted must have its form references cleared FIRST (cleanup), while a form referencing a
+// brand-new web resource must be registered AFTER that resource exists (registration). So the pipeline
+// runs twice per push: CleanupOrphanedAsync before WebResourceService.SyncSolutionAsync, RegisterAsync
+// after. Each call re-reads the snapshot rather than sharing state — registration must see formxml as
+// of after cleanup's own write landed, not a stale pre-cleanup snapshot.
 public class FormEventService(IAnsiConsole console)
 {
     readonly FormEventReader _reader = new(console);
     readonly FormEventPlanner _planner = new(console);
     readonly FormEventExecutor _executor = new(console);
 
-    // R14: cleanup pass — removes stale/orphaned handlers before web resources are created/updated/deleted,
-    // so a pending web-resource delete never trips Dataverse's "referenced by N other components" fault.
+    // Cleanup pass — removes stale/orphaned handlers before web resources are created/updated/deleted, so
+    // a pending web-resource delete never trips Dataverse's "referenced by N other components" fault.
     // cleanupOnly narrows the plan's writes to already-safe removals only (see FormEventExecutor.BuildFormXml)
     // — it never adds a handler/library reference that isn't already on the form.
     public Task<bool> CleanupOrphanedAsync(
@@ -35,8 +35,8 @@ public class FormEventService(IAnsiConsole console)
         CancellationToken cancellationToken = default) =>
         SyncAsync(service, webresourceRoot, solutionName, force, dryRun, cleanupOnly: true, publishAfterSync, formEventCachePath, cancellationToken);
 
-    // R10a: registration pass — runs strictly after web resources are pushed, so new/updated handlers can
-    // only ever reference libraries that already exist in Dataverse.
+    // Registration pass — runs strictly after web resources are pushed, so new/updated handlers can only
+    // ever reference libraries that already exist in Dataverse.
     public Task<bool> RegisterAsync(
         IOrganizationServiceAsync2 service,
         string webresourceRoot,
@@ -66,9 +66,13 @@ public class FormEventService(IAnsiConsole console)
 
         // Phase 1: Load snapshot (local annotations + current Dataverse form state). Cleanup and
         // registration both re-scan the same local JS files, so cleanup's pass stays silent — only the
-        // registration (second, fuller) pass surfaces reader/planner-level warnings, matching the "up to
-        // date"/dry-run-preview dedup below.
-        var snapshot = await console.Status().FlowlineSpinner().StartAsync("Lookup form events...", _ =>
+        // registration (second, fuller) pass surfaces reader/planner-level warnings. Cleanup can write a
+        // new formxml to Dataverse before registration runs (see class doc comment), so each pass re-reads
+        // rather than sharing one snapshot — the label below distinguishes the two reads (mirrors
+        // FormEventExecutor's cleanupOnly ? "Cleaning forms" : "Updating forms") so they don't read as an
+        // accidental duplicate.
+        var spinnerLabel = cleanupOnly ? "Checking form events..." : "Registering form events...";
+        var snapshot = await console.Status().FlowlineSpinner().StartAsync(spinnerLabel, _ =>
             _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, formEventCachePath, suppressWarnings: cleanupOnly, cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         // Phase 2: Plan registration (pure, synchronous)
@@ -83,10 +87,10 @@ public class FormEventService(IAnsiConsole console)
             return false;
         }
 
-        // R18b: FormEventExecutor's dry-run preview never consults cleanupOnly — it prints and returns
-        // before that point — so the plan (Reader+Planner are identical for both phases) would render the
-        // exact same preview block twice. Only the registration pass (the fuller pass, run second by
-        // PushCommand) surfaces it; the cleanup pass just signals "has pending changes" silently.
+        // FormEventExecutor's dry-run preview never consults cleanupOnly — it prints and returns before
+        // that point — so the plan (identical for both phases) would render the exact same preview twice.
+        // Only the registration pass surfaces it; the cleanup pass just signals "has pending changes"
+        // silently.
         if (dryRun && cleanupOnly)
             return true;
 

@@ -23,7 +23,7 @@ public static class FormEventAnnotationParser
     // Matches "// flowline:onload/onsave <entity> <form> [modifiers] [Function[(params)]]", the "//!"
     // legal-comment variant, and the single-line block form "/*! ... */" — same three comment forms
     // WebResourceAnnotationParser recognizes for "flowline:depends". <form> is a bare token (no whitespace),
-    // a double-quoted string, or a single-quoted string (R3: both quote styles are accepted — matches JS's
+    // a double-quoted string, or a single-quoted string (both quote styles are accepted — matches JS's
     // own string-literal convention; Dataverse form names routinely contain spaces).
     static readonly Regex OnLoadSaveAnnotationRegex = new(
         """^(?://!?|/\*!)\s*flowline:on(?<event>load|save)\s+(?<entity>\S+)\s+(?<form>"[^"]+"|'[^']+'|\S+)(?:\s+""" + ModifierFragment + """(?<function>[A-Za-z_][\w.]*)?(?:\((?<params>[^)]*)\))?)?\s*(?:\*/)?$""",

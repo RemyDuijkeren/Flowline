@@ -1,7 +1,4 @@
-using System.ServiceModel;
-using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
-using Flowline.Core.Console;
 using Flowline.Core.Services;
 using Spectre.Console;
 
@@ -40,11 +37,10 @@ public sealed class CustomApiFamilyHandler(IAnsiConsole console) : IOrphanHandle
         // RowIds carries every id found, independent of the name filter below — a null/empty name is
         // still evidence this candidate belongs to this table, so ClaimedIds includes it even though
         // Names does not.
-        async Task<(Dictionary<Guid, string> Names, HashSet<Guid> RowIds)> ResolveNamesAsync(string entityLogicalName, string idAttribute)
-        {
-            try
+        Task<(Dictionary<Guid, string> Names, HashSet<Guid> RowIds)> ResolveNamesAsync(string entityLogicalName, string idAttribute) =>
+            DataverseFaultTolerance.TryQueryAsync(async () =>
             {
-                // The 2000-id guard runs inside each table's own try so an oversized batch degrades
+                // The 2000-id guard runs inside each table's own query so an oversized batch degrades
                 // per-table (warn + skip) rather than throwing uncaught for all three at once.
                 if (idList.Count > 2000)
                     throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {idList.Count} IDs (max 2000). Solution has too many orphan candidates for CustomApi-family detection.");
@@ -61,17 +57,7 @@ public sealed class CustomApiFamilyHandler(IAnsiConsole console) : IOrphanHandle
                     .ToDictionary(e => e.Id, e => e.GetAttributeValue<string>("name")!);
                 var rowIds = entities.Select(e => e.Id).ToHashSet();
                 return (names, rowIds);
-            }
-            catch (FaultException<OrganizationServiceFault>)
-            {
-                return ([], []);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                console.Warning($"CustomApi-family orphan detection failed for '{entityLogicalName}' ({Markup.Escape(ex.Message)}) — its candidates are skipped this run.");
-                return ([], []);
-            }
-        }
+            }, ([], []), console, msg => $"CustomApi-family orphan detection failed for '{entityLogicalName}' ({msg}) — its candidates are skipped this run.");
 
         var caTask    = ResolveNamesAsync("customapi",                 "customapiid");
         var paramTask = ResolveNamesAsync("customapirequestparameter", "customapirequestparameterid");

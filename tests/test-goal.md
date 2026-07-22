@@ -187,6 +187,26 @@ default layout:
   dangerous (`--force delete-orphans` could delete a live registration). Details/repro/root
   cause/suggested fix: `tests/test-findings/false-positive-orphan-dotted-classic-assembly-name.md`.
 
+## Output modes: run every phase both without and with `-v`/`--verbose`
+
+Every command in the test matrix above gets run twice: once plain, once with `--verbose`. These
+exercise different UX contracts and both need explicit judgment, not just "did it not crash":
+
+- **Without `--verbose`** — this is what a normal user sees. Judge it as a UX reviewer would: is the
+  output clean, well-formatted, free of noise/clutter, and does it read as polished/professional
+  output? Flag anything that looks unfinished, inconsistent, or like leaked internal detail.
+- **With `--verbose`** — this exposes the real step-by-step work (`VerboseRenderable` output that's
+  otherwise filtered from the console by `VerboseFilterHook`
+  (`src/Flowline.Core/Console/VerboseFilterHook.cs`)). Confirm the extra detail is accurate, actually
+  reflects the real Dataverse calls/results made, and isn't just restating the non-verbose summary.
+- `--verbose` is a convenience, not a requirement for auditing: every run also writes a full log file
+  (path is printed at the end of every invocation, verbose or not — see
+  `FlowlineStoragePaths.GetLogsPath` via `src/Flowline/Program.cs`), and `LoggingRenderHook`
+  (`src/Flowline.Core/Console/LoggingRenderHook.cs`) captures `VerboseRenderable` content into that
+  log regardless of the console's verbose filter. So: for a subset of runs, skip `--verbose` entirely
+  and instead open the printed log file afterward to confirm the same step-by-step detail is present
+  there — this validates the "log has everything" guarantee independently of the console flag.
+
 ## Operational notes
 
 - **PAC auth profile ambiguity**: this machine has multiple PAC auth profiles that can resolve to the

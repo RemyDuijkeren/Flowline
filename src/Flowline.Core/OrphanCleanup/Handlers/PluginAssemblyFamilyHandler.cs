@@ -1,8 +1,6 @@
-using System.ServiceModel;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
-using Flowline.Core.Console;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Spectre.Console;
@@ -180,43 +178,29 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
     // Batched live check of packageid on each PluginAssembly candidate — a transient failure degrades
     // every candidate in this batch to the un-redirected assembly-delete finding rather than aborting
     // detection for the whole family.
-    static async Task<Dictionary<Guid, EntityReference>> ResolvePackageIdsAsync(
+    static Task<Dictionary<Guid, EntityReference>> ResolvePackageIdsAsync(
         IOrganizationServiceAsync2 service,
         IReadOnlyList<Guid> assemblyIds,
         IAnsiConsole console,
-        CancellationToken ct)
-    {
-        var query = new QueryExpression("pluginassembly")
+        CancellationToken ct) =>
+        DataverseFaultTolerance.TryQueryAsync(async () =>
         {
-            ColumnSet = new ColumnSet("packageid"),
-            Criteria = { Conditions = { new ConditionExpression("pluginassemblyid", ConditionOperator.In, assemblyIds.Select(id => (object)id).ToArray()) } }
-        };
+            var query = new QueryExpression("pluginassembly")
+            {
+                ColumnSet = new ColumnSet("packageid"),
+                Criteria = { Conditions = { new ConditionExpression("pluginassemblyid", ConditionOperator.In, assemblyIds.Select(id => (object)id).ToArray()) } }
+            };
+            var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
 
-        List<Entity> entities;
-        try
-        {
-            entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
-        }
-        catch (FaultException<OrganizationServiceFault>)
-        {
-            return new Dictionary<Guid, EntityReference>();
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            console.Warning($"pluginassembly packageid lookup failed ({Markup.Escape(ex.Message)}) — degrading to un-redirected assembly-delete finding this run.");
-            return new Dictionary<Guid, EntityReference>();
-        }
-
-        var result = new Dictionary<Guid, EntityReference>();
-        foreach (var entity in entities)
-        {
-            var packageRef = entity.GetAttributeValue<EntityReference>("packageid");
-            if (packageRef != null)
-                result[entity.Id] = packageRef;
-        }
-
-        return result;
-    }
+            var result = new Dictionary<Guid, EntityReference>();
+            foreach (var entity in entities)
+            {
+                var packageRef = entity.GetAttributeValue<EntityReference>("packageid");
+                if (packageRef != null)
+                    result[entity.Id] = packageRef;
+            }
+            return result;
+        }, [], console, msg => $"pluginassembly packageid lookup failed ({msg}) — degrading to un-redirected assembly-delete finding this run.");
 
     // Dataverse's practical ConditionOperator.In ceiling — same limit EntityNameLookup.cs centralizes.
     // QueryChildIdsAsync enforces it directly (rather than delegating to EntityNameLookup) since it needs
@@ -241,11 +225,11 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
     {
         var degraded = false;
 
-        async Task<HashSet<Guid>> QueryChildIdsAsync(string entityLogicalName, string filterAttribute, IReadOnlyCollection<Guid> parentIds)
+        Task<HashSet<Guid>> QueryChildIdsAsync(string entityLogicalName, string filterAttribute, IReadOnlyCollection<Guid> parentIds)
         {
-            if (parentIds.Count == 0) return [];
+            if (parentIds.Count == 0) return Task.FromResult(new HashSet<Guid>());
 
-            try
+            return DataverseFaultTolerance.TryQueryAsync(async () =>
             {
                 if (parentIds.Count > ConditionOperatorInLimit)
                     throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {parentIds.Count} IDs (max {ConditionOperatorInLimit}). Package has too many {entityLogicalName} candidates for cleanup this run.");
@@ -257,18 +241,7 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
                 };
                 var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
                 return entities.Select(e => e.Id).ToHashSet();
-            }
-            catch (FaultException<OrganizationServiceFault>)
-            {
-                degraded = true;
-                return [];
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                degraded = true;
-                console.Warning($"{entityLogicalName} lookup for package-delete cleanup failed ({Markup.Escape(ex.Message)}) — left for a future run.");
-                return [];
-            }
+            }, [], console, msg => $"{entityLogicalName} lookup for package-delete cleanup failed ({msg}) — left for a future run.", onFault: () => degraded = true);
         }
 
         var pluginTypeIds = await QueryChildIdsAsync("plugintype", "pluginassemblyid", redirectedAssemblyIds).ConfigureAwait(false);
@@ -288,18 +261,11 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
                      ("customapiresponseproperty", "customapiresponsepropertyid", responsePropIds),
                  })
         {
-            try
-            {
-                foreach (var (id, name) in await EntityNameLookup.GetEntityNamesAsync(service, entityLogicalName, idAttribute, "name", ids, ct).ConfigureAwait(false))
-                    names[id] = name;
-            }
-            catch (FaultException<OrganizationServiceFault>)
-            {
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                console.Warning($"{entityLogicalName} name resolution failed ({Markup.Escape(ex.Message)}) — display falls back to bare id this run.");
-            }
+            var resolved = await DataverseFaultTolerance.TryQueryAsync(
+                () => EntityNameLookup.GetEntityNamesAsync(service, entityLogicalName, idAttribute, "name", ids, ct),
+                [], console, msg => $"{entityLogicalName} name resolution failed ({msg}) — display falls back to bare id this run.");
+            foreach (var (id, name) in resolved)
+                names[id] = name;
         }
 
         var candidateComponentTypes = candidates.ToDictionary(c => c.ObjectId, c => c.ComponentType);
@@ -350,21 +316,11 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         foreach (var group in claimed.GroupBy(c => c.ComponentType))
         {
             var lookup = Lookups[group.Key];
-            try
-            {
-                var names = await EntityNameLookup.GetEntityNamesAsync(service, lookup.EntityLogicalName, lookup.IdAttribute, lookup.NameAttribute, group.Select(c => c.ObjectId), ct).ConfigureAwait(false);
-                foreach (var (id, name) in names)
-                    result[id] = name;
-            }
-            // A business fault (no matching rows) is not evidence of deletion — names simply stay
-            // unresolved, same as an infrastructure fault (which additionally warns).
-            catch (FaultException<OrganizationServiceFault>)
-            {
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                console.Warning($"{lookup.EntityLogicalName} name resolution failed ({Markup.Escape(ex.Message)}) — display falls back to bare id this run.");
-            }
+            var names = await DataverseFaultTolerance.TryQueryAsync(
+                () => EntityNameLookup.GetEntityNamesAsync(service, lookup.EntityLogicalName, lookup.IdAttribute, lookup.NameAttribute, group.Select(c => c.ObjectId), ct),
+                [], console, msg => $"{lookup.EntityLogicalName} name resolution failed ({msg}) — display falls back to bare id this run.");
+            foreach (var (id, name) in names)
+                result[id] = name;
         }
 
         return result;
@@ -372,55 +328,43 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
 
     // Single query resolves both Step's own statecode (Prio2 when Enabled) and PluginType's
     // has-any-enabled-step check, since PluginType carries no statecode of its own.
-    static async Task<(Dictionary<Guid, bool> StepEnabled, HashSet<Guid> TypeHasEnabledStep)> QueryEnabledStateAsync(
+    // Unresolved enabled-state defaults Step/PluginType to Prio3, same as an empty result set (record
+    // already gone).
+    static Task<(Dictionary<Guid, bool> StepEnabled, HashSet<Guid> TypeHasEnabledStep)> QueryEnabledStateAsync(
         IOrganizationServiceAsync2 service,
         IReadOnlyList<Guid> stepIds,
         IReadOnlyList<Guid> typeIds,
         IAnsiConsole console,
-        CancellationToken ct)
-    {
-        var filter = new FilterExpression(LogicalOperator.Or);
-        if (stepIds.Count > 0)
-            filter.Conditions.Add(new ConditionExpression("sdkmessageprocessingstepid", ConditionOperator.In, stepIds.Select(id => (object)id).ToArray()));
-        if (typeIds.Count > 0)
-            filter.Conditions.Add(new ConditionExpression("plugintypeid", ConditionOperator.In, typeIds.Select(id => (object)id).ToArray()));
-
-        var query = new QueryExpression("sdkmessageprocessingstep")
+        CancellationToken ct) =>
+        DataverseFaultTolerance.TryQueryAsync(async () =>
         {
-            ColumnSet = new ColumnSet("plugintypeid", "statecode"),
-            Criteria  = filter,
-        };
+            var filter = new FilterExpression(LogicalOperator.Or);
+            if (stepIds.Count > 0)
+                filter.Conditions.Add(new ConditionExpression("sdkmessageprocessingstepid", ConditionOperator.In, stepIds.Select(id => (object)id).ToArray()));
+            if (typeIds.Count > 0)
+                filter.Conditions.Add(new ConditionExpression("plugintypeid", ConditionOperator.In, typeIds.Select(id => (object)id).ToArray()));
 
-        List<Entity> entities;
-        try
-        {
-            entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
-        }
-        // Unresolved enabled-state defaults Step/PluginType to Prio3, same as an empty result set
-        // (record already gone).
-        catch (FaultException<OrganizationServiceFault>)
-        {
-            return (new Dictionary<Guid, bool>(), new HashSet<Guid>());
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            console.Warning($"PluginType/Step enabled-state lookup failed ({Markup.Escape(ex.Message)}) — defaulting to Prio3 this run.");
-            return (new Dictionary<Guid, bool>(), new HashSet<Guid>());
-        }
+            var query = new QueryExpression("sdkmessageprocessingstep")
+            {
+                ColumnSet = new ColumnSet("plugintypeid", "statecode"),
+                Criteria  = filter,
+            };
 
-        var stepEnabled = new Dictionary<Guid, bool>();
-        var typeHasEnabledStep = new HashSet<Guid>();
+            var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
 
-        foreach (var entity in entities)
-        {
-            var enabled = entity.GetAttributeValue<OptionSetValue>("statecode")?.Value == 0;
-            stepEnabled[entity.Id] = enabled;
+            var stepEnabled = new Dictionary<Guid, bool>();
+            var typeHasEnabledStep = new HashSet<Guid>();
 
-            var pluginTypeId = entity.GetAttributeValue<EntityReference>("plugintypeid")?.Id;
-            if (enabled && pluginTypeId.HasValue)
-                typeHasEnabledStep.Add(pluginTypeId.Value);
-        }
+            foreach (var entity in entities)
+            {
+                var enabled = entity.GetAttributeValue<OptionSetValue>("statecode")?.Value == 0;
+                stepEnabled[entity.Id] = enabled;
 
-        return (stepEnabled, typeHasEnabledStep);
-    }
+                var pluginTypeId = entity.GetAttributeValue<EntityReference>("plugintypeid")?.Id;
+                if (enabled && pluginTypeId.HasValue)
+                    typeHasEnabledStep.Add(pluginTypeId.Value);
+            }
+
+            return (stepEnabled, typeHasEnabledStep);
+        }, (new Dictionary<Guid, bool>(), new HashSet<Guid>()), console, msg => $"PluginType/Step enabled-state lookup failed ({msg}) — defaulting to Prio3 this run.");
 }

@@ -1,4 +1,3 @@
-using System.ServiceModel;
 using Microsoft.Xrm.Sdk;
 using Flowline.Core.WebResources;
 using Flowline.Core.Console;
@@ -29,21 +28,9 @@ public sealed class WebResourceHandler(IAnsiConsole console) : IOrphanHandler
         // suppresses out of Findings — it's still a recognized WebResource, just not orphaned.
         var claimedIds = webResourceCandidates.Select(c => c.ObjectId).ToHashSet();
 
-        Dictionary<Guid, string> names;
-        try
-        {
-            names = await EntityNameLookup.GetEntityNamesAsync(
-                context.Service, "webresource", "webresourceid", "name", webResourceCandidates.Select(c => c.ObjectId), ct).ConfigureAwait(false);
-        }
-        catch (FaultException<OrganizationServiceFault>)
-        {
-            names = [];
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            console.Warning($"WebResource name resolution failed ({Markup.Escape(ex.Message)}) — display falls back to bare id this run.");
-            names = [];
-        }
+        var names = await DataverseFaultTolerance.TryQueryAsync(
+            () => EntityNameLookup.GetEntityNamesAsync(context.Service, "webresource", "webresourceid", "name", webResourceCandidates.Select(c => c.ObjectId), ct),
+            [], console, msg => $"WebResource name resolution failed ({msg}) — display falls back to bare id this run.");
 
         // Scans the package source under WebResources — the content this deploy is actually packing and
         // importing — never WebResources/dist. Deploy promotes whatever's committed there; reading a

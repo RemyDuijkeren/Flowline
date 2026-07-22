@@ -14,12 +14,10 @@ public static class FormXmlEventSerializer
     const string IframeClassId = "{FD2A7985-3187-444E-908D-6624B21F69C0}";
 
     // Maker Portal always renders "IFRAME_" as a fixed, non-editable prefix in the control's Name field —
-    // the maker only ever types the suffix (confirmed live: Maker Portal screenshot showed "IFRAME_" greyed
-    // out with only "myiFrame" editable). The stored FormXml `id` carries the full prefixed value, but
-    // requiring the annotation to repeat that system-assigned prefix verbatim is unnecessary friction, so
+    // the maker only ever types the suffix. The stored FormXml `id` carries the full prefixed value, but
     // the bare suffix is the canonical scope-token form used everywhere control ids are compared, hashed,
-    // or derived into a default function name — an annotation may still spell out the full prefixed id and
-    // it resolves identically.
+    // or derived into a default function name — an annotation may still spell out the full prefixed id
+    // and it resolves identically.
     const string IframeControlIdPrefix = "IFRAME_";
 
     public static string NormalizeIframeControlId(string controlId) =>
@@ -52,7 +50,7 @@ public static class FormXmlEventSerializer
     }
 
     // Enumerates every attribute currently wired to an onchange event, regardless of whether a current
-    // annotation still targets it — needed by the planner for orphan detection (KTD4), since onchange's
+    // annotation still targets it — needed by the planner for orphan detection, since onchange's
     // "current" set can't be derived from a fixed enum the way onload/onsave's can.
     public static IReadOnlySet<string> GetOnChangeAttributes(XDocument form)
     {
@@ -71,7 +69,7 @@ public static class FormXmlEventSerializer
 
     // Enumerates every <tab name="..."> currently carrying a tabstatechange event with at least one
     // Handler, regardless of whether a current annotation still targets it — same orphan-detection role
-    // GetOnChangeAttributes plays for onchange (KTD4/R13, extended to Tab/IFRAME).
+    // GetOnChangeAttributes plays for onchange, extended to Tab/IFRAME.
     public static IReadOnlySet<string> GetTabNamesWithStateChangeHandlers(XDocument form) =>
         (form.Root?.Descendants("tab") ?? [])
             .Where(tab => tab.Element("events")?.Elements("event")
@@ -99,7 +97,7 @@ public static class FormXmlEventSerializer
             .Select(NormalizeIframeControlId)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-    // R8: lets the planner detect a bulk-edit-only change (no handler/order change on the onload event
+    // Lets the planner detect a bulk-edit-only change (no handler/order change on the onload event
     // itself) by comparing the freshly-computed union against what's already live — without this, a push
     // that only adds/removes [bulkEdit] with no other onload change would never emit a plan entry, since
     // the handlersChanged gate has nothing else to trigger on.
@@ -127,10 +125,10 @@ public static class FormXmlEventSerializer
     }
 
     // attribute carries the scope token for OnChange/TabStateChange/OnReadyStateComplete — see GetHandlers.
-    // desired is an ordered list (KTD2): callers must de-duplicate by identity without discarding position
-    // (the write order here is exactly the order handlers are enumerated in, no internal re-sorting).
-    // bulkEditEnabled only applies to OnLoad (KTD4) — sets/clears BehaviorInBulkEditForm on the located
-    // onload <event> element; ignored for every other event type.
+    // desired is an ordered list: callers must de-duplicate by identity without discarding position (the
+    // write order here is exactly the order handlers are enumerated in, no internal re-sorting).
+    // bulkEditEnabled only applies to OnLoad — sets/clears BehaviorInBulkEditForm on the located onload
+    // <event> element; ignored for every other event type.
     public static void SetHandlers(XDocument form, FormEventType evt, IReadOnlyList<FormEventHandler> desired, string? attribute = null, bool bulkEditEnabled = false)
     {
         var root = form.Root ?? throw new InvalidOperationException("Form XML has no root element.");
@@ -144,7 +142,7 @@ public static class FormXmlEventSerializer
         }
 
         // SetAttributeValue with a null value removes the attribute — this is how a previously-set
-        // BehaviorInBulkEditForm gets cleared when no onload annotation specifies [bulkEdit] anymore (R8).
+        // BehaviorInBulkEditForm gets cleared when no onload annotation specifies [bulkEdit] anymore.
         if (evt == FormEventType.OnLoad)
             eventElement.SetAttributeValue("BehaviorInBulkEditForm", bulkEditEnabled ? "Enabled" : null);
 
@@ -199,11 +197,10 @@ public static class FormXmlEventSerializer
     }
 
     // Locates (or creates) the <events> container this evt/attribute pair writes into: the form root for
-    // OnLoad/OnSave/OnChange (unchanged), or the Tab/IFRAME container's own nested <events> child (KTD1).
-    // Throws if a Tab/IFRAME scope token doesn't resolve to any live container — planning enumerates scopes
-    // from existing FormXml/annotations, so an unresolvable scope here means the annotation references a
-    // tab/control the current form genuinely doesn't have; synthesizing one is out of scope for this plan
-    // (Scope Boundaries: rename/not-found resilience for Tab/IFRAME is deferred).
+    // OnLoad/OnSave/OnChange, or the Tab/IFRAME container's own nested <events> child. Throws if a
+    // Tab/IFRAME scope token doesn't resolve to any live container — planning enumerates scopes from
+    // existing FormXml/annotations, so an unresolvable scope here means the annotation references a
+    // tab/control the current form genuinely doesn't have; synthesizing one is out of scope.
     static XElement GetOrAddEventsContainer(XElement root, FormEventType evt, string? attribute)
     {
         var container = evt switch
@@ -272,7 +269,7 @@ public static class FormXmlEventSerializer
     public static bool IframeControlExists(XDocument form, string controlId) =>
         form.Root is not null && FindIframeCell(form.Root, controlId) is not null;
 
-    // attribute carries the scope token for OnChange/TabStateChange/OnReadyStateComplete (KTD1): OnChange
+    // attribute carries the scope token for OnChange/TabStateChange/OnReadyStateComplete: OnChange
     // additionally matches the "attribute" XML attribute on a form-root <event> element; TabStateChange and
     // OnReadyStateComplete instead resolve their container first (FindTabElement/FindIframeCell) and match
     // by name only within that container's own nested <events> — the container itself is the scope, so no

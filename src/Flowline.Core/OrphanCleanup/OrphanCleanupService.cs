@@ -468,25 +468,19 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
     {
         using var semaphore = new SemaphoreSlim(MaxConcurrentMetadataRequests, MaxConcurrentMetadataRequests);
 
+        // A genuinely-deleted global choice faults at the org-service level — treated as expected.
+        // Anything else is a real failure the operator should see.
         var tasks = schemaNames.Distinct().Select(async name =>
         {
             await semaphore.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                var request = new RetrieveOptionSetRequest { Name = name };
-                var response = (RetrieveOptionSetResponse)await service.ExecuteAsync(request, ct).ConfigureAwait(false);
-                return response.OptionSetMetadata?.MetadataId;
-            }
-            // A genuinely-deleted global choice faults at the org-service level — treated as expected.
-            // Anything else is a real failure the operator should see.
-            catch (FaultException<OrganizationServiceFault>)
-            {
-                return null;
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                console.Warning($"OptionSet metadata lookup for '{name}' failed ({Markup.Escape(ex.Message)}) — treating as unresolved this run.");
-                return null;
+                return await DataverseFaultTolerance.TryQueryAsync(async () =>
+                {
+                    var request = new RetrieveOptionSetRequest { Name = name };
+                    var response = (RetrieveOptionSetResponse)await service.ExecuteAsync(request, ct).ConfigureAwait(false);
+                    return response.OptionSetMetadata?.MetadataId;
+                }, null, console, msg => $"OptionSet metadata lookup for '{name}' failed ({msg}) — treating as unresolved this run.");
             }
             finally
             {
