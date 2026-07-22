@@ -223,50 +223,13 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         IAnsiConsole console,
         CancellationToken ct)
     {
-        var degraded = false;
+        var (pluginTypeIds, customApiIds, requestParamIds, responsePropIds, degraded) =
+            await ResolveCascadedChildIdsAsync(service, redirectedAssemblyIds, console, ct).ConfigureAwait(false);
 
-        Task<HashSet<Guid>> QueryChildIdsAsync(string entityLogicalName, string filterAttribute, IReadOnlyCollection<Guid> parentIds)
-        {
-            if (parentIds.Count == 0) return Task.FromResult(new HashSet<Guid>());
+        if (pluginTypeIds.Count == 0 || customApiIds.Count == 0)
+            return ([], degraded);
 
-            return DataverseFaultTolerance.TryQueryAsync(async () =>
-            {
-                if (parentIds.Count > ConditionOperatorInLimit)
-                    throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {parentIds.Count} IDs (max {ConditionOperatorInLimit}). Package has too many {entityLogicalName} candidates for cleanup this run.");
-
-                var query = new QueryExpression(entityLogicalName)
-                {
-                    ColumnSet = new ColumnSet(false),
-                    Criteria = { Conditions = { new ConditionExpression(filterAttribute, ConditionOperator.In, parentIds.Select(id => (object)id).ToArray()) } }
-                };
-                var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
-                return entities.Select(e => e.Id).ToHashSet();
-            }, [], console, msg => $"{entityLogicalName} lookup for package-delete cleanup failed ({msg}) — left for a future run.", onFault: () => degraded = true);
-        }
-
-        var pluginTypeIds = await QueryChildIdsAsync("plugintype", "pluginassemblyid", redirectedAssemblyIds).ConfigureAwait(false);
-        if (pluginTypeIds.Count == 0) return ([], degraded);
-
-        var customApiIds = await QueryChildIdsAsync("customapi", "plugintypeid", pluginTypeIds).ConfigureAwait(false);
-        if (customApiIds.Count == 0) return ([], degraded);
-
-        var requestParamIds = await QueryChildIdsAsync("customapirequestparameter", "customapiid", customApiIds).ConfigureAwait(false);
-        var responsePropIds = await QueryChildIdsAsync("customapiresponseproperty", "customapiid", customApiIds).ConfigureAwait(false);
-
-        var names = new Dictionary<Guid, string>();
-        foreach (var (entityLogicalName, idAttribute, ids) in new[]
-                 {
-                     ("customapi", "customapiid", (IReadOnlyCollection<Guid>)customApiIds),
-                     ("customapirequestparameter", "customapirequestparameterid", requestParamIds),
-                     ("customapiresponseproperty", "customapiresponsepropertyid", responsePropIds),
-                 })
-        {
-            var resolved = await DataverseFaultTolerance.TryQueryAsync(
-                () => EntityNameLookup.GetEntityNamesAsync(service, entityLogicalName, idAttribute, "name", ids, ct),
-                [], console, msg => $"{entityLogicalName} name resolution failed ({msg}) — display falls back to bare id this run.");
-            foreach (var (id, name) in resolved)
-                names[id] = name;
-        }
+        var names = await ResolveChildNamesAsync(service, customApiIds, requestParamIds, responsePropIds, console, ct).ConfigureAwait(false);
 
         var candidateComponentTypes = candidates.ToDictionary(c => c.ObjectId, c => c.ComponentType);
         var findings = new List<HandlerFinding>();
@@ -300,6 +263,74 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         AddIfOrphaned(customApiIds, "customapi", "CustomApi", CustomApiParentSequenceHint, localCustomApiNames.ApiUniqueNames);
 
         return (findings, degraded);
+    }
+
+    // The 4-level cascade behind ResolvePackageChildCleanupFindingsAsync: pluginType -> customApi ->
+    // (requestParameter, responseProperty). Each level short-circuits on an empty parent set instead of
+    // querying — a redirected assembly with no plugin types has nothing further to look up.
+    static async Task<(HashSet<Guid> PluginTypeIds, HashSet<Guid> CustomApiIds, HashSet<Guid> RequestParamIds, HashSet<Guid> ResponsePropIds, bool Degraded)>
+        ResolveCascadedChildIdsAsync(
+            IOrganizationServiceAsync2 service,
+            IReadOnlyCollection<Guid> redirectedAssemblyIds,
+            IAnsiConsole console,
+            CancellationToken ct)
+    {
+        var degraded = false;
+
+        Task<HashSet<Guid>> QueryChildIdsAsync(string entityLogicalName, string filterAttribute, IReadOnlyCollection<Guid> parentIds)
+        {
+            if (parentIds.Count == 0) return Task.FromResult(new HashSet<Guid>());
+
+            return DataverseFaultTolerance.TryQueryAsync(async () =>
+            {
+                if (parentIds.Count > ConditionOperatorInLimit)
+                    throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {parentIds.Count} IDs (max {ConditionOperatorInLimit}). Package has too many {entityLogicalName} candidates for cleanup this run.");
+
+                var query = new QueryExpression(entityLogicalName)
+                {
+                    ColumnSet = new ColumnSet(false),
+                    Criteria = { Conditions = { new ConditionExpression(filterAttribute, ConditionOperator.In, parentIds.Select(id => (object)id).ToArray()) } }
+                };
+                var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
+                return entities.Select(e => e.Id).ToHashSet();
+            }, [], console, msg => $"{entityLogicalName} lookup for package-delete cleanup failed ({msg}) — left for a future run.", onFault: () => degraded = true);
+        }
+
+        var pluginTypeIds = await QueryChildIdsAsync("plugintype", "pluginassemblyid", redirectedAssemblyIds).ConfigureAwait(false);
+        if (pluginTypeIds.Count == 0) return (pluginTypeIds, [], [], [], degraded);
+
+        var customApiIds = await QueryChildIdsAsync("customapi", "plugintypeid", pluginTypeIds).ConfigureAwait(false);
+        if (customApiIds.Count == 0) return (pluginTypeIds, customApiIds, [], [], degraded);
+
+        var requestParamIds = await QueryChildIdsAsync("customapirequestparameter", "customapiid", customApiIds).ConfigureAwait(false);
+        var responsePropIds = await QueryChildIdsAsync("customapiresponseproperty", "customapiid", customApiIds).ConfigureAwait(false);
+
+        return (pluginTypeIds, customApiIds, requestParamIds, responsePropIds, degraded);
+    }
+
+    static async Task<Dictionary<Guid, string>> ResolveChildNamesAsync(
+        IOrganizationServiceAsync2 service,
+        IReadOnlyCollection<Guid> customApiIds,
+        IReadOnlyCollection<Guid> requestParamIds,
+        IReadOnlyCollection<Guid> responsePropIds,
+        IAnsiConsole console,
+        CancellationToken ct)
+    {
+        var names = new Dictionary<Guid, string>();
+        foreach (var (entityLogicalName, idAttribute, ids) in new[]
+                 {
+                     ("customapi", "customapiid", customApiIds),
+                     ("customapirequestparameter", "customapirequestparameterid", requestParamIds),
+                     ("customapiresponseproperty", "customapiresponsepropertyid", responsePropIds),
+                 })
+        {
+            var resolved = await DataverseFaultTolerance.TryQueryAsync(
+                () => EntityNameLookup.GetEntityNamesAsync(service, entityLogicalName, idAttribute, "name", ids, ct),
+                [], console, msg => $"{entityLogicalName} name resolution failed ({msg}) — display falls back to bare id this run.");
+            foreach (var (id, name) in resolved)
+                names[id] = name;
+        }
+        return names;
     }
 
     static string TypeName(int componentType, Guid objectId, string? detail) =>

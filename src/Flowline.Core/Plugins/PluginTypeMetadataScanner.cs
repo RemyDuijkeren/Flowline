@@ -209,54 +209,47 @@ public class PluginTypeMetadataScanner(IAnsiConsole console)
             if (attr.AttributeType.FullName == "Flowline.Attributes.InputAttribute" &&
                 attr.ConstructorArguments.Count == 2)
             {
-                var uniqueName = (string)attr.ConstructorArguments[0].Value!;
-                var fieldType = Convert.ToInt32(attr.ConstructorArguments[1].Value);
-                bool isOptional = false;
-                string? entityName = null, displayName = null, description = null;
-
-                foreach (var arg in attr.NamedArguments)
-                {
-                    switch (arg.MemberName)
-                    {
-                        case "IsOptional":   isOptional = (bool)arg.TypedValue.Value!; break;
-                        case "Table":        entityName = arg.TypedValue.Value as string; break;
-                        case "DisplayName":  displayName = arg.TypedValue.Value as string; break;
-                        case "Description":  description = arg.TypedValue.Value as string; break;
-                    }
-                }
-
-                displayName ??= SplitPascalCase(uniqueName);
-                var name = $"{apiBaseName}.{uniqueName}";
-                description ??= $"{displayName} ({name})";
-
-                requestParams.Add(new(uniqueName, displayName, name, description, fieldType, isOptional, entityName));
+                var p = ReadParamAttribute(attr, apiBaseName, readIsOptional: true);
+                requestParams.Add(new(p.UniqueName, p.DisplayName, p.Name, p.Description, p.FieldType, p.IsOptional, p.EntityName));
             }
             else if (attr.AttributeType.FullName == "Flowline.Attributes.OutputAttribute" &&
                      attr.ConstructorArguments.Count == 2)
             {
-                var uniqueName = (string)attr.ConstructorArguments[0].Value!;
-                var fieldType = Convert.ToInt32(attr.ConstructorArguments[1].Value);
-                string? entityName = null, displayName = null, description = null;
-
-                foreach (var arg in attr.NamedArguments)
-                {
-                    switch (arg.MemberName)
-                    {
-                        case "Table":        entityName = arg.TypedValue.Value as string; break;
-                        case "DisplayName":  displayName = arg.TypedValue.Value as string; break;
-                        case "Description":  description = arg.TypedValue.Value as string; break;
-                    }
-                }
-
-                displayName ??= SplitPascalCase(uniqueName);
-                var name = $"{apiBaseName}.{uniqueName}";
-                description ??= $"{displayName} ({name})";
-
-                responseProps.Add(new(uniqueName, displayName, name, description, fieldType, entityName));
+                var p = ReadParamAttribute(attr, apiBaseName, readIsOptional: false);
+                responseProps.Add(new(p.UniqueName, p.DisplayName, p.Name, p.Description, p.FieldType, p.EntityName));
             }
         }
 
         return (requestParams, responseProps);
+    }
+
+    // Shared by the Input/Output branches above — both attributes carry the same (uniqueName, fieldType)
+    // positional pair plus Table/DisplayName/Description named args and the same displayName/name/
+    // description derivation; only Input additionally carries IsOptional.
+    private static (string UniqueName, int FieldType, string? EntityName, string? DisplayName, string? Description, string Name, bool IsOptional)
+        ReadParamAttribute(CustomAttributeData attr, string apiBaseName, bool readIsOptional)
+    {
+        var uniqueName = (string)attr.ConstructorArguments[0].Value!;
+        var fieldType = Convert.ToInt32(attr.ConstructorArguments[1].Value);
+        bool isOptional = false;
+        string? entityName = null, displayName = null, description = null;
+
+        foreach (var arg in attr.NamedArguments)
+        {
+            switch (arg.MemberName)
+            {
+                case "IsOptional" when readIsOptional: isOptional = (bool)arg.TypedValue.Value!; break;
+                case "Table":       entityName = arg.TypedValue.Value as string; break;
+                case "DisplayName": displayName = arg.TypedValue.Value as string; break;
+                case "Description": description = arg.TypedValue.Value as string; break;
+            }
+        }
+
+        displayName ??= SplitPascalCase(uniqueName);
+        var name = $"{apiBaseName}.{uniqueName}";
+        description ??= $"{displayName} ({name})";
+
+        return (uniqueName, fieldType, entityName, displayName, description, name, isOptional);
     }
 
     internal static IEnumerable<PluginStepMetadata> TryBuildSteps(Type type)

@@ -1,4 +1,3 @@
-using Microsoft.Xrm.Sdk;
 using Flowline.Core.WebResources;
 using Flowline.Core.Console;
 using Spectre.Console;
@@ -16,52 +15,31 @@ public sealed class WebResourceHandler(IAnsiConsole console) : IOrphanHandler
 
     public HandlerStatus Status => HandlerStatus.Active;
 
-    public async Task<HandlerDetectionResult> DetectAsync(
+    public Task<HandlerDetectionResult> DetectAsync(
         DetectionContext context,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates,
         CancellationToken ct)
     {
-        var webResourceCandidates = candidates.Where(c => c.ComponentType == WebResourceComponentType).ToList();
-        if (webResourceCandidates.Count == 0) return new HandlerDetectionResult([], new HashSet<Guid>());
-
-        // Every componenttype-61 candidate is claimed, even one the annotation exemption below
-        // suppresses out of Findings — it's still a recognized WebResource, just not orphaned.
-        var claimedIds = webResourceCandidates.Select(c => c.ObjectId).ToHashSet();
-
-        var names = await DataverseFaultTolerance.TryQueryAsync(
-            () => EntityNameLookup.GetEntityNamesAsync(context.Service, "webresource", "webresourceid", "name", webResourceCandidates.Select(c => c.ObjectId), ct),
-            [], console, msg => $"WebResource name resolution failed ({msg}) — display falls back to bare id this run.");
-
         // Scans the package source under WebResources — the content this deploy is actually packing and
         // importing — never WebResources/dist. Deploy promotes whatever's committed there; reading a
         // separate local build artifact here would check content that may not match what's shipping.
         var annotationRefs = WebResourceAnnotationParser.CollectAllReferences(Path.Combine(context.DataverseSolutionSrcRoot, "WebResources"));
 
-        var findings = new List<HandlerFinding>();
-        foreach (var candidate in webResourceCandidates)
-        {
-            var hasName = names.TryGetValue(candidate.ObjectId, out var name);
-
-            // Still referenced via // flowline:depends elsewhere in the committed WebResources — exempt
-            // it from the orphan report.
-            if (hasName && annotationRefs.Contains(name!))
+        return NameLookupDetectionHelper.DetectByComponentTypeAsync(
+            context, candidates, console, ct,
+            componentType: WebResourceComponentType,
+            entityLogicalName: "webresource",
+            idAttribute: "webresourceid",
+            nameAttribute: "name",
+            label: "WebResource",
+            action: OrphanAction.Delete,
+            isExempt: (_, name) =>
             {
+                // Still referenced via // flowline:depends elsewhere in the committed WebResources —
+                // exempt it from the orphan report.
+                if (name is null || !annotationRefs.Contains(name)) return false;
                 console.Skip($"'{name}' preserved — referenced in // flowline:depends annotation.");
-                continue;
-            }
-
-            var displayName = hasName ? $"WebResource '{name}' ({candidate.ObjectId})" : $"WebResource {candidate.ObjectId}";
-
-            findings.Add(new HandlerFinding(
-                candidate.ObjectId,
-                WebResourceComponentType,
-                displayName,
-                OrphanAction.Delete,
-                OrphanPriority.Prio3,
-                SequenceHint: 0, // WebResource is the only type in this family — no ordering to express
-                OrphanTiming.PreImportEligible));
-        }
-
-        return new HandlerDetectionResult(findings, claimedIds);
+                return true;
+            });
     }
 }

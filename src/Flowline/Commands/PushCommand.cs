@@ -284,7 +284,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (standaloneMode)
         {
             (devEnv, profile) = await GetAndCheckStandaloneEnvironmentAsync(environmentUrl, settings, cancellationToken).ConfigureAwait(false);
-            slnInfo = await GetAndCheckStandaloneSolutionAsync(Console, standaloneParams.SolutionName!, environmentUrl, settings, cancellationToken).ConfigureAwait(false);
+            slnInfo = await GetAndCheckStandaloneSolutionAsync(standaloneParams.SolutionName!, environmentUrl, settings, cancellationToken).ConfigureAwait(false);
             solutionName = standaloneParams.SolutionName!;
         }
         else
@@ -730,40 +730,4 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         return path;
     }
 
-    static async Task<SolutionInfo> GetAndCheckStandaloneSolutionAsync(
-        IAnsiConsole console,
-        string solutionName,
-        string environmentUrl,
-        Settings settings,
-        CancellationToken cancellationToken)
-    {
-        SolutionInfo? remoteSln = await console.Status().FlowlineSpinner().StartAsync(
-            $"Looking up [bold]{solutionName}[/]...",
-            ctx => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, solutionName, includeManaged: false, settings, cancellationToken));
-        if (remoteSln == null)
-            throw new FlowlineException(ExitCode.NotFound, $"Solution '{solutionName}' not found in that environment.");
-
-        console.Ok($"Solution: [bold]{solutionName}[/] (managed: {remoteSln.IsManaged})");
-        return remoteSln;
-    }
-
-    async Task<(EnvironmentInfo Info, PacProfile Profile)> GetAndCheckStandaloneEnvironmentAsync(
-        string environmentUrl,
-        Settings settings,
-        CancellationToken cancellationToken)
-    {
-        var profile = await ProfileResolutionService.ResolveAsync(environmentUrl, cancellationToken);
-        EnvironmentInfo? env = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Checking dev [bold]{environmentUrl}[/]...",
-            ctx => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(environmentUrl, profile, settings, cancellationToken));
-
-        if (env == null)
-            throw new FlowlineException(ExitCode.ConnectionFailed, "Dev environment not found — check the URL or your PAC login.");
-
-        if (env.Type == "Production")
-            throw new FlowlineException(ExitCode.ValidationFailed, "That's a Production environment — use a sandbox or dev instead.");
-
-        Console.Ok($"Dev: [bold]{env.DisplayName}[/] ({env.EnvironmentUrl})");
-        return (env, profile);
-    }
 }

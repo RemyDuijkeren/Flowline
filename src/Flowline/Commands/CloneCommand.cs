@@ -84,24 +84,10 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
         ScaffoldRootGitignore();
 
-        // Pack the solution in pac to validate it
-        Logger.LogInformation("Validating pack: {SolutionName}", projectSln.UniqueName);
-        var artifactsFolder = Path.Combine(slnFolder, "artifacts");
-        Directory.CreateDirectory(artifactsFolder);
-        if (await PacUtils.PackSolutionAsync(projectSln, ScaffoldedDataverseSolutionFolder(slnFolder), artifactsFolder, false, _capture, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
-        if (projectSln.IncludeManaged &&
-            await PacUtils.PackSolutionAsync(projectSln, ScaffoldedDataverseSolutionFolder(slnFolder), artifactsFolder, true, _capture, cancellationToken) != 0)
+        if (await ValidatePackAndBuildAsync(projectSln, ScaffoldedDataverseSolutionFolder(slnFolder), slnFolder,
+                buildRelease: true, skipBuild: false, cancellationToken) is { } exitCode)
         {
-            return (int)ExitCode.BuildFailed;
-        }
-
-        // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
-        Logger.LogInformation("Validating build: {SlnFolder}", slnFolder);
-        if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, _capture, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
-        if (projectSln.IncludeManaged &&
-            await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Release, _capture, cancellationToken) != 0)
-        {
-            return (int)ExitCode.BuildFailed;
+            return exitCode;
         }
 
         await ScaffoldAgentsFileAsync(projectSln.UniqueName, slnFileName, cancellationToken);

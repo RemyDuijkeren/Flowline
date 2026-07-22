@@ -29,47 +29,35 @@ public static class FormEventAnnotationParser
         """^(?://!?|/\*!)\s*flowline:on(?<event>load|save)\s+(?<entity>\S+)\s+(?<form>"[^"]+"|'[^']+'|\S+)(?:\s+""" + ModifierFragment + """(?<function>[A-Za-z_][\w.]*)?(?:\((?<params>[^)]*)\))?)?\s*(?:\*/)?$""",
         RegexOptions.Compiled);
 
-    // Same shape as OnLoadSaveAnnotationRegex, with one extra mandatory token between <form> and the
-    // optional [modifiers][Function[(params)]] tail: <attribute>, always a bare token (attribute logical
-    // names never contain spaces, so no quoting rules apply to it). <form>'s bare-token fallback excludes a
-    // leading quote character (unlike OnLoadSaveAnnotationRegex, where nothing is required after <form>) —
-    // without that exclusion, a malformed quoted form with the mandatory <attribute> token missing lets the
-    // regex backtrack into splitting the quoted form itself into bogus <form>/<attribute> pieces instead of
-    // failing to match.
-    static readonly Regex OnChangeAnnotationRegex = new(
-        """^(?://!?|/\*!)\s*flowline:onchange\s+(?<entity>\S+)\s+(?<form>"[^"]+"|'[^']+'|[^"'\s]\S*)\s+(?<attribute>\S+)(?:\s+""" + ModifierFragment + """(?<function>[A-Za-z_][\w.]*)?(?:\((?<params>[^)]*)\))?)?\s*(?:\*/)?$""",
+    // The three attribute-scoped directives (onchange, tabstatechange, onreadystatecomplete) share
+    // identical grammar — <entity>, <form>, then a mandatory <attribute> token (always bare; attribute/tab
+    // logical names never contain spaces, so no quoting rules apply), then the optional
+    // [modifiers][Function[(params)]] tail. Merged into one regex with a `directive` capture instead of
+    // three byte-identical patterns — AttributeScopedDirectiveEvents maps the captured literal to its
+    // FormEventType. <form>'s bare-token fallback excludes a leading quote character (unlike
+    // OnLoadSaveAnnotationRegex, where nothing is required after <form>) — without that exclusion, a
+    // malformed quoted form with the mandatory <attribute> token missing lets the regex backtrack into
+    // splitting the quoted form itself into bogus <form>/<attribute> pieces instead of failing to match.
+    //
+    // OnReadyStateComplete's <attribute> is the IFRAME control's id. Maker Portal always renders "IFRAME_"
+    // as a fixed, non-editable prefix in the control's Name field, so the token may be written either with
+    // or without it (FormXmlEventSerializer.NormalizeIframeControlId resolves both to the same control).
+    static readonly Regex AttributeScopedAnnotationRegex = new(
+        """^(?://!?|/\*!)\s*flowline:(?<directive>onchange|tabstatechange|onreadystatecomplete)\s+(?<entity>\S+)\s+(?<form>"[^"]+"|'[^']+'|[^"'\s]\S*)\s+(?<attribute>\S+)(?:\s+""" + ModifierFragment + """(?<function>[A-Za-z_][\w.]*)?(?:\((?<params>[^)]*)\))?)?\s*(?:\*/)?$""",
         RegexOptions.Compiled);
 
-    // Tab TabStateChange — <attribute> is the tab's FormXml `name`. Same shape as OnChangeAnnotationRegex,
-    // one directive literal swapped in. Kept as its own regex (not merged into a shared alternation) per
-    // the readability precedent set for OnLoadSaveAnnotationRegex vs OnChangeAnnotationRegex.
-    static readonly Regex TabStateChangeAnnotationRegex = new(
-        """^(?://!?|/\*!)\s*flowline:tabstatechange\s+(?<entity>\S+)\s+(?<form>"[^"]+"|'[^']+'|[^"'\s]\S*)\s+(?<attribute>\S+)(?:\s+""" + ModifierFragment + """(?<function>[A-Za-z_][\w.]*)?(?:\((?<params>[^)]*)\))?)?\s*(?:\*/)?$""",
-        RegexOptions.Compiled);
-
-    // IFRAME OnReadyStateComplete — <attribute> is the IFRAME control's id. Maker Portal always renders
-    // "IFRAME_" as a fixed, non-editable prefix in the control's Name field, so the token may be written
-    // either with or without it (FormXmlEventSerializer.NormalizeIframeControlId resolves both to the same
-    // control).
-    static readonly Regex OnReadyStateCompleteAnnotationRegex = new(
-        """^(?://!?|/\*!)\s*flowline:onreadystatecomplete\s+(?<entity>\S+)\s+(?<form>"[^"]+"|'[^']+'|[^"'\s]\S*)\s+(?<attribute>\S+)(?:\s+""" + ModifierFragment + """(?<function>[A-Za-z_][\w.]*)?(?:\((?<params>[^)]*)\))?)?\s*(?:\*/)?$""",
-        RegexOptions.Compiled);
+    static readonly Dictionary<string, FormEventType> AttributeScopedDirectiveEvents = new(StringComparer.Ordinal)
+    {
+        ["onchange"] = FormEventType.OnChange,
+        ["tabstatechange"] = FormEventType.TabStateChange,
+        ["onreadystatecomplete"] = FormEventType.OnReadyStateComplete,
+    };
 
     // Prefix-only check: "does this line even intend to be a flowline annotation" — used to distinguish a
     // malformed annotation (warn) from an ordinary comment that just happens not to match (silently skip).
     static readonly Regex AnnotationIntentRegex = new(
         """^(?://!?|/\*!)\s*flowline:(?:on(?:load|save|change|readystatecomplete)|tabstatechange)\b""",
         RegexOptions.Compiled);
-
-    // The three attribute-scoped directives share identical match-handling shape (entity, form, attribute,
-    // optional modifiers/function/params) — only the regex and the resulting FormEventType differ, so
-    // ParseAnnotations loops over this table instead of repeating the extraction logic per directive.
-    static readonly (Regex Regex, FormEventType Event)[] AttributeScopedDirectives =
-    [
-        (OnChangeAnnotationRegex, FormEventType.OnChange),
-        (TabStateChangeAnnotationRegex, FormEventType.TabStateChange),
-        (OnReadyStateCompleteAnnotationRegex, FormEventType.OnReadyStateComplete)
-    ];
 
     // Extracts BulkEdit/Order from a match's repeated "modifier" captures. Last [order:N] wins if repeated;
     // any [bulkEdit] occurrence sets BulkEdit true. Semantic validation of these values is the planner's job.
@@ -124,28 +112,22 @@ public static class FormEventAnnotationParser
                 continue;
             }
 
-            var matchedAttributeScoped = false;
-            foreach (var (regex, evtType) in AttributeScopedDirectives)
+            var attributeScopedMatch = AttributeScopedAnnotationRegex.Match(trimmed);
+            if (attributeScopedMatch.Success)
             {
-                var match = regex.Match(trimmed);
-                if (!match.Success)
-                    continue;
-
-                var entity = match.Groups["entity"].Value;
-                var form = match.Groups["form"].Value.Trim('"', '\'');
-                var attribute = match.Groups["attribute"].Value;
-                var functionName = match.Groups["function"].Success ? match.Groups["function"].Value : null;
-                var parameters = match.Groups["params"].Success
-                    ? string.Join(",", match.Groups["params"].Value.Split(',').Select(p => p.Trim()))
+                var evtType = AttributeScopedDirectiveEvents[attributeScopedMatch.Groups["directive"].Value];
+                var entity = attributeScopedMatch.Groups["entity"].Value;
+                var form = attributeScopedMatch.Groups["form"].Value.Trim('"', '\'');
+                var attribute = attributeScopedMatch.Groups["attribute"].Value;
+                var functionName = attributeScopedMatch.Groups["function"].Success ? attributeScopedMatch.Groups["function"].Value : null;
+                var parameters = attributeScopedMatch.Groups["params"].Success
+                    ? string.Join(",", attributeScopedMatch.Groups["params"].Value.Split(',').Select(p => p.Trim()))
                     : null;
-                var (bulkEdit, order) = ExtractModifiers(match);
+                var (bulkEdit, order) = ExtractModifiers(attributeScopedMatch);
 
                 (annotations ??= []).Add(new FormEventAnnotation(entity, form, evtType, functionName, parameters, attribute, bulkEdit, order));
-                matchedAttributeScoped = true;
-                break;
-            }
-            if (matchedAttributeScoped)
                 continue;
+            }
 
             if (AnnotationIntentRegex.IsMatch(trimmed))
                 (malformed ??= []).Add(trimmed);

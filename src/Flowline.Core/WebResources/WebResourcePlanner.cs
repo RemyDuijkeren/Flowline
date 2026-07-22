@@ -27,21 +27,10 @@ public class WebResourcePlanner(IAnsiConsole console)
 
             if (snapshot.GlobalOrphans.TryGetValue(name, out var existing))
             {
-                var existingDeps = DependencyXmlSerializer.Deserialize(existing.DependencyXml);
-                var existingByName = ToDictByName(existingDeps);
-                var desiredDeps = BuildDesiredSet(local.DependsOn, existingByName, snapshot);
-
-                var depsChangedGlobal = DependenciesDiffer(desiredDeps, existingDeps);
-                if (existing.Content != local.Content || existing.DisplayName != local.DisplayName || depsChangedGlobal)
-                {
-                    existing.Entity["content"] = local.Content;
-                    existing.Entity["displayname"] = local.DisplayName;
-                    existing.Entity["webresourcetype"] = new OptionSetValue((int)local.Type);
-                    if (depsChangedGlobal)
-                        existing.Entity["dependencyxml"] = DependencyXmlSerializer.Serialize(desiredDeps);
-                    var reasonGlobal = DescribeChanges(existing.Content != local.Content, existing.DisplayName != local.DisplayName, depsChangedGlobal);
+                // clearDependencyXmlWhenUnchanged: false — unlike the exists-in-both branch below, a
+                // global orphan's Entity never already carries a stale dependencyxml value to clear.
+                if (TryBuildUpdate(local, existing, snapshot, clearDependencyXmlWhenUnchanged: false, out var reasonGlobal))
                     plan.Updates.Add(new WebResourcePlanAction(name, WebResourceAction.Update, Entity: existing.Entity, Id: existing.Id, Reason: reasonGlobal));
-                }
                 plan.AddsToSolution.Add(new WebResourcePlanAction(name, WebResourceAction.AddToSolution, Id: existing.Id, SolutionName: targetSolutionName));
                 continue;
             }
@@ -66,31 +55,8 @@ public class WebResourcePlanner(IAnsiConsole console)
             var local = snapshot.LocalResources[name];
             var remote = snapshot.DataverseResources[name];
 
-            var currentDeps = DependencyXmlSerializer.Deserialize(remote.DependencyXml);
-            var currentByName = ToDictByName(currentDeps);
-            var desiredDeps = BuildDesiredSet(local.DependsOn, currentByName, snapshot);
-            var depsChanged = DependenciesDiffer(desiredDeps, currentDeps);
-
-            var contentChanged = remote.Content != local.Content;
-            var displayNameChanged = remote.DisplayName != local.DisplayName;
-            if (!contentChanged && !displayNameChanged && !depsChanged)
-                continue;
-
-            remote.Entity["content"] = local.Content;
-            remote.Entity["displayname"] = local.DisplayName;
-            remote.Entity["webresourcetype"] = new OptionSetValue((int)local.Type);
-
-            if (depsChanged)
-                remote.Entity["dependencyxml"] = DependencyXmlSerializer.Serialize(desiredDeps);
-            else
-                remote.Entity.Attributes.Remove("dependencyxml");
-
-            plan.Updates.Add(new WebResourcePlanAction(
-                name,
-                WebResourceAction.Update,
-                Entity: remote.Entity,
-                Id: remote.Id,
-                Reason: DescribeChanges(contentChanged, displayNameChanged, depsChanged)));
+            if (TryBuildUpdate(local, remote, snapshot, clearDependencyXmlWhenUnchanged: true, out var reason))
+                plan.Updates.Add(new WebResourcePlanAction(name, WebResourceAction.Update, Entity: remote.Entity, Id: remote.Id, Reason: reason));
         }
 
         // Exist in Dataverse, but not in local, delete or remove them
@@ -121,6 +87,40 @@ public class WebResourcePlanner(IAnsiConsole console)
         }
 
         return plan;
+    }
+
+    // Shared by the global-orphan and exists-in-both branches above — both deserialize dv's current
+    // deps, build the desired set, compare content/displayname/deps, and stamp dv.Entity when anything
+    // changed. clearDependencyXmlWhenUnchanged is the one real difference between callers: the
+    // exists-in-both branch's dv.Entity already carries the current (now-stale-if-unrelated-fields-
+    // changed) dependencyxml value from the query and must clear it explicitly when deps themselves
+    // didn't change; a global orphan's Entity never carries one to clear.
+    bool TryBuildUpdate(
+        LocalWebResource local, DataverseWebResource dv, WebResourceSyncSnapshot snapshot,
+        bool clearDependencyXmlWhenUnchanged, out string reason)
+    {
+        var currentDeps = DependencyXmlSerializer.Deserialize(dv.DependencyXml);
+        var currentByName = ToDictByName(currentDeps);
+        var desiredDeps = BuildDesiredSet(local.DependsOn, currentByName, snapshot);
+        var depsChanged = DependenciesDiffer(desiredDeps, currentDeps);
+
+        var contentChanged = dv.Content != local.Content;
+        var displayNameChanged = dv.DisplayName != local.DisplayName;
+        reason = DescribeChanges(contentChanged, displayNameChanged, depsChanged);
+
+        if (!contentChanged && !displayNameChanged && !depsChanged)
+            return false;
+
+        dv.Entity["content"] = local.Content;
+        dv.Entity["displayname"] = local.DisplayName;
+        dv.Entity["webresourcetype"] = new OptionSetValue((int)local.Type);
+
+        if (depsChanged)
+            dv.Entity["dependencyxml"] = DependencyXmlSerializer.Serialize(desiredDeps);
+        else if (clearDependencyXmlWhenUnchanged)
+            dv.Entity.Attributes.Remove("dependencyxml");
+
+        return true;
     }
 
     IReadOnlySet<DependencyLibrary> BuildDesiredSet(

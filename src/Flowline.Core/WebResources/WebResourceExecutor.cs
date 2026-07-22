@@ -37,62 +37,33 @@ public class WebResourceExecutor(IAnsiConsole console)
         }
 
         // Update web resources — parallel, so lock needed for progress
-        if (plan.Updates.Count > 0)
-        {
-            await console.Progress().StartAsync(ctx =>
-                ExecuteBoundedParallelAsync(plan.Updates, MaxParallelism, async action =>
-                {
-                    try
-                    {
-                        await service.UpdateAsync(action.Entity!, cancellationToken).ConfigureAwait(false);
-                        lock (publishIds) publishIds.Add(action.Entity!.Id);
-                    }
-                    catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
-                }, ctx.AddTask("Updating web resources", maxValue: plan.Updates.Count), cancellationToken)).ConfigureAwait(false);
-            foreach (var a in plan.Updates) console.Verbose($"Web resource '{a.Name}' updated ({a.Reason})");
-            console.Ok($"{plan.Updates.Count} web resource(s) updated");
-        }
+        await RunPhaseAsync(plan.Updates, "Updating web resources", "updated",
+            a => $"Web resource '{a.Name}' updated ({a.Reason})", failures,
+            async action =>
+            {
+                await service.UpdateAsync(action.Entity!, cancellationToken).ConfigureAwait(false);
+                lock (publishIds) publishIds.Add(action.Entity!.Id);
+            }, cancellationToken).ConfigureAwait(false);
 
         // Add web resources to solution — parallel, so lock needed for progress
-        if (plan.AddsToSolution.Count > 0)
-        {
-            await console.Progress().StartAsync(ctx =>
-                ExecuteBoundedParallelAsync(plan.AddsToSolution, MaxParallelism, async action =>
-                {
-                    try { await AddToSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken).ConfigureAwait(false); }
-                    catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
-                }, ctx.AddTask("Adding web resources to solution", maxValue: plan.AddsToSolution.Count), cancellationToken)).ConfigureAwait(false);
-            foreach (var a in plan.AddsToSolution) console.Verbose($"Web resource '{a.Name}' added to solution");
-            console.Ok($"{plan.AddsToSolution.Count} web resource(s) added to solution");
-        }
+        await RunPhaseAsync(plan.AddsToSolution, "Adding web resources to solution", "added to solution",
+            a => $"Web resource '{a.Name}' added to solution", failures,
+            action => AddToSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
 
         if (!save)
         {
             // Delete web resources — parallel, so lock needed for progress
-            if (plan.Deletes.Count > 0)
-            {
-                await console.Progress().StartAsync(ctx =>
-                    ExecuteBoundedParallelAsync(plan.Deletes, MaxParallelism, async action =>
-                    {
-                        try { await service.DeleteAsync("webresource", action.Id!.Value, cancellationToken).ConfigureAwait(false); }
-                        catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
-                    }, ctx.AddTask("Deleting web resources", maxValue: plan.Deletes.Count), cancellationToken)).ConfigureAwait(false);
-                foreach (var a in plan.Deletes) console.Verbose($"Web resource '{a.Name}' deleted");
-                console.Ok($"{plan.Deletes.Count} web resource(s) deleted");
-            }
+            await RunPhaseAsync(plan.Deletes, "Deleting web resources", "deleted",
+                a => $"Web resource '{a.Name}' deleted", failures,
+                action => service.DeleteAsync("webresource", action.Id!.Value, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
 
             // Remove web resources from solution — parallel, so lock needed for progress
-            if (plan.RemovesFromSolution.Count > 0)
-            {
-                await console.Progress().StartAsync(ctx =>
-                    ExecuteBoundedParallelAsync(plan.RemovesFromSolution, MaxParallelism, async action =>
-                    {
-                        try { await RemoveFromSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken).ConfigureAwait(false); }
-                        catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
-                    }, ctx.AddTask("Removing web resources from solution", maxValue: plan.RemovesFromSolution.Count), cancellationToken)).ConfigureAwait(false);
-                foreach (var a in plan.RemovesFromSolution) console.Verbose($"Web resource '{a.Name}' removed from solution ({a.Reason})");
-                console.Ok($"{plan.RemovesFromSolution.Count} web resource(s) removed from solution");
-            }
+            await RunPhaseAsync(plan.RemovesFromSolution, "Removing web resources from solution", "removed from solution",
+                a => $"Web resource '{a.Name}' removed from solution ({a.Reason})", failures,
+                action => RemoveFromSolutionAsync(service, action.Id!.Value, action.SolutionName!, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -117,6 +88,31 @@ public class WebResourceExecutor(IAnsiConsole console)
                 console.Error($"'{name}' — {ex.Message}");
             throw new InvalidOperationException($"{failures.Count} web resource operation(s) failed.");
         }
+    }
+
+    // Shared by the Updates/AddsToSolution/Deletes/RemovesFromSolution phases — each is a
+    // progress-tracked bounded-parallel run over a WebResourcePlanAction list, differing only in the
+    // progress label, the summary verb, the per-item verbose message, and the operation itself.
+    async Task RunPhaseAsync(
+        List<WebResourcePlanAction> actions,
+        string progressLabel,
+        string verb,
+        Func<WebResourcePlanAction, string> verboseMessage,
+        List<(string Name, Exception Error)> failures,
+        Func<WebResourcePlanAction, Task> perform,
+        CancellationToken cancellationToken)
+    {
+        if (actions.Count == 0) return;
+
+        await console.Progress().StartAsync(ctx =>
+            ExecuteBoundedParallelAsync(actions, MaxParallelism, async action =>
+            {
+                try { await perform(action).ConfigureAwait(false); }
+                catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
+            }, ctx.AddTask(progressLabel, maxValue: actions.Count), cancellationToken)).ConfigureAwait(false);
+
+        foreach (var a in actions) console.Verbose(verboseMessage(a));
+        console.Ok($"{actions.Count} web resource(s) {verb}");
     }
 
     async Task<List<Guid>> ExecuteCreatesAsync(IOrganizationServiceAsync2 service,

@@ -226,6 +226,80 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         return (projectSln, remoteSln);
     }
 
+    // Standalone-mode counterparts of GetAndCheckEnvironmentInfoAsync/GetAndCheckSolutionAsync above —
+    // shared by PushCommand and GenerateCommand's --pluginFile/no-project paths, which take the
+    // environment URL and solution name directly instead of resolving them through ProjectConfig.
+    protected async Task<(EnvironmentInfo Info, PacProfile Profile)> GetAndCheckStandaloneEnvironmentAsync(
+        string environmentUrl, TSettings settings, CancellationToken cancellationToken, PacProfile? resolvedProfile = null)
+    {
+        var profile = resolvedProfile ?? await ProfileResolutionService.ResolveAsync(environmentUrl, cancellationToken);
+        EnvironmentInfo? env = await Console.Status().FlowlineSpinner().StartAsync(
+            $"Checking dev [bold]{environmentUrl}[/]...",
+            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(environmentUrl, profile, settings, cancellationToken));
+
+        if (env == null)
+            throw new FlowlineException(ExitCode.ConnectionFailed, "Dev environment not found — check the URL or your PAC login.");
+        if (env.Type == "Production")
+            throw new FlowlineException(ExitCode.ValidationFailed, "That's a Production environment — use a sandbox or dev instead.");
+
+        Console.Ok($"Dev: [bold]{env.DisplayName}[/] ({env.EnvironmentUrl})");
+        return (env, profile);
+    }
+
+    protected async Task<SolutionInfo> GetAndCheckStandaloneSolutionAsync(
+        string solutionName, string environmentUrl, TSettings settings, CancellationToken cancellationToken)
+    {
+        SolutionInfo? remoteSln = await Console.Status().FlowlineSpinner().StartAsync(
+            $"Looking up [bold]{solutionName}[/]...",
+            _ => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, solutionName, includeManaged: false, settings, cancellationToken));
+        if (remoteSln == null)
+            throw new FlowlineException(ExitCode.NotFound, $"Solution '{solutionName}' not found in that environment.");
+
+        Console.Ok($"Solution: [bold]{solutionName}[/] (managed: {remoteSln.IsManaged})");
+        return remoteSln;
+    }
+
+    // Shared pack-then-build validation for Clone and Sync — same pack (unmanaged, conditional managed)
+    // and Debug-build shape for both. buildRelease/skipBuild capture the one real behavioral difference
+    // between callers: Clone always validates a Release/managed build when IncludeManaged and has no
+    // skip switch; Sync never builds Release (managed validation happens at deploy) and honors --no-build.
+    // Returns a non-null exit code the caller should return immediately on pack/build failure, or null to
+    // continue.
+    protected async Task<int?> ValidatePackAndBuildAsync(
+        ProjectSolution projectSln, string dataverseSolutionFolder, string slnFolder,
+        bool buildRelease, bool skipBuild, CancellationToken cancellationToken)
+    {
+        // Pack the solution in pac to validate it
+        Logger.LogInformation("Validating pack: {SolutionName}", projectSln.UniqueName);
+        var artifactsFolder = Path.Combine(slnFolder, "artifacts");
+        if (await PacUtils.PackSolutionAsync(projectSln, dataverseSolutionFolder, artifactsFolder, false, _capture, cancellationToken) != 0)
+            return (int)ExitCode.BuildFailed;
+        if (projectSln.IncludeManaged &&
+            await PacUtils.PackSolutionAsync(projectSln, dataverseSolutionFolder, artifactsFolder, true, _capture, cancellationToken) != 0)
+        {
+            return (int)ExitCode.BuildFailed;
+        }
+
+        // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
+        Logger.LogInformation("Validating build: {SlnFolder}", slnFolder);
+        if (skipBuild)
+        {
+            Console.Skip("Build validation — skipping (--no-build active)");
+        }
+        else
+        {
+            if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, _capture, cancellationToken) != 0)
+                return (int)ExitCode.BuildFailed;
+            if (buildRelease && projectSln.IncludeManaged &&
+                await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Release, _capture, cancellationToken) != 0)
+            {
+                return (int)ExitCode.BuildFailed;
+            }
+        }
+
+        return null;
+    }
+
     // R8: project mode has exactly one configured solution — a passed [solution] argument no longer
     // selects among several, it just has to name the one that's already configured.
     internal static void ValidateSolutionMatchesConfig(string? inputName, string configuredUniqueName)

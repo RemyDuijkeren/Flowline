@@ -228,8 +228,8 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         SolutionInfo remoteSln;
         if (standaloneMode)
         {
-            await CheckStandaloneEnvironmentAsync(devUrl, resolvedProfile, settings, cancellationToken);
-            remoteSln = await GetStandaloneSolutionAsync(solutionName, devUrl, settings, cancellationToken);
+            await GetAndCheckStandaloneEnvironmentAsync(devUrl, settings, cancellationToken, resolvedProfile);
+            remoteSln = await GetAndCheckStandaloneSolutionAsync(solutionName, devUrl, settings, cancellationToken);
         }
         else
         {
@@ -244,40 +244,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
 
         var outputLabel = Path.GetRelativePath(RootFolder, modelsFolder).Replace('\\', '/');
 
-        XrmContextAuth? xrmContextAuth = null;
-        string? resolvedSecret = null;
-
-        if (resolvedGeneratorType is GeneratorType.XrmContext3)
-        {
-            if (effectiveProfile.IsUniversal)
-            {
-                if (!ConsoleHelper.IsInteractive(settings))
-                    throw new FlowlineException(ExitCode.NotAuthenticated,
-                        "xrmcontext3 uses ADAL browser OAuth for UNIVERSAL profiles — not available in non-interactive/CI mode. " +
-                        "Pass --client-id <CLIENT_ID> --client-secret <SECRET> to authenticate as a service principal. " +
-                        "Alternatively, upgrade to XrmContext v4 using --generator xrmcontext which produces a different output layout.");
-                xrmContextAuth = new XrmContextAuth.BrowserOAuth(DataverseConnector.PacCliAppId);
-            }
-            else if (effectiveProfile.IsServicePrincipal)
-            {
-                if (string.IsNullOrEmpty(effectiveProfile.ApplicationId))
-                    throw new FlowlineException(ExitCode.NotAuthenticated,
-                        "Service principal profile is missing ApplicationId — pass --client-id <CLIENT_ID> --client-secret <SECRET> to supply credentials directly.");
-                resolvedSecret = await secretResolver.ResolveAsync(effectiveProfile, settings.ClientSecret);
-                xrmContextAuth = new XrmContextAuth.ClientSecret(effectiveProfile.ApplicationId, resolvedSecret);
-            }
-            else
-            {
-                throw new FlowlineException(ExitCode.NotAuthenticated,
-                    $"PAC auth profile kind '{effectiveProfile.Kind}' is not supported by xrmcontext3 — switch to a service principal or UNIVERSAL profile, or pass --client-id <CLIENT_ID> --client-secret <SECRET>. " +
-                    $"run: pac auth select");
-            }
-        }
-        else if (resolvedGeneratorType is GeneratorType.XrmContext && effectiveProfile.IsServicePrincipal)
-        {
-            // XrmContext v4 SP: resolve secret for env injection (U6 uses context.ResolvedSecret)
-            resolvedSecret = await secretResolver.ResolveAsync(effectiveProfile, settings.ClientSecret);
-        }
+        var (xrmContextAuth, resolvedSecret) = await ResolveXrmContextAuthAsync(resolvedGeneratorType, effectiveProfile, settings);
 
         // --- Dispatch generator ---
         var generationContext = new GenerationContext(
@@ -315,6 +282,73 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         Logger.LogInformation("Generator ran in {Duration}", FormatDuration(sw.Elapsed));
 
         // --- Shared tail (all generators) ---
+        ReplaceModelsFolderWithGenerated(tempFolder, modelsFolder);
+
+        // Save to .flowline — project mode only, skipped when --output overrides the path
+        if (!standaloneMode && projectSln != null && string.IsNullOrWhiteSpace(settings.Output))
+        {
+            projectSln.Generate ??= new GenerateConfig();
+            if (namespaceWasDerived)
+                projectSln.Generate.Namespace = modelNamespace;
+            projectSln.Generate.Generator = resolvedGeneratorType;
+            Config!.Save(RootFolder);
+        }
+
+        Console.Done($"Types generated into [bold]{outputLabel}[/] in {FormatDuration(sw.Elapsed)} ᕦ(ò_óˇ)ᕤ");
+
+        return 0;
+    }
+
+    private bool IsStandaloneMode() =>
+        !File.Exists(Path.Combine(RootFolder, ProjectConfig.s_configFileName));
+
+    async Task<(XrmContextAuth? XrmContextAuth, string? ResolvedSecret)> ResolveXrmContextAuthAsync(
+        GeneratorType generatorType, PacProfile effectiveProfile, Settings settings)
+    {
+        XrmContextAuth? xrmContextAuth = null;
+        string? resolvedSecret = null;
+
+        if (generatorType is GeneratorType.XrmContext3)
+        {
+            if (effectiveProfile.IsUniversal)
+            {
+                if (!ConsoleHelper.IsInteractive(settings))
+                    throw new FlowlineException(ExitCode.NotAuthenticated,
+                        "xrmcontext3 uses ADAL browser OAuth for UNIVERSAL profiles — not available in non-interactive/CI mode. " +
+                        "Pass --client-id <CLIENT_ID> --client-secret <SECRET> to authenticate as a service principal. " +
+                        "Alternatively, upgrade to XrmContext v4 using --generator xrmcontext which produces a different output layout.");
+                xrmContextAuth = new XrmContextAuth.BrowserOAuth(DataverseConnector.PacCliAppId);
+            }
+            else if (effectiveProfile.IsServicePrincipal)
+            {
+                if (string.IsNullOrEmpty(effectiveProfile.ApplicationId))
+                    throw new FlowlineException(ExitCode.NotAuthenticated,
+                        "Service principal profile is missing ApplicationId — pass --client-id <CLIENT_ID> --client-secret <SECRET> to supply credentials directly.");
+                resolvedSecret = await secretResolver.ResolveAsync(effectiveProfile, settings.ClientSecret);
+                xrmContextAuth = new XrmContextAuth.ClientSecret(effectiveProfile.ApplicationId, resolvedSecret);
+            }
+            else
+            {
+                throw new FlowlineException(ExitCode.NotAuthenticated,
+                    $"PAC auth profile kind '{effectiveProfile.Kind}' is not supported by xrmcontext3 — switch to a service principal or UNIVERSAL profile, or pass --client-id <CLIENT_ID> --client-secret <SECRET>. " +
+                    $"run: pac auth select");
+            }
+        }
+        else if (generatorType is GeneratorType.XrmContext && effectiveProfile.IsServicePrincipal)
+        {
+            // XrmContext v4 SP: resolve secret for env injection (U6 uses context.ResolvedSecret)
+            resolvedSecret = await secretResolver.ResolveAsync(effectiveProfile, settings.ClientSecret);
+        }
+
+        return (xrmContextAuth, resolvedSecret);
+    }
+
+    // Moves the generator's temp output into place as the real models folder: preserves any
+    // non-generator-owned user file already there, deletes now-empty leftover directories, then swaps
+    // tempFolder in. Shared by every generator — XrmContext3, XrmContext v4, and Pac all land here the
+    // same way once RunAsync returns.
+    void ReplaceModelsFolderWithGenerated(string tempFolder, string modelsFolder)
+    {
         try
         {
             var generatorPaths = Directory.EnumerateFiles(tempFolder, "*", SearchOption.AllDirectories)
@@ -328,7 +362,6 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
 
             if (Directory.Exists(modelsFolder))
             {
-
                 foreach (var file in Directory.EnumerateFiles(modelsFolder, "*", SearchOption.AllDirectories))
                 {
                     var rel = Path.GetRelativePath(modelsFolder, file);
@@ -351,50 +384,6 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
                 Directory.Delete(tempFolder, recursive: true);
             throw;
         }
-
-        // Save to .flowline — project mode only, skipped when --output overrides the path
-        if (!standaloneMode && projectSln != null && string.IsNullOrWhiteSpace(settings.Output))
-        {
-            projectSln.Generate ??= new GenerateConfig();
-            if (namespaceWasDerived)
-                projectSln.Generate.Namespace = modelNamespace;
-            projectSln.Generate.Generator = resolvedGeneratorType;
-            Config!.Save(RootFolder);
-        }
-
-        Console.Done($"Types generated into [bold]{outputLabel}[/] in {FormatDuration(sw.Elapsed)} ᕦ(ò_óˇ)ᕤ");
-
-        return 0;
-    }
-
-    private bool IsStandaloneMode() =>
-        !File.Exists(Path.Combine(RootFolder, ProjectConfig.s_configFileName));
-
-    private async Task CheckStandaloneEnvironmentAsync(string devUrl, PacProfile profile, Settings settings, CancellationToken cancellationToken)
-    {
-        EnvironmentInfo? env = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Checking dev [bold]{devUrl}[/]...",
-            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(devUrl, profile, settings, cancellationToken));
-
-        if (env == null)
-            throw new FlowlineException(ExitCode.ConnectionFailed, "Dev environment not found — check the URL or your PAC login.");
-        if (env.Type == "Production")
-            throw new FlowlineException(ExitCode.ValidationFailed, "That's a Production environment — use a sandbox or dev instead.");
-
-        Console.Ok($"Dev: [bold]{env.DisplayName}[/] ({env.EnvironmentUrl})");
-    }
-
-    private async Task<SolutionInfo> GetStandaloneSolutionAsync(string solutionName, string environmentUrl, Settings settings, CancellationToken cancellationToken)
-    {
-        SolutionInfo? remoteSln = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Looking up [bold]{solutionName}[/]...",
-            _ => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, solutionName, includeManaged: false, settings, cancellationToken));
-
-        if (remoteSln == null)
-            throw new FlowlineException(ExitCode.NotFound, $"Solution '{solutionName}' not found in that environment.");
-
-        Console.Ok($"Solution: [bold]{solutionName}[/] (managed: {remoteSln.IsManaged})");
-        return remoteSln;
     }
 
     private static bool IsGeneratorOwned(string filePath) =>

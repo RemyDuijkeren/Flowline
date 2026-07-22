@@ -85,14 +85,11 @@ public class PluginService(IAnsiConsole console)
             return true;
         }
 
-        await console.Progress()
-            .StartAsync(async ctx =>
-            {
-                var task = ctx.AddTask("Updating plugin assembly", maxValue: 1);
-                await UpdateAssemblyContentAsync(service, existing, metadata, cancellationToken).ConfigureAwait(false);
-                task.Increment(1);
-            })
-            .ConfigureAwait(false);
+        await RunWithProgressAsync("Updating plugin assembly", 1, async task =>
+        {
+            await UpdateAssemblyContentAsync(service, existing, metadata, cancellationToken).ConfigureAwait(false);
+            task.Increment(1);
+        }).ConfigureAwait(false);
         console.Ok($"Assembly [bold]{metadata.Name}[/] ({metadata.Version}) updated");
         return true;
     }
@@ -206,40 +203,27 @@ public class PluginService(IAnsiConsole console)
         }
         else
         {
-            await console.Progress()
-                .StartAsync(async ctx =>
-                {
-                    var task = ctx.AddTask("Deleting stale plugin components", maxValue: plan.TotalDeletes);
-                    await _executor.ExecuteDeletesAsync(service, plan, solutionName, false, cancellationToken, task).ConfigureAwait(false);
-                })
-                .ConfigureAwait(false);
+            await RunWithProgressAsync("Deleting stale plugin components", plan.TotalDeletes,
+                task => _executor.ExecuteDeletesAsync(service, plan, solutionName, false, cancellationToken, task)).ConfigureAwait(false);
         }
         if (plan.TotalDeletes > 0) console.Ok($"{plan.TotalDeletes} stale component(s) deleted");
 
         // Phase 5: Update assembly content — must happen before new plugin types are registered
         if (needsUpdate)
         {
-            await console.Progress()
-                .StartAsync(async ctx =>
-                {
-                    var task = ctx.AddTask("Updating plugin assembly", maxValue: 1);
-                    await UpdateAssemblyContentAsync(service, assembly, metadata, cancellationToken).ConfigureAwait(false);
-                    task.Increment(1);
-                })
-                .ConfigureAwait(false);
+            await RunWithProgressAsync("Updating plugin assembly", 1, async task =>
+            {
+                await UpdateAssemblyContentAsync(service, assembly, metadata, cancellationToken).ConfigureAwait(false);
+                task.Increment(1);
+            }).ConfigureAwait(false);
             console.Ok($"Updated assembly content for [bold]{metadata.Name}[/]");
         }
 
         // Phase 6: Execute upserts and add to solution
         if (plan.TotalUpserts > 0)
         {
-            await console.Progress()
-                .StartAsync(async ctx =>
-                {
-                    var task = ctx.AddTask("Syncing plugin components", maxValue: plan.TotalUpserts);
-                    await _executor.ExecuteUpsertsAsync(service, plan, solutionName, cancellationToken, task).ConfigureAwait(false);
-                })
-                .ConfigureAwait(false);
+            await RunWithProgressAsync("Syncing plugin components", plan.TotalUpserts,
+                task => _executor.ExecuteUpsertsAsync(service, plan, solutionName, cancellationToken, task)).ConfigureAwait(false);
         }
         else
         {
@@ -250,13 +234,8 @@ public class PluginService(IAnsiConsole console)
         var addToSolutionCount = CountAddToSolutionComponents(plan);
         if (addToSolutionCount > 0)
         {
-            await console.Progress()
-                .StartAsync(async ctx =>
-                {
-                    var task = ctx.AddTask("Adding plugin components to solution", maxValue: addToSolutionCount);
-                    await _executor.ExecuteAddToSolutionAsync(service, plan, cancellationToken, task).ConfigureAwait(false);
-                })
-                .ConfigureAwait(false);
+            await RunWithProgressAsync("Adding plugin components to solution", addToSolutionCount,
+                task => _executor.ExecuteAddToSolutionAsync(service, plan, cancellationToken, task)).ConfigureAwait(false);
         }
         else
         {
@@ -901,7 +880,7 @@ public class PluginService(IAnsiConsole console)
                 case RunMode.DryRun:
                     var blockNote = !forceRecreateAssembly ? " — would be blocked without --force recreate-assembly" : "";
                     console.Warning($"Assembly [bold]{metadata.Name}[/] identity changed ({reason}){blockNote} — would delete and recreate");
-                    WriteCascadePreview(oldSnapshot);
+                    WriteCascade(oldSnapshot, dryRun: true);
                     return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false, cascadeDeleteCount);
                 case RunMode.NoDelete:
                     console.Error($"Assembly [bold]{metadata.Name}[/] identity changed ({reason}) — Dataverse needs a delete and recreate. Re-run without --no-delete to apply, or use --dry-run to preview.");
@@ -909,7 +888,7 @@ public class PluginService(IAnsiConsole console)
                 case RunMode.Normal:
                     var forceNote = isDowngrade ? " (version downgrade, --force recreate-assembly)" : " (--force recreate-assembly)";
                     console.Warning($"Assembly [bold]{metadata.Name}[/] identity changed ({reason}){forceNote} — deleting and recreating all registrations");
-                    WriteCascadeNormal(oldSnapshot);
+                    WriteCascade(oldSnapshot, dryRun: false);
                     await service.DeleteAsync("pluginassembly", existing.Id, cancellationToken).ConfigureAwait(false);
                     break;
                 default:
@@ -984,24 +963,27 @@ public class PluginService(IAnsiConsole console)
             });
     }
 
-    void WriteCascadePreview(RegistrationSnapshot snapshot)
-    {
-        foreach (var name in snapshot.PluginTypes.Keys)
-            console.Info($"  [red]-[/] Plugin type '{name}' — would delete (cascade)");
-        foreach (var step in snapshot.Steps)
-            console.Info($"  [red]-[/] Step '{step.GetAttributeValue<string>("name")}' — would delete (cascade)");
-        foreach (var image in snapshot.Images)
-            console.Info($"  [red]-[/] Image '{image.GetAttributeValue<string>("name")}' — would delete (cascade)");
-    }
+    // Shared by every progress-tracked phase below — each adds one task to a console.Progress() run and
+    // awaits a body that receives it, differing only in the label, the task's maxValue, and the body.
+    async Task RunWithProgressAsync(string label, int maxValue, Func<ProgressTask, Task> body) =>
+        await console.Progress()
+            .StartAsync(async ctx =>
+            {
+                var task = ctx.AddTask(label, maxValue: maxValue);
+                await body(task).ConfigureAwait(false);
+            })
+            .ConfigureAwait(false);
 
-    void WriteCascadeNormal(RegistrationSnapshot snapshot)
+    void WriteCascade(RegistrationSnapshot snapshot, bool dryRun)
     {
+        var prefix = dryRun ? "  [red]-[/] " : "";
+        var suffix = dryRun ? " — would delete (cascade)" : " — cascade delete";
         foreach (var name in snapshot.PluginTypes.Keys)
-            console.Info($"Plugin type '{name}' — cascade delete");
+            console.Info($"{prefix}Plugin type '{name}'{suffix}");
         foreach (var step in snapshot.Steps)
-            console.Info($"Step '{step.GetAttributeValue<string>("name")}' — cascade delete");
+            console.Info($"{prefix}Step '{step.GetAttributeValue<string>("name")}'{suffix}");
         foreach (var image in snapshot.Images)
-            console.Info($"Image '{image.GetAttributeValue<string>("name")}' — cascade delete");
+            console.Info($"{prefix}Image '{image.GetAttributeValue<string>("name")}'{suffix}");
     }
 
     void WritePlanTree(PluginAssemblyMetadata metadata, bool needsUpdate, RegistrationPlan plan, RunMode runMode, int cascadeDeleteCount = 0)
@@ -1466,12 +1448,7 @@ public class PluginService(IAnsiConsole console)
     }
 
     static int CountAddToSolutionComponents(RegistrationPlan plan) =>
-        plan.PluginTypes.AddSolutionComponents.Count
-        + plan.Steps.AddSolutionComponents.Count
-        + plan.Images.AddSolutionComponents.Count
-        + plan.CustomApis.AddSolutionComponents.Count
-        + plan.RequestParams.AddSolutionComponents.Count
-        + plan.ResponseProps.AddSolutionComponents.Count;
+        plan.AllPlans.Sum(p => p.AddSolutionComponents.Count);
 
     static bool SameReference(EntityReference? reference, Guid id) =>
         reference != null && reference.Id == id;

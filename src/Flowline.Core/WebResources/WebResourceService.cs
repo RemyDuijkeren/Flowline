@@ -68,20 +68,14 @@ public class WebResourceService(IAnsiConsole console)
     static Tree BuildResourceTree(string label, IEnumerable<string> names)
     {
         var tree = new Tree($"[dim]{label}[/]") { Style = Style.Parse("dim") };
-
-        foreach (var group in names
-            .Select(n => n.Split('/'))
-            .GroupBy(p => p[0], StringComparer.OrdinalIgnoreCase)
-            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
-        {
-            var folderNode = tree.AddNode($"[dim]{Markup.Escape(group.Key)}[/]");
-            AddTreeChildren(folderNode, group.Select(p => p[1..]).Where(p => p.Length > 0).ToList());
-        }
-
+        AddTreeChildren(tree, names.Select(n => n.Split('/')).ToList());
         return tree;
     }
 
-    static void AddTreeChildren(TreeNode parent, List<string[]> paths)
+    // Tree and TreeNode both implement IHasTreeNodes.AddNode — one recursive method builds both the root
+    // level and every nested folder level. Folders (grouped by first path segment) are added before
+    // files at every level, root included, for a consistent nested-vs-top-level ordering.
+    static void AddTreeChildren(IHasTreeNodes parent, List<string[]> paths)
     {
         foreach (var folder in paths
             .Where(p => p.Length > 1)

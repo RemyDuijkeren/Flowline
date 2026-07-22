@@ -692,130 +692,106 @@ public class PluginPlanner(IAnsiConsole console)
 
     ActionPlan PlanRequestParameters(
         RegistrationSnapshot snapshot, string prefix, Guid customApiId, string customApiName,
-        List<RequestParameterMetadata> asmRequestParams, string solutionName)
-    {
-        ActionPlan plan = new();
-
-        var dvRequestParams = snapshot.RequestParams
-            .Where(r => r.GetAttributeValue<EntityReference>("customapiid")?.Id == customApiId)
-            .ToDictionary(r => r.GetAttributeValue<string>("uniquename"), r => r, StringComparer.OrdinalIgnoreCase)
-            .AsReadOnly();
-
-        foreach (var asmParam in asmRequestParams)
-        {
-            if (!dvRequestParams.TryGetValue(asmParam.UniqueName, out var dvParam))
-            {
-                plan.Upserts.Add(new UpsertAction(asmParam.UniqueName,
-                    NewRequestParameterEntity(asmParam, customApiId), IsCreate: true, SolutionName: solutionName));
-                continue;
-            }
-
-            // type, isoptional, logicalentityname: immutable after creation despite IsValidForUpdate=true in
-            // entity metadata. Platform ignores updates to these fields. Must delete+recreate on change.
-            // Source: https://learn.microsoft.com/power-apps/developer/data-platform/create-custom-api-solution#update-a-custom-api-in-a-solution
-            var immutableChanged =
-                (dvParam.GetAttributeValue<OptionSetValue>("type")?.Value ?? 0) != asmParam.Type ||
-                dvParam.GetAttributeValue<bool>("isoptional") != asmParam.IsOptional ||
-                dvParam.GetAttributeValue<string>("logicalentityname") != asmParam.EntityName;
-
-            if (immutableChanged)
-            {
-                console.Warning($"Request parameter '{asmParam.DisplayName}' has immutable field changes — deleting and recreating.");
-                plan.Deletes.Add(new DeleteAction(asmParam.UniqueName, "customapirequestparameter", dvParam.Id));
-                plan.Upserts.Add(new UpsertAction(asmParam.UniqueName,
-                    NewRequestParameterEntity(asmParam, customApiId), IsCreate: true, SolutionName: solutionName));
-                continue;
-            }
-
-            if (!IsInSolution(snapshot, dvParam.Id, solutionName))
-            {
-                plan.AddSolutionComponents.Add(
-                    new AddToSolutionAction(asmParam.UniqueName, "customapirequestparameter", dvParam.Id, solutionName,
-                        snapshot.ComponentTypeById[dvParam.Id]));
-            }
-
-            var mutableChanged =
-                dvParam.GetAttributeValue<string>("name") != asmParam.Name ||
-                dvParam.GetAttributeValue<string>("displayname") != asmParam.DisplayName ||
-                dvParam.GetAttributeValue<string>("description") != asmParam.Description;
-
-            if (!mutableChanged) continue;
-
-            dvParam["name"]        = asmParam.Name;
-            dvParam["displayname"] = asmParam.DisplayName;
-            dvParam["description"] = asmParam.Description;
-            plan.Upserts.Add(new UpsertAction(asmParam.UniqueName, dvParam, IsCreate: false));
-        }
-
-        foreach (var obsoleteParam in dvRequestParams.Where(r => asmRequestParams.All(p => p.UniqueName != r.Key)))
-        {
-            var name = obsoleteParam.Value.GetAttributeValue<string>("uniquename");
-            plan.Deletes.Add(new DeleteAction(name, "customapirequestparameter", obsoleteParam.Value.Id));
-        }
-
-        return plan;
-    }
+        List<RequestParameterMetadata> asmRequestParams, string solutionName) =>
+        PlanCustomApiChildComponents(
+            snapshot, snapshot.RequestParams, customApiId, "customapirequestparameter",
+            asmRequestParams, solutionName, warningLabel: "Request parameter",
+            getUniqueName: p => p.UniqueName,
+            getName: p => p.Name,
+            getDisplayName: p => p.DisplayName,
+            getDescription: p => p.Description,
+            getType: p => p.Type,
+            getEntityName: p => p.EntityName,
+            newEntity: p => NewRequestParameterEntity(p, customApiId),
+            // isoptional: immutable after creation despite IsValidForUpdate=true in entity metadata (see
+            // shared type/logicalentityname immutability comment on PlanCustomApiChildComponents) — this
+            // extra term only applies to request parameters, not response properties.
+            extraImmutableChanged: (p, dvParam) => dvParam.GetAttributeValue<bool>("isoptional") != p.IsOptional);
 
     ActionPlan PlanResponseProperties(
         RegistrationSnapshot snapshot, string prefix, Guid customApiId, string customApiName,
-        List<ResponsePropertyMetadata> asmResponseProps, string solutionName)
+        List<ResponsePropertyMetadata> asmResponseProps, string solutionName) =>
+        PlanCustomApiChildComponents(
+            snapshot, snapshot.ResponseProps, customApiId, "customapiresponseproperty",
+            asmResponseProps, solutionName, warningLabel: "Response Property",
+            getUniqueName: p => p.UniqueName,
+            getName: p => p.Name,
+            getDisplayName: p => p.DisplayName,
+            getDescription: p => p.Description,
+            getType: p => p.Type,
+            getEntityName: p => p.EntityName,
+            newEntity: p => NewResponsePropertyEntity(p, customApiId));
+
+    // Shared by PlanRequestParameters and PlanResponseProperties — customapirequestparameter and
+    // customapiresponseproperty are structurally identical child components (same
+    // create/immutable-recreate/add-to-solution/mutable-update/delete-obsolete shape), differing only in
+    // table name, an optional extra immutability term (request parameters' isoptional), and how each
+    // asmItem's fields and replacement entity are read/built.
+    //
+    // type, logicalentityname: immutable after creation despite IsValidForUpdate=true in entity metadata.
+    // Platform ignores updates to these fields. Must delete+recreate on change.
+    // Source: https://learn.microsoft.com/power-apps/developer/data-platform/create-custom-api-solution#update-a-custom-api-in-a-solution
+    ActionPlan PlanCustomApiChildComponents<T>(
+        RegistrationSnapshot snapshot, IEnumerable<Entity> dvRows, Guid customApiId, string entityLogicalName,
+        List<T> asmItems, string solutionName, string warningLabel,
+        Func<T, string> getUniqueName, Func<T, string?> getName, Func<T, string?> getDisplayName,
+        Func<T, string?> getDescription, Func<T, int> getType, Func<T, string?> getEntityName,
+        Func<T, Entity> newEntity, Func<T, Entity, bool>? extraImmutableChanged = null)
     {
         ActionPlan plan = new();
 
-        var dvResponseProps = snapshot.ResponseProps
+        var dvItems = dvRows
             .Where(r => r.GetAttributeValue<EntityReference>("customapiid")?.Id == customApiId)
             .ToDictionary(r => r.GetAttributeValue<string>("uniquename"), r => r, StringComparer.OrdinalIgnoreCase)
             .AsReadOnly();
 
-        foreach (var asmProp in asmResponseProps)
+        foreach (var asmItem in asmItems)
         {
-            if (!dvResponseProps.TryGetValue(asmProp.UniqueName, out var dvProp))
+            var uniqueName = getUniqueName(asmItem);
+
+            if (!dvItems.TryGetValue(uniqueName, out var dvItem))
             {
-                plan.Upserts.Add(new UpsertAction(asmProp.UniqueName,
-                    NewResponsePropertyEntity(asmProp, customApiId), IsCreate: true, SolutionName: solutionName));
+                plan.Upserts.Add(new UpsertAction(uniqueName, newEntity(asmItem), IsCreate: true, SolutionName: solutionName));
                 continue;
             }
 
-            // type, logicalentityname: immutable after creation despite IsValidForUpdate=true in entity metadata.
-            // Platform ignores updates to these fields. Must delete+recreate on change.
-            // Source: https://learn.microsoft.com/power-apps/developer/data-platform/create-custom-api-solution#update-a-custom-api-in-a-solution
             var immutableChanged =
-                (dvProp.GetAttributeValue<OptionSetValue>("type")?.Value ?? 0) != asmProp.Type ||
-                dvProp.GetAttributeValue<string>("logicalentityname") != asmProp.EntityName;
+                (dvItem.GetAttributeValue<OptionSetValue>("type")?.Value ?? 0) != getType(asmItem) ||
+                dvItem.GetAttributeValue<string>("logicalentityname") != getEntityName(asmItem) ||
+                (extraImmutableChanged?.Invoke(asmItem, dvItem) ?? false);
 
             if (immutableChanged)
             {
-                console.Warning($"Response Property '{asmProp.DisplayName}' has immutable field changes — deleting and recreating.");
-                plan.Deletes.Add(new DeleteAction(asmProp.UniqueName, "customapiresponseproperty", dvProp.Id));
-                plan.Upserts.Add(new UpsertAction(asmProp.UniqueName,
-                    NewResponsePropertyEntity(asmProp, customApiId), IsCreate: true, SolutionName: solutionName));
+                console.Warning($"{warningLabel} '{getDisplayName(asmItem)}' has immutable field changes — deleting and recreating.");
+                plan.Deletes.Add(new DeleteAction(uniqueName, entityLogicalName, dvItem.Id));
+                plan.Upserts.Add(new UpsertAction(uniqueName, newEntity(asmItem), IsCreate: true, SolutionName: solutionName));
                 continue;
             }
 
-            if (!IsInSolution(snapshot, dvProp.Id, solutionName))
+            if (!IsInSolution(snapshot, dvItem.Id, solutionName))
             {
                 plan.AddSolutionComponents.Add(
-                    new AddToSolutionAction(asmProp.UniqueName, "customapiresponseproperty", dvProp.Id, solutionName,
-                        snapshot.ComponentTypeById[dvProp.Id]));
+                    new AddToSolutionAction(uniqueName, entityLogicalName, dvItem.Id, solutionName,
+                        snapshot.ComponentTypeById[dvItem.Id]));
             }
 
             var mutableChanged =
-                dvProp.GetAttributeValue<string>("name") != asmProp.Name ||
-                dvProp.GetAttributeValue<string>("displayname") != asmProp.DisplayName ||
-                dvProp.GetAttributeValue<string>("description") != asmProp.Description;
+                dvItem.GetAttributeValue<string>("name") != getName(asmItem) ||
+                dvItem.GetAttributeValue<string>("displayname") != getDisplayName(asmItem) ||
+                dvItem.GetAttributeValue<string>("description") != getDescription(asmItem);
 
             if (!mutableChanged) continue;
 
-            dvProp["name"]        = asmProp.Name;
-            dvProp["displayname"] = asmProp.DisplayName;
-            dvProp["description"] = asmProp.Description;
-            plan.Upserts.Add(new UpsertAction(asmProp.UniqueName, dvProp, IsCreate: false));
+            dvItem["name"]        = getName(asmItem);
+            dvItem["displayname"] = getDisplayName(asmItem);
+            dvItem["description"] = getDescription(asmItem);
+            plan.Upserts.Add(new UpsertAction(uniqueName, dvItem, IsCreate: false));
         }
 
-        foreach (var obsoleteProp in dvResponseProps.Where(r => asmResponseProps.All(p => p.UniqueName != r.Key)))
+        foreach (var obsolete in dvItems.Where(r => asmItems.All(a => getUniqueName(a) != r.Key)))
         {
-            var name = obsoleteProp.Value.GetAttributeValue<string>("uniquename");
-            plan.Deletes.Add(new DeleteAction(name, "customapiresponseproperty", obsoleteProp.Value.Id));
+            var name = obsolete.Value.GetAttributeValue<string>("uniquename");
+            plan.Deletes.Add(new DeleteAction(name, entityLogicalName, obsolete.Value.Id));
         }
 
         return plan;

@@ -521,7 +521,7 @@ public class SolutionChangeSummary
         try
         {
             // git show preserves the UTF-8 BOM; XDocument.Parse rejects a leading BOM
-            var doc = XDocument.Parse(xml.TrimStart('﻿'));
+            var doc = XmlHelpers.Parse(xml);
             var title = xmlRead switch
             {
                 XmlRead.StepName or XmlRead.WorkflowName => (string?)doc.Root?.Attribute("Name"),
@@ -567,7 +567,7 @@ public class SolutionChangeSummary
                 .Add("show").Add($"HEAD:{gitPath}"))
             .WithValidation(CommandResultValidation.None)
             .ExecuteBufferedAsync(ct);
-        return result.ExitCode == 0 ? result.StandardOutput.TrimStart('﻿') : null;
+        return result.ExitCode == 0 ? XmlHelpers.StripBom(result.StandardOutput) : null;
     }
 
     static async Task<string?> GetCurrentXmlAsync(string relPath, string srcFolder, CancellationToken ct)
@@ -611,7 +611,7 @@ public class SolutionChangeSummary
             ParseXmlElements(xml, "cell", e => (string?)e.Attribute("name"))?.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase)
             ?? [];
 
-        XDocument? ParseDoc(string? xml) { try { return xml != null ? XDocument.Parse(xml.TrimStart('﻿')) : null; } catch { return null; } }
+        XDocument? ParseDoc(string? xml) { try { return xml != null ? XmlHelpers.Parse(xml) : null; } catch { return null; } }
 
         var oldDoc = ParseDoc(oldXml);
         var newDoc = ParseDoc(newXml);
@@ -729,7 +729,7 @@ public class SolutionChangeSummary
         if (xml == null) return null;
         try
         {
-            var doc = XDocument.Parse(xml.TrimStart('﻿'));
+            var doc = XmlHelpers.Parse(xml);
             return doc.Descendants(elementName)
                 .Select(e => (key: keySelector(e), el: e))
                 .Where(t => !string.IsNullOrEmpty(t.key))
@@ -742,9 +742,7 @@ public class SolutionChangeSummary
 
     static string? GetLocalizedName(XDocument doc)
     {
-        var ln = doc.Descendants("LocalizedName")
-            .FirstOrDefault(e => (string?)e.Attribute("languagecode") == "1033")
-            ?? doc.Descendants("LocalizedName").FirstOrDefault();
+        var ln = XmlHelpers.PreferLanguage(doc.Descendants("LocalizedName"));
         return (string?)ln?.Attribute("description");
     }
 }

@@ -4,6 +4,7 @@ using System.Xml;
 using System.Xml.Linq;
 using Flowline.Core;
 using Flowline.Core.Console;
+using Flowline.Utils;
 using Spectre.Console;
 
 namespace Flowline.Services;
@@ -192,7 +193,7 @@ public class DataverseContextGenerator(IAnsiConsole console)
         if (xml == null) return null;
         try
         {
-            var doc = XDocument.Parse(xml.TrimStart('﻿'));
+            var doc = XmlHelpers.Parse(xml);
             var manifest = doc.Root?.Element("SolutionManifest");
             if (manifest == null) return null;
 
@@ -221,7 +222,7 @@ public class DataverseContextGenerator(IAnsiConsole console)
         if (xml == null) return string.Empty;
         try
         {
-            var doc = XDocument.Parse(xml.TrimStart('﻿'));
+            var doc = XmlHelpers.Parse(xml);
             return (string?)doc.Root?.Element("SolutionManifest")?.Element("Publisher")?.Element("CustomizationPrefix") ?? string.Empty;
         }
         catch (XmlException) { return string.Empty; }
@@ -234,7 +235,7 @@ public class DataverseContextGenerator(IAnsiConsole console)
         if (xml == null) return null;
         try
         {
-            var doc = XDocument.Parse(xml.TrimStart('﻿'));
+            var doc = XmlHelpers.Parse(xml);
             // Root-level <Name LocalizedName="Account">account</Name> holds names for all entity XML shapes
             var rootNameEl  = doc.Root?.Element("Name");
             var logicalName = (string?)rootNameEl ?? string.Empty;
@@ -317,7 +318,7 @@ public class DataverseContextGenerator(IAnsiConsole console)
         if (xml == null) return null;
         try
         {
-            var doc = XDocument.Parse(xml.TrimStart('﻿'));
+            var doc = XmlHelpers.Parse(xml);
             var relationships = doc.Descendants("EntityRelationship").ToList();
             if (relationships.Count == 0) return null;
 
@@ -362,7 +363,7 @@ public class DataverseContextGenerator(IAnsiConsole console)
         if (xml == null) return null;
         try
         {
-            var doc = XDocument.Parse(xml.TrimStart('﻿'));
+            var doc = XmlHelpers.Parse(xml);
             var formName = GetLocalizedName(doc.Root?.Element("LocalizedNames"))
                         ?? (string?)doc.Root?.Attribute("Name")
                         ?? formType;
@@ -416,7 +417,7 @@ public class DataverseContextGenerator(IAnsiConsole console)
         if (xml == null) return null;
         try
         {
-            var doc = XDocument.Parse(xml.TrimStart('﻿'));
+            var doc = XmlHelpers.Parse(xml);
             // PAC wraps in <savedqueries>; test fixtures use <savedquery> as root directly
             var savedQuery = doc.Root?.Element("savedquery") ?? doc.Root;
             var viewName = GetLocalizedName(savedQuery?.Element("LocalizedNames"))
@@ -490,7 +491,7 @@ public class DataverseContextGenerator(IAnsiConsole console)
             if (xml == null) continue;
             try
             {
-                var doc = XDocument.Parse(xml.TrimStart('﻿'));
+                var doc = XmlHelpers.Parse(xml);
                 var rawName    = (string?)doc.Root?.Attribute("Name") ?? GetLocalizedName(doc.Root?.Element("LocalizedNames")) ?? Path.GetFileNameWithoutExtension(file);
                 var name       = rawName.Replace("|", "\\|");
                 var stateCode  = (string?)doc.Root?.Attribute("StateCode") ?? (string?)doc.Root?.Element("StateCode");
@@ -526,7 +527,7 @@ public class DataverseContextGenerator(IAnsiConsole console)
             if (xml == null) continue;
             try
             {
-                var doc = XDocument.Parse(xml.TrimStart('﻿'));
+                var doc = XmlHelpers.Parse(xml);
                 // Message is not a separate element — extract from step Name: "PluginClass: Update of contact"
                 var stepName = (string?)doc.Root?.Attribute("Name") ?? string.Empty;
                 var afterColon = stepName.Contains(": ") ? stepName[(stepName.IndexOf(": ") + 2)..] : stepName;
@@ -567,7 +568,7 @@ public class DataverseContextGenerator(IAnsiConsole console)
         if (xml == null) return null;
         try
         {
-            var doc = XDocument.Parse(xml.TrimStart('﻿'));
+            var doc = XmlHelpers.Parse(xml);
 
             // PAC unpacks connection references as <connectionreference> elements inside <connectionreferences>
             var refs = doc.Descendants("connectionreference").ToList();
@@ -601,21 +602,15 @@ public class DataverseContextGenerator(IAnsiConsole console)
     {
         if (parent == null) return null;
         // Try <LocalizedName languagecode="1033" description="...">
-        var ln = parent.Elements("LocalizedName")
-                       .FirstOrDefault(e => (string?)e.Attribute("languagecode") == "1033")
-              ?? parent.Elements("LocalizedName").FirstOrDefault();
+        var ln = XmlHelpers.PreferLanguage(parent.Elements("LocalizedName"));
         if (ln != null) return (string?)ln.Attribute("description");
 
         // Try <label languagecode="1033" description="...">
-        var label = parent.Elements("label")
-                          .FirstOrDefault(e => (string?)e.Attribute("languagecode") == "1033")
-                 ?? parent.Elements("label").FirstOrDefault();
+        var label = XmlHelpers.PreferLanguage(parent.Elements("label"));
         if (label != null) return (string?)label.Attribute("description");
 
         // Try <displayname languagecode="1033" description="..."> (PAC attribute display names)
-        var dn = parent.Elements("displayname")
-                       .FirstOrDefault(e => (string?)e.Attribute("languagecode") == "1033")
-              ?? parent.Elements("displayname").FirstOrDefault();
+        var dn = XmlHelpers.PreferLanguage(parent.Elements("displayname"));
         return (string?)dn?.Attribute("description");
     }
 

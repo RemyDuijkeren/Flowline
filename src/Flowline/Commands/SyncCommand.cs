@@ -121,22 +121,11 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         // Sync solution from Dataverse
         await PacUtils.SyncSolutionFromDataverseAsync(projectSln.UniqueName, dataverseSolutionFolder, devEnv.EnvironmentUrl!, projectSln.IncludeManaged, _capture, cancellationToken);
 
-        // Pack the solution in pac to validate it
-        Logger.LogInformation("Validating pack: {SolutionName}", projectSln.UniqueName);
-        var artifactsFolder = Path.Combine(slnFolder, "artifacts");
-        if (await PacUtils.PackSolutionAsync(projectSln, dataverseSolutionFolder, artifactsFolder, false, _capture, cancellationToken) != 0) return (int)ExitCode.BuildFailed;
-        if (projectSln.IncludeManaged &&
-            await PacUtils.PackSolutionAsync(projectSln, dataverseSolutionFolder, artifactsFolder, true, _capture, cancellationToken) != 0)
+        if (await ValidatePackAndBuildAsync(projectSln, dataverseSolutionFolder, slnFolder,
+                buildRelease: false, skipBuild: settings.NoBuild, cancellationToken) is { } exitCode)
         {
-            return (int)ExitCode.BuildFailed;
+            return exitCode;
         }
-
-        // Build the solution in dotnet to validate it (Debug = unmanaged, Release = managed!)
-        Logger.LogInformation("Validating build: {SlnFolder}", slnFolder);
-        if (settings.NoBuild)
-            Console.Skip("Build validation — skipping (--no-build active)");
-        else if (await DotNetUtils.BuildSolutionAsync(slnFolder, DotnetBuild.Debug, _capture, cancellationToken) != 0)
-            return (int)ExitCode.BuildFailed;
 
         // Check for drift between local solution (Plugins/WebResources) and Dataverse (/src). A null
         // WebResources project is a legitimate state — warn loudly and let the checker skip that half.

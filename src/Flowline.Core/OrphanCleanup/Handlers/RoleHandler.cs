@@ -1,4 +1,3 @@
-using Microsoft.Xrm.Sdk;
 using Spectre.Console;
 
 namespace Flowline.Core.OrphanCleanup.Handlers;
@@ -15,38 +14,16 @@ public sealed class RoleHandler(IAnsiConsole console) : IOrphanHandler
 
     public HandlerStatus Status => HandlerStatus.Active;
 
-    public async Task<HandlerDetectionResult> DetectAsync(
+    public Task<HandlerDetectionResult> DetectAsync(
         DetectionContext context,
         IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates,
-        CancellationToken ct)
-    {
-        var roleCandidates = candidates.Where(c => c.ComponentType == RoleComponentType).ToList();
-        if (roleCandidates.Count == 0) return new HandlerDetectionResult([], new HashSet<Guid>());
-
-        // Every componenttype-20 candidate is claimed — this handler always emits a finding for each
-        // one, so ClaimedIds equals the full roleCandidates set.
-        var claimedIds = roleCandidates.Select(c => c.ObjectId).ToHashSet();
-
-        var names = await DataverseFaultTolerance.TryQueryAsync(
-            () => EntityNameLookup.GetEntityNamesAsync(context.Service, "role", "roleid", "name", roleCandidates.Select(c => c.ObjectId), ct),
-            [], console, msg => $"Role name resolution failed ({msg}) — display falls back to bare id this run.");
-
-        var findings = new List<HandlerFinding>();
-        foreach (var candidate in roleCandidates)
-        {
-            var hasName = names.TryGetValue(candidate.ObjectId, out var name);
-            var displayName = hasName ? $"Role '{name}' ({candidate.ObjectId})" : $"Role {candidate.ObjectId}";
-
-            findings.Add(new HandlerFinding(
-                candidate.ObjectId,
-                RoleComponentType,
-                displayName,
-                OrphanAction.Manual,
-                OrphanPriority.Prio3,
-                SequenceHint: 0, // Role is the only type in this family — no ordering to express
-                OrphanTiming.PreImportEligible));
-        }
-
-        return new HandlerDetectionResult(findings, claimedIds);
-    }
+        CancellationToken ct) =>
+        NameLookupDetectionHelper.DetectByComponentTypeAsync(
+            context, candidates, console, ct,
+            componentType: RoleComponentType,
+            entityLogicalName: "role",
+            idAttribute: "roleid",
+            nameAttribute: "name",
+            label: "Role",
+            action: OrphanAction.Manual);
 }

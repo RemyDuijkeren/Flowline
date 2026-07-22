@@ -22,11 +22,14 @@ public class RegistrationPlan
 
     public List<string> Warnings { get; } = new();
 
-    public int TotalDeletes => PluginTypes.Deletes.Count + Steps.Deletes.Count + Images.Deletes.Count
-                             + CustomApis.Deletes.Count + RequestParams.Deletes.Count + ResponseProps.Deletes.Count;
+    // All six categories — for totals that genuinely apply to every category uniformly. Do NOT reuse
+    // this for NonPluginTypeDeletes (deliberately excludes PluginTypes) or AddCrossSolutionWarnings
+    // (excludes PluginTypes from Upserts but not from Deletes) — those subsets are intentional, not
+    // duplication.
+    public IEnumerable<ActionPlan> AllPlans => [PluginTypes, Steps, Images, CustomApis, RequestParams, ResponseProps];
 
-    public int TotalUpserts => PluginTypes.Upserts.Count + Steps.Upserts.Count + Images.Upserts.Count
-                             + CustomApis.Upserts.Count + RequestParams.Upserts.Count + ResponseProps.Upserts.Count;
+    public int TotalDeletes => AllPlans.Sum(p => p.Deletes.Count);
+    public int TotalUpserts => AllPlans.Sum(p => p.Upserts.Count);
     public int TotalChanges => TotalDeletes + TotalUpserts;
 
     // KD2/KD4/KTD13: Flowline must never call DeleteAsync("plugintype", ...) — Dataverse's package sync
