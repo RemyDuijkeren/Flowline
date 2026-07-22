@@ -6,7 +6,6 @@ using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Core.Plugins;
 using FluentAssertions;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
@@ -32,7 +31,7 @@ public class PluginServiceTests
         _console.Profile.Width = 400; // avoid word-wrap splitting longer assertion substrings across lines
         _runtimeOptions = new FlowlineRuntimeOptions();
         _console.Pipeline.Attach(new VerboseFilterHook(_runtimeOptions)); // matches Program.cs wiring — required for verbose-only output to be suppressed
-        _service = new PluginService(_console, NullLogger<PluginService>.Instance);
+        _service = new PluginService(_console);
 
         // Default empty results for all queries
         _serviceMock.RetrieveMultipleAsync(Arg.Any<QueryExpression>())

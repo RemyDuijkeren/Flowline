@@ -2,7 +2,6 @@ using System.Security.Cryptography;
 using Flowline.Core.Models;
 using Flowline.Core.Console;
 using Flowline.Core.Services;
-using Microsoft.Extensions.Logging;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
@@ -11,7 +10,7 @@ using Spectre.Console;
 
 namespace Flowline.Core.Plugins;
 
-public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
+public class PluginService(IAnsiConsole console)
 {
     const string FlowlineMarker = "[flowline]";
 
@@ -69,7 +68,6 @@ public class PluginService(IAnsiConsole console, ILogger<PluginService> logger)
                 "package — push the .nupkg package instead of the raw assembly. Automated migration is not supported.");
 
         var identityChanges = DetectIdentityChanges(existing, metadata);
-        logger.LogDebug("Assembly '{MetadataNamee}' identity changes: {Joinin}", metadata.Name, string.Join(", ", identityChanges ?? Enumerable.Empty<string>()));
         if (identityChanges != null)
             throw new InvalidOperationException($"Assembly '{metadata.Name}' identity changed ({string.Join(", ", identityChanges)}) — cannot update assembly-only. Run push without --scope assemblyonly to delete and recreate registrations.");
 
