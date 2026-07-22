@@ -26,4 +26,26 @@ public class DeployCommandFirstImportTests
         prompt.Should().Contain("unmanaged");
         prompt.Should().Contain("removed manually first");
     }
+
+    [Fact]
+    public void BuildFirstImportDryRunNote_Managed_NamesThatRealDeployWillConfirm()
+    {
+        var note = DeployCommand.BuildFirstImportDryRunNote("ContosoSales", "Production", includeManaged: true);
+
+        note.Should().Contain("ContosoSales");
+        note.Should().Contain("Production");
+        note.Should().Contain("managed");
+        note.Should().Contain("real deploy will ask you to confirm");
+    }
+
+    [Fact]
+    public void BuildFirstImportDryRunNote_Unmanaged_NamesThatRealDeployWillConfirm()
+    {
+        var note = DeployCommand.BuildFirstImportDryRunNote("ContosoSales", "UAT", includeManaged: false);
+
+        note.Should().Contain("ContosoSales");
+        note.Should().Contain("UAT");
+        note.Should().Contain("unmanaged");
+        note.Should().Contain("real deploy will ask you to confirm");
+    }
 }

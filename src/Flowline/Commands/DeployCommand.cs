@@ -50,6 +50,11 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         [Description("Report orphan components without deleting them")]
         [DefaultValue(false)]
         public bool NoDelete { get; set; } = false;
+
+        [CommandOption("--dry-run")]
+        [Description("Run every deploy pre-flight check and back up the target, without importing the solution")]
+        [DefaultValue(false)]
+        public bool DryRun { get; set; } = false;
     }
 
     // "drift" is this command's local force hazard (skip drift validation) — distinct from the
@@ -125,11 +130,18 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         // on a deploy that's about to be blocked moments later anyway.
         if (!existingSolutionInTarget)
         {
-            var prompt = BuildFirstImportPrompt(sln.UniqueName, targetEnv.DisplayName!, sln.IncludeManaged);
-            if (!ConsoleHelper.Confirm(prompt, false, settings, "first-import"))
+            if (settings.DryRun)
             {
-                Console.Info("Deploy cancelled. Re-run with --force first-import to skip this confirmation.");
-                return (int)ExitCode.Cancelled;
+                Console.Info(BuildFirstImportDryRunNote(sln.UniqueName, targetEnv.DisplayName!, sln.IncludeManaged));
+            }
+            else
+            {
+                var prompt = BuildFirstImportPrompt(sln.UniqueName, targetEnv.DisplayName!, sln.IncludeManaged);
+                if (!ConsoleHelper.Confirm(prompt, false, settings, "first-import"))
+                {
+                    Console.Info("Deploy cancelled. Re-run with --force first-import to skip this confirmation.");
+                    return (int)ExitCode.Cancelled;
+                }
             }
         }
 
@@ -146,7 +158,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         // cleanup noise. The report itself stays valuable: a preview of what Upgrade will remove, or (when
         // no prior version) a signal that cleanup still needs a later managed Upgrade deploy to catch up.
         var useStageAndUpgrade = sln.IncludeManaged && existingSolutionInTarget;
-        var runMode = settings.NoDelete || sln.IncludeManaged ? RunMode.NoDelete : RunMode.Normal;
+        var runMode = ResolveRunMode(settings.DryRun, settings.NoDelete, sln.IncludeManaged);
 
         // pac's --publish-changes runs PublishAllXmlRequest, not the solution-scoped PublishXmlRequest —
         // it republishes every pending customization in the ENTIRE target environment, not just this
@@ -201,8 +213,11 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         // R5: fires regardless of whether the subsequent import succeeds — the packed zip is already
         // valid and potentially useful (manual retry, inspection) once it's resolved, independent of
-        // origin (fresh pack, cache reuse, or --path) or import outcome.
-        PublishArtifactForCi(packagePath, sln.UniqueName, gateVersion);
+        // origin (fresh pack, cache reuse, or --path) or import outcome. U3: never fires under --dry-run —
+        // this signal hands a packed artifact off to a later pipeline stage for real promotion, and
+        // --dry-run never produces one.
+        if (!settings.DryRun)
+            PublishArtifactForCi(packagePath, sln.UniqueName, gateVersion);
 
         // Always unpack the zip actually being imported — whether freshly packed, reused from cache, or
         // supplied via --path — so post-deploy services evaluate real imported content, never an assumed
@@ -223,6 +238,15 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
             foreach (var postDeployService in activeServices)
                 await postDeployService.RunPreImportAsync(postDeployContext, cancellationToken);
+
+            // U3/KTD5: every check above (DTAP, git-clean, local drift, packing, solution checker, orphan
+            // preview, backup) runs identically for dry-run and a real deploy — this is the one branch
+            // where they diverge. --dry-run stops here: no import, no post-import cleanup.
+            if (settings.DryRun)
+            {
+                Console.Done(BuildDryRunCompleteMessage(sln.UniqueName, targetEnv.DisplayName!));
+                return 0;
+            }
 
             Logger.LogInformation("Importing to: {TargetUrl}", targetUrl);
             await ImportSolutionAsync(packagePath, targetEnv, sln.UniqueName, useStageAndUpgrade, publishChanges, cancellationToken);
@@ -321,6 +345,14 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         includeManaged
             ? $"[yellow]First managed deploy of '{solutionName}' to {targetDisplayName} — this environment's mode can't be changed later without uninstalling the solution first. Continue?[/]"
             : $"[yellow]First deploy of '{solutionName}' to {targetDisplayName} as unmanaged — switching to managed here later needs the solution removed manually first. Continue?[/]";
+
+    // U2/KTD7: statement form of BuildFirstImportPrompt for --dry-run — a dry run never performs the
+    // irreversible mode-lock the prompt exists to gate, so it informs instead of blocking. Pure for the
+    // same reason as BuildFirstImportPrompt.
+    internal static string BuildFirstImportDryRunNote(string solutionName, string targetDisplayName, bool includeManaged) =>
+        includeManaged
+            ? $"First managed deploy of '{solutionName}' to {targetDisplayName} — the real deploy will ask you to confirm before importing, since this mode can't change later without uninstalling first."
+            : $"First deploy of '{solutionName}' to {targetDisplayName} as unmanaged — the real deploy will ask you to confirm before importing, since switching to managed later needs manual removal first.";
 
     private async Task ValidateDtapGateAsync(
         ProjectSolution sln, string gateVersion, string targetUrl, Settings settings, CancellationToken ct)
@@ -643,6 +675,19 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     }
 
     internal static bool ShouldReportPartialSuccess(int cleanupFailures) => cleanupFailures > 0;
+
+    // U1/KTD1: dryRun takes precedence over noDelete/includeManaged — a dry run is always the most
+    // restrictive mode regardless of what those two would otherwise select. Pure so it's unit-testable
+    // without a live PAC CLI or Dataverse connection, matching this file's established decision-method style.
+    internal static RunMode ResolveRunMode(bool dryRun, bool noDelete, bool includeManaged) =>
+        dryRun ? RunMode.DryRun
+        : noDelete || includeManaged ? RunMode.NoDelete
+        : RunMode.Normal;
+
+    // U3: printed once every pre-import check has passed under --dry-run — mirrors PushCommand's own
+    // dry-run completion tone ("Air push complete...").
+    internal static string BuildDryRunCompleteMessage(string solutionName, string targetDisplayName) =>
+        $"Dry run complete — '{solutionName}' would deploy cleanly to {targetDisplayName}. Run without --dry-run to make it real.";
 
     internal enum DtapGateOutcome { DevBlock, Skip, Check }
     internal sealed record DtapGateDecision(DtapGateOutcome Outcome, string? PredecessorUrl = null, string? PredecessorLabel = null);
