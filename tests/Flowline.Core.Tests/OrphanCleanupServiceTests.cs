@@ -78,6 +78,19 @@ public class OrphanCleanupServiceTests : IDisposable
         Assert.Equal(expected, OrphanCleanupService.BuildNoDeleteHint(solution));
     }
 
+    // U5: DryRun short-circuits before the managed/unmanaged/exists-in-target branching regardless of
+    // combination — confirms the dry-run branch dominates, mirroring BuildNoDeleteHint_ReturnsExpected's cases.
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    public void BuildNoDeleteHint_DryRun_ReturnsPreviewRegardlessOfManagedStatus(bool includeManaged, bool existsInTarget)
+    {
+        var solution = new DeploySolutionInfo("MySolution", "https://example.crm.dynamics.com", includeManaged, existsInTarget);
+        Assert.Equal("(--dry-run preview)", OrphanCleanupService.BuildNoDeleteHint(solution, RunMode.DryRun));
+    }
+
     // PostDeployContext no longer carries LocalComponents/EntityLogicalNames/NamedComponents (KTD12) —
     // OrphanCleanupService.CompareAsync parses DataverseSolutionSrcRoot itself now. Ctx() keeps the same test-facing
     // shape every existing call site already uses by writing a synthetic Solution.xml fixture that
@@ -1507,6 +1520,23 @@ public class OrphanCleanupServiceTests : IDisposable
             Ctx("MySolution", [(Guid.NewGuid(), 0)], mode: RunMode.NoDelete), default);
 
         Assert.Contains("would delete", _console.Output);
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_DryRunMode_ReportBuiltButExecuteInOrderAsyncNotCalled()
+    {
+        // U5: RunMode.DryRun gets the exact same report-only treatment as RunMode.NoDelete — mirrors
+        // RunPreImportAsync_NoDeleteMode_ReportBuiltButExecuteInOrderAsyncNotCalled above.
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 91)); // 91 = PluginAssembly
+
+        await _service.RunPreImportAsync(
+            Ctx("MySolution", [(Guid.NewGuid(), 0)], mode: RunMode.DryRun), default);
+
+        Assert.Contains("would delete", _console.Output);
+        Assert.Contains("(--dry-run preview)", _console.Output);
         await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
     }

@@ -87,9 +87,12 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         // succeeds.
         var skipRedirectedFindingsThisRun = childCleanupDegraded;
 
-        // RunMode.NoDelete is the only signal knowable at classify time — the
+        // RunMode.NoDelete/DryRun is the only signal knowable at classify time — the
         // reactively-deferred/still-blocking-at-post-import case is not implemented by this handler.
-        if (context.Mode == RunMode.NoDelete)
+        // U5/KTD2: DryRun forces the same blanket Prio1 as NoDelete, so a dry-run preview shows the exact
+        // priority grouping a real (managed -> NoDelete) deploy would, instead of taking the live
+        // enabled-state query branch below.
+        if (context.Mode is RunMode.NoDelete or RunMode.DryRun)
             return new HandlerDetectionResult(
                 BuildAllFindings(claimed, names, packageIds, _ => OrphanPriority.Prio1, skipRedirectedFindingsThisRun)
                     .Concat(childCleanupFindings.Select(f => f with { Priority = OrphanPriority.Prio1 }))

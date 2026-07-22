@@ -195,6 +195,29 @@ public class PluginAssemblyFamilyHandlerTests
     }
 
     [Fact]
+    public async Task DetectAsync_DryRunModeActive_ReturnsPrio1NotPrio2Or3()
+    {
+        // U5: RunMode.DryRun gets the exact same forced-Prio1, no-live-query treatment as
+        // RunMode.NoDelete — mirrors DetectAsync_NoDeleteModeActive_ReturnsPrio1NotPrio2Or3 above.
+        var assemblyId = Guid.NewGuid();
+        var typeId     = Guid.NewGuid();
+        var stepId     = Guid.NewGuid();
+        var imageId    = Guid.NewGuid();
+
+        // Even a live-Enabled step must still classify Prio1 under DryRun (KTD2: DryRun is widened
+        // alongside NoDelete — takes precedence over the Enabled check).
+        SetupStepStates((stepId, typeId, true));
+
+        var findings = (await _handler.DetectAsync(
+            Ctx(RunMode.DryRun),
+            [(assemblyId, 91), (typeId, 90), (stepId, 92), (imageId, 93)],
+            default)).Findings;
+
+        Assert.Equal(4, findings.Count);
+        Assert.All(findings, f => Assert.Equal(OrphanPriority.Prio1, f.Priority));
+    }
+
+    [Fact]
     public async Task DetectAsync_LivePluginTypeHasOnlyDisabledSteps_ReturnsPrio3NotPrio2()
     {
         var typeId = Guid.NewGuid();
