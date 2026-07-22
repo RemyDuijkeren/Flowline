@@ -133,9 +133,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
 
         var result = await CompareAsync(context, ct, BuildNoDeleteHint(context.Solution, context.Mode)).ConfigureAwait(false);
 
-        // U5/KTD2: DryRun gets the exact same report-only treatment as NoDelete — never reaches
-        // ExecuteInOrderAsync below.
-        if (context.Mode is RunMode.NoDelete or RunMode.DryRun)
+        if (context.Mode.IsReportOnly())
             return;
 
         // PostImportOnly entries skip the pre-import execution pass entirely and are threaded to
@@ -401,7 +399,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         // the pre/post-import boundary — same tradeoff as querying live state twice.
         var (sNew, _, _) = ComponentClassifier.ParseLocalSource(context.DataverseSolutionSrcRoot);
 
-        if (candidates.Count == 0 || mode is RunMode.NoDelete or RunMode.DryRun)
+        if (candidates.Count == 0 || mode.IsReportOnly())
             return 0;
 
         var sNewIds      = sNew.Select(c => c.ObjectId).ToHashSet();
@@ -887,7 +885,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
             console.MarkupLine($"  [bold {PriorityColor(priority)}]{PriorityLabel(priority)}:[/]");
             foreach (var entry in group)
             {
-                var label = mode is RunMode.NoDelete or RunMode.DryRun ? NoDeleteLabel(entry.Action) : ActionLabel(entry.Action);
+                var label = mode.IsReportOnly() ? NoDeleteLabel(entry.Action) : ActionLabel(entry.Action);
                 console.MarkupLine($"    [{ActionColor(entry.Action)}]{Markup.Escape(entry.DisplayName)} — {label}[/]");
             }
         }
@@ -903,7 +901,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         var deleteCount = entries.Count(e => e.Action == OrphanAction.Delete);
         var removeCount = entries.Count(e => e.Action == OrphanAction.RemoveFromSolution);
 
-        if (mode is RunMode.NoDelete or RunMode.DryRun)
+        if (mode.IsReportOnly())
         {
             var hint = string.IsNullOrEmpty(noDeleteHint) ? "" : $" {noDeleteHint}";
             console.Skip($"{deleteCount} would be deleted, {removeCount} would be removed from solution, {manual.Count} manual.{hint}");

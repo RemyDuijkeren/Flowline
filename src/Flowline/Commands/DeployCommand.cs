@@ -134,14 +134,10 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             {
                 Console.Info(BuildFirstImportDryRunNote(sln.UniqueName, targetEnv.DisplayName!, sln.IncludeManaged));
             }
-            else
+            else if (!ConsoleHelper.Confirm(BuildFirstImportPrompt(sln.UniqueName, targetEnv.DisplayName!, sln.IncludeManaged), false, settings, "first-import"))
             {
-                var prompt = BuildFirstImportPrompt(sln.UniqueName, targetEnv.DisplayName!, sln.IncludeManaged);
-                if (!ConsoleHelper.Confirm(prompt, false, settings, "first-import"))
-                {
-                    Console.Info("Deploy cancelled. Re-run with --force first-import to skip this confirmation.");
-                    return (int)ExitCode.Cancelled;
-                }
+                Console.Info("Deploy cancelled. Re-run with --force first-import to skip this confirmation.");
+                return (int)ExitCode.Cancelled;
             }
         }
 
