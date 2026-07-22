@@ -17,6 +17,7 @@
   </Folder>
   <Folder Name="/tests/">
     <File Path="tests/Directory.Build.props" />
+    <File Path="tests/test-goal.md" />
     <Project Path="tests/Flowline.Core.Tests/Flowline.Core.Tests.csproj" />
     <Project Path="tests\Flowline.Tests\Flowline.Tests.csproj" />
   </Folder>

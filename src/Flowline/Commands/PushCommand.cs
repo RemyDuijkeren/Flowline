@@ -446,7 +446,10 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             if (target != null) targets.Add(target);
         }
 
-        if (targets.Count == 0)
+        // R8/AE9: zero plugin projects is a valid, common state (a WebResources-only solution) under the
+        // default scope — only an explicit `--scope plugins`/`--scope assemblyonly` request means the user
+        // specifically wanted a plugin push, so only that case is actually an error.
+        if (targets.Count == 0 && settings.Scopes.Length > 0)
             throw new FlowlineException(ExitCode.NotFound,
                 "No plugin project found — nothing the solution file references builds an IPlugin or CodeActivity type. " +
                 "Run again with --verbose to see what got skipped.");
