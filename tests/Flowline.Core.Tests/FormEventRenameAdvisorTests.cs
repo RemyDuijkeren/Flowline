@@ -282,6 +282,72 @@ public class FormEventRenameAdvisorTests : IDisposable
         suggestion.Should().Contain($"// flowline:onsave {entity} \"{newName}\"");
     }
 
+    [Fact]
+    public void Suggest_TwoSharingAnnotationsBothSelfTagSameForm_EmitsStrongSuggestion()
+    {
+        // Both onLoad and onSave carry self-tag evidence, and it agrees on one candidate — the strong
+        // signal fires, one rewrite line per annotation, all pointing at the agreed form.
+        const string entity = "account";
+        const string oldName = "Old Main";
+        const string newName = "New Main";
+        const string library = "av_/lib.js";
+
+        var onLoadId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.OnLoad, "onLoad", library);
+        var onSaveId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.OnSave, "onSave", library);
+        var xdoc = System.Xml.Linq.XDocument.Parse(BuildFormXml());
+        FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnLoad, new List<FormEventHandler> { new("onLoad", library, onLoadId, "") });
+        FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnSave, new List<FormEventHandler> { new("onSave", library, onSaveId, "") });
+
+        const string content = "function onLoad() {} function onSave() {}";
+        var onLoadAnnotation = Annotation(entity, oldName, library, content);
+        var onSaveAnnotation = Annotation(entity, oldName, library, content, FormEventType.OnSave);
+
+        var solutionForms = new List<DataverseForm>
+        {
+            new(Guid.NewGuid(), newName, entity, xdoc.ToString(), null)
+        };
+
+        var suggestion = FormEventRenameAdvisor.Suggest(entity, oldName, [onLoadAnnotation, onSaveAnnotation], solutionForms, NewCache());
+
+        suggestion.Should().NotBeNull();
+        suggestion.Should().Contain("renamed to");
+        suggestion.Should().Contain($"// flowline:onload {entity} \"{newName}\"");
+        suggestion.Should().Contain($"// flowline:onsave {entity} \"{newName}\"");
+    }
+
+    [Fact]
+    public void Suggest_TwoSharingAnnotationsSelfTagDifferentForms_AbandonsSelfTagSignalRatherThanGuess()
+    {
+        // P2 (adversarial): the two sharing annotations' own handler fingerprints point at DIFFERENT live
+        // forms. Emitting the first match would confidently tell a developer to repoint the onSave
+        // annotation to a form its own evidence never named. On disagreement the self-tag signal is
+        // abandoned; with two candidates on the entity, no weaker signal fires either, so nothing is
+        // suggested rather than something wrong.
+        const string entity = "account";
+        const string oldName = "Old Main";
+        const string library = "av_/lib.js";
+
+        var onLoadId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.OnLoad, "onLoad", library);
+        var onSaveId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.OnSave, "onSave", library);
+
+        var formAXml = BuildFormXml(FormEventType.OnLoad, new HashSet<FormEventHandler> { new("onLoad", library, onLoadId, "") });
+        var formBXml = BuildFormXml(FormEventType.OnSave, new HashSet<FormEventHandler> { new("onSave", library, onSaveId, "") });
+
+        const string content = "function onLoad() {} function onSave() {}";
+        var onLoadAnnotation = Annotation(entity, oldName, library, content);
+        var onSaveAnnotation = Annotation(entity, oldName, library, content, FormEventType.OnSave);
+
+        var solutionForms = new List<DataverseForm>
+        {
+            new(Guid.NewGuid(), "Form A", entity, formAXml, null),   // onLoad annotation self-tags this
+            new(Guid.NewGuid(), "Form B", entity, formBXml, null)    // onSave annotation self-tags this one
+        };
+
+        var suggestion = FormEventRenameAdvisor.Suggest(entity, oldName, [onLoadAnnotation, onSaveAnnotation], solutionForms, NewCache());
+
+        suggestion.Should().BeNull();
+    }
+
     // --- flowline:onchange self-tag ---
 
     [Fact]

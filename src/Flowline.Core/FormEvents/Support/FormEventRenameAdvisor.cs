@@ -54,6 +54,14 @@ public static class FormEventRenameAdvisor
         IReadOnlyList<ResolvedFormEventAnnotation> sharingAnnotations,
         List<DataverseForm> candidatesForEntity)
     {
+        // Each sharing annotation votes independently for the candidate its OWN handler fingerprint tags.
+        // A single suggestion is only emitted when every annotation that has self-tag evidence agrees on
+        // the same candidate: BuildSuggestion prints a rewrite line for every sharing annotation using one
+        // winning candidate, so returning on the first match could confidently tell a developer to repoint
+        // an annotation whose own evidence pointed at a different form. On disagreement, favour precision —
+        // abandon the self-tag signal entirely (return null) and let the weaker signals hedge instead.
+        string? agreedCandidate = null;
+
         foreach (var resolved in sharingAnnotations)
         {
             var evt = resolved.Annotation.Event;
@@ -76,6 +84,7 @@ public static class FormEventRenameAdvisor
                 : resolved.Annotation.Attribute;
             var expectedId = FormEventDeterministicId.ForHandler(entity, requestedName, evt, finalFunctionName!, resolved.LibraryName, attribute);
 
+            string? matchForThisAnnotation = null;
             foreach (var candidate in candidatesForEntity)
             {
                 // Unlike FormEventPlanner's XDocument.Parse (only ever run on cleanly, uniquely resolved
@@ -88,11 +97,22 @@ public static class FormEventRenameAdvisor
                 catch (Exception) { continue; }
 
                 if (FormXmlEventSerializer.GetHandlers(xdoc, evt, attribute).Any(h => h.HandlerUniqueId == expectedId))
-                    return candidate.Name;
+                {
+                    matchForThisAnnotation = candidate.Name;
+                    break;
+                }
             }
+
+            if (matchForThisAnnotation is null)
+                continue; // this annotation's handler self-tags no live candidate — no evidence from it.
+
+            if (agreedCandidate is null)
+                agreedCandidate = matchForThisAnnotation;
+            else if (!string.Equals(agreedCandidate, matchForThisAnnotation, StringComparison.Ordinal))
+                return null; // two sharing annotations tag different candidates — evidence disagrees.
         }
 
-        return null;
+        return agreedCandidate;
     }
 
     // Names the candidate and shows the exact annotation text to change — one line per sharing

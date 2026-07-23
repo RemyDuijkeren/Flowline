@@ -89,7 +89,7 @@ public class FormEventReader(IAnsiConsole console)
         // ResolveObjectTypeCodeAsync's forward-direction lookup above) — Dataverse's EntityName attribute
         // type auto-resolves to the logical name for API consumers, so no reverse ObjectTypeCode ->
         // logical-name lookup is needed.
-        var solutionForms = new List<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)>();
+        var solutionForms = new List<DataverseForm>();
         foreach (var formEntity in solutionFormEntities)
         {
             var entityLogicalName = formEntity.GetAttributeValue<string>("objecttypecode");
@@ -102,8 +102,9 @@ public class FormEventReader(IAnsiConsole console)
 
             // RowVersion is a first-class SDK property (Dataverse's optimistic-concurrency token, aka
             // @odata.etag) always populated on retrieve regardless of ColumnSet - no explicit column
-            // selection needed.
-            solutionForms.Add((
+            // selection needed. Modelled with the named DataverseForm record (not a positional tuple) so
+            // Name/EntityLogicalName can't get silently transposed by a future edit.
+            solutionForms.Add(new DataverseForm(
                 formEntity.Id,
                 formEntity.GetAttributeValue<string>("name"),
                 entityLogicalName,
@@ -124,7 +125,7 @@ public class FormEventReader(IAnsiConsole console)
             var matches = group.ToList();
             if (matches.Count == 1)
             {
-                resolvedForms[group.Key] = new DataverseForm(matches[0].Id, matches[0].Name, matches[0].EntityLogicalName, matches[0].FormXml, matches[0].RowVersion);
+                resolvedForms[group.Key] = matches[0];
                 cacheResolutions.Add((matches[0].EntityLogicalName, matches[0].Name, matches[0].Id));
             }
             else
@@ -215,7 +216,7 @@ public class FormEventReader(IAnsiConsole console)
     static string BuildFormNotFoundMessage(
         string entity, string form,
         List<ResolvedFormEventAnnotation> resolvedAnnotations,
-        List<(Guid Id, string Name, string EntityLogicalName, string FormXml, string? RowVersion)> solutionForms,
+        IReadOnlyList<DataverseForm> solutionForms,
         FormEventIdentityCache? cache)
     {
         var baseMessage = $"form '{form}' not found for entity '{entity}' (Main or Quick Create form).";
@@ -224,13 +225,7 @@ public class FormEventReader(IAnsiConsole console)
             .Where(a => FormKeyComparer.Instance.Equals((a.Annotation.Entity, a.Annotation.Form), (entity, form)))
             .ToList();
 
-        // Retyped to the named DataverseForm record at this cross-class boundary (rather than passing the
-        // raw positional tuple further) so Name/EntityLogicalName can't get silently transposed by a future edit.
-        var candidateForms = solutionForms
-            .Select(f => new DataverseForm(f.Id, f.Name, f.EntityLogicalName, f.FormXml, f.RowVersion))
-            .ToList();
-
-        var suggestion = FormEventRenameAdvisor.Suggest(entity, form, sharingAnnotations, candidateForms, cache);
+        var suggestion = FormEventRenameAdvisor.Suggest(entity, form, sharingAnnotations, solutionForms, cache);
         return suggestion is null ? baseMessage : baseMessage + suggestion;
     }
 
