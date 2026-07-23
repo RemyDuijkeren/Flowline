@@ -78,9 +78,17 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
         await CloneSolutionFromDataverseAsync(projectSln, slnFolder, cdsprojPath, sourceEnv.EnvironmentUrl!, settings, cancellationToken);
         await CreateSolutionFileAsync(slnFolder, slnFilePath, cdsprojPath, cancellationToken);
-        await SetupPluginsProjectAsync(slnFolder, slnFilePath, solutionName, settings, cancellationToken);
-        await SetupWebResourcesProjectAsync(slnFolder, slnFilePath, solutionName, settings, cancellationToken);
-        SeedWebResourceDistFromSrc(slnFolder, solutionInfo.PublisherPrefix, projectSln.UniqueName, settings);
+
+        // The .cdsproj entry CreateSolutionFileAsync just wrote makes the solution file loadable, so the
+        // scaffold-skip checks below can ask "is a plugin/WebResources project already registered under
+        // any name or location" instead of only "does the default folder hold one" — a project whose
+        // Plugins/WebResources project was legitimately moved/renamed (project-structure flexibility)
+        // resolves here the same way push/sync/deploy already discover it. Loaded once and reused by both
+        // setup calls, matching SolutionFileLayout's one-read contract.
+        var layout = await SolutionFileLayout.LoadAsync(slnFolder, cancellationToken);
+        await SetupPluginsProjectAsync(slnFolder, slnFilePath, solutionName, settings, layout, cancellationToken);
+        var webresourcesFolder = await SetupWebResourcesProjectAsync(slnFolder, slnFilePath, solutionName, settings, layout, cancellationToken);
+        SeedWebResourceDistFromSrc(slnFolder, webresourcesFolder, solutionInfo.PublisherPrefix, projectSln.UniqueName, settings);
 
         ScaffoldRootGitignore();
 
@@ -346,10 +354,10 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         throw new FlowlineException(ExitCode.NotFound, "No unmanaged environment found — provide a --dev, --test, --uat, or --prod URL with an unmanaged solution.");
     }
 
-    private void SeedWebResourceDistFromSrc(string slnFolder, string? publisherPrefix, string solutionName, Settings settings)
+    private void SeedWebResourceDistFromSrc(string slnFolder, string webresourcesFolder, string? publisherPrefix, string solutionName, Settings settings)
     {
         var srcWebResources = Path.Combine(ScaffoldedDataverseSolutionFolder(slnFolder), "src", "WebResources");
-        var publicFolder = Path.Combine(slnFolder, "WebResources", "public");
+        var publicFolder = Path.Combine(webresourcesFolder, "public");
 
         if (!Directory.Exists(srcWebResources))
         {
@@ -546,16 +554,30 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     /// </remarks>
     internal static string PluginsProjectFileName(string solutionName) => $"{solutionName}.Plugins.csproj";
 
-    private async Task SetupPluginsProjectAsync(string slnFolder, string slnFilePath, string solutionName, Settings settings, CancellationToken cancellationToken)
+    /// <summary>Whether a plugin project already exists for this solution — in the default folder, or
+    /// registered anywhere else in the solution file (a moved/renamed plugin project).</summary>
+    /// <remarks>
+    /// OR, not a replacement: the default-folder check alone missed a moved/renamed project (this method's
+    /// reason for existing), but keeping it alongside the solution-file check means a solution-file read
+    /// that somehow misses a real default-folder project still can't cause clone to scaffold a duplicate
+    /// on top of it.
+    /// </remarks>
+    internal static bool PluginsProjectAlreadyRegistered(string pluginsFolder, SolutionFileLayout layout) =>
+        (Directory.Exists(pluginsFolder) && Directory.EnumerateFiles(pluginsFolder, "*.csproj").Any())
+        || layout.PluginProjects.Count > 0;
+
+    private async Task SetupPluginsProjectAsync(string slnFolder, string slnFilePath, string solutionName, Settings settings, SolutionFileLayout layout, CancellationToken cancellationToken)
     {
         var pluginsFolder = Path.Combine(slnFolder, "Plugins");
         var pluginsCsproj = Path.Combine(pluginsFolder, PluginsProjectFileName(solutionName));
 
-        // Any plugin project already in the folder means clone has nothing to add: a fresh scaffold, a
-        // resumed clone, or the pre-rename Plugins/Plugins.csproj layout (§6) all land here. Skip rather
-        // than re-scaffold — every other command discovers the project through the solution file, and
-        // re-running init would clobber the user's source. Never tell them to move a folder holding it.
-        if (Directory.Exists(pluginsFolder) && Directory.EnumerateFiles(pluginsFolder, "*.csproj").Any())
+        // Any plugin project already in the folder, or already registered elsewhere in the solution file,
+        // means clone has nothing to add: a fresh scaffold, a resumed clone, the pre-rename
+        // Plugins/Plugins.csproj layout (§6), or a plugin project legitimately moved/renamed since the
+        // last clone all land here. Skip rather than re-scaffold — every other command discovers the
+        // project through the solution file, and re-running init would clobber the user's source or
+        // register a spurious duplicate. Never tell them to move a folder holding it.
+        if (PluginsProjectAlreadyRegistered(pluginsFolder, layout))
         {
             Console.Skip("Plugins project already there — skipping");
             return;
@@ -644,15 +666,39 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     /// </remarks>
     internal static string WebResourcesProjectFileName(string solutionName) => $"{solutionName}.WebResources.csproj";
 
-    private async Task SetupWebResourcesProjectAsync(string slnFolder, string slnFilePath, string solutionName, Settings settings, CancellationToken cancellationToken)
+    /// <summary>The folder holding the already-registered WebResources project — the default folder, or a
+    /// moved/renamed one resolved via <paramref name="layout"/> — or <c>null</c> when none is registered.</summary>
+    /// <remarks>
+    /// OR, not a replacement — see <see cref="PluginsProjectAlreadyRegistered"/>'s remarks for why.
+    /// <see cref="SolutionFileLayout.WebResourcesProjectPath"/> throws <see cref="ExitCode.ConfigInvalid"/>
+    /// on a genuine tie between two candidates; that's left to propagate here rather than caught, since
+    /// scaffolding a third default-named project on top of an unresolved ambiguity would only make it worse.
+    ///
+    /// Names the resolved folder, not just whether one exists, so a caller that needs to write into the
+    /// real WebResources project (e.g. seeding) stops guessing the default path — the gap that let
+    /// <c>SeedWebResourceDistFromSrc</c> pollute a stray <c>WebResources/public</c> folder for a project
+    /// that had moved elsewhere.
+    /// </remarks>
+    internal static string? ResolveExistingWebResourcesFolder(string webresourcesFolder, string webresourcesCsproj, SolutionFileLayout layout) =>
+        File.Exists(webresourcesCsproj) ? webresourcesFolder
+        : layout.WebResourcesProjectPath is { } path ? Path.GetDirectoryName(path)
+        : null;
+
+    /// <summary>Whether a WebResources project already exists for this solution — see <see cref="ResolveExistingWebResourcesFolder"/>.</summary>
+    internal static bool WebResourcesProjectAlreadyRegistered(string webresourcesCsproj, SolutionFileLayout layout) =>
+        ResolveExistingWebResourcesFolder(Path.GetDirectoryName(webresourcesCsproj)!, webresourcesCsproj, layout) is not null;
+
+    /// <summary>Scaffolds the WebResources project if none is registered yet.</summary>
+    /// <returns>The folder holding the WebResources project — existing (possibly moved) or freshly scaffolded.</returns>
+    private async Task<string> SetupWebResourcesProjectAsync(string slnFolder, string slnFilePath, string solutionName, Settings settings, SolutionFileLayout layout, CancellationToken cancellationToken)
     {
         // Create WebResources project if it doesn't exist
         var webresourcesFolder = Path.Combine(slnFolder, "WebResources");
         var webresourcesCsproj = Path.Combine(webresourcesFolder, WebResourcesProjectFileName(solutionName));
-        if (File.Exists(webresourcesCsproj))
+        if (ResolveExistingWebResourcesFolder(webresourcesFolder, webresourcesCsproj, layout) is { } existingFolder)
         {
             Console.Skip("WebResources project already there — skipping");
-            return;
+            return existingFolder;
         }
 
         await Console.Status().FlowlineSpinner().StartAsync(
@@ -687,5 +733,6 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             });
 
         Console.Ok("WebResources project ready");
+        return webresourcesFolder;
     }
 }

@@ -520,6 +520,232 @@ public class CloneCommandTests
         CloneCommand.DescribeCSharpKeywordCollision(solutionName).Should().BeNull();
     }
 
+    // ── PluginsProjectAlreadyRegistered / WebResourcesProjectAlreadyRegistered ──
+    // Clone's scaffold-skip check used to look only at the default Plugins/WebResources folder by name, so
+    // re-cloning a project whose plugin/WebResources project was legitimately moved/renamed (project-
+    // structure flexibility) scaffolded a spurious duplicate and registered it into the solution file
+    // (tests/test-findings/clone-idempotent-reclone-duplicates-moved-plugins-webresources.md). These now
+    // also ask the solution file, the same way push/sync/deploy already discover a moved project.
+
+    const string PluginProjectXml = """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net462</TargetFramework></PropertyGroup><ItemGroup><PackageReference Include="Microsoft.CrmSdk.CoreAssemblies" Version="9.0.2" /></ItemGroup></Project>""";
+    const string WebResourcesProjectXml = """<Project Sdk="Microsoft.Build.NoTargets/3.7.134"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>""";
+    const string PlainCsprojXml = """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>""";
+
+    /// <summary>Writes a solution file (through the real writer) registering a `.cdsproj` plus whatever
+    /// extra projects the test needs, then loads it exactly the way clone does mid-run.</summary>
+    static async Task<SolutionFileLayout> LoadLayoutAsync(string root, params (string RelativePath, string Xml)[] extraProjects)
+    {
+        var cdsprojRelativePath = Path.Combine("Solution", "CrO7982.cdsproj");
+        Directory.CreateDirectory(Path.Combine(root, "Solution"));
+        File.WriteAllText(Path.Combine(root, cdsprojRelativePath), "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
+
+        var writer = new MsBuildSolutionWriter();
+        var slnPath = Path.Combine(root, "CrO7982.slnx");
+        await writer.AddProjectAsync(slnPath, cdsprojRelativePath);
+
+        foreach (var (relativePath, xml) in extraProjects)
+        {
+            var full = Path.Combine(root, relativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+            File.WriteAllText(full, xml);
+            await writer.AddProjectAsync(slnPath, relativePath);
+        }
+
+        return await SolutionFileLayout.LoadAsync(root);
+    }
+
+    [Fact]
+    public async Task PluginsProjectAlreadyRegistered_NothingAnywhere_ReturnsFalse()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var layout = await LoadLayoutAsync(root);
+
+            var result = CloneCommand.PluginsProjectAlreadyRegistered(Path.Combine(root, "Plugins"), layout);
+
+            result.Should().BeFalse();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task PluginsProjectAlreadyRegistered_DefaultFolderHasAProject_ReturnsTrue()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "Plugins"));
+            File.WriteAllText(Path.Combine(root, "Plugins", "CrO7982.Plugins.csproj"), PluginProjectXml);
+            var layout = await LoadLayoutAsync(root);
+
+            var result = CloneCommand.PluginsProjectAlreadyRegistered(Path.Combine(root, "Plugins"), layout);
+
+            result.Should().BeTrue();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task PluginsProjectAlreadyRegistered_MovedAndRenamedElsewhereInSolutionFile_ReturnsTrue()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            // The default folder holds nothing -- only the solution file knows the plugin project moved.
+            var layout = await LoadLayoutAsync(root, (Path.Combine("Backend", "CrO7982.Backend.csproj"), PluginProjectXml));
+
+            var result = CloneCommand.PluginsProjectAlreadyRegistered(Path.Combine(root, "Plugins"), layout);
+
+            result.Should().BeTrue();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task WebResourcesProjectAlreadyRegistered_NothingAnywhere_ReturnsFalse()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var layout = await LoadLayoutAsync(root);
+            var webresourcesCsproj = Path.Combine(root, "WebResources", "CrO7982.WebResources.csproj");
+
+            var result = CloneCommand.WebResourcesProjectAlreadyRegistered(webresourcesCsproj, layout);
+
+            result.Should().BeFalse();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task WebResourcesProjectAlreadyRegistered_MovedAndRenamedElsewhereInSolutionFile_ReturnsTrue()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            // The default folder holds nothing -- only the solution file knows the WebResources project moved.
+            var layout = await LoadLayoutAsync(root, (Path.Combine("Frontend", "ClientAssets.csproj"), WebResourcesProjectXml));
+            var webresourcesCsproj = Path.Combine(root, "WebResources", "CrO7982.WebResources.csproj");
+
+            var result = CloneCommand.WebResourcesProjectAlreadyRegistered(webresourcesCsproj, layout);
+
+            result.Should().BeTrue();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task WebResourcesProjectAlreadyRegistered_GenuineTieInSolutionFile_PropagatesConfigInvalid()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            // Two equally-unweighted candidates -- a 0-0 tie is still a tie (KD4, matching
+            // WebResourcesProjectResolverTests.Resolve_TwoEquallyWeightedCandidates_ThrowsConfigInvalidNamingBoth).
+            // Propagating this rather than swallowing it and scaffolding a third default-named project is the
+            // documented design choice: scaffolding on top of an unresolved ambiguity would only make it worse.
+            var layout = await LoadLayoutAsync(root,
+                (Path.Combine("Alpha", "Alpha.csproj"), PlainCsprojXml),
+                (Path.Combine("Beta", "Beta.csproj"), PlainCsprojXml));
+            var webresourcesCsproj = Path.Combine(root, "WebResources", "CrO7982.WebResources.csproj");
+
+            var act = () => CloneCommand.WebResourcesProjectAlreadyRegistered(webresourcesCsproj, layout);
+
+            act.Should().Throw<FlowlineException>().Which.ExitCode.Should().Be(ExitCode.ConfigInvalid);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    // ── ResolveExistingWebResourcesFolder ───────────────────────────────────
+    // SetupWebResourcesProjectAsync's seed step (SeedWebResourceDistFromSrc) used to always seed into the
+    // hardcoded WebResources/public folder, even when the real WebResources project had moved elsewhere --
+    // leaving stray untracked seed files nobody builds (a related, separate issue found while verifying the
+    // scaffold-skip fix above: tests/test-findings/clone-idempotent-reclone-duplicates-moved-plugins-webresources.md).
+    // This resolver names the real folder so the seed step can write into it instead of guessing.
+
+    [Fact]
+    public async Task ResolveExistingWebResourcesFolder_NothingAnywhere_ReturnsNull()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var layout = await LoadLayoutAsync(root);
+            var webresourcesFolder = Path.Combine(root, "WebResources");
+            var webresourcesCsproj = Path.Combine(webresourcesFolder, "CrO7982.WebResources.csproj");
+
+            var result = CloneCommand.ResolveExistingWebResourcesFolder(webresourcesFolder, webresourcesCsproj, layout);
+
+            result.Should().BeNull();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ResolveExistingWebResourcesFolder_DefaultFolderHasAProject_ReturnsDefaultFolder()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var webresourcesFolder = Path.Combine(root, "WebResources");
+            var webresourcesCsproj = Path.Combine(webresourcesFolder, "CrO7982.WebResources.csproj");
+            Directory.CreateDirectory(webresourcesFolder);
+            File.WriteAllText(webresourcesCsproj, WebResourcesProjectXml);
+            var layout = await LoadLayoutAsync(root, (Path.Combine("WebResources", "CrO7982.WebResources.csproj"), WebResourcesProjectXml));
+
+            var result = CloneCommand.ResolveExistingWebResourcesFolder(webresourcesFolder, webresourcesCsproj, layout);
+
+            result.Should().Be(webresourcesFolder);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ResolveExistingWebResourcesFolder_MovedAndRenamedElsewhereInSolutionFile_ReturnsThatFolder()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            // The default folder holds nothing -- only the solution file knows the WebResources project moved.
+            var movedFolder = Path.Combine(root, "Frontend");
+            var layout = await LoadLayoutAsync(root, (Path.Combine("Frontend", "ClientAssets.csproj"), WebResourcesProjectXml));
+            var webresourcesFolder = Path.Combine(root, "WebResources");
+            var webresourcesCsproj = Path.Combine(webresourcesFolder, "CrO7982.WebResources.csproj");
+
+            var result = CloneCommand.ResolveExistingWebResourcesFolder(webresourcesFolder, webresourcesCsproj, layout);
+
+            result.Should().Be(movedFolder);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     // ── ValidateForce / HasForce ────────────────────────────────────────────
 
     [Fact]

@@ -73,14 +73,22 @@ re-run against an already-cloned/pushed/synced folder) where relevant.
   flag entirely leaves it unset, which downstream code treats as `false`. The CLI help's "DEFAULT"
   column reflects what bare `--managed` resolves to, not the omitted-flag default — don't "fix" this
   without re-running `ManagedFlagBindingTests` first.
-- **New bug found this run (2026-07-23), not fixed**: idempotent re-clone of a project whose
+- **Bug found and fixed this run (2026-07-23)**: idempotent re-clone of a project whose
   Plugins/WebResources projects were legitimately moved+renamed (this test workspace's own
-  project-structure-flexibility history) scaffolds brand-new duplicate default-named
-  `Plugins/`/`WebResources/` projects and registers them into the solution file — `clone`'s own
-  scaffold-skip check uses a hardcoded literal folder name instead of `SolutionFileLayout` discovery,
-  unlike `push`/`sync`/`deploy`. Cleaned up the polluted test workspace after confirming (`git
-  checkout -- Cr07982.slnx CHANGES.md "Solution/src/Other/Solution.xml" "docs/DATAVERSE_CONTEXT.md" &&
-  rm -rf Plugins WebResources`). Details:
+  project-structure-flexibility history) used to scaffold brand-new duplicate default-named
+  `Plugins/`/`WebResources/` projects and register them into the solution file — `clone`'s own
+  scaffold-skip check used a hardcoded literal folder name instead of `SolutionFileLayout` discovery,
+  unlike `push`/`sync`/`deploy`. Fixed (design confirmed with the user first, not assumed): the skip
+  check now also asks `SolutionFileLayout`, OR'd with the original literal-folder check; a genuine
+  WebResources tie or any other layout-load failure propagates and stops clone rather than silently
+  falling back to scaffold. Live re-verified against the exact repro — now correctly prints "already
+  there — skipping" for both, solution file untouched. A separate issue surfaced during
+  re-verification and is now also fixed: `SeedWebResourceDistFromSrc` used to hardcode the
+  `WebResources/public` seed destination, leaving stray untracked files when the real WebResources
+  project had moved. `SetupWebResourcesProjectAsync` now returns the WebResources project's real
+  folder (existing or freshly scaffolded) and the seed step writes into that instead of guessing.
+  Live re-verified against the same repro — seed check now correctly evaluates the real project's
+  `public/` folder, no stray `WebResources/` folder created. Full details:
   `tests/test-findings/clone-idempotent-reclone-duplicates-moved-plugins-webresources.md`.
 - Fresh-state matrix (empty folder × env-URL combos × `--managed`) and the managed/C#-keyword
   rejection cases: **not re-verified live this run** — covered by existing unit tests
