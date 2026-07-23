@@ -72,23 +72,23 @@ public class OrphanCleanupServiceTests : IDisposable
     [InlineData(false, true, "(--no-delete active)")]
     [InlineData(true, true, "(managed — previewing what the upgrade import will remove)")]
     [InlineData(true, false, "(managed — first install, cleanup runs on a later upgrade deploy)")]
-    public void BuildNoDeleteHint_ReturnsExpected(bool includeManaged, bool existsInTarget, string expected)
+    public void BuildReportOnlyHint_ReturnsExpected(bool includeManaged, bool existsInTarget, string expected)
     {
         var solution = new DeploySolutionInfo("MySolution", "https://example.crm.dynamics.com", includeManaged, existsInTarget);
-        Assert.Equal(expected, OrphanCleanupService.BuildNoDeleteHint(solution));
+        Assert.Equal(expected, OrphanCleanupService.BuildReportOnlyHint(solution));
     }
 
     // U5: DryRun short-circuits before the managed/unmanaged/exists-in-target branching regardless of
-    // combination — confirms the dry-run branch dominates, mirroring BuildNoDeleteHint_ReturnsExpected's cases.
+    // combination — confirms the dry-run branch dominates, mirroring BuildReportOnlyHint_ReturnsExpected's cases.
     [Theory]
     [InlineData(false, false)]
     [InlineData(false, true)]
     [InlineData(true, true)]
     [InlineData(true, false)]
-    public void BuildNoDeleteHint_DryRun_ReturnsPreviewRegardlessOfManagedStatus(bool includeManaged, bool existsInTarget)
+    public void BuildReportOnlyHint_DryRun_ReturnsPreviewRegardlessOfManagedStatus(bool includeManaged, bool existsInTarget)
     {
         var solution = new DeploySolutionInfo("MySolution", "https://example.crm.dynamics.com", includeManaged, existsInTarget);
-        Assert.Equal("(--dry-run preview)", OrphanCleanupService.BuildNoDeleteHint(solution, RunMode.DryRun));
+        Assert.Equal("(--dry-run preview)", OrphanCleanupService.BuildReportOnlyHint(solution, RunMode.DryRun));
     }
 
     // PostDeployContext no longer carries LocalComponents/EntityLogicalNames/NamedComponents (KTD12) —

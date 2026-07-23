@@ -376,11 +376,12 @@ var runMode = settings.NoDelete || sln.IncludeManaged ? RunMode.NoDelete : RunMo
 
 `--publish-changes` is *not* solution-scoped — it runs `PublishAllXmlRequest`, which republishes every pending customization across the **entire target environment**, confirmed via three independent Microsoft sources: the ALM "Performance recommendations" doc ("doesn't apply only to the selected solution... publishes all pending changes across the entire environment," and explicitly recommends skipping it for managed since managed customizations always import already published); the `pac solution publish` CLI reference's one-line description, literally "Publishes all customizations"; and the `PublishAllXmlRequest` SDK message itself, which has no parameter to scope it to one solution (its sibling, `PublishXmlRequest`, does — via a `ParameterXml` with `<entities>`/`<optionsets>`/`<webresources>`/etc.). Given that environment-wide cost, `publishChanges = !sln.IncludeManaged` — skipped for managed (zero benefit there), accepted for unmanaged because Flowline's unmanaged targets are documented as single-environment/DEV-like, so in practice there's nothing else pending for that org-wide publish to sweep up.
 
-The printed NoDelete-report reason is now derived from facts rather than a caller-rendered string — `OrphanCleanupService.BuildNoDeleteHint(DeploySolutionInfo solution)` (`src/Flowline.Core/Services/OrphanCleanupService.cs:163`, unit-tested):
+The printed NoDelete-report reason is now derived from facts rather than a caller-rendered string — `OrphanCleanupService.BuildReportOnlyHint(DeploySolutionInfo solution)` (`src/Flowline.Core/OrphanCleanup/OrphanCleanupService.cs`, unit-tested; renamed from `BuildNoDeleteHint` once `--dry-run` gave it a second report-only mode to cover):
 
 ```csharp
-internal static string BuildNoDeleteHint(DeploySolutionInfo solution) =>
-    !solution.IncludeManaged ? "(--no-delete active)"
+internal static string BuildReportOnlyHint(DeploySolutionInfo solution, RunMode mode = RunMode.NoDelete) =>
+    mode == RunMode.DryRun ? "(--dry-run preview)"
+    : !solution.IncludeManaged ? "(--no-delete active)"
     : solution.ExistsInTarget ? "(managed — previewing what the upgrade import will remove)"
     : "(managed — first install, cleanup runs on a later upgrade deploy)";
 ```

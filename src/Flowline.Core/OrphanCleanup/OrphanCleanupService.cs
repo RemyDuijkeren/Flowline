@@ -131,7 +131,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         _deferred = [];
         _postImportOnly = [];
 
-        var result = await CompareAsync(context, ct, BuildNoDeleteHint(context.Solution, context.Mode)).ConfigureAwait(false);
+        var result = await CompareAsync(context, ct, BuildReportOnlyHint(context.Solution, context.Mode)).ConfigureAwait(false);
 
         if (context.Mode.IsReportOnly())
             return;
@@ -149,7 +149,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
     // every pre-existing call site (and test) keeps its current behavior unmodified; DryRun short-circuits
     // before the managed/unmanaged/exists-in-target branching, since --dry-run's "preview" framing
     // dominates regardless of the solution's managed status.
-    internal static string BuildNoDeleteHint(DeploySolutionInfo solution, RunMode mode = RunMode.NoDelete) =>
+    internal static string BuildReportOnlyHint(DeploySolutionInfo solution, RunMode mode = RunMode.NoDelete) =>
         mode == RunMode.DryRun ? "(--dry-run preview)"
         : !solution.IncludeManaged ? "(--no-delete active)"
         : solution.ExistsInTarget ? "(managed — previewing what the upgrade import will remove)"
@@ -885,7 +885,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
             console.MarkupLine($"  [bold {PriorityColor(priority)}]{PriorityLabel(priority)}:[/]");
             foreach (var entry in group)
             {
-                var label = mode.IsReportOnly() ? NoDeleteLabel(entry.Action) : ActionLabel(entry.Action);
+                var label = mode.IsReportOnly() ? ReportOnlyLabel(entry.Action) : ActionLabel(entry.Action);
                 console.MarkupLine($"    [{ActionColor(entry.Action)}]{Markup.Escape(entry.DisplayName)} — {label}[/]");
             }
         }
@@ -920,7 +920,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         _                               => action.ToString()
     };
 
-    static string NoDeleteLabel(OrphanAction action) => action switch
+    static string ReportOnlyLabel(OrphanAction action) => action switch
     {
         OrphanAction.Delete             => "would delete",
         OrphanAction.RemoveFromSolution => "would remove from solution",
