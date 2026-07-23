@@ -119,7 +119,7 @@ Key rules:
 
 ## GitHub Wiki
 
-The GitHub Wiki commonly lives in sibling folder `E:\Code\RemyDuijkeren\Flowline.wiki\` on the
+The GitHub Wiki commonly lives in sibling folder `..\Flowline.wiki\` on the
 primary Windows development machine. Do not assume this path exists on other machines. If wiki
 checkout is unavailable or outside writable workspace, report that before completion; do not
 silently skip required wiki updates or create a replacement folder.

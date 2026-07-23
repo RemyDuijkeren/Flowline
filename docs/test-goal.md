@@ -25,7 +25,7 @@ push/sync/delete/orphan-cleanup scenarios. No need to preserve or restore DEV st
   additional preview alongside `--dry-run`.
 - Never delete or modify anything under `MyFlowTest`.
 - Never force-push, never touch remote git state.
-- Never commit in the Flowline source repo (`E:\Code\RemyDuijkeren\Flowline`) without being
+- Never commit in the Flowline source repo (`Code/Flowline/`) without being
   explicitly asked, even mid-session.
 
 ## Bug-fix policy
@@ -279,10 +279,25 @@ default layout:
 - **Orphan/drift detection across renames**: after renaming a plugin project, the old assembly/package
   name becomes a genuine orphan in Dataverse — confirm `push`'s orphan warnings correctly name it and
   gate deletion behind `--force delete-orphans`.
-- **Known unfixed gap**: a classic (non-package) plugin assembly whose `.NET AssemblyName` contains a
-  period gets a **false-positive orphan flag** in `sync`/`push`/`deploy` drift checks — potentially
-  dangerous (`--force delete-orphans` could delete a live registration). Details/repro/root
-  cause/suggested fix: `tests/test-findings/false-positive-orphan-dotted-classic-assembly-name.md`.
+- **Fixed and live-verified (2026-07-23)**: a classic (non-package) plugin assembly whose `.NET
+  AssemblyName` contains a period used to get a **false-positive orphan flag** in `sync`/`push`/`deploy`
+  drift checks — potentially dangerous (`--force delete-orphans` could delete a live registration).
+  `PluginWebResourceDriftChecker` now resolves each unpacked `PluginAssemblies/` DLL to its true name
+  (companion `<dll>.data.xml` `FullName`, simple name before the first comma) before comparing, falling
+  back to the on-disk filename when metadata is absent/unreadable — so `Cr07982.LegacyPlugins` (unpacked
+  dot-stripped as `Cr07982LegacyPlugins.dll`) now matches build output and is no longer flagged. 5 new
+  regression tests, full suite green (bar the 2 pre-existing live-MSAL `ConnectToDataverseAsync_*`
+  failures, unrelated). Fix rebuilt + reinstalled + confirmed present in the running binary this run.
+  **Live-verified against real PAC output**: with Flowline's own MSAL session expired, the check was
+  routed through PAC's still-valid connection — `pac solution export --name Cr07982` (DEV) +
+  `pac solution unpack`. Real output confirmed the exact bug shape: `Cr07982.LegacyPlugins` unpacks
+  dot-stripped to `Cr07982LegacyPlugins.dll`, its `.data.xml` carries `FullName` as an attribute on the
+  root `<PluginAssembly>` element (`Cr07982.LegacyPlugins, Version=1.0.0.0, ...`) plus a UTF-8 BOM. A
+  throwaway probe drove the **deployed** `CheckAsync` against the real exported folder → **empty (no
+  orphan)**; discriminating (without the fix the dot-stripped key wouldn't match). Full `sync`/`push`/`drift`
+  command runs still pending Flowline auth, but they invoke the exact code path the probe exercised.
+  Uncommitted in the source working tree; awaits explicit commit authorization. Details:
+  `docs/test-findings/false-positive-orphan-dotted-classic-assembly-name.md`.
 
 ## Output modes: run every phase both without and with `-v`/`--verbose`
 
@@ -311,6 +326,41 @@ exercise different UX contracts and both need explicit judgment, not just "did i
 
 ## Operational notes
 
+- **PAC MSAL session expiry blocks all live testing (session 3, 2026-07-23 later)**: single unnamed
+  UNIVERSAL PAC profile (`remy@automatevalue.com`). `pac org who` connects and `pac org select
+  --environment <devurl>` refreshes PAC's own token store (non-interactive, refresh token still valid),
+  but Flowline still fails every connect with a clean `Session expired for 'remy@automatevalue.com'.
+  Run 'pac auth create --url <url>' to re-authenticate.` (exit 4 standalone / same message on clone).
+  Root cause confirmed **not a Flowline bug**: `DataverseConnector.AcquireUserTokenAsync`'s
+  `AcquireTokenSilent` finds no account in the shared MSAL public-client cache for the
+  `dynamics.com/.default` scope (inner `MsalUiRequiredException: No account or login hint`) — `pac org
+  select` does not repopulate that cache. Message + exit behavior correct. **Unblock is interactive
+  only**: user must run `pac auth create --url https://automatevalue-dev.crm4.dynamics.com` (browser
+  login) — no non-interactive path found. **Conclusively proven**: even a *fresh, successful*
+  `pac solution export`/`pac org who --environment <devurl>` to the exact DEV org (real Dataverse
+  token acquired) does **not** unblock Flowline — retried `clone` immediately after still failed
+  session-expired. PAC 2.9.x's connect/refresh path does not write user tokens back to
+  `tokencache_msalv3.dat` (the file `DataverseConnector.CreateMsalCacheHelperAsync` reads); likely a
+  WAM/OS broker Flowline doesn't opt into. Full root cause + suggested fix directions (WAM support vs.
+  `pac`-token passthrough — architectural, logged not fixed):
+  `docs/test-findings/pac-2.9-user-token-not-in-shared-msal-cache-blocks-flowline.md`. Same root as
+  the 2 pre-existing `ConnectToDataverseAsync_*` unit-test failures. **PAC-routed workaround** used for
+  read-only verification needing only unpacked content: `pac solution export` + `pac solution unpack`
+  (how the dotted-classic fix was live-verified this run).
+- **Offline matrix re-verified this run (session 3, against the rebuilt binary w/ the dotted-classic
+  fix)** — everything reachable without a Dataverse connection, all matching prior documented behavior:
+  `clone` in a non-git folder → `No Git repo found...`, exit 11. `sln add` **5/5**: valid add (`✓ ...
+  added`, exit 0), idempotent re-add (`↷ ... already in ... — skipping`, exit 0), wrong extension
+  `.csproj` (`... is a C# project — use 'dotnet sln add'...`, exit 15), nonexistent path (`No project
+  at '...' — check the path.`, exit 3), and the **walk-up regression** (subfolder w/ no solution file
+  whose parent has one → errors naming the exact folder, parent `.slnx` untouched, exit 3). `push`
+  standalone inside a `.flowline` project → `--pluginFile and --webresources cannot be used inside a
+  Flowline project folder...`, exit 15; standalone missing/nonexistent plugin file → `Plugin file not
+  found: ...`, exit 3. Confirmed ordering (not a bug): `deploy` resolves the project **before** target
+  validation (folder w/ `.slnx` but no `.flowline` → `No Flowline project found`, exit 11), and `push`
+  scope mutual-exclusion / scope-flag-mismatch run **after** auth resolution (hit session-expiry before
+  the check) — both remain live-only. Not re-reachable offline: full clone/push/sync/deploy pipeline,
+  dotted-classic live verify, verbose-vs-plain output judgment — all need live auth.
 - **PAC auth profile ambiguity — resolved (2026-07-23)**: the user removed the duplicate PAC auth
   profile that caused the ambiguity block described below; the DTAP gate's predecessor check now runs
   live cleanly without `--skip-dtap-check` (confirmed: it correctly rejected a real version mismatch,
@@ -356,7 +406,7 @@ not bundled into a single report. Each file should cover:
 - **Suggested fix direction**, if any, and why it wasn't attempted inline.
 
 This test-goal document only ever *references* a finding file by path and a one-line summary — it
-does not duplicate the full writeup. Before starting a new run, skim `tests/test-findings/` for
+does not duplicate the full writeup. Before starting a new run, skim `docs/test-findings/` for
 issues that might now be fixed (re-verify, then delete or update the file accordingly) and check
 whether any still-open finding should be promoted to a fix this run instead.
 

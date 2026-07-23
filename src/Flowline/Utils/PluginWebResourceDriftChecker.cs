@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using System.Xml;
+using System.Xml.Linq;
 using Flowline.Core.Services;
 
 namespace Flowline.Utils;
@@ -96,7 +98,7 @@ public static class PluginWebResourceDriftChecker
             yield break;
 
         var srcDlls = Directory.EnumerateFiles(pluginAssembliesFolder, "*.dll", SearchOption.AllDirectories)
-            .ToDictionary(f => Path.GetFileName(f), f => new FileInfo(f).Length, StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(ResolveUnpackedAssemblyName, f => new FileInfo(f).Length, StringComparer.OrdinalIgnoreCase);
 
         foreach (var releaseDll in EnumerateReleaseDlls(releaseFolders))
         {
@@ -129,10 +131,57 @@ public static class PluginWebResourceDriftChecker
 
         foreach (var dll in Directory.EnumerateFiles(pluginAssembliesFolder, "*.dll", SearchOption.AllDirectories))
         {
-            var name = Path.GetFileName(dll);
+            var name = ResolveUnpackedAssemblyName(dll);
             if (!releaseDlls.Contains(name))
                 yield return new DriftWarning(DriftCategory.OrphanAssembly, name);
         }
+    }
+
+    /// <summary>
+    /// The comparison filename for an unpacked <c>PluginAssemblies/</c> DLL, resolved from the assembly's
+    /// true name rather than the on-disk filename PAC generated.
+    /// </summary>
+    /// <remarks>
+    /// PAC's solution-unpack strips periods from the folder/file it writes for a <b>classic</b>
+    /// PluginAssembly component: <c>Cr07982.LegacyPlugins</c> unpacks to <c>Cr07982LegacyPlugins.dll</c> —
+    /// no dot. Build output keeps the real name (<c>Cr07982.LegacyPlugins.dll</c>), so a raw filename
+    /// compare misreports any dotted classic assembly as an orphan (or misses a size mismatch), even while
+    /// correctly registered. The companion <c>&lt;dll&gt;.data.xml</c> preserves the true identity in its
+    /// <c>FullName</c> — its simple name (before the first comma) plus <c>.dll</c> matches build output.
+    /// Nupkg PluginPackage exports don't strip the dot, and any DLL with no readable metadata falls back to
+    /// its on-disk filename, so both keep working unchanged.
+    /// </remarks>
+    static string ResolveUnpackedAssemblyName(string dllPath) =>
+        ReadAssemblySimpleName(dllPath + ".data.xml") is { } simpleName
+            ? simpleName + ".dll"
+            : Path.GetFileName(dllPath);
+
+    /// <summary>The assembly's simple name from a <c>.dll.data.xml</c>'s <c>FullName</c>, or null when absent/unreadable.</summary>
+    static string? ReadAssemblySimpleName(string dataXmlPath)
+    {
+        if (!File.Exists(dataXmlPath))
+            return null;
+
+        string? fullName;
+        try
+        {
+            var doc = XDocument.Load(dataXmlPath);
+            fullName = doc.Descendants().Attributes("FullName").Select(a => a.Value)
+                .Concat(doc.Descendants("FullName").Select(e => e.Value))
+                .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+        }
+        catch (XmlException)
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(fullName))
+            return null;
+
+        // FullName is an assembly display name: "Simple.Name, Version=…, Culture=…, PublicKeyToken=…".
+        var comma = fullName.IndexOf(',');
+        var simple = (comma >= 0 ? fullName[..comma] : fullName).Trim();
+        return simple.Length > 0 ? simple : null;
     }
 
     static IEnumerable<string> EnumerateReleaseDlls(IReadOnlyList<string> releaseFolders) =>

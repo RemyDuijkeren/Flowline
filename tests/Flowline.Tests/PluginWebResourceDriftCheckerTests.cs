@@ -285,6 +285,98 @@ public class PluginWebResourceDriftCheckerTests : IDisposable
             w.Category == DriftCategory.OrphanAssembly && w.RelativePath == "Plugins.dll");
     }
 
+    // ── classic dotted assembly: PAC strips the dot from the on-disk name, .data.xml keeps the truth ─
+    // PAC unpacks a classic PluginAssembly named "Cr07982.LegacyPlugins" to a dot-stripped file
+    // "Cr07982LegacyPlugins.dll". Build output keeps the dot. Matching on the raw file name misreports
+    // a live, correctly-registered assembly as an orphan (and hides genuine size drift) — the companion
+    // .data.xml's FullName carries the true identity, so the checker compares on that.
+
+    /// <summary>Writes the companion &lt;dll&gt;.data.xml PAC unpacks next to a classic PluginAssembly.</summary>
+    void WriteAssemblyMetadata(string relativeDllPath, string fullName, bool asElement = false) =>
+        WriteFile(relativeDllPath + ".data.xml", asElement
+            ? $"""<?xml version="1.0" encoding="utf-8"?><PluginAssembly><FullName>{fullName}</FullName></PluginAssembly>"""
+            : $"""<?xml version="1.0" encoding="utf-8"?><PluginAssembly FullName="{fullName}" />""");
+
+    const string DottedFullName = "Cr07982.LegacyPlugins, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null";
+
+    [Fact]
+    public async Task Check_ClassicDottedAssembly_PacStrippedFilename_NotReportedAsOrphan()
+    {
+        WritePluginProject(Path.Combine("Legacy", "Cr07982.LegacyPlugins.csproj"));
+        WriteSolution(@"Legacy\Cr07982.LegacyPlugins.csproj");
+        WriteBinaryFile(Path.Combine("Legacy", "bin", "Release", "Cr07982.LegacyPlugins.dll"), 1_000);
+
+        // Unpacked with the dot stripped, but the metadata keeps the true name.
+        var unpacked = Path.Combine("Solution", "src", "PluginAssemblies", "Cr07982LegacyPlugins.dll");
+        WriteBinaryFile(unpacked, 1_000);
+        WriteAssemblyMetadata(unpacked, DottedFullName);
+
+        (await Check()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Check_ClassicDottedAssembly_FullNameAsElement_NotReportedAsOrphan()
+    {
+        WritePluginProject(Path.Combine("Legacy", "Cr07982.LegacyPlugins.csproj"));
+        WriteSolution(@"Legacy\Cr07982.LegacyPlugins.csproj");
+        WriteBinaryFile(Path.Combine("Legacy", "bin", "Release", "Cr07982.LegacyPlugins.dll"), 1_000);
+
+        var unpacked = Path.Combine("Solution", "src", "PluginAssemblies", "Cr07982LegacyPlugins.dll");
+        WriteBinaryFile(unpacked, 1_000);
+        WriteAssemblyMetadata(unpacked, DottedFullName, asElement: true);
+
+        (await Check()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Check_ClassicDottedAssembly_SizeMismatchReportedUnderTrueName()
+    {
+        WritePluginProject(Path.Combine("Legacy", "Cr07982.LegacyPlugins.csproj"));
+        WriteSolution(@"Legacy\Cr07982.LegacyPlugins.csproj");
+        WriteBinaryFile(Path.Combine("Legacy", "bin", "Release", "Cr07982.LegacyPlugins.dll"), 50_000 + 15_000);
+
+        var unpacked = Path.Combine("Solution", "src", "PluginAssemblies", "Cr07982LegacyPlugins.dll");
+        WriteBinaryFile(unpacked, 50_000);
+        WriteAssemblyMetadata(unpacked, DottedFullName);
+
+        (await Check()).Should().ContainSingle(w =>
+            w.Category == DriftCategory.PluginSizeMismatch &&
+            w.RelativePath.Equals("Cr07982.LegacyPlugins.dll", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Check_ClassicDottedAssembly_NoBuildingProject_ReportedAsOrphanUnderTrueName()
+    {
+        // A genuinely orphaned dotted classic assembly is still flagged — under its true dotted
+        // identity, not PAC's dot-stripped file name.
+        WritePluginProject(Path.Combine("Sales", "Sales.Plugins.csproj"));
+        WriteSolution(@"Sales\Sales.Plugins.csproj");
+        WriteBinaryFile(Path.Combine("Sales", "bin", "Release", "Sales.Plugins.dll"), 1_000);
+        WriteBinaryFile(Path.Combine("Solution", "src", "PluginAssemblies", "Sales.Plugins.dll"), 1_000);
+
+        var orphan = Path.Combine("Solution", "src", "PluginAssemblies", "Cr07982LegacyPlugins.dll");
+        WriteBinaryFile(orphan, 1_000);
+        WriteAssemblyMetadata(orphan, DottedFullName);
+
+        (await Check()).Should().ContainSingle(w =>
+            w.Category == DriftCategory.OrphanAssembly && w.RelativePath == "Cr07982.LegacyPlugins.dll");
+    }
+
+    [Fact]
+    public async Task Check_UnpackedAssembly_MalformedDataXml_FallsBackToFileName()
+    {
+        // A .data.xml that won't parse must not throw — the checker falls back to the on-disk file name.
+        WritePluginProject(Path.Combine("Sales", "Sales.Plugins.csproj"));
+        WriteSolution(@"Sales\Sales.Plugins.csproj");
+        WriteBinaryFile(Path.Combine("Sales", "bin", "Release", "Sales.Plugins.dll"), 1_000);
+
+        var unpacked = Path.Combine("Solution", "src", "PluginAssemblies", "Sales.Plugins.dll");
+        WriteBinaryFile(unpacked, 1_000);
+        WriteFile(unpacked + ".data.xml", "<PluginAssembly> not valid xml");
+
+        (await Check()).Should().BeEmpty();
+    }
+
     // ── null WebResources project: skip web-resource drift, still check plugins, don't throw ─────
 
     [Fact]
