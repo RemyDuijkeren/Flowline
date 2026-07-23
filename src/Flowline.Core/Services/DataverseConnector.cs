@@ -51,7 +51,7 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         var resourceUrl = environmentUrl.TrimEnd('/');
         var serviceUri  = new Uri(resourceUrl + "/");
 
-        console.Verbose($"Connecting via PAC auth profile '{profile.Name ?? profile.User}' at {resourceUrl}...");
+        console.Verbose($"Connecting via PAC auth profile '{ResolveProfileLabel(profile)}' at {resourceUrl}...");
 
         var authority = ResolveAuthority(profile);
         var cacheHelper = await GetOrCreateMsalCacheHelperAsync();
@@ -65,6 +65,12 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         string.IsNullOrWhiteSpace(profile.Authority)
             ? "https://login.microsoftonline.com/organizations"
             : profile.Authority.TrimEnd('/');
+
+    // PAC's authprofiles_v2.json gives an unnamed profile an empty-string Name, not null — a bare
+    // ?? chain never falls through to User for that shape (see StatusCommand.FormatProfileNote's
+    // identical fix).
+    internal static string? ResolveProfileLabel(PacProfile profile) =>
+        string.IsNullOrWhiteSpace(profile.Name) ? profile.User : profile.Name;
 
     /// <summary>
     /// Platform storage backends:
@@ -224,7 +230,7 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         {
             var user = profile.User ?? "unknown";
             throw new FlowlineException(ExitCode.NotAuthenticated,
-                $"'{user}' isn't valid in tenant '{profile.TenantId ?? "unknown"}' for profile '{profile.Name ?? user}'. " +
+                $"'{user}' isn't valid in tenant '{profile.TenantId ?? "unknown"}' for profile '{ResolveProfileLabel(profile) ?? user}'. " +
                 "If this account should have access, the cached PAC credential may be stale or bound " +
                 "to a different tenant -- run 'pac auth clear' then 'pac auth create' to re-authenticate " +
                 "from scratch. If it genuinely lacks access, ask a tenant admin to add it as a guest, " +

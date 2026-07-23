@@ -114,6 +114,28 @@ public class SecretResolverTests
         }
     }
 
+    [Fact]
+    public async Task ResolveAsync_EmptyStringName_NonInteractive_FallsBackToApplicationId()
+    {
+        // Live bug (2026-07-23): PAC's authprofiles_v2.json gives an unnamed profile Name = "", not
+        // null — a bare `Name ?? ApplicationId` chain never falls through for that shape.
+        var original = Environment.GetEnvironmentVariable("AZURE_CLIENT_SECRET");
+        try
+        {
+            Environment.SetEnvironmentVariable("AZURE_CLIENT_SECRET", null);
+            var resolver = new FakeSecretResolver(new TestConsole(), interactive: false);
+
+            var act = async () => await resolver.ResolveAsync(SpProfile(applicationId: "app-id", name: ""), secretFlag: null);
+
+            await act.Should().ThrowAsync<FlowlineException>()
+                .Where(ex => ex.Message.Contains("app-id") && !ex.Message.Contains("''"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("AZURE_CLIENT_SECRET", original);
+        }
+    }
+
     // ── 5. Interactive → prompt shown ───────────────────────────────────────
 
     [Fact]

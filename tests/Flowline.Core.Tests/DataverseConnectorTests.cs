@@ -430,6 +430,39 @@ public class DataverseConnectorTests
     }
 
     [Fact]
+    public void ResolveProfileLabel_NamedProfile_ReturnsName()
+    {
+        var profile = new PacProfile { Kind = "DATAVERSE", Name = "Dev", User = "someone@contoso.com" };
+
+        var result = DataverseConnector.ResolveProfileLabel(profile);
+
+        Assert.Equal("Dev", result);
+    }
+
+    [Fact]
+    public void ResolveProfileLabel_EmptyStringName_FallsBackToUser()
+    {
+        // Live bug (2026-07-23): PAC's authprofiles_v2.json gives an unnamed profile Name = "", not
+        // null — a bare `Name ?? User` chain never falls through for that shape, producing "Connecting
+        // via PAC auth profile ''..." instead of naming the user.
+        var profile = new PacProfile { Kind = "DATAVERSE", Name = "", User = "someone@contoso.com" };
+
+        var result = DataverseConnector.ResolveProfileLabel(profile);
+
+        Assert.Equal("someone@contoso.com", result);
+    }
+
+    [Fact]
+    public void ResolveProfileLabel_NullName_FallsBackToUser()
+    {
+        var profile = new PacProfile { Kind = "DATAVERSE", User = "someone@contoso.com" };
+
+        var result = DataverseConnector.ResolveProfileLabel(profile);
+
+        Assert.Equal("someone@contoso.com", result);
+    }
+
+    [Fact]
     public void FindBestProfile_SingleCandidateMatchesUrl_ReturnsProfileFound()
     {
         var profile = new PacProfile { Kind = "DATAVERSE", Resource = "https://contoso.crm4.dynamics.com" };

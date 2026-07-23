@@ -37,14 +37,22 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
     internal static string? FormatProfileNote(ProfileResolutionResult resolution, bool isActive) =>
         resolution switch
         {
+            // PAC's authprofiles_v2.json gives an unnamed profile an empty-string Name, not a missing/null
+            // one — a bare ?? chain never falls through to User for that shape, so this checks for
+            // whitespace explicitly instead of relying on null-coalescing alone.
             ProfileFound found when !isActive =>
-                $"PAC auth profile mismatch — active identity may not be '{found.Profile.Name ?? found.Profile.User ?? "(unnamed)"}'",
+                $"PAC auth profile mismatch — active identity may not be '{FirstNonBlank(found.Profile.Name, found.Profile.User) ?? "(unnamed)"}'",
             ProfileFound => null,
             ProfileAmbiguous ambiguous =>
                 $"{ambiguous.Candidates.Count} local PAC profiles match this environment — run 'pac auth list' to check",
             ProfileNotFound => "No local PAC auth profile matches this environment yet",
             _ => null
         };
+
+    static string? FirstNonBlank(string? first, string? second) =>
+        !string.IsNullOrWhiteSpace(first) ? first
+        : !string.IsNullOrWhiteSpace(second) ? second
+        : null;
 
     // DataverseConnector isn't mockable (no interface, its instance overloads read the real
     // authprofiles_v2.json with no override seam) -- taking the two operations as funcs lets tests

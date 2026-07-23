@@ -65,6 +65,30 @@ public class StatusCommandTests
     }
 
     [Fact]
+    public void FormatProfileNote_ProfileFoundNotActive_EmptyStringName_FallsBackToUser()
+    {
+        // Live bug (2026-07-23): PAC's authprofiles_v2.json gives an unnamed profile Name = "",
+        // not null — a bare `Name ?? User` chain never falls through for that shape, producing
+        // "active identity may not be ''" instead of naming the user.
+        var profile = new PacProfile { Kind = "DATAVERSE", Name = "", User = "someone@contoso.com" };
+
+        var result = StatusCommand.FormatProfileNote(new ProfileFound(profile), isActive: false);
+
+        result.Should().Contain("someone@contoso.com");
+        result.Should().NotContain("''");
+    }
+
+    [Fact]
+    public void FormatProfileNote_ProfileFoundNotActive_EmptyStringNameAndUser_FallsBackToUnnamed()
+    {
+        var profile = new PacProfile { Kind = "DATAVERSE", Name = "", User = "" };
+
+        var result = StatusCommand.FormatProfileNote(new ProfileFound(profile), isActive: false);
+
+        result.Should().Contain("(unnamed)");
+    }
+
+    [Fact]
     public void FormatProfileNote_ProfileAmbiguous_ReturnsCandidateCountNote()
     {
         var candidates = new List<PacProfile>

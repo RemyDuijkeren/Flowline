@@ -28,16 +28,23 @@ public class SecretResolver(IAnsiConsole console)
 
         if (IsInteractive())
         {
-            var profileLabel = profile.Name ?? profile.ApplicationId ?? "unknown";
             var secret = console.Prompt(
-                new TextPrompt<string>($"Enter client secret for '{profileLabel}' (client ID: {profile.ApplicationId}):")
+                new TextPrompt<string>($"Enter client secret for '{ResolveProfileLabel(profile)}' (client ID: {profile.ApplicationId}):")
                     .Secret());
             return Task.FromResult(secret);
         }
 
         throw new FlowlineException(ExitCode.NotAuthenticated,
-            $"Client secret required for '{profile.Name ?? profile.ApplicationId ?? "unknown"}' — set AZURE_CLIENT_SECRET env var or use --client-secret flag");
+            $"Client secret required for '{ResolveProfileLabel(profile)}' — set AZURE_CLIENT_SECRET env var or use --client-secret flag");
     }
+
+    // PAC's authprofiles_v2.json gives an unnamed profile an empty-string Name, not null — a bare ??
+    // chain never falls through to ApplicationId for that shape (see
+    // DataverseConnector.ResolveProfileLabel's identical fix for the Name/User fallback case).
+    static string ResolveProfileLabel(PacProfile profile) =>
+        !string.IsNullOrWhiteSpace(profile.Name) ? profile.Name
+        : !string.IsNullOrWhiteSpace(profile.ApplicationId) ? profile.ApplicationId
+        : "unknown";
 
     protected virtual bool IsInteractive() => ConsoleHelper.IsInteractive(null);
 }
