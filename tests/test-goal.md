@@ -73,6 +73,18 @@ re-run against an already-cloned/pushed/synced folder) where relevant.
   flag entirely leaves it unset, which downstream code treats as `false`. The CLI help's "DEFAULT"
   column reflects what bare `--managed` resolves to, not the omitted-flag default — don't "fix" this
   without re-running `ManagedFlagBindingTests` first.
+- **New bug found this run (2026-07-23), not fixed**: idempotent re-clone of a project whose
+  Plugins/WebResources projects were legitimately moved+renamed (this test workspace's own
+  project-structure-flexibility history) scaffolds brand-new duplicate default-named
+  `Plugins/`/`WebResources/` projects and registers them into the solution file — `clone`'s own
+  scaffold-skip check uses a hardcoded literal folder name instead of `SolutionFileLayout` discovery,
+  unlike `push`/`sync`/`deploy`. Cleaned up the polluted test workspace after confirming (`git
+  checkout -- Cr07982.slnx CHANGES.md "Solution/src/Other/Solution.xml" "docs/DATAVERSE_CONTEXT.md" &&
+  rm -rf Plugins WebResources`). Details:
+  `tests/test-findings/clone-idempotent-reclone-duplicates-moved-plugins-webresources.md`.
+- Fresh-state matrix (empty folder × env-URL combos × `--managed`) and the managed/C#-keyword
+  rejection cases: **not re-verified live this run** — covered by existing unit tests
+  (`CloneCommandTests.cs`) only this round.
 
 ### `push` — test **both modes explicitly**, they have different validation surfaces
 
@@ -101,6 +113,20 @@ re-run against an already-cloned/pushed/synced folder) where relevant.
 - **Fixed** (2026-07-22, verified in source: `PluginService.cs` now throws `FlowlineException` on a
   `packageid`-owned assembly before any Dataverse write, in both classic-assembly write paths).
   `tests/test-findings/standalone-push-pluginpackage-raw-faultexception.md`.
+- **Live-verified this run (2026-07-23), project mode, `--dry-run`**: ran against both plugin projects
+  in this workspace. `Cr07982.Backend` (moved/renamed nupkg-mode plugin project) succeeded cleanly.
+  `Cr07982.LegacyPlugins` (classic/unpackaged) hit the classic-vs-package conflict guard with the
+  expected clean friendly error — confirms that guard works correctly, not a bug.
+- **Live-verified this run (2026-07-23), standalone mode negative cases**: run inside a Flowline
+  project folder → rejected with the exact "cannot be used inside a Flowline project folder" message.
+  Missing solution name positional arg → rejected. `--scope webresources` with `--pluginFile` only
+  (once auth/env resolution passed) → `"--scope webresources/formevents requires --webresources."`.
+  `--scope plugins` with `--webresources` only → `"--scope plugins/assemblyonly requires
+  --pluginFile."`. Both name the missing flag exactly, not a generic project-not-found message. Note:
+  the scope/flag-mismatch check runs *after* env-URL and auth-profile resolution in
+  `PushCommand.ExecuteAsync` (`ResolveStandaloneEnvironmentUrl` before `ResolveScope`), so reaching it
+  live requires a resolvable `--dev`/auth profile first — not a bug, just an ordering note for future
+  live repro.
 
 ### `sync`
 
@@ -114,6 +140,13 @@ re-run against an already-cloned/pushed/synced folder) where relevant.
   value — must reject cleanly, not hang or silently apply.
 - If the WebResources project was moved/renamed since the last sync, confirm drift correctly still
   finds it (see "Project-structure flexibility" below) rather than reporting phantom drift.
+- **Live-verified this run (2026-07-23)**: full `sync` against DEV succeeded (~4 min), version bumped
+  2.0.3→2.0.4, drift detection accurate for the real fixture state. Dirty-tree rejection re-confirmed
+  with a plain entity-file change under `Solution/src/` — exit 12, clean plain-text message, no
+  Dataverse contact.
+- `--bump patch|minor|major|none`, `--no-build`, and the non-interactive `--managed` reconfirmation
+  gate: **not re-verified live this run** — see prior session's `sync bump tests` git history in the
+  test workspace (commit `516b445`) for earlier live coverage; not re-run this round.
 
 ### `sln add`
 
@@ -129,6 +162,11 @@ re-run against an already-cloned/pushed/synced folder) where relevant.
   `E:\Code\TryOut\handwritten-backup.slnx` (the file the original incident modified) untouched.
 - For `.csproj` (non-`.cdsproj`) additions to the solution file, use `dotnet sln add` — that's the
   correct tool, not `flowline sln add`.
+- **Live-verified this run (2026-07-23)**: idempotent re-add of the already-present `.cdsproj` →
+  `"already in Cr07982.slnx — skipping"`, exit 0. Wrong extension (a real `.csproj`) →
+  `"'Cr07982.Backend.csproj' is a C# project — use 'dotnet sln add' for those..."`, exit 15.
+  Nonexistent path → `"No project at '...' — check the path."`, exit 3. Workspace tree confirmed
+  unchanged (`git status --short` clean) after all three.
 
 ### `deploy` — always with `--dry-run`, per the safety constraints above
 
@@ -186,15 +224,13 @@ re-run against an already-cloned/pushed/synced folder) where relevant.
   repo. **Live-verified against PROD only** (partial): `drift prod` reported the same 2 orphans as
   `deploy --dry-run`'s report, consistent between the two mechanisms, exit 15 (drift found). Not yet
   run against DEV or on a genuinely clean/zero-drift repo state.
-- **Operational blocker found this run**: this machine has two PAC auth profiles resolving to the same
-  Dev URL (an unnamed one and one named `Dev`), and `pac auth select --index <n>` does **not** resolve
-  Flowline's own ambiguity check (which matches by URL, not by which profile is currently "active") —
-  confirmed by testing both. This blocks the DTAP gate's predecessor check for any `prod`/`uat`/`test`
-  deploy on this machine until one of the two duplicate profiles is deleted (`pac auth delete`, not
-  attempted this run — modifying the user's local PAC auth profile list wasn't clearly in scope for an
-  autonomous fix). Every PROD `--dry-run` test above used `--skip-dtap-check` to work around it; the
-  DTAP predecessor-check step itself (`ValidateDtapGateAsync`'s non-skip path) is therefore still
-  untested live this run, though it's unit-tested in `DeployCommandDtapGateTests.cs`.
+- **Operational blocker — resolved (2026-07-23)**: the previous run hit two PAC auth profiles
+  resolving to the same Dev URL, blocking the DTAP gate's predecessor check (worked around with
+  `--skip-dtap-check`). The user removed the duplicate profile between sessions. **Live-verified this
+  run**: `deploy prod --dry-run` (no `--skip-dtap-check`) now runs the real predecessor check —
+  correctly rejected when Dev was at solution version 2.0.3.0 but the local package's DTAP gate
+  version was 2.0.2.0 (a real, expected mismatch at that point in testing, not a bug). See "Operational
+  notes" below for the full profile-ambiguity resolution and the `status` fix it surfaced.
 - **New bug found and fixed this run** (unrelated to `--dry-run` itself, surfaced by verbose-mode
   testing): `console.Verbose(...)` leaked raw `[bold]...[/]` Spectre markup tags when fed
   `ConsolePath.ShortenPath`'s output (the "Loaded N PAC auth profile(s) from ..." line). Root cause,
@@ -260,6 +296,11 @@ exercise different UX contracts and both need explicit judgment, not just "did i
   otherwise filtered from the console by `VerboseFilterHook`
   (`src/Flowline.Core/Console/VerboseFilterHook.cs`)). Confirm the extra detail is accurate, actually
   reflects the real Dataverse calls/results made, and isn't just restating the non-verbose summary.
+- **Possible finding, not confirmed this run (2026-07-23)**: verbose `push` output for a WebResources
+  project with a rollup build step showed mojibake (`ΓåÆ` instead of `→`) and literal ANSI escape codes
+  in the passed-through npm/rollup build log. Couldn't conclusively attribute this to Flowline vs. this
+  session's own Bash-tool terminal (cp437) — needs re-confirmation from a real interactive terminal
+  before treating as a real bug. `tests/test-findings/verbose-build-output-mojibake-cp437.md`.
 - `--verbose` is a convenience, not a requirement for auditing: every run also writes a full log file
   (path is printed at the end of every invocation, verbose or not — see
   `FlowlineStoragePaths.GetLogsPath` via `src/Flowline/Program.cs`), and `LoggingRenderHook`
@@ -270,11 +311,34 @@ exercise different UX contracts and both need explicit judgment, not just "did i
 
 ## Operational notes
 
-- **PAC auth profile ambiguity**: this machine has multiple PAC auth profiles that can resolve to the
-  same environment URL (an unnamed one and a named one). Commands will error
-  ("Multiple PAC auth profiles match ... run: pac auth select --index <n>") rather than guess — resolve
-  with `pac auth select --index <n>` before proceeding, or pass `-a`/`--auto-select-auth-profile` to
-  let Flowline switch automatically for that one command.
+- **PAC auth profile ambiguity — resolved (2026-07-23)**: the user removed the duplicate PAC auth
+  profile that caused the ambiguity block described below; the DTAP gate's predecessor check now runs
+  live cleanly without `--skip-dtap-check` (confirmed: it correctly rejected a real version mismatch,
+  Dev at 2.0.3.0 vs local gate version 2.0.2.0 — correct behavior, not a bug).
+- **New bug found and fixed this run (2026-07-23)**: while cleaning up the duplicate profile, `flowline
+  status` printed `PAC auth profile mismatch — active identity may not be ''` (empty quotes) for the
+  one remaining unnamed profile — PAC's `authprofiles_v2.json` gives an unnamed profile `Name: ""`
+  (empty string, not null), so `StatusCommand.FormatProfileNote`'s bare `??` chain never fell through
+  to `User`. Fixed with an explicit `IsNullOrWhiteSpace`-based fallback; live re-verified (now prints
+  the real user email). Not yet committed — needs explicit commit authorization.
+  `tests/test-findings/status-empty-profile-name-breaks-fallback.md`.
+- **Second instance of the same bug, found and fixed this run (2026-07-23)**: `--verbose` output for
+  `push`/`sync`/`deploy` (any command connecting via PAC) showed `Connecting via PAC auth profile ''`
+  for the same unnamed profile shape — same `Name ?? User` root cause, different call site
+  (`DataverseConnector.ConnectViaPacAsync`). Fixed with an extracted `ResolveProfileLabel` helper,
+  live re-verified. Not yet committed. `tests/test-findings/connect-verbose-empty-profile-name-shows-blank.md`.
+  A proactive grep sweep for the same `Name ?? ...` pattern across `src/` (per the "discovered this
+  one by accident" risk) found and fixed two more instances of the identical bug —
+  `DataverseConnector.cs:233` (rare AADSTS tenant-mismatch error message) and `SecretResolver.cs`
+  (service-principal client-secret prompt, `Name ?? ApplicationId`) — both unit-tested but not
+  live-verified (their trigger conditions aren't practical to contrive against real Dataverse).
+  Confirmed no further instances: `ProfileResolutionService.cs`/`PacUtils.cs` already handle this
+  correctly.
+- **Historical note (superseded by the fix above)**: this machine previously had multiple PAC auth
+  profiles that could resolve to the same environment URL (an unnamed one and a named one). Commands
+  error ("Multiple PAC auth profiles match ... run: pac auth select --index <n>") rather than guess —
+  resolve with `pac auth select --index <n>` before proceeding, or pass
+  `-a`/`--auto-select-auth-profile` to let Flowline switch automatically for that one command.
 - Git hygiene in the test workspace: commit between test phases so `sync`'s dirty-check behaves
   predictably, and use `git checkout --`/`git status` before any destructive reset.
 - Long-running commands (`clone`'s Dataverse export, `sync`'s export) can take several minutes — run
