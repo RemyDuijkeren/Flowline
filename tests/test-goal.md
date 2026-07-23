@@ -27,11 +27,10 @@ push/sync/delete/orphan-cleanup scenarios. No need to preserve or restore DEV st
 
 ## Safety constraints (hard limits)
 
-- PROD is off-limits for any real write. `deploy` has **no `--dry-run` flag** — do not run an actual
-  deploy/import against DEV or PROD. Instead: exercise deploy's pre-flight rejection paths only
-  (invalid target, dirty git tree, `dev` rejected as a deploy target — all fail before any
-  Dataverse write), and use `flowline drift <target>` (genuinely read-only, safe against PROD too)
-  as the preview-equivalent.
+- PROD is off-limits for any real write. `deploy` supports `--dry-run` — **always** pass it for
+  every deploy test against DEV or PROD, no exceptions. Never run `deploy` without `--dry-run`. Also
+  still useful: `flowline drift <target>` (genuinely read-only, even lighter-weight) as an
+  additional preview alongside `--dry-run`.
 - Never delete or modify anything under `MyFlowTest`.
 - Never force-push, never touch remote git state.
 - Never commit in the Flowline source repo (`E:\Code\RemyDuijkeren\Flowline`) without being
@@ -87,9 +86,9 @@ re-run against an already-cloned/pushed/synced folder) where relevant.
 - Non-interactive confirmation gates: an unrecognized form-event handler requires
   `--force delete-form-handlers`; an orphaned plugin assembly requires `--force delete-orphans`.
   Confirm both are clearly reported and require the flag rather than silently proceeding or hanging.
-- **Known unfixed minor issue**: `push` prints "Lookup form events..." twice and appears to re-fetch
-  the same Dataverse snapshot once for orphan-cleanup and once for registration. Low severity, not
-  deeply investigated: `tests/test-findings/push-form-events-snapshot-fetched-twice.md`.
+- **Fixed** (2026-07-22, verified in source): the double form-events spinner now reads distinctly
+  ("Checking form events..." vs "Registering form events...") — the underlying double-fetch is by
+  design, not a bug. `tests/test-findings/push-form-events-snapshot-fetched-twice.md`.
 
 **Standalone mode** (`--pluginFile`/`--webresources`, run from *outside* a Flowline project folder):
 - Rejected when run *inside* a Flowline project folder (`.flowline` present) — must error clearly.
@@ -99,9 +98,9 @@ re-run against an already-cloned/pushed/synced folder) where relevant.
   "no Flowline project found" (which is what you get if you omit `--pluginFile`/`--webresources`
   *and* the scope flag, since without either standalone flag there's no way to detect standalone
   intent at all — that's expected, not a bug).
-- **Known unfixed issue**: pushing a `--pluginFile` standalone against an assembly already registered
-  as a `PluginPackage` (nupkg) throws a raw, unhandled `FaultException` instead of a friendly message.
-  Details/repro/suggested fix: `tests/test-findings/standalone-push-pluginpackage-raw-faultexception.md`.
+- **Fixed** (2026-07-22, verified in source: `PluginService.cs` now throws `FlowlineException` on a
+  `packageid`-owned assembly before any Dataverse write, in both classic-assembly write paths).
+  `tests/test-findings/standalone-push-pluginpackage-raw-faultexception.md`.
 
 ### `sync`
 
@@ -123,21 +122,83 @@ re-run against an already-cloned/pushed/synced folder) where relevant.
 - Nonexistent path.
 - No solution file in the **exact** folder → must error, and must **not** search parent folders
   (regression test for the walk-up incident — run this specific case in an isolated subfolder inside
-  the test workspace, per the safety note above).
+  the test workspace, per the safety note above). **Live-verified (2026-07-23)**: ran in
+  `ClaudeFlowlineTest/tmp-sln-add-negative-test/` (isolated throwaway subfolder, deleted after) with a
+  genuine `.cdsproj` present — error named the exact folder searched
+  (`E:\Code\TryOut\ClaudeFlowlineTest\tmp-sln-add-negative-test`), no parent-folder mention; confirmed
+  `E:\Code\TryOut\handwritten-backup.slnx` (the file the original incident modified) untouched.
 - For `.csproj` (non-`.cdsproj`) additions to the solution file, use `dotnet sln add` — that's the
   correct tool, not `flowline sln add`.
 
-### `deploy` — validation-only, per the safety constraints above
+### `deploy` — always with `--dry-run`, per the safety constraints above
 
 - Invalid target name (not `prod`/`uat`/`test`/`dev` and not a URL) → must give a clean validation
   error, not an opaque `MsalServiceException`/AADSTS stack trace (this was a real bug: garbage target
-  strings fell through to being used as an OAuth token scope).
-- `dev` as a deploy target → must be rejected ("use sync, not deploy").
+  strings fell through to being used as an OAuth token scope). **Live-verified (2026-07-23)**:
+  `deploy garbage-target-xyz --dry-run` → clean `'garbage-target-xyz' isn't a known target...` error,
+  exit 15.
+- `dev` as a deploy target → must be rejected ("use sync, not deploy") — the DTAP gate blocks this
+  before `--dry-run` even becomes relevant, and blocks it **regardless of `--dry-run`** — `deploy dev`
+  is never a valid target at all, dry-run or real. (Corrects this doc's earlier "run against DEV"
+  wording below — there's no such thing; `flowline drift dev` is the DEV-target preview tool instead.)
+  **Live-verified**: `deploy dev --dry-run` → `Dev is a development environment — use 'sync'...`,
+  exit 15, no Dataverse contact.
 - Dirty git tree → must reject before contacting *any* target environment. Note the dirty-check scope
   is `Solution/src/` (the Dataverse-solution folder) only — dirtying `Plugins/`/`Backend/` etc. does
   **not** trigger it, since deploy packs the Dataverse solution, not the plugin assembly.
-- `flowline drift <target>` as the safe, read-only substitute for an actual deploy preview — confirm
-  it works against both DEV and PROD with zero drift on a clean repo.
+  **Live-verified**: dirtying `Solution/src/Other/Customizations.xml` and running
+  `deploy prod --dry-run` → rejects immediately after the prerequisites check (no "Checking prod..."
+  line at all — zero Dataverse contact), plain-text message naming the file, exit 12.
+- Full `--dry-run` run against PROD: confirm it runs every pre-flight check — DTAP gate, git-clean,
+  local plugin/web-resource drift, packing, the solution checker gate, and the orphan-cleanup report —
+  and takes a labeled environment backup before stopping short of import. Confirm the backup label is
+  actually `flowline-dryrun-<solution>-<timestamp>`, distinct from a real deploy's
+  `flowline-deploy-<solution>-<timestamp>` (`PacUtils.BuildBackupLabel`). Confirm the final message
+  reads "Dry run complete — ... would deploy cleanly ..." and exit code is 0. **Live-verified**: ran
+  `deploy prod --dry-run --skip-dtap-check --force drift -a` (DTAP predecessor check and local drift
+  both bypassed via flags — see profile-ambiguity note below) against real PROD. Full pipeline ran:
+  packed fresh ("No cached build yet"), solution checker ("3 findings, 0 Critical"), real
+  `pac admin backup` call confirmed via `--verbose` (returned a genuine Environment Id/Backup Expiry
+  record), label was exactly `flowline-dryrun-Cr07982-20260723T005539Z`, orphan report showed 2 real
+  Prio1 orphans (`Plugins` assembly + one step — stale from an earlier plugin-project rename, expected
+  given this workspace's git history) with "would delete" phrasing and the `(--dry-run preview)` hint,
+  final line exactly `🚀 Dry run complete — 'Cr07982' would deploy cleanly to AutomateValue. Run
+  without --dry-run to make it real.`, exit 0.
+- Confirm `--dry-run` never calls `pac solution import`, never runs post-import cleanup, and never
+  emits a CI artifact-publish signal (`##vso[artifact.upload...]` line or a `$GITHUB_OUTPUT` write) —
+  check console output for the absence of both. **Live-verified**: none of the three appeared in any
+  `--dry-run` run's output (verbose or not) — output stops at the completion message.
+- First-import scenario under `--dry-run` (target has no existing copy of the solution yet): confirm
+  it prints an informational note ("the real deploy will ask you to confirm...") instead of blocking
+  on the interactive first-import confirmation prompt — `--dry-run` never performs the irreversible
+  action that prompt guards, so it can't hang waiting for input. **Not live-tested this run** — no
+  practical way to construct a genuine "never deployed here before" target against the two real
+  configured environments (both already have `Cr07982`). Covered by
+  `DeployCommandFirstImportTests.cs` instead (unit-level, same pattern this doc already uses for the
+  C#-keyword-solution-name case).
+- `--dry-run` combined with `--no-delete`: confirm orphan cleanup still only reports, never deletes —
+  `--dry-run` alone already forces report-only mode (`ResolveRunMode` gives dry-run precedence over
+  `--no-delete`/managed), so this combo should behave identically to `--dry-run` alone. **Live-verified**:
+  ran the same PROD scenario with `--no-delete` added — identical output (same 2 orphans, same
+  `(--dry-run preview)` hint, not `(--no-delete active)`), confirming dry-run precedence.
+- `flowline drift <target>` as an additional, even-lighter-weight read-only preview alongside
+  `deploy --dry-run` — confirm it still works against both DEV and PROD with zero drift on a clean
+  repo. **Live-verified against PROD only** (partial): `drift prod` reported the same 2 orphans as
+  `deploy --dry-run`'s report, consistent between the two mechanisms, exit 15 (drift found). Not yet
+  run against DEV or on a genuinely clean/zero-drift repo state.
+- **Operational blocker found this run**: this machine has two PAC auth profiles resolving to the same
+  Dev URL (an unnamed one and one named `Dev`), and `pac auth select --index <n>` does **not** resolve
+  Flowline's own ambiguity check (which matches by URL, not by which profile is currently "active") —
+  confirmed by testing both. This blocks the DTAP gate's predecessor check for any `prod`/`uat`/`test`
+  deploy on this machine until one of the two duplicate profiles is deleted (`pac auth delete`, not
+  attempted this run — modifying the user's local PAC auth profile list wasn't clearly in scope for an
+  autonomous fix). Every PROD `--dry-run` test above used `--skip-dtap-check` to work around it; the
+  DTAP predecessor-check step itself (`ValidateDtapGateAsync`'s non-skip path) is therefore still
+  untested live this run, though it's unit-tested in `DeployCommandDtapGateTests.cs`.
+- **New bug found and fixed this run** (unrelated to `--dry-run` itself, surfaced by verbose-mode
+  testing): `console.Verbose(...)` leaked raw `[bold]...[/]` Spectre markup tags when fed
+  `ConsolePath.ShortenPath`'s output (the "Loaded N PAC auth profile(s) from ..." line). Root cause,
+  fix, and live re-verification: `tests/test-findings/verbose-shortenpath-leaks-raw-markup-tags.md`.
 
 ### Project-structure flexibility (`SolutionFileLayout` / multi-project support)
 
