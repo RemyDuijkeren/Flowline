@@ -493,7 +493,7 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
             if (profiles == null)
                 throw new JsonException("Profile file deserialized to null.");
 
-            console.Verbose($"Loaded {profiles.Profiles?.Count ?? 0} PAC auth profile(s) from {ConsolePath.ShortenPath(authProfilesPath)}");
+            console.Verbose($"Loaded {profiles.Profiles?.Count ?? 0} PAC auth profile(s) from {ConsolePath.ShortenPath(authProfilesPath, markup: false)}");
 
             return profiles;
         }

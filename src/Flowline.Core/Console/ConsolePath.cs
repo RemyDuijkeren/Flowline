@@ -59,7 +59,11 @@ public static class ConsolePath
         }
     }
 
-    public static string ShortenPath(string path, int maxLength = 40)
+    /// <param name="markup">Same contract as <see cref="FormatRelativePath"/>'s <c>markup</c> parameter —
+    /// pass <c>false</c> when the result feeds a sink that escapes its own input (e.g. <c>console.Verbose</c>,
+    /// which wraps and escapes the whole message), otherwise the embedded <c>[bold]...[/]</c> tags show up
+    /// as literal text instead of being rendered.</param>
+    public static string ShortenPath(string path, int maxLength = 40, bool markup = true)
     {
         if (string.IsNullOrWhiteSpace(path))
             return path;
@@ -113,6 +117,9 @@ public static class ConsolePath
                 }
             }
         }
+
+        if (!markup)
+            return shortened + (isDirectory ? "/" : "");
 
         int lastSlash = shortened.LastIndexOf('/');
 
