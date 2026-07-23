@@ -2,10 +2,13 @@ using Flowline;
 using Flowline.Core.Models;
 using Flowline.Core.Console;
 using Microsoft.Identity.Client;
+using Microsoft.Identity.Client.Broker;
 using Microsoft.Identity.Client.Extensions.Msal;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using System.Diagnostics;
 using System.Net.Http.Headers;
+using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Text.Json;
 using Spectre.Console;
 
@@ -197,16 +200,99 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
 
     // Shared by ConnectUserAsync (which additionally wraps the result in a ServiceClient renewal
     // callback) and GetEnvironmentInfoAsync (which only needs Token.AccessToken).
+    //
+    // PAC 2.9+ defaults new user profiles to OS/WAM token storage (shown as Type=OperatingSystem in
+    // `pac auth list`): the refresh token lives in the Windows broker, not tokencache_msalv3.dat, so a
+    // file-cache-only silent read finds no account and fails with "Session expired" even while `pac`
+    // itself still connects. So on Windows we try the WAM broker first, then fall back to the file MSAL
+    // cache (File-type profiles, older PAC, and every non-Windows host). Silent only -- never
+    // interactive; PAC still owns `pac auth create`. See
+    // docs/test-findings/pac-2.9-user-token-not-in-shared-msal-cache-blocks-flowline.md.
     async Task<(IPublicClientApplication App, AuthenticationResult Token)> AcquireUserTokenAsync(
         PacProfile profile, string authority, MsalCacheHelper cacheHelper, string resourceUrl, CancellationToken cancellationToken)
     {
-        const string redirectUri = "http://localhost";
         var scopes = new[] { $"{resourceUrl}/.default" };
 
+        if (OperatingSystem.IsWindows())
+        {
+            var viaBroker = await TryAcquireUserTokenViaBrokerAsync(profile, authority, scopes, cancellationToken);
+            if (viaBroker is { } acquired)
+                return acquired;
+        }
+
+        return await AcquireUserTokenViaFileCacheAsync(profile, authority, cacheHelper, scopes, resourceUrl, cancellationToken);
+    }
+
+    /// <summary>
+    /// Silent acquisition through the Windows WAM broker, where PAC 2.9+ stores OS-type profile tokens.
+    /// Returns <c>null</c> -- signalling the caller to fall back to the file MSAL cache -- when the broker
+    /// is unavailable or holds no usable token for this account. Only a genuine tenant mismatch
+    /// (AADSTS90072/50020), which a file-cache retry can't fix either, surfaces as an error here.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    async Task<(IPublicClientApplication App, AuthenticationResult Token)?> TryAcquireUserTokenViaBrokerAsync(
+        PacProfile profile, string authority, string[] scopes, CancellationToken cancellationToken)
+    {
+        IPublicClientApplication app;
+        try
+        {
+            app = PublicClientApplicationBuilder
+                .Create(PacCliAppId)
+                .WithAuthority(authority)
+                .WithDefaultRedirectUri()
+                .WithParentActivityOrWindow(GetConsoleOrTerminalWindow)
+                .WithBroker(new BrokerOptions(BrokerOptions.OperatingSystems.Windows))
+                .Build();
+        }
+        catch (Exception ex) when (ex is not FlowlineException)
+        {
+            console.Verbose($"WAM broker unavailable ({ex.GetType().Name}) -- using the file token cache.");
+            return null;
+        }
+
+        IAccount account;
+        try
+        {
+            var accounts = await app.GetAccountsAsync();
+            // With the broker, GetAccountsAsync surfaces WAM accounts; fall back to the signed-in
+            // Windows account when the profile's user isn't among them.
+            account = SelectCachedAccount(accounts, profile.User, profile.TenantId)
+                      ?? PublicClientApplication.OperatingSystemAccount;
+        }
+        catch (Exception ex) when (ex is not FlowlineException)
+        {
+            console.Verbose($"WAM account lookup failed ({ex.GetType().Name}) -- using the file token cache.");
+            return null;
+        }
+
+        try
+        {
+            var token = await app.AcquireTokenSilent(scopes, account).ExecuteAsync(cancellationToken);
+            return (app, token);
+        }
+        catch (MsalUiRequiredException ex) when (ex.Message.Contains("AADSTS90072") || ex.Message.Contains("AADSTS50020"))
+        {
+            throw TenantMismatchException(profile, ex);
+        }
+        catch (MsalUiRequiredException)
+        {
+            return null;   // no usable WAM token -- fall back to the file cache
+        }
+        catch (MsalServiceException ex)
+        {
+            console.Verbose($"WAM broker error ({ex.ErrorCode}) -- using the file token cache.");
+            return null;
+        }
+    }
+
+    async Task<(IPublicClientApplication App, AuthenticationResult Token)> AcquireUserTokenViaFileCacheAsync(
+        PacProfile profile, string authority, MsalCacheHelper cacheHelper, string[] scopes, string resourceUrl,
+        CancellationToken cancellationToken)
+    {
         var app = PublicClientApplicationBuilder
             .Create(PacCliAppId)
             .WithAuthority(authority)
-            .WithRedirectUri(redirectUri)
+            .WithRedirectUri("http://localhost")
             .Build();
 
         cacheHelper.RegisterCache(app.UserTokenCache);
@@ -220,21 +306,9 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
             var token = await app.AcquireTokenSilent(scopes, account).ExecuteAsync(cancellationToken);
             return (app, token);
         }
-        // AADSTS90072/AADSTS50020: the resolved account isn't valid in this tenant. Either it
-        // genuinely lacks access, or (if the same account works via 'pac' directly) the cached
-        // MSAL entry picked above belongs to a different tenant this username is also known to
-        // -- re-running 'pac auth create' for the same account/profile won't fix either case on
-        // its own. Distinguish this from a plain expired token, which the catch below still
-        // handles correctly.
         catch (MsalUiRequiredException ex) when (ex.Message.Contains("AADSTS90072") || ex.Message.Contains("AADSTS50020"))
         {
-            var user = profile.User ?? "unknown";
-            throw new FlowlineException(ExitCode.NotAuthenticated,
-                $"'{user}' isn't valid in tenant '{profile.TenantId ?? "unknown"}' for profile '{ResolveProfileLabel(profile) ?? user}'. " +
-                "If this account should have access, the cached PAC credential may be stale or bound " +
-                "to a different tenant -- run 'pac auth clear' then 'pac auth create' to re-authenticate " +
-                "from scratch. If it genuinely lacks access, ask a tenant admin to add it as a guest, " +
-                "or sign in with a different account.", ex);
+            throw TenantMismatchException(profile, ex);
         }
         catch (MsalUiRequiredException ex)
         {
@@ -242,6 +316,41 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
             throw new FlowlineException(ExitCode.NotAuthenticated,
                 $"Session expired for '{user}'. Run 'pac auth create --url {resourceUrl}' to re-authenticate.", ex);
         }
+    }
+
+    // AADSTS90072/AADSTS50020: the resolved account isn't valid in this tenant. Either it genuinely
+    // lacks access, or (if the same account works via 'pac' directly) the cached MSAL entry picked
+    // above belongs to a different tenant this username is also known to -- re-running 'pac auth create'
+    // for the same account/profile won't fix either case on its own. Distinguished from a plain expired
+    // token, which the file-cache path reports as "Session expired".
+    static FlowlineException TenantMismatchException(PacProfile profile, MsalUiRequiredException ex)
+    {
+        var user = profile.User ?? "unknown";
+        return new FlowlineException(ExitCode.NotAuthenticated,
+            $"'{user}' isn't valid in tenant '{profile.TenantId ?? "unknown"}' for profile '{ResolveProfileLabel(profile) ?? user}'. " +
+            "If this account should have access, the cached PAC credential may be stale or bound " +
+            "to a different tenant -- run 'pac auth clear' then 'pac auth create' to re-authenticate " +
+            "from scratch. If it genuinely lacks access, ask a tenant admin to add it as a guest, " +
+            "or sign in with a different account.", ex);
+    }
+
+    // WAM parents its dialogs to a window handle (unused on the silent path, but required to configure
+    // the broker); a console app supplies its terminal window.
+    [SupportedOSPlatform("windows")]
+    [DllImport("kernel32.dll")]
+    static extern IntPtr GetConsoleWindow();
+
+    [SupportedOSPlatform("windows")]
+    [DllImport("user32.dll", ExactSpelling = true)]
+    static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+
+    [SupportedOSPlatform("windows")]
+    static IntPtr GetConsoleOrTerminalWindow()
+    {
+        const uint GA_ROOTOWNER = 3;
+        var hConsole = GetConsoleWindow();
+        var owner = GetAncestor(hConsole, GA_ROOTOWNER);
+        return owner == IntPtr.Zero ? hConsole : owner;
     }
 
     /// <summary>

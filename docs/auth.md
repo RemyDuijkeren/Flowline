@@ -4,9 +4,20 @@ Flowline delegates all auth to PAC CLI. There are no credentials in Flowline con
 
 ## How it works
 
-When Flowline needs a Dataverse connection, it reads PAC CLI's token cache from
-`%LOCALAPPDATA%\Microsoft\PowerAppsCLI\tokencache_msalv3.dat` and acquires a token
-silently — no browser, no password prompt.
+When Flowline needs a Dataverse connection, it reuses the credentials PAC CLI already cached
+and acquires a token silently — no browser, no password prompt. Flowline stores no credentials
+of its own.
+
+Where PAC keeps that token depends on the profile — see the `Type` column in `pac auth list`:
+
+- **`OperatingSystem`** — the Windows account broker (WAM). Default for profiles created with
+  recent PAC CLI (2.9+).
+- **`File`** — PAC's MSAL token cache at
+  `%LOCALAPPDATA%\Microsoft\PowerAppsCLI\tokencache_msalv3.dat`.
+
+On Windows, Flowline asks the account broker first, then falls back to the file cache — so both
+profile types work with no extra setup. On macOS and Linux (no broker) it uses the file cache.
+Service principal profiles authenticate directly with their client secret.
 
 Profile selection order:
 1. A resource-specific profile whose URL matches the target environment
