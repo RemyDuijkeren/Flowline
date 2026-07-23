@@ -9,15 +9,7 @@ Use this as the `/goal` input for future test runs; update it with new learnings
 - DEV: `https://automatevalue-dev.crm4.dynamics.com`
 - PROD: `https://automatevalue.crm4.dynamics.com`
 - Solution: `Cr07982` (unmanaged)
-- Test workspace: `E:\Code\TryOut\ClaudeFlowlineTest` — create/reset freely.
-- **Never touch** `E:\Code\TryOut\MyFlowTest` (a separate, real project) or anything else under
-  `E:\Code\TryOut\` outside the dedicated test workspace. Past incident: running `sln add` from a
-  bare subfolder directly under `E:\Code\TryOut\` (not inside the test workspace) once walked
-  upward and modified an unrelated file (`handwritten-backup.slnx`) sitting in that parent
-  directory. The walk-up bug is now fixed (`sln add` only looks in the exact folder given), but as
-  defense-in-depth, always run throwaway/negative-case tests for `sln add` and similar
-  path-sensitive commands **inside** the test workspace, in a dedicated subfolder, never directly
-  under `E:\Code\TryOut\`.
+- Test workspace: `E:\Code\TryOut\ClaudeFlowlineTest` or `C:\Code\FlowlineTryOutByClaude` depending on the machine — create/reset freely.
 
 ## DEV mutation permissions
 
