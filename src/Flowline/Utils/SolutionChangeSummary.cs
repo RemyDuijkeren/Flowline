@@ -88,9 +88,11 @@ public class SolutionChangeSummary
         foreach (var (status, absPath) in changedFiles)
         {
             var relPath = absPath.StartsWith(srcPrefix) ? absPath[srcPrefix.Length..] : absPath;
-            var parsed = ParseComponentPath(relPath);
-            if (parsed == null) continue;
 
+            // Counted here, before the parseability gate below, so TotalFiles reflects every real change under
+            // srcFolder — including paths ParseComponentPath doesn't know how to render as a ChangeItem (e.g.
+            // Other/Solution.xml, or a non-Dataverse folder like GenerateCommand's Models/). Callers that gate
+            // dirty-tree checks on TotalFiles must not silently pass just because a change can't be described.
             fileCount++;
 
             if (status.Trim() == "??")
@@ -104,6 +106,9 @@ public class SolutionChangeSummary
                 totalAdded += counts.added;
                 totalRemoved += counts.removed;
             }
+
+            var parsed = ParseComponentPath(relPath);
+            if (parsed == null) continue;
 
             if (!components.TryGetValue(parsed.ComponentKey, out var comp))
             {

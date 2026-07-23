@@ -345,6 +345,19 @@ public class SolutionChangeSummaryComputeTests : IDisposable
     }
 
     [Fact]
+    public async Task ComputeAsync_WithOnlyUnparseableFileChanged_ReturnsNonZeroTotalFilesButNoGroups()
+    {
+        // Other/ (Solution.xml, Customizations.xml) is skipped by ParseComponentPath since it has no
+        // single-component representation — but a dirty-tree gate reading TotalFiles must still see it.
+        WriteFile("Other/Customizations.xml", "<ImportExportXml/>");
+
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root);
+
+        result.TotalFiles.Should().Be(1);
+        result.Groups.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task ComputeAsync_MultipleEntities_GroupsCorrectly()
     {
         WriteFile("Entities/Account/Entity.xml", "<entity/>");
