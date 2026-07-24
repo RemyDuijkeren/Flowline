@@ -145,14 +145,14 @@ internal static class StatusGrid
     }
 
     internal const string Legend =
-        "[dim]—[/] not deployed   [yellow]✗[/] auth failed   [cyan]↑[/] behind   [red]⚠[/] ahead   [magenta]●[/] uncommitted";
+        "[dim]—[/] not deployed   [red]✗[/] auth failed   [cyan]↑[/] behind   [yellow]⚠[/] ahead   [magenta]●[/] uncommitted";
 
     private static string RenderArrow(GridCell destination) => destination.Kind switch
     {
         GridCellKind.Version => destination.Drift switch
         {
             DriftKind.Pending => "[cyan]┈┈▶[/]",
-            DriftKind.Inverted => "[red]──▶[/]",
+            DriftKind.Inverted => "[yellow]──▶[/]",
             _ => "[green]──▶[/]",
         },
         _ => "[dim]┈┈▶[/]",
@@ -165,11 +165,11 @@ internal static class StatusGrid
             GridCellKind.Version => cell.Drift switch
             {
                 DriftKind.Pending => $"[cyan]{Markup.Escape(cell.Value!)} ↑[/]",
-                DriftKind.Inverted => $"[red]{Markup.Escape(cell.Value!)} ⚠[/]",
+                DriftKind.Inverted => $"[yellow]{Markup.Escape(cell.Value!)} ⚠[/]",
                 _ => $"[green]{Markup.Escape(cell.Value!)}[/]",
             },
             GridCellKind.Dash => "[dim]—[/]",
-            GridCellKind.AuthFailed => "[yellow]✗ auth[/]",
+            GridCellKind.AuthFailed => "[red]✗ auth[/]",
             _ => throw new ArgumentOutOfRangeException(nameof(cell)),
         };
 
