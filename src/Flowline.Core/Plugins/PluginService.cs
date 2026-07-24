@@ -20,6 +20,21 @@ public class PluginService(IAnsiConsole console)
     readonly SolutionReader _solutionReader = new();
     readonly PluginAssemblyReader _assemblyReader = new(console);
 
+    // Analyze() is the single choke point for every Validate* throw in PluginTypeMetadataScanner —
+    // all plain InvalidOperationException by convention. Rewrapped here so a bad [CustomApi]/[Step]
+    // attribute on the pushed assembly renders as a clean Error: line instead of a raw stack trace.
+    PluginAssemblyMetadata AnalyzeAssembly(string dllPath)
+    {
+        try
+        {
+            return console.Status().FlowlineSpinner().Start("Analyzing plugin assembly...", _ => _assemblyReader.Analyze(dllPath));
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new FlowlineException(ExitCode.ValidationFailed, ex.Message, ex);
+        }
+    }
+
     public async Task<bool> SyncAssemblyOnlyAsync(
         IOrganizationServiceAsync2 service,
         string dllPath,
@@ -30,7 +45,7 @@ public class PluginService(IAnsiConsole console)
         if (string.IsNullOrWhiteSpace(dllPath))
             throw new ArgumentException("dllPath is required and cannot be empty.", nameof(dllPath));
 
-        var metadata = console.Status().FlowlineSpinner().Start("Analyzing plugin assembly...", _ => _assemblyReader.Analyze(dllPath));
+        var metadata = AnalyzeAssembly(dllPath);
         return await SyncAssemblyOnlyAsync(service, metadata, solutionName, runMode, cancellationToken).ConfigureAwait(false);
     }
 
@@ -112,7 +127,7 @@ public class PluginService(IAnsiConsole console)
         if (string.IsNullOrWhiteSpace(dllPath))
             throw new ArgumentException("dllPath is required and cannot be empty.", nameof(dllPath));
 
-        var metadata = console.Status().FlowlineSpinner().Start("Analyzing plugin assembly...", ctx => _assemblyReader.Analyze(dllPath));
+        var metadata = AnalyzeAssembly(dllPath);
         return await SyncSolutionAsync(service, metadata, solutionName, runMode, forceDeleteOrphans, forceRecreateAssembly, cancellationToken, pushedAssemblyNames).ConfigureAwait(false);
     }
 

@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Orphan cleanup no longer misclassifies a reconciled Role as orphaned**: Role was the only orphan-detected type still matched purely by the raw id declared in Solution.xml. Dataverse reconciles security roles by name on import when a role of that name already exists in the target, so a role synced from one environment could carry a different live id in another — the raw id-match alone would then report a still-assigned role as removable. Role is now also resolved live by name (its local `Roles/<name>.xml` file name), the same way WebResource/Entity/OptionSet already are, in addition to the existing id-match.
 
+- **`push` no longer prints a raw stack trace for a bad `[CustomApi]`/`[Step]`/etc. attribute**: every validation error `PluginTypeMetadataScanner` raises while reading a plugin assembly (invalid `[CustomApi(UniqueName = ...)]` format, a bad secondary table, and about 20 other checks) used a plain `InvalidOperationException`, which `Program.cs`'s global handler doesn't recognize — it fell through to a full raw exception dump instead of a clean `Error: ...` line. Both places that analyze a plugin assembly (`push`'s normal and `--scope assemblyonly` paths) now catch that exception and rewrap it as a `FlowlineException`, so any misconfigured attribute reads as a one-line validation error like every other rejected push.
+
 ## [0.12.0] - 2026-07-17
 
 ### Fixed

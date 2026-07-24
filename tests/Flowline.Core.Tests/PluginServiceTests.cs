@@ -1,5 +1,8 @@
+using System.Reflection;
+using System.Reflection.Emit;
 using System.Security.Cryptography;
 using Flowline;
+using Flowline.Attributes;
 using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Models;
@@ -2340,5 +2343,64 @@ public class PluginServiceTests
             e.GetAttributeValue<string>("version") == "1.2.3.4" &&
             !e.Contains("content")
         ), Arg.Any<CancellationToken>());
+    }
+
+    // -- AnalyzeAssembly exception routing (dllPath overload only — goes through the real reflection
+    // pipeline, unlike every other test above which hands PluginService a pre-built PluginAssemblyMetadata) --
+
+    [Fact]
+    public async Task SyncAssemblyOnlyAsync_InvalidCustomApiUniqueNameFormat_ThrowsFlowlineExceptionWithOriginalMessage()
+    {
+        var dir = Directory.CreateTempSubdirectory("flowline-plugin-service-test-").FullName;
+        try
+        {
+            var dllPath = BuildPluginDllWithBadCustomApiUniqueName(dir, "BadCustomApiAssembly", "BadUniqueNameApi", "NoUnderscoreAtAll");
+
+            var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
+                _service.SyncAssemblyOnlyAsync(_serviceMock, dllPath, "MySolution"));
+
+            Assert.Equal(ExitCode.ValidationFailed, ex.ExitCode);
+            Assert.Contains("[CustomApi] UniqueName 'NoUnderscoreAtAll'", ex.Message);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // Builds a minimal real assembly on disk with one public class implementing IPlugin, decorated with
+    // [CustomApi(UniqueName = badUniqueName)] — used to drive an actual InvalidOperationException out of
+    // PluginTypeMetadataScanner.ValidateCustomApiUniqueNameFormat through the real Analyze() reflection
+    // pipeline, so the AnalyzeAssembly rewrap is proven end-to-end rather than assumed from the source.
+    // Microsoft.Xrm.Sdk.dll and Flowline.Attributes.dll are copied next to the built DLL so Analyze()'s
+    // PathAssemblyResolver (which scans the directory containing dllPath) can resolve IPlugin and
+    // CustomApiAttribute — mirroring PluginAssemblyReaderTests' CopyXrmSdkDllNextTo pattern.
+    static string BuildPluginDllWithBadCustomApiUniqueName(string dir, string assemblyName, string pluginTypeName, string badUniqueName)
+    {
+        var ab = new PersistedAssemblyBuilder(new AssemblyName(assemblyName), typeof(object).Assembly);
+        var mb = ab.DefineDynamicModule("MainModule");
+
+        var pluginTb = mb.DefineType(pluginTypeName, TypeAttributes.Public | TypeAttributes.Class, typeof(object), [typeof(IPlugin)]);
+        var executeMethod = typeof(IPlugin).GetMethod(nameof(IPlugin.Execute))!;
+        var methodBuilder = pluginTb.DefineMethod(nameof(IPlugin.Execute),
+            MethodAttributes.Public | MethodAttributes.Virtual, typeof(void), [typeof(IServiceProvider)]);
+        methodBuilder.GetILGenerator().Emit(OpCodes.Ret);
+        pluginTb.DefineMethodOverride(methodBuilder, executeMethod);
+
+        var customApiCtor = typeof(CustomApiAttribute).GetConstructor(Type.EmptyTypes)!;
+        var uniqueNameProp = typeof(CustomApiAttribute).GetProperty(nameof(CustomApiAttribute.UniqueName))!;
+        var attrBuilder = new CustomAttributeBuilder(customApiCtor, [], [uniqueNameProp], [badUniqueName]);
+        pluginTb.SetCustomAttribute(attrBuilder);
+
+        pluginTb.CreateType();
+
+        var xrmSdkDir = Path.GetDirectoryName(typeof(IPlugin).Assembly.Location)!;
+        File.Copy(Path.Combine(xrmSdkDir, "Microsoft.Xrm.Sdk.dll"), Path.Combine(dir, "Microsoft.Xrm.Sdk.dll"), overwrite: true);
+        var attributesDir = Path.GetDirectoryName(typeof(CustomApiAttribute).Assembly.Location)!;
+        File.Copy(Path.Combine(attributesDir, "Flowline.Attributes.dll"), Path.Combine(dir, "Flowline.Attributes.dll"), overwrite: true);
+
+        var path = Path.Combine(dir, $"{assemblyName}.dll");
+        ab.Save(path);
+        return path;
     }
 }
