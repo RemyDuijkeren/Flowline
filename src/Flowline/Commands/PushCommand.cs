@@ -653,6 +653,8 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
 
         var nupkgPaths = Directory.Exists(buildOutputRoot)
             ? Directory.GetFiles(buildOutputRoot, "*.nupkg", SearchOption.AllDirectories)
+                .OrderBy(Path.GetFileName, StringComparer.Ordinal)
+                .ToArray()
             : [];
 
         if (nupkgPaths.Length == 0)
