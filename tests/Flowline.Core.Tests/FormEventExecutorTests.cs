@@ -282,7 +282,41 @@ public class FormEventExecutorTests
         // _console stays non-interactive — force must skip the prompt entirely.
         await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: true, dryRun: false, cleanupOnly: false);
 
-        Assert.DoesNotContain("unrecognized", _console.Output, StringComparison.OrdinalIgnoreCase);
+        // The force-bypass trace line echoes the confirm message (and so the word "unrecognized"), but
+        // the beforePrompt detail listing — "found on tracked forms" + one line per handler — must not print.
+        Assert.DoesNotContain("found on tracked forms", _console.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("(--force)", _console.Output);
+        var written = GetHandlersFromCapturedXml(captured, formId, FormEventType.OnLoad);
+        Assert.Contains(recognized, written);
+        Assert.DoesNotContain(unrecognized, written);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_UnrecognizedHandlersInteractiveForce_ProceedsWithoutPromptingOrWarningDetail()
+    {
+        var formId = Guid.NewGuid();
+        var recognized = new FormEventHandler("onLoad", "av_/lib.js", FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js"), "");
+        var unrecognized = new FormEventHandler("manualFn", "av_/manual.js", Guid.NewGuid(), "");
+        var formPlan = new FormEventFormPlan(formId, "account", "Account Main", FormEventType.OnLoad,
+            new List<FormEventHandler> { recognized, unrecognized }, new HashSet<UnrecognizedHandler> { new(unrecognized, "") },
+            new HashSet<FormLibrary>());
+
+        var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml()));
+        var plan = BuildPlan(formPlan);
+        var captured = CaptureUpdatedFormXml();
+
+        _console.Interactive();
+        // No input pushed — if force didn't short-circuit before the prompt, TestConsole would throw on the empty queue.
+
+        var savedCiVars = SaveAndClearCiVars();
+        try
+        {
+            await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: true, dryRun: false, cleanupOnly: false);
+        }
+        finally { RestoreCiVars(savedCiVars); }
+
+        Assert.DoesNotContain("found on tracked forms", _console.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("(--force)", _console.Output);
         var written = GetHandlersFromCapturedXml(captured, formId, FormEventType.OnLoad);
         Assert.Contains(recognized, written);
         Assert.DoesNotContain(unrecognized, written);

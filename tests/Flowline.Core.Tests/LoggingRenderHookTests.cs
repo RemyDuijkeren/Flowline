@@ -23,8 +23,8 @@ public class LoggingRenderHookTests
     [InlineData("[green]✓[/] msg", LogLevel.Information)]
     [InlineData("· msg", LogLevel.Information)]
     [InlineData("[dim]↷ msg[/]", LogLevel.Information)]
-    [InlineData("[yellow]Warning:[/] something", LogLevel.Warning)]
-    [InlineData("[red]Error:[/] something", LogLevel.Error)]
+    [InlineData("[yellow]![/] something", LogLevel.Warning)]
+    [InlineData("[red]✗[/] something", LogLevel.Error)]
     [InlineData("[dim]verbose detail[/]", LogLevel.Debug)]
     public void MarkupLine_LogsAtCorrectLevel(string markupText, LogLevel expectedLevel)
     {
@@ -95,7 +95,7 @@ public class LoggingRenderHookTests
     public void MarkupLine_MultipleMessages_HandlesEachIndependently()
     {
         _console.MarkupLine("[green]✓[/] done");
-        _console.MarkupLine("[yellow]Warning:[/] heads up");
+        _console.MarkupLine("[yellow]![/] heads up");
         _console.Write(new Text("noise"));
 
         _logger.Entries.Should().HaveCount(2);

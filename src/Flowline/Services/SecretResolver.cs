@@ -1,4 +1,5 @@
 using Flowline.Core;
+using Flowline.Core.Console;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Utils;
@@ -29,7 +30,7 @@ public class SecretResolver(IAnsiConsole console)
         if (IsInteractive())
         {
             var secret = console.Prompt(
-                new TextPrompt<string>($"Enter client secret for '{ResolveProfileLabel(profile)}' (client ID: {profile.ApplicationId}):")
+                new TextPrompt<string>(FlowlineConsoleExtensions.Question($"Enter client secret for '{ResolveProfileLabel(profile)}' (client ID: {profile.ApplicationId}):"))
                     .Secret());
             return Task.FromResult(secret);
         }

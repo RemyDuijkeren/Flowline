@@ -1,10 +1,19 @@
 using Flowline.Core;
 using Flowline.Utils;
 using FluentAssertions;
+using Spectre.Console;
+using Spectre.Console.Testing;
 using Xunit;
 
 namespace Flowline.Tests;
 
+// ConsoleHelper.Confirm reads the static ambient AnsiConsole.Console (no injected IAnsiConsole to
+// substitute), so the interactive test below has to swap that global for its duration. Serialized
+// against every other test in this collection so no concurrently-running test observes the swap.
+[CollectionDefinition(nameof(ConsoleStaticSwapCollection), DisableParallelization = true)]
+public class ConsoleStaticSwapCollection;
+
+[Collection(nameof(ConsoleStaticSwapCollection))]
 public class ConsoleHelperTests
 {
     [Fact]
@@ -59,6 +68,23 @@ public class ConsoleHelperTests
             ConsoleHelper.Confirm("Continue?", false, settings, "first-import").Should().BeTrue();
         }
         finally { RestoreCiVars(saved); }
+    }
+
+    [Fact]
+    public void Confirm_Interactive_Force_ReturnsTrueWithoutPromptingEvenWhenInteractive()
+    {
+        var previousConsole = AnsiConsole.Console;
+        var testConsole = new TestConsole();
+        testConsole.Interactive();
+        // No input pushed — if Confirm tried to prompt, TestConsole would throw on the empty queue.
+        AnsiConsole.Console = testConsole;
+        try
+        {
+            var settings = new FlowlineSettings { Force = ["first-import"] };
+
+            ConsoleHelper.Confirm("Continue?", false, settings, "first-import").Should().BeTrue();
+        }
+        finally { AnsiConsole.Console = previousConsole; }
     }
 
     [Fact]

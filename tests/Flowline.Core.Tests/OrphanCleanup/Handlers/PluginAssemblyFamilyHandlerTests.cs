@@ -429,7 +429,7 @@ public class PluginAssemblyFamilyHandlerTests
         Assert.Equal(assemblyId, finding.ObjectId);
         Assert.Null(finding.EntityName);
         Assert.Contains("network timeout", _console.Output);
-        Assert.Contains("Warning", _console.Output);
+        Assert.Contains("! ", _console.Output);
     }
 
     const int SequenceHints91 = 3; // PluginAssembly's SequenceHint slot — the redirected package finding keeps it.
@@ -659,7 +659,7 @@ public class PluginAssemblyFamilyHandlerTests
 
         Assert.Empty(result.Findings);
         Assert.Contains("network timeout", _console.Output);
-        Assert.Contains("Warning", _console.Output);
+        Assert.Contains("! ", _console.Output);
     }
 
     [Fact]

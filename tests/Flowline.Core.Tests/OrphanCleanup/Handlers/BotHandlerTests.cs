@@ -210,7 +210,7 @@ public class BotHandlerTests : IDisposable
 
         Assert.Empty(findings);
         Assert.Contains("network timeout", _console.Output);
-        Assert.Contains("Warning", _console.Output);
+        Assert.Contains("! ", _console.Output);
     }
 
     [Fact]

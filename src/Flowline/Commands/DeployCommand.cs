@@ -339,8 +339,8 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     // connection, mirroring the established pattern in provision-safety-guard-unmanaged-solutions-2026-05-18.md.
     internal static string BuildFirstImportPrompt(string solutionName, string targetDisplayName, bool includeManaged) =>
         includeManaged
-            ? $"[yellow]First managed deploy of '{solutionName}' to {targetDisplayName} — this environment's mode can't be changed later without uninstalling the solution first. Continue?[/]"
-            : $"[yellow]First deploy of '{solutionName}' to {targetDisplayName} as unmanaged — switching to managed here later needs the solution removed manually first. Continue?[/]";
+            ? $"First managed deploy of '{solutionName}' to {targetDisplayName} — this environment's mode can't be changed later without uninstalling the solution first. Continue?"
+            : $"First deploy of '{solutionName}' to {targetDisplayName} as unmanaged — switching to managed here later needs the solution removed manually first. Continue?";
 
     // U2/KTD7: statement form of BuildFirstImportPrompt for --dry-run — a dry run never performs the
     // irreversible mode-lock the prompt exists to gate, so it informs instead of blocking. Pure for the

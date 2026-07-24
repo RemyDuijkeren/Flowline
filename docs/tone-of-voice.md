@@ -20,6 +20,27 @@ wizard that over-explains itself.
 
 ---
 
+## Prefix glyphs
+
+Every status line leads with a one-character glyph — the same idea as GitHub CLI's `?`/`!`
+convention. The glyph carries the meaning, so output skims by shape, not just by color.
+
+| Glyph | Meaning | Color |
+|---|---|---|
+| `✓ ` | Success | green |
+| `? ` | Question — needs your answer | bold cyan |
+| `! ` | Warning — heads up, not fatal | yellow |
+| `✗ ` | Error | red |
+| `↷ ` | Skip — already done | dim |
+| `· ` | Info — neutral detail | plain |
+| `🚀` | Finish line | bold green |
+
+A leading `! ` (warning glyph) is not the same thing as the trailing `!` on the finish line
+(`Cloned!`) — one flags a problem, the other is the finish line's own lift-off. They never share a
+position, so they don't compete for meaning.
+
+---
+
 ## Message categories & rules
 
 ### Spinner labels *(text next to the spinner)*
@@ -175,17 +196,19 @@ output should feel complete without it.
 
 ## Console helpers
 
-Use `FlowlineConsoleExtensions` (namespace `Flowline.Core`) instead of raw `MarkupLine` calls. Every message category maps to a helper:
+Use `FlowlineConsoleExtensions` (namespace `Flowline.Core.Console`) instead of raw `MarkupLine` calls. Every message category maps to a helper:
 
 | Category | Method | Raw equivalent |
 |---|---|---|
-| Success | `console.Success(msg)` | `MarkupLine($"[green]{msg}[/]")` |
-| Info / neutral | `console.Info(msg)` | `MarkupLine(msg)` |
-| Skip / already done | `console.Skip(msg)` | `MarkupLine($"[dim]{msg}[/]")` |
-| Verbose detail | `console.Verbose(msg, isVerbose)` | `if (isVerbose) MarkupLine($"[dim]{msg}[/]")` |
-| Warning | `console.Warning(msg)` | `MarkupLine($"[yellow]Warning: {msg}[/]")` |
-| Error | `console.Error(msg)` | `MarkupLine($"[red]Error: {msg}[/]")` |
+| Success | `console.Ok(msg)` | `MarkupLine($"[green]✓ {msg}[/]")` |
+| Finish line | `console.Done(msg)` | `MarkupLine($"[bold green]🚀 {msg}[/]")` |
+| Info / neutral | `console.Info(msg)` | `MarkupLine($"· {msg}")` |
+| Skip / already done | `console.Skip(msg)` | `MarkupLine($"[dim]↷ {msg}[/]")` |
+| Verbose detail | `console.Verbose(msg)` | writes a dim, indented verbose line |
+| Warning | `console.Warning(msg)` | `MarkupLine($"[yellow]! {msg}[/]")` |
+| Error | `console.Error(msg)` | `MarkupLine($"[red]✗ {msg}[/]")` |
 | Error (exception) | `console.Error(ex)` | `WriteException(ex)` |
+| Question / confirm | `FlowlineConsoleExtensions.Question(msg)` | returns `$"[bold cyan]? {msg}[/]"` — wrap prompt titles/messages with it (`SelectionPrompt.Title(...)`, `TextPrompt`/`ConfirmationPrompt` constructors, `console.Confirm(...)`); doesn't print by itself |
 
 Use raw markup only when mixing styles within a single line (e.g., bold name inside a green line). For any plain, single-intent message — always use the helper.
 

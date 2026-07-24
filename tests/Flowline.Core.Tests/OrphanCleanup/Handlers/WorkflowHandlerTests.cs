@@ -116,7 +116,7 @@ public class WorkflowHandlerTests
         Assert.Equal(OrphanPriority.Prio3, finding.Priority);
         Assert.Equal($"Workflow {id}", finding.DisplayName);
         Assert.Contains("workflow table unavailable", _console.Output);
-        Assert.Contains("Warning", _console.Output);
+        Assert.Contains("! ", _console.Output);
     }
 
     [Fact]

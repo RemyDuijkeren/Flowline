@@ -115,7 +115,7 @@ public class RoleHandlerTests
         Assert.Equal(OrphanPriority.Prio3, finding.Priority);
         Assert.Equal($"Role {roleId}", finding.DisplayName);
         Assert.Contains("role table unavailable", _console.Output);
-        Assert.Contains("Warning", _console.Output);
+        Assert.Contains("! ", _console.Output);
     }
 
     [Fact]

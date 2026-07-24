@@ -61,7 +61,7 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
         }
 
         var prompt = new SelectionPrompt<PacProfile>()
-            .Title("Multiple PAC auth profiles match — select one:")
+            .Title(FlowlineConsoleExtensions.Question("Multiple PAC auth profiles match — select one:"))
             .UseConverter(FormatCandidate)
             .AddChoices(candidates);
 
@@ -103,7 +103,7 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
         ShowActiveVsTarget(allProfiles, isActive, profile);
 
         var confirmed = console.Prompt(
-            new ConfirmationPrompt("[yellow]Switch active PAC auth profile?[/]") { DefaultValue = false });
+            new ConfirmationPrompt(FlowlineConsoleExtensions.Question("Switch active PAC auth profile?")) { DefaultValue = false });
 
         if (!confirmed)
             throw BuildMismatchException(profile, allProfiles);

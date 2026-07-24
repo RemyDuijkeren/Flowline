@@ -1,5 +1,6 @@
 using System.Reflection;
 using Flowline.Core;
+using Flowline.Core.Console;
 using Flowline.Core.Services;
 using Spectre.Console;
 using Spectre.Console.Rendering;
@@ -42,20 +43,10 @@ public static class ConsoleHelper
     }
 
     /// <summary>
-    /// Prompts the user with a confirmation, or automatically accepts if in non-interactive mode and --force &lt;specifier&gt; (or --force all) is specified.
+    /// Prompts the user with a confirmation, or automatically accepts if --force &lt;specifier&gt; (or --force all) is
+    /// specified. In non-interactive mode without --force, throws instead of prompting.
     /// </summary>
-    public static bool Confirm(string prompt, bool defaultValue, FlowlineSettings? settings, string specifier)
-    {
-        if (!IsInteractive(settings))
-        {
-            if (settings?.HasForce(specifier) == true)
-            {
-                return true;
-            }
-
-            throw new FlowlineException(ExitCode.ForceRequired, $"Confirmation required but not in interactive mode. Use --force {specifier} to proceed.");
-        }
-
-        return AnsiConsole.Confirm(prompt, defaultValue);
-    }
+    public static bool Confirm(string prompt, bool defaultValue, FlowlineSettings? settings, string specifier) =>
+        AnsiConsole.Console.ConfirmGated(prompt, defaultValue, settings?.HasForce(specifier) == true,
+            $"Confirmation required but not in interactive mode. Use --force {specifier} to proceed.");
 }

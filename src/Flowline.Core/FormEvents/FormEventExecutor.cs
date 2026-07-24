@@ -212,29 +212,17 @@ public class FormEventExecutor(IAnsiConsole console)
         if (unrecognized.Count == 0)
             return true; // nothing to remove either way — Except() against an empty set is a no-op
 
-        if (force)
-            return true;
-
-        if (!IsInteractive())
-        {
-            var lines = unrecognized.Select(u => FormatUnrecognizedHandlerLine(u.Form, u.Unrecognized));
-            throw new FlowlineException(ExitCode.ForceRequired,
-                "Unrecognized form event handler(s) found — confirmation required but not in interactive mode. Use --force delete-form-handlers to proceed.\n"
-                + string.Join("\n", lines));
-        }
-
-        console.Warning($"{unrecognized.Count} unrecognized handler(s) found on tracked forms — confirming below removes them:");
-        foreach (var u in unrecognized)
-            console.Info($"  {FormatUnrecognizedHandlerLine(u.Form, u.Unrecognized)}");
-
-        return console.Confirm("Remove unrecognized handler(s) from form(s)?", false);
+        var lines = unrecognized.Select(u => FormatUnrecognizedHandlerLine(u.Form, u.Unrecognized));
+        return console.ConfirmGated("Remove unrecognized handler(s) from form(s)?", false, force,
+            "Unrecognized form event handler(s) found — confirmation required but not in interactive mode. Use --force delete-form-handlers to proceed.\n"
+            + string.Join("\n", lines),
+            beforePrompt: () =>
+            {
+                console.Warning($"{unrecognized.Count} unrecognized handler(s) found on tracked forms — confirming below removes them:");
+                foreach (var u in unrecognized)
+                    console.Info($"  {FormatUnrecognizedHandlerLine(u.Form, u.Unrecognized)}");
+            });
     }
-
-    // Shares CiEnvironment's CI-detection with ConsoleHelper.IsInteractive (Flowline.Core can't reference
-    // the CLI project's ConsoleHelper/FlowlineSettings), but checks the injected console's own profile
-    // rather than the static AnsiConsole ambient instance — keeps this testable via a TestConsole without
-    // mutating global state.
-    bool IsInteractive() => !CiEnvironment.IsCi() && console.Profile.Capabilities.Interactive;
 
     async Task ExecuteByEntityAsync(
         IOrganizationServiceAsync2 service,

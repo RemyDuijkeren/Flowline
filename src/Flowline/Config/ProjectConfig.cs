@@ -58,7 +58,7 @@ public class ProjectConfig
         if (get() != input)
         {
             AnsiConsole.MarkupLine($"[yellow]{label} is already set: [bold]{get()}[/][/]");
-            if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings, "config"))
+            if (!ConsoleHelper.Confirm("Overwrite it?", false, settings, "config"))
             {
                 AnsiConsole.MarkupLine($"[dim]Keeping {label} as-is: [link]{get()}[/][/]");
                 return get();
@@ -136,7 +136,7 @@ public class ProjectConfig
         {
             AnsiConsole.MarkupLine($"[yellow]{Solution.UniqueName} is already set to managed: {Solution.IncludeManaged}[/]");
 
-            if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings, "config"))
+            if (!ConsoleHelper.Confirm("Overwrite it?", false, settings, "config"))
             {
                 AnsiConsole.MarkupLine("[dim]Keeping solution config as-is[/]");
                 return Solution;

@@ -205,7 +205,7 @@ public class ConnectionReferenceHandlerTests : IDisposable
 
         Assert.Empty(findings);
         Assert.Contains("network timeout", _console.Output);
-        Assert.Contains("Warning", _console.Output);
+        Assert.Contains("! ", _console.Output);
     }
 
     // -- Fix2 (code-review): the >2000 ConditionOperator.In guard now degrades instead of throwing uncaught --
@@ -222,7 +222,7 @@ public class ConnectionReferenceHandlerTests : IDisposable
 
         Assert.Empty(findings);
         Assert.Contains("2001", _console.Output);
-        Assert.Contains("Warning", _console.Output);
+        Assert.Contains("! ", _console.Output);
     }
 
     [Fact]

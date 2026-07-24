@@ -184,7 +184,7 @@ public class CustomApiFamilyHandlerTests : IDisposable
 
         Assert.Empty(findings);
         Assert.Contains("network timeout", _console.Output);
-        Assert.Contains("Warning", _console.Output);
+        Assert.Contains("! ", _console.Output);
     }
 
     // -- Integration: SequenceHint ordering --
