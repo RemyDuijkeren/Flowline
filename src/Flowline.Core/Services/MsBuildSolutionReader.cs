@@ -146,17 +146,24 @@ public class MsBuildSolutionReader
         var normalized = path.Replace('\\', Path.DirectorySeparatorChar)
                              .Replace('/', Path.DirectorySeparatorChar);
 
-        // Only a relative path may be stripped. Trimming unconditionally silently re-roots an absolute
-        // POSIX path ("/opt/x.csproj" becomes "opt/x.csproj") and mangles a UNC share
-        // (@"\\server\share\P.cdsproj" becomes @"server\share\P.cdsproj").
+        // Only a drive-absolute path or a UNC share may be left rooted. Trimming unconditionally would
+        // mangle either (@"\\server\share\P.cdsproj" becomes @"server\share\P.cdsproj"); everything else
+        // — including a bare leading separator, e.g. @"\Plugins\X.csproj" — names the same project as
+        // "Plugins\X.csproj" and must normalize to it, or the already-present check misses.
         //
-        // IsPathFullyQualified, not IsPathRooted: on Windows a bare leading separator is "rooted"
-        // (drive-relative), but @"\Plugins\X.csproj" still names the same project as "Plugins\X.csproj"
-        // and must normalize to it, or the already-present check misses.
-        return Path.IsPathFullyQualified(normalized)
+        // Checked structurally rather than via Path.IsPathFullyQualified/IsPathRooted: those are
+        // host-OS-aware, and on Linux/macOS *any* leading separator reads as fully qualified — which
+        // would leave a solution file's stray leading separator un-stripped there while correctly
+        // stripping it on Windows. A solution file never legitimately stores a bare POSIX-absolute path,
+        // so it's safe to always strip one.
+        return IsDriveAbsoluteOrUnc(normalized)
             ? normalized
             : normalized.TrimStart(Path.DirectorySeparatorChar);
     }
+
+    static bool IsDriveAbsoluteOrUnc(string path) =>
+        (path.Length >= 2 && path[1] == ':') ||
+        (path.Length >= 2 && path[0] == Path.DirectorySeparatorChar && path[1] == Path.DirectorySeparatorChar);
 
     /// <summary>Compares two project paths the way a solution file means them: separator- and case-insensitively.</summary>
     internal static bool PathEquals(string a, string b) =>

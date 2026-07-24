@@ -28,8 +28,12 @@ public class WebResourcesProjectResolverTests : IDisposable
         return full;
     }
 
+    // relativePath is written with Windows-style backslashes throughout this file (matching how the other
+    // fixture data is authored); MsBuildSolutionReader.NormalizePath is what a real read of a solution file
+    // applies before a resolver ever sees the path, so apply it here too — a raw backslash literal is a
+    // literal, non-separator character on Linux/macOS and silently fails every File.Exists check below.
     static MsBuildSolutionProject CsProjectEntry(string relativePath, string name) =>
-        new(relativePath, name, ".csproj");
+        new(MsBuildSolutionReader.NormalizePath(relativePath), name, ".csproj");
 
     const string NoTargetsXml = """<Project Sdk="Microsoft.Build.NoTargets/3.7.134"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>""";
     const string SuppressedCompileXml = """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup><Target Name="CoreCompile" /><Target Name="Build" AfterTargets="CoreCompile"><Exec Command="npm run build" /></Target></Project>""";

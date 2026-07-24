@@ -262,15 +262,17 @@ EndGlobal
             .Should().Be(Sep("Plugins/X.csproj"));
     }
 
-    [Fact]
-    public void NormalizePath_RootedInput_StaysRooted()
+    [Theory]
+    [InlineData(@"C:\Users\x\x.csproj")]
+    [InlineData(@"\\server\share\x.csproj")]
+    public void NormalizePath_DriveAbsoluteOrUncInput_IsNotTrimmed(string input)
     {
-        // Stripping unconditionally re-roots an absolute path, turning /opt/x.csproj into opt/x.csproj.
-        var rooted = Path.Combine(Path.GetTempPath(), "x.csproj");
-
-        var normalized = MsBuildSolutionReader.NormalizePath(rooted);
-
-        Path.IsPathRooted(normalized).Should().BeTrue();
+        // Stripping unconditionally mangles a drive-absolute path or a UNC share
+        // (@"\\server\share\P.cdsproj" becomes @"server\share\P.cdsproj"). Checked by shape (drive letter
+        // or a doubled leading separator), not Path.IsPathRooted — on Linux/macOS a bare "C:\..." string
+        // isn't rooted at all, so that assertion can't verify this cross-platform.
+        MsBuildSolutionReader.NormalizePath(input)
+            .Should().Be(input.Replace('\\', Path.DirectorySeparatorChar));
     }
 
     [Fact]

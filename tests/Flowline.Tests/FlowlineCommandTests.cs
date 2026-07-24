@@ -129,10 +129,12 @@ public class FlowlineCommandTests
         {
             await command.Connect(connector, environmentUrl, CancellationToken.None, resolvedProfile: givenProfile);
         }
-        catch (InvalidOperationException)
+        catch (Exception ex) when (ex is InvalidOperationException or FlowlineException)
         {
-            // Expected — no real PAC CLI auth cache in this test environment; ConnectViaPacAsync fails
-            // past the point this test cares about. Only the resolve-call count matters here.
+            // Expected — no real PAC CLI auth cache in this test environment; ConnectViaPacAsync fails past
+            // the point this test cares about. Which exception surfaces is platform-dependent (Windows can
+            // take the WAM broker path and fail differently than the file-cache path Linux/macOS use).
+            // Only the resolve-call count matters here.
         }
 
         resolveCalls.Should().Be(0);
@@ -157,7 +159,7 @@ public class FlowlineCommandTests
         {
             await command.Connect(connector, environmentUrl, CancellationToken.None);
         }
-        catch (InvalidOperationException)
+        catch (Exception ex) when (ex is InvalidOperationException or FlowlineException)
         {
             // Expected — see note above.
         }

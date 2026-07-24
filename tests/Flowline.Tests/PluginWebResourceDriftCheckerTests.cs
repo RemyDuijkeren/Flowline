@@ -54,7 +54,9 @@ public class PluginWebResourceDriftCheckerTests : IDisposable
     void WriteSolution(params string[] relativePluginProjectPaths)
     {
         var allPaths = new[] { WebResourcesProjectRelPath }.Concat(relativePluginProjectPaths);
-        var projects = string.Concat(allPaths.Select(p => $"""<Project Path="{p}" />"""));
+        // .slnx stores forward slashes on disk regardless of host OS (see MsBuildSolutionReaderTests'
+        // SlnxWithBothProjects) — a literal backslash here would be non-canonical .slnx content.
+        var projects = string.Concat(allPaths.Select(p => $"""<Project Path="{p.Replace('\\', '/')}" />"""));
         File.WriteAllText(Path.Combine(_root, "Test.slnx"), $"<Solution>{projects}</Solution>");
     }
 
@@ -387,7 +389,7 @@ public class PluginWebResourceDriftCheckerTests : IDisposable
         // report plugin drift — never throw. The single loud warning is the command caller's job, not here.
         WritePluginProject(Path.Combine("Plugins", "Test.Plugins.csproj"));
         File.WriteAllText(Path.Combine(_root, "Test.slnx"),
-            """<Solution><Project Path="Plugins\Test.Plugins.csproj" /></Solution>""");
+            """<Solution><Project Path="Plugins/Test.Plugins.csproj" /></Solution>""");
 
         // A dist/ that would drift if it were checked — proves the web-resource half is genuinely skipped.
         WriteFile(Path.Combine("WebResources", "dist", "local.js"), "local");
