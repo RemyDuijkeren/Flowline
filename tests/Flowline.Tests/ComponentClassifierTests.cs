@@ -496,6 +496,28 @@ public class ComponentClassifierTests : IDisposable
         result.Should().BeEquivalentTo(["msdyn_salesCopilot"]);
     }
 
+    // ── ScanRoleNames ────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ScanRoleNames_ReturnsNamesFromRolesFolder()
+    {
+        Directory.CreateDirectory(Path.Combine(_dir, "Roles"));
+        File.WriteAllText(Path.Combine(_dir, "Roles", "Custom Sales Role.xml"), "<Role />");
+        File.WriteAllText(Path.Combine(_dir, "Roles", "System Customizer.xml"), "<Role />");
+
+        var result = ComponentClassifier.ScanRoleNames(_dir);
+
+        result.Should().BeEquivalentTo(["Custom Sales Role", "System Customizer"]);
+    }
+
+    [Fact]
+    public void ScanRoleNames_ReturnsEmpty_WhenRolesFolderMissing()
+    {
+        var result = ComponentClassifier.ScanRoleNames(_dir);
+
+        result.Should().BeEmpty();
+    }
+
     // ── ScanConnectionReferenceLogicalNames ─────────────────────────────────────
 
     void WriteCustomizationsXml(string connectionReferencesXml)

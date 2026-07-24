@@ -247,6 +247,29 @@ public static class ComponentClassifier
     }
 
     /// <summary>
+    /// Scans the unpacked package source under Roles/&lt;name&gt;.xml for role names still declared
+    /// locally — role names are just the file names (strip `.xml`), no XML content is read. Unlike
+    /// WebResource/Entity/OptionSet, Role's RootComponent id is declared directly in Solution.xml, not
+    /// schemaName, so it's captured raw and never routed through <see cref="SolutionXmlComponents.NamedComponents"/>.
+    /// But that raw id isn't portable either — Dataverse reconciles security roles by name on import when
+    /// a role of that name already exists in the target, so a role synced from one org can carry a
+    /// different live id in another. Used to additionally resolve Role live by name (alongside the raw
+    /// id, not instead of it), the same way WebResource/Entity/OptionSet schemaName roots already are.
+    /// </summary>
+    public static HashSet<string> ScanRoleNames(string dataverseSolutionSrcRoot)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var rolesRoot = Path.Combine(dataverseSolutionSrcRoot, "Roles");
+        if (!Directory.Exists(rolesRoot)) return result;
+
+        foreach (var file in Directory.EnumerateFiles(rolesRoot, "*.xml"))
+            result.Add(Path.GetFileNameWithoutExtension(file));
+
+        return result;
+    }
+
+    /// <summary>
     /// Reads the connectionreferencelogicalname attributes still declared in
     /// Other/Customizations.xml's &lt;connectionreferences&gt; section — ConnectionReference has no
     /// dedicated top-level folder (unlike Bot's bots/&lt;schemaname&gt;/bot.xml shape), it's declared

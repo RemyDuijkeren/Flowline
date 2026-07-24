@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   What changes: an API whose plugin type belongs to this push and is no longer declared in source is still deleted on a normal push — unchanged. An API whose plugin type isn't one this push owns is **never** deleted, with or without `--force`; `--verbose` says why it was left. An API with no `plugintypeid` at all — which may be a contract waiting for an implementation — now needs `--force delete-orphans`, the same gate the orphan assembly and step sweeps use. This supersedes the earlier fix that protected a sibling project's Custom APIs by feeding every pushed project's plugin type ids into the planner; that widening is removed, since under positive attribution there is no "unknown" bucket to shrink. Single-project and standalone pushes see the same protection.
 
+- **Orphan cleanup no longer misclassifies a reconciled Role as orphaned**: Role was the only orphan-detected type still matched purely by the raw id declared in Solution.xml. Dataverse reconciles security roles by name on import when a role of that name already exists in the target, so a role synced from one environment could carry a different live id in another — the raw id-match alone would then report a still-assigned role as removable. Role is now also resolved live by name (its local `Roles/<name>.xml` file name), the same way WebResource/Entity/OptionSet already are, in addition to the existing id-match.
+
 ## [0.12.0] - 2026-07-17
 
 ### Fixed

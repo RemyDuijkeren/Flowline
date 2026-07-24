@@ -900,6 +900,36 @@ public class OrphanCleanupServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RunPreImportAsync_RoleReconciledToDifferentLiveId_ResolvedByLocalName_NotReportedAsOrphan()
+    {
+        // Cross-environment id drift: Dataverse reconciles security roles by name on import when a role
+        // of that name already exists in the target, so a role synced from one org can carry a different
+        // live id in another. The raw id-match alone would misclassify the reconciled live role as
+        // orphaned; ComponentClassifier.ScanRoleNames + the by-name resolution now also resolve it via
+        // the local Roles/<name>.xml file name, in addition to the stale raw id.
+        var staleLocalId = Guid.NewGuid(); // id recorded in Solution.xml, captured from a different org
+        var liveId = Guid.NewGuid();       // reconciled id actually present in this target org
+
+        SetupSolutionComponents("MySolution", (liveId, 20)); // 20 = Role
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "role"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("role", liveId) { ["name"] = "Custom Sales Role" }
+            ])));
+
+        var rolesDir = Path.Combine(_dataverseSolutionSrcRoot, "Roles");
+        Directory.CreateDirectory(rolesDir);
+        File.WriteAllText(Path.Combine(rolesDir, "Custom Sales Role.xml"), "<Role />");
+
+        await _service.RunPreImportAsync(
+            Ctx("MySolution", [(staleLocalId, 20)], dataverseSolutionSrcRoot: _dataverseSolutionSrcRoot), default);
+
+        Assert.DoesNotContain(liveId.ToString(), _console.Output);
+        Assert.Contains("No orphan components", _console.Output);
+    }
+
+    [Fact]
     public async Task RunPreImportAsync_RoleGenuinelyRemoved_ReportedAsManualRoleWithResolvedName()
     {
         // Role (20) is claimed by RoleHandler (R1) — a genuinely removed Role (absent from

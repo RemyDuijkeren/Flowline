@@ -224,9 +224,20 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
 
         // Other types recorded by schemaName instead of id (e.g. WebResource — its id is not portable
         // across environments, so pac always records it by name) — resolve live for the same reason.
-        if (namedComponents.Count > 0)
+        //
+        // Role isn't schemaName-declared in Solution.xml (it carries a raw id, see ComponentClassifier),
+        // but its raw id isn't portable either — Dataverse reconciles security roles by name on import
+        // when a role of that name already exists in the target. Its local name comes from the unpacked
+        // Roles/<name>.xml file instead and is folded into the same by-name resolution, additively
+        // alongside the raw id already captured in sNew.
+        var roleNames = ComponentClassifier.ScanRoleNames(dataverseSolutionSrcRoot);
+        var resolvableNamedComponents = roleNames.Count == 0
+            ? namedComponents
+            : namedComponents.Concat(roleNames.Select(name => (ComponentType: RoleComponentType, SchemaName: name))).ToList();
+
+        if (resolvableNamedComponents.Count > 0)
         {
-            var resolvedNamedIds = await ResolveNamedComponentIdsAsync(service, namedComponents, ct).ConfigureAwait(false);
+            var resolvedNamedIds = await ResolveNamedComponentIdsAsync(service, resolvableNamedComponents, ct).ConfigureAwait(false);
             sNewIds.UnionWith(resolvedNamedIds);
         }
 
@@ -460,6 +471,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
     }
 
     const int OptionSetComponentType = 9;
+    const int RoleComponentType = 20;
 
     // OptionSet's own metadata-resolution path — separate from ResolveNamedComponentIdsAsync since
     // OptionSet has no backing table. Unlike ResolveEntityMetadataIdsAsync, failures are caught per-name
