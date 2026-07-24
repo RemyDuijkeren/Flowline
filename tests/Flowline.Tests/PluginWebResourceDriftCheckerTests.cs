@@ -10,7 +10,11 @@ public class PluginWebResourceDriftCheckerTests : IDisposable
     readonly string _root;
     readonly string _pkg;
 
-    const string WebResourcesProjectRelPath = @"WebResources\WebResources.csproj";
+    // Forward slash, not Path.Combine: this constant is used both as a WriteFile relative path (where
+    // Path.Combine would accept either separator) and inside a .slnx Path="" attribute written as raw text
+    // (WriteSolution), where a literal backslash isn't a separator on Linux/macOS and silently produces a
+    // single-segment file name instead of a nested "WebResources/WebResources.csproj" on disk.
+    const string WebResourcesProjectRelPath = "WebResources/WebResources.csproj";
 
     public PluginWebResourceDriftCheckerTests()
     {
