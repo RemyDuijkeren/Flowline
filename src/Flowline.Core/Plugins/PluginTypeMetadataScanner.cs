@@ -28,25 +28,6 @@ public class PluginTypeMetadataScanner(IAnsiConsole console)
         "Merge", "Route", "Send", "SetState", "Update", "UpdateMultiple"
     ];
 
-    // Maps C# type full names to CustomApiFieldType values.
-    private static readonly Dictionary<string, int> FieldTypeMap = new()
-    {
-        ["System.Boolean"]                          = 0,
-        ["System.DateTime"]                         = 1,
-        ["System.Decimal"]                          = 2,
-        ["Microsoft.Xrm.Sdk.Entity"]                = 3,
-        ["Microsoft.Xrm.Sdk.EntityCollection"]      = 4,
-        ["Microsoft.Xrm.Sdk.EntityReference"]       = 5,
-        ["System.Single"]                           = 6,
-        ["System.Double"]                           = 6,
-        ["System.Int32"]                            = 7,
-        ["Microsoft.Xrm.Sdk.Money"]                 = 8,
-        ["Microsoft.Xrm.Sdk.OptionSetValue"]        = 9,
-        ["System.String"]                           = 10,
-        ["System.String[]"]                         = 11,
-        ["System.Guid"]                             = 12,
-    };
-
     /// <summary>KD2's test on its own: does <paramref name="assembly"/> carry any plugin-bearing type?</summary>
     /// <remarks>
     /// Same filter <see cref="ScanPluginTypes"/> applies per type, minus the attribute parsing and
