@@ -35,7 +35,7 @@ namespace Flowline.Attributes
 
         /// <summary>
         /// A full Dataverse record snapshot. Maps to C# <c>Entity</c>.
-        /// Requires <see cref="InputAttribute.Entity"/> or <see cref="OutputAttribute.Entity"/>
+        /// Requires <see cref="InputAttribute.Table"/> or <see cref="OutputAttribute.Table"/>
         /// to be set to the table logical name.
         /// </summary>
         Entity = 3,
@@ -45,7 +45,7 @@ namespace Flowline.Attributes
 
         /// <summary>
         /// A reference to a Dataverse record (table + ID). Maps to C# <c>EntityReference</c>.
-        /// Requires <see cref="InputAttribute.Entity"/> or <see cref="OutputAttribute.Entity"/>
+        /// Requires <see cref="InputAttribute.Table"/> or <see cref="OutputAttribute.Table"/>
         /// to be set to the table logical name.
         /// </summary>
         EntityReference = 5,

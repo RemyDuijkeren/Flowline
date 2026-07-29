@@ -27,7 +27,7 @@ namespace Flowline.Attributes
     /// </para>
     /// <code>
     /// [CustomApi]
-    /// public partial class SendNotificationApi : IPlugin { ... }
+    /// public class SendNotificationApi : IPlugin { ... }
     /// </code>
     /// <para>
     /// <b>Entity-bound API:</b> the API operates on a specific record. Pass the table logical name.
@@ -36,9 +36,9 @@ namespace Flowline.Attributes
     /// </para>
     /// <code>
     /// [CustomApi("salesorder")]
-    /// public partial class ApproveOrderApi : IPlugin
+    /// public class ApproveOrderApi : IPlugin
     /// {
-    ///     public void FlowlineExecute(IServiceProvider sp)
+    ///     public void Execute(IServiceProvider sp)
     ///     {
     ///         var ctx = (IPluginExecutionContext)sp.GetService(typeof(IPluginExecutionContext));
     ///         var target = (EntityReference)ctx.InputParameters["Target"]; // auto-provided by Dataverse
@@ -51,7 +51,7 @@ namespace Flowline.Attributes
     /// </para>
     /// <code>
     /// [CustomApi(EntityCollection = "invoice")]
-    /// public partial class BulkApproveApi : IPlugin { ... }
+    /// public class BulkApproveApi : IPlugin { ... }
     /// </code>
     /// </remarks>
     [AttributeUsage(AttributeTargets.Class)]
@@ -101,7 +101,7 @@ namespace Flowline.Attributes
         /// // spkl: [CrmPluginRegistration("dev1_ApproveOrder")]
         /// // Flowline: keep the class as-is, pin the same live unique name
         /// [CustomApi(UniqueName = "dev1_ApproveOrder")]
-        /// public partial class LegacyOrderApprovalPlugin : IPlugin { ... }
+        /// public class LegacyOrderApprovalPlugin : IPlugin { ... }
         /// </code>
         /// <para>
         /// <b>This does not preserve identity across a C# class rename.</b> Plugin type identity is the
