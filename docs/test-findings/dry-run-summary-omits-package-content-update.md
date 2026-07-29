@@ -1,9 +1,8 @@
 # `push --dry-run` summary counts omit the plugin package / assembly content update
 
-- **Status**: not fixed — the count line is per-assembly but the package update is per-package, so
-  deciding which line owns it is a design call, not a mechanical fix (see "Why not fixed inline").
-- **Severity**: medium — the summary line contradicts the detail line directly above/below it. An agent
-  or a user reading only the summary concludes "nothing would change" and skips the real push.
+- **Status**: **fixed** 2026-07-29. Regression tests added, full suite green, live re-verified.
+- **Severity**: medium — the summary line contradicted the detail line directly above/below it. An agent
+  or a user reading only the summary concluded "nothing would change" and skipped the real push.
 - **Found**: 2026-07-29, live, `flowline push --dry-run` (nupkg package mode) against DEV.
 
 ## Repro
@@ -16,7 +15,7 @@ Custom API changes:
 flowline push --scope plugins --dry-run
 ```
 
-Observed:
+Observed before the fix:
 
 ```
 Cr07982.Plugins (0.0.0.0)
@@ -26,43 +25,60 @@ Cr07982.Plugins (0.0.0.0)
 
 A real push of that same state does write: `✓ Package av_Cr07982.Plugins updated`.
 
-The same undercount shows on the classic (non-package) assembly path, where the assembly content
-update is tracked as `needsUpdate` and executed in its own phase:
-
-- `PluginService.cs:1215-1222` — `creates`/`updates` are summed only over
-  `plan.PluginTypes/Steps/CustomApis/Images/RequestParams/ResponseProps`. `needsUpdate` (the parameter
-  that drives the very `~ … — would update content` label at `PluginService.cs:1089-1091`) is not in
-  the sum.
-- `PluginService.cs:208` proves it *is* a change: the real-run path skips only when
-  `!needsUpdate && plan.TotalChanges == 0`.
-- `PluginService.cs:96-100` (`SyncAssemblyOnlyAsync`) already establishes the opposite, correct
-  convention for the same event: `console.Ok("Dry run: 1 update. Run without --dry-run to apply.")`.
-
-On the package path the omission is structural rather than an oversight in the sum: `SyncSolutionFromPackageAsync`
-calls `WritePlanTree(metadata, needsUpdate: false, …)` once **per assembly** (`PluginService.cs:426-427`)
-— each printing its own `Dry run: …` line — and only then prints the single package create/update line
-(`PluginService.cs:429-434`), after the summaries it should have been counted in.
+The same undercount existed on the classic (non-package) assembly path, where the assembly content
+update is tracked as `needsUpdate` and executed in its own phase.
 
 ## Root cause
 
-The dry-run summary is rendered per plugin *assembly*, but "package content would be updated" is a
-fact about the *package*, which is one level above the assemblies (and can own several). There is no
-line in the current output whose scope matches the package, so the package update has nowhere correct
-to be counted.
+Two distinct halves.
 
-## Suggested fix direction
+**Classic path** — `WritePlanTree` summed `creates`/`updates` only over
+`plan.PluginTypes/Steps/CustomApis/Images/RequestParams/ResponseProps`. `needsUpdate`, the parameter
+that drives the very `~ … — would update content` label in the same method, was not in the sum. That
+it is a real change is settled elsewhere in the same file: the execute path skips only when
+`!needsUpdate && plan.TotalChanges == 0`, and `SyncAssemblyOnlyAsync`'s dry run already reported the
+identical event as `"Dry run: 1 update."`.
 
-Make the package path print one aggregate summary after the per-assembly trees instead of one summary
-per assembly — sum every assembly's plan plus the package create/update — and suppress
-`WritePlanTree`'s own summary when it is called as part of a package push. On the classic path the fix
-is then a one-liner in the same place (`updates + (needsUpdate ? 1 : 0)`), consistent with
-`SyncAssemblyOnlyAsync`'s existing "Dry run: 1 update."
+**Package path** — structural rather than an arithmetic slip. `SyncSolutionFromPackageAsync` called
+`WritePlanTree(…, needsUpdate: false, …)` once **per assembly**, each printing its own `Dry run: …`
+line, and only then printed the single package create/update line — after the summaries it should have
+been counted in. There was no line in the output whose scope matched the package, which owns the
+assemblies, so the package write had nowhere correct to be counted.
 
-## Why not fixed inline
+## Fix
 
-Two reasonable answers exist for the package path (aggregate summary vs. attributing the package
-update to the primary assembly's summary), and they produce different output shapes for the
-multi-assembly package case. That is a UX/design decision for the owner, and the bug-fix policy in
-`docs/test-goal.md` reserves those for a finding rather than an inline fix. The classic-path one-liner
-was not applied on its own because shipping half of a two-path inconsistency would leave the two
-summaries disagreeing with each other instead of with the detail line.
+A package push now reports **one** total instead of one summary per assembly:
+
+- `WritePlanTree` returns a summable `PlanCounts` (deletes / creates / updates) and takes
+  `writeSummary`, so a caller that aggregates can suppress the per-plan line. Its update count now
+  includes `needsUpdate`, which fixes the classic path on its own.
+- `SyncSolutionFromPackageAsync` sums every assembly's counts, adds the package's own create *or*
+  update, and writes one summary after the package line.
+- `SyncPackageStepsOnlyAsync` (R4 no-op path, where the hash matched and no package content is
+  written) also writes a single aggregate summary — the sum of the per-assembly plans, with no package
+  entry, which is correct for that path.
+
+All in `src/Flowline.Core/Plugins/PluginService.cs`.
+
+Regression tests in `tests/Flowline.Core.Tests/PluginServiceTests.cs` — all four fail against the
+pre-fix file and pass after it:
+
+- `SyncSolutionFromPackageAsync_DryRun_ExistingPackageChanged_CountsPackageUpdateInSummary`
+- `SyncSolutionFromPackageAsync_DryRun_NewPackage_CountsPackageCreateInSummary`
+- `SyncSolutionFromPackageAsync_DryRun_MultipleAssemblies_WritesOneSummaryForThePackage` (asserts
+  exactly one `Dry run:` line for a two-assembly package)
+- `SyncAsync_DryRun_AssemblyContentChangedOnly_ReportsOneUpdate` (classic path)
+
+## Live verification
+
+`flowline push --scope plugins --dry-run` in the test workspace, package content changed, no
+registration changes:
+
+```
+Cr07982.Backend (0.0.0.0)
+·   ~ Package av_Cr07982.Backend — would update content
+✓ Dry run: 0 delete(s), 0 create(s), 1 update(s). Run without --dry-run to apply.
+```
+
+One summary, it counts the package write, and it now reads after the package line rather than before
+it.

@@ -1715,6 +1715,81 @@ public class PluginServiceTests
         Assert.Contains("would update content", _console.Output);
     }
 
+    // -- Dry-run summary counts (the package/assembly content write is an update, and a package push
+    //    reports ONE total, not one summary per assembly it owns) --
+
+    static int CountOccurrences(string haystack, string needle)
+    {
+        var count = 0;
+        for (var i = haystack.IndexOf(needle, StringComparison.Ordinal); i >= 0; i = haystack.IndexOf(needle, i + needle.Length, StringComparison.Ordinal))
+            count++;
+        return count;
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_DryRun_ExistingPackageChanged_CountsPackageUpdateInSummary()
+    {
+        SetupAssembly(PackageOwnedAssembly(Guid.NewGuid(), hash: "stalehash"));
+        SetupPluginPackage(ExistingPluginPackage(Guid.NewGuid()));
+
+        await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, PackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution", RunMode.DryRun);
+
+        // Was "0 update(s)" printed directly above its own "would update content" line.
+        Assert.Contains("would update content", _console.Output);
+        Assert.Contains("Dry run: 0 delete(s), 0 create(s), 1 update(s)", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_DryRun_NewPackage_CountsPackageCreateInSummary()
+    {
+        SetupAssembly();
+        SetupPluginPackage();
+
+        await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, PackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution", RunMode.DryRun);
+
+        Assert.Contains("Package", _console.Output);
+        Assert.Contains("would create", _console.Output);
+        Assert.Contains("1 create(s)", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_DryRun_MultipleAssemblies_WritesOneSummaryForThePackage()
+    {
+        SetupAssembly(PackageOwnedAssembly(Guid.NewGuid(), hash: "stalehash"));
+        SetupPluginPackage(ExistingPluginPackage(Guid.NewGuid()));
+
+        List<PluginAssemblyMetadata> assemblies =
+        [
+            .. PackageAssemblies("MyPlugin"),
+            .. PackageAssemblies("MyPlugin.Secondary"),
+        ];
+
+        await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, assemblies, NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution", RunMode.DryRun);
+
+        Assert.Equal(1, CountOccurrences(_console.Output, "Dry run:"));
+    }
+
+    [Fact]
+    public async Task SyncAsync_DryRun_AssemblyContentChangedOnly_ReportsOneUpdate()
+    {
+        // Classic (non-package) assembly: hash differs, nothing else does. The content write runs its
+        // own execute phase, so it has to appear in the summary.
+        SetupAssembly(ExistingAssembly(Guid.NewGuid(), hash: "oldhash"));
+        SetupPluginTypes(new Entity("plugintype", Guid.NewGuid()) { ["typename"] = "MyNamespace.MyPlugin", ["isworkflowactivity"] = false });
+
+        await _service.SyncSolutionAsync(
+            _serviceMock,
+            Metadata(hash: "newhash", plugins: new PluginTypeMetadata("MyPlugin", "MyNamespace.MyPlugin", [], [], false)),
+            "MySolution",
+            RunMode.DryRun);
+
+        Assert.Contains("would update content", _console.Output);
+        Assert.Contains("Dry run: 0 delete(s), 0 create(s), 1 update(s)", _console.Output);
+    }
+
     [Fact]
     public async Task SyncSolutionFromPackageAsync_ExistingPackageStaleHash_UpdatesContentOnlyOmitsVersion()
     {

@@ -423,14 +423,20 @@ public class PluginService(IAnsiConsole console)
             prePlans.Add((metadata, _planner.Plan(planSnapshot, metadata, planAssembly, solutionName, preKnownPluginTypeIds, forceDeleteOrphans)));
         }
 
+        // One summary for the whole package, written after the package line below — the package is the
+        // parent of every assembly here, so per-assembly summaries would each report a fraction of the
+        // push and none of them would account for the package content write itself.
+        var counts = new PlanCounts();
         foreach (var (metadata, plan) in prePlans)
-            WritePlanTree(metadata, needsUpdate: false, plan, runMode);
+            counts += WritePlanTree(metadata, needsUpdate: false, plan, runMode, writeSummary: false);
 
         if (runMode == RunMode.DryRun)
         {
             console.Info(existingPackage == null
                 ? $"  [green]+[/] Package [bold]{packageUniqueName}[/] ({primary.Version}) — would create"
                 : $"  [yellow]~[/] Package [bold]{packageUniqueName}[/] — would update content");
+            counts += existingPackage == null ? new PlanCounts(0, 1, 0) : new PlanCounts(0, 0, 1);
+            console.Ok($"Dry run: {counts}. Run without --dry-run to apply.");
             return true;
         }
 
@@ -518,11 +524,17 @@ public class PluginService(IAnsiConsole console)
         // Same plan drives both the --dry-run preview and the --verbose display below (WritePlanTree
         // branches on runMode internally) and the real execution — no package content write happens on
         // this path, so unlike the changed-package flow above there's no pre/post snapshot split needed.
+        // No package write here, so the total is exactly the per-assembly plans — still one summary
+        // for the push, not one per assembly.
+        var counts = new PlanCounts();
         foreach (var (metadata, plan) in plans)
-            WritePlanTree(metadata, needsUpdate: false, plan, runMode);
+            counts += WritePlanTree(metadata, needsUpdate: false, plan, runMode, writeSummary: false);
 
         if (runMode == RunMode.DryRun)
+        {
+            console.Ok($"Dry run: {counts}. Run without --dry-run to apply.");
             return true;
+        }
 
         foreach (var (_, plan) in plans)
         {
@@ -1004,7 +1016,26 @@ public class PluginService(IAnsiConsole console)
             console.Info($"{prefix}Image '{image.GetAttributeValue<string>("name")}'{suffix}");
     }
 
-    void WritePlanTree(PluginAssemblyMetadata metadata, bool needsUpdate, RegistrationPlan plan, RunMode runMode, int cascadeDeleteCount = 0)
+    /// <summary>What a dry run would do, in the three verbs the summary line reports.</summary>
+    /// <remarks>
+    /// Summable because a plugin <b>package</b> push plans one <see cref="RegistrationPlan"/> per
+    /// assembly it owns but writes a single package: the per-assembly counts and the package's own
+    /// create/update are one user-facing total, not one summary each.
+    /// </remarks>
+    readonly record struct PlanCounts(int Deletes, int Creates, int Updates)
+    {
+        public static PlanCounts operator +(PlanCounts a, PlanCounts b) =>
+            new(a.Deletes + b.Deletes, a.Creates + b.Creates, a.Updates + b.Updates);
+
+        public override string ToString() => $"{Deletes} delete(s), {Creates} create(s), {Updates} update(s)";
+    }
+
+    /// <param name="writeSummary">
+    /// False for a package push, whose caller sums every assembly's counts with the package's own
+    /// create/update and writes one summary for the lot.
+    /// </param>
+    /// <returns>What this plan would do, for callers that aggregate before reporting.</returns>
+    PlanCounts WritePlanTree(PluginAssemblyMetadata metadata, bool needsUpdate, RegistrationPlan plan, RunMode runMode, int cascadeDeleteCount = 0, bool writeSummary = true)
     {
         // --- Name parse helpers ---
         static string TypeFromStep(string stepName)
@@ -1212,22 +1243,33 @@ public class PluginService(IAnsiConsole console)
             }
         }
 
-        if (runMode == RunMode.DryRun)
-        {
-            console.Write(tree);
-            var creates = plan.PluginTypes.Upserts.Count(u => u.IsCreate)
+        var createCount = plan.PluginTypes.Upserts.Count(u => u.IsCreate)
                           + plan.Steps.Upserts.Count(u => u.IsCreate)
                           + plan.CustomApis.Upserts.Count(u => u.IsCreate)
                           + plan.Images.Upserts.Count(u => u.IsCreate)
                           + plan.RequestParams.Upserts.Count(u => u.IsCreate)
                           + plan.ResponseProps.Upserts.Count(u => u.IsCreate);
-            var updates = plan.TotalUpserts - creates;
-            console.Ok($"Dry run: {plan.TotalDeletes + cascadeDeleteCount} delete(s), {creates} create(s), {updates} update(s). Run without --dry-run to apply.");
+        // The assembly content write is a real update — the execute path treats it as one (it runs its
+        // own phase, and a no-change run is only skipped when !needsUpdate) and the assembly-only dry
+        // run already reports it as "1 update". Leaving it out made the summary read "0 update(s)"
+        // directly above its own "~ … would update content" line.
+        var counts = new PlanCounts(
+            plan.TotalDeletes + cascadeDeleteCount,
+            createCount,
+            plan.TotalUpserts - createCount + (needsUpdate ? 1 : 0));
+
+        if (runMode == RunMode.DryRun)
+        {
+            console.Write(tree);
+            if (writeSummary)
+                console.Ok($"Dry run: {counts}. Run without --dry-run to apply.");
         }
         else
         {
             console.Verbose(tree);
         }
+
+        return counts;
     }
 
     void WriteSnapshotVerbose(RegistrationSnapshot snapshot)
