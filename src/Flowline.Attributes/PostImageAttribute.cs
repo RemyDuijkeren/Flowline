@@ -39,7 +39,7 @@ namespace Flowline.Attributes
     ///     public void Execute(IServiceProvider sp)
     ///     {
     ///         var ctx       = (IPluginExecutionContext)sp.GetService(typeof(IPluginExecutionContext));
-    ///         var preImage  = ctx.PreEntityImages["postimage"];
+    ///         var preImage  = ctx.PreEntityImages["preimage"];
     ///         var postImage = ctx.PostEntityImages["postimage"];
     ///         var oldName   = preImage.GetAttributeValue&lt;string&gt;("name");
     ///         var newName   = postImage.GetAttributeValue&lt;string&gt;("name");
@@ -55,6 +55,8 @@ namespace Flowline.Attributes
     [AttributeUsage(AttributeTargets.Class)]
     public sealed class PostImageAttribute : Attribute
     {
+        /// <summary>Registers a post-image on this plugin step.</summary>
+        /// <param name="columns">The logical names of the columns to include in the snapshot.</param>
         public PostImageAttribute(params string[] columns)
         {
             Columns = columns;

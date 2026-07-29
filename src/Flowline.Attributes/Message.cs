@@ -3,11 +3,15 @@ namespace Flowline.Attributes
     /// <summary>
     /// Identifies the Dataverse SDK message a plugin step fires on.
     /// Used as the <c>message</c> parameter in <see cref="HandlesAttribute"/> to override
-    /// the naming-convention parser.
+    /// the class-name convention.
     /// </summary>
     /// <remarks>
-    /// Member names mirror <c>Flowline.Core.Models.MessageName</c> exactly — the reader
-    /// maps values to message-name strings via a startup-time dictionary, not by integer cast.
+    /// Each member's name is the Dataverse message name verbatim — <see cref="Update"/> is the
+    /// message <c>"Update"</c>. Message names are case-sensitive.
+    /// <para>
+    /// For a message not listed here — a Custom API, or a message added to Dataverse since this
+    /// package was built — use the <c>string</c> overload of <c>[Handles]</c> instead.
+    /// </para>
     /// </remarks>
     public enum Message
     {

@@ -64,7 +64,8 @@ namespace Flowline.Attributes
 
         /// <summary>
         /// The message name this step fires on.
-        /// For built-in messages this is the <see cref="Message"/> member name (e.g. <c>"Update"</c>).
+        /// For built-in messages this is the <see cref="Flowline.Attributes.Message"/> enum member
+        /// name (e.g. <c>"Update"</c>).
         /// For Custom API messages this is the unique name supplied at decoration time.
         /// </summary>
         public string Message { get; }

@@ -5,11 +5,13 @@ namespace Flowline.Attributes
     /// Used as the <c>stage</c> parameter in <see cref="HandlesAttribute"/>.
     /// </summary>
     /// <remarks>
-    /// Integer values (0–3) do not match the internal <c>ProcessingStage</c> ints (10/20/40).
-    /// <c>PluginAssemblyReader</c> maps each value explicitly via a switch statement.
+    /// Each value carries both the pipeline stage and the execution mode, which is why
+    /// <c>[Handles]</c> needs no separate asynchronous flag.
     /// <para>
-    /// <c>PostOperationAsync</c> folds execution mode into the stage value —
-    /// it maps to <c>ProcessingStage.PostOperation (40)</c> + <c>ProcessingMode.Asynchronous (1)</c>.
+    /// <see cref="PostOperationAsync"/> is not a stage of its own — it is
+    /// <see cref="PostOperation"/> running in the background, after the transaction commits.
+    /// Dataverse allows asynchronous execution at PostOperation only; asking for it at any other
+    /// stage is an error Flowline reports during <c>flowline push</c>.
     /// </para>
     /// </remarks>
     public enum Stage

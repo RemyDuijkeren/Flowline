@@ -13,6 +13,12 @@
     <IncludeSymbols>false</IncludeSymbols>
     <!-- Marks this as a development-time dependency — PrivateAssets="all" by default for consumers -->
     <DevelopmentDependency>true</DevelopmentDependency>
+    <!-- Validation only: the XML file is never packed (IncludeBuildOutput=false). This is what makes
+         the compiler diagnose broken <see cref> (CS1574) — without it, doc comments in this
+         source-only package drift silently as members are renamed. CS1591 stays off: the shipped
+         source is documentation, not an API surface that needs every member commented. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
     <PackageOutputPath>../../../artifacts/nupkg</PackageOutputPath>
   </PropertyGroup>
 

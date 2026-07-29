@@ -31,7 +31,7 @@ namespace Flowline.Attributes
     /// </code>
     /// <para>
     /// <b>Entity-bound API:</b> the API operates on a specific record. Pass the table logical name.
-    /// Dataverse automatically adds a <c>Target</c> <see cref="Microsoft.Xrm.Sdk.EntityReference"/>
+    /// Dataverse automatically adds a <c>Target</c> <c>EntityReference</c>
     /// parameter — the caller must provide the record ID when invoking the API.
     /// </para>
     /// <code>
@@ -47,10 +47,10 @@ namespace Flowline.Attributes
     /// </code>
     /// <para>
     /// <b>Entity collection-bound API:</b> like entity binding but for a collection of records.
-    /// Use <see cref="EntityCollection"/> instead of the constructor parameter.
+    /// Use <see cref="TableCollection"/> instead of the constructor parameter.
     /// </para>
     /// <code>
-    /// [CustomApi(EntityCollection = "invoice")]
+    /// [CustomApi(TableCollection = "invoice")]
     /// public class BulkApproveApi : IPlugin { ... }
     /// </code>
     /// </remarks>

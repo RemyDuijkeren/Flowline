@@ -16,7 +16,7 @@ namespace Flowline.Attributes
     /// <code>
     /// {DescriptiveName}{Stage}{Message}[Async][Plugin]
     ///
-    /// AccountPostCreatePlugin      → PostOperation, Create, account, synchronous
+    /// InitializeAccountPostCreatePlugin      → PostOperation, Create, account, synchronous
     /// InvoicePreUpdatePlugin       → PreOperation,  Update, cr123_invoice, synchronous
     /// ContactValidationDeletePlugin → PreValidation, Delete, contact, synchronous
     /// OrderPostUpdateAsyncPlugin   → PostOperation, Update, salesorder, asynchronous
@@ -130,7 +130,7 @@ namespace Flowline.Attributes
         /// Retrieve it in a constructor overload that accepts <c>string unsecureConfig</c>:
         /// </para>
         /// <code>
-        /// [Step("account", Configuration = "{\"endpoint\":\"https://api.example.com\"}")]
+        /// [Step("account", Config = "{\"endpoint\":\"https://api.example.com\"}")]
         /// public class AccountPostCreatePlugin : IPlugin
         /// {
         ///     private readonly string _endpoint;
