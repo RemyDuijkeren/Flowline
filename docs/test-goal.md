@@ -616,6 +616,31 @@ Gaps found:
     ruled out that the earlier `--force delete-orphans` run silently deleted `av_AatYourService` (still
     present in the committed `Solution/src/CustomAPIs/`). DEV is disposable; noted for honesty, and
     because a `sync` will surface it as drift.
+  - **Custom API fix live-verified afterwards, with a discriminating probe.** Technique worth reusing:
+    plant a `[CustomApi]` class in *each* plugin project (`av_BackendProbe` in the package project,
+    `av_LegacyProbe` in the classic one — same publisher prefix, different assemblies), then run a
+    **standalone** push of only the package `.nupkg` with `--force delete-orphans`. Standalone mode's
+    pushed set is the single artifact, so the classic assembly becomes an orphan on demand — no project
+    renaming or fixture surgery needed. Result: the cascade printed and deleted `av_LegacyProbe` and left
+    `av_BackendProbe` alone; before the fix both would have gone, unprinted. The `--dry-run` variant
+    printed the same four `would delete (cascade)` lines and changed nothing (re-queried to confirm).
+    Fixture and DEV restored afterwards: orphaned assembly re-pushed, probe classes deleted, final push
+    removed their APIs, and DEV re-verified back to two assemblies / two steps / no `av_` APIs.
+  - **Watch the FetchXML `like` escape — it produced a false negative this run.** `value='av!_%'` was
+    used to mean "literal underscore"; `!` is not a FetchXML escape character, so the filter matched
+    nothing and an earlier check concluded "no `av_` Custom APIs exist" without actually looking. Use
+    `value='av_%'` (treating `_` as a single-character wildcard) or `[_]`, and be suspicious of any
+    "No results returned." that confirms what you expected.
+  - **Minor, pre-existing, no finding filed**: under `--dry-run` *with* `--force delete-orphans` the
+    orphan warning still reads "Use --force delete-orphans to delete" — the flag was passed. `willDelete`
+    is false in dry-run, and the message keys off that rather than off the flag. Harmless but reads as if
+    the user forgot something they did.
+  - **New finding logged, not fixed**: a multi-assembly plugin package fails to push — Dataverse never
+    creates a `pluginassembly` record for the second DLL, and `push` exits 1 *after* the package content
+    write has committed.
+    `docs/test-findings/multi-assembly-plugin-package-never-registers-second-assembly.md`. This also
+    explains why the shared-package refusal branch could not be constructed live: if a package always
+    owns exactly one assembly, that branch is a guard that cannot fire in a real org.
 - Git hygiene in the test workspace: commit between test phases so `sync`'s dirty-check behaves
   predictably, and use `git checkout --`/`git status` before any destructive reset.
 - Long-running commands (`clone`'s Dataverse export, `sync`'s export) can take several minutes — run

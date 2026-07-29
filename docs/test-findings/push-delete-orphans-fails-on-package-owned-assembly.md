@@ -190,11 +190,35 @@ pluginpackage:   av_Cr07982.Backend
 An immediate re-run prints no orphan warnings at all, exit 0. The run log
 (`%LOCALAPPDATA%\Flowline\logs\…-push.log`) carries the same lines with no markup leakage.
 
-**Not verified live: the refusal branch.** It needs a package owning both an orphan and an assembly the
-run can't account for — i.e. a multi-assembly package, which this fixture's one-project-one-package
-shape can't produce without building a hand-crafted two-DLL nupkg. Covered by unit tests only
-(shared-package refusal, the orphan-step pass honouring it, and the blocked `--dry-run`). Worth
-constructing if a multi-assembly package fixture ever exists.
+**Not verified live: the refusal branch — and it may be unreachable in a real org.** It needs a package
+owning both an orphan and an assembly the run can't account for, i.e. a multi-assembly package. Building
+one was attempted (a `ProjectReference` into a second plugin-bearing project, which does produce a
+two-DLL nupkg) and Dataverse never created a `pluginassembly` record for the second DLL at all — see
+`docs/test-findings/multi-assembly-plugin-package-never-registers-second-assembly.md`. If a package
+always owns exactly one assembly, this branch is a safety guard that cannot fire rather than a path
+users reach. It stays either way: one query, and it is what stops a package delete from taking a live
+assembly with it. Covered by unit tests only (shared-package refusal, the orphan-step pass honouring it,
+and the blocked `--dry-run`).
+
+**Verified live instead: the Custom API scoping fix** (see "Follow-up" below), with a discriminating
+probe. Two `[CustomApi]` classes were planted, one in the package project and one in the classic
+project, giving `av_BackendProbe` and `av_LegacyProbe` under the same publisher prefix but different
+assemblies. A standalone push of only the Backend `.nupkg` with `--force delete-orphans` orphans the
+classic assembly, and its cascade printed and deleted `av_LegacyProbe` while leaving `av_BackendProbe`
+untouched:
+
+```
+! Cr07982.LegacyPlugins.dll in environment — no local source. Deleting.
+·   av_LegacyProbe — cascade delete
+·   Cr07982.LegacyPlugins.LegacyAuditPostUpdatePlugin — cascade delete
+·   Cr07982.LegacyPlugins.LegacyProbeApi — cascade delete
+·   Cr07982.LegacyPlugins.LegacyAuditPostUpdatePlugin: Update of contact — cascade delete
+```
+
+Before the fix both APIs would have gone, and neither would have been named in the output. The same run
+under `--dry-run` printed the same four lines as `would delete (cascade)` and changed nothing —
+re-queried afterwards, both APIs and both assemblies were still present. The fixture was then restored:
+the orphaned assembly re-pushed, both probe classes deleted, and a final push removed their APIs.
 
 ## Note on DEV state
 
