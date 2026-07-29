@@ -307,6 +307,15 @@ public class ApproveOrderApi : IPlugin
 }
 ```
 
+Pass `TableCollection` for **entity collection binding** — the API operates on a set of records rather than one:
+
+```csharp
+[CustomApi(TableCollection = "invoice")]
+public class BulkApproveApi : IPlugin { ... }
+```
+
+`Table` and `TableCollection` are mutually exclusive — an API binds to a single record or to a collection, never both. Setting both fails the push.
+
 Optional named properties:
 
 | Property           | Type              | Default            | Description                                                                                                                                                                                                    |

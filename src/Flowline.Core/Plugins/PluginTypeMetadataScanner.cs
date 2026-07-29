@@ -125,6 +125,7 @@ public class PluginTypeMetadataScanner(IAnsiConsole console)
         }
 
         ValidateCustomApiUniqueNameFormat(type.Name, uniqueNameOverride);
+        ValidateCustomApiBinding(type.Name, boundEntity, entityCollection);
 
         int bindingType;
         string? boundEntityLogicalName;
@@ -177,6 +178,19 @@ public class PluginTypeMetadataScanner(IAnsiConsole console)
             throw new InvalidOperationException(
                 $"{className}: [CustomApi] UniqueName '{uniqueName}' is invalid — it may contain only letters, digits, and underscores, " +
                 $"and must start with a letter.");
+    }
+
+    // Table and TableCollection are the two binding forms and are mutually exclusive — Dataverse binds
+    // a Custom API to a single record or to a collection, never both. Without this check the binding
+    // resolution below silently keeps Table and discards TableCollection.
+    internal static void ValidateCustomApiBinding(string className, string? table, string? tableCollection)
+    {
+        if (table is null || tableCollection is null) return;
+
+        throw new InvalidOperationException(
+            $"{className}: [CustomApi] can't bind to both a table and a table collection. " +
+            $"Use [CustomApi(\"{table}\")] for single records, " +
+            $"or [CustomApi(TableCollection = \"{tableCollection}\")] for a collection.");
     }
 
     private static (List<RequestParameterMetadata>, List<ResponsePropertyMetadata>)

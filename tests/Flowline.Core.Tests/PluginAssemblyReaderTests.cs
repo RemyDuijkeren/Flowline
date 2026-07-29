@@ -465,6 +465,27 @@ public class PluginAssemblyReaderTests
         Assert.Contains("publisher prefix", ex.Message);
     }
 
+    [Theory]
+    [InlineData(null, null)]        // global API — neither binding form
+    [InlineData("salesorder", null)] // entity-bound
+    [InlineData(null, "invoice")]    // collection-bound
+    public void ValidateCustomApiBinding_AtMostOneBindingForm_DoesNotThrow(string? table, string? tableCollection)
+    {
+        PluginTypeMetadataScanner.ValidateCustomApiBinding("MockApi", table, tableCollection);
+    }
+
+    [Fact]
+    public void ValidateCustomApiBinding_BothForms_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            PluginTypeMetadataScanner.ValidateCustomApiBinding("MockApi", "salesorder", "invoice"));
+
+        // Both values echoed back so the fix is obvious without opening the class.
+        Assert.Contains("salesorder", ex.Message);
+        Assert.Contains("invoice", ex.Message);
+        Assert.Contains("can't bind to both", ex.Message);
+    }
+
     [Fact]
     public void ValidateCustomApiUniqueNameFormat_EmptyAfterPrefix_Throws()
     {

@@ -46,10 +46,7 @@ namespace Flowline.Attributes
     [AttributeUsage(AttributeTargets.Class)]
     public sealed class PreImageAttribute : Attribute
     {
-        /// <summary>
-        /// Specifies an attribute to define a pre-image for a specific entity.
-        /// This is commonly utilized in plugins to capture the state of an entity prior to an operation or event execution.
-        /// </summary>
+        /// <summary>Registers a pre-image on this plugin step.</summary>
         /// <param name="columns">The logical names of the columns to include in the snapshot.</param>
         public PreImageAttribute(params string[] columns)
         {

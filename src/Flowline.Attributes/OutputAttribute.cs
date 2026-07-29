@@ -36,15 +36,10 @@ namespace Flowline.Attributes
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
     public sealed class OutputAttribute : Attribute
     {
-        /// <summary>
-        /// Specifies the output metadata for a class. This attribute can be applied to a class
-        /// to define the name and type of output.
-        /// </summary>
-        /// <remarks>
-        /// This attribute allows multiple usages on a single class.
-        /// </remarks>
-        /// <param name="name">The name of the output.</param>
-        /// <param name="type">The type of the output.</param>
+        /// <summary>Declares one return value of this Custom API.</summary>
+        /// <remarks>Apply once per return value.</remarks>
+        /// <param name="name">The name callers read this value by, e.g. <c>"riskScore"</c>.</param>
+        /// <param name="type">The Dataverse type of the return value.</param>
         public OutputAttribute(string name, FieldType type)
         {
             Name = name;

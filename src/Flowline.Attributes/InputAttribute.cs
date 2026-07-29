@@ -42,10 +42,10 @@ namespace Flowline.Attributes
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
     public sealed class InputAttribute : Attribute
     {
-        /// <summary>Represents metadata that can be applied to a class to specify its expected input parameters.</summary>
-        /// <remarks>This attribute allows multiple usages on a single class.</remarks>
-        /// <param name="name">The name of the parameter.</param>
-        /// <param name="type">The type of the parameter.</param>
+        /// <summary>Declares one input parameter of this Custom API.</summary>
+        /// <remarks>Apply once per parameter.</remarks>
+        /// <param name="name">The name callers pass this argument by, e.g. <c>"accountId"</c>.</param>
+        /// <param name="type">The Dataverse type of the parameter.</param>
         public InputAttribute(string name, FieldType type)
         {
             Name = name;

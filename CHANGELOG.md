@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`[CustomApi]` rejects conflicting bindings**: setting both a table (the constructor argument) and `TableCollection` now fails `push` with an error naming both values. A Custom API binds to a single record or to a collection, never both — previously the table silently won and `TableCollection` was discarded, producing a registration that didn't match the source. Entity collection binding is also now documented in the README and wiki, where it had been missing.
+
+### Fixed
+
+- **`Flowline.Attributes` XML documentation**: several code samples didn't compile and several references pointed at renamed or deleted members — `[CustomApi(EntityCollection = ...)]` (the property is `TableCollection`), `[Step(Configuration = ...)]` (it's `Config`), a `[PostImage]` sample reading the pre-image with the post-image's key, `FieldType` referencing a non-existent `InputAttribute.Entity`, `Handles.Message` resolving to the wrong symbol, and a `Message` remark citing a `Flowline.Core.Models.MessageName` type that no longer exists. Remarks that explained behavior by naming Flowline's internal classes were rewritten in terms of what a consumer actually observes. `GenerateDocumentationFile` is now enabled on the package so broken `<see cref>` fails the build instead of drifting silently.
+
 ## [0.13.0] - 2026-07-24
 
 ### Removed
