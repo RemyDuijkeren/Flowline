@@ -471,6 +471,9 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         else
         {
             didBuild = true;
+            if (pluginPackageMode != PluginPackageMode.Dll)
+                ClearStalePackages(candidate.BuildOutputRoot, note => Console.Verbose(note));
+
             if (await DotNetUtils.BuildSolutionAsync(projectFolder, DotnetBuild.Release, _capture, cancellationToken) != 0)
                 throw new FlowlineException(ExitCode.BuildFailed, $"{candidate.ProjectName} build failed — fix errors above.");
         }
@@ -646,6 +649,47 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     // whole build output root for a .nupkg — dotnet pack drops it at bin/Release/ directly, a sibling of
     // the net462/publish/ folder the .dll itself lives in, not alongside the .dll — and differ only in
     // what happens when none is found: Auto falls back to the .dll silently, Nupkg fails loudly (U2/R2).
+    /// <summary>
+    /// Removes every <c>.nupkg</c> under a plugin project's build output, so the package
+    /// <c>dotnet pack</c> is about to write is the only one there.
+    /// </summary>
+    /// <remarks>
+    /// <c>dotnet pack</c> embeds the version in the filename and never removes a previous version's
+    /// package, and MinVer moves the version on every commit — so a normal `push` after a commit leaves
+    /// two packages side by side and the ambiguity guard in <see cref="ResolvePluginPushPath"/> blocks
+    /// the push, on the very path that produced the ambiguity. Neither <c>-t:Rebuild</c> nor
+    /// <c>dotnet clean</c> helps (measured): MSBuild only tracks the outputs of the version it is
+    /// building, so `clean` removes the current package and leaves the stale one. Deleting first is
+    /// safe — a build regenerates a missing package (also measured), so this cannot strand
+    /// <see cref="PluginPackageMode.Auto"/> on the classic .dll path.
+    /// <para>
+    /// Only called when Flowline runs the build itself: with <c>--no-build</c> the packages on disk are
+    /// all there is, and deleting them would destroy the very thing being pushed.
+    /// </para>
+    /// </remarks>
+    internal static void ClearStalePackages(string buildOutputRoot, Action<string>? note = null)
+    {
+        if (!Directory.Exists(buildOutputRoot)) return;
+
+        foreach (var nupkg in Directory.GetFiles(buildOutputRoot, "*.nupkg", SearchOption.AllDirectories))
+        {
+            // markup: false — console.Verbose escapes what it is given, so a marked-up path would show
+            // its own [bold] tags as literal text.
+            var display = ConsolePath.FormatRelativePath(nupkg, markup: false);
+            try
+            {
+                File.Delete(nupkg);
+                note?.Invoke($"Removed stale package {display}");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // A locked or read-only package isn't worth failing a push over — the ambiguity guard in
+                // ResolvePluginPushPath still catches whatever survives, and names it.
+                note?.Invoke($"Could not remove {display}: {ex.Message}");
+            }
+        }
+    }
+
     internal static string ResolvePluginPushPath(string dllPath, string buildOutputRoot, PluginPackageMode mode)
     {
         if (mode == PluginPackageMode.Dll)
@@ -670,10 +714,12 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         // build nor pack cleans a previously-produced .nupkg with a different version out of bin/Release
         // first — a version bump without a clean build leaves both old and new side by side. Picking
         // FirstOrDefault (enumeration order is unspecified) risked silently pushing stale package content.
+        // ClearStalePackages keeps a build we ran ourselves out of this state; reaching it now means
+        // --no-build, where there is nothing to disambiguate against.
         if (nupkgPaths.Length > 1)
             throw new FlowlineException(ExitCode.ValidationFailed,
                 $"Found {nupkgPaths.Length} .nupkg files under the build output — {string.Join(", ", nupkgPaths.Select(Path.GetFileName))}. " +
-                "Run a clean build (delete bin/Release or drop --no-build) so only the current version's package remains.");
+                "Can't tell which one matches your source. Delete the ones you don't want, or drop --no-build so Flowline can repack.");
 
         return nupkgPaths[0];
     }

@@ -338,6 +338,73 @@ public class PushCommandTests : IDisposable
             .WithMessage("*Plugins.1.0.0.nupkg*Plugins.1.0.1.nupkg*");
     }
 
+    // -- ClearStalePackages --
+    // dotnet pack embeds the version in the filename and never removes an earlier version's package, so
+    // with MinVer (version moves on every commit) a normal `push` after a commit left two packages side
+    // by side and the ambiguity guard above blocked the push. Measured: neither `-t:Rebuild` nor
+    // `dotnet clean` removes the old one — `clean` removes the CURRENT package and leaves the stale one,
+    // because MSBuild only tracks the outputs of the version it is building. Hence clearing here.
+
+    [Fact]
+    public void ClearStalePackages_RemovesEveryNupkgUnderTheBuildOutput()
+    {
+        var buildOutputRoot = Path.Combine(_root, "bin", "Release");
+        var publishDir = Path.Combine(buildOutputRoot, "net462", "publish");
+        Directory.CreateDirectory(publishDir);
+        var dll = Path.Combine(publishDir, "Plugins.dll");
+        File.WriteAllText(dll, "");
+        File.WriteAllText(Path.Combine(buildOutputRoot, "Plugins.1.0.0.nupkg"), "");
+        File.WriteAllText(Path.Combine(buildOutputRoot, "Plugins.1.0.1.nupkg"), "");
+        File.WriteAllText(Path.Combine(publishDir, "Nested.2.0.0.nupkg"), "");
+
+        PushCommand.ClearStalePackages(buildOutputRoot);
+
+        Directory.GetFiles(buildOutputRoot, "*.nupkg", SearchOption.AllDirectories).Should().BeEmpty();
+        File.Exists(dll).Should().BeTrue("only packages are cleared — the build output itself stays");
+    }
+
+    [Fact]
+    public void ClearStalePackages_ThenResolve_NoLongerHitsTheAmbiguityGuard()
+    {
+        // The end-to-end shape: two versions present, cleared, then the build writes exactly one.
+        var buildOutputRoot = Path.Combine(_root, "bin", "Release");
+        var publishDir = Path.Combine(buildOutputRoot, "net462", "publish");
+        Directory.CreateDirectory(publishDir);
+        var dll = Path.Combine(publishDir, "Plugins.dll");
+        File.WriteAllText(dll, "");
+        File.WriteAllText(Path.Combine(buildOutputRoot, "Plugins.1.0.0.nupkg"), "");
+        File.WriteAllText(Path.Combine(buildOutputRoot, "Plugins.1.0.1.nupkg"), "");
+
+        PushCommand.ClearStalePackages(buildOutputRoot);
+        var repacked = Path.Combine(buildOutputRoot, "Plugins.1.0.2.nupkg");
+        File.WriteAllText(repacked, ""); // stands in for what dotnet pack writes next
+
+        PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Auto).Should().Be(repacked);
+    }
+
+    [Fact]
+    public void ClearStalePackages_ReportsWhatItRemoved()
+    {
+        var buildOutputRoot = Path.Combine(_root, "bin", "Release");
+        Directory.CreateDirectory(buildOutputRoot);
+        File.WriteAllText(Path.Combine(buildOutputRoot, "Plugins.1.0.0.nupkg"), "");
+
+        var notes = new List<string>();
+        PushCommand.ClearStalePackages(buildOutputRoot, notes.Add);
+
+        notes.Should().ContainSingle(n => n.Contains("Plugins.1.0.0.nupkg"));
+        // console.Verbose escapes what it is given, so a marked-up path would print its own tags.
+        notes.Should().NotContain(n => n.Contains("[bold]"));
+    }
+
+    [Fact]
+    public void ClearStalePackages_MissingBuildOutputRoot_DoesNotThrow()
+    {
+        var act = () => PushCommand.ClearStalePackages(Path.Combine(_root, "bin", "Release"));
+
+        act.Should().NotThrow();
+    }
+
     // -- U4: every confirmed project pushes in one invocation (R5, R6, KD4) --
 
     static PushCommand.PluginPushTarget Target(string projectName, string assemblyName, params string[] extraPackageAssemblies) =>
