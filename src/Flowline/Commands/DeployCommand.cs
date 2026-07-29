@@ -141,7 +141,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             }
         }
 
-        await ValidateLocalStateAsync(slnFolder, layout, dataverseSolutionFolder, settings, cancellationToken, checkDrift: !usingExplicitArtifact);
+        await ValidateLocalStateAsync(sln.UniqueName, layout, dataverseSolutionFolder, settings, cancellationToken, checkDrift: !usingExplicitArtifact);
 
         // Managed import only removes components no longer in the solution when Dataverse runs it as an
         // Upgrade (pac's --stage-and-upgrade) — plain import ("Update" semantics) never deletes anything,
@@ -429,7 +429,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         ..layout.WebResourcesProjectPath is { } wr ? new[] { wr } : Array.Empty<string>()
     ];
 
-    private async Task ValidateLocalStateAsync(string slnFolder, SolutionFileLayout? layout, string? dataverseSolutionFolder, Settings settings, CancellationToken ct, bool checkDrift = true)
+    private async Task ValidateLocalStateAsync(string solutionUniqueName, SolutionFileLayout? layout, string? dataverseSolutionFolder, Settings settings, CancellationToken ct, bool checkDrift = true)
     {
         // checkDrift is false exactly on the --path route, the one route that leaves layout/dataverseSolutionFolder null.
         if (!checkDrift) return;
@@ -439,7 +439,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         if (layout!.WebResourcesProjectPath is null)
             Console.Warning("No WebResources project resolved — skipping the web-resource drift check. If this solution has web resources, a deploy will not validate them.");
 
-        var drift = (await PluginWebResourceDriftChecker.CheckAsync(slnFolder, layout!, dataverseSolutionFolder!, cancellationToken: ct))
+        var drift = (await PluginWebResourceDriftChecker.CheckAsync(solutionUniqueName, layout!, dataverseSolutionFolder!, cancellationToken: ct))
             .Where(w => w.Category is DriftCategory.OnlyLocal or DriftCategory.PluginSizeMismatch)
             .ToList();
 

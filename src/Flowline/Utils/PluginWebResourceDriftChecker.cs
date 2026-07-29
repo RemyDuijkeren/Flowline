@@ -24,8 +24,14 @@ public static class PluginWebResourceDriftChecker
     /// WebResources folder from <see cref="SolutionFileLayout.WebResourcesProjectPath"/> — null when none is
     /// confidently identified, in which case only plugin checks run. No await left once the caller hands
     /// over an already-loaded layout, so this returns synchronously.
+    /// <para>
+    /// <paramref name="solutionUniqueName"/> is the Dataverse solution's unique name, which names the
+    /// publisher-prefixed root PAC unpacks web resources into (<c>src/WebResources/&lt;prefix&gt;_&lt;solution&gt;/</c>).
+    /// It must be the real solution name, not the repo folder's — deriving it from the folder made every
+    /// web resource look like drift in both directions on any repo whose folder is named anything else.
+    /// </para>
     /// </remarks>
-    public static Task<List<DriftWarning>> CheckAsync(string slnFolder, SolutionFileLayout layout, string dataverseSolutionFolder, string? publisherPrefix = null, CancellationToken cancellationToken = default)
+    public static Task<List<DriftWarning>> CheckAsync(string solutionUniqueName, SolutionFileLayout layout, string dataverseSolutionFolder, string? publisherPrefix = null, CancellationToken cancellationToken = default)
     {
         var releaseFolders = layout.PluginProjects
                              .Select(c => c.BuildOutputRoot)
@@ -37,13 +43,13 @@ public static class PluginWebResourceDriftChecker
         // only. The single loud warning is emitted by the command caller (push, sync, deploy), not here, so
         // it fires once per command instead of once per checker call.
         if (layout.WebResourcesProjectPath is { } webResourcesProject)
-            warnings.AddRange(CheckWebResources(slnFolder, Path.GetDirectoryName(webResourcesProject)!, dataverseSolutionFolder, publisherPrefix, cancellationToken));
+            warnings.AddRange(CheckWebResources(solutionUniqueName, Path.GetDirectoryName(webResourcesProject)!, dataverseSolutionFolder, publisherPrefix, cancellationToken));
         warnings.AddRange(CheckPlugins(releaseFolders, dataverseSolutionFolder));
         warnings.AddRange(CheckOrphanAssemblies(releaseFolders, dataverseSolutionFolder));
         return Task.FromResult(warnings);
     }
 
-    static IEnumerable<DriftWarning> CheckWebResources(string slnFolder, string webResourcesFolder, string dataverseSolutionFolder, string? publisherPrefix, CancellationToken cancellationToken = default)
+    static IEnumerable<DriftWarning> CheckWebResources(string solutionUniqueName, string webResourcesFolder, string dataverseSolutionFolder, string? publisherPrefix, CancellationToken cancellationToken = default)
     {
         var distFolder = Path.Combine(webResourcesFolder, "dist");
         var srcWebFolder = Path.Combine(dataverseSolutionFolder, "src", "WebResources");
@@ -52,7 +58,7 @@ public static class PluginWebResourceDriftChecker
             yield break;
 
         var distHashes = GetFileHashes(distFolder, cancellationToken);
-        var srcHashes = Directory.Exists(srcWebFolder) ? GetWebResourceSrcHashes(srcWebFolder, slnFolder, publisherPrefix, cancellationToken) : new Dictionary<string, byte[]>();
+        var srcHashes = Directory.Exists(srcWebFolder) ? GetWebResourceSrcHashes(srcWebFolder, solutionUniqueName, publisherPrefix, cancellationToken) : new Dictionary<string, byte[]>();
 
         foreach (var (relPath, srcHash) in srcHashes)
         {
@@ -66,10 +72,9 @@ public static class PluginWebResourceDriftChecker
             yield return new DriftWarning(DriftCategory.OnlyLocal, relPath);
     }
 
-    static Dictionary<string, byte[]> GetWebResourceSrcHashes(string srcWebFolder, string slnFolder, string? publisherPrefix, CancellationToken cancellationToken = default)
+    static Dictionary<string, byte[]> GetWebResourceSrcHashes(string srcWebFolder, string solutionUniqueName, string? publisherPrefix, CancellationToken cancellationToken = default)
     {
-        var solutionName = Path.GetFileName(slnFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        var pattern = publisherPrefix != null ? $"{publisherPrefix}_{solutionName}" : $"*_{solutionName}";
+        var pattern = publisherPrefix != null ? $"{publisherPrefix}_{solutionUniqueName}" : $"*_{solutionUniqueName}";
         var publisherRoot = Directory.EnumerateDirectories(srcWebFolder, pattern, SearchOption.TopDirectoryOnly)
             .FirstOrDefault();
 

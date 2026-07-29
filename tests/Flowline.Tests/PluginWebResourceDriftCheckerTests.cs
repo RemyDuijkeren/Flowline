@@ -48,10 +48,15 @@ public class PluginWebResourceDriftCheckerTests : IDisposable
         File.WriteAllBytes(full, new byte[sizeBytes]);
     }
 
+    // The Dataverse solution unique name, which is what names the publisher-prefixed unpack root — never
+    // the repo folder's name (_root is a GUID temp folder here, exactly like a real repo folder that isn't
+    // named after its solution).
+    const string SolutionUniqueName = "Cr07982";
+
     async Task<List<DriftWarning>> Check(string? publisherPrefix = null)
     {
         var layout = await SolutionFileLayout.LoadAsync(_root);
-        return await PluginWebResourceDriftChecker.CheckAsync(_root, layout, _pkg, publisherPrefix);
+        return await PluginWebResourceDriftChecker.CheckAsync(SolutionUniqueName, layout, _pkg, publisherPrefix);
     }
 
     /// <summary>Writes a .slnx at the root referencing the WebResources project plus each given plugin project path, as `clone` would.</summary>
@@ -168,6 +173,54 @@ public class PluginWebResourceDriftCheckerTests : IDisposable
         (await Check()).Should().ContainSingle(w =>
             w.Category == DriftCategory.OnlyLocal &&
             w.RelativePath.Contains("script.js"));
+    }
+
+    // ── publisher-prefixed unpack root (what PAC actually writes) ─────────────
+    // `pac solution unpack` puts every web resource under src/WebResources/<prefix>_<solution>/, so the
+    // comparison key has to be relative to THAT folder, not to src/WebResources. The solution name comes
+    // from the .flowline config — deriving it from the repo folder name made this root unfindable on any
+    // repo not named after its solution, and every web resource then reported twice: once NewInDataverse
+    // (prefixed key) and once OnlyLocal (bare key).
+
+    [Fact]
+    public async Task Check_PublisherPrefixedSrcRoot_MatchingContent_NoWarning()
+    {
+        WriteFile(Path.Combine("WebResources", "dist", "script.js"), "same");
+        WriteFile(Path.Combine("Solution", "src", "WebResources", $"av_{SolutionUniqueName}", "script.js"), "same");
+
+        (await Check("av")).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Check_PublisherPrefixedSrcRoot_RepoFolderNotNamedAfterSolution_NoPhantomDrift()
+    {
+        // _root is a GUID temp folder, so this only passes when the solution name is taken from config.
+        WriteFile(Path.Combine("WebResources", "dist", "script.js"), "same");
+        WriteFile(Path.Combine("WebResources", "dist", "images", "logo.png"), "png");
+        WriteFile(Path.Combine("Solution", "src", "WebResources", $"av_{SolutionUniqueName}", "script.js"), "same");
+        WriteFile(Path.Combine("Solution", "src", "WebResources", $"av_{SolutionUniqueName}", "images", "logo.png"), "png");
+
+        (await Check("av")).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Check_PublisherPrefixedSrcRoot_UnknownPrefix_StillResolvesBySolutionName()
+    {
+        WriteFile(Path.Combine("WebResources", "dist", "script.js"), "same");
+        WriteFile(Path.Combine("Solution", "src", "WebResources", $"new_{SolutionUniqueName}", "script.js"), "same");
+
+        (await Check()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Check_PublisherPrefixedSrcRoot_ContentDiffers_ReportedOnceNotTwice()
+    {
+        WriteFile(Path.Combine("WebResources", "dist", "script.js"), "v1");
+        WriteFile(Path.Combine("Solution", "src", "WebResources", $"av_{SolutionUniqueName}", "script.js"), "v2");
+
+        (await Check("av")).Should().ContainSingle(w =>
+            w.Category == DriftCategory.ContentDiffers &&
+            w.RelativePath.Equals("script.js", StringComparison.OrdinalIgnoreCase));
     }
 
     // ── plugin checks ─────────────────────────────────────────────────────────
@@ -403,7 +456,7 @@ public class PluginWebResourceDriftCheckerTests : IDisposable
         var layout = await SolutionFileLayout.LoadAsync(_root);
         layout.WebResourcesProjectPath.Should().BeNull();
 
-        var warnings = await PluginWebResourceDriftChecker.CheckAsync(_root, layout, _pkg);
+        var warnings = await PluginWebResourceDriftChecker.CheckAsync(SolutionUniqueName, layout, _pkg);
 
         warnings.Should().ContainSingle(w =>
             w.Category == DriftCategory.PluginSizeMismatch && w.RelativePath == "Test.Plugins.dll");
