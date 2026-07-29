@@ -883,7 +883,10 @@ public class PluginService(IAnsiConsole console)
             {
                 var reasonText = isDowngrade ? $"version downgraded ({reason})" : $"identity changed ({reason})";
                 console.Error($"Assembly [bold]{metadata.Name}[/] {reasonText} — Dataverse needs a delete and recreate. Use --force recreate-assembly to allow.");
-                throw new FlowlineException(ExitCode.ForceRequired, $"Assembly [bold]{metadata.Name}[/] {reasonText}. Use --force recreate-assembly to allow.");
+                // Plain text, no Spectre markup: an exception message is escaped before it is printed
+                // (it can carry arbitrary Dataverse text), so markup here surfaces as literal
+                // "[bold]…[/]" in the error line. Markup belongs on the console.* call above.
+                throw new FlowlineException(ExitCode.ForceRequired, $"Assembly '{metadata.Name}' {reasonText}. Use --force recreate-assembly to allow.");
             }
 
             // Load existing registrations before deletion to show what cascades
@@ -899,7 +902,7 @@ public class PluginService(IAnsiConsole console)
                     return (new Entity("pluginassembly") { Id = Guid.NewGuid() }, false, cascadeDeleteCount);
                 case RunMode.NoDelete:
                     console.Error($"Assembly [bold]{metadata.Name}[/] identity changed ({reason}) — Dataverse needs a delete and recreate. Re-run without --no-delete to apply, or use --dry-run to preview.");
-                    throw new InvalidOperationException($"Assembly [bold]{metadata.Name}[/] identity changed ({reason}). Cannot continue in no-delete mode — re-run without --no-delete to apply, or use --dry-run to preview.");
+                    throw new InvalidOperationException($"Assembly '{metadata.Name}' identity changed ({reason}). Cannot continue in no-delete mode — re-run without --no-delete to apply, or use --dry-run to preview.");
                 case RunMode.Normal:
                     var forceNote = isDowngrade ? " (version downgrade, --force recreate-assembly)" : " (--force recreate-assembly)";
                     console.Warning($"Assembly [bold]{metadata.Name}[/] identity changed ({reason}){forceNote} — deleting and recreating all registrations");

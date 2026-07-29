@@ -1094,6 +1094,37 @@ public class PluginServiceTests
         Assert.Contains("--force", _console.Output);
     }
 
+    // The message is escaped before it reaches the console (it can carry arbitrary Dataverse text), so
+    // Spectre markup in the exception itself renders as literal "[bold]…[/]" in the error line.
+    [Fact]
+    public async Task SyncAsync_IdentityChanged_NoForce_ExceptionMessageHasNoSpectreMarkup()
+    {
+        SetupAssembly(ExistingAssembly(Guid.NewGuid(), pkt: "df889c1cc53657b7"));
+        SetupPluginTypes();
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, Metadata(pkt: "a4d07ffa42de325f"), "MySolution", RunMode.Normal));
+
+        Assert.DoesNotContain("[bold]", ex.Message);
+        Assert.DoesNotContain("[/]", ex.Message);
+        Assert.Contains("MyPlugin", ex.Message);
+        Assert.Contains("--force recreate-assembly", ex.Message);
+    }
+
+    [Fact]
+    public async Task SyncAsync_IdentityChanged_NoDeleteMode_ExceptionMessageHasNoSpectreMarkup()
+    {
+        SetupAssembly(ExistingAssembly(Guid.NewGuid(), pkt: "df889c1cc53657b7"));
+        SetupPluginTypes();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, Metadata(pkt: "a4d07ffa42de325f"), "MySolution", RunMode.NoDelete));
+
+        Assert.DoesNotContain("[bold]", ex.Message);
+        Assert.DoesNotContain("[/]", ex.Message);
+        Assert.Contains("MyPlugin", ex.Message);
+    }
+
     [Fact]
     public async Task SyncAsync_BuildVersionChanged_DoesNotDeleteAssembly()
     {
