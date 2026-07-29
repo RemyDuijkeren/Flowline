@@ -675,6 +675,201 @@ public class PluginServiceTests
                 new Entity("pluginassembly", assemblyId) { ["name"] = assemblyName }
             })));
 
+    // -- Package-owned orphan assemblies --
+
+    // Stubs the orphan query, the org-wide "what else does this package own" query, and the package
+    // name lookup. alsoOwnedAssemblyIds are assemblies the package owns that this solution can't see.
+    private void SetupPackageOwnedOrphan(Guid assemblyId, string assemblyName, Guid packageId, string packageUniqueName, params Guid[] alsoOwnedAssemblyIds)
+    {
+        EntityReference PackageRef() => new("pluginpackage", packageId);
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly"
+                                          && q.Criteria.Conditions.Any(c => c.Operator == ConditionOperator.NotEqual || c.Operator == ConditionOperator.NotIn)),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(new List<Entity>
+            {
+                new Entity("pluginassembly", assemblyId) { ["name"] = assemblyName, ["packageid"] = PackageRef() }
+            })));
+
+        var owned = alsoOwnedAssemblyIds.Prepend(assemblyId)
+                                        .Select(id => new Entity("pluginassembly", id) { ["packageid"] = PackageRef() })
+                                        .ToList();
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly"
+                                          && q.Criteria.Conditions.Any(c => c.AttributeName == "packageid" && c.Operator == ConditionOperator.In)),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(owned)));
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "pluginpackage"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(new List<Entity>
+            {
+                new Entity("pluginpackage", packageId) { ["uniquename"] = packageUniqueName }
+            })));
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_OrphanAssemblyWithNoPackage_WithForce_DeletesTheAssembly()
+    {
+        // Baseline for the two package cases below: the classic orphan still deletes as it always did.
+        var orphanId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(Guid.NewGuid()));
+        SetupPluginTypes();
+        SetupSteps();
+        SetupOrphanAssembly(orphanId, "Legacy");
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(), "MySolution", RunMode.Normal, forceDeleteOrphans: true, forceRecreateAssembly: false);
+
+        await _serviceMock.Received(1).DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginpackage", Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_PackageOwnedOrphanThePackageFullyOwns_WithForce_DeletesThePackage()
+    {
+        // Dataverse refuses a direct pluginassembly delete while packageid is set — deleting the package
+        // is the only lever, and it's safe here because the package owns nothing else.
+        var orphanId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(Guid.NewGuid()));
+        SetupPluginTypes();
+        SetupSteps();
+        SetupPackageOwnedOrphan(orphanId, "Plugins", packageId, "av_Plugins");
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(), "MySolution", RunMode.Normal, forceDeleteOrphans: true, forceRecreateAssembly: false);
+
+        await _serviceMock.Received(1).DeleteAsync("pluginpackage", packageId, Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
+        _console.Output.Should().Contain("av_Plugins");
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_PackageOwnedOrphanSharingItsPackage_WithForce_DeletesNothing()
+    {
+        // The package also owns an assembly the solution-scoped orphan query can't see. Deleting the
+        // package would take that live assembly with it, so nothing is touched — not even the orphan's
+        // children, which the old code destroyed before hitting the refused assembly delete.
+        var orphanId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(Guid.NewGuid()));
+        SetupPluginTypes();
+        SetupSteps();
+        SetupPackageOwnedOrphan(orphanId, "Plugins", packageId, "av_Shared", Guid.NewGuid());
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(), "MySolution", RunMode.Normal, forceDeleteOrphans: true, forceRecreateAssembly: false);
+
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginpackage", Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
+        _console.Output.Should().Contain("av_Shared").And.Contain("remove the package yourself");
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_PackageOwnedOrphanSharingItsPackage_WithForce_LeavesItsStepsAlone()
+    {
+        // The orphan-step pass keys off "assembly not in this push", which a refused package-owned
+        // orphan is by definition — so it would delete the steps the assembly pass just declined to
+        // touch, re-creating the half-cleaned state, in the same run that printed "remove the package
+        // yourself". The exclusion is server-side, so the query is the behaviour.
+        var orphanId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(Guid.NewGuid()));
+        SetupPluginTypes();
+        SetupSteps();
+        SetupPackageOwnedOrphan(orphanId, "Plugins", Guid.NewGuid(), "av_Shared", Guid.NewGuid());
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(), "MySolution", RunMode.Normal, forceDeleteOrphans: true, forceRecreateAssembly: false);
+
+        var assemblyLink = _serviceMock.ReceivedCalls()
+            .Select(c => c.GetArguments().OfType<QueryExpression>().FirstOrDefault())
+            .OfType<QueryExpression>()
+            .Single(q => q.EntityName == "solutioncomponent"
+                      && q.LinkEntities.Any(l => l.LinkToEntityName == "sdkmessageprocessingstep"))
+            .LinkEntities.SelectMany(l => l.LinkEntities).SelectMany(l => l.LinkEntities)
+            .Single(l => l.LinkToEntityName == "pluginassembly");
+
+        assemblyLink.LinkCriteria.Conditions
+            .Should().ContainSingle(c => c.AttributeName == "pluginassemblyid" && c.Operator == ConditionOperator.NotIn)
+            .Which.Values.Should().Equal([orphanId]);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_DeletingAnOrphanAssembly_LeavesACustomApiItNeverImplemented()
+    {
+        // A snapshot's PluginTypes/Steps/Images are assembly-scoped, but its CustomApis are resolved
+        // publisher-prefix-wide — every API under the prefix, across every project and repo sharing it.
+        // Deleting the whole list took out other people's live public APIs, silently, on one orphan.
+        var orphanId = Guid.NewGuid();
+        var orphanTypeId = Guid.NewGuid();
+        var ownApiId = Guid.NewGuid();
+        var foreignApiId = Guid.NewGuid();
+        var ownParamId = Guid.NewGuid();
+        var foreignParamId = Guid.NewGuid();
+        var ownPropId = Guid.NewGuid();
+        var foreignPropId = Guid.NewGuid();
+
+        SetupAssembly(ExistingAssembly(Guid.NewGuid()));
+        SetupPluginTypes();
+        SetupSteps();
+        SetupOrphanAssembly(orphanId, "Legacy");
+        SetupPluginTypesForAssembly(orphanId, new Entity("plugintype", orphanTypeId) { ["typename"] = "Legacy.MyPlugin" });
+        SetupCustomApis(
+            new Entity("customapi", ownApiId) { ["uniquename"] = "abc_LegacyApi", ["plugintypeid"] = new EntityReference("plugintype", orphanTypeId) },
+            new Entity("customapi", foreignApiId) { ["uniquename"] = "abc_ForeignApi", ["plugintypeid"] = new EntityReference("plugintype", Guid.NewGuid()) });
+        // Parameters and properties come back prefix-wide too, and they carry only customapiid — if that
+        // read ever breaks, the filter silently drops every one and a real orphan's children survive.
+        SetupRequestParameters(
+            new Entity("customapirequestparameter", ownParamId) { ["uniquename"] = "abc_LegacyParam", ["customapiid"] = new EntityReference("customapi", ownApiId) },
+            new Entity("customapirequestparameter", foreignParamId) { ["uniquename"] = "abc_ForeignParam", ["customapiid"] = new EntityReference("customapi", foreignApiId) });
+        SetupResponseProperties(
+            new Entity("customapiresponseproperty", ownPropId) { ["uniquename"] = "abc_LegacyProp", ["customapiid"] = new EntityReference("customapi", ownApiId) },
+            new Entity("customapiresponseproperty", foreignPropId) { ["uniquename"] = "abc_ForeignProp", ["customapiid"] = new EntityReference("customapi", foreignApiId) });
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(), "MySolution", RunMode.Normal, forceDeleteOrphans: true, forceRecreateAssembly: false);
+
+        await _serviceMock.Received(1).DeleteAsync("customapi", ownApiId, Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).DeleteAsync("customapirequestparameter", ownParamId, Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).DeleteAsync("customapiresponseproperty", ownPropId, Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().DeleteAsync("customapi", foreignApiId, Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().DeleteAsync("customapirequestparameter", foreignParamId, Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().DeleteAsync("customapiresponseproperty", foreignPropId, Arg.Any<CancellationToken>());
+        // Deleting a public API surface must not be invisible — the cascade lists it like any other child.
+        _console.Output.Should().Contain("abc_LegacyApi").And.NotContain("abc_ForeignApi");
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_PackageOwnedOrphanSharingItsPackage_DryRun_PromisesNoCascade()
+    {
+        // Nothing will be deleted here, so listing children as "would delete" would be a lie in the
+        // preview the user is about to trust. The orphan is given a plugin type precisely so the
+        // cascade lines would print if the blocked branch didn't stop first.
+        var orphanId = Guid.NewGuid();
+        SetupAssembly(ExistingAssembly(Guid.NewGuid()));
+        SetupPluginTypes();
+        SetupSteps();
+        SetupPackageOwnedOrphan(orphanId, "Plugins", Guid.NewGuid(), "av_Shared", Guid.NewGuid());
+        SetupPluginTypesForAssembly(orphanId, new Entity("plugintype", Guid.NewGuid()) { ["typename"] = "Plugins.MyPlugin", ["isworkflowactivity"] = false });
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(), "MySolution", RunMode.DryRun, forceDeleteOrphans: true, forceRecreateAssembly: false);
+
+        _console.Output.Should().Contain("av_Shared").And.NotContain("would delete");
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_PackageOwnedOrphan_WithoutForce_NamesThePackageInTheHint()
+    {
+        // "Use --force delete-orphans to delete" alone was a lie for a package-owned orphan — say what
+        // the flag actually removes.
+        SetupAssembly(ExistingAssembly(Guid.NewGuid()));
+        SetupPluginTypes();
+        SetupSteps();
+        SetupPackageOwnedOrphan(Guid.NewGuid(), "Plugins", Guid.NewGuid(), "av_Plugins");
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(), "MySolution");
+
+        _console.Output.Should().Contain("--force delete-orphans").And.Contain("av_Plugins");
+    }
+
     // -- Deletion of obsolete types --
 
     [Fact]
@@ -2379,6 +2574,61 @@ public class PluginServiceTests
 
         Assert.False(result);
         await _serviceMock.DidNotReceive().DeleteAsync("customapi", foreignApiId, Arg.Any<CancellationToken>());
+    }
+
+    // -- The package path runs the orphan passes too (a nupkg-only solution has no classic pass) --
+
+    private Guid ArrangeUnchangedPackagePush(params string[] extraAssemblyNames)
+    {
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId, hash: NupkgHash));
+        SetupPluginPackage(ExistingPluginPackage(Guid.NewGuid()));
+        SetupPackageAssemblyByName(assemblyId, "MyPlugin");
+        SetupPluginTypesForAssembly(assemblyId, new Entity("plugintype", Guid.NewGuid()) { ["typename"] = "Ns.MyPluginType" });
+        SetupStepsForAssembly(assemblyId);
+        foreach (var name in extraAssemblyNames)
+            SetupPackageAssemblyByName(Guid.NewGuid(), name);
+        return assemblyId;
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_ReportsOrphanAssemblies()
+    {
+        // Without this the only orphan pass lives on the classic path, so a solution whose every plugin
+        // project packs to a .nupkg never hears about its orphans — and deploy can't cover it, because
+        // deploy targets a downstream environment and `deploy dev` is rejected outright.
+        ArrangeUnchangedPackagePush();
+        SetupOrphanAssembly(Guid.NewGuid(), "Legacy");
+
+        await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, PackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
+
+        _console.Output.Should().Contain("Legacy.dll").And.Contain("--force delete-orphans");
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_OrphanQueryExcludesEveryAssemblyInThePackage()
+    {
+        // KTD16 — the original reason this path skipped the orphan pass. A package's secondary assemblies
+        // must never read as orphans of the very push registering them, and that must hold even when the
+        // caller passes no pushed-name set at all, so the exclusion can't depend on the caller.
+        ArrangeUnchangedPackagePush("Extra");
+        List<PluginAssemblyMetadata> twoAssemblies =
+        [
+            new("MyPlugin", "MyPlugin, Version=1.0.0.0", [9, 9, 9], "dll-hash-unused", "1.0.0.0", null, "neutral", []),
+            new("Extra", "Extra, Version=1.0.0.0", [9, 9, 9], "dll-hash-unused", "1.0.0.0", null, "neutral", []),
+        ];
+
+        await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, twoAssemblies, NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
+
+        var orphanQuery = _serviceMock.ReceivedCalls()
+            .Select(c => c.GetArguments().OfType<QueryExpression>().FirstOrDefault())
+            .OfType<QueryExpression>()
+            .Single(q => q.EntityName == "pluginassembly"
+                      && q.Criteria.Conditions.Any(c => c.Operator is ConditionOperator.NotEqual or ConditionOperator.NotIn));
+
+        orphanQuery.Criteria.Conditions.Single().Values.Should().BeEquivalentTo(["MyPlugin", "Extra"]);
     }
 
     [Fact]

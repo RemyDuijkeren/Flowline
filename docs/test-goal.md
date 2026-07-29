@@ -353,13 +353,21 @@ default layout:
     `PluginPackageMode.Auto` resolved per project as documented.
   - Orphan detection across the rename named the stale assemblies (`Plugins.dll`,
     `Cr07982.Plugins.dll`) and their cascades, and gated deletion behind `--force delete-orphans`
-    (report-only, exit 0, without it). **But the deletion itself is broken for package-owned orphans**
-    — see `docs/test-findings/push-delete-orphans-fails-on-package-owned-assembly.md`.
+    (report-only, exit 0, without it). The deletion half **was broken for package-owned orphans** and is
+    now **fixed and live-verified (2026-07-29, session 5)** — see
+    `docs/test-findings/push-delete-orphans-fails-on-package-owned-assembly.md`. Dataverse refuses a
+    direct `pluginassembly` delete while `packageid` is set, and clearing the children does not unlock
+    it; push now deletes the owning `pluginpackage` when that package owns nothing but orphans, and
+    refuses without touching anything when it owns more. `av_Plugins` and `av_Cr07982.Plugins` were both
+    cleared from DEV this way, exit 0, with `av_Cr07982.Backend` (pushed by the same run) untouched.
   - Zero plugin projects, zero WebResources projects, and the tied two-candidate WebResources
     ambiguity all behaved exactly as this section specifies (details in Operational notes, session 4).
-  - Note on the classic path: because push's per-assembly orphan check runs for the classic assembly
-    only, a nupkg-mode push on its own never emits these warnings. That is the documented design
-    (`PluginService.cs:273-276`), not a gap — deploy's orphan cleanup covers the package case.
+  - Note on the classic path, **superseded the same day**: push's per-assembly orphan check used to run
+    for the classic assembly only, so a nupkg-mode push never emitted these warnings, and the stated
+    rationale was "deploy's orphan cleanup covers the package case". That rationale is **wrong for DEV** —
+    `deploy` imports into a *target* environment and `deploy dev` is rejected outright, so DEV's only
+    cleanup tool is `push`, and a nupkg-only solution had no orphan pass anywhere. Both orphan passes now
+    run on the package path too; see session 5 in Operational notes.
 
 ## Output modes: run every phase both without and with `-v`/`--verbose`
 
@@ -540,7 +548,8 @@ Gaps found:
   - **Three findings logged, not fixed**: dry-run summary omits the package/assembly content update;
     `push --force delete-orphans` fails on a package-owned orphan *after* deleting its children;
     stale-`.nupkg` guard trips on the normal build path after any MinVer bump. Plus one agent-UX
-    finding (80-column hard wrap).
+    finding (80-column hard wrap). (All three have since been fixed — the first two in commits
+    `2c90248`/`7890ed2`, the package-owned orphan in session 5 below.)
   - **The `--force drift` workaround in the deploy section above is now explained**: it was the
     phantom-drift bug, not an environment quirk. With the fix, `deploy prod --dry-run` runs the local
     drift check clean and needs neither `--force drift` nor `--skip-dtap-check`.
@@ -559,6 +568,54 @@ Gaps found:
     solution-name rejection, first-import `--dry-run` against a target that has never seen the
     solution, and a systematic plain-vs-`--verbose` pass over *every* command (verbose was judged on
     `push --scope webresources` and `drift dev` only).
+- **Run of 2026-07-29 (session 5, targeted — package-owned orphan fix only)**, tool packed and
+  reinstalled as `0.13.1-alpha.0.14`, workspace `C:\Code\FlowlineTryOutByClaude`:
+  - **One finding promoted to a fix**: `push --force delete-orphans` on a package-owned orphan. Push now
+    deletes the owning `pluginpackage` (the only thing Dataverse lets you delete — clearing children does
+    *not* unlock the assembly delete) when that package owns nothing but orphans, and refuses without
+    touching anything, naming the package, when it owns more. Six regression tests; full suite green at
+    **1988 passed / 0 failed / 4 skipped**.
+  - **Second-order bug caught during review, worth remembering as a pattern**: `WarnOrphanStepsAsync`
+    runs immediately after `WarnOrphanAssembliesAsync` and selects steps by "owning assembly not in this
+    push" — which a *refused* orphan is by definition. It would have deleted the very children the
+    refusal protected, one pass later, in the same run. The two orphan passes overlap by design; any
+    change to one has to be checked against the other.
+  - **Live-verified**: report-only run names each package in the `--force delete-orphans` hint (exit 0,
+    nothing deleted); the real run cleared `av_Plugins` and `av_Cr07982.Plugins` plus their assemblies
+    and cascades at **exit 0** (previously exit 1 with a raw Dataverse fault after committing the child
+    deletes); `av_Cr07982.Backend`, updated by the same run, survived; an immediate re-run prints no
+    orphan warnings. Run log carries the same lines with no markup leakage.
+  - **Not covered this run**: the refusal branch live — it needs a package owning both an orphan and an
+    unaccounted-for assembly, i.e. a multi-assembly package, which this fixture's
+    one-project-one-package shape cannot produce without a hand-crafted two-DLL nupkg. Unit-tested only.
+    Nothing else in the matrix was re-run: this was a targeted fix verification, not a full pass.
+  - **Follow-up in the same session — the nupkg-only orphan gap, closed.** `push` now runs both orphan
+    passes on the plugin-package path too. The old rationale for skipping them (KTD16: a multi-assembly
+    package reading its own secondary assemblies as orphans) died when `ExcludePushedAssemblies` started
+    taking the whole pushed set; the package path also unions in its own reflected assembly names so the
+    guarantee no longer depends on the caller. **Live-verified**: a standalone push of only the Backend
+    `.nupkg` now reports `Cr07982.LegacyPlugins` as an orphan (exit 0, report-only) where it previously
+    printed nothing at all, and a normal project-mode push still reports no orphans, because both
+    projects are in the pushed set. Note what that first case means and why it is deliberate: in
+    standalone mode the pushed set is just the one artifact, so every *other* assembly in the solution is
+    an orphan by definition — the same invocation with `--force delete-orphans` would delete a live
+    sibling. Standalone classic push has always behaved that way; the package path now matches it.
+  - **Critical pre-existing bug this uncovered — orphan cleanup deleted every Custom API under the
+    publisher prefix.** A snapshot's plugin types, steps and images are assembly-scoped, but its
+    `CustomApis`/`RequestParams`/`ResponseProps` are resolved **prefix-wide**
+    (`PluginReader.GetRegisteredCustomApisAsync` filters on `uniquename BeginsWith "<prefix>_"`).
+    `WarnOrphanAssembliesAsync` deleted that whole list, so clearing one orphan assembly under
+    `--force delete-orphans` deleted every Custom API sharing the publisher prefix — other projects',
+    other repos' — and did it **silently**, because the cascade preview only ever listed plugin types,
+    steps and images. It now deletes only Custom APIs bound to the orphan's own plugin types, and lists
+    them in the cascade. This lived on the classic path all along; adding the package path is what made
+    an existing test fail and exposed it. **Lesson for future runs: an assertion that a foreign Custom
+    API survives is worth having on every path that deletes anything.**
+  - **DEV state note**: DEV had no `av_`-prefixed Custom APIs left by the time this was found, so nothing
+    could be shown to have been lost — but the destructive path did run before the fix, and it cannot be
+    ruled out that the earlier `--force delete-orphans` run silently deleted `av_AatYourService` (still
+    present in the committed `Solution/src/CustomAPIs/`). DEV is disposable; noted for honesty, and
+    because a `sync` will surface it as drift.
 - Git hygiene in the test workspace: commit between test phases so `sync`'s dirty-check behaves
   predictably, and use `git checkout --`/`git status` before any destructive reset.
 - Long-running commands (`clone`'s Dataverse export, `sync`'s export) can take several minutes — run

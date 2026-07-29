@@ -180,9 +180,9 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
                         ? await pluginService.SyncSolutionFromPackageAsync(conn, target.ReflectedAssemblies,
                             await File.ReadAllBytesAsync(target.PushPath, cancellationToken).ConfigureAwait(false),
                             target.PushPath, target.AssemblyName, solutionName, runMode,
-                            settings.HasForce("delete-orphans"), cancellationToken).ConfigureAwait(false)
+                            settings.HasForce("delete-orphans"), cancellationToken, pushedAssemblyNames).ConfigureAwait(false)
                         : await pluginService.SyncSolutionFromPackageAsync(conn, target.PushPath, target.AssemblyName, solutionName, runMode,
-                            settings.HasForce("delete-orphans"), cancellationToken).ConfigureAwait(false);
+                            settings.HasForce("delete-orphans"), cancellationToken, pushedAssemblyNames).ConfigureAwait(false);
                 }
                 else if (pushAssemblyOnly)
                 {

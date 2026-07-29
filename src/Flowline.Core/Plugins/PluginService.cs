@@ -159,8 +159,8 @@ public class PluginService(IAnsiConsole console)
             ? $"Assembly [bold]{metadata.Name}[/] ({metadata.Version}) found but needs content update"
             : $"Assembly [bold]{metadata.Name}[/] ({metadata.Version}) found");
 
-        await WarnOrphanAssembliesAsync(service, metadata.Name, pushedAssemblyNames, solutionName, forceDeleteOrphans, runMode, cancellationToken).ConfigureAwait(false);
-        await WarnOrphanStepsAsync(service, metadata.Name, pushedAssemblyNames, solutionName, forceDeleteOrphans, runMode, cancellationToken).ConfigureAwait(false);
+        var blockedAssemblyIds = await WarnOrphanAssembliesAsync(service, metadata.Name, pushedAssemblyNames, solutionName, forceDeleteOrphans, runMode, cancellationToken).ConfigureAwait(false);
+        await WarnOrphanStepsAsync(service, metadata.Name, pushedAssemblyNames, blockedAssemblyIds, solutionName, forceDeleteOrphans, runMode, cancellationToken).ConfigureAwait(false);
 
         // Phase 2: Load snapshot (all Dataverse state in parallel)
         var snapshot = await console.Status().FlowlineSpinner()
@@ -270,10 +270,14 @@ public class PluginService(IAnsiConsole console)
     // package content (create or update, R5/R5a) -> confirm the auto-created records per assembly with
     // a bounded retry (R6/KTD14) -> write the hash marker -> re-plan per assembly against the
     // post-update snapshot and run the remaining upserts/adds (R7, KD5, KTD15 — N independently-scoped
-    // snapshots/plans, never merged). WarnOrphanAssembliesAsync/WarnOrphanStepsAsync are intentionally
-    // never called on this path — a multi-assembly package's own other assemblies would misclassify as
-    // orphans under the classic path's single-assembly check (R11/KTD16); package-owned orphan cleanup
-    // is covered separately by U8's pipeline redirect.
+    // snapshots/plans, never merged). WarnOrphanAssembliesAsync/WarnOrphanStepsAsync run here too, at the
+    // same place the classic path calls them. They used to be skipped because the orphan check compared
+    // against a single assembly name, so a multi-assembly package read its own other assemblies as
+    // orphans (R11/KTD16) — ExcludePushedAssemblies takes the whole pushed set now, and this path unions
+    // the package's own reflected assembly names into it regardless of what the caller passed, so that
+    // hazard is gone. Deferring to deploy's pipeline redirect instead is not an option for DEV: deploy
+    // imports into a *target* environment and `deploy dev` is rejected outright, which left a nupkg-only
+    // solution with no orphan cleanup route at all.
 
     const int PackageAssemblyCheckMaxAttempts = 5;
     static readonly TimeSpan PackageAssemblyCheckDelay = TimeSpan.FromSeconds(1);
@@ -285,14 +289,15 @@ public class PluginService(IAnsiConsole console)
         string solutionName,
         RunMode runMode = RunMode.Normal,
         bool forceDeleteOrphans = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<string>? pushedAssemblyNames = null)
     {
         if (string.IsNullOrWhiteSpace(nupkgPath))
             throw new ArgumentException("nupkgPath is required and cannot be empty.", nameof(nupkgPath));
 
         var assemblies = console.Status().FlowlineSpinner().Start("Analyzing plugin package...", _ => _assemblyReader.AnalyzePackage(nupkgPath));
         var nupkgContent = await File.ReadAllBytesAsync(nupkgPath, cancellationToken).ConfigureAwait(false);
-        return await SyncSolutionFromPackageAsync(service, assemblies, nupkgContent, nupkgPath, projectAssemblyName, solutionName, runMode, forceDeleteOrphans, cancellationToken).ConfigureAwait(false);
+        return await SyncSolutionFromPackageAsync(service, assemblies, nupkgContent, nupkgPath, projectAssemblyName, solutionName, runMode, forceDeleteOrphans, cancellationToken, pushedAssemblyNames).ConfigureAwait(false);
     }
 
     // Public so callers that must reflect the package themselves before this call (e.g. standalone push
@@ -307,7 +312,8 @@ public class PluginService(IAnsiConsole console)
         string solutionName,
         RunMode runMode = RunMode.Normal,
         bool forceDeleteOrphans = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<string>? pushedAssemblyNames = null)
     {
         // R3a: zero-DLL rejection — first check, ahead of detect-and-block and change detection,
         // since neither has anything to operate against without at least one reflected assembly.
@@ -363,6 +369,19 @@ public class PluginService(IAnsiConsole console)
                 _ => _solutionReader.GetSupportedSolutionInfoAsync(service, solutionName, cancellationToken))
             .ConfigureAwait(false);
         console.Info("Solution found");
+
+        // Union in this package's own reflected assembly names rather than trusting the caller's set —
+        // a caller that passes null (or only the primary name) would otherwise have the package's
+        // secondary assemblies flagged as orphans of the very push registering them (R11/KTD16).
+        var packageAwarePushedNames = assemblies.Select(a => a.Name)
+                                                .Concat(pushedAssemblyNames ?? [])
+                                                .Where(n => !string.IsNullOrWhiteSpace(n))
+                                                .Distinct(StringComparer.OrdinalIgnoreCase)
+                                                .ToList();
+
+        var blockedAssemblyIds = await WarnOrphanAssembliesAsync(service, projectAssemblyName, packageAwarePushedNames, solutionName, forceDeleteOrphans, runMode, cancellationToken).ConfigureAwait(false);
+        await WarnOrphanStepsAsync(service, projectAssemblyName, packageAwarePushedNames, blockedAssemblyIds, solutionName, forceDeleteOrphans, runMode, cancellationToken).ConfigureAwait(false);
+
         var prefix = solutionInfo.PublisherPrefix;
 
         var packageUniqueName = $"{prefix}_{projectAssemblyName}";
@@ -685,7 +704,67 @@ public class PluginService(IAnsiConsole console)
                 siblings.Prepend(managedAssemblyName).Cast<object>().ToArray());
     }
 
-    async Task WarnOrphanAssembliesAsync(
+    /// <summary>An orphan's owning plugin package, and whether push may delete that package.</summary>
+    /// <param name="FullyOrphaned">
+    /// Every assembly the package owns is an orphan of this push. False means the package also owns
+    /// something this run can't account for — an assembly in another solution, or one being pushed
+    /// right now — so deleting the package would take a live assembly with it.
+    /// </param>
+    sealed record OrphanPackage(Guid Id, string UniqueName, bool FullyOrphaned);
+
+    // Dataverse refuses DeleteAsync on any pluginassembly with a packageid ("Unable to delete plug-in
+    // assembly as it is part of plugin package") — deleting its children first does not unlock it. The
+    // only lever is deleting the pluginpackage, which cascades assembly + plugintype away. Re-uploading
+    // a nupkg without the class does the same, but a leftover package (the shape after a plugin project
+    // is renamed) has no local nupkg to re-upload.
+    static async Task<Dictionary<Guid, OrphanPackage>> ResolveOrphanPackagesAsync(
+        IOrganizationServiceAsync2 service,
+        IReadOnlyCollection<Entity> orphans,
+        CancellationToken cancellationToken)
+    {
+        var packageIds = orphans.Select(e => e.GetAttributeValue<EntityReference>("packageid"))
+                                .Where(r => r != null)
+                                .Select(r => r!.Id)
+                                .Distinct()
+                                .ToList();
+        if (packageIds.Count == 0) return [];
+
+        // Org-wide, deliberately unfiltered by solution: the orphan query only sees this solution's
+        // members, and a package delete removes everything it owns anywhere.
+        var ownedQuery = new QueryExpression("pluginassembly")
+        {
+            ColumnSet = new ColumnSet("packageid"),
+            Criteria = { Conditions = { new ConditionExpression("packageid", ConditionOperator.In, packageIds.Cast<object>().ToArray()) } }
+        };
+        var owned = await service.RetrieveAllAsync(ownedQuery, cancellationToken).ConfigureAwait(false);
+
+        var nameQuery = new QueryExpression("pluginpackage")
+        {
+            ColumnSet = new ColumnSet("uniquename"),
+            Criteria = { Conditions = { new ConditionExpression("pluginpackageid", ConditionOperator.In, packageIds.Cast<object>().ToArray()) } }
+        };
+        var names = (await service.RetrieveAllAsync(nameQuery, cancellationToken).ConfigureAwait(false))
+            .ToDictionary(e => e.Id, e => e.GetAttributeValue<string>("uniquename"));
+
+        var orphanIds = orphans.Select(e => e.Id).ToHashSet();
+
+        return packageIds.ToDictionary(id => id, id =>
+        {
+            var members = owned.Where(e => e.GetAttributeValue<EntityReference>("packageid")?.Id == id).ToList();
+            // An empty member list means the ownership lookup told us nothing — treat as not deletable
+            // rather than letting All() on an empty set green-light a package delete.
+            var fullyOrphaned = members.Count > 0 && members.TrueForAll(e => orphanIds.Contains(e.Id));
+            return new OrphanPackage(id, names.GetValueOrDefault(id) ?? id.ToString(), fullyOrphaned);
+        });
+    }
+
+    /// <returns>
+    /// The orphan assemblies this pass refused to touch because their package owns more than orphans.
+    /// <see cref="WarnOrphanStepsAsync"/> must exclude them: it keys off "assembly not in this push",
+    /// which a refused orphan is by definition, and would otherwise delete the very children this pass
+    /// declined to destroy.
+    /// </returns>
+    async Task<IReadOnlyCollection<Guid>> WarnOrphanAssembliesAsync(
         IOrganizationServiceAsync2 service,
         string managedAssemblyName,
         IReadOnlyCollection<string>? pushedAssemblyNames,
@@ -696,7 +775,7 @@ public class PluginService(IAnsiConsole console)
     {
         var query = new QueryExpression("pluginassembly")
         {
-            ColumnSet = new ColumnSet("pluginassemblyid", "name"),
+            ColumnSet = new ColumnSet("pluginassemblyid", "name", "packageid"),
             Criteria = { Conditions = { ExcludePushedAssemblies("name", managedAssemblyName, pushedAssemblyNames) } }
         };
         var componentLink = query.AddLink("solutioncomponent", "pluginassemblyid", "objectid", JoinOperator.Inner);
@@ -705,16 +784,37 @@ public class PluginService(IAnsiConsole console)
         solutionLink.LinkCriteria.AddCondition("uniquename", ConditionOperator.Equal, solutionName);
 
         var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
+        if (result.Entities.Count == 0) return [];
+
+        var packages = await ResolveOrphanPackagesAsync(service, result.Entities, cancellationToken).ConfigureAwait(false);
+        var packagesToDelete = new HashSet<Guid>();
+        var blockedAssemblyIds = new List<Guid>();
+
         foreach (var entity in result.Entities)
         {
             var name = entity.GetAttributeValue<string>("name");
+            var packageRef = entity.GetAttributeValue<EntityReference>("packageid");
+            var package = packageRef != null ? packages.GetValueOrDefault(packageRef.Id) : null;
+
+            // Nothing here can remove the assembly, so don't destroy its children on the way to a delete
+            // that will be refused — warn and move on.
+            if (package is { FullyOrphaned: false })
+            {
+                console.Warning($"[bold]{Safe(name)}.dll[/] in environment — no local source. Its package [bold]{Safe(package.UniqueName)}[/] owns assemblies this solution doesn't — remove the package yourself.");
+                blockedAssemblyIds.Add(entity.Id);
+                continue;
+            }
 
             var willDelete = forceDeleteOrphans && runMode == RunMode.Normal;
             var showCascade = forceDeleteOrphans || runMode == RunMode.DryRun;
 
-            console.Warning(willDelete
-                ? $"[bold]{Safe(name)}.dll[/] in environment — no local source. Deleting."
-                : $"[bold]{Safe(name)}.dll[/] in environment — no local source. Use --force delete-orphans to delete.");
+            console.Warning((willDelete, package) switch
+            {
+                (true, null) => $"[bold]{Safe(name)}.dll[/] in environment — no local source. Deleting.",
+                (true, _) => $"[bold]{Safe(name)}.dll[/] in environment — no local source. Deleting package [bold]{Safe(package.UniqueName)}[/].",
+                (false, null) => $"[bold]{Safe(name)}.dll[/] in environment — no local source. Use --force delete-orphans to delete.",
+                (false, _) => $"[bold]{Safe(name)}.dll[/] in environment — no local source. Use --force delete-orphans to delete package [bold]{Safe(package.UniqueName)}[/]."
+            });
 
             // Load snapshot for cascade display and/or explicit child deletion
             RegistrationSnapshot? orphanSnapshot = null;
@@ -725,8 +825,25 @@ public class PluginService(IAnsiConsole console)
                 orphanSnapshot = await _reader.LoadSnapshotAsync(service, entity.Id, stub, solutionName, cancellationToken).ConfigureAwait(false);
             }
 
+            // PluginTypes/Steps/Images in a snapshot are assembly-scoped, but CustomApis (and their
+            // parameters/properties) are resolved publisher-prefix-wide — every API under the prefix,
+            // across every project and every repo sharing it. Deleting the whole list would take out
+            // Custom APIs this orphan never implemented. Only the ones bound to *this* assembly's own
+            // plugin types are its children; the rest are simply other people's APIs.
+            var orphanTypeIds = orphanSnapshot?.PluginTypes.Values.Select(t => t.Id).ToHashSet() ?? [];
+            var orphanCustomApis = orphanSnapshot?.CustomApis
+                .Where(a => a.GetAttributeValue<EntityReference>("plugintypeid") is { } t && orphanTypeIds.Contains(t.Id))
+                .ToList() ?? [];
+            var orphanCustomApiIds = orphanCustomApis.Select(a => a.Id).ToHashSet();
+            bool BoundToOrphanApi(Entity e) =>
+                e.GetAttributeValue<EntityReference>("customapiid") is { } a && orphanCustomApiIds.Contains(a.Id);
+
             if (showCascade && orphanSnapshot != null)
             {
+                foreach (var api in orphanCustomApis)
+                    console.Info(willDelete
+                        ? $"  {Safe(api.GetAttributeValue<string>("uniquename"))} — cascade delete"
+                        : $"  [red]-[/] {Safe(api.GetAttributeValue<string>("uniquename"))} — would delete (cascade)");
                 foreach (var typeName in orphanSnapshot.PluginTypes.Keys.OrderBy(n => n, StringComparer.OrdinalIgnoreCase))
                     console.Info(willDelete
                         ? $"  {Safe(typeName)} — cascade delete"
@@ -748,19 +865,29 @@ public class PluginService(IAnsiConsole console)
                 // Must delete children manually in reverse dependency order — same as RunDeletesAsync.
                 foreach (var e in orphanSnapshot.Images)
                     await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
-                foreach (var e in orphanSnapshot.ResponseProps)
+                foreach (var e in orphanSnapshot.ResponseProps.Where(BoundToOrphanApi))
                     await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
-                foreach (var e in orphanSnapshot.RequestParams)
+                foreach (var e in orphanSnapshot.RequestParams.Where(BoundToOrphanApi))
                     await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
                 foreach (var e in orphanSnapshot.Steps)
                     await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
-                foreach (var e in orphanSnapshot.CustomApis)
+                foreach (var e in orphanCustomApis)
                     await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
                 foreach (var (_, pluginType) in orphanSnapshot.PluginTypes)
                     await service.DeleteAsync(pluginType.LogicalName, pluginType.Id, cancellationToken).ConfigureAwait(false);
-                await service.DeleteAsync("pluginassembly", entity.Id, cancellationToken).ConfigureAwait(false);
+
+                // A package-owned assembly goes away with its package, and only once every orphan
+                // sibling in that package has had its children cleared — so the package delete waits
+                // until the loop is done.
+                if (package != null) packagesToDelete.Add(package.Id);
+                else await service.DeleteAsync("pluginassembly", entity.Id, cancellationToken).ConfigureAwait(false);
             }
         }
+
+        foreach (var packageId in packagesToDelete)
+            await service.DeleteAsync("pluginpackage", packageId, cancellationToken).ConfigureAwait(false);
+
+        return blockedAssemblyIds;
     }
 
     // Catches steps left behind after a plugin project rename: the old assembly (and its plugin
@@ -772,6 +899,7 @@ public class PluginService(IAnsiConsole console)
         IOrganizationServiceAsync2 service,
         string managedAssemblyName,
         IReadOnlyCollection<string>? pushedAssemblyNames,
+        IReadOnlyCollection<Guid> blockedAssemblyIds,
         string solutionName,
         bool forceDeleteOrphans,
         RunMode runMode,
@@ -792,6 +920,10 @@ public class PluginService(IAnsiConsole console)
         asmLink.Columns = new ColumnSet("name");
         asmLink.EntityAlias = "asm";
         asmLink.LinkCriteria.AddCondition(ExcludePushedAssemblies("name", managedAssemblyName, pushedAssemblyNames));
+        // An assembly the orphan pass refused to remove keeps its steps — deleting them here would
+        // undo that refusal one line later. Excluded server-side, same as the pushed-assembly rule.
+        if (blockedAssemblyIds.Count > 0)
+            asmLink.LinkCriteria.AddCondition("pluginassemblyid", ConditionOperator.NotIn, blockedAssemblyIds.Cast<object>().ToArray());
 
         var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
         if (result.Entities.Count == 0) return;
