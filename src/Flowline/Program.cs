@@ -103,7 +103,7 @@ var logLinkShown = false;
 app.Configure(config =>
 {
     config.SetApplicationName("flowline");
-    config.SetApplicationVersion(Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version ?? "1.0.0");
+    config.SetApplicationVersion(FlowlineVersion.Display);
 #if DEBUG
     config.PropagateExceptions();
     config.ValidateExamples();

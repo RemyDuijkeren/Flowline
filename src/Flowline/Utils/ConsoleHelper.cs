@@ -23,7 +23,7 @@ public static class ConsoleHelper
         console.Write(welcomeText);
         console.WriteLine();
 
-        var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version;
+        var version = FlowlineVersion.Display;
         var versionText = new Text($"Flowline CLI v{version} ({Environment.OSVersion}, CLR:{Environment.Version}, {(Environment.Is64BitOperatingSystem ? "64-bit" : "32-bit")})", new Style(s_welcomeColor));
 
         console.Write(versionText);
