@@ -2606,6 +2606,87 @@ public class PluginServiceTests
         _console.Output.Should().Contain("Legacy.dll").And.Contain("--force delete-orphans");
     }
 
+    // Stubs a package that still has an assembly the local .nupkg no longer carries, plus that
+    // assembly's blocking children. The dropped-assembly query is the packageid-Equal one, which no
+    // other stub in this class matches.
+    private (Guid AssemblyId, Guid StepId, Guid ApiId) SetupDroppedPackageAssembly(Guid packageId, string droppedName)
+    {
+        var assemblyId = Guid.NewGuid();
+        var typeId = Guid.NewGuid();
+        var stepId = Guid.NewGuid();
+        var apiId = Guid.NewGuid();
+
+        // Must NOT also match FindPackageAssemblyAsync, which filters by packageid *and* name — without
+        // the name exclusion this stub wins that query too (most-recently-configured), and the reflected
+        // assembly's snapshot loads against the dropped assembly's id.
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly"
+                                          && q.Criteria.Conditions.Any(c => c.AttributeName == "packageid" && c.Operator == ConditionOperator.Equal)
+                                          && !q.Criteria.Conditions.Any(c => c.AttributeName == "name")),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(new List<Entity>
+            {
+                new Entity("pluginassembly", assemblyId) { ["name"] = droppedName }
+            })));
+
+        SetupPluginTypesForAssembly(assemblyId, new Entity("plugintype", typeId) { ["typename"] = $"{droppedName}.Gone" });
+        SetupStepsForAssembly(assemblyId, new Entity("sdkmessageprocessingstep", stepId)
+        {
+            ["name"] = $"{droppedName}.Gone: Update of contact",
+            ["plugintypeid"] = new EntityReference("plugintype", typeId)
+        });
+        SetupCustomApis(new Entity("customapi", apiId)
+        {
+            ["uniquename"] = "abc_GoneApi",
+            ["plugintypeid"] = new EntityReference("plugintype", typeId)
+        });
+
+        return (assemblyId, stepId, apiId);
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_AssemblyDroppedFromPackage_ClearsItsStepsBeforeTheContentUpdate()
+    {
+        // Dataverse rejects a content update that drops an assembly whose types still have steps.
+        // KD4 clears that for a class removed from a surviving assembly, but an assembly that vanishes
+        // from the .nupkg has no plan of its own, so nothing cleared its steps and the push died on the
+        // package write.
+        var packageId = Guid.NewGuid();
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId));
+        SetupPluginPackage(ExistingPluginPackage(packageId));
+        SetupPackageAssemblyByName(assemblyId, "MyPlugin");
+        var dropped = SetupDroppedPackageAssembly(packageId, "GoneAssembly");
+
+        await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, PackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
+
+        await _serviceMock.Received(1).DeleteAsync("sdkmessageprocessingstep", dropped.StepId, Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).DeleteAsync("customapi", dropped.ApiId, Arg.Any<CancellationToken>());
+        // The plugin type and the assembly record are Dataverse's to remove via the content update —
+        // deleting them here would be redundant work that the update already does.
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", dropped.AssemblyId, Arg.Any<CancellationToken>());
+        _console.Output.Should().Contain("GoneAssembly.dll").And.Contain("no longer in the package");
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_AssemblyStillInThePackage_IsNotClearedAsDropped()
+    {
+        // The guard that keeps this from wiping the assembly the push is actually registering.
+        var packageId = Guid.NewGuid();
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId));
+        SetupPluginPackage(ExistingPluginPackage(packageId));
+        SetupPackageAssemblyByName(assemblyId, "MyPlugin");
+        var stillThere = SetupDroppedPackageAssembly(packageId, "MyPlugin"); // same name the push reflects
+
+        await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, PackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
+
+        await _serviceMock.DidNotReceive().DeleteAsync("sdkmessageprocessingstep", stillThere.StepId, Arg.Any<CancellationToken>());
+        _console.Output.Should().NotContain("no longer in the package");
+    }
+
     [Fact]
     public async Task SyncSolutionFromPackageAsync_OrphanQueryExcludesEveryAssemblyInThePackage()
     {

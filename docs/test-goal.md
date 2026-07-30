@@ -635,9 +635,33 @@ Gaps found:
     orphan warning still reads "Use --force delete-orphans to delete" — the flag was passed. `willDelete`
     is false in dry-run, and the message keys off that rather than off the flag. Harmless but reads as if
     the user forgot something they did.
-  - **New finding logged, not fixed**: changing which assemblies an *existing* plugin package contains
+  - **New finding, now half fixed**: changing which assemblies an *existing* plugin package contains
     breaks the push, in both directions.
-    `docs/test-findings/changing-a-plugin-packages-assemblies-breaks-push.md`.
+    `docs/test-findings/changing-a-plugin-packages-assemblies-breaks-push.md`. **Dropping** an assembly
+    is fixed and live-verified — push clears the dropped assembly's steps and Custom APIs before the
+    content update, which is the remedy Microsoft documents; the exact repro that died on `Unable to
+    delete … due to 1 step(s)` now exits 0 with the assembly and its step gone. **Adding** an assembly
+    to an existing package is still broken and stays a finding — but the fix is now scoped, not open.
+  - **Self-registration works — proven by probe, and it changes the recommended fix.** A `pluginassembly`
+    row can be created by hand under an existing package: `isolationmode` must be Sandbox (Dataverse
+    rejects the create outright otherwise — *"not allowed to be registered in full-trust mode"*), the row
+    lands with zero plugin types, and the **next content update populates them**. After that an ordinary
+    `push` exits 0 and registers the assembly's step. **And it really executes**: the probe plugin was
+    made to throw a marker exception, and a real contact update returned that exact marker — so the
+    sandbox loads the type out of the package content for a hand-registered assembly. That beats the
+    delete-and-recreate alternative, which destroys every assembly, type and step registration in the
+    package and churns every GUID.
+  - **Technique note — make the probe throw.** The first runtime check used the no-op plugin and
+    "update succeeded" was recorded as evidence. It wasn't: a silently skipped step looks identical.
+    Only the throwing version discriminated. Same lesson as the vacuous-test checks elsewhere in this
+    session; it applies to live probes too.
+  - **Plugin package content is synced by content, not by version — don't guess otherwise.** Microsoft:
+    "The version of the plug-in package or plug-in assembly is not a factor in any upgrade behaviors",
+    and the package's name and version cannot be changed after create at all. Confirmed across this
+    session: the fixture's `.nupkg` version stayed `0.0.0-alpha.0.4` while code changes, new classes,
+    new Custom APIs and removed classes all applied normally. The classic-assembly rules
+    (build/revision = in-place upgrade, major/minor = a different assembly) govern solution import of
+    *classic* assemblies and do **not** carry over to packages.
   - **A first guess in that finding was wrong, and the correction is the lesson.** It originally claimed
     Dataverse registers only one `pluginassembly` per package. Microsoft documents the opposite ("any
     assemblies that contain classes that implement the `IPlugin` interface are registered"), and a

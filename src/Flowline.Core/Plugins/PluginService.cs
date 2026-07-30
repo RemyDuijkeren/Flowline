@@ -449,8 +449,20 @@ public class PluginService(IAnsiConsole console)
         foreach (var (metadata, plan) in prePlans)
             counts += WritePlanTree(metadata, needsUpdate: false, plan, runMode, writeSummary: false);
 
+        // Dataverse rejects a content update that drops an assembly whose plugin types still carry step
+        // registrations — documented behavior: "If your update removes any plug-in assemblies, or types
+        // which are used in plug-in step registrations, the update will be rejected. You must manually
+        // remove any step registrations..." KD4 below already clears this for a class removed from a
+        // surviving assembly; an assembly that disappears from the package has no plan of its own, so
+        // nothing cleared its steps and the whole update failed.
+        var droppedAssemblies = existingPackage != null
+            ? await FindDroppedPackageAssembliesAsync(service, existingPackage.Id, assemblies.Select(a => a.Name), cancellationToken).ConfigureAwait(false)
+            : [];
+
         if (runMode == RunMode.DryRun)
         {
+            foreach (var dropped in droppedAssemblies)
+                console.Info($"  [red]-[/] [bold]{Safe(dropped.GetAttributeValue<string>("name"))}.dll[/] — would drop from package, clearing its registrations first");
             console.Info(existingPackage == null
                 ? $"  [green]+[/] Package [bold]{packageUniqueName}[/] ({primary.Version}) — would create"
                 : $"  [yellow]~[/] Package [bold]{packageUniqueName}[/] — would update content");
@@ -467,6 +479,41 @@ public class PluginService(IAnsiConsole console)
         {
             if (plan.PluginTypes.Deletes.Count == 0) continue; // no class was removed for this assembly
             await _executor.ExecuteDeletesAsync(service, plan.NonPluginTypeDeletes(), solutionName, runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Same rule, for an assembly the .nupkg no longer carries at all. Only the blocking children go —
+        // the plugin types and the assembly record itself are removed by the content update, the way KD4
+        // already relies on for a removed class.
+        foreach (var dropped in droppedAssemblies)
+        {
+            var droppedName = dropped.GetAttributeValue<string>("name");
+
+            if (runMode == RunMode.NoDelete)
+            {
+                console.Warning($"[bold]{Safe(droppedName)}.dll[/] dropped from the package, but --no-delete is active — Dataverse will reject the update while its steps remain.");
+                continue;
+            }
+
+            var stub = new PluginAssemblyMetadata("", "", [], "", "", null, "", []);
+            var droppedSnapshot = await _reader.LoadSnapshotAsync(service, dropped.Id, stub, solutionName, cancellationToken).ConfigureAwait(false);
+            var (droppedApis, droppedRequestParams, droppedResponseProps) = OwnCustomApiRecords(droppedSnapshot);
+
+            console.Warning($"[bold]{Safe(droppedName)}.dll[/] no longer in the package — clearing its registrations so the update can remove it.");
+            foreach (var api in droppedApis)
+                console.Info($"  {Safe(api.GetAttributeValue<string>("uniquename"))} — cascade delete");
+            foreach (var step in droppedSnapshot.Steps)
+                console.Info($"  {Safe(step.GetAttributeValue<string>("name"))} — cascade delete");
+
+            foreach (var e in droppedSnapshot.Images)
+                await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
+            foreach (var e in droppedResponseProps)
+                await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
+            foreach (var e in droppedRequestParams)
+                await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
+            foreach (var e in droppedSnapshot.Steps)
+                await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
+            foreach (var e in droppedApis)
+                await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
         }
 
         var packageId = await WritePackageContentAsync(service, existingPackage, packageUniqueName, primary, nupkgContent, solutionName, cancellationToken).ConfigureAwait(false);
@@ -704,6 +751,51 @@ public class PluginService(IAnsiConsole console)
                 siblings.Prepend(managedAssemblyName).Cast<object>().ToArray());
     }
 
+    /// <summary>The Custom API records a snapshot's own plugin types implement.</summary>
+    /// <remarks>
+    /// A snapshot's <c>PluginTypes</c>/<c>Steps</c>/<c>Images</c> are scoped to one assembly, but its
+    /// <c>CustomApis</c> (and their parameters and properties) are resolved publisher-prefix-wide —
+    /// every API under the prefix, across every project and every repo sharing it. Only the ones naming
+    /// one of this assembly's plugin types as their implementation are its children; the rest are other
+    /// people's APIs and deleting them was a real bug.
+    /// </remarks>
+    static (List<Entity> Apis, List<Entity> RequestParams, List<Entity> ResponseProps) OwnCustomApiRecords(
+        RegistrationSnapshot? snapshot)
+    {
+        if (snapshot == null) return ([], [], []);
+
+        var typeIds = snapshot.PluginTypes.Values.Select(t => t.Id).ToHashSet();
+        var apis = snapshot.CustomApis
+            .Where(a => a.GetAttributeValue<EntityReference>("plugintypeid") is { } t && typeIds.Contains(t.Id))
+            .ToList();
+
+        var apiIds = apis.Select(a => a.Id).ToHashSet();
+        bool Bound(Entity e) => e.GetAttributeValue<EntityReference>("customapiid") is { } a && apiIds.Contains(a.Id);
+
+        return (apis, snapshot.RequestParams.Where(Bound).ToList(), snapshot.ResponseProps.Where(Bound).ToList());
+    }
+
+    /// <summary>Assemblies registered under the package that the local .nupkg no longer contains.</summary>
+    static async Task<List<Entity>> FindDroppedPackageAssembliesAsync(
+        IOrganizationServiceAsync2 service,
+        Guid packageId,
+        IEnumerable<string> reflectedAssemblyNames,
+        CancellationToken cancellationToken)
+    {
+        var reflected = new HashSet<string>(reflectedAssemblyNames.Where(n => !string.IsNullOrWhiteSpace(n)), StringComparer.OrdinalIgnoreCase);
+
+        var query = new QueryExpression("pluginassembly")
+        {
+            ColumnSet = new ColumnSet("pluginassemblyid", "name"),
+            Criteria = { Conditions = { new ConditionExpression("packageid", ConditionOperator.Equal, packageId) } }
+        };
+        var registered = await service.RetrieveAllAsync(query, cancellationToken).ConfigureAwait(false);
+
+        return registered
+            .Where(a => a.GetAttributeValue<string>("name") is { } n && !string.IsNullOrWhiteSpace(n) && !reflected.Contains(n))
+            .ToList();
+    }
+
     /// <summary>An orphan's owning plugin package, and whether push may delete that package.</summary>
     /// <param name="FullyOrphaned">
     /// Every assembly the package owns is an orphan of this push. False means the package also owns
@@ -828,18 +920,7 @@ public class PluginService(IAnsiConsole console)
                 orphanSnapshot = await _reader.LoadSnapshotAsync(service, entity.Id, stub, solutionName, cancellationToken).ConfigureAwait(false);
             }
 
-            // PluginTypes/Steps/Images in a snapshot are assembly-scoped, but CustomApis (and their
-            // parameters/properties) are resolved publisher-prefix-wide — every API under the prefix,
-            // across every project and every repo sharing it. Deleting the whole list would take out
-            // Custom APIs this orphan never implemented. Only the ones bound to *this* assembly's own
-            // plugin types are its children; the rest are simply other people's APIs.
-            var orphanTypeIds = orphanSnapshot?.PluginTypes.Values.Select(t => t.Id).ToHashSet() ?? [];
-            var orphanCustomApis = orphanSnapshot?.CustomApis
-                .Where(a => a.GetAttributeValue<EntityReference>("plugintypeid") is { } t && orphanTypeIds.Contains(t.Id))
-                .ToList() ?? [];
-            var orphanCustomApiIds = orphanCustomApis.Select(a => a.Id).ToHashSet();
-            bool BoundToOrphanApi(Entity e) =>
-                e.GetAttributeValue<EntityReference>("customapiid") is { } a && orphanCustomApiIds.Contains(a.Id);
+            var (orphanCustomApis, orphanRequestParams, orphanResponseProps) = OwnCustomApiRecords(orphanSnapshot);
 
             if (showCascade && orphanSnapshot != null)
             {
@@ -868,9 +949,9 @@ public class PluginService(IAnsiConsole console)
                 // Must delete children manually in reverse dependency order — same as RunDeletesAsync.
                 foreach (var e in orphanSnapshot.Images)
                     await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
-                foreach (var e in orphanSnapshot.ResponseProps.Where(BoundToOrphanApi))
+                foreach (var e in orphanResponseProps)
                     await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
-                foreach (var e in orphanSnapshot.RequestParams.Where(BoundToOrphanApi))
+                foreach (var e in orphanRequestParams)
                     await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
                 foreach (var e in orphanSnapshot.Steps)
                     await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
