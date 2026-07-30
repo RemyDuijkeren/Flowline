@@ -635,12 +635,24 @@ Gaps found:
     orphan warning still reads "Use --force delete-orphans to delete" — the flag was passed. `willDelete`
     is false in dry-run, and the message keys off that rather than off the flag. Harmless but reads as if
     the user forgot something they did.
-  - **New finding logged, not fixed**: a multi-assembly plugin package fails to push — Dataverse never
-    creates a `pluginassembly` record for the second DLL, and `push` exits 1 *after* the package content
-    write has committed.
-    `docs/test-findings/multi-assembly-plugin-package-never-registers-second-assembly.md`. This also
-    explains why the shared-package refusal branch could not be constructed live: if a package always
-    owns exactly one assembly, that branch is a guard that cannot fire in a real org.
+  - **New finding logged, not fixed**: changing which assemblies an *existing* plugin package contains
+    breaks the push, in both directions.
+    `docs/test-findings/multi-assembly-plugin-package-never-registers-second-assembly.md`.
+  - **A first guess in that finding was wrong, and the correction is the lesson.** It originally claimed
+    Dataverse registers only one `pluginassembly` per package. Microsoft documents the opposite ("any
+    assemblies that contain classes that implement the `IPlugin` interface are registered"), and a
+    from-scratch package create does register both. The real constraint is narrower: on *update* of an
+    existing package Dataverse never enumerates new assemblies, and dropping one fails if its plugin
+    types still have steps. **Check the vendor docs before writing "the platform doesn't support X" into
+    a finding** — one search would have caught it, and the wrong version was committed.
+  - **Both remaining orphan branches got live-verified along the way**, using the two-DLL package that
+    investigation produced: the **shared-package refusal** (drop one DLL from a two-assembly package —
+    the dropped assembly is an orphan while its package still owns the live one the same push registers;
+    push refused and deleted nothing) and the **fully-owned multi-assembly collapse** (both assemblies
+    orphaned → one package delete, not two). Nothing in the orphan work is unverified live any more.
+  - **Message corrected from that run**: the refusal warning said the package "owns assemblies this
+    solution doesn't", which is wrong for the commonest shape — the solution does have the other
+    assembly, it just isn't an orphan. Now reads "owns assemblies that aren't orphans — not deleting it".
 - Git hygiene in the test workspace: commit between test phases so `sync`'s dirty-check behaves
   predictably, and use `git checkout --`/`git status` before any destructive reset.
 - Long-running commands (`clone`'s Dataverse export, `sync`'s export) can take several minutes — run

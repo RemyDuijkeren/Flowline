@@ -800,7 +800,10 @@ public class PluginService(IAnsiConsole console)
             // that will be refused — warn and move on.
             if (package is { FullyOrphaned: false })
             {
-                console.Warning($"[bold]{Safe(name)}.dll[/] in environment — no local source. Its package [bold]{Safe(package.UniqueName)}[/] owns assemblies this solution doesn't — remove the package yourself.");
+                // Deliberately not "assemblies this solution doesn't have" — the commonest shape is a
+                // package whose other assembly this very push just registered, which the solution
+                // certainly does have. What makes it undeletable is that it isn't an orphan.
+                console.Warning($"[bold]{Safe(name)}.dll[/] in environment — no local source. Package [bold]{Safe(package.UniqueName)}[/] owns assemblies that aren't orphans — not deleting it.");
                 blockedAssemblyIds.Add(entity.Id);
                 continue;
             }

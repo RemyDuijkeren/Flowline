@@ -762,7 +762,7 @@ public class PluginServiceTests
 
         await _serviceMock.DidNotReceive().DeleteAsync("pluginpackage", Arg.Any<Guid>(), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
-        _console.Output.Should().Contain("av_Shared").And.Contain("remove the package yourself");
+        _console.Output.Should().Contain("av_Shared").And.Contain("aren't orphans");
     }
 
     [Fact]

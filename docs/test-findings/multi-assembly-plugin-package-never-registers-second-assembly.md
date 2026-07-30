@@ -1,103 +1,115 @@
-# Multi-assembly plugin package: push fails after writing package content, second assembly never registers
+# Adding or dropping an assembly in an existing plugin package breaks the push
 
-- **Status**: not fixed — the premise itself needs checking (does Dataverse register more than one
-  `pluginassembly` per `pluginpackage` at all?), which is investigation, not a small fix.
-- **Severity**: high — `push` exits 1 *after* the package content write has already committed, so the org
-  keeps a package whose second DLL Dataverse ignores, the second assembly's plugin types and steps never
-  land, and every later project in the same push is skipped ("Not attempted").
-- **Found**: 2026-07-29, live, DEV, tool built from `b79642a`.
+- **Status**: not fixed — the platform constraint is now understood, but choosing what `push` should do
+  about it (refuse early, or delete and recreate the package) is a product decision.
+- **Severity**: high — both failure modes exit 1 *after* the package content write has committed, and the
+  "add" case's message blames a timeout that will never resolve no matter how long it waits.
+- **Found**: 2026-07-29, live, DEV. Investigated and corrected 2026-07-30.
 
-## Repro
+## The premise this finding originally got wrong
 
-Give a nupkg-mode plugin project a `ProjectReference` to a second plugin-bearing assembly — the shape
-KD5 in the nupkg plan describes as the way a package comes to hold more than one DLL:
+The first version of this finding guessed that Dataverse registers only one `pluginassembly` per
+`pluginpackage`, and that Flowline's multi-assembly support rested on a false premise. **That is wrong.**
+Microsoft documents the opposite, in
+[Build and package plug-in code](https://learn.microsoft.com/power-apps/developer/data-platform/build-and-package#dependent-assemblies):
 
-```xml
-<ItemGroup>
-  <ProjectReference Include="..\ProbeExtra\Cr07982.ProbeExtra.csproj" />
-</ItemGroup>
-```
+> When you upload your NuGet package, any assemblies that contain classes that implement the `IPlugin`
+> interface are registered in the `PluginAssembly` table and associated with the plug-in package.
 
-The second project is a plain net462 class library, strong-named with the same key (a signed assembly
-cannot reference an unsigned one), with one `IPlugin` class carrying a `[Step]`. It is deliberately
-*not* in the `.slnx`, so it is not discovered as a plugin project of its own.
-
-The package packs correctly — both DLLs land side by side:
+And it is live-verified: a `.nupkg` containing two plugin-bearing DLLs, pushed when **no package existed
+yet**, registered both assemblies under one package:
 
 ```
-lib/net462/Cr07982.Backend.dll
-lib/net462/Cr07982.ProbeExtra.dll
+name                packageid           version
+Cr07982.Backend     av_Cr07982.Backend  0.0.0.0
+Cr07982.ProbeExtra  av_Cr07982.Backend  1.0.0.0
 ```
 
-`flowline push --scope plugins`:
+Both are also `solutioncomponent` rows (componenttype 91) of the solution. So multi-assembly packages
+work, Flowline's support for them is well-founded, and the second DLL genuinely did contain an `IPlugin`
+implementation (`public class ProbeExtraPostUpdatePlugin : IPlugin`, SDK-style project, `net462`, signed
+with the same key — every documented requirement met).
+
+The real constraint is narrower and only bites on **update** of a package that already exists.
+
+## Failure 1 — adding an assembly to an existing package
+
+Add a `ProjectReference` to a second plugin-bearing project so the `.nupkg` grows from one DLL to two,
+then push into a solution whose package already exists:
 
 ```
-· Assembly Cr07982.ProbeExtra (1.0.0.0) analyzed
 · Package contains 2 plugin-bearing assemblies: Cr07982.Backend, Cr07982.ProbeExtra
 ✓ Package av_Cr07982.Backend updated
 Error: 'Cr07982.Backend' failed to push: Timed out waiting for Dataverse to auto-create plugin
 assembly record(s) for: Cr07982.ProbeExtra. Not attempted: Cr07982.LegacyPlugins.
-Fix 'Cr07982.Backend', then push again.
 ```
 
-Exit 1. Note the ordering: `Package av_Cr07982.Backend updated` succeeded first, so the two-DLL package
-is now live in the org.
+Exit 1. Dataverse never creates the record — **this is not a timeout**. The row was still absent when
+queried minutes later, and the identical package content registers both assemblies fine when the package
+is created from scratch. Raising `PackageAssemblyCheckMaxAttempts` would only make the same wrong
+outcome take longer.
 
-## Root cause, as far as it is understood
+Likely mechanism, consistent with Microsoft's note that "you can't change the name and version of the
+plug-in package (on the server) once created" and with KTD4 (Flowline omits `version` on update because
+it is create-time-only): the server re-syncs plugin *types* inside already-registered assemblies on a
+content update, but never enumerates *new* assemblies.
 
-`SyncSolutionFromPackageAsync` reflects every plugin-bearing DLL under `lib/<tfm>/` (KD5), writes the
-package content, then waits for Dataverse to auto-create one `pluginassembly` per reflected assembly —
-a bounded retry of `PackageAssemblyCheckMaxAttempts` (5) × `PackageAssemblyCheckDelay` (1s) in
-`src/Flowline.Core/Plugins/PluginService.cs`. Dataverse created the record for the primary assembly
-only.
+## Failure 2 — dropping an assembly from an existing package
 
-**This is not a timeout.** The record was still absent when queried several minutes later:
+The reverse direction fails too, for a different reason. Remove the `ProjectReference` so the `.nupkg`
+goes back to one DLL, and push while the dropped assembly's plugin type still has a step:
 
 ```
-name                   packageid
-Cr07982.Backend        av_Cr07982.Backend
-Cr07982.LegacyPlugins  (none)
+Error: 'Cr07982.Backend' failed to push: Unable to delete
+'Cr07982.ProbeExtra.ProbeExtraPostUpdatePlugin' plugintype due to 1 step(s) registered on it.
+Please delete step registrations and try the operation again.
 ```
 
-So either:
+Flowline already mitigates exactly this hazard for plugin types (KD4/KTD13 — delete a to-be-removed
+type's steps and Custom APIs *before* the content update). The mitigation is scoped to assemblies the
+push still reflects, so an assembly that disappears from the package entirely takes its steps with it
+into the content write, and Dataverse rejects the whole update.
 
-1. **Dataverse registers exactly one `pluginassembly` per `pluginpackage`** — the primary — and treats
-   every other DLL in `lib/<tfm>/` as a runtime dependency, however plugin-bearing it is. If so, the
-   multi-assembly package support (KD5/KTD15 — N independently-scoped snapshots, `SiblingAssemblyNames`
-   taking a set, `CollectPushedAssemblyNames` reaching into `ReflectedAssemblies`) rests on a premise
-   that does not hold, and the honest behavior is to reject or warn at reflection time rather than write
-   the package and then fail.
-2. Or the probe assembly was missing something Dataverse requires that this repro did not supply, and
-   the feature works with the right packaging.
+## What does work
 
-Distinguishing the two is the investigation this finding asks for. Nothing here should be "fixed" until
-it is settled — the failure mode is a wrong premise, not a wrong retry count, and raising the retry
-count would just make the same wrong outcome take longer.
-
-## Consequence for the package-owned orphan work
-
-If (1) holds, a `pluginpackage` always owns exactly one `pluginassembly`, which means the
-shared-package refusal branch in `WarnOrphanAssembliesAsync` — where a package owns an orphan *and*
-something the run cannot account for — is unreachable in a real org and exists purely as a safety
-guard. That is the branch
-`docs/test-findings/push-delete-orphans-fails-on-package-owned-assembly.md` records as unit-tested only;
-this is why it could not be constructed live. The guard should stay either way: it costs one query and
-it is what stops a delete from taking a live assembly with it.
+Deleting the package and letting the next push recreate it. Both failures above were recovered that way:
+drop the project from the solution file so its assemblies become orphans, `push --force delete-orphans`
+(which now deletes the owning package — see
+`push-delete-orphans-fails-on-package-owned-assembly.md`), restore the solution file, push again.
 
 ## Suggested fix direction
 
-Settle the premise first. If Dataverse really is one-assembly-per-package, the reflection step should
-say so plainly when it finds a second plugin-bearing DLL — before the content write, not after — and the
-multi-assembly machinery becomes dead weight worth deleting. If instead the packaging was at fault, the
-repro above is the test case, and the retry's failure message should distinguish "Dataverse has not
-created it yet" from "Dataverse is never going to create it".
+Detect the mismatch *before* the content write, by comparing the reflected assembly set against the
+assemblies already registered to the package. Then either:
 
-Independently of which: the content write should not commit before the push knows it can finish, or the
-failure message should say that the package in the org now contains a DLL that did not register.
+- **(a)** refuse with a message naming the added or dropped assembly and telling the user the package has
+  to be recreated, which is honest and cheap; or
+- **(b)** do the recreate itself — delete the package and create it fresh — which is what a user
+  currently has to do by hand, but it is a destructive act that deserves a `--force` specifier of its own.
+
+Whichever is chosen, failure 2's step-cleanup should extend to assemblies that vanish from the package,
+not just types that vanish from a surviving assembly. And neither failure should reach the user after the
+content write has already committed.
+
+## Side benefit: this is what finally exercised the refusal branch
+
+Failure 2's setup is the first realistic construction of the shared-package refusal in
+`WarnOrphanAssembliesAsync` — a package owning both an orphan (`Cr07982.ProbeExtra`, dropped from the
+nupkg) and an assembly that is not an orphan (`Cr07982.Backend`, which the same push registers). It
+behaved correctly, refusing to delete a package that would have taken a live assembly with it:
+
+```
+! Cr07982.ProbeExtra.dll in environment — no local source. Package av_Cr07982.Backend owns
+  assemblies that aren't orphans — not deleting it.
+```
+
+The live run also showed the original wording ("owns assemblies this solution doesn't") was inaccurate
+for this, the commonest shape — the solution does have `Cr07982.Backend`; it simply isn't an orphan. The
+message was corrected as a result.
 
 ## Note on DEV state
 
-DEV was restored: the `ProjectReference` was reverted, the probe project deleted, and a clean
-`push --scope plugins` re-wrote `av_Cr07982.Backend` back to its single-assembly content. Verified
-afterwards — two unmanaged assemblies (`Cr07982.Backend`, `Cr07982.LegacyPlugins`), their two steps, and
-no leftover probe records.
+Restored. The probe project and its `ProjectReference` are gone, the multi-assembly package was deleted
+via orphan cleanup, and a clean push recreated `av_Cr07982.Backend` with its single assembly. Verified
+afterwards: two unmanaged assemblies (`Cr07982.Backend`, `Cr07982.LegacyPlugins`) and their two steps,
+nothing else.

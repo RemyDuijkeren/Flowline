@@ -190,15 +190,31 @@ pluginpackage:   av_Cr07982.Backend
 An immediate re-run prints no orphan warnings at all, exit 0. The run log
 (`%LOCALAPPDATA%\Flowline\logs\…-push.log`) carries the same lines with no markup leakage.
 
-**Not verified live: the refusal branch — and it may be unreachable in a real org.** It needs a package
-owning both an orphan and an assembly the run can't account for, i.e. a multi-assembly package. Building
-one was attempted (a `ProjectReference` into a second plugin-bearing project, which does produce a
-two-DLL nupkg) and Dataverse never created a `pluginassembly` record for the second DLL at all — see
-`docs/test-findings/multi-assembly-plugin-package-never-registers-second-assembly.md`. If a package
-always owns exactly one assembly, this branch is a safety guard that cannot fire rather than a path
-users reach. It stays either way: one query, and it is what stops a package delete from taking a live
-assembly with it. Covered by unit tests only (shared-package refusal, the orphan-step pass honouring it,
-and the blocked `--dry-run`).
+**The refusal branch is live-verified too (2026-07-30), and it is a realistic case, not a defensive
+one.** It needs a package owning both an orphan and a non-orphan, which a multi-assembly package
+provides: push a `.nupkg` carrying two plugin-bearing DLLs, then drop one of them from the project. The
+dropped assembly stays registered in Dataverse with no local source (an orphan), while its package still
+owns the other assembly — which the same push registers. Deleting that package would have destroyed a
+live assembly. It refused:
+
+```
+! Cr07982.ProbeExtra.dll in environment — no local source. Package av_Cr07982.Backend owns
+  assemblies that aren't orphans — not deleting it.
+```
+
+Nothing was deleted, and the package survived. The run also corrected the message: the original wording
+("owns assemblies this solution doesn't") is wrong for this, the commonest shape — the solution *does*
+have `Cr07982.Backend`; it simply isn't an orphan.
+
+The **fully-owned multi-assembly collapse** was verified in the same session: with both of that
+package's assemblies orphaned, the two of them produced one package delete, not two, each with its own
+cascade.
+
+Getting there required building a genuine two-DLL package, which exposed two separate platform-level
+bugs in the package update path — see
+`docs/test-findings/multi-assembly-plugin-package-never-registers-second-assembly.md`. That finding also
+corrects an earlier guess of mine, that Dataverse registers only one assembly per package: Microsoft
+documents the opposite and a from-scratch package create registers both.
 
 **Verified live instead: the Custom API scoping fix** (see "Follow-up" below), with a discriminating
 probe. Two `[CustomApi]` classes were planted, one in the package project and one in the classic
