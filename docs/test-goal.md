@@ -637,7 +637,7 @@ Gaps found:
     the user forgot something they did.
   - **New finding logged, not fixed**: changing which assemblies an *existing* plugin package contains
     breaks the push, in both directions.
-    `docs/test-findings/multi-assembly-plugin-package-never-registers-second-assembly.md`.
+    `docs/test-findings/changing-a-plugin-packages-assemblies-breaks-push.md`.
   - **A first guess in that finding was wrong, and the correction is the lesson.** It originally claimed
     Dataverse registers only one `pluginassembly` per package. Microsoft documents the opposite ("any
     assemblies that contain classes that implement the `IPlugin` interface are registered"), and a

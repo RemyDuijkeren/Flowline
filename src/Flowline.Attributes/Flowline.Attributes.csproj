@@ -19,7 +19,7 @@
          source is documentation, not an API surface that needs every member commented. -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);1591</NoWarn>
-    <PackageOutputPath>../../../artifacts/nupkg</PackageOutputPath>
+    <PackageOutputPath>../../artifacts/nupkg</PackageOutputPath>
   </PropertyGroup>
 
   <PropertyGroup Label="PackageProperties">

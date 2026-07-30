@@ -2,6 +2,7 @@
 
     <PropertyGroup>
       <OutputType>Exe</OutputType>
+      <ApplicationIcon>../../docs/flowline.ico</ApplicationIcon>
       <InvariantGlobalization>true</InvariantGlobalization>
       <PackAsTool>true</PackAsTool>
       <ToolCommandName>flowline</ToolCommandName>

@@ -1,9 +1,8 @@
 # `push --force delete-orphans` fails on a package-owned orphan assembly — after deleting its children
 
-- **Status**: **fixed 2026-07-29, live-verified against DEV** — push now deletes the owning package when
-  that package owns nothing but orphans, and refuses (touching nothing) when it owns anything else. The
-  delete half is confirmed live; the refusal half is unit-tested only (see "Live verification"). See
-  "Fix" below.
+- **Status**: **fixed 2026-07-29, fully live-verified against DEV (delete half 07-29, refusal half and
+  multi-assembly collapse 07-30)** — push now deletes the owning package when that package owns nothing
+  but orphans, and refuses, touching nothing, when it owns anything else. See "Fix" below.
 - **Severity**: high — the run deletes the orphan's plugin types, steps and images, *then* fails on the
   assembly itself with a raw Dataverse fault and exit 1, leaving Dataverse in a half-cleaned state that
   a re-run does not obviously recover.
@@ -212,7 +211,7 @@ cascade.
 
 Getting there required building a genuine two-DLL package, which exposed two separate platform-level
 bugs in the package update path — see
-`docs/test-findings/multi-assembly-plugin-package-never-registers-second-assembly.md`. That finding also
+`docs/test-findings/changing-a-plugin-packages-assemblies-breaks-push.md`. That finding also
 corrects an earlier guess of mine, that Dataverse registers only one assembly per package: Microsoft
 documents the opposite and a from-scratch package create registers both.
 
