@@ -87,7 +87,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
         if (targetEnv == null)
         {
             var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-            await Console.Status().FlowlineSpinner().StartAsync(
+            var createResult = await Console.Status().FlowlineSpinner().StartAsync(
                 $"Creating [bold]{targetDisplayName}[/]...",
                 _ => Cli.Wrap(cmdName)
                         .WithArguments(args => args
@@ -95,12 +95,17 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
                                                .Add("admin")
                                                .Add("create")
                                                .Add("--name").Add($"{targetDisplayName} (cloning)")
+                                               .Add("--type").Add("Sandbox")
                                                .Add("--domain").Add($"{urlParts.Organization}-{suffix.ToLower()}")
                                                .Add("--region").Add(urlParts.Region)
                                                .Add("--async"))
+                        .WithValidation(CommandResultValidation.None)
                         .WithCapture(_capture)
                         .ExecuteAsync(cancellationToken)
                         .Task);
+
+            if (!createResult.IsSuccess)
+                throw new FlowlineException(ExitCode.GeneralError, "Environment creation failed — check the environment and your PAC login. Use --verbose for more details.");
 
             targetEnv = await FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, settings, cancellationToken);
             if (targetEnv == null)
@@ -155,7 +160,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
 
         var (cmdNameCopy, prefixArgsCopy, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
 
-        await Console.Status().FlowlineSpinner().StartAsync(
+        var copyResult = await Console.Status().FlowlineSpinner().StartAsync(
             $"Copying prod to [bold]{targetDisplayName}[/]...",
             _ => Cli.Wrap(cmdNameCopy)
                     .WithArguments(args => args
@@ -167,9 +172,13 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
                                            .Add("--target-env").Add(targetEnv.EnvironmentUrl!)
                                            .Add("--type").Add(copyType)
                                            .Add("--async"))
+                    .WithValidation(CommandResultValidation.None)
                     .WithCapture(_capture)
                     .ExecuteAsync(cancellationToken)
                     .Task);
+
+        if (!copyResult.IsSuccess)
+            throw new FlowlineException(ExitCode.GeneralError, "Copy from prod failed — check the environment and your PAC login. Use --verbose for more details.");
 
         Config!.Save();
         Console.Done($"Provisioned! See [link]{targetEnv.EnvironmentUrl}[/]. You can now run 'clone' or 'sync' ٩(◕‿◕｡)۶");
