@@ -1,6 +1,7 @@
 ﻿using CliWrap;
 using CliWrap.Buffered;
 using Flowline.Core;
+using Flowline.Core.Console;
 using Flowline.Diagnostics;
 using Flowline.Utils;
 using Spectre.Console;
@@ -23,7 +24,7 @@ public static class GitUtils
             if (output.StartsWith("git version "))
             {
                 string gitVersion = output.Substring("git version ".Length);
-                AnsiConsole.MarkupLine("Git's good");
+                AnsiConsole.Console.Info("Git's good");
                 if (verbose)
                 {
                     AnsiConsole.MarkupLine($"[dim]Git version: {gitVersion}[/]");
@@ -35,7 +36,7 @@ public static class GitUtils
         }
         catch (Exception)
         {
-            AnsiConsole.MarkupLine("[red]Git isn't available. Install it from https://git-scm.com/.[/]");
+            AnsiConsole.Console.Error("Git isn't available. Install it from https://git-scm.com/.");
             Environment.Exit(1);
             return string.Empty; // This line will never be reached due to Environment.Exit
         }
@@ -143,7 +144,7 @@ public static class GitUtils
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLineInterpolated($"[red]Failed to retrieve remote: {ex.Message}[/]");
+            AnsiConsole.Console.Error($"Failed to retrieve remote: {Markup.Escape(ex.Message)}");
         }
 
         return (remoteName, remoteUrl);
@@ -218,7 +219,7 @@ public static class GitUtils
         if (!Directory.Exists(Path.Combine(rootFolder, ".git")))
             throw new FlowlineException(ExitCode.ConfigInvalid, "No Git repo found. Run 'git init' or 'git clone' first.");
 
-        AnsiConsole.MarkupLine("You're in a Git repo");
+        AnsiConsole.Console.Info("You're in a Git repo");
 
         // Check if remote URL is configured
         (string? remoteName, string? remoteUrl) = await GetRemoteUrlAsync(capture, cancellationToken);
@@ -231,7 +232,7 @@ public static class GitUtils
         }
         else
         {
-            AnsiConsole.MarkupLine("[yellow]No remote configured — run 'git remote add <name> <url>' to set one up.[/]");
+            AnsiConsole.Console.Warning("No remote configured — run 'git remote add <name> <url>' to set one up.");
         }
     }
 }

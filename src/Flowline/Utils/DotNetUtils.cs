@@ -31,14 +31,14 @@ public static class DotNetUtils
 
         if (!buildResult.IsSuccess)
         {
-            AnsiConsole.MarkupLine("[red]Build failed — check the output above. Use --verbose for details.[/]");
+            AnsiConsole.Console.Error("Build failed — check the output above. Use --verbose for details.");
             return 1;
         }
         else
         {
             var elapsed = buildResult.RunTime;
             var duration = elapsed.TotalMinutes >= 1 ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds}s" : $"{(int)elapsed.TotalSeconds}s";
-            AnsiConsole.MarkupLine($"[green]✓[/] Build [bold]{Markup.Escape(buildTarget)}[/] done in {duration} ({configuration})");
+            AnsiConsole.Console.Ok($"Build [bold]{Markup.Escape(buildTarget)}[/] done in {duration} ({configuration})");
             return 0;
         }
     }
@@ -73,7 +73,7 @@ public static class DotNetUtils
                                   .ExecuteBufferedAsync(cancellationToken);
 
             var version = result.StandardOutput.Trim();
-            AnsiConsole.MarkupLine(".NET's good");
+            AnsiConsole.Console.Info(".NET's good");
             if (verbose)
             {
                 AnsiConsole.MarkupLine($"[dim].NET SDK version: {version}[/]");
@@ -82,7 +82,7 @@ public static class DotNetUtils
         }
         catch (Exception)
         {
-            AnsiConsole.MarkupLine("[red].NET SDK isn't available. Install it from https://dotnet.microsoft.com/download.[/]");
+            AnsiConsole.Console.Error(".NET SDK isn't available. Install it from https://dotnet.microsoft.com/download.");
             Environment.Exit(1);
             return string.Empty;
         }

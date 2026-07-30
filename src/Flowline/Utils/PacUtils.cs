@@ -76,7 +76,7 @@ public static class PacUtils
             if (versionLine != null)
             {
                 var version = versionLine.Trim().Replace("Version: ", string.Empty);
-                AnsiConsole.MarkupLine("PAC CLI's good");
+                AnsiConsole.Console.Info("PAC CLI's good");
                 if (verbose)
                 {
                     AnsiConsole.MarkupLine($"[dim]Power Platform CLI version: {version} ({installType})[/]");
@@ -193,14 +193,14 @@ public static class PacUtils
 
         if (!result.IsSuccess)
         {
-            AnsiConsole.MarkupLine($"[red]{packageType} pack failed — check your solution source.[/]");
+            AnsiConsole.Console.Error($"{packageType} pack failed — check your solution source.");
             return (int)ExitCode.BuildFailed;
         }
 
         var duration = result.RunTime.TotalMinutes >= 1
             ? $"{(int)result.RunTime.TotalMinutes}m {result.RunTime.Seconds}s"
             : $"{(int)result.RunTime.TotalSeconds}s";
-        AnsiConsole.MarkupLine($"[green]✓[/] {packageType} package validated in {duration}");
+        AnsiConsole.Console.Ok($"{packageType} package validated in {duration}");
         return 0;
     }
 
@@ -231,7 +231,7 @@ public static class PacUtils
         var duration = result.RunTime.TotalMinutes >= 1
             ? $"{(int)result.RunTime.TotalMinutes}m {result.RunTime.Seconds}s"
             : $"{(int)result.RunTime.TotalSeconds}s";
-        AnsiConsole.MarkupLine($"[green]✓[/] Solution synced from Dataverse in {duration}");
+        AnsiConsole.Console.Ok($"Solution synced from Dataverse in {duration}");
     }
 
     public static async Task UnpackSolutionAsync(string zipPath, string destinationFolder, SubprocessCapture capture, CancellationToken cancellationToken)
