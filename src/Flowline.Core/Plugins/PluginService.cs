@@ -279,8 +279,10 @@ public class PluginService(IAnsiConsole console)
     // imports into a *target* environment and `deploy dev` is rejected outright, which left a nupkg-only
     // solution with no orphan cleanup route at all.
 
-    const int PackageAssemblyCheckMaxAttempts = 5;
-    static readonly TimeSpan PackageAssemblyCheckDelay = TimeSpan.FromSeconds(1);
+    // Instance (not const) so tests can shrink the budget instead of paying ~4 real seconds to drive the
+    // self-registration fallback (U3) to full expiry. Production callers never touch these.
+    internal int PackageAssemblyCheckMaxAttempts { get; set; } = 5;
+    internal TimeSpan PackageAssemblyCheckDelay { get; set; } = TimeSpan.FromSeconds(1);
 
     public async Task<bool> SyncSolutionFromPackageAsync(
         IOrganizationServiceAsync2 service,
@@ -530,7 +532,9 @@ public class PluginService(IAnsiConsole console)
         var packageId = await WritePackageContentAsync(service, existingPackage, packageUniqueName, primary, nupkgContent, solutionName, cancellationToken).ConfigureAwait(false);
 
         // R6/KTD14: confirm the auto-created pluginassembly/plugintype records per DLL, bounded retry.
-        var postSnapshots = await LoadPackageSnapshotsWithRetryAsync(service, packageId, assemblies, solutionName, cancellationToken).ConfigureAwait(false);
+        // R4/R5/KTD2: when the wait expires, this self-registers whatever Dataverse still hasn't picked
+        // up rather than throwing — see the method for why.
+        var postSnapshots = await LoadPackageSnapshotsWithRetryAsync(service, packageId, packageUniqueName, primary, nupkgContent, assemblies, solutionName, cancellationToken).ConfigureAwait(false);
 
         var primaryPost = postSnapshots.FirstOrDefault(t => string.Equals(t.Metadata.Name, projectAssemblyName, StringComparison.OrdinalIgnoreCase));
         if (primaryPost.Assembly == null)
@@ -626,10 +630,18 @@ public class PluginService(IAnsiConsole console)
 
     // R6/KTD14: a handful of short, bounded 1-second polls — defense-in-depth for the untested case of
     // larger packages/slower environments, not a hedge against real observed latency (verified
-    // synchronous in practice). Throws naming the still-missing assemblies if the budget is exceeded.
+    // synchronous in practice). KTD2: measurement showed the retry is a check, not a latency
+    // accommodation, so an expiry means Dataverse isn't going to auto-register the assembly at all —
+    // wherever it happens, not only on the add-to-an-existing-package path. R5: instead of throwing,
+    // register whatever is still missing directly, then run KTD6's write-again-and-reload so the newly
+    // registered assembly reaches the caller with a real snapshot instead of the null pair that used to
+    // trip the caller's post-update guard.
     async Task<IReadOnlyList<(PluginAssemblyMetadata Metadata, Entity? Assembly, RegistrationSnapshot? Snapshot)>> LoadPackageSnapshotsWithRetryAsync(
         IOrganizationServiceAsync2 service,
         Guid packageId,
+        string packageUniqueName,
+        PluginAssemblyMetadata primary,
+        byte[] nupkgContent,
         List<PluginAssemblyMetadata> assemblies,
         string solutionName,
         CancellationToken cancellationToken)
@@ -640,17 +652,64 @@ public class PluginService(IAnsiConsole console)
             if (snapshots.All(s => s.Assembly != null))
                 return snapshots;
 
-            if (attempt == PackageAssemblyCheckMaxAttempts)
+            if (attempt < PackageAssemblyCheckMaxAttempts)
             {
-                var missing = string.Join(", ", snapshots.Where(s => s.Assembly == null).Select(s => s.Metadata.Name));
-                throw new InvalidOperationException(
-                    $"Timed out waiting for Dataverse to auto-create plugin assembly record(s) for: {missing}.");
+                await Task.Delay(PackageAssemblyCheckDelay, cancellationToken).ConfigureAwait(false);
+                continue;
             }
 
-            await Task.Delay(PackageAssemblyCheckDelay, cancellationToken).ConfigureAwait(false);
+            foreach (var missing in snapshots.Where(s => s.Assembly == null))
+                await RegisterPackageAssemblyDirectlyAsync(service, packageId, packageUniqueName, missing.Metadata, solutionName, cancellationToken).ConfigureAwait(false);
+
+            // KTD6: a freshly registered assembly owns no plugin types yet — only the content write
+            // populates them, and it has to run after the create. The order is load-bearing: two content
+            // writes with no create between them were observed to register nothing, both times.
+            await WritePackageContentAsync(service, new Entity("pluginpackage", packageId), packageUniqueName, primary, nupkgContent, solutionName, cancellationToken).ConfigureAwait(false);
+            return await _reader.LoadPackageSnapshotsAsync(service, packageId, assemblies, solutionName, cancellationToken).ConfigureAwait(false);
         }
 
         throw new InvalidOperationException("Unreachable.");
+    }
+
+    // KTD3/KTD4: smallest field set the create accepts, using the same direct request-plus-solution-name
+    // pattern GetOrRegisterAssemblyAsync already uses below — no wrapper helper exists in this file for a
+    // single call site to justify one. Sandbox isolation is the one field known required: a full-trust
+    // create is rejected outright ("'<assembly>' is not allowed to be registered in full-trust mode,
+    // assembly must be registered in isolation."). Version/culture/publickeytoken are left unset — same
+    // restraint the classic path takes on identity fields Dataverse derives from the binary it already
+    // holds, this time via the package content rather than a per-assembly content field. R6: no --force
+    // specifier gates this — an environment self-repairing what Dataverse should have done itself.
+    async Task RegisterPackageAssemblyDirectlyAsync(
+        IOrganizationServiceAsync2 service,
+        Guid packageId,
+        string packageUniqueName,
+        PluginAssemblyMetadata metadata,
+        string solutionName,
+        CancellationToken cancellationToken)
+    {
+        var entity = new Entity("pluginassembly")
+        {
+            ["name"]          = metadata.Name,
+            ["packageid"]     = new EntityReference("pluginpackage", packageId),
+            ["isolationmode"] = new OptionSetValue(2) // 2 = Sandbox (cloud only) — required, see above
+        };
+
+        try
+        {
+            await service.ExecuteAsync(
+                new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName }, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // R8: never phrase this as a timeout — the wait already ran and expired; this is a distinct,
+            // harder failure where the package content has already committed a DLL nothing points at.
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"Assembly '{metadata.Name}' could not be registered under package '{packageUniqueName}'. " +
+                "Package content now contains a DLL with no registration — remove it from the project or " +
+                $"register '{metadata.Name}' manually. {ex.Message}", ex);
+        }
+
+        console.Ok($"Assembly [bold]{Safe(metadata.Name)}[/] registered directly under package [bold]{Safe(packageUniqueName)}[/] — Dataverse didn't auto-register it.");
     }
 
     // Extracted from the create/update branches so the U6 orchestrator can call it at the specific

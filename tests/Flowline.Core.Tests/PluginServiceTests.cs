@@ -2297,6 +2297,255 @@ public class PluginServiceTests
         await _serviceMock.DidNotReceive().DeleteAsync("plugintype", Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 
+    // -- Self-registration fallback on confirm expiry (U3, R4-R8) --
+    //
+    // KTD2: Dataverse never auto-registers an assembly added to an existing package's content — measured
+    // live, not a latency issue — so the confirm-retry's expiry is the trigger for registering it
+    // directly instead of failing. PackageAssemblyCheckMaxAttempts/-Delay are dropped to avoid paying the
+    // real ~4s the production budget costs to reach expiry.
+
+    // Wires the mocks so "Extra" (the second, not-yet-registered assembly) is invisible to
+    // FindPackageAssemblyAsync's packageid+name query until the given CreateRequest predicate has fired
+    // once — the same shape Dataverse itself would produce: absent, then present only after a create.
+    Guid? _selfRegisteredExtraId;
+
+    void SetupPackageAssemblySelfRegisteredOnCreate(Guid packageId, string assemblyName)
+    {
+        _serviceMock.ExecuteAsync(
+                Arg.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly" && r.Target.GetAttributeValue<string>("name") == assemblyName),
+                Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                _selfRegisteredExtraId = Guid.NewGuid();
+                var response = new CreateResponse();
+                response.Results["id"] = _selfRegisteredExtraId.Value;
+                return Task.FromResult<OrganizationResponse>(response);
+            });
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly"
+                    && q.Criteria.Conditions.Any(c => c.AttributeName == "packageid")
+                    && HasCondition(q, "name", assemblyName)),
+                Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult(_selfRegisteredExtraId is { } id
+                ? new EntityCollection(new List<Entity> { new Entity("pluginassembly", id) { ["name"] = assemblyName, ["version"] = "1.0.0.0" } })
+                : new EntityCollection()));
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_MissingAfterConfirmExpiry_SelfRegistersAndNamesItInOutput()
+    {
+        // Covers R4, R5, R6, R7: the confirm-retry expires for "Extra" (never found), Flowline creates
+        // the record itself with no --force involved (forceDeleteOrphans defaults to false), and names
+        // the assembly in normal output.
+        var packageId = Guid.NewGuid();
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId));
+        SetupPluginPackage(ExistingPluginPackage(packageId));
+        SetupPackageAssemblyByName(assemblyId, "MyPlugin");
+        SetupRegisteredPackageAssemblies(packageId, "MyPlugin"); // "Extra" isn't registered yet -> pending add
+        SetupPackageAssemblySelfRegisteredOnCreate(packageId, "Extra");
+        _service.PackageAssemblyCheckMaxAttempts = 1;
+        _service.PackageAssemblyCheckDelay = TimeSpan.Zero;
+
+        List<PluginAssemblyMetadata> assemblies =
+        [
+            .. PackageAssemblies("MyPlugin"),
+            .. PackageAssemblies("Extra"),
+        ];
+
+        var result = await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, assemblies, NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
+
+        Assert.True(result);
+        // Contiguous phrase, not two separately-satisfiable substrings — the multi-assembly info line
+        // ("Package contains 2 plugin-bearing assemblies: MyPlugin, Extra") already contains "Extra" on
+        // its own, so this has to be the R7 registration line specifically.
+        _console.Output.Should().Contain("Assembly Extra registered directly");
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_SelfRegisteredAssembly_CarriesPackageAssociationAndSandboxIsolation()
+    {
+        // Covers R5: KTD3's minimum field set — name, packageid, sandbox isolation. Sandbox is the one
+        // field known required; a full-trust create is rejected outright.
+        var packageId = Guid.NewGuid();
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId));
+        SetupPluginPackage(ExistingPluginPackage(packageId));
+        SetupPackageAssemblyByName(assemblyId, "MyPlugin");
+        SetupRegisteredPackageAssemblies(packageId, "MyPlugin");
+        SetupPackageAssemblySelfRegisteredOnCreate(packageId, "Extra");
+        _service.PackageAssemblyCheckMaxAttempts = 1;
+        _service.PackageAssemblyCheckDelay = TimeSpan.Zero;
+
+        List<PluginAssemblyMetadata> assemblies =
+        [
+            .. PackageAssemblies("MyPlugin"),
+            .. PackageAssemblies("Extra"),
+        ];
+
+        await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, assemblies, NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
+
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r =>
+            r.Target.LogicalName == "pluginassembly" &&
+            r.Target.GetAttributeValue<string>("name") == "Extra" &&
+            r.Target.GetAttributeValue<EntityReference>("packageid")!.Id == packageId &&
+            r.Target.GetAttributeValue<EntityReference>("packageid")!.LogicalName == "pluginpackage" &&
+            r.Target.GetAttributeValue<OptionSetValue>("isolationmode")!.Value == 2 &&
+            r["SolutionUniqueName"].ToString() == "MySolution"
+        ), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_SelfRegistration_WritesContentAgainAndReloadsSnapshots()
+    {
+        // Covers R5/KTD6: the guard right after the confirm step (`if (assemblyEntity == null ||
+        // snapshot == null) throw`) is dead code today because the retry always threw first. Once the
+        // retry self-registers instead, that guard becomes reachable for the first time — this proves
+        // "Extra" reaches it with a non-null entity and snapshot rather than tripping it. The two content
+        // writes are the mechanism: the first is the normal update, the second is KTD6's re-write that
+        // populates the freshly created assembly's plugin types.
+        var packageId = Guid.NewGuid();
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId));
+        SetupPluginPackage(ExistingPluginPackage(packageId));
+        SetupPackageAssemblyByName(assemblyId, "MyPlugin");
+        SetupRegisteredPackageAssemblies(packageId, "MyPlugin");
+        SetupPackageAssemblySelfRegisteredOnCreate(packageId, "Extra");
+        _service.PackageAssemblyCheckMaxAttempts = 1;
+        _service.PackageAssemblyCheckDelay = TimeSpan.Zero;
+
+        List<PluginAssemblyMetadata> assemblies =
+        [
+            .. PackageAssemblies("MyPlugin"),
+            .. PackageAssemblies("Extra"),
+        ];
+
+        var result = await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, assemblies, NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
+
+        // No InvalidOperationException from the post-confirm guard means "Extra" arrived with a snapshot.
+        Assert.True(result);
+        await _serviceMock.Received(2).UpdateAsync(
+            Arg.Is<Entity>(e => e.LogicalName == "pluginpackage" && e.Id == packageId), Arg.Any<CancellationToken>());
+
+        // KTD6: the order is load-bearing — the create has to land before the second content write, not
+        // just happen somewhere in the run. Two writes with no create between them registered nothing.
+        // NSubstitute's InOrder checks the full realized sequence of every call matching either
+        // predicate, so the first (pre-confirm) content write is listed too, ahead of the create.
+        Received.InOrder(() =>
+        {
+            _serviceMock.UpdateAsync(Arg.Is<Entity>(e => e.LogicalName == "pluginpackage" && e.Id == packageId), Arg.Any<CancellationToken>());
+            _serviceMock.ExecuteAsync(Arg.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly" && r.Target.GetAttributeValue<string>("name") == "Extra"), Arg.Any<CancellationToken>());
+            _serviceMock.UpdateAsync(Arg.Is<Entity>(e => e.LogicalName == "pluginpackage" && e.Id == packageId), Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_AssemblyFoundOnFirstAttempt_IsNotSelfRegistered()
+    {
+        // Covers R4, R5: F3 — the platform doing its job means the fallback never fires and nothing is
+        // reported as registered by Flowline.
+        SetupAssembly(); // no existing pluginassembly -> no classic conflict; wires the CreateResponse mock
+        SetupPackageAssemblyFoundAfterCreate("MyPlugin", "1.0.0.0"); // found on the very first confirm attempt
+        SetupPluginPackage(); // brand-new package
+
+        var result = await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, PackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
+
+        Assert.True(result);
+        await _serviceMock.DidNotReceive().ExecuteAsync(
+            Arg.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), Arg.Any<CancellationToken>());
+        _console.Output.Should().NotContain("registered directly");
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_FoundOnSecondAttempt_WaitsInsteadOfSelfRegistering()
+    {
+        // Covers R4: the retry itself still gets a chance to succeed before the fallback fires. Every
+        // other self-registration test uses MaxAttempts=1, so none of them exercises the loop's
+        // continue-and-retry branch — this is the one case where the wait, not the fallback, is what
+        // resolves it. Brand-new package: an existing package's preSnapshots would issue its own
+        // FindPackageAssemblyAsync call and consume the first counted attempt before the confirm loop
+        // even starts.
+        SetupAssembly();
+        SetupPluginPackage();
+        _service.PackageAssemblyCheckMaxAttempts = 2;
+        _service.PackageAssemblyCheckDelay = TimeSpan.Zero;
+
+        var attempt = 0;
+        var registeredId = Guid.NewGuid();
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly"
+                    && q.Criteria.Conditions.Any(c => c.AttributeName == "packageid")
+                    && HasCondition(q, "name", "MyPlugin")),
+                Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                attempt++;
+                return Task.FromResult(attempt >= 2
+                    ? new EntityCollection(new List<Entity> { new Entity("pluginassembly", registeredId) { ["name"] = "MyPlugin", ["version"] = "1.0.0.0" } })
+                    : new EntityCollection());
+            });
+
+        var result = await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, PackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
+
+        Assert.True(result);
+        Assert.Equal(2, attempt); // proves the loop actually waited for the second attempt, not a fluke
+        await _serviceMock.DidNotReceive().ExecuteAsync(
+            Arg.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly"), Arg.Any<CancellationToken>());
+        _console.Output.Should().NotContain("registered directly");
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_SelfRegistrationRejected_FailsNamingAssemblyAndPackage_NeverAsATimeout()
+    {
+        // Covers R8: when the direct create is itself rejected, the failure names the assembly and the
+        // package, states the package content now holds an unregistered DLL, and never reads as a
+        // timeout — the wait already ran to completion; this is a distinct, harder failure.
+        var packageId = Guid.NewGuid();
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId));
+        SetupPluginPackage(ExistingPluginPackage(packageId));
+        SetupPackageAssemblyByName(assemblyId, "MyPlugin");
+        SetupRegisteredPackageAssemblies(packageId, "MyPlugin");
+        _service.PackageAssemblyCheckMaxAttempts = 1;
+        _service.PackageAssemblyCheckDelay = TimeSpan.Zero;
+
+        // "Extra" is never found under the package — without this override, SetupAssembly's broad
+        // pluginassembly match (registered above) would wrongly hand back "MyPlugin"'s entity for it too.
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly"
+                    && q.Criteria.Conditions.Any(c => c.AttributeName == "packageid")
+                    && HasCondition(q, "name", "Extra")),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection()));
+
+        _serviceMock.ExecuteAsync(
+                Arg.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly" && r.Target.GetAttributeValue<string>("name") == "Extra"),
+                Arg.Any<CancellationToken>())
+            .Returns<OrganizationResponse>(_ => throw new InvalidOperationException("not allowed to be registered in full-trust mode"));
+
+        List<PluginAssemblyMetadata> assemblies =
+        [
+            .. PackageAssemblies("MyPlugin"),
+            .. PackageAssemblies("Extra"),
+        ];
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
+            _service.SyncSolutionFromPackageAsync(_serviceMock, assemblies, NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution"));
+
+        Assert.Equal(ExitCode.ValidationFailed, ex.ExitCode);
+        Assert.Contains("Extra", ex.Message);
+        Assert.Contains("abc_MyPlugin", ex.Message); // packageUniqueName
+        Assert.Contains("no registration", ex.Message);
+        Assert.DoesNotContain("imed out", ex.Message); // never phrased as a timeout (R8)
+        Assert.DoesNotContain("Unreachable", ex.Message);
+    }
+
     [Fact]
     public async Task SyncSolutionFromPackageAsync_NoDeleteMode_NeverIssuesDeleteAsync()
     {
