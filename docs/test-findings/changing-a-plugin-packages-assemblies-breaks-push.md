@@ -1,12 +1,11 @@
 # Adding or dropping an assembly in an existing plugin package breaks the push
 
-- **Status**: **half fixed 2026-07-30, live-verified.** Dropping an assembly now works — push clears the
-  dropped assembly's blocking registrations before the content update, which is exactly the remedy
-  Microsoft documents. Adding an assembly to an existing package is still broken and still unfixed:
-  it is a platform limitation, and what `push` should do about it (refuse early, or delete and recreate
-  the package) is a product decision.
-- **Severity**: was high — both modes exited 1 *after* the package content write had committed. The
-  remaining half still does, and its message blames a timeout that will never resolve.
+- **Status**: **fixed 2026-07-31, both halves live-verified.** Dropping an assembly clears its blocking
+  registrations before the content update, which is the remedy Microsoft documents. Adding an assembly
+  now works too: `push` creates the `pluginassembly` record itself when the confirm step expires, then
+  writes the content again so the plugin types populate. The platform gap is unchanged — Flowline
+  compensates for it rather than fixing it.
+- **Severity**: was high — both modes exited 1 *after* the package content write had committed.
 - **Found**: 2026-07-29, live, DEV. Investigated and corrected 2026-07-30.
 
 ## The premise this finding originally got wrong
@@ -128,32 +127,42 @@ assembly untouched. Two regression tests: one that the dropped assembly's step a
 deleted while its `pluginassembly` record is not, one that an assembly still present in the `.nupkg` is
 never mistaken for dropped.
 
-## What still doesn't work: adding
+### Fixed 2026-07-31
 
-Deleting the package and letting the next push recreate it is the only route. Drop the project from the
-solution file so its assemblies become orphans, `push --force delete-orphans` (which now deletes the
-owning package — see `push-delete-orphans-fails-on-package-owned-assembly.md`), restore the solution
-file, push again.
+`push` compares the reflected assembly set against the assemblies registered to the package before the
+content write — the same query the drop fix runs, read the other way round. When the confirm step then
+expires with an assembly still unregistered, it creates the `pluginassembly` record itself, writes the
+package content a second time so the plugin types populate, and reloads the snapshots.
 
-### Suggested fix direction for the remaining half
+The order is load-bearing. Two content writes with no create between them registered nothing, both
+times: the write populates types for assemblies Dataverse already knows about, and it never learns of a
+new one from content alone.
 
-Detect it before the content write, by comparing the reflected assembly set against the assemblies
-already registered to the package — the same query the drop fix already runs, read the other way round.
+No `--force` gates it. The push has no other way to succeed, creating a record is additive, and refusing
+would only strand the user. It reports what it registered rather than acting silently.
 
-**Then register the assembly directly. This is proven to work** (probe, 2026-07-30, live against DEV):
+**The field set, arrived at empirically — this is the part worth not rediscovering.** Two rejections
+define it:
 
-1. `Create` a `pluginassembly` row with `packageid` pointing at the package. `isolationmode` **must** be
-   Sandbox — omitting it is the one thing Dataverse rejects:
-   *"'Cr07982.ProbeExtra' is not allowed to be registered in full-trust mode, assembly must be registered
-   in isolation."* With `isolationmode = 2` (plus `version`, `culture`, `publickeytoken`, `sourcetype`)
-   the create succeeds.
-2. The row lands inert — zero plugin types immediately after the create.
-3. The **next content update populates its plugin types**, and from there the ordinary push path works
-   unchanged: `flowline push` then exited 0 and registered the assembly's step.
-4. **It genuinely runs.** The probe plugin was changed to throw `InvalidPluginExecutionException
-   ("FLOWLINE-PROBE-EXECUTED")`, pushed, and a real contact update came back with exactly that message —
-   so the sandbox loads and executes the type out of the package content for a hand-registered assembly.
-   (The prior no-op version passing proved nothing: a silently skipped step looks the same.)
+| Fields set | Result |
+|---|---|
+| `name`, `packageid` | `'<assembly>' is not allowed to be registered in full-trust mode, assembly must be registered in isolation.` |
+| `+ isolationmode` (Sandbox, 2) | `Unable to load plug-in assembly.` |
+| `+ version`, `culture`, `publickeytoken` | Accepted. |
+
+A package-owned row carries no `content` of its own — the bytes live in the package — so Dataverse
+resolves *which* DLL in the package the row refers to from the assembly's full identity. A name alone
+does not identify it. This is the opposite of the classic path, which deliberately leaves `culture` and
+`publickeytoken` unset because there Dataverse reads identity out of the uploaded content field; here
+there is no such field to read. `sourcetype` proved unnecessary and is not set.
+
+Only the live gate could find this. The unit tests were green against the insufficient set, because a
+mock accepts whatever it is given.
+
+**It genuinely runs.** The probe plugin was changed to throw `InvalidPluginExecutionException
+("FLOWLINE-U3-EXECUTED")`, pushed, and a real contact update came back with exactly that message — so
+the sandbox loads and executes the type out of the package content for a Flowline-registered assembly.
+A no-op plugin passing would have proved nothing: a silently skipped step looks identical.
 
 That makes self-registration strictly better than the delete-and-recreate alternative, which destroys
 every assembly, plugin type and step registration in the package and churns every record GUID. The
