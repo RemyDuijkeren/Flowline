@@ -23,7 +23,7 @@ public sealed class EntityFamilyHandler(IAnsiConsole console) : IOrphanHandler
     const int EntityComponentType = 1;
     const int AttributeComponentType = 2;
 
-    public HandlerStatus Status => HandlerStatus.Active;
+    public HandlerStatus Status => HandlerStatus.Report;
 
     public async Task<HandlerDetectionResult> DetectAsync(
         DetectionContext context,

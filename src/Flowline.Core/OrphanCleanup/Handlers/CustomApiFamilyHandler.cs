@@ -13,7 +13,7 @@ namespace Flowline.Core.OrphanCleanup.Handlers;
 // docs/solutions/architecture-patterns/orphan-cleanup-two-phase-deploy-pipeline.md).
 public sealed class CustomApiFamilyHandler(IAnsiConsole console) : IOrphanHandler
 {
-    public HandlerStatus Status => HandlerStatus.Active;
+    public HandlerStatus Status => HandlerStatus.Guarded;
 
     // Children before parent — the request-parameter and response-property child records execute first
     // (SequenceHint 0), the customapi parent last (1).

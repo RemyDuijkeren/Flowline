@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`deploy --force delete-orphans`**: opt a deploy into deleting orphaned components that it otherwise leaves in the report (today: web resources, custom APIs and plugin assemblies). `--force all` covers it too.
+
+### Changed
+
+- **`deploy` no longer deletes orphans automatically.** By default it now reports orphaned components and leaves them in place — pass `--force delete-orphans` to delete the ones it can, and the rest are surfaced for manual removal. This avoids removing a component the cleanup can't yet identify with full confidence, including a false-positive that flagged a live, just-imported nupkg plugin package as an orphan (`docs/test-findings/deploy-false-positive-orphan-package-assembly-guid-not-portable.md`) — now surfaced, not auto-deleted. Orphans left in place read as `detected, not auto-removed` and are counted separately in the summary.
+
 ## [0.14.0] - 2026-07-31
 
 ### Added

@@ -26,7 +26,10 @@ public sealed record PostDeployContext(
     DeploySolutionInfo Solution,
     RunMode Mode,
     string PackagePath,
-    string DataverseSolutionSrcRoot);
+    string DataverseSolutionSrcRoot,
+    // `--force delete-orphans` consent — lets Guarded handlers delete on this deploy. Defaults false so
+    // Guarded stays report-only unless the user explicitly opted in. Ignored in report-only run modes.
+    bool DeleteOrphansConsent = false);
 
 public interface IPostDeployService
 {

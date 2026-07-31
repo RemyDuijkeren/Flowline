@@ -9,7 +9,7 @@ namespace Flowline.Core.OrphanCleanup.Handlers;
 // ConnectionReferenceHandler failure (or vice versa) can never affect this handler's detection.
 public sealed class BotHandler(IAnsiConsole console) : IOrphanHandler
 {
-    public HandlerStatus Status => HandlerStatus.Active;
+    public HandlerStatus Status => HandlerStatus.Report;
 
     public Task<HandlerDetectionResult> DetectAsync(
         DetectionContext context,

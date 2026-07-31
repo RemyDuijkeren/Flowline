@@ -10,7 +10,7 @@ namespace Flowline.Core.OrphanCleanup.Handlers;
 // detection.
 public sealed class ConnectionReferenceHandler(IAnsiConsole console) : IOrphanHandler
 {
-    public HandlerStatus Status => HandlerStatus.Active;
+    public HandlerStatus Status => HandlerStatus.Report;
 
     public Task<HandlerDetectionResult> DetectAsync(
         DetectionContext context,

@@ -22,7 +22,7 @@ public sealed class WorkflowHandler(IAnsiConsole console) : IOrphanHandler
     // OrphanCleanupService.TryDeactivateWorkflowAsync, which deactivates by setting statecode to 0).
     const int ActivatedStateCode = 1;
 
-    public HandlerStatus Status => HandlerStatus.Active;
+    public HandlerStatus Status => HandlerStatus.Report;
 
     public async Task<HandlerDetectionResult> DetectAsync(
         DetectionContext context,

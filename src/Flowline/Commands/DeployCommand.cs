@@ -59,7 +59,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
     // "drift" is this command's local force hazard (skip drift validation) — distinct from the
     // unrelated `flowline drift` CLI command, which reports drift for any environment read-only.
-    internal static readonly string[] ValidSpecifiers = ["drift", "first-import", "all"];
+    internal static readonly string[] ValidSpecifiers = ["drift", "first-import", "delete-orphans", "all"];
     protected override string[] ValidForceSpecifiers => ValidSpecifiers;
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
@@ -224,7 +224,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             await PacUtils.UnpackSolutionAsync(packagePath, tmpUnpackDir, _capture, cancellationToken);
 
             var solutionInfo = new DeploySolutionInfo(sln.UniqueName, targetEnv.EnvironmentUrl!, sln.IncludeManaged, existingSolutionInTarget);
-            var postDeployContext = new PostDeployContext(service, solutionInfo, runMode, packagePath, tmpUnpackDir);
+            var postDeployContext = new PostDeployContext(service, solutionInfo, runMode, packagePath, tmpUnpackDir, settings.HasForce("delete-orphans"));
 
             bool IsSkipped(IPostDeployService s) =>
                 settings.SkipSolutionCheck && s is SolutionCheckService ||

@@ -219,9 +219,9 @@ public class CustomApiFamilyHandlerTests : IDisposable
     }
 
     [Fact]
-    public void Status_IsActive()
+    public void Status_IsGuarded()
     {
-        Assert.Equal(HandlerStatus.Active, _handler.Status);
+        Assert.Equal(HandlerStatus.Guarded, _handler.Status);
     }
 
     // -- ClaimedIds: recognized-but-clean vs genuinely-unrecognized --

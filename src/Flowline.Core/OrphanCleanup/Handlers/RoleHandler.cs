@@ -14,7 +14,7 @@ public sealed class RoleHandler(IAnsiConsole console) : IOrphanHandler
 {
     const int RoleComponentType = 20;
 
-    public HandlerStatus Status => HandlerStatus.Active;
+    public HandlerStatus Status => HandlerStatus.Report;
 
     public Task<HandlerDetectionResult> DetectAsync(
         DetectionContext context,

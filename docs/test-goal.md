@@ -7,11 +7,23 @@ Use this as the `/goal` input for future test runs; update it with new learnings
 ## Environment
 
 - DEV: `https://automatevalue-dev.crm4.dynamics.com`
+- TEST: `https://automatevalue-test.crm4.dynamics.com` — **real-deploy target** (see below)
 - PROD: `https://automatevalue.crm4.dynamics.com`
-- Solution: `Cr07982` (unmanaged)
-- Test workspace: `E:\Code\TryOut\ClaudeFlowlineTest` or `C:\Code\FlowlineTryOutByClaude` depending on the machine — create/reset freely.
+- Solutions: `Cr07982` (unmanaged; **is the env default solution** — see the deploy blocker note) and
+  `FlowlineDeployTest` (unmanaged; a normal, deletable solution created 2026-07-31 for real
+  deploy-to-TEST testing).
+- **Test workspaces — nested `solutions/<Name>/` layout (2026-07-31), one repo per solution.** Both live
+  under `C:\Code\FlowlineTests\solutions\` now (moved from the old flat `C:\Code\FlowlineTryOutByClaude`
+  / `E:\Code\TryOut\ClaudeFlowlineTest` paths), each a self-contained Flowline project with its own
+  `.flowline` and its own `.git` (co-located separate repos, per `docs/folder-structure.md` §4):
+  - `C:\Code\FlowlineTests\solutions\Cr07982\` — the project-structure-flexibility fixture (below).
+  - `C:\Code\FlowlineTests\solutions\FlowlineDeployTest\` — clean scaffold: one `[Step("account")]`
+    plugin (`AccountPostCreatePlugin`, package `av_FlowlineDeployTest.Plugins`) + one web resource,
+    `Flowline.Attributes 0.14.0`. Use this for deploy tests that need a **deletable** solution.
+  - Flowline resolves each project by walking up to the nearest `.flowline`, so run commands from inside
+    the specific solution's subfolder. Create/reset freely.
 
-### Fixture state on `C:\Code\FlowlineTryOutByClaude` (built 2026-07-29, keep it)
+### Fixture state on `C:\Code\FlowlineTests\solutions\Cr07982\` (built 2026-07-29, keep it)
 
 The project-structure-flexibility fixture now exists on this machine — don't rebuild it, and don't
 assume the scaffolded default layout when reading command output:
@@ -37,12 +49,86 @@ DEV already has web resources, plugins, and custom APIs from prior test runs —
 disposable test fixtures. Freely add, modify, or delete any component in DEV to exercise
 push/sync/delete/orphan-cleanup scenarios. No need to preserve or restore DEV state between runs.
 
+## TEST environment — the real-deploy target (added 2026-07-31)
+
+`https://automatevalue-test.crm4.dynamics.com` (note **crm4**, matching DEV/PROD — the `.flowline`
+`TestUrl` is authoritative; an earlier note here said `crm.` in error) exists specifically so real
+(non-`--dry-run`) deployments can be exercised end-to-end. This is the one target where the
+dry-run-only rule below does **not** apply. `flowline status` connects to Test first try on the same
+`OperatingSystem` universal profile as Dev/Prod — no separate `pac auth create`.
+
+- **Real `deploy test` is allowed** — run it without `--dry-run` to actually import into TEST. Dry-run
+  stops short of `pac solution import` (and of post-import orphan cleanup), so update/cleanup were
+  never provable live before.
+- **Disposable-fixture status** — TEST components (assemblies, steps, Custom APIs, web resources) may
+  be freely added/modified/deleted, same as DEV. **But the solution itself cannot be pac-deleted**:
+  see the first-import blocker below.
+
+### Mechanics established live 2026-07-31 (read before running)
+
+- **A real TEST deploy is SLOW — always background it.** The `pac solution import` async op alone took
+  **~8 min** (7m53s) for `Cr07982`; with pack + checker + backup + publish + cleanup the whole command
+  runs **>10 min**. A 10-min foreground timeout **killed the CLI mid-publish** — the import had already
+  committed server-side but the post-import deferred-orphan delete never ran. Run `deploy test` with
+  `run_in_background` from the start and watch the printed log
+  (`…\Flowline\logs\<ts>-deploy.log`) for the `🚀`/error terminal line. Do **not** poll for "log idle"
+  — the publish/import async waits are silent for minutes, so an idle-detector fires a false "done".
+- **`deploy` has NO `--force delete-orphans` flag** (that's `push`). Orphan cleanup is automatic:
+  `ResolveRunMode` gives an unmanaged real deploy `RunMode.Normal`, which **deletes** orphans as part
+  of the deploy (pre-import for eligible, deferred ones retried post-import); `--no-delete` (or managed)
+  forces report-only. So "cleanup makes deploy succeed" is proven by a plain `deploy test`, not a flag.
+- **First-import non-interactive bypass = `--force first-import`** (`DeployCommand.cs:137-139`; valid
+  specifiers `drift`/`first-import`/`all`). Dry-run only prints an info note and never hits the prompt.
+
+### Results, 2026-07-31
+
+- **Dry-run pipeline ✓** — `deploy test --dry-run` ran DTAP (Dev predecessor), cached-artifact reuse,
+  solution checker (3 findings/0 Critical), a real backup labelled `flowline-dryrun-Cr07982-<ts>`,
+  orphan report with `(--dry-run preview)`, exit 0. `drift test` ✓ (read-only, exit 15 when drift
+  found).
+- **Update deploy ✓** — real `deploy test` imported 2.0.5 over 1.0.37; version advanced, real backup
+  `flowline-deploy-Cr07982-<ts>` (distinct label from dry-run), genuine orphan **step** deleted
+  pre-import. (The CLI was killed by the foreground-timeout mistake above after the import committed;
+  the update itself landed server-side.)
+- **Fresh first-import ✓ — live, on the `FlowlineDeployTest` fixture.** `deploy test --force first-import`
+  into a TEST that had never held the solution: the first-import confirmation was satisfied by `--force`
+  **without hanging** (log: `First deploy of 'FlowlineDeployTest' … Continue? (--force)`), checker 0
+  findings, backup `flowline-deploy-FlowlineDeployTest-<ts>`, `No solution components — skipping orphan
+  check` (correct — nothing there yet), **Deployed, exit 0**.
+  - Why a *new* fixture was needed: `Cr07982` **cannot** be deleted to reach a first-import state —
+    `pac solution delete` refuses it (`Attempting to delete a Common Data Services Default solution`)
+    because `Cr07982` carries friendlyname "AV Default Solution" and the system default-solution id
+    `00000001-0000-0000-0001-00000000009b` on **both** TEST and DEV. That is the fixture's identity, not
+    a TEST quirk or a Flowline bug — do not force a default-solution delete. So `FlowlineDeployTest` (a
+    normal, deletable solution) was created for this.
+- **Finding — orphan detection false-flags a live, in-solution plugin package assembly** (HIGH for the
+  deploy path; sync-fixable on push/DEV). Plugin assemblies are matched **GUID-only** against the
+  on-disk `Solution.xml`, but the assembly's `pluginassemblyid` is non-portable: measured live it
+  differs in every place — on-disk `31d733bd…`, DEV `93ca7a81…`, TEST `10a1719c…` — because `push`
+  re-registers and `import` re-mints it, while the stable assembly **name** sits unused in the
+  RootComponent `schemaName`. **Reproduced read-only on two envs** (`drift dev` *and* `drift test`, no
+  deploy), which rules out a TEST/killed-deploy artifact — so this is *not* just "TEST re-minted"; it's
+  GUID-non-portability generally. On DEV a `sync` refreshes the ids and clears it (documented stale-src
+  behavior); on a **deploy target it's unfixable** — you can't `sync` a target and import re-mints
+  anyway. **Reproduced clean on the normal `FlowlineDeployTest` solution** (drift test flags its own
+  just-imported `av_FlowlineDeployTest.Plugins` package as the *only* orphan: live `1ec43993…` vs
+  committed `14c3bcbb…`) — default-solution identity ruled out. **Real-deploy impact now observed** (not
+  inferred): a re-`deploy test` acts on the false orphan, defers the package delete to post-import, then
+  the delete **fails** (`cannot be deleted because it is referenced by 1 other components` — the
+  just-reimported plugin type) → **exit 18 PartialSuccess** with a false "remove manually via maker
+  portal" about the user's own live plugin. So no data loss (dependency protects it), but **every
+  re-deploy exits 18** — breaks CI/CD green. Fix direction: match plugin assemblies by name (as
+  WebResource/CustomApi/Bot already are). Full writeup:
+  `docs/test-findings/deploy-false-positive-orphan-package-assembly-guid-not-portable.md`.
+- Still pass `--dry-run`/`drift` **first** on any new TEST scenario to preview, then re-run for real.
+
 ## Safety constraints (hard limits)
 
 - PROD is off-limits for any real write. `deploy` supports `--dry-run` — **always** pass it for
-  every deploy test against DEV or PROD, no exceptions. Never run `deploy` without `--dry-run`. Also
-  still useful: `flowline drift <target>` (genuinely read-only, even lighter-weight) as an
-  additional preview alongside `--dry-run`.
+  every deploy test against PROD (and DEV, though `deploy dev` is rejected outright), no exceptions.
+  Never run a real `deploy` against PROD. **TEST is the exception** — real `deploy test` is
+  explicitly allowed, see the section above. Also still useful everywhere: `flowline drift <target>`
+  (genuinely read-only, even lighter-weight) as an additional preview alongside `--dry-run`.
 - Never force-push, never touch remote git state.
 - Never commit in the Flowline source repo (`Code/Flowline/`) without being
   explicitly asked, even mid-session.

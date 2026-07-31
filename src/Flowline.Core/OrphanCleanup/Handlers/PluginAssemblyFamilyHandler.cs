@@ -15,7 +15,7 @@ namespace Flowline.Core.OrphanCleanup.Handlers;
 // else warns and skips, falling back to each query's "unresolved" display/Prio path.
 public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanHandler
 {
-    public HandlerStatus Status => HandlerStatus.Active;
+    public HandlerStatus Status => HandlerStatus.Guarded;
 
     // Same entityLogicalName/idAttribute/nameAttribute triples as OrphanCleanupService.NameResolvableTypes'
     // 91/90/92/93 rows, used for live display-name resolution.

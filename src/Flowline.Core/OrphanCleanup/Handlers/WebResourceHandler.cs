@@ -13,7 +13,7 @@ public sealed class WebResourceHandler(IAnsiConsole console) : IOrphanHandler
 {
     const int WebResourceComponentType = 61;
 
-    public HandlerStatus Status => HandlerStatus.Active;
+    public HandlerStatus Status => HandlerStatus.Guarded;
 
     public Task<HandlerDetectionResult> DetectAsync(
         DetectionContext context,

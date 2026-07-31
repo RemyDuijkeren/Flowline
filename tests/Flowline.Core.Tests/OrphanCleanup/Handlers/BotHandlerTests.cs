@@ -223,9 +223,9 @@ public class BotHandlerTests : IDisposable
     }
 
     [Fact]
-    public void Status_IsActive()
+    public void Status_IsReport()
     {
-        Assert.Equal(HandlerStatus.Active, _handler.Status);
+        Assert.Equal(HandlerStatus.Report, _handler.Status);
     }
 
     // -- ClaimedIds: row found (even if suppressed) vs no matching row at all --

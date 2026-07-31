@@ -120,9 +120,9 @@ public class WorkflowHandlerTests
     }
 
     [Fact]
-    public void Status_IsActive()
+    public void Status_IsReport()
     {
-        Assert.Equal(HandlerStatus.Active, _handler.Status);
+        Assert.Equal(HandlerStatus.Report, _handler.Status);
     }
 
     [Fact]

@@ -105,7 +105,8 @@ public class OrphanCleanupServiceTests : IDisposable
         RunMode mode = RunMode.Normal,
         IReadOnlyList<string>? entityLogicalNames = null,
         string? dataverseSolutionSrcRoot = null,
-        IReadOnlyList<(int ComponentType, string SchemaName)>? namedComponents = null)
+        IReadOnlyList<(int ComponentType, string SchemaName)>? namedComponents = null,
+        bool deleteOrphansConsent = false)
     {
         string srcRoot;
         if (dataverseSolutionSrcRoot != null)
@@ -122,7 +123,7 @@ public class OrphanCleanupServiceTests : IDisposable
         WriteSolutionXmlFixture(srcRoot, localComponents, entityLogicalNames ?? [], namedComponents ?? []);
 
         var solution = new DeploySolutionInfo(solutionName, "https://example.crm.dynamics.com", IncludeManaged: false, ExistsInTarget: true);
-        return new(_serviceMock, solution, mode, "solution.zip", srcRoot);
+        return new(_serviceMock, solution, mode, "solution.zip", srcRoot, deleteOrphansConsent);
     }
 
     static void WriteSolutionXmlFixture(
@@ -194,7 +195,8 @@ public class OrphanCleanupServiceTests : IDisposable
         File.WriteAllText(Path.Combine(_webResourcesDir, "form.js"),
             "// flowline:depends av_ext/shared.js\nconsole.log('hi');");
 
-        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], dataverseSolutionSrcRoot: _dataverseSolutionSrcRoot), default);
+        // WebResource is Guarded — pass consent so this asserts the exemption decision (not the gate).
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], dataverseSolutionSrcRoot: _dataverseSolutionSrcRoot, deleteOrphansConsent: true), default);
 
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
@@ -223,7 +225,7 @@ public class OrphanCleanupServiceTests : IDisposable
         // No annotations referencing unref.js
         File.WriteAllText(Path.Combine(_webResourcesDir, "form.js"), "// no deps\ncode();");
 
-        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], dataverseSolutionSrcRoot: _dataverseSolutionSrcRoot), default);
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], dataverseSolutionSrcRoot: _dataverseSolutionSrcRoot, deleteOrphansConsent: true), default);
 
         await _serviceMock.Received(1).DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
@@ -236,7 +238,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupWebResourceNames((orphanId, "av_ext/lib.js"));
         File.WriteAllText(Path.Combine(_webResourcesDir, "form.js"), "code(); // no annotations");
 
-        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], dataverseSolutionSrcRoot: _dataverseSolutionSrcRoot), default);
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], dataverseSolutionSrcRoot: _dataverseSolutionSrcRoot, deleteOrphansConsent: true), default);
 
         await _serviceMock.Received(1).DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
@@ -252,7 +254,7 @@ public class OrphanCleanupServiceTests : IDisposable
         File.WriteAllText(Path.Combine(_webResourcesDir, "b.js"),
             "// flowline:depends av_ext/shared.js\ncode();");
 
-        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], dataverseSolutionSrcRoot: _dataverseSolutionSrcRoot), default);
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], dataverseSolutionSrcRoot: _dataverseSolutionSrcRoot, deleteOrphansConsent: true), default);
 
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
     }
@@ -280,7 +282,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("Cr07982", (orphanId, 91)); // 91 = PluginAssembly
         SetupCrossSolutionMembership(orphanId, "Default");
 
-        await _service.RunPreImportAsync(Ctx("Cr07982", [(Guid.NewGuid(), 0)]), default);
+        await AutoService(91, "pluginassembly").RunPreImportAsync(Ctx("Cr07982", [(Guid.NewGuid(), 0)]), default);
 
         await _serviceMock.Received(1).DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
@@ -809,7 +811,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("Cr07982", (orphanId, 91));
         SetupCrossSolutionMembership(orphanId, "Default", "SharedSolution");
 
-        await _service.RunPreImportAsync(Ctx("Cr07982", [(Guid.NewGuid(), 0)]), default);
+        await AutoService(91, "pluginassembly").RunPreImportAsync(Ctx("Cr07982", [(Guid.NewGuid(), 0)]), default);
 
         await _serviceMock.Received(1).ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
@@ -824,7 +826,7 @@ public class OrphanCleanupServiceTests : IDisposable
         // ran, it would try to query and the mock would return an empty collection, potentially still
         // deleting. The point is: no WebResources dir → no name query, normal orphan flow.
 
-        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)], deleteOrphansConsent: true), default);
 
         // With no name query setup, it falls through to delete the orphan
         await _serviceMock.Received(1).DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
@@ -1328,10 +1330,11 @@ public class OrphanCleanupServiceTests : IDisposable
                     new OrganizationServiceFault { ErrorCode = unchecked((int)0x80047002) }),
                 _ => Task.CompletedTask); // second call (post-import retry) succeeds
 
-        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+        var svc = AutoService(91, "pluginassembly");
+        await svc.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
         Assert.Contains("Deferred", _console.Output);
 
-        var failures = await _service.RunPostImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+        var failures = await svc.RunPostImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
 
         Assert.Equal(0, failures);
         await _serviceMock.Received(2).DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
@@ -1346,12 +1349,112 @@ public class OrphanCleanupServiceTests : IDisposable
         await _serviceMock.DidNotReceiveWithAnyArgs().DeleteAsync(default!, default, default);
     }
 
+    // Reusable actionable (Auto) handler for the orchestrator-machinery tests below — claims one
+    // componenttype and emits a PreImportEligible Delete, so the execute/report path runs independent of
+    // any production handler's status. Each real handler's own status is asserted in its per-handler test;
+    // these tests exercise the shared machinery (delete, cross-solution remove, deferral, report-only
+    // skip) and must not couple to a specific handler's status policy.
+    sealed class FakeAutoHandler(int componentType, string displayName, string entityName) : IOrphanHandler
+    {
+        public HandlerStatus Status => HandlerStatus.Auto;
+
+        public Task<HandlerDetectionResult> DetectAsync(
+            DetectionContext context,
+            IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates,
+            CancellationToken ct)
+        {
+            var claimed = candidates.Where(c => c.ComponentType == componentType).ToList();
+            var findings = claimed
+                .Select(c => new HandlerFinding(c.ObjectId, c.ComponentType, displayName, OrphanAction.Delete, OrphanPriority.Prio3, SequenceHint: 0, OrphanTiming.PreImportEligible, EntityName: entityName))
+                .ToList();
+            return Task.FromResult(new HandlerDetectionResult(findings, claimed.Select(c => c.ObjectId).ToHashSet()));
+        }
+    }
+
+    // Service wired with a single FakeAutoHandler for `componentType` — for machinery tests that need an
+    // actionable delete regardless of the production status mapping.
+    OrphanCleanupService AutoService(int componentType, string entityName, string displayName = "Thing") =>
+        new(_console, [new FakeAutoHandler(componentType, displayName, entityName)]);
+
+    // Configurable-status handler for the status-behavior tests below (Report/Guarded/Silent/Auto).
+    sealed class FakeStatusHandler(int componentType, string displayName, string entityName, HandlerStatus status) : IOrphanHandler
+    {
+        public HandlerStatus Status => status;
+
+        public Task<HandlerDetectionResult> DetectAsync(
+            DetectionContext context,
+            IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates,
+            CancellationToken ct)
+        {
+            var claimed = candidates.Where(c => c.ComponentType == componentType).ToList();
+            var findings = claimed
+                .Select(c => new HandlerFinding(c.ObjectId, c.ComponentType, displayName, OrphanAction.Delete, OrphanPriority.Prio3, SequenceHint: 0, OrphanTiming.PreImportEligible, EntityName: entityName))
+                .ToList();
+            return Task.FromResult(new HandlerDetectionResult(findings, claimed.Select(c => c.ObjectId).ToHashSet()));
+        }
+    }
+
+    OrphanCleanupService StatusService(HandlerStatus status, int componentType = 91, string entityName = "pluginassembly", string displayName = "PluginAssembly 'thing'") =>
+        new(_console, [new FakeStatusHandler(componentType, displayName, entityName, status)]);
+
+    [Fact]
+    public async Task RunPreImportAsync_ReportHandler_Normal_SurfacesButNeverDeletes()
+    {
+        // A Report handler surfaces its orphan in the report even in Normal mode, but is never executed.
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 91));
+
+        await StatusService(HandlerStatus.Report).RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Contains("PluginAssembly 'thing'", _console.Output);
+        Assert.Contains("detected, not auto-removed", _console.Output);
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_GuardedHandler_NoConsent_SurfacesButNeverDeletes()
+    {
+        // Guarded without --force delete-orphans behaves exactly like Report: surfaced, never executed.
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 91));
+
+        await StatusService(HandlerStatus.Guarded).RunPreImportAsync(
+            Ctx("MySolution", [(Guid.NewGuid(), 0)], deleteOrphansConsent: false), default);
+
+        Assert.Contains("detected, not auto-removed", _console.Output);
+        await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_GuardedHandler_WithConsent_Deletes()
+    {
+        // --force delete-orphans consent promotes a Guarded handler to actionable — it deletes like Auto.
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 91));
+
+        await StatusService(HandlerStatus.Guarded).RunPreImportAsync(
+            Ctx("MySolution", [(Guid.NewGuid(), 0)], deleteOrphansConsent: true), default);
+
+        await _serviceMock.Received(1).DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(HandlerStatus.Report, false, true)]
+    [InlineData(HandlerStatus.Report, true, true)]   // consent never promotes Report
+    [InlineData(HandlerStatus.Guarded, false, true)]
+    [InlineData(HandlerStatus.Guarded, true, false)] // consent promotes Guarded to actionable
+    [InlineData(HandlerStatus.Auto, false, false)]
+    [InlineData(HandlerStatus.Auto, true, false)]
+    [InlineData(HandlerStatus.Silent, false, false)] // Silent never reaches this; defensive default
+    public void IsReportOnly_MapsStatusAndConsent(HandlerStatus status, bool consent, bool expected) =>
+        Assert.Equal(expected, OrphanCleanupService.IsReportOnly(status, consent));
+
     // -- U11: declared PostImportOnly timing (R12) — synthetic handler, no real handler declares this
     // yet (KTD2 defers the motivating use case, Attribute-Auto) --
 
     sealed class FakePostImportOnlyHandler(int componentType, string displayName, string entityName) : IOrphanHandler
     {
-        public HandlerStatus Status => HandlerStatus.Active;
+        public HandlerStatus Status => HandlerStatus.Auto;
 
         public Task<HandlerDetectionResult> DetectAsync(
             DetectionContext context,
@@ -1418,7 +1521,7 @@ public class OrphanCleanupServiceTests : IDisposable
 
         IReadOnlyList<IOrphanHandler> handlers =
         [
-            new PluginAssemblyFamilyHandler(_console),
+            new FakeAutoHandler(91, "PluginAssembly 'thing'", "pluginassembly"),
             new FakePostImportOnlyHandler(9999, "Widget 'thing'", "widgettable"),
         ];
         var mixedService = new OrphanCleanupService(_console, handlers);
@@ -1546,7 +1649,7 @@ public class OrphanCleanupServiceTests : IDisposable
         var orphanId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (orphanId, 91)); // 91 = PluginAssembly
 
-        await _service.RunPreImportAsync(
+        await AutoService(91, "pluginassembly").RunPreImportAsync(
             Ctx("MySolution", [(Guid.NewGuid(), 0)], mode: RunMode.NoDelete), default);
 
         Assert.Contains("would delete", _console.Output);
@@ -1562,7 +1665,7 @@ public class OrphanCleanupServiceTests : IDisposable
         var orphanId = Guid.NewGuid();
         SetupSolutionComponents("MySolution", (orphanId, 91)); // 91 = PluginAssembly
 
-        await _service.RunPreImportAsync(
+        await AutoService(91, "pluginassembly").RunPreImportAsync(
             Ctx("MySolution", [(Guid.NewGuid(), 0)], mode: RunMode.DryRun), default);
 
         Assert.Contains("would delete", _console.Output);
@@ -1648,11 +1751,11 @@ public class OrphanCleanupServiceTests : IDisposable
         Assert.DoesNotContain("Prio2 — still running deleted logic", _console.Output);
     }
 
-    // Synthetic handler exercising the KTD3 Preview-marker rendering path directly — no handler ships
-    // Preview this round (KTD2), so no real handler can drive this scenario.
-    sealed class FakePreviewHandler(int componentType, string displayName) : IOrphanHandler
+    // Synthetic handler exercising the Silent-marker rendering path directly — no real handler ships
+    // Silent this round, so no real handler can drive this scenario.
+    sealed class FakeSilentHandler(int componentType, string displayName) : IOrphanHandler
     {
-        public HandlerStatus Status => HandlerStatus.Preview;
+        public HandlerStatus Status => HandlerStatus.Silent;
 
         public Task<HandlerDetectionResult> DetectAsync(
             DetectionContext context,
@@ -1668,19 +1771,18 @@ public class OrphanCleanupServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CompareAsync_PreviewHandlerFinding_PrintsPreviewMarker_ExcludedFromReport()
+    public async Task CompareAsync_SilentHandlerFinding_PrintsSilentMarker_ExcludedFromReport()
     {
-        // KTD3/R7: a Preview handler's findings print a "[Preview: HandlerName]" verbose marker and
-        // never enter the actionable report (Entries stays empty) — U9 already wires this branch in
-        // DispatchToHandlersAsync; this confirms the marker's exact rendering format from PrintReport's
-        // perspective (nothing else in the report references it).
+        // A Silent handler's findings print a "[Silent: HandlerName]" verbose marker and never enter the
+        // actionable report (Entries stays empty) — MergeResult drops them to verbose before an
+        // OrphanEntry is built; this confirms the marker's exact rendering format.
         var orphanId = Guid.NewGuid();
-        var previewOnlyService = new OrphanCleanupService(_console, [new FakePreviewHandler(9999, "Widget 'thing'")]);
+        var silentOnlyService = new OrphanCleanupService(_console, [new FakeSilentHandler(9999, "Widget 'thing'")]);
         SetupSolutionComponents("MySolution", (orphanId, 9999));
 
-        var result = await previewOnlyService.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+        var result = await silentOnlyService.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
 
-        Assert.Contains("[Preview: FakePreviewHandler] Widget 'thing'", _console.Output);
+        Assert.Contains("[Silent: FakeSilentHandler] Widget 'thing'", _console.Output);
         Assert.Empty(result.Entries);
     }
 

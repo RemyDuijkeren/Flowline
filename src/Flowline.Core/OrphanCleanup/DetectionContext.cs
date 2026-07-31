@@ -15,4 +15,8 @@ public sealed record DetectionContext(
     string SolutionName,
     string EnvironmentUrl,
     RunMode Mode,
-    IReadOnlyList<string> EntityLogicalNames);
+    IReadOnlyList<string> EntityLogicalNames,
+    // Explicit `--force delete-orphans` consent. Promotes Guarded handlers from report-only to
+    // actionable; irrelevant to Auto (always acts), Report/Silent (never act), and any report-only run
+    // mode (dry-run/managed). Defaults false so every existing call site stays report-safe.
+    bool DeleteOrphansConsent = false);

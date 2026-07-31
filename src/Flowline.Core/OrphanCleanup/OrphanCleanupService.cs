@@ -26,7 +26,11 @@ public sealed record OrphanEntry(
     string? EntityName = null,
     OrphanPriority Priority = OrphanPriority.None,
     int SequenceHint = 0,
-    OrphanTiming Timing = OrphanTiming.PreImportEligible);
+    OrphanTiming Timing = OrphanTiming.PreImportEligible,
+    // Set for findings from a Report handler (or a Guarded handler with no delete-orphans consent):
+    // surfaced in the report but never executed. ExecuteInOrderAsync skips these, so a report-only
+    // entry can never be deleted even if it carries Action.Delete.
+    bool ReportOnly = false);
 
 // Skipped distinguishes "ran and found nothing" (false) from "an empty-input guard short-circuited
 // before comparing" (true) — a read-only caller like DriftCommand must not conflate the two.
@@ -159,7 +163,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
     // fan-out. Delegates to the primitives overload below so the engine isn't coupled to deploy-only
     // fields like PackagePath.
     public Task<CompareResult> CompareAsync(PostDeployContext context, CancellationToken ct, string? noDeleteHint = "(--no-delete active)") =>
-        CompareAsync(context.DataverseSolutionSrcRoot, context.Service, context.Solution.Name, context.Solution.EnvironmentUrl, context.Mode, ct, noDeleteHint);
+        CompareAsync(context.DataverseSolutionSrcRoot, context.Service, context.Solution.Name, context.Solution.EnvironmentUrl, context.Mode, ct, noDeleteHint, context.DeleteOrphansConsent);
 
     // Convenience overload for read-only callers with no context of their own (e.g. DriftCommand) —
     // takes dataverseSolutionFolder (parent of src) and always runs RunMode.NoDelete.
@@ -191,7 +195,8 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         string environmentUrl,
         RunMode mode,
         CancellationToken ct,
-        string? noDeleteHint = "(--no-delete active)")
+        string? noDeleteHint = "(--no-delete active)",
+        bool deleteOrphansConsent = false)
     {
         var (sNew, entityLogicalNames, namedComponents) = ComponentClassifier.ParseLocalSource(dataverseSolutionSrcRoot);
 
@@ -265,7 +270,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
             return new CompareResult([]);
         }
 
-        var detectionContext = new DetectionContext(dataverseSolutionSrcRoot, service, solutionName, environmentUrl, mode, entityLogicalNames);
+        var detectionContext = new DetectionContext(dataverseSolutionSrcRoot, service, solutionName, environmentUrl, mode, entityLogicalNames, deleteOrphansConsent);
         var entries = await DispatchToHandlersAsync(detectionContext, namedComponents, orphans, ct).ConfigureAwait(false);
 
         PrintReport(entries, mode, solutionName, environmentUrl, noDeleteHint);
@@ -307,20 +312,20 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
             var handler = _orderedHandlers[index];
             claimedIds.UnionWith(result.ClaimedIds);
 
-            if (handler.Status == HandlerStatus.Active)
+            // Silent handlers never surface or act — verbose log only. Report/Guarded/Auto all surface in
+            // the report; whether each surfaced finding actually executes is decided per-entry below
+            // (OrphanEntry.ReportOnly), from the owning handler's status plus delete-orphans consent.
+            if (handler.Status == HandlerStatus.Silent)
             {
                 foreach (var finding in result.Findings)
-                {
-                    findings.Add(finding);
-                    familyIndexById[finding.ObjectId] = index;
-                }
+                    console.Verbose($"[Silent: {handler.GetType().Name}] {finding.DisplayName}");
+                return;
             }
-            else
+
+            foreach (var finding in result.Findings)
             {
-                // No handler ships Preview today — this branch exists so a future Preview handler is
-                // field-tested with zero action risk, without a code change here.
-                foreach (var finding in result.Findings)
-                    console.Verbose($"[Preview: {handler.GetType().Name}] {finding.DisplayName}");
+                findings.Add(finding);
+                familyIndexById[finding.ObjectId] = index;
             }
         }
 
@@ -388,10 +393,25 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
                         action = OrphanAction.RemoveFromSolution;
                 }
 
-                return new OrphanEntry(f.ObjectId, f.ComponentType, f.DisplayName, action, f.EntityName, f.Priority, f.SequenceHint, f.Timing);
+                // Report handlers, and Guarded handlers without delete-orphans consent, surface but never
+                // execute — ExecuteInOrderAsync skips ReportOnly entries. Auto (and consented Guarded)
+                // stay actionable. Silent findings never reach here (excluded in MergeResult).
+                var reportOnly = IsReportOnly(_orderedHandlers[familyIndexById[f.ObjectId]].Status, detectionContext.DeleteOrphansConsent);
+
+                return new OrphanEntry(f.ObjectId, f.ComponentType, f.DisplayName, action, f.EntityName, f.Priority, f.SequenceHint, f.Timing, reportOnly);
             })
             .ToList();
     }
+
+    // A surfaced finding is report-only (surfaced, never executed) when its handler is Report, or Guarded
+    // without explicit `--force delete-orphans` consent. Auto and consented-Guarded are actionable. Silent
+    // findings never reach this — MergeResult drops them to verbose before an OrphanEntry is built.
+    internal static bool IsReportOnly(HandlerStatus status, bool deleteOrphansConsent) => status switch
+    {
+        HandlerStatus.Report  => true,
+        HandlerStatus.Guarded => !deleteOrphansConsent,
+        _                     => false,
+    };
 
     public async Task<int> RunPostImportAsync(PostDeployContext context, CancellationToken ct)
     {
@@ -793,7 +813,9 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
     {
         var deferred = new List<OrphanEntry>();
 
-        foreach (var entry in entries.Where(e => e.Action != OrphanAction.Manual))
+        // ReportOnly entries (Report handlers, and Guarded handlers without --force delete-orphans) are
+        // surfaced in the report but never executed — this is the single chokepoint that guarantees it.
+        foreach (var entry in entries.Where(e => e.Action != OrphanAction.Manual && !e.ReportOnly))
             await TryExecuteEntryAsync(service, solutionName, entry, isPostImport, deferred, ct);
 
         return deferred.AsReadOnly();
@@ -897,6 +919,15 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
             console.MarkupLine($"  [bold {PriorityColor(priority)}]{PriorityLabel(priority)}:[/]");
             foreach (var entry in group)
             {
+                // ReportOnly entries surface but are never executed (Report handler, or Guarded without
+                // consent) — a dim "detected, not auto-removed" label, distinct from the real delete/would-
+                // delete wording, so nobody reads a report-only line as an action that ran or will run.
+                if (entry.ReportOnly)
+                {
+                    console.MarkupLine($"    [dim]{Markup.Escape(entry.DisplayName)} — detected, not auto-removed[/]");
+                    continue;
+                }
+
                 var label = mode.IsReportOnly() ? ReportOnlyLabel(entry.Action) : ActionLabel(entry.Action);
                 console.MarkupLine($"    [{ActionColor(entry.Action)}]{Markup.Escape(entry.DisplayName)} — {label}[/]");
             }
@@ -910,16 +941,19 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
             console.MarkupLine($"  Open {SolutionsListUrl(environmentUrl)}, find '{solutionName}', and remove these from there.");
         }
 
-        var deleteCount = entries.Count(e => e.Action == OrphanAction.Delete);
-        var removeCount = entries.Count(e => e.Action == OrphanAction.RemoveFromSolution);
+        // ReportOnly entries are excluded from the delete/remove counts — they are surfaced, not acted on.
+        var deleteCount     = entries.Count(e => e.Action == OrphanAction.Delete && !e.ReportOnly);
+        var removeCount     = entries.Count(e => e.Action == OrphanAction.RemoveFromSolution && !e.ReportOnly);
+        var reportOnlyCount = entries.Count(e => e.ReportOnly);
+        var reportOnlySuffix = reportOnlyCount > 0 ? $", {reportOnlyCount} report-only" : "";
 
         if (mode.IsReportOnly())
         {
             var hint = string.IsNullOrEmpty(noDeleteHint) ? "" : $" {noDeleteHint}";
-            console.Skip($"{deleteCount} would be deleted, {removeCount} would be removed from solution, {manual.Count} manual.{hint}");
+            console.Skip($"{deleteCount} would be deleted, {removeCount} would be removed from solution, {manual.Count} manual{reportOnlySuffix}.{hint}");
         }
         else
-            console.Skip($"{deleteCount} to delete, {removeCount} to remove from solution, {manual.Count} manual");
+            console.Skip($"{deleteCount} to delete, {removeCount} to remove from solution, {manual.Count} manual{reportOnlySuffix}");
     }
 
     static string SolutionsListUrl(string environmentUrl) =>
