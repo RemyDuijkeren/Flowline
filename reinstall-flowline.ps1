@@ -6,6 +6,12 @@
 # silently reinstalling that stale build instead of the fresh one below.
 Remove-Item ./artifacts/nupkg/*.nupkg, ./artifacts/nupkg/*.snupkg -ErrorAction SilentlyContinue
 
-dotnet pack --no-restore
+# Force a clean recompile before packing. Plain 'dotnet pack' reuses whatever the incremental
+# up-to-date check considers current, and that has shipped a STALE Release binary when the source
+# changed but MSBuild's timestamp check decided not to recompile -- you then install a tool that
+# silently lacks your latest edit. --no-incremental on an explicit Release build guarantees fresh
+# IL; 'pack --no-build' then just zips that output (pack defaults to Release, matching the build).
+dotnet build -c Release --no-restore --no-incremental
+dotnet pack -c Release --no-build
 dotnet tool uninstall -g Flowline 2>$null
 dotnet tool install -g Flowline --source ./artifacts/nupkg --source https://api.nuget.org/v3/index.json --prerelease
