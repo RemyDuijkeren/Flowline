@@ -1910,6 +1910,92 @@ public class PluginServiceTests
         Assert.Contains("would update content", _console.Output);
     }
 
+    // -- Dry-run assembly-set preview (U2, R2) --
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_DryRun_PendingAdd_NamesItInThePreview()
+    {
+        var packageId = Guid.NewGuid();
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId));
+        SetupPluginPackage(ExistingPluginPackage(packageId));
+        SetupPackageAssemblyByName(assemblyId, "MyPlugin");
+        SetupRegisteredPackageAssemblies(packageId, "MyPlugin"); // only MyPlugin registered -> Extra is pending
+
+        List<PluginAssemblyMetadata> assemblies =
+        [
+            .. PackageAssemblies("MyPlugin"),
+            .. PackageAssemblies("Extra"),
+        ];
+
+        var result = await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, assemblies, NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution", RunMode.DryRun);
+
+        Assert.True(result);
+        _console.Output.Should().Contain("Extra.dll").And.Contain("would add");
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_DryRun_PendingDrop_NamesItInThePreview()
+    {
+        var packageId = Guid.NewGuid();
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId));
+        SetupPluginPackage(ExistingPluginPackage(packageId));
+        SetupPackageAssemblyByName(assemblyId, "MyPlugin");
+        SetupDroppedPackageAssembly(packageId, "GoneAssembly");
+
+        var result = await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, PackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution", RunMode.DryRun);
+
+        Assert.True(result);
+        _console.Output.Should().Contain("GoneAssembly.dll").And.Contain("would drop from the package");
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_DryRun_PendingAddAndDrop_NoDeleteAndNoContentWrite()
+    {
+        var packageId = Guid.NewGuid();
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId));
+        SetupPluginPackage(ExistingPluginPackage(packageId));
+        SetupPackageAssemblyByName(assemblyId, "MyPlugin");
+        var dropped = SetupDroppedPackageAssembly(packageId, "GoneAssembly");
+
+        List<PluginAssemblyMetadata> assemblies =
+        [
+            .. PackageAssemblies("MyPlugin"),
+            .. PackageAssemblies("Extra"),
+        ];
+
+        var result = await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, assemblies, NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution", RunMode.DryRun);
+
+        Assert.True(result);
+        _console.Output.Should().Contain("Extra.dll").And.Contain("GoneAssembly.dll");
+        await _serviceMock.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<UpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_DryRun_NoAssemblySetChange_PreviewsWithoutAddOrDropNoise()
+    {
+        var packageId = Guid.NewGuid();
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId));
+        SetupPluginPackage(ExistingPluginPackage(packageId));
+        SetupPackageAssemblyByName(assemblyId, "MyPlugin");
+        SetupRegisteredPackageAssemblies(packageId, "MyPlugin"); // matches the one reflected assembly exactly
+
+        var result = await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, PackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution", RunMode.DryRun);
+
+        Assert.True(result);
+        _console.Output.Should().Contain("would update content").And.NotContain("would add").And.NotContain("would drop");
+    }
+
     // -- Dry-run summary counts (the package/assembly content write is an update, and a package push
     //    reports ONE total, not one summary per assembly it owns) --
 

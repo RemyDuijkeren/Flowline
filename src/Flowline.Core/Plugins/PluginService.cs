@@ -412,8 +412,8 @@ public class PluginService(IAnsiConsole console)
         // R1/R3 (KTD1): one comparison of reflected-versus-registered assemblies, run before the
         // snapshot-and-plan step below so a failure to determine the assembly-set change surfaces before
         // package content is written. Absorbs the former FindDroppedPackageAssembliesAsync — same query,
-        // now producing both the added and dropped sets instead of only the dropped one. The added set has
-        // no consumer yet here — a later unit previews it under --dry-run.
+        // now producing both the added and dropped sets instead of only the dropped one. R2: the added
+        // set is previewed under --dry-run below.
         //
         // Dataverse rejects a content update that drops an assembly whose plugin types still carry step
         // registrations — documented behavior: "If your update removes any plug-in assemblies, or types
@@ -421,7 +421,7 @@ public class PluginService(IAnsiConsole console)
         // remove any step registrations..." KD4 below already clears this for a class removed from a
         // surviving assembly; an assembly that disappears from the package has no plan of its own, so
         // nothing cleared its steps and the whole update failed.
-        var (_, droppedAssemblies) = await CompareAssemblySetAsync(service, existingPackage?.Id, assemblies, cancellationToken).ConfigureAwait(false);
+        var (addedAssemblies, droppedAssemblies) = await CompareAssemblySetAsync(service, existingPackage?.Id, assemblies, cancellationToken).ConfigureAwait(false);
 
         // Snapshot + plan per assembly against CURRENT (pre-update) state — this is the one plan shown
         // to the user via WritePlanTree, in both --dry-run and --verbose (real run), so the two never
@@ -465,8 +465,15 @@ public class PluginService(IAnsiConsole console)
 
         if (runMode == RunMode.DryRun)
         {
+            // R2: name each pending assembly-set change. Gated on an existing package — a brand-new
+            // package has every reflected assembly as "added" (CompareAssemblySetAsync's own rule), but
+            // that's just the create, already covered by the "would create" line below; there's nothing
+            // incremental to call out.
+            if (existingPackage != null)
+                foreach (var added in addedAssemblies)
+                    console.Info($"  [green]+[/] [bold]{Safe(added.Name)}.dll[/] — would add to the package");
             foreach (var dropped in droppedAssemblies)
-                console.Info($"  [red]-[/] [bold]{Safe(dropped.GetAttributeValue<string>("name"))}.dll[/] — would drop from package, clearing its registrations first");
+                console.Info($"  [red]-[/] [bold]{Safe(dropped.GetAttributeValue<string>("name"))}.dll[/] — would drop from the package, clearing its registrations first");
             console.Info(existingPackage == null
                 ? $"  [green]+[/] Package [bold]{packageUniqueName}[/] ({primary.Version}) — would create"
                 : $"  [yellow]~[/] Package [bold]{packageUniqueName}[/] — would update content");
