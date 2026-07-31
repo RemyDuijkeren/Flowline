@@ -1961,7 +1961,7 @@ public class PluginServiceTests
         SetupAssembly(PackageOwnedAssembly(assemblyId));
         SetupPluginPackage(ExistingPluginPackage(packageId));
         SetupPackageAssemblyByName(assemblyId, "MyPlugin");
-        var dropped = SetupDroppedPackageAssembly(packageId, "GoneAssembly");
+        SetupDroppedPackageAssembly(packageId, "GoneAssembly");
 
         List<PluginAssemblyMetadata> assemblies =
         [
@@ -2307,18 +2307,18 @@ public class PluginServiceTests
     // Wires the mocks so "Extra" (the second, not-yet-registered assembly) is invisible to
     // FindPackageAssemblyAsync's packageid+name query until the given CreateRequest predicate has fired
     // once — the same shape Dataverse itself would produce: absent, then present only after a create.
-    Guid? _selfRegisteredExtraId;
-
     void SetupPackageAssemblySelfRegisteredOnCreate(Guid packageId, string assemblyName)
     {
+        Guid? selfRegisteredId = null;
+
         _serviceMock.ExecuteAsync(
                 Arg.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly" && r.Target.GetAttributeValue<string>("name") == assemblyName),
                 Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-                _selfRegisteredExtraId = Guid.NewGuid();
+                selfRegisteredId = Guid.NewGuid();
                 var response = new CreateResponse();
-                response.Results["id"] = _selfRegisteredExtraId.Value;
+                response.Results["id"] = selfRegisteredId.Value;
                 return Task.FromResult<OrganizationResponse>(response);
             });
 
@@ -2327,7 +2327,7 @@ public class PluginServiceTests
                     && q.Criteria.Conditions.Any(c => c.AttributeName == "packageid")
                     && HasCondition(q, "name", assemblyName)),
                 Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromResult(_selfRegisteredExtraId is { } id
+            .Returns(_ => Task.FromResult(selfRegisteredId is { } id
                 ? new EntityCollection(new List<Entity> { new Entity("pluginassembly", id) { ["name"] = assemblyName, ["version"] = "1.0.0.0" } })
                 : new EntityCollection()));
     }
@@ -3095,9 +3095,6 @@ public class PluginServiceTests
     // the drop-path tests above cover what happens to a dropped assembly's children, these cover the
     // comparison itself.
 
-    private static PluginAssemblyMetadata ReflectedAssembly(string name) =>
-        new(name, $"{name}, Version=1.0.0.0", new byte[] { 9, 9, 9 }, "dll-hash-unused", "1.0.0.0", null, "neutral", []);
-
     private void SetupRegisteredPackageAssemblies(Guid packageId, params string[] names)
     {
         var entities = names.Select(n => new Entity("pluginassembly", Guid.NewGuid()) { ["name"] = n }).ToList();
@@ -3115,7 +3112,7 @@ public class PluginServiceTests
         SetupRegisteredPackageAssemblies(packageId, "MyPlugin");
 
         var (added, dropped) = await PluginService.CompareAssemblySetAsync(
-            _serviceMock, packageId, [ReflectedAssembly("MyPlugin"), ReflectedAssembly("Extra")], CancellationToken.None);
+            _serviceMock, packageId, [PackageAssemblies("MyPlugin")[0], PackageAssemblies("Extra")[0]], CancellationToken.None);
 
         added.Select(a => a.Name).Should().BeEquivalentTo(["Extra"]);
         dropped.Should().BeEmpty();
@@ -3128,7 +3125,7 @@ public class PluginServiceTests
         SetupRegisteredPackageAssemblies(packageId, "MyPlugin", "Gone");
 
         var (added, dropped) = await PluginService.CompareAssemblySetAsync(
-            _serviceMock, packageId, [ReflectedAssembly("MyPlugin")], CancellationToken.None);
+            _serviceMock, packageId, [PackageAssemblies("MyPlugin")[0]], CancellationToken.None);
 
         added.Should().BeEmpty();
         dropped.Select(e => e.GetAttributeValue<string>("name")).Should().BeEquivalentTo(["Gone"]);
@@ -3141,7 +3138,7 @@ public class PluginServiceTests
         SetupRegisteredPackageAssemblies(packageId, "MyPlugin");
 
         var (added, dropped) = await PluginService.CompareAssemblySetAsync(
-            _serviceMock, packageId, [ReflectedAssembly("MyPlugin")], CancellationToken.None);
+            _serviceMock, packageId, [PackageAssemblies("MyPlugin")[0]], CancellationToken.None);
 
         added.Should().BeEmpty();
         dropped.Should().BeEmpty();
@@ -3151,7 +3148,7 @@ public class PluginServiceTests
     public async Task CompareAssemblySetAsync_NoExistingPackage_EveryReflectedIsAddedWithoutQuerying()
     {
         var (added, dropped) = await PluginService.CompareAssemblySetAsync(
-            _serviceMock, null, [ReflectedAssembly("MyPlugin"), ReflectedAssembly("Extra")], CancellationToken.None);
+            _serviceMock, null, [PackageAssemblies("MyPlugin")[0], PackageAssemblies("Extra")[0]], CancellationToken.None);
 
         added.Select(a => a.Name).Should().BeEquivalentTo(["MyPlugin", "Extra"]);
         dropped.Should().BeEmpty();
