@@ -409,6 +409,20 @@ public class PluginService(IAnsiConsole console)
             return await SyncPackageStepsOnlyAsync(service, assemblies, existingPackage.Id, solutionName, runMode, forceDeleteOrphans, cancellationToken).ConfigureAwait(false);
         }
 
+        // R1/R3 (KTD1): one comparison of reflected-versus-registered assemblies, run before the
+        // snapshot-and-plan step below so a failure to determine the assembly-set change surfaces before
+        // package content is written. Absorbs the former FindDroppedPackageAssembliesAsync — same query,
+        // now producing both the added and dropped sets instead of only the dropped one. The added set has
+        // no consumer yet here — a later unit previews it under --dry-run.
+        //
+        // Dataverse rejects a content update that drops an assembly whose plugin types still carry step
+        // registrations — documented behavior: "If your update removes any plug-in assemblies, or types
+        // which are used in plug-in step registrations, the update will be rejected. You must manually
+        // remove any step registrations..." KD4 below already clears this for a class removed from a
+        // surviving assembly; an assembly that disappears from the package has no plan of its own, so
+        // nothing cleared its steps and the whole update failed.
+        var (_, droppedAssemblies) = await CompareAssemblySetAsync(service, existingPackage?.Id, assemblies, cancellationToken).ConfigureAwait(false);
+
         // Snapshot + plan per assembly against CURRENT (pre-update) state — this is the one plan shown
         // to the user via WritePlanTree, in both --dry-run and --verbose (real run), so the two never
         // diverge (the post-update re-plan further down is execution-only, since Dataverse's own package
@@ -448,16 +462,6 @@ public class PluginService(IAnsiConsole console)
         var counts = new PlanCounts();
         foreach (var (metadata, plan) in prePlans)
             counts += WritePlanTree(metadata, needsUpdate: false, plan, runMode, writeSummary: false);
-
-        // Dataverse rejects a content update that drops an assembly whose plugin types still carry step
-        // registrations — documented behavior: "If your update removes any plug-in assemblies, or types
-        // which are used in plug-in step registrations, the update will be rejected. You must manually
-        // remove any step registrations..." KD4 below already clears this for a class removed from a
-        // surviving assembly; an assembly that disappears from the package has no plan of its own, so
-        // nothing cleared its steps and the whole update failed.
-        var droppedAssemblies = existingPackage != null
-            ? await FindDroppedPackageAssembliesAsync(service, existingPackage.Id, assemblies.Select(a => a.Name), cancellationToken).ConfigureAwait(false)
-            : [];
 
         if (runMode == RunMode.DryRun)
         {
@@ -775,25 +779,46 @@ public class PluginService(IAnsiConsole console)
         return (apis, snapshot.RequestParams.Where(Bound).ToList(), snapshot.ResponseProps.Where(Bound).ToList());
     }
 
-    /// <summary>Assemblies registered under the package that the local .nupkg no longer contains.</summary>
-    static async Task<List<Entity>> FindDroppedPackageAssembliesAsync(
+    /// <summary>
+    /// The assemblies being added to and dropped from a package (KTD1), by comparing the assemblies
+    /// reflected from the local .nupkg against those already registered under the package.
+    /// </summary>
+    /// <remarks>
+    /// One query answers both questions: a reflected assembly with no <c>pluginassembly</c> record under
+    /// the package is being added; a registered record whose name the .nupkg no longer carries is being
+    /// dropped. <paramref name="existingPackageId"/> is <c>null</c> for a brand-new package, which has
+    /// nothing registered yet — every reflected assembly is added and nothing is dropped, without
+    /// querying for a package that doesn't exist.
+    /// </remarks>
+    internal static async Task<(List<PluginAssemblyMetadata> Added, List<Entity> Dropped)> CompareAssemblySetAsync(
         IOrganizationServiceAsync2 service,
-        Guid packageId,
-        IEnumerable<string> reflectedAssemblyNames,
+        Guid? existingPackageId,
+        IReadOnlyList<PluginAssemblyMetadata> reflectedAssemblies,
         CancellationToken cancellationToken)
     {
-        var reflected = new HashSet<string>(reflectedAssemblyNames.Where(n => !string.IsNullOrWhiteSpace(n)), StringComparer.OrdinalIgnoreCase);
+        if (existingPackageId == null)
+            return (reflectedAssemblies.ToList(), []);
 
         var query = new QueryExpression("pluginassembly")
         {
             ColumnSet = new ColumnSet("pluginassemblyid", "name"),
-            Criteria = { Conditions = { new ConditionExpression("packageid", ConditionOperator.Equal, packageId) } }
+            Criteria = { Conditions = { new ConditionExpression("packageid", ConditionOperator.Equal, existingPackageId.Value) } }
         };
         var registered = await service.RetrieveAllAsync(query, cancellationToken).ConfigureAwait(false);
 
-        return registered
-            .Where(a => a.GetAttributeValue<string>("name") is { } n && !string.IsNullOrWhiteSpace(n) && !reflected.Contains(n))
+        var registeredNames = new HashSet<string>(
+            registered.Select(a => a.GetAttributeValue<string>("name")).Where(n => !string.IsNullOrWhiteSpace(n))!,
+            StringComparer.OrdinalIgnoreCase);
+        var reflectedNames = new HashSet<string>(
+            reflectedAssemblies.Select(a => a.Name).Where(n => !string.IsNullOrWhiteSpace(n)),
+            StringComparer.OrdinalIgnoreCase);
+
+        var added = reflectedAssemblies.Where(a => !registeredNames.Contains(a.Name)).ToList();
+        var dropped = registered
+            .Where(a => a.GetAttributeValue<string>("name") is { } n && !string.IsNullOrWhiteSpace(n) && !reflectedNames.Contains(n))
             .ToList();
+
+        return (added, dropped);
     }
 
     /// <summary>An orphan's owning plugin package, and whether push may delete that package.</summary>

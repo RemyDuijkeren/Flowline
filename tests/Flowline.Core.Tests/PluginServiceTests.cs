@@ -2688,6 +2688,135 @@ public class PluginServiceTests
     }
 
     [Fact]
+    public async Task SyncSolutionFromPackageAsync_AssemblyDroppedFromPackage_ForeignCustomApiSurvives()
+    {
+        // R10: only Custom APIs naming one of the DROPPED assembly's own plugin types are cleared — one
+        // sharing the publisher prefix but implemented by another assembly's plugin type must survive.
+        var packageId = Guid.NewGuid();
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId));
+        SetupPluginPackage(ExistingPluginPackage(packageId));
+        SetupPackageAssemblyByName(assemblyId, "MyPlugin");
+
+        var droppedAssemblyId = Guid.NewGuid();
+        var droppedTypeId = Guid.NewGuid();
+        var droppedApiId = Guid.NewGuid();
+        var foreignApiId = Guid.NewGuid();
+
+        // Same dropped-assembly stub shape as SetupDroppedPackageAssembly — packageid-Equal, no name
+        // condition, so it doesn't also match FindPackageAssemblyAsync.
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly"
+                                          && q.Criteria.Conditions.Any(c => c.AttributeName == "packageid" && c.Operator == ConditionOperator.Equal)
+                                          && !q.Criteria.Conditions.Any(c => c.AttributeName == "name")),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(new List<Entity>
+            {
+                new Entity("pluginassembly", droppedAssemblyId) { ["name"] = "GoneAssembly" }
+            })));
+
+        SetupPluginTypesForAssembly(droppedAssemblyId, new Entity("plugintype", droppedTypeId) { ["typename"] = "GoneAssembly.Gone" });
+        SetupStepsForAssembly(droppedAssemblyId);
+        SetupCustomApis(
+            new Entity("customapi", droppedApiId) { ["uniquename"] = "abc_GoneApi", ["plugintypeid"] = new EntityReference("plugintype", droppedTypeId) },
+            new Entity("customapi", foreignApiId) { ["uniquename"] = "abc_ForeignApi", ["plugintypeid"] = new EntityReference("plugintype", Guid.NewGuid()) });
+
+        await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, PackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
+
+        await _serviceMock.Received(1).DeleteAsync("customapi", droppedApiId, Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().DeleteAsync("customapi", foreignApiId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_AssemblyDroppedFromPackage_NoDeleteMode_WarnsWithoutClearing()
+    {
+        // R12: under --no-delete, push must not clear a dropped assembly's registrations — it can only
+        // warn that Dataverse will reject the update while they remain.
+        var packageId = Guid.NewGuid();
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId));
+        SetupPluginPackage(ExistingPluginPackage(packageId));
+        SetupPackageAssemblyByName(assemblyId, "MyPlugin");
+        var dropped = SetupDroppedPackageAssembly(packageId, "GoneAssembly");
+
+        await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, PackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution", RunMode.NoDelete);
+
+        await _serviceMock.DidNotReceive().DeleteAsync("sdkmessageprocessingstep", dropped.StepId, Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().DeleteAsync("customapi", dropped.ApiId, Arg.Any<CancellationToken>());
+        _console.Output.Should().Contain("GoneAssembly.dll").And.Contain("will reject the update");
+    }
+
+    // -- CompareAssemblySetAsync (U1: shared assembly-set pre-flight, KTD1) --
+    // Exercised directly rather than only through the drop path, per the plan's verification note —
+    // the drop-path tests above cover what happens to a dropped assembly's children, these cover the
+    // comparison itself.
+
+    private static PluginAssemblyMetadata ReflectedAssembly(string name) =>
+        new(name, $"{name}, Version=1.0.0.0", new byte[] { 9, 9, 9 }, "dll-hash-unused", "1.0.0.0", null, "neutral", []);
+
+    private void SetupRegisteredPackageAssemblies(Guid packageId, params string[] names)
+    {
+        var entities = names.Select(n => new Entity("pluginassembly", Guid.NewGuid()) { ["name"] = n }).ToList();
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly"
+                    && q.Criteria.Conditions.Any(c => c.AttributeName == "packageid" && c.Operator == ConditionOperator.Equal && Equals(c.Values[0], packageId))),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(entities)));
+    }
+
+    [Fact]
+    public async Task CompareAssemblySetAsync_OneRegisteredTwoReflected_YieldsOneAddedZeroDropped()
+    {
+        var packageId = Guid.NewGuid();
+        SetupRegisteredPackageAssemblies(packageId, "MyPlugin");
+
+        var (added, dropped) = await PluginService.CompareAssemblySetAsync(
+            _serviceMock, packageId, [ReflectedAssembly("MyPlugin"), ReflectedAssembly("Extra")], CancellationToken.None);
+
+        added.Select(a => a.Name).Should().BeEquivalentTo(["Extra"]);
+        dropped.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CompareAssemblySetAsync_TwoRegisteredOneReflected_YieldsZeroAddedOneDropped()
+    {
+        var packageId = Guid.NewGuid();
+        SetupRegisteredPackageAssemblies(packageId, "MyPlugin", "Gone");
+
+        var (added, dropped) = await PluginService.CompareAssemblySetAsync(
+            _serviceMock, packageId, [ReflectedAssembly("MyPlugin")], CancellationToken.None);
+
+        added.Should().BeEmpty();
+        dropped.Select(e => e.GetAttributeValue<string>("name")).Should().BeEquivalentTo(["Gone"]);
+    }
+
+    [Fact]
+    public async Task CompareAssemblySetAsync_AssemblyInBoth_IsNeitherAddedNorDropped()
+    {
+        var packageId = Guid.NewGuid();
+        SetupRegisteredPackageAssemblies(packageId, "MyPlugin");
+
+        var (added, dropped) = await PluginService.CompareAssemblySetAsync(
+            _serviceMock, packageId, [ReflectedAssembly("MyPlugin")], CancellationToken.None);
+
+        added.Should().BeEmpty();
+        dropped.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CompareAssemblySetAsync_NoExistingPackage_EveryReflectedIsAddedWithoutQuerying()
+    {
+        var (added, dropped) = await PluginService.CompareAssemblySetAsync(
+            _serviceMock, null, [ReflectedAssembly("MyPlugin"), ReflectedAssembly("Extra")], CancellationToken.None);
+
+        added.Select(a => a.Name).Should().BeEquivalentTo(["MyPlugin", "Extra"]);
+        dropped.Should().BeEmpty();
+        await _serviceMock.DidNotReceive().RetrieveMultipleAsync(Arg.Any<QueryExpression>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task SyncSolutionFromPackageAsync_OrphanQueryExcludesEveryAssemblyInThePackage()
     {
         // KTD16 — the original reason this path skipped the orphan pass. A package's secondary assemblies
