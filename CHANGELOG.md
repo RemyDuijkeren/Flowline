@@ -7,11 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-07-31
+
 ### Added
 
-- **`[CustomApi]` rejects conflicting bindings**: setting both a table (the constructor argument) and `TableCollection` now fails `push` with an error naming both values. A Custom API binds to a single record or to a collection, never both — previously the table silently won and `TableCollection` was discarded, producing a registration that didn't match the source. Entity collection binding is also now documented in the README and wiki, where it had been missing.
+- **`[CustomApi]` rejects conflicting bindings**: setting both a table (the constructor argument) and `TableCollection` now fails `push` with an error naming both values. A Custom API binds to a single record or to a collection, never both — previously the table silently won and `TableCollection` was discarded, producing a registration that didn't match the source.
+
+### Changed
+
+- **Status messages now lead with a glyph**: every status line is prefixed by a one-character glyph that carries its meaning — `✓` success, `✗` error, `!` warning, `↷` skip (dim), `·` info, `🚀` finish line — and confirmation prompts lead with a cyan `?`. Output now reads by shape, not colour alone. Presentation only; no behavior or exit-code change.
 
 ### Fixed
+
+- **`provision` now waits for the environment create and copy to finish**: `pac admin create` and `pac admin copy` ran with `--async`, which returns the moment the operation is triggered — so `provision` looked for the new environment before it existed and failed with "created but not found", and printed "Provisioned!" while the copy was still running. Both now run synchronously: create blocks until the environment exists, and copy raises `--max-async-wait-time` to 8 hours (a copy can run well past pac's 60-minute default). Success now means the operation actually finished, so `clone`/`sync` are safe immediately after. `pac admin create` also passes the required `--type Sandbox`, and a pac failure reads as a clean one-line error instead of a raw stack trace.
+
+- **`provision --allow-overwrite` no longer aborts on a fresh environment's default solution**: the pre-copy guard that refuses to overwrite an unmanaged solution absent from prod flagged the Common Data Services Default Solution — unmanaged and present in every environment, but with an environment-specific unique name, so it never matched prod by name and every provision stopped with "would be permanently lost". The guard now matches a target solution against prod by solution id as well as unique name: the default solutions share a stable id across environments, while genuine user solutions still match by name and stay protected.
 
 - **Adding a plugin project to a `.nupkg` package left it unregistered**: a new plugin-bearing assembly added to an existing plugin package was never registered, and the push failed claiming a timeout. Dataverse registers every such assembly when a package is *created*, but never when one is added to an existing package's content — measured live: the record was still absent 18 minutes later, `pac plugin push` behaves identically, and re-writing the content changes nothing. `push` now creates the record itself when the confirm step expires, writes the package content again so the new assembly's plugin types populate, and reloads its snapshots. It reports what it registered and needs no `--force` — the push has no other way to succeed, and creating a record is additive. When the create is itself rejected, the failure names the assembly and its package and says the content holds an unregistered DLL, instead of blaming a timeout that already expired.
 
@@ -23,7 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`push --force delete-orphans` on a package-owned orphan assembly**: an orphan assembly that belongs to a plugin package used to have its plugin types, steps and images deleted and *then* fail on the assembly itself — Dataverse refuses a direct `pluginassembly` delete while `packageid` is set — leaving the run at exit 1 with a raw Dataverse fault and the environment half-cleaned. `push` now reads `packageid` with the orphan and deletes the owning package instead, which is the only thing that removes such an assembly. If the package also owns something the run can't account for (an assembly in another solution, or one this push just registered), nothing is deleted — not even the orphan's children — and the warning names the package and says it owns assemblies that aren't orphans. The orphan-*step* pass, which used to sweep up those same steps a few lines later on the "not in this push" rule, now honours that refusal. The `--force delete-orphans` hint and the `--dry-run` cascade lines also tell the truth for these orphans instead of promising a delete that would be refused.
 
-- **`Flowline.Attributes` XML documentation**: several code samples didn't compile and several references pointed at renamed or deleted members — `[CustomApi(EntityCollection = ...)]` (the property is `TableCollection`), `[Step(Configuration = ...)]` (it's `Config`), a `[PostImage]` sample reading the pre-image with the post-image's key, `FieldType` referencing a non-existent `InputAttribute.Entity`, `Handles.Message` resolving to the wrong symbol, and a `Message` remark citing a `Flowline.Core.Models.MessageName` type that no longer exists. Remarks that explained behavior by naming Flowline's internal classes were rewritten in terms of what a consumer actually observes. `GenerateDocumentationFile` is now enabled on the package so broken `<see cref>` fails the build instead of drifting silently.
+- **`push` no longer fails on a stale `.nupkg` after a version bump**: a rebuild following a version bump could leave the previous package alongside the new one in the build output, and `push` aborted with a "multiple `.nupkg` files" error even without `--no-build`. Stale packages are cleared before the build now, so the push proceeds without manual cleanup.
+
+- **`sync`/`deploy` web-resource drift no longer false-flags when the repo folder isn't named after the solution**: drift detection resolved the unpacked web-resource root from the repo folder name instead of the configured solution name, so any project whose folder differs from its Dataverse solution name — the common case — saw every web resource reported as drift in both directions on a byte-identical tree, and `deploy` then demanded `--force drift`. It now resolves the root from the solution name and drift is detected correctly.
+
+- **`flowline --version` reports the real package version**: prerelease builds printed the 4-part assembly file version (e.g. `0.13.1.0`) instead of the package version (e.g. `0.13.1-alpha.0.2`), so you couldn't tell which build was installed. It now prints the package version.
 
 ## [0.13.0] - 2026-07-24
 
@@ -365,7 +379,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions CI and release workflows.
 
 
-[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.12.0...HEAD
+[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.14.0...HEAD
+[0.14.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.13.0...0.14.0
+[0.13.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.12.0...0.13.0
 [0.12.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.11.0...0.12.0
 [0.11.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.10.0...0.11.0
 [0.10.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.9.0...0.10.0
