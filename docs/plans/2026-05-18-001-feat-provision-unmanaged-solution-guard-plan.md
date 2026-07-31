@@ -8,6 +8,15 @@ origin: docs/brainstorms/provision-unmanaged-solution-guard-requirements.md
 
 # feat: Add unmanaged solution guard to ProvisionCommand
 
+> **Correction (2026-07-31):** The "no system solution filtering needed" conclusion below (Summary,
+> Scope Boundaries, Key Technical Decisions, Open Questions) was **wrong**. It accounted for the
+> *Default Solution* (unique name `Default`, matches prod by name) but missed the **Common Data
+> Services Default Solution** — also unmanaged and present in every environment, but with an
+> environment-specific unique name and a stable solution Id. It never matches prod by name, so it was
+> flagged "absent from prod" on every provision (both reused and freshly-created envs — so R7 is also
+> wrong; a new Dataverse env is never solution-empty). Fix: `FindProblematicSolutions` now matches by
+> unique name **or** non-empty Id, so the same solution in prod is recognised despite the rename.
+
 ## Summary
 
 Extends `ProvisionCommand` with a pre-copy safety check: after `--allow-overwrite` passes, two parallel `PacUtils.GetSolutionsAsync` calls (prod + target) feed a pure comparison function that blocks the copy if any unmanaged target solution is managed or absent in prod. No system solution filtering needed — Microsoft solutions are always managed (excluded by `!IsManaged`), and the Default Solution is always unmanaged in both envs (passes the comparison cleanly).

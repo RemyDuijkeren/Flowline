@@ -97,8 +97,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
                                                .Add("--name").Add($"{targetDisplayName} (cloning)")
                                                .Add("--type").Add("Sandbox")
                                                .Add("--domain").Add($"{urlParts.Organization}-{suffix.ToLower()}")
-                                               .Add("--region").Add(urlParts.Region)
-                                               .Add("--async"))
+                                               .Add("--region").Add(urlParts.Region))
                         .WithValidation(CommandResultValidation.None)
                         .WithCapture(_capture)
                         .ExecuteAsync(cancellationToken)
@@ -160,8 +159,12 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
 
         var (cmdNameCopy, prefixArgsCopy, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
 
+        // Run synchronously (no --async): pac blocks and polls the copy to completion, so IsSuccess
+        // means the copy actually finished, not just that it was triggered. Typical copy is ~30 min but
+        // can run longer, so raise --max-async-wait-time well above pac's 60 min default. Ctrl-C only
+        // stops pac's poll — the copy is a server-side operation and keeps running regardless.
         var copyResult = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Copying prod to [bold]{targetDisplayName}[/]...",
+            $"Copying prod into [bold]{targetDisplayName}[/] (takes a while)...",
             _ => Cli.Wrap(cmdNameCopy)
                     .WithArguments(args => args
                                            .AddIfNotNull(prefixArgsCopy)
@@ -171,17 +174,19 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
                                            .Add("--source-env").Add(prodEnv.EnvironmentUrl!)
                                            .Add("--target-env").Add(targetEnv.EnvironmentUrl!)
                                            .Add("--type").Add(copyType)
-                                           .Add("--async"))
+                                           .Add("--max-async-wait-time").Add("480"))
                     .WithValidation(CommandResultValidation.None)
                     .WithCapture(_capture)
                     .ExecuteAsync(cancellationToken)
                     .Task);
 
+        // Non-success covers both a real copy failure and pac giving up after the wait cap while the
+        // copy is still running server-side — hence "didn't finish", not "failed", and point at status.
         if (!copyResult.IsSuccess)
-            throw new FlowlineException(ExitCode.GeneralError, "Copy from prod failed — check the environment and your PAC login. Use --verbose for more details.");
+            throw new FlowlineException(ExitCode.GeneralError, "Copy from prod didn't finish — check 'pac admin status' and the Power Platform admin center. Use --verbose for more details.");
 
         Config!.Save();
-        Console.Done($"Provisioned! See [link]{targetEnv.EnvironmentUrl}[/]. You can now run 'clone' or 'sync' ٩(◕‿◕｡)۶");
+        Console.Done($"Provisioned! Prod copied into [bold]{targetDisplayName}[/]. Run 'clone' or 'sync' to get going. ٩(◕‿◕｡)۶");
 
         return 0;
 
@@ -193,19 +198,37 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
         IEnumerable<SolutionInfo> targetSolutions,
         IEnumerable<SolutionInfo> prodSolutions)
     {
-        var prodByName = prodSolutions
+        var prod = prodSolutions.ToList();
+
+        var prodByName = prod
             .Where(s => s.SolutionUniqueName != null)
             .ToDictionary(s => s.SolutionUniqueName!, StringComparer.OrdinalIgnoreCase);
+
+        // Match by Id as well as unique name. The default solutions (Default Solution, Common Data
+        // Services Default Solution) are unmanaged and present in every environment, but carry an
+        // environment-specific unique name — only their solution Id is stable across environments.
+        // Without the Id match they never match prod by name and get flagged "absent from prod" on
+        // every provision. A shared non-empty Id only ever links the same solution (Dataverse preserves
+        // solutionid on import; user solutions get a fresh Id per env, so they still match by name).
+        var prodById = prod
+            .Where(s => s.Id != Guid.Empty)
+            .ToDictionary(s => s.Id);
 
         return targetSolutions
             .Where(s => !s.IsManaged && s.SolutionUniqueName != null)
             .Select(s =>
             {
-                if (!prodByName.TryGetValue(s.SolutionUniqueName!, out var prodMatch))
+                var candidates = new List<SolutionInfo>();
+                if (prodByName.TryGetValue(s.SolutionUniqueName!, out var byName))
+                    candidates.Add(byName);
+                if (s.Id != Guid.Empty && prodById.TryGetValue(s.Id, out var byId))
+                    candidates.Add(byId);
+
+                if (candidates.Count == 0)
                     return (Target: s, Reason: "absent from prod");
-                if (prodMatch.IsManaged)
-                    return (Target: s, Reason: "managed in prod");
-                return (Target: s, Reason: "");
+                if (candidates.Any(c => !c.IsManaged))
+                    return (Target: s, Reason: ""); // same solution exists unmanaged in prod → safe
+                return (Target: s, Reason: "managed in prod");
             })
             .Where(x => x.Reason != "")
             .ToList();

@@ -12,6 +12,12 @@ public class ProvisionCommandTests
     private static SolutionInfo Managed(string uniqueName) =>
         new() { SolutionUniqueName = uniqueName, IsManaged = true };
 
+    private static SolutionInfo Unmanaged(string uniqueName, Guid id) =>
+        new() { SolutionUniqueName = uniqueName, IsManaged = false, Id = id };
+
+    private static SolutionInfo Managed(string uniqueName, Guid id) =>
+        new() { SolutionUniqueName = uniqueName, IsManaged = true, Id = id };
+
     [Fact]
     public void FindProblematicSolutions_ReturnsEmpty_WhenTargetUnmanagedExistsAsUnmanagedInProd()
     {
@@ -71,6 +77,42 @@ public class ProvisionCommandTests
         var prod   = new[] { Unmanaged("MySolution") };
 
         ProvisionCommand.FindProblematicSolutions(target, prod).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void FindProblematicSolutions_ReturnsEmpty_WhenSameIdButDifferentUniqueName_ProdUnmanaged()
+    {
+        // The default solutions carry a stable Id but an environment-specific unique name.
+        var sharedId = Guid.NewGuid();
+        var target = new[] { Unmanaged("Cr2b44a", sharedId) };   // Common Data Services Default Solution in test
+        var prod   = new[] { Unmanaged("Cr07982", sharedId) };   // same solution, renamed in prod
+
+        ProvisionCommand.FindProblematicSolutions(target, prod).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void FindProblematicSolutions_ReturnsAbsentFromProd_WhenDifferentNameAndDifferentId()
+    {
+        var target = new[] { Unmanaged("WorkInProgress", Guid.NewGuid()) };
+        var prod   = new[] { Unmanaged("SomethingElse",  Guid.NewGuid()) };
+
+        var result = ProvisionCommand.FindProblematicSolutions(target, prod);
+
+        result.Should().HaveCount(1);
+        result[0].Reason.Should().Be("absent from prod");
+    }
+
+    [Fact]
+    public void FindProblematicSolutions_ReturnsManagedInProd_WhenSameIdButProdManaged()
+    {
+        var sharedId = Guid.NewGuid();
+        var target = new[] { Unmanaged("LocalName", sharedId) };
+        var prod   = new[] { Managed("ProdName",   sharedId) };
+
+        var result = ProvisionCommand.FindProblematicSolutions(target, prod);
+
+        result.Should().HaveCount(1);
+        result[0].Reason.Should().Be("managed in prod");
     }
 
     [Fact]
