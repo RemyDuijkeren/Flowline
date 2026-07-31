@@ -2554,6 +2554,85 @@ public class PluginServiceTests
     }
 
     [Fact]
+    public async Task SyncSolutionFromPackageAsync_OneOfTwoSelfRegistrationsRejected_StillWritesContentForTheOneThatLanded()
+    {
+        // A created record owns no plugin types until the content write runs. Aborting the loop on the
+        // first rejection would leave the assembly that DID register sitting in Dataverse with no types
+        // and no mention in the error — a worse state than the message admits.
+        var packageId = Guid.NewGuid();
+        var assemblyId = Guid.NewGuid();
+        SetupAssembly(PackageOwnedAssembly(assemblyId));
+        SetupPluginPackage(ExistingPluginPackage(packageId));
+        SetupPackageAssemblyByName(assemblyId, "MyPlugin");
+        SetupRegisteredPackageAssemblies(packageId, "MyPlugin");
+        _service.PackageAssemblyCheckMaxAttempts = 1;
+        _service.PackageAssemblyCheckDelay = TimeSpan.Zero;
+
+        foreach (var absent in new[] { "Good", "Bad" })
+            _serviceMock.RetrieveMultipleAsync(
+                    Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly"
+                        && q.Criteria.Conditions.Any(c => c.AttributeName == "packageid")
+                        && HasCondition(q, "name", absent)),
+                    Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(new EntityCollection()));
+
+        var goodCreated = false;
+        _serviceMock.ExecuteAsync(
+                Arg.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly" && r.Target.GetAttributeValue<string>("name") == "Good"),
+                Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                goodCreated = true;
+                var response = new CreateResponse();
+                response.Results["id"] = Guid.NewGuid();
+                return Task.FromResult<OrganizationResponse>(response);
+            });
+
+        _serviceMock.ExecuteAsync(
+                Arg.Is<CreateRequest>(r => r.Target.LogicalName == "pluginassembly" && r.Target.GetAttributeValue<string>("name") == "Bad"),
+                Arg.Any<CancellationToken>())
+            .Returns<OrganizationResponse>(_ => throw new InvalidOperationException("Unable to load plug-in assembly."));
+
+        List<PluginAssemblyMetadata> assemblies =
+        [
+            .. PackageAssemblies("MyPlugin"),
+            .. PackageAssemblies("Good"),
+            .. PackageAssemblies("Bad"),
+        ];
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
+            _service.SyncSolutionFromPackageAsync(_serviceMock, assemblies, NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution"));
+
+        Assert.True(goodCreated, "the assembly that could register should still have been attempted");
+        Assert.Contains("Bad", ex.Message);
+        Assert.DoesNotContain("imed out", ex.Message);
+        // The content write is what gives 'Good' its plugin types — it must run despite 'Bad' failing.
+        await _serviceMock.Received(2).UpdateAsync(
+            Arg.Is<Entity>(e => e.LogicalName == "pluginpackage"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_DryRun_BrandNewPackage_DoesNotListEveryAssemblyAsAnAdd()
+    {
+        // For a brand-new package every reflected assembly is "added", which the "would create" line
+        // already conveys — listing each one again is noise. Deleting the guard that suppresses this
+        // should fail here.
+        SetupAssembly();
+        SetupPluginPackage();
+
+        List<PluginAssemblyMetadata> assemblies =
+        [
+            .. PackageAssemblies("MyPlugin"),
+            .. PackageAssemblies("Extra"),
+        ];
+
+        await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, assemblies, NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution", RunMode.DryRun);
+
+        _console.Output.Should().Contain("would create").And.NotContain("would add to the package");
+    }
+
+    [Fact]
     public async Task SyncSolutionFromPackageAsync_NoDeleteMode_NeverIssuesDeleteAsync()
     {
         // Reliability/correctness regression: --no-delete was previously ignored on the package path
@@ -3095,12 +3174,17 @@ public class PluginServiceTests
     // the drop-path tests above cover what happens to a dropped assembly's children, these cover the
     // comparison itself.
 
+    // Excludes queries carrying a name condition for the same reason SetupDroppedPackageAssembly does:
+    // FindPackageAssemblyAsync filters by packageid *and* name, and NSubstitute lets the
+    // most-recently-configured match win. Without this, the broad stub shadows
+    // SetupPackageAssemblyByName and hands the primary assembly's snapshot a placeholder entity.
     private void SetupRegisteredPackageAssemblies(Guid packageId, params string[] names)
     {
         var entities = names.Select(n => new Entity("pluginassembly", Guid.NewGuid()) { ["name"] = n }).ToList();
         _serviceMock.RetrieveMultipleAsync(
                 Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly"
-                    && q.Criteria.Conditions.Any(c => c.AttributeName == "packageid" && c.Operator == ConditionOperator.Equal && Equals(c.Values[0], packageId))),
+                    && q.Criteria.Conditions.Any(c => c.AttributeName == "packageid" && c.Operator == ConditionOperator.Equal && Equals(c.Values[0], packageId))
+                    && !q.Criteria.Conditions.Any(c => c.AttributeName == "name")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(entities)));
     }

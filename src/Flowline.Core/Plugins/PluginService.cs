@@ -658,13 +658,36 @@ public class PluginService(IAnsiConsole console)
                 continue;
             }
 
+            // One failure must not strand the assemblies that already registered. A created record owns no
+            // plugin types until the content write below runs, so aborting the loop early would leave a
+            // half-registered assembly behind and name only the one that failed. Register every one we
+            // can, write the content regardless, then report all the failures together.
+            var registrationFailures = new List<string>();
+            var registered = 0;
             foreach (var missing in snapshots.Where(s => s.Assembly == null))
-                await RegisterPackageAssemblyDirectlyAsync(service, packageId, packageUniqueName, missing.Metadata, solutionName, cancellationToken).ConfigureAwait(false);
+            {
+                try
+                {
+                    await RegisterPackageAssemblyDirectlyAsync(service, packageId, packageUniqueName, missing.Metadata, solutionName, cancellationToken).ConfigureAwait(false);
+                    registered++;
+                }
+                catch (FlowlineException ex)
+                {
+                    registrationFailures.Add($"'{missing.Metadata.Name}' ({ex.Message})");
+                }
+            }
 
             // KTD6: a freshly registered assembly owns no plugin types yet — only the content write
             // populates them, and it has to run after the create. The order is load-bearing: two content
             // writes with no create between them were observed to register nothing, both times.
-            await WritePackageContentAsync(service, new Entity("pluginpackage", packageId), packageUniqueName, primary, nupkgContent, solutionName, cancellationToken).ConfigureAwait(false);
+            if (registered > 0)
+                await WritePackageContentAsync(service, new Entity("pluginpackage", packageId), packageUniqueName, primary, nupkgContent, solutionName, cancellationToken).ConfigureAwait(false);
+
+            if (registrationFailures.Count > 0)
+                throw new FlowlineException(ExitCode.ValidationFailed,
+                    $"Package '{packageUniqueName}' has assemblies Dataverse didn't register and Flowline couldn't either: {string.Join("; ", registrationFailures)}. " +
+                    "Package content now contains DLLs with no registration — remove them from the project or register them manually.");
+
             return await _reader.LoadPackageSnapshotsAsync(service, packageId, assemblies, solutionName, cancellationToken).ConfigureAwait(false);
         }
 
@@ -711,12 +734,9 @@ public class PluginService(IAnsiConsole console)
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // R8: never phrase this as a timeout — the wait already ran and expired; this is a distinct,
-            // harder failure where the package content has already committed a DLL nothing points at.
-            throw new FlowlineException(ExitCode.ValidationFailed,
-                $"Assembly '{metadata.Name}' could not be registered under package '{packageUniqueName}'. " +
-                "Package content now contains a DLL with no registration — remove it from the project or " +
-                $"register '{metadata.Name}' manually. {ex.Message}", ex);
+            // Carries only why Dataverse refused. The caller aggregates every failed assembly into the
+            // single user-facing message (R8), so composing that wording here too would double it.
+            throw new FlowlineException(ExitCode.ValidationFailed, ex.Message, ex);
         }
 
         console.Ok($"Assembly [bold]{Safe(metadata.Name)}[/] registered directly under package [bold]{Safe(packageUniqueName)}[/] — Dataverse didn't auto-register it.");
