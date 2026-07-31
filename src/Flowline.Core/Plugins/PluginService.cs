@@ -671,14 +671,21 @@ public class PluginService(IAnsiConsole console)
         throw new InvalidOperationException("Unreachable.");
     }
 
-    // KTD3/KTD4: smallest field set the create accepts, using the same direct request-plus-solution-name
-    // pattern GetOrRegisterAssemblyAsync already uses below — no wrapper helper exists in this file for a
-    // single call site to justify one. Sandbox isolation is the one field known required: a full-trust
-    // create is rejected outright ("'<assembly>' is not allowed to be registered in full-trust mode,
-    // assembly must be registered in isolation."). Version/culture/publickeytoken are left unset — same
-    // restraint the classic path takes on identity fields Dataverse derives from the binary it already
-    // holds, this time via the package content rather than a per-assembly content field. R6: no --force
-    // specifier gates this — an environment self-repairing what Dataverse should have done itself.
+    // KTD3/KTD4: smallest field set the create accepts, arrived at against a live environment by starting
+    // from the minimum and adding only what Dataverse rejected the create without. It uses the same direct
+    // request-plus-solution-name pattern GetOrRegisterAssemblyAsync already uses below — no wrapper helper
+    // exists in this file, and one call site doesn't justify inventing one.
+    //
+    // Two rejections shaped this set. Without isolationmode: "'<assembly>' is not allowed to be registered
+    // in full-trust mode, assembly must be registered in isolation." Then, with only name/package/isolation:
+    // "Unable to load plug-in assembly." A package-owned row carries no content of its own — the bytes live
+    // in the package — so Dataverse resolves which DLL the row refers to from the assembly's full identity.
+    // Name alone doesn't identify it; version, culture and public key token do. That is why this sets
+    // identity the classic path deliberately leaves unset: there, Dataverse reads identity out of the
+    // uploaded content field, and here there is no such field to read.
+    //
+    // R6: no --force specifier gates this — the push has no other way to succeed, and creating a record is
+    // additive.
     async Task RegisterPackageAssemblyDirectlyAsync(
         IOrganizationServiceAsync2 service,
         Guid packageId,
@@ -689,9 +696,12 @@ public class PluginService(IAnsiConsole console)
     {
         var entity = new Entity("pluginassembly")
         {
-            ["name"]          = metadata.Name,
-            ["packageid"]     = new EntityReference("pluginpackage", packageId),
-            ["isolationmode"] = new OptionSetValue(2) // 2 = Sandbox (cloud only) — required, see above
+            ["name"]           = metadata.Name,
+            ["packageid"]      = new EntityReference("pluginpackage", packageId),
+            ["isolationmode"]  = new OptionSetValue(2), // 2 = Sandbox (cloud only)
+            ["version"]        = metadata.Version,
+            ["culture"]        = metadata.Culture,
+            ["publickeytoken"] = metadata.PublicKeyToken
         };
 
         try

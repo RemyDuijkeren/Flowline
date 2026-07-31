@@ -2365,10 +2365,14 @@ public class PluginServiceTests
     }
 
     [Fact]
-    public async Task SyncSolutionFromPackageAsync_SelfRegisteredAssembly_CarriesPackageAssociationAndSandboxIsolation()
+    public async Task SyncSolutionFromPackageAsync_SelfRegisteredAssembly_CarriesPackageAssociationAndFullIdentity()
     {
-        // Covers R5: KTD3's minimum field set — name, packageid, sandbox isolation. Sandbox is the one
-        // field known required; a full-trust create is rejected outright.
+        // Covers R5: KTD3's field set, as settled against a live environment. Two rejections define it.
+        // Without isolationmode: "not allowed to be registered in full-trust mode". With only
+        // name/package/isolation: "Unable to load plug-in assembly" — a package-owned row has no content
+        // of its own, so Dataverse resolves which DLL in the package the row means from the assembly's
+        // full identity. Dropping version, culture or public key token from this assertion re-opens a
+        // failure that only shows up against a real environment.
         var packageId = Guid.NewGuid();
         var assemblyId = Guid.NewGuid();
         SetupAssembly(PackageOwnedAssembly(assemblyId));
@@ -2394,6 +2398,9 @@ public class PluginServiceTests
             r.Target.GetAttributeValue<EntityReference>("packageid")!.Id == packageId &&
             r.Target.GetAttributeValue<EntityReference>("packageid")!.LogicalName == "pluginpackage" &&
             r.Target.GetAttributeValue<OptionSetValue>("isolationmode")!.Value == 2 &&
+            r.Target.GetAttributeValue<string>("version") == "1.0.0.0" &&
+            r.Target.GetAttributeValue<string>("culture") == "neutral" &&
+            r.Target.Contains("publickeytoken") &&
             r["SolutionUniqueName"].ToString() == "MySolution"
         ), Arg.Any<CancellationToken>());
     }
