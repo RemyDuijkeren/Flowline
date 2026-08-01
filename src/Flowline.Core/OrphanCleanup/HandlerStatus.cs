@@ -7,7 +7,7 @@ namespace Flowline.Core.OrphanCleanup;
 public enum HandlerStatus
 {
     // Detect, print to the verbose log only. Never surfaces in the actionable report, never acts.
-    // For a brand-new handler whose detection may still false-positive — collect field data quietly
+    // For a brand-new handler whose detection may still give false-positive — collect field data quietly
     // before showing anything to the user.
     Silent,
 
@@ -18,7 +18,7 @@ public enum HandlerStatus
 
     // Detect, surface, and delete — but only with explicit consent (`--force delete-orphans`; a TTY
     // prompt is a later refinement). A maturity waystation: tested enough to act, not yet trusted for
-    // unattended auto-delete. Without consent it behaves exactly like Report (surfaces, never deletes),
+    // unattended auto-delete. Without the consent it behaves exactly like Report (surfaces, never deletes it),
     // so a non-interactive run never blocks and never deletes by surprise.
     Guarded,
 
