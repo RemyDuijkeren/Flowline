@@ -77,6 +77,8 @@ flowline deploy test
 flowline deploy prod
 ```
 
+Starting from scratch instead? `flowline init <name>` creates the publisher and solution in Dataverse, then scaffolds the repo the same way — see [Command Reference](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#init).
+
 For full setup, auth, and project workflow: **[Getting Started](https://github.com/RemyDuijkeren/Flowline/wiki/01-Getting-Started)**
 
 ---
@@ -150,7 +152,8 @@ export function onCreditLimitChange(executionContext) { ... }
 
 | Command                                                                                                       | What it does                                                                                 |
 |---------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|
-| [`clone <solution>`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#clone)               | Bootstrap an existing solution from Dataverse into the repo                                  |
+| [`clone <solution>`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#clone)               | Bootstrap an existing solution from Dataverse into the repo; run with no solution to pick one interactively, or create new |
+| [`init <name>`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#init)                     | Create a new publisher + empty solution in Dataverse (greenfield), then scaffold the repo    |
 | [`push [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#push)                 | Build and sync code assets to DEV; or push standalone with `--pluginFile` / `--webresources` |
 | [`sync [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#sync)                 | Pull the current solution state from DEV into source control                                 |
 | [`deploy <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#deploy)               | Pack from the repo and import into `test`, `uat`, `prod`, or a URL                           |

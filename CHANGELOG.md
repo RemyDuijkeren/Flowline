@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`flowline init <name>`**: creates a new publisher (or reuses one) and an empty unmanaged solution in a DEV environment via the Dataverse SDK, then runs the same scaffold `clone` does. `--dev <url>` targets the environment (omit for a tenant-wide interactive picker); `--publisher-prefix <prefix>` reuses an existing publisher or creates one — required, prompted interactively, or the command fails naming the flag with no TTY; `--display-name`/`--publisher-name` override the display and publisher names Flowline otherwise derives from `<name>`/`<prefix>`. Create only runs against Sandbox/Developer environments — Production is refused — and Flowline never creates a `pac auth` profile, only switches to an existing one (erroring naming `pac auth create` when none matches).
+- **`flowline clone` is now interactive when run with no solution**: it prompts a tenant-wide environment picker (framed as choosing your DEV/source-of-truth environment), then lists that environment's unmanaged solutions to pick from — managed ones are hidden, with a count — plus a "create new" choice that routes into the same create path as `init`.
 - **`deploy --force delete-orphans`**: opt a deploy into deleting orphaned components that it otherwise leaves in the report (today: web resources, custom APIs and plugin assemblies). `--force all` covers it too.
 
 ### Changed

@@ -216,6 +216,47 @@ re-run against an already-cloned/pushed/synced folder) where relevant.
   rejection cases: **not re-verified live this run** — covered by existing unit tests
   (`CloneCommandTests.cs`) only this round.
 
+### `init` (and interactive `clone`)
+
+Greenfield solution/publisher creation, added by the `init`/interactive-`clone` plan
+(`docs/plans/2026-08-01-001-feat-clone-init-greenfield-solution-plan.md`). Not yet exercised live —
+run this against DEV before trusting it.
+
+- **Greenfield create**: `flowline init <name> --dev <dev-url> --publisher-prefix <prefix>` against
+  DEV — confirm a new publisher (when the prefix doesn't already exist) and an empty **unmanaged**
+  solution land in Dataverse, then the repo scaffolds and builds identically to a `clone`.
+- Reusing an existing `--publisher-prefix` (already present in DEV) instead of creating a new
+  publisher.
+- **Name/prefix validation rejections**, before any Dataverse write: `--publisher-prefix mscrmx`
+  (starts with `mscrm`), a 1-char prefix (too short), a 9-char prefix (too long), a
+  non-alphanumeric or non-letter-start prefix; a `<name>` that's a C# keyword; a `<name>` with
+  invalid characters (outside `[A-Za-z0-9_]`) or a digit-start; a `<name>` over 65 characters; a
+  `--display-name` over 256 characters.
+- **DEV-only refusal**: `flowline init` targeting a Production-type environment — via `--dev` or
+  the interactive picker — must refuse before any create call; a Sandbox/Developer environment
+  proceeds.
+- **No-TTY errors** (CI or piped stdin): missing `--dev` errors naming the flag; missing
+  `--publisher-prefix` errors naming the flag (never derives one from `<name>`); a `--dev`
+  environment with no matching PAC auth profile errors naming `pac auth create`, without blocking
+  on a login prompt.
+- **Duplicate-name refusal**: `<name>` matching a solution that already exists in the target
+  environment is refused with a naming-conflict error before any write.
+- **Interactive `clone` pick-or-create**: `flowline clone` with no solution and no environment
+  configured — tenant-wide environment picker, then a list of the environment's unmanaged
+  solutions (managed ones hidden with a count) plus a "create new" choice; picking "create new"
+  routes into the same create path as `init`. Picking an existing solution confirms the `.flowline`
+  role to save it under, defaulting to DEV.
+- **`✓ DEV set to <env>` confirmation**: after a successful create + scaffold + build (via `init` or
+  interactive `clone`), confirm the chosen environment is written to the `DEV` role in `.flowline`
+  and the confirmation line names the environment.
+- **Post-create failure reporting**: if scaffold or build fails after the publisher/solution already
+  exist in Dataverse, confirm Flowline reports the created publisher/solution identifiers for manual
+  cleanup rather than discarding them silently.
+- **Privilege fault**: a user lacking create privileges on publisher/solution gets a clear error
+  naming the missing permission, not a raw SDK exception — harder to trigger live without a
+  locked-down test user; check the code path directly if a live repro isn't practical (same caveat
+  as the `clone` C#-keyword case above).
+
 ### `push` — test **both modes explicitly**, they have different validation surfaces
 
 **Project mode** (inside a cloned Flowline project folder):
