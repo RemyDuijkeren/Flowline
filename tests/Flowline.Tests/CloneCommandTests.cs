@@ -1,8 +1,14 @@
 using FluentAssertions;
 using Flowline.Commands;
+using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Models;
 using Flowline.Core.Services;
+using Flowline.Diagnostics;
 using Flowline.Services;
+using Microsoft.Extensions.Logging.Abstractions;
+using Spectre.Console.Cli;
+using Spectre.Console.Testing;
 
 namespace Flowline.Tests;
 
@@ -817,5 +823,199 @@ public class CloneCommandTests
         content.Should().Contain("Dataverse/CrO7982.cdsproj")
                .And.Contain("Dataverse/src/")
                .And.NotContain("Solution/src/");
+    }
+
+    // ── Interactive pick-or-create (U6 / R2, R11, R17, R13) ─────────────────
+    // No solution named, no role URL configured, interactive — offers pick-existing-or-create-new
+    // instead of FindUnmanagedSourceAsync's flag-driven error. `ShouldPickOrCreate` is the pure gate
+    // that decides whether that branch runs at all; `PickOrCreateAsync` is the branch's own logic,
+    // exercised directly (like SolutionCreateFlowTests exercises `RunAsync`/`PickPublisherPrefixAsync`
+    // without going through the full command pipeline InitCommand sits on top of).
+
+    const string DevUrl = "https://contoso-dev.crm4.dynamics.com";
+
+    static EnvironmentInfo MakeDevEnv() => new() { DisplayName = "Contoso Dev", EnvironmentUrl = DevUrl, Type = "Sandbox" };
+
+    static (CloneCommand Command, TestConsole Console) MakeCloneCommand()
+    {
+        var console = new TestConsole();
+        var connector = new DataverseConnector(console, new HttpClient());
+        var profileResolutionService = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions())
+        {
+            FindBestProfileOverride = _ => new ProfileFound(new PacProfile { Name = "Contoso", Resource = DevUrl }),
+            IsProfileActiveOverride = _ => true
+        };
+        var capture = new SubprocessCapture(console);
+        var createSolutionService = new CreateSolutionService(console, capture);
+        var createEnvironmentResolver = new CreateEnvironmentResolver(console, profileResolutionService, capture)
+        {
+            GetEnvironmentInfoByUrlOverride = (_, _, _, _) => Task.FromResult<EnvironmentInfo?>(MakeDevEnv())
+        };
+        var solutionCreateFlow = new SolutionCreateFlow(console, profileResolutionService, connector, new SolutionCreateService(), createSolutionService);
+
+        var command = new CloneCommand(console, new FlowlineRuntimeOptions(), profileResolutionService, NullLoggerFactory.Instance, capture,
+            createSolutionService, createEnvironmentResolver, solutionCreateFlow);
+
+        return (command, console);
+    }
+
+    static SolutionInfo MakeSolution(string uniqueName, bool isManaged = false) =>
+        new() { SolutionUniqueName = uniqueName, FriendlyName = uniqueName, PublisherPrefix = "acme", IsManaged = isManaged };
+
+    // Settings.IncludeManaged (a Spectre FlagValue<bool>) is only non-null once bound by Spectre's own
+    // parser (see ManagedFlagBindingTests) — `new CloneCommand.Settings()` leaves it literally null,
+    // which NREs the moment PickOrCreateAsync reads `.IsSet`. Parsing through a probe command, then
+    // setting DevUrl directly, gives PickOrCreateAsync's tests a Settings shaped like a real run's.
+    sealed class SettingsProbeCommand : Command<CloneCommand.Settings>
+    {
+        public static CloneCommand.Settings? Captured;
+
+        protected override int Execute(CommandContext context, CloneCommand.Settings settings, CancellationToken cancellationToken)
+        {
+            Captured = settings;
+            return 0;
+        }
+    }
+
+    static CloneCommand.Settings MakeSettings(string? devUrl = null)
+    {
+        var app = new CommandApp<SettingsProbeCommand>();
+        app.Configure(c => c.PropagateExceptions());
+        app.Run(["Placeholder"]);
+
+        var settings = SettingsProbeCommand.Captured!;
+        settings.DevUrl = devUrl;
+        return settings;
+    }
+
+    // ── ShouldPickOrCreate: the pure gate ────────────────────────────────────
+
+    [Fact]
+    public void ShouldPickOrCreate_NoSolutionNoRoleConfiguredInteractive_ReturnsTrue()
+    {
+        CloneCommand.ShouldPickOrCreate(new CloneCommand.Settings(), new ProjectConfig(), isInteractive: true).Should().BeTrue();
+    }
+
+    [Fact]
+    public void ShouldPickOrCreate_SolutionNamed_ReturnsFalse()
+    {
+        // R13/guardrail: a named solution always keeps today's flag-driven path, interactive or not.
+        var settings = new CloneCommand.Settings { Solution = "CrO7982" };
+
+        CloneCommand.ShouldPickOrCreate(settings, new ProjectConfig(), isInteractive: true).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(nameof(ProjectConfig.ProdUrl))]
+    [InlineData(nameof(ProjectConfig.UatUrl))]
+    [InlineData(nameof(ProjectConfig.TestUrl))]
+    [InlineData(nameof(ProjectConfig.DevUrl))]
+    public void ShouldPickOrCreate_AnyRoleUrlConfigured_ReturnsFalse(string roleProperty)
+    {
+        // Guardrail: "role URLs configured" (this run's flags or a prior .flowline) must behave
+        // exactly as today, regardless of which role is set.
+        var config = new ProjectConfig();
+        typeof(ProjectConfig).GetProperty(roleProperty)!.SetValue(config, DevUrl);
+
+        CloneCommand.ShouldPickOrCreate(new CloneCommand.Settings(), config, isInteractive: true).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ShouldPickOrCreate_NotInteractive_ReturnsFalse()
+    {
+        // R13: no TTY — never take the picker branch, so today's FindUnmanagedSourceAsync error
+        // (unchanged by this unit) is what a non-interactive run with no solution still gets.
+        CloneCommand.ShouldPickOrCreate(new CloneCommand.Settings(), new ProjectConfig(), isInteractive: false).Should().BeFalse();
+    }
+
+    // ── PickOrCreateAsync: R11 — unmanaged-only picker with a hidden-managed count ──
+
+    [Fact]
+    public async Task PickOrCreateAsync_MixOfManagedAndUnmanaged_ListsOnlyUnmanagedAndReportsHiddenCount()
+    {
+        var (command, console) = MakeCloneCommand();
+        command.GetSolutionsOverride = (_, _) => Task.FromResult(new List<SolutionInfo>
+        {
+            MakeSolution("Unmanaged1"),
+            MakeSolution("ManagedOnly", isManaged: true),
+            MakeSolution("Unmanaged2"),
+        });
+        console.Interactive();
+        console.Input.PushKey(ConsoleKey.Enter); // solution picker: selects the first listed choice ("Unmanaged1")
+        console.Input.PushKey(ConsoleKey.Enter); // role picker: Dev is listed first, so Enter accepts it
+
+        var settings = MakeSettings(DevUrl);
+        var (exitCode, env, projectSolution, solutionInfo) = await command.PickOrCreateAsync(settings, "root", new ProjectConfig(), CancellationToken.None);
+
+        exitCode.Should().BeNull();
+        env!.EnvironmentUrl.Should().Be(DevUrl);
+        projectSolution!.UniqueName.Should().Be("Unmanaged1");
+        solutionInfo!.SolutionUniqueName.Should().Be("Unmanaged1");
+        console.Output.Should().Contain("Unmanaged1").And.Contain("Unmanaged2").And.NotContain("ManagedOnly");
+        console.Output.Should().Contain("1 managed solution hidden");
+    }
+
+    // ── PickOrCreateAsync: R2 — "create new" routes into SolutionCreateFlow ──
+
+    [Fact]
+    public async Task PickOrCreateAsync_CreateNewChoice_RoutesIntoSolutionCreateFlow()
+    {
+        var (command, console) = MakeCloneCommand();
+        command.GetSolutionsOverride = (_, _) => Task.FromResult(new List<SolutionInfo> { MakeSolution("Existing") });
+
+        (EnvironmentInfo Env, string Name, string Root, ProjectConfig Config)? captured = null;
+        command.CreateFlowOverride = (env, name, root, cfg, _) =>
+        {
+            captured = (env, name, root, cfg);
+            return Task.FromResult(0);
+        };
+
+        console.Interactive();
+        console.Input.PushKey(ConsoleKey.DownArrow); // move past the one existing solution...
+        console.Input.PushKey(ConsoleKey.Enter);      // ...onto "+ Create new solution"
+        console.Input.PushTextWithEnter("NewSolution");
+
+        var settings = MakeSettings(DevUrl);
+        var config = new ProjectConfig();
+        var (exitCode, env, projectSolution, solutionInfo) = await command.PickOrCreateAsync(settings, "root", config, CancellationToken.None);
+
+        exitCode.Should().Be(0);
+        env.Should().BeNull();
+        projectSolution.Should().BeNull();
+        solutionInfo.Should().BeNull();
+
+        captured.Should().NotBeNull();
+        captured!.Value.Name.Should().Be("NewSolution");
+        captured.Value.Root.Should().Be("root");
+        captured.Value.Config.Should().BeSameAs(config);
+        captured.Value.Env.EnvironmentUrl.Should().Be(DevUrl);
+    }
+
+    // ── PickOrCreateAsync: R17 — existing-solution pick confirms the .flowline role, defaulting DEV ──
+
+    [Fact]
+    public async Task PickOrCreateAsync_ExistingSolutionPick_ConfirmsRoleDefaultingDev()
+    {
+        var (command, console) = MakeCloneCommand();
+        command.GetSolutionsOverride = (_, _) => Task.FromResult(new List<SolutionInfo> { MakeSolution("CrO7982") });
+
+        console.Interactive();
+        console.Input.PushKey(ConsoleKey.Enter); // picks the only listed solution
+        console.Input.PushKey(ConsoleKey.Enter); // role picker: Dev is listed first, so Enter accepts it
+
+        var settings = MakeSettings(DevUrl);
+        var config = new ProjectConfig();
+        var (exitCode, env, projectSolution, solutionInfo) = await command.PickOrCreateAsync(settings, "root", config, CancellationToken.None);
+
+        exitCode.Should().BeNull();
+        env!.EnvironmentUrl.Should().Be(DevUrl);
+        projectSolution!.UniqueName.Should().Be("CrO7982");
+        solutionInfo!.SolutionUniqueName.Should().Be("CrO7982");
+
+        config.DevUrl.Should().Be(DevUrl);
+        config.TestUrl.Should().BeNull();
+        config.UatUrl.Should().BeNull();
+        config.ProdUrl.Should().BeNull();
+        console.Output.Should().Contain("DEV set to");
     }
 }
