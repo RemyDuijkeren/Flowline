@@ -120,8 +120,7 @@ public static class ComponentClassifier
                 // a live, in-solution assembly as an orphan. Additionally harvest the simple assembly name
                 // (strong-name up to the first comma) so CompareAsync resolves it live by name via
                 // NameResolvableTypes[91] — the same portable-identity path WebResource/Entity/Role already
-                // use — alongside, not instead of, the GUID. See
-                // docs/test-findings/deploy-false-positive-orphan-package-assembly-guid-not-portable.md.
+                // use — alongside, not instead of, the GUID.
                 if (type == PluginAssembly)
                 {
                     var strongName = component.Attribute("schemaName")?.Value;

@@ -18,8 +18,7 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
     // Auto: the cross-environment id-drift false positive is fixed upstream — ComponentClassifier now
     // resolves live plugin assemblies by their portable simple name (not the re-minted GUID), so a live,
     // in-solution assembly is no longer flagged. Only a genuinely-removed assembly reaches this handler,
-    // making unattended auto-delete safe. See
-    // docs/test-findings/deploy-false-positive-orphan-package-assembly-guid-not-portable.md.
+    // making unattended auto-delete safe.
     public HandlerStatus Status => HandlerStatus.Auto;
 
     // Same entityLogicalName/idAttribute/nameAttribute triples as OrphanCleanupService.NameResolvableTypes'
