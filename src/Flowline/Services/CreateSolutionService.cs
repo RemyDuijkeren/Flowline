@@ -1,4 +1,5 @@
 using CliWrap;
+using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Services;
@@ -287,6 +288,76 @@ public class CreateSolutionService(IAnsiConsole console, SubprocessCapture captu
         var srcFolder = Path.Combine(dataverseSolutionFolder, "src");
         return Directory.Exists(srcFolder) &&
                Directory.EnumerateFiles(srcFolder, "*_managed.xml", SearchOption.AllDirectories).Any();
+    }
+
+    /// <summary>
+    /// Pulls a solution's XML source from Dataverse via <c>pac solution clone</c> into
+    /// <see cref="ScaffoldedDataverseSolutionFolder"/> — shared by <c>clone</c> (an existing solution)
+    /// and <c>init</c>'s create-new path (a solution <see cref="SolutionCreateService"/> just created
+    /// empty in Dataverse), so both scaffold from the same pull (KTD1, R3, R7).
+    /// </summary>
+    /// <remarks>
+    /// Moved out of <c>CloneCommand</c> unchanged (U5) — the one behavioral difference from the
+    /// original private method is that the unused <c>Settings</c> parameter is gone; nothing in the
+    /// body ever read it.
+    /// </remarks>
+    internal async Task CloneSolutionFromDataverseAsync(ProjectSolution projectSln, string slnFolder, string cdsprojPath, string environmentUrl,
+        CancellationToken cancellationToken)
+    {
+        if (File.Exists(cdsprojPath))
+        {
+            // Unmanaged content is always present once cloned (Both is a superset), so only a
+            // switch to managed can leave the local source stale — and only when it doesn't
+            // already have the managed layer (e.g. a previous clone/sync already fetched Both).
+            if (projectSln.IncludeManaged && !HasManagedContent(ScaffoldedDataverseSolutionFolder(slnFolder)))
+                await PacUtils.SyncSolutionFromDataverseAsync(projectSln.UniqueName, ScaffoldedDataverseSolutionFolder(slnFolder), environmentUrl, projectSln.IncludeManaged, capture, cancellationToken);
+            else
+                console.Skip("Solution already cloned — skipping");
+
+            return;
+        }
+
+        if (Directory.Exists(ScaffoldedDataverseSolutionFolder(slnFolder)))
+            throw new FlowlineException(ExitCode.ConfigInvalid,
+                DescribeDataverseSolutionFolderWithoutCdsproj(ScaffoldedDataverseSolutionFolder(slnFolder), Path.GetFileName(cdsprojPath)));
+
+        Directory.CreateDirectory(slnFolder);
+
+        var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
+        CommandResult result = await console.Status().FlowlineSpinner().StartAsync(
+            $"Cloning solution [bold]{projectSln.UniqueName}[/] from Dataverse...",
+            ctx => Cli.Wrap(cmdName)
+                      .WithArguments(args =>
+                          args.AddIfNotNull(prefixArgs)
+                              .Add("solution")
+                              .Add("clone")
+                              .Add("--name").Add(projectSln.UniqueName)
+                              .Add("--environment").Add(environmentUrl)
+                              .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
+                              .Add("--outputDirectory").Add(slnFolder)
+                              .Add("--async"))
+                      .WithValidation(CommandResultValidation.None)
+                      .WithCapture(capture, ctx)
+                      .ExecuteAsync(cancellationToken)
+                      .Task);
+
+        if (!result.IsSuccess)
+            throw new FlowlineException(ExitCode.GeneralError, "Clone failed — check the environment and your PAC login.");
+
+        // pac writes slnFolder/{SolutionName}/{SolutionName}.cdsproj plus src/. Flowline places that folder
+        // under the role-based name and leaves the project file exactly as pac wrote it — the folder answers
+        // "what kind of thing lives here", the file answers "which solution", and only the latter escapes
+        // the repo.
+        Directory.Move(Path.Combine(slnFolder, projectSln.UniqueName), ScaffoldedDataverseSolutionFolder(slnFolder));
+        DeleteScaffoldedGitignore(ScaffoldedDataverseSolutionFolder(slnFolder)); // superseded by the project-root .gitignore
+
+        // Duplicated rather than calling FlowlineCommand<T>.FormatDuration — this class isn't a command
+        // and has no TSettings to close the generic over. Three branches (not PacUtils's two) to match
+        // FormatDuration exactly, including its sub-second ms case.
+        var duration = result.RunTime.TotalMinutes >= 1 ? $"{(int)result.RunTime.TotalMinutes}m {result.RunTime.Seconds}s"
+            : result.RunTime.TotalSeconds >= 1 ? $"{(int)result.RunTime.TotalSeconds}s"
+            : $"{(int)result.RunTime.TotalMilliseconds}ms";
+        console.Ok($"Solution [bold]{projectSln.UniqueName}[/] cloned in {duration}");
     }
 
     internal async Task CreateSolutionFileAsync(string slnFolder, string slnFilePath, string cdsprojPath, CancellationToken cancellationToken)

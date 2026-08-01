@@ -46,6 +46,30 @@ public class SolutionCreateService
         return new SolutionCreateResult(publisherId, publisherPrefix, publisherCreated, solutionId);
     }
 
+    /// <summary>
+    /// Lists existing publishers (prefix + friendly name) for the interactive publisher picker
+    /// (R5/AE4) — the flag path never calls this, so a normal <c>--publisher-prefix</c> run does
+    /// one fewer round trip.
+    /// </summary>
+    public async Task<List<PublisherSummary>> ListPublishersAsync(
+        IOrganizationServiceAsync2 service, CancellationToken cancellationToken = default)
+    {
+        var query = new QueryExpression("publisher")
+        {
+            ColumnSet = new ColumnSet("customizationprefix", "friendlyname")
+        };
+
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
+
+        return result.Entities
+            .Select(e => new PublisherSummary(
+                e.GetAttributeValue<string>("customizationprefix"),
+                e.GetAttributeValue<string>("friendlyname")))
+            .Where(p => !string.IsNullOrWhiteSpace(p.Prefix))
+            .OrderBy(p => p.Prefix, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     /// <summary>Reuses an existing publisher matching <paramref name="prefix"/>'s customizationprefix, or creates one (R5/KTD3).</summary>
     async Task<(Guid PublisherId, bool Created)> ResolvePublisherAsync(
         IOrganizationServiceAsync2 service,
@@ -153,3 +177,6 @@ public class SolutionCreateService
 
 /// <summary>Publisher and solution identifiers a caller can log after <see cref="SolutionCreateService.CreateAsync"/> succeeds.</summary>
 public record SolutionCreateResult(Guid PublisherId, string PublisherPrefix, bool PublisherCreated, Guid SolutionId);
+
+/// <summary>An existing publisher's prefix and friendly name, for the interactive picker (R5/AE4).</summary>
+public record PublisherSummary(string Prefix, string? FriendlyName);

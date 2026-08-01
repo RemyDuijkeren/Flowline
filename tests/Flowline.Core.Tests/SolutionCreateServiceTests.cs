@@ -108,6 +108,22 @@ public class SolutionCreateServiceTests
     }
 
     [Fact]
+    public async Task ListPublishersAsync_ReturnsPrefixAndFriendlyName_OrderedByPrefix()
+    {
+        var zulu = new Entity("publisher") { ["customizationprefix"] = "zulu", ["friendlyname"] = "Zulu Corp" };
+        var acme = new Entity("publisher") { ["customizationprefix"] = "acme", ["friendlyname"] = "Acme Corp" };
+        _serviceMock.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "publisher")), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([zulu, acme])));
+
+        var result = await _service.ListPublishersAsync(_serviceMock);
+
+        result.Should().HaveCount(2);
+        result[0].Prefix.Should().Be("acme");
+        result[0].FriendlyName.Should().Be("Acme Corp");
+        result[1].Prefix.Should().Be("zulu");
+    }
+
+    [Fact]
     public async Task CreateAsync_PrivilegeFaultOnPublisherCreate_ThrowsFlowlineExceptionNamingPermission()
     {
         _serviceMock.CreateAsync(Arg.Is(Matching<Entity>(e => e.LogicalName == "publisher")), Arg.Any<CancellationToken>())

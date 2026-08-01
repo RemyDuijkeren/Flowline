@@ -74,6 +74,9 @@ services.AddSingleton<OrphanCleanupService>();
 services.AddSingleton<IPostDeployService>(sp => sp.GetRequiredService<OrphanCleanupService>());
 services.AddSingleton<SubprocessCapture>();
 services.AddSingleton<CreateSolutionService>();
+services.AddSingleton<SolutionCreateService>();
+services.AddSingleton<CreateEnvironmentResolver>();
+services.AddSingleton<SolutionCreateFlow>();
 
 Serilog.ILogger? serilogLogger = null;
 try
@@ -145,6 +148,12 @@ app.Configure(config =>
                 return 1;
         }
     });
+
+    // init = create a brand-new publisher + empty unmanaged solution in DEV, then scaffold the repo
+    config.AddCommand<InitCommand>("init")
+          .WithDescription("Create a new publisher (if needed) and an empty unmanaged solution in a DEV environment, then scaffold the repo around it. Front door for greenfield — no Dataverse solution exists yet.")
+          .WithExample("init", "MySolution")
+          .WithExample("init", "MySolution", "--dev", "https://contoso-dev.crm4.dynamics.com", "--publisher-prefix", "contoso");
 
     // clone = Clone solution from environment to local folder
     config.AddCommand<CloneCommand>("clone") // init (new repo) or clone (existing repo)

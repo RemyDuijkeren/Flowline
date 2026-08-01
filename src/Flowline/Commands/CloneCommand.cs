@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using CliWrap;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
@@ -74,7 +73,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         var slnFilePath = CreateSolutionService.ResolveSolutionFilePath(slnFolder, solutionName);
         var slnFileName = Path.GetFileName(slnFilePath);
 
-        await CloneSolutionFromDataverseAsync(projectSln, slnFolder, cdsprojPath, sourceEnv.EnvironmentUrl!, settings, cancellationToken);
+        await createSolutionService.CloneSolutionFromDataverseAsync(projectSln, slnFolder, cdsprojPath, sourceEnv.EnvironmentUrl!, cancellationToken);
         await createSolutionService.CreateSolutionFileAsync(slnFolder, slnFilePath, cdsprojPath, cancellationToken);
 
         // The .cdsproj entry CreateSolutionFileAsync just wrote makes the solution file loadable, so the
@@ -135,58 +134,5 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         }
 
         throw new FlowlineException(ExitCode.NotFound, "No unmanaged environment found — provide a --dev, --test, --uat, or --prod URL with an unmanaged solution.");
-    }
-
-    private async Task CloneSolutionFromDataverseAsync(ProjectSolution projectSln, string slnFolder, string cdsprojPath, string environmentUrl,
-        Settings settings, CancellationToken cancellationToken)
-    {
-        if (File.Exists(cdsprojPath))
-        {
-            // Unmanaged content is always present once cloned (Both is a superset), so only a
-            // switch to managed can leave the local source stale — and only when it doesn't
-            // already have the managed layer (e.g. a previous clone/sync already fetched Both).
-            if (projectSln.IncludeManaged && !CreateSolutionService.HasManagedContent(CreateSolutionService.ScaffoldedDataverseSolutionFolder(slnFolder)))
-                await PacUtils.SyncSolutionFromDataverseAsync(projectSln.UniqueName, CreateSolutionService.ScaffoldedDataverseSolutionFolder(slnFolder), environmentUrl, projectSln.IncludeManaged, _capture, cancellationToken);
-            else
-                Console.Skip("Solution already cloned — skipping");
-
-            return;
-        }
-
-        if (Directory.Exists(CreateSolutionService.ScaffoldedDataverseSolutionFolder(slnFolder)))
-            throw new FlowlineException(ExitCode.ConfigInvalid,
-                CreateSolutionService.DescribeDataverseSolutionFolderWithoutCdsproj(CreateSolutionService.ScaffoldedDataverseSolutionFolder(slnFolder), Path.GetFileName(cdsprojPath)));
-
-        Directory.CreateDirectory(slnFolder);
-
-        var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-        CommandResult result = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Cloning solution [bold]{projectSln.UniqueName}[/] from Dataverse...",
-            ctx => Cli.Wrap(cmdName)
-                      .WithArguments(args =>
-                          args.AddIfNotNull(prefixArgs)
-                              .Add("solution")
-                              .Add("clone")
-                              .Add("--name").Add(projectSln.UniqueName)
-                              .Add("--environment").Add(environmentUrl)
-                              .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
-                              .Add("--outputDirectory").Add(slnFolder)
-                              .Add("--async"))
-                      .WithValidation(CommandResultValidation.None)
-                      .WithCapture(_capture, ctx)
-                      .ExecuteAsync(cancellationToken)
-                      .Task);
-
-        if (!result.IsSuccess)
-            throw new FlowlineException(ExitCode.GeneralError, "Clone failed — check the environment and your PAC login.");
-
-        // pac writes slnFolder/{SolutionName}/{SolutionName}.cdsproj plus src/. Flowline places that folder
-        // under the role-based name and leaves the project file exactly as pac wrote it — the folder answers
-        // "what kind of thing lives here", the file answers "which solution", and only the latter escapes
-        // the repo.
-        Directory.Move(Path.Combine(slnFolder, projectSln.UniqueName), CreateSolutionService.ScaffoldedDataverseSolutionFolder(slnFolder));
-        CreateSolutionService.DeleteScaffoldedGitignore(CreateSolutionService.ScaffoldedDataverseSolutionFolder(slnFolder)); // superseded by the project-root .gitignore
-
-        Console.Ok($"Solution [bold]{projectSln.UniqueName}[/] cloned in {FormatDuration(result.RunTime)}");
     }
 }
