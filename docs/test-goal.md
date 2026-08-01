@@ -111,6 +111,21 @@ dry-run-only rule below does **not** apply. `flowline status` connects to Test f
   18 PartialSuccess with a false manual-cleanup alarm). Full suite 2030 passed / 0 failed / 4 skipped.
   Fix uncommitted in the Flowline source tree, awaiting commit authorization. Original writeup (now
   marked FIXED): `docs/test-findings/deploy-false-positive-orphan-package-assembly-guid-not-portable.md`.
+- **Orphan handlers `Auto` detect+delete live-verified on TEST 2026-08-01** (closes the one gap the
+  false-positive fix left: does `Guarded`→`Auto` actually auto-delete a *genuine* orphan on the deploy
+  path, safely?). Method: plant a genuine CustomApi orphan (`av_DeployOrphan`) + a step-less package
+  plugin-assembly orphan (`av_FlowlineDeployTest.Extra`) into TEST via a real `deploy test`, then remove
+  both from source (push `--force delete-orphans`→sync→commit) and re-deploy. Default `deploy test`
+  (no `--force`) detected both (`CustomApi 'av_DeployOrphan' — delete` Prio2; `PluginPackage (owns
+  PluginAssembly 'FlowlineDeployTest.Extra') — delete` Prio3), **auto-deleted both, exit 0**, and a
+  follow-up `drift test` reported 0 orphans. Both foreign survivors — the in-source main package and
+  `av_KeepMe` (same `av_` prefix as the deleted API) — were untouched; `av_KeepMe`'s survival was
+  positively proven by removing it from source and re-running `drift test` (flagged live in TEST,
+  `av_KeepMe (263a20a1…)`, exit 15), so the prefix-wide over-delete regression did **not** recur.
+  Code-trace gate established that deploy's post-import deferred-delete reuses the same package-redirected
+  delete as pre-import, but a clean (unblocked) orphan deletes pre-import — so the **post-import deferred
+  path was verified by code trace, not live** (needs a dependency-blocked orphan). Detail in the finding
+  file's "`Auto` promotion live-verified" block.
   The pre-fix analysis below is kept for the record:
 - **(pre-fix)** deploy path; sync-fixable on push/DEV. Plugin assemblies are matched **GUID-only** against the
   on-disk `Solution.xml`, but the assembly's `pluginassemblyid` is non-portable: measured live it

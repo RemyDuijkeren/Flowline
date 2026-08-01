@@ -9,14 +9,28 @@
   default deploy again auto-cleans genuine orphans without `--force delete-orphans` and no longer
   exits 18 on the false alarm. See "Fix (implemented)" below. The earlier 2026-07-31 Guarded mitigation
   is superseded.
-  - **Coverage boundary (be honest about it):** the *false-positive elimination* is verified live (see
-    below) and by unit test (`CompareAsync_PluginAssemblyIdDriftsButNameMatches_NotReportedAsOrphan`),
-    and *genuine-orphan-still-detected* is unit-verified (`CompareAsync_PluginAssemblyRenamedAway_StillReportedAsOrphan`).
-    The **`Auto` promotion actually executing an ungated delete of a real orphan on a default deploy —
-    and a foreign sibling surviving it — was NOT exercised live this run** (the verification deploy had
-    zero genuine orphans). That behavior rests on unit coverage + the prior-session foreign-Custom-API
-    survivor fix only; a live exercise (construct one genuine orphan via the probe/rename technique, then
-    a default `deploy test` with no `--force`) is still outstanding.
+  - **`Auto` promotion live-verified end-to-end on TEST 2026-08-01** (was the one outstanding gap). A
+    genuine CustomApi orphan *and* a genuine package-owned plugin-assembly orphan were planted in TEST
+    (deploy #1), then removed from source (deploy #2). A default `deploy test` with **no `--force`**:
+    - detected both — `CustomApi 'av_DeployOrphan' — delete` (Prio2) and `PluginPackage (owns
+      PluginAssembly 'FlowlineDeployTest.Extra') — delete` (Prio3), `2 to delete, 0 manual`;
+    - **auto-deleted both and exited 0** (no exit 18, no manual-cleanup alarm); a follow-up `drift test`
+      reported `Orphan components (0)`, confirming the deletes committed;
+    - **left both foreign survivors untouched** — the main package `av_FlowlineDeployTest.Plugins` (live
+      in TEST per verbose drift, `not tracked, no action taken`) and `av_KeepMe`, a Custom API sharing
+      the **same `av_` publisher prefix** as the deleted `av_DeployOrphan`. `av_KeepMe`'s survival was
+      positively proven: removing it from source and re-running `drift test` flagged it live in TEST
+      (`CustomApi 'av_KeepMe' (263a20a1…) — would delete`, exit 15). So the prefix-wide over-delete
+      regression this handler family had before did **not** recur.
+    Backing unit tests: false-positive elimination (`CompareAsync_PluginAssemblyIdDriftsButNameMatches_NotReportedAsOrphan`),
+    genuine-orphan-still-detected (`CompareAsync_PluginAssemblyRenamedAway_StillReportedAsOrphan`),
+    `Status_IsAuto` on both handlers.
+  - **Coverage caveat that remains:** the deleted orphans were dependency-*unblocked*, so they deleted at
+    **pre-import**. The **post-import deferred-delete** retry path (the one that actually failed in the
+    original exit-18 bug) was therefore not fired by a genuine orphan this run — it was verified by code
+    trace only (the deferred executor reuses the same `PerformActionAsync` → package-redirected
+    `DeleteAsync("pluginpackage", …)` as pre-import; see "Fix (implemented)"). Exercising it live needs a
+    dependency-blocked genuine orphan.
 - **Live-verified on TEST 2026-08-01** (CLI `0.14.1-alpha.0.2`, `FlowlineDeployTest` fixture, the exact
   solution that previously exited 18):
   - Read-only `drift test` → `Orphan components (0)`, **exit 0** (was: one orphan — the solution's own
@@ -26,6 +40,20 @@
     `1 orphan component couldn't be cleaned up — remove manually via maker portal` pointing at the
     user's own live plugin). Checker 0 findings, real backup `flowline-deploy-FlowlineDeployTest-20260801T043348Z`.
   - Full suite green at **2030 passed / 0 failed / 4 skipped** with the fix in place.
+  - **Fixture / env state left after the `Auto` verification (honesty notes):** TEST restored clean
+    (deploy #3 deleted the last probe orphan `av_KeepMe`, final `drift test` → 0 orphans). DEV left with
+    a stray `av_KeepMe` Custom API — disposable per the goal, not cleaned. The `FlowlineDeployTest`
+    fixture's committed source is left mildly inconsistent: the main-package `.nupkg` still carries an
+    inert `KeepMe` plugin type with no matching source class or customapi (the probe removed the class
+    and the customapi folder but not the already-built package content). It is invisible and drift-clean
+    now because TEST imported that same `.nupkg`, but a future run that rebuilds (`push`) would drop the
+    type and create drift vs TEST — so a future run should rebuild+sync or re-clone rather than trust
+    this exact fixture snapshot.
+  - **Residual-confidence caveat on method:** every live read went through Flowline's own `drift`/`deploy`
+    (no Dataverse MCP is connected and `pac` can't query data, so no independent Web-API read was
+    available). This is acceptable here because the `av_KeepMe` survivor probe exercises the detector in
+    the *presence* direction (it returned exit 15, flagging a live component) — which rules out the one
+    shared-code failure that would undermine the whole method, a detector that always reports 0.
 - **Severity**: **high for the deploy/promotion path**, where it is unfixable by the user; **lower on
   the push/DEV path**, where a `sync` refreshes the stale ids (see "DEV vs deploy-target" below).
 - **Now fully observed** (updated 2026-07-31 by a real re-deploy of `FlowlineDeployTest`):
