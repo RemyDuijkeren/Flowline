@@ -114,6 +114,8 @@ public class SolutionCreateFlow(
         }
 
         // R10: the DEV role is written only once create + scaffold + build all succeeded.
+        // Record the created solution too, so a later push/sync can resolve it from .flowline.
+        config.GetOrUpdateSolution(uniqueName, includeManaged: false);
         config.GetOrUpdateDevUrl(devEnv.EnvironmentUrl);
         config.Save(rootFolder);
         console.Ok($"DEV set to [bold]{devEnv.DisplayName}[/] ({devEnv.EnvironmentUrl})");

@@ -170,6 +170,7 @@ public class SolutionCreateFlowTests
 
             exitCode.Should().Be(0);
             config.DevUrl.Should().Be(DevUrl);
+            config.Solution!.UniqueName.Should().Be("MySolution");
             console.Output.Should().Contain("DEV set to");
         }
         finally { Directory.Delete(root, recursive: true); }
@@ -196,6 +197,7 @@ public class SolutionCreateFlowTests
 
             exitCode.Should().Be(13);
             config.DevUrl.Should().BeNull();
+            config.Solution.Should().BeNull();
             console.Output.Should().Contain(publisherId.ToString()).And.Contain(solutionId.ToString());
         }
         finally { Directory.Delete(root, recursive: true); }
