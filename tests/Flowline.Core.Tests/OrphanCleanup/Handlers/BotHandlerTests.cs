@@ -49,7 +49,7 @@ public class BotHandlerTests : IDisposable
         if (publishedOn.HasValue) entity["publishedon"] = publishedOn.Value;
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "bot"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "bot")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([entity])));
     }
@@ -136,7 +136,7 @@ public class BotHandlerTests : IDisposable
         var candidateId = Guid.NewGuid();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "bot"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "bot")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("bot table unavailable")));
 
@@ -157,12 +157,12 @@ public class BotHandlerTests : IDisposable
         var connectionReferenceId = Guid.NewGuid();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "bot"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "bot")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("bot table unavailable")));
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "connectionreference"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "connectionreference")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("connectionreference", connectionReferenceId) { ["connectionreferencelogicalname"] = "av_sharepoint" }
@@ -186,7 +186,7 @@ public class BotHandlerTests : IDisposable
         var candidateId = Guid.NewGuid();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "bot"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "bot")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new FaultException<OrganizationServiceFault>(new OrganizationServiceFault())));
 
@@ -202,7 +202,7 @@ public class BotHandlerTests : IDisposable
         var candidateId = Guid.NewGuid();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "bot"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "bot")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("network timeout")));
 
@@ -241,7 +241,7 @@ public class BotHandlerTests : IDisposable
         Directory.CreateDirectory(Path.Combine(_dataverseSolutionSrcRoot, "bots", "msdyn_salesCopilot"));
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "bot"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "bot")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("bot", liveId) { ["schemaname"] = "msdyn_salesCopilot" }

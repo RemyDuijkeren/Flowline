@@ -101,8 +101,18 @@ dry-run-only rule below does **not** apply. `flowline status` connects to Test f
     `00000001-0000-0000-0001-00000000009b` on **both** TEST and DEV. That is the fixture's identity, not
     a TEST quirk or a Flowline bug — do not force a default-solution delete. So `FlowlineDeployTest` (a
     normal, deletable solution) was created for this.
-- **Finding — orphan detection false-flags a live, in-solution plugin package assembly** (HIGH for the
-  deploy path; sync-fixable on push/DEV). Plugin assemblies are matched **GUID-only** against the
+- **Finding — orphan detection false-flags a live, in-solution plugin package assembly — FIXED and
+  live-verified on TEST 2026-08-01.** The fix harvests each plugin assembly's portable simple name from
+  `Solution.xml`'s `schemaName` (type 91) into the named-component set, so `CompareAsync` resolves the
+  live assembly by name via `NameResolvableTypes[91]` and no longer diffs it out as an orphan;
+  `PluginAssemblyFamilyHandler`/`CustomApiFamilyHandler` were promoted `Guarded`→`Auto`. Live on
+  `FlowlineDeployTest` (CLI `0.14.1-alpha.0.2`): `drift test` → `Orphan components (0)`, exit 0 (was 1
+  orphan, exit 15); real re-`deploy test` → 0 orphans pre-import, `🚀 Deployed!`, **exit 0** (was exit
+  18 PartialSuccess with a false manual-cleanup alarm). Full suite 2030 passed / 0 failed / 4 skipped.
+  Fix uncommitted in the Flowline source tree, awaiting commit authorization. Original writeup (now
+  marked FIXED): `docs/test-findings/deploy-false-positive-orphan-package-assembly-guid-not-portable.md`.
+  The pre-fix analysis below is kept for the record:
+- **(pre-fix)** deploy path; sync-fixable on push/DEV. Plugin assemblies are matched **GUID-only** against the
   on-disk `Solution.xml`, but the assembly's `pluginassemblyid` is non-portable: measured live it
   differs in every place — on-disk `31d733bd…`, DEV `93ca7a81…`, TEST `10a1719c…` — because `push`
   re-registers and `import` re-mints it, while the stable assembly **name** sits unused in the

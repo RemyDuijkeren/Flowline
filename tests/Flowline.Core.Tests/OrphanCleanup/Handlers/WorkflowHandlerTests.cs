@@ -46,7 +46,7 @@ public class WorkflowHandlerTests
         };
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "workflow"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "workflow")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([entity])));
     }
@@ -106,7 +106,7 @@ public class WorkflowHandlerTests
         var id = Guid.NewGuid();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "workflow"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "workflow")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("workflow table unavailable")));
 

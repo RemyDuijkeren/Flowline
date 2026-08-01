@@ -81,11 +81,11 @@ public class FormEventReaderTests : IDisposable
 
         // R9: only Main (2) and Quick Create (7) form types are queried (solution-scoped systemform query).
         await _serviceMock.Received(1).RetrieveMultipleAsync(
-            Arg.Is<QueryExpression>(q => q.EntityName == "systemform" &&
+            Arg.Is(Matching<QueryExpression>(q => q.EntityName == "systemform" &&
                 q.LinkEntities.Count > 0 &&
                 q.Criteria.Conditions.Any(c => c.AttributeName == "type" &&
                     c.Operator == ConditionOperator.In &&
-                    c.Values.Contains(2) && c.Values.Contains(7))),
+                    c.Values.Contains(2) && c.Values.Contains(7)))),
             Arg.Any<CancellationToken>());
     }
 
@@ -119,7 +119,7 @@ public class FormEventReaderTests : IDisposable
         await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
 
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<OrganizationRequest>(r => r.RequestName == "RetrieveEntity" && (string)r.Parameters["LogicalName"] == "account"),
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "RetrieveEntity" && (string)r.Parameters["LogicalName"] == "account")),
             Arg.Any<CancellationToken>());
     }
 
@@ -157,7 +157,7 @@ public class FormEventReaderTests : IDisposable
             "// flowline:onload account \"Account Main\" handler\nfunction handler() {}");
 
         _serviceMock.ExecuteAsync(
-                Arg.Is<OrganizationRequest>(r => r.RequestName == "RetrieveEntity" && (string)r.Parameters["LogicalName"] == "badentity"),
+                Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "RetrieveEntity" && (string)r.Parameters["LogicalName"] == "badentity")),
                 Arg.Any<CancellationToken>())
             .Returns<OrganizationResponse>(_ => throw new FaultException<OrganizationServiceFault>(new OrganizationServiceFault()));
         _serviceMock.SetupEntityObjectTypeCode("account", 1);
@@ -270,7 +270,7 @@ public class FormEventReaderTests : IDisposable
 
         // WebResourceReader.LoadSnapshotAsync still ran (it resolves the solution regardless of annotations).
         await _serviceMock.Received(1).RetrieveMultipleAsync(
-            Arg.Is<QueryExpression>(q => q.EntityName == "solution"), Arg.Any<CancellationToken>());
+            Arg.Is(Matching<QueryExpression>(q => q.EntityName == "solution")), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -289,7 +289,7 @@ public class FormEventReaderTests : IDisposable
             }
         };
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "systemform" && q.LinkEntities.Count > 0),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "systemform" && q.LinkEntities.Count > 0)),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(entities)));
 
@@ -311,7 +311,7 @@ public class FormEventReaderTests : IDisposable
             new("systemform", brokenFormId) { ["name"] = "Broken Form", ["formxml"] = "<form/>", ["objecttypecode"] = null! }
         };
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "systemform" && q.LinkEntities.Count > 0),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "systemform" && q.LinkEntities.Count > 0)),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(entities)));
 
@@ -331,7 +331,7 @@ public class FormEventReaderTests : IDisposable
             new("systemform", brokenFormId) { ["name"] = "Broken Form", ["formxml"] = "<form/>", ["objecttypecode"] = null! }
         };
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "systemform" && q.LinkEntities.Count > 0),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "systemform" && q.LinkEntities.Count > 0)),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(entities)));
 

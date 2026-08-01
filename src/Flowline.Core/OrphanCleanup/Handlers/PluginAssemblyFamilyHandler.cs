@@ -15,7 +15,12 @@ namespace Flowline.Core.OrphanCleanup.Handlers;
 // else warns and skips, falling back to each query's "unresolved" display/Prio path.
 public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanHandler
 {
-    public HandlerStatus Status => HandlerStatus.Guarded;
+    // Auto: the cross-environment id-drift false positive is fixed upstream — ComponentClassifier now
+    // resolves live plugin assemblies by their portable simple name (not the re-minted GUID), so a live,
+    // in-solution assembly is no longer flagged. Only a genuinely-removed assembly reaches this handler,
+    // making unattended auto-delete safe. See
+    // docs/test-findings/deploy-false-positive-orphan-package-assembly-guid-not-portable.md.
+    public HandlerStatus Status => HandlerStatus.Auto;
 
     // Same entityLogicalName/idAttribute/nameAttribute triples as OrphanCleanupService.NameResolvableTypes'
     // 91/90/92/93 rows, used for live display-name resolution.

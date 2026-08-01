@@ -53,7 +53,7 @@ public class WebResourceHandlerTests : IDisposable
         }).ToList();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "webresource"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "webresource")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(entities)));
     }

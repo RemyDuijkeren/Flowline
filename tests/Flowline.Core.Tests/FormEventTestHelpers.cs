@@ -35,7 +35,7 @@ static class FormEventTestHelpers
             ["publisher.customizationprefix"] = new AliasedValue("publisher", "customizationprefix", prefix)
         };
 
-        service.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "solution"), Arg.Any<CancellationToken>())
+        service.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "solution")), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([solution])));
     }
 
@@ -54,7 +54,7 @@ static class FormEventTestHelpers
         };
 
         service.ExecuteAsync(
-                Arg.Is<OrganizationRequest>(r => r.RequestName == "RetrieveEntity" && (string)r.Parameters["LogicalName"] == logicalName),
+                Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "RetrieveEntity" && (string)r.Parameters["LogicalName"] == logicalName)),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<OrganizationResponse>(response));
     }
@@ -70,9 +70,9 @@ static class FormEventTestHelpers
         }).ToList();
 
         service.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "systemform" &&
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "systemform" &&
                     q.Criteria.Conditions.Any(c => c.AttributeName == "objecttypecode" && c.Values.Contains(objectTypeCode)) &&
-                    q.Criteria.Conditions.Any(c => c.AttributeName == "name" && c.Values.Contains(formName))),
+                    q.Criteria.Conditions.Any(c => c.AttributeName == "name" && c.Values.Contains(formName)))),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(entities)));
     }
@@ -94,7 +94,7 @@ static class FormEventTestHelpers
         }).ToList();
 
         service.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "systemform" && q.LinkEntities.Count > 0),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "systemform" && q.LinkEntities.Count > 0)),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(entities)));
     }

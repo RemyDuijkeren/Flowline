@@ -49,7 +49,7 @@ public class RoleHandlerTests
         var entity = new Entity("role", id) { ["name"] = name };
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "role"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "role")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([entity])));
     }
@@ -104,7 +104,7 @@ public class RoleHandlerTests
         var roleId = Guid.NewGuid();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "role"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "role")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("role table unavailable")));
 

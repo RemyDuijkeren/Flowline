@@ -4,9 +4,9 @@
     "net10.0": {
       "CliWrap": {
         "type": "Direct",
-        "requested": "[3.10.2, )",
-        "resolved": "3.10.2",
-        "contentHash": "oW63Lh5Tr2dVRnGSn5UyV2ITAYTdyaGB8r4pGMcz7CwfzketV7ANyn2LvNJtOjXjL/tJbG0qDH8Xwgt3jgGMNg=="
+        "requested": "[3.10.4, )",
+        "resolved": "3.10.4",
+        "contentHash": "Vv0HjTkbCOsicbY4uX978MJOoWabFV/GE0zS2ww2mKNLcqLVPY8xaFRIRWa8dRhjkAYhe9h9uhRnw5FCT8Qa4A=="
       },
       "Microsoft.SourceLink.GitHub": {
         "type": "Direct",
@@ -132,8 +132,8 @@
       },
       "Microsoft.Identity.Client": {
         "type": "Transitive",
-        "resolved": "4.86.1",
-        "contentHash": "cXG5eqMEHr2FJ4JdYguLaYe3hsBXkau4XTmh4f17VQYK4dTEvViLY+Vgl55KaiQ7Qs3H2kKLjjg6fJNAOIb3gA==",
+        "resolved": "4.87.0",
+        "contentHash": "ERObBpS3b6kc92D/Z86zSd/MpWvdJu97BNamRzg5V4y59KwnxzfhM762tgiNnKoIwTbnIBOcwGPFGQ4DvShLvw==",
         "dependencies": {
           "Microsoft.IdentityModel.Abstractions": "8.14.0"
         }
@@ -256,8 +256,8 @@
           "Flowline.Attributes": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection": "[10.0.10, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.10, )",
-          "Microsoft.Identity.Client.Broker": "[4.86.1, )",
-          "Microsoft.Identity.Client.Extensions.Msal": "[4.86.1, )",
+          "Microsoft.Identity.Client.Broker": "[4.87.0, )",
+          "Microsoft.Identity.Client.Extensions.Msal": "[4.87.0, )",
           "Microsoft.PowerPlatform.Dataverse.Client": "[1.2.26, )",
           "Microsoft.VisualStudio.SolutionPersistence": "[1.0.52, )",
           "Spectre.Console": "[0.57.2, )",
@@ -291,21 +291,21 @@
       },
       "Microsoft.Identity.Client.Broker": {
         "type": "CentralTransitive",
-        "requested": "[4.86.1, )",
-        "resolved": "4.86.1",
-        "contentHash": "HiDyp0tnq8OuvjrjiGI9UGkZxTAG6dwAz1hLdjWMyZyDsApr+StfZDqy+QIWRQc5vGSVQp47mzzgyXv7llvWGQ==",
+        "requested": "[4.87.0, )",
+        "resolved": "4.87.0",
+        "contentHash": "k6NPfyPcNRW/z5Jbzmfi008Z4dmFHLAtfNvs46tU7+2sXdFpWLlHpcNK2Zm+dJx6CXj3De1dLOUsjthcF72z+w==",
         "dependencies": {
-          "Microsoft.Identity.Client": "4.86.1",
+          "Microsoft.Identity.Client": "4.87.0",
           "Microsoft.Identity.Client.NativeInterop": "0.20.6"
         }
       },
       "Microsoft.Identity.Client.Extensions.Msal": {
         "type": "CentralTransitive",
-        "requested": "[4.86.1, )",
-        "resolved": "4.86.1",
-        "contentHash": "OhbQU02GSIXDwI+Aj8ZM2bqFHM4Ix8EqjMYDhs8m0SVTq+bGqyIHvp8vPBZNdXCz6pr18GOFlUIfSo8O5elSHg==",
+        "requested": "[4.87.0, )",
+        "resolved": "4.87.0",
+        "contentHash": "TyBuYz7Nldl0rhC4Fza/yAM4MATEf+YG4CCh5Kl10UXeT/JOzI4yag8/juD2ZinhiQSmJl+BFzMjEWY75JCX5Q==",
         "dependencies": {
-          "Microsoft.Identity.Client": "4.86.1",
+          "Microsoft.Identity.Client": "4.87.0",
           "System.Security.Cryptography.ProtectedData": "4.5.0"
         }
       },

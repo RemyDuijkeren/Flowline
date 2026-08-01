@@ -65,13 +65,13 @@ public class WebResourceServiceTests : IDisposable
 
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
 
-        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r =>
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is(Matching<CreateRequest>(r =>
             r.Target.GetAttributeValue<string>("name") == "my_MySolution/test.js" &&
-            r["SolutionUniqueName"].ToString() == "MySolution"), Arg.Any<CancellationToken>());
+            r["SolutionUniqueName"].ToString() == "MySolution")), Arg.Any<CancellationToken>());
 
-        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<OrganizationRequest>(r =>
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is(Matching<OrganizationRequest>(r =>
             r.RequestName == "PublishXml" &&
-            r["ParameterXml"].ToString()!.Contains(createdId.ToString())), Arg.Any<CancellationToken>());
+            r["ParameterXml"].ToString()!.Contains(createdId.ToString()))), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -86,10 +86,10 @@ public class WebResourceServiceTests : IDisposable
 
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
 
-        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<CreateRequest>(r =>
-            r.Target.GetAttributeValue<string>("name") == "my_MySolution/test.js"), Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is(Matching<CreateRequest>(r =>
+            r.Target.GetAttributeValue<string>("name") == "my_MySolution/test.js")), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().ExecuteAsync(
-            Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>());
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml")), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -117,11 +117,11 @@ public class WebResourceServiceTests : IDisposable
 
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
 
-        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<OrganizationRequest>(r =>
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is(Matching<OrganizationRequest>(r =>
             r.RequestName == "RemoveSolutionComponent" &&
             (Guid)r["ComponentId"] == webResourceId &&
             (int)r["ComponentType"] == 61 &&
-            r["SolutionUniqueName"].ToString() == "MySolution"), Arg.Any<CancellationToken>());
+            r["SolutionUniqueName"].ToString() == "MySolution")), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", webResourceId, Arg.Any<CancellationToken>());
         Assert.Contains("still in other solution", _console.Output);
     }
@@ -135,7 +135,7 @@ public class WebResourceServiceTests : IDisposable
 
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
 
-        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent")), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", webResourceId, Arg.Any<CancellationToken>());
         Assert.Contains("ownership unclear", _console.Output);
     }
@@ -188,11 +188,11 @@ public class WebResourceServiceTests : IDisposable
 
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
 
-        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<OrganizationRequest>(r =>
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is(Matching<OrganizationRequest>(r =>
             r.RequestName == "RemoveSolutionComponent" &&
             (Guid)r["ComponentId"] == webResourceId &&
             (int)r["ComponentType"] == 61 &&
-            r["SolutionUniqueName"].ToString() == "MySolution"), Arg.Any<CancellationToken>());
+            r["SolutionUniqueName"].ToString() == "MySolution")), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", webResourceId, Arg.Any<CancellationToken>());
         Assert.Contains("owned by managed solution", _console.Output);
     }
@@ -219,7 +219,7 @@ public class WebResourceServiceTests : IDisposable
 
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
 
-        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml")), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -285,11 +285,11 @@ public class WebResourceServiceTests : IDisposable
         createResponse.Results["id"] = succeededId;
 
         _serviceMock.ExecuteAsync(
-                Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_MySolution/b.js"),
+                Arg.Is(Matching<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_MySolution/b.js")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<OrganizationResponse>(createResponse));
         _serviceMock.ExecuteAsync(
-                Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_MySolution/a.js"),
+                Arg.Is(Matching<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_MySolution/a.js")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<OrganizationResponse>(new FaultException<OrganizationServiceFault>(new OrganizationServiceFault(), "Dataverse error")));
 
@@ -298,9 +298,9 @@ public class WebResourceServiceTests : IDisposable
 
         Assert.Contains("1 web resource", ex.Message);
         Assert.Contains("my_MySolution/a.js", _console.Output);
-        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<OrganizationRequest>(r =>
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is(Matching<OrganizationRequest>(r =>
             r.RequestName == "PublishXml" &&
-            r["ParameterXml"].ToString()!.Contains(succeededId.ToString())), Arg.Any<CancellationToken>());
+            r["ParameterXml"].ToString()!.Contains(succeededId.ToString()))), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -316,9 +316,9 @@ public class WebResourceServiceTests : IDisposable
         File.WriteAllText(Path.Combine(_webresourceRoot, "a.js"), "new content");
         File.WriteAllText(Path.Combine(_webresourceRoot, "b.js"), "new content");
 
-        _serviceMock.UpdateAsync(Arg.Is<Entity>(e => e.Id == id1), Arg.Any<CancellationToken>())
+        _serviceMock.UpdateAsync(Arg.Is(Matching<Entity>(e => e.Id == id1)), Arg.Any<CancellationToken>())
             .Returns(Task.FromException(new FaultException<OrganizationServiceFault>(new OrganizationServiceFault(), "Dataverse update error")));
-        _serviceMock.UpdateAsync(Arg.Is<Entity>(e => e.Id == id2), Arg.Any<CancellationToken>())
+        _serviceMock.UpdateAsync(Arg.Is(Matching<Entity>(e => e.Id == id2)), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -326,9 +326,9 @@ public class WebResourceServiceTests : IDisposable
 
         Assert.Contains("1 web resource", ex.Message);
         Assert.Contains("my_MySolution/a.js", _console.Output);
-        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<OrganizationRequest>(r =>
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is(Matching<OrganizationRequest>(r =>
             r.RequestName == "PublishXml" &&
-            r["ParameterXml"].ToString()!.Contains(id2.ToString())), Arg.Any<CancellationToken>());
+            r["ParameterXml"].ToString()!.Contains(id2.ToString()))), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -341,17 +341,17 @@ public class WebResourceServiceTests : IDisposable
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
 
         await _serviceMock.Received(1).UpdateAsync(
-            Arg.Is<Entity>(e => e.Id == webResourceId), Arg.Any<CancellationToken>());
+            Arg.Is(Matching<Entity>(e => e.Id == webResourceId)), Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<OrganizationRequest>(r =>
+            Arg.Is(Matching<OrganizationRequest>(r =>
                 r.RequestName == "AddSolutionComponent" &&
                 (Guid)r["ComponentId"] == webResourceId &&
-                r["SolutionUniqueName"].ToString() == "MySolution"),
+                r["SolutionUniqueName"].ToString() == "MySolution")),
             Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<OrganizationRequest>(r =>
+            Arg.Is(Matching<OrganizationRequest>(r =>
                 r.RequestName == "PublishXml" &&
-                r["ParameterXml"].ToString()!.Contains(webResourceId.ToString())),
+                r["ParameterXml"].ToString()!.Contains(webResourceId.ToString()))),
             Arg.Any<CancellationToken>());
     }
 
@@ -367,17 +367,17 @@ public class WebResourceServiceTests : IDisposable
 
         await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<OrganizationRequest>(r =>
+            Arg.Is(Matching<OrganizationRequest>(r =>
                 r.RequestName == "AddSolutionComponent" &&
                 (Guid)r["ComponentId"] == webResourceId &&
-                r["SolutionUniqueName"].ToString() == "MySolution"),
+                r["SolutionUniqueName"].ToString() == "MySolution")),
             Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task SyncSolutionAsync_SolutionNotFound_ShouldThrow()
     {
-        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "solution"), Arg.Any<CancellationToken>())
+        _serviceMock.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "solution")), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection()));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -401,7 +401,7 @@ public class WebResourceServiceTests : IDisposable
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
 
         await _serviceMock.Received(1).UpdateAsync(
-            Arg.Is<Entity>(e => e.Id == id && !e.Attributes.ContainsKey("dependencyxml")),
+            Arg.Is(Matching<Entity>(e => e.Id == id && !e.Attributes.ContainsKey("dependencyxml"))),
             Arg.Any<CancellationToken>());
     }
 
@@ -418,7 +418,7 @@ public class WebResourceServiceTests : IDisposable
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
 
         await _serviceMock.Received(1).UpdateAsync(
-            Arg.Is<Entity>(e => e.Id == id && e.Attributes.ContainsKey("dependencyxml")),
+            Arg.Is(Matching<Entity>(e => e.Id == id && e.Attributes.ContainsKey("dependencyxml"))),
             Arg.Any<CancellationToken>());
     }
 
@@ -466,7 +466,7 @@ public class WebResourceServiceTests : IDisposable
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
 
         await _serviceMock.Received(1).UpdateAsync(
-            Arg.Is<Entity>(e => e.Id == id && e.Attributes.ContainsKey("dependencyxml") && e["dependencyxml"] == null),
+            Arg.Is(Matching<Entity>(e => e.Id == id && e.Attributes.ContainsKey("dependencyxml") && e["dependencyxml"] == null)),
             Arg.Any<CancellationToken>());
     }
 
@@ -484,7 +484,7 @@ public class WebResourceServiceTests : IDisposable
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
 
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<CreateRequest>(r => r.Target.Attributes.ContainsKey("dependencyxml")),
+            Arg.Is(Matching<CreateRequest>(r => r.Target.Attributes.ContainsKey("dependencyxml"))),
             Arg.Any<CancellationToken>());
     }
 
@@ -505,10 +505,10 @@ public class WebResourceServiceTests : IDisposable
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
 
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<CreateRequest>(r =>
+            Arg.Is(Matching<CreateRequest>(r =>
                 r.Target.GetAttributeValue<string>("name") == "my_MySolution/form.js" &&
                 r.Target.GetAttributeValue<string>("dependencyxml")!.Contains("name=\"my_MySolution/lib.js\"") &&
-                !r.Target.GetAttributeValue<string>("dependencyxml")!.Contains("name=\"lib.js\"")),
+                !r.Target.GetAttributeValue<string>("dependencyxml")!.Contains("name=\"lib.js\""))),
             Arg.Any<CancellationToken>());
     }
 
@@ -525,7 +525,7 @@ public class WebResourceServiceTests : IDisposable
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
 
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<CreateRequest>(r => !r.Target.Attributes.ContainsKey("dependencyxml")),
+            Arg.Is(Matching<CreateRequest>(r => !r.Target.Attributes.ContainsKey("dependencyxml"))),
             Arg.Any<CancellationToken>());
     }
 
@@ -585,15 +585,15 @@ public class WebResourceServiceTests : IDisposable
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
 
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<CreateRequest>(r =>
+            Arg.Is(Matching<CreateRequest>(r =>
                 r.Target.GetAttributeValue<string>("name") == "my_MySolution/Labels.js" &&
                 r.Target.Attributes.ContainsKey("dependencyxml") &&
-                r.Target.GetAttributeValue<string>("dependencyxml")!.Contains("my_MySolution/Labels.1033.resx")),
+                r.Target.GetAttributeValue<string>("dependencyxml")!.Contains("my_MySolution/Labels.1033.resx"))),
             Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<CreateRequest>(r =>
+            Arg.Is(Matching<CreateRequest>(r =>
                 r.Target.GetAttributeValue<string>("name") == "my_MySolution/sub/Labels.js" &&
-                !r.Target.Attributes.ContainsKey("dependencyxml")),
+                !r.Target.Attributes.ContainsKey("dependencyxml"))),
             Arg.Any<CancellationToken>());
     }
 
@@ -610,10 +610,10 @@ public class WebResourceServiceTests : IDisposable
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
 
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<CreateRequest>(r =>
+            Arg.Is(Matching<CreateRequest>(r =>
                 r.Target.GetAttributeValue<string>("name") == "my_MySolution/Form.js" &&
                 r.Target.Attributes.ContainsKey("dependencyxml") &&
-                r.Target.GetAttributeValue<string>("dependencyxml")!.Contains("my_MySolution/Form.1033.resx")),
+                r.Target.GetAttributeValue<string>("dependencyxml")!.Contains("my_MySolution/Form.1033.resx"))),
             Arg.Any<CancellationToken>());
     }
 
@@ -632,10 +632,10 @@ public class WebResourceServiceTests : IDisposable
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
 
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<CreateRequest>(r =>
+            Arg.Is(Matching<CreateRequest>(r =>
                 r.Target.GetAttributeValue<string>("name") == "my_MySolution/Form.js" &&
                 r.Target.Attributes.ContainsKey("dependencyxml") &&
-                r.Target.GetAttributeValue<string>("dependencyxml")!.Contains("my_MySolution/strings.1033.resx")),
+                r.Target.GetAttributeValue<string>("dependencyxml")!.Contains("my_MySolution/strings.1033.resx"))),
             Arg.Any<CancellationToken>());
     }
 
@@ -655,16 +655,16 @@ public class WebResourceServiceTests : IDisposable
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
 
         await _serviceMock.Received(1).UpdateAsync(
-            Arg.Is<Entity>(e =>
+            Arg.Is(Matching<Entity>(e =>
                 e.Id == orphanId &&
                 e.Attributes.ContainsKey("dependencyxml") &&
-                e.GetAttributeValue<string>("dependencyxml")!.Contains("av_Sol/new-lib.js")),
+                e.GetAttributeValue<string>("dependencyxml")!.Contains("av_Sol/new-lib.js"))),
             Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<OrganizationRequest>(r =>
+            Arg.Is(Matching<OrganizationRequest>(r =>
                 r.RequestName == "AddSolutionComponent" &&
                 (Guid)r["ComponentId"] == orphanId &&
-                r["SolutionUniqueName"].ToString() == "MySolution"),
+                r["SolutionUniqueName"].ToString() == "MySolution")),
             Arg.Any<CancellationToken>());
     }
 
@@ -681,7 +681,7 @@ public class WebResourceServiceTests : IDisposable
 
         // Remote had dep, local has no annotation → planner clears dependencyxml
         await _serviceMock.Received(1).UpdateAsync(
-            Arg.Is<Entity>(e => e.Id == id && e.Attributes.ContainsKey("dependencyxml") && e["dependencyxml"] == null),
+            Arg.Is(Matching<Entity>(e => e.Id == id && e.Attributes.ContainsKey("dependencyxml") && e["dependencyxml"] == null)),
             Arg.Any<CancellationToken>());
     }
 
@@ -703,7 +703,7 @@ public class WebResourceServiceTests : IDisposable
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
 
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "av_helper.js"),
+            Arg.Is(Matching<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "av_helper.js")),
             Arg.Any<CancellationToken>());
     }
 
@@ -721,7 +721,7 @@ public class WebResourceServiceTests : IDisposable
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
 
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_MySolution/js/app.js"),
+            Arg.Is(Matching<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_MySolution/js/app.js")),
             Arg.Any<CancellationToken>());
     }
 
@@ -739,7 +739,7 @@ public class WebResourceServiceTests : IDisposable
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
 
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_legacyscript.js"),
+            Arg.Is(Matching<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_legacyscript.js")),
             Arg.Any<CancellationToken>());
     }
 
@@ -757,7 +757,7 @@ public class WebResourceServiceTests : IDisposable
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
 
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "new_Other/util/helper.js"),
+            Arg.Is(Matching<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "new_Other/util/helper.js")),
             Arg.Any<CancellationToken>());
     }
 
@@ -775,7 +775,7 @@ public class WebResourceServiceTests : IDisposable
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
 
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "dh_/lib/jquery.js"),
+            Arg.Is(Matching<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "dh_/lib/jquery.js")),
             Arg.Any<CancellationToken>());
     }
 
@@ -797,10 +797,10 @@ public class WebResourceServiceTests : IDisposable
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
 
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_MySolution/app.js"),
+            Arg.Is(Matching<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_MySolution/app.js")),
             Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "av_Shared/lib/util.js"),
+            Arg.Is(Matching<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "av_Shared/lib/util.js")),
             Arg.Any<CancellationToken>());
     }
 
@@ -829,14 +829,14 @@ public class WebResourceServiceTests : IDisposable
         if (parentSolutionId.HasValue)
             solution["parentsolutionid"] = new EntityReference("solution", parentSolutionId.Value);
 
-        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "solution"), Arg.Any<CancellationToken>())
+        _serviceMock.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "solution")), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([solution])));
     }
 
     void SetupWebResources(params Entity[] webResources)
     {
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "webresource" && q.LinkEntities.Count > 0),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "webresource" && q.LinkEntities.Count > 0)),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(webResources.ToList())));
     }
@@ -844,7 +844,7 @@ public class WebResourceServiceTests : IDisposable
     void SetupGlobalOrphans(params Entity[] webResources)
     {
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "webresource" && q.LinkEntities.Count == 0),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "webresource" && q.LinkEntities.Count == 0)),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(webResources.ToList())));
     }
@@ -878,8 +878,8 @@ public class WebResourceServiceTests : IDisposable
         }).ToList();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" &&
-                    q.Criteria.Conditions.Any(c => c.AttributeName == "objectid" && c.Values.Contains(webResourceId))),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "solutioncomponent" &&
+                    q.Criteria.Conditions.Any(c => c.AttributeName == "objectid" && c.Values.Contains(webResourceId)))),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(rows)));
     }

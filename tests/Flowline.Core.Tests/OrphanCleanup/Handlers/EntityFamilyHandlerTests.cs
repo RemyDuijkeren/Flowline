@@ -63,7 +63,7 @@ public class EntityFamilyHandlerTests
         };
 
         _serviceMock.ExecuteAsync(
-                Arg.Is<OrganizationRequest>(r => r.RequestName == "RetrieveMetadataChanges"),
+                Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "RetrieveMetadataChanges")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<OrganizationResponse>(response));
     }

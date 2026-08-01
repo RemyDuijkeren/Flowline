@@ -56,7 +56,7 @@ public class FormEventServiceTests : IDisposable
         Assert.False(result);
         await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().ExecuteAsync(
-            Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>());
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml")), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -69,7 +69,7 @@ public class FormEventServiceTests : IDisposable
         Assert.False(result);
         await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().ExecuteAsync(
-            Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>());
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml")), Arg.Any<CancellationToken>());
         // Complements CleanupOrphanedAsync_EmptyPlan_ShouldReturnFalseSilentlyWithoutSkipMessage — the
         // registration phase is the one that's still allowed to report "up to date" to the user.
         Assert.Contains("already up to date", _console.Output);
@@ -88,9 +88,9 @@ public class FormEventServiceTests : IDisposable
         var result = await _service.RegisterAsync(_serviceMock, _webresourceRoot, "MySolution", force: false, dryRun: false);
 
         Assert.True(result);
-        await _serviceMock.Received(1).UpdateAsync(Arg.Is<Entity>(e => e.Id == formId), Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).UpdateAsync(Arg.Is(Matching<Entity>(e => e.Id == formId)), Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>());
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml")), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -108,9 +108,9 @@ public class FormEventServiceTests : IDisposable
         var result = await _service.RegisterAsync(_serviceMock, _webresourceRoot, "MySolution", force: false, dryRun: false, publishAfterSync: false);
 
         Assert.True(result);
-        await _serviceMock.Received(1).UpdateAsync(Arg.Is<Entity>(e => e.Id == formId), Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).UpdateAsync(Arg.Is(Matching<Entity>(e => e.Id == formId)), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().ExecuteAsync(
-            Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>());
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml")), Arg.Any<CancellationToken>());
     }
 
     // U2: proves FormEventService actually threads formEventCachePath through to FormEventReader (not just
@@ -156,7 +156,7 @@ public class FormEventServiceTests : IDisposable
         Assert.True(result);
         await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().ExecuteAsync(
-            Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>());
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml")), Arg.Any<CancellationToken>());
 
         // R18b: the removed short-circuit means the executor's own rich per-handler preview is now
         // reachable — not just a bare "N form(s) pending" count.
@@ -190,7 +190,7 @@ public class FormEventServiceTests : IDisposable
         Assert.True(result);
         await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().ExecuteAsync(
-            Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>());
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml")), Arg.Any<CancellationToken>());
         Assert.DoesNotContain("Run without --dry-run to apply", _console.Output);
         Assert.DoesNotContain("Summary:", _console.Output);
     }

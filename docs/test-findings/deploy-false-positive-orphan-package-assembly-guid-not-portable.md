@@ -1,11 +1,31 @@
 # Orphan detection false-flags a live, in-solution nupkg plugin-package assembly — plugin assemblies are matched by a non-portable GUID instead of their (stable) assembly name
 
-- **Status**: root cause **not fixed** (architectural — the cross-environment identity model for plugin
-  assemblies), but **mitigated 2026-07-31**: `PluginAssemblyFamilyHandler` is now `HandlerStatus.Guarded`,
-  so a default deploy **surfaces the false orphan and does not delete it** (no exit-18 PartialSuccess).
-  It is still deleted if the user passes `--force delete-orphans`, so the false-positive is gated, not
-  gone. The real fix (match plugin assemblies by name, then the handler is safe to auto-delete) is still
-  open. See "Suggested fix direction" below and `HandlerStatus`.
+- **Status**: root cause **FIXED 2026-08-01**. `ComponentClassifier.ParseSolutionXmlComponents` now
+  harvests each plugin assembly's portable simple name (from `schemaName`) alongside its GUID, and the
+  existing `CompareAsync` name-resolution path (`ResolveNamedComponentIdsAsync` / `NameResolvableTypes[91]`)
+  resolves the live assembly by name into the in-solution set — so a live, in-solution assembly is no
+  longer flagged regardless of GUID drift. With the false positive gone, `PluginAssemblyFamilyHandler`
+  and `CustomApiFamilyHandler` were promoted from `HandlerStatus.Guarded` to `HandlerStatus.Auto`, so a
+  default deploy again auto-cleans genuine orphans without `--force delete-orphans` and no longer
+  exits 18 on the false alarm. See "Fix (implemented)" below. The earlier 2026-07-31 Guarded mitigation
+  is superseded.
+  - **Coverage boundary (be honest about it):** the *false-positive elimination* is verified live (see
+    below) and by unit test (`CompareAsync_PluginAssemblyIdDriftsButNameMatches_NotReportedAsOrphan`),
+    and *genuine-orphan-still-detected* is unit-verified (`CompareAsync_PluginAssemblyRenamedAway_StillReportedAsOrphan`).
+    The **`Auto` promotion actually executing an ungated delete of a real orphan on a default deploy —
+    and a foreign sibling surviving it — was NOT exercised live this run** (the verification deploy had
+    zero genuine orphans). That behavior rests on unit coverage + the prior-session foreign-Custom-API
+    survivor fix only; a live exercise (construct one genuine orphan via the probe/rename technique, then
+    a default `deploy test` with no `--force`) is still outstanding.
+- **Live-verified on TEST 2026-08-01** (CLI `0.14.1-alpha.0.2`, `FlowlineDeployTest` fixture, the exact
+  solution that previously exited 18):
+  - Read-only `drift test` → `Orphan components (0)`, **exit 0** (was: one orphan — the solution's own
+    live plugin package — and exit 15).
+  - Real `deploy test` (re-deploy over the already-present solution) → pre-import orphan query
+    `Orphan components (0)`, `🚀 Deployed!`, **exit 0** (was: exit 18 PartialSuccess with a false
+    `1 orphan component couldn't be cleaned up — remove manually via maker portal` pointing at the
+    user's own live plugin). Checker 0 findings, real backup `flowline-deploy-FlowlineDeployTest-20260801T043348Z`.
+  - Full suite green at **2030 passed / 0 failed / 4 skipped** with the fix in place.
 - **Severity**: **high for the deploy/promotion path**, where it is unfixable by the user; **lower on
   the push/DEV path**, where a `sync` refreshes the stale ids (see "DEV vs deploy-target" below).
 - **Now fully observed** (updated 2026-07-31 by a real re-deploy of `FlowlineDeployTest`):
@@ -133,21 +153,32 @@ reproduces the finding independent of the Cr07982 fixture and its default-soluti
   real re-`deploy` **always exits 18 PartialSuccess** on the failed cleanup (see "failure mode" below).
   The only real fix is to stop matching plugin assemblies by GUID.
 
-## Suggested fix direction (not attempted — architectural)
+## Fix (implemented)
 
-Reconcile live plugin assemblies against source **by name**, not GUID:
+Reconcile live plugin assemblies against source **by name**, not GUID — reusing the same portable-identity
+path WebResource/Entity/Role already use:
 
-1. In `ParseSolutionXmlComponents`, for type-91 RootComponents that carry a `schemaName`, additionally
-   harvest the simple assembly name (strong-name up to the first comma, e.g. `Cr07982.Backend`) into a
-   name-keyed local identifier set — alongside, not instead of, the GUID.
-2. In the orphan diff (`OrphanCleanupService.CompareAsync` / `BuildLocalIdentifierHarvest`), resolve
-   each live `pluginassembly` candidate's `name` and treat it as in-solution if that name is in the
-   committed set — mirroring the existing WebResource/CustomApi/Bot name reconciliation.
+1. `ComponentClassifier.ParseSolutionXmlComponents` — for type-91 RootComponents (which carry both a GUID
+   `id` and a strong-name `schemaName`), the GUID branch now *additionally* emits the simple assembly name
+   (`SimpleAssemblyName` — strong-name up to the first comma, e.g. `Cr07982.Backend`) into `namedComponents`,
+   alongside the GUID in `Components`.
+2. No change needed in the diff itself: `CompareAsync` already resolves `namedComponents` live by name via
+   `ResolveNamedComponentIdsAsync`, and `NameResolvableTypes[91]` already maps 91 → `pluginassembly`/`name`.
+   The live assembly's id is folded into `sNewIds`, so it's no longer diffed out as an orphan.
 
-Why not inline: this changes the identity model for plugin assemblies and has high blast radius — too
-loose and a *genuine* orphan (a renamed-away package, the old `Plugins`) stops being detected; wrong
-name extraction and a live plugin is deleted. Needs its own design + regression tests (package vs
-classic, renamed-away still detected, same-name/different-public-key-token cases).
+Because the false positive is killed at the diff (before any handler sees the candidate), the redirect →
+defer → post-import-delete cascade never starts — no handler or post-import change was required. With the
+false positive gone, `PluginAssemblyFamilyHandler` and `CustomApiFamilyHandler` were promoted
+`Guarded` → `Auto`.
+
+Blast radius that was checked (regression tests in `ComponentClassifierTests` and `OrphanCleanupServiceTests`):
+- **renamed-away still detected**: a live assembly whose simple name is no longer declared in source is
+  not resolved by name, so it stays a genuine orphan (`CompareAsync_PluginAssemblyRenamedAway_StillReportedAsOrphan`).
+- **name harvested alongside, not instead of, the GUID** (`ParseSolutionXmlComponents_PluginAssembly_HarvestsSimpleNameAlongsideGuid`);
+  harvest scoped to type 91 only (non-91 id+schemaName still GUID-only).
+- **same-name / different-PublicKeyToken**: accepted trade-off — both live rows match one source name and
+  are treated in-solution (Dataverse doesn't support duplicate assembly names in a package); noted in
+  `SimpleAssemblyName`'s comment.
 
 ## Failure mode precision (for the fixer)
 

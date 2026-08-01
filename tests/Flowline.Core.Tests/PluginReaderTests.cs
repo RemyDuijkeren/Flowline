@@ -32,13 +32,13 @@ public class PluginReaderTests
         {
             ["pub.customizationprefix"] = new AliasedValue("publisher", "customizationprefix", "abc")
         };
-        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "solution"), Arg.Any<CancellationToken>())
+        _serviceMock.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "solution")), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(new List<Entity> { defaultSolution })));
 
         // Solution membership lookups (round 3) — mirror PluginServiceTests: return no memberships,
         // not relevant to these scenarios.
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "solutioncomponent"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "solutioncomponent")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection()));
     }
@@ -57,9 +57,9 @@ public class PluginReaderTests
     {
         var entity = new Entity("pluginassembly", assemblyId) { ["name"] = assemblyName };
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly"
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginassembly"
                     && HasCondition(q, "packageid", packageId)
-                    && HasCondition(q, "name", assemblyName)),
+                    && HasCondition(q, "name", assemblyName))),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(new List<Entity> { entity })));
     }
@@ -70,7 +70,7 @@ public class PluginReaderTests
     private void SetupPluginTypesFor(Guid assemblyId, params Entity[] types)
     {
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "plugintype" && HasCondition(q, "pluginassemblyid", assemblyId)),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "plugintype" && HasCondition(q, "pluginassemblyid", assemblyId))),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(types.ToList())));
     }
@@ -84,41 +84,41 @@ public class PluginReaderTests
             if (!s.Contains("stage"))
                 s["stage"] = new OptionSetValue(20);
         }
-        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep"))
+        _serviceMock.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep")))
             .Returns(Task.FromResult(new EntityCollection(steps.ToList())));
-        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep"), Arg.Any<CancellationToken>())
+        _serviceMock.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep")), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(steps.ToList())));
     }
 
     private void SetupImages(params Entity[] images)
     {
-        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstepimage"))
+        _serviceMock.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstepimage")))
             .Returns(Task.FromResult(new EntityCollection(images.ToList())));
-        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstepimage"), Arg.Any<CancellationToken>())
+        _serviceMock.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstepimage")), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(images.ToList())));
     }
 
     private void SetupCustomApis(params Entity[] apis)
     {
-        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "customapi"))
+        _serviceMock.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "customapi")))
             .Returns(Task.FromResult(new EntityCollection(apis.ToList())));
-        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "customapi"), Arg.Any<CancellationToken>())
+        _serviceMock.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "customapi")), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(apis.ToList())));
     }
 
     private void SetupRequestParameters(params Entity[] parameters)
     {
-        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "customapirequestparameter"))
+        _serviceMock.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "customapirequestparameter")))
             .Returns(Task.FromResult(new EntityCollection(parameters.ToList())));
-        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "customapirequestparameter"), Arg.Any<CancellationToken>())
+        _serviceMock.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "customapirequestparameter")), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(parameters.ToList())));
     }
 
     private void SetupResponseProperties(params Entity[] properties)
     {
-        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "customapiresponseproperty"))
+        _serviceMock.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "customapiresponseproperty")))
             .Returns(Task.FromResult(new EntityCollection(properties.ToList())));
-        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "customapiresponseproperty"), Arg.Any<CancellationToken>())
+        _serviceMock.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "customapiresponseproperty")), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(properties.ToList())));
     }
 
@@ -222,7 +222,7 @@ public class PluginReaderTests
         // (e.g. calling public LoadSnapshotAsync N times) would still pass every content assertion
         // above (the prefix value is identical either way) but would query "solution" twice here.
         await _serviceMock.Received(1).RetrieveMultipleAsync(
-            Arg.Is<QueryExpression>(q => q.EntityName == "solution"),
+            Arg.Is(Matching<QueryExpression>(q => q.EntityName == "solution")),
             Arg.Any<CancellationToken>());
     }
 

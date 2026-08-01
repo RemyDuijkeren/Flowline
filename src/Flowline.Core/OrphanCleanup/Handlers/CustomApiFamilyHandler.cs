@@ -13,7 +13,11 @@ namespace Flowline.Core.OrphanCleanup.Handlers;
 // docs/solutions/architecture-patterns/orphan-cleanup-two-phase-deploy-pipeline.md).
 public sealed class CustomApiFamilyHandler(IAnsiConsole console) : IOrphanHandler
 {
-    public HandlerStatus Status => HandlerStatus.Guarded;
+    // Auto: CustomApi family is matched by uniquename (the only portable local identity — see
+    // ScanCustomApiNames), so a recreated API (same uniquename, new id) is never flagged and only a
+    // genuinely-removed API reaches this handler. Same portable-identity guarantee that makes
+    // PluginAssemblyFamilyHandler safe to auto-delete.
+    public HandlerStatus Status => HandlerStatus.Auto;
 
     // Children before parent — the request-parameter and response-property child records execute first
     // (SequenceHint 0), the customapi parent last (1).

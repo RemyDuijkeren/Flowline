@@ -113,6 +113,52 @@ public class ComponentClassifierTests : IDisposable
     }
 
     [Fact]
+    public void ParseSolutionXmlComponents_PluginAssembly_HarvestsSimpleNameAlongsideGuid()
+    {
+        // Plugin assemblies carry BOTH a GUID id and a strong-name schemaName. The GUID is captured (as
+        // before) AND the simple assembly name (strong-name up to the first comma) is additionally
+        // harvested into NamedComponents so CompareAsync can resolve the live assembly by its portable
+        // name — see deploy-false-positive-orphan-package-assembly-guid-not-portable.md.
+        var id = Guid.NewGuid();
+        WriteSolutionXml($$"""
+            <RootComponent type="91" id="{{{id}}}" schemaName="Cr07982.Backend, Version=0.0.0.0, Culture=neutral, PublicKeyToken=48c2f23af73ee643" />
+            """);
+
+        var result = ComponentClassifier.ParseSolutionXmlComponents(SolutionXmlPath);
+
+        result.Components.Should().Contain((id, 91));
+        result.NamedComponents.Should().ContainEquivalentOf((91, "Cr07982.Backend"));
+    }
+
+    [Fact]
+    public void ParseSolutionXmlComponents_PluginAssembly_WithoutSchemaName_HarvestsGuidOnly()
+    {
+        // A type-91 RootComponent with a GUID but no schemaName (e.g. older fixtures) keeps the
+        // GUID-only behavior — nothing to harvest by name.
+        var id = Guid.NewGuid();
+        WriteSolutionXml($$"""<RootComponent type="91" id="{{{id}}}" />""");
+
+        var result = ComponentClassifier.ParseSolutionXmlComponents(SolutionXmlPath);
+
+        result.Components.Should().Contain((id, 91));
+        result.NamedComponents.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ParseSolutionXmlComponents_NonPluginAssembly_WithIdAndSchemaName_DoesNotHarvestName()
+    {
+        // The name-harvest is scoped to type 91 only. Any other type carrying both an id and a
+        // schemaName keeps the GUID-only capture — the schemaName is ignored, as before.
+        var id = Guid.NewGuid();
+        WriteSolutionXml($$"""<RootComponent type="90" id="{{{id}}}" schemaName="Cr07982.Backend.SomeType" />""");
+
+        var result = ComponentClassifier.ParseSolutionXmlComponents(SolutionXmlPath);
+
+        result.Components.Should().Contain((id, 90));
+        result.NamedComponents.Should().BeEmpty();
+    }
+
+    [Fact]
     public void ParseSolutionXmlComponents_IgnoresSchemaNameOnly_ForNonEntityType()
     {
         WriteSolutionXml("""<RootComponent type="29" schemaName="somename" />""");

@@ -168,14 +168,14 @@ public class WebResourceReaderTests : IDisposable
             ["publisher.customizationprefix"] = new AliasedValue("publisher", "customizationprefix", prefix)
         };
 
-        _serviceMock.RetrieveMultipleAsync(Arg.Is<QueryExpression>(q => q.EntityName == "solution"), Arg.Any<CancellationToken>())
+        _serviceMock.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "solution")), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([solution])));
     }
 
     void SetupWebResources(params Entity[] webResources)
     {
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "webresource" && q.LinkEntities.Count > 0),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "webresource" && q.LinkEntities.Count > 0)),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(webResources.ToList())));
     }
@@ -183,7 +183,7 @@ public class WebResourceReaderTests : IDisposable
     void SetupGlobalOrphans(params Entity[] webResources)
     {
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "webresource" && q.LinkEntities.Count == 0),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "webresource" && q.LinkEntities.Count == 0)),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(webResources.ToList())));
     }
@@ -206,8 +206,8 @@ public class WebResourceReaderTests : IDisposable
         }).ToList();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" &&
-                    q.Criteria.Conditions.Any(c => c.AttributeName == "objectid" && c.Values.Contains(webResourceId))),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "solutioncomponent" &&
+                    q.Criteria.Conditions.Any(c => c.AttributeName == "objectid" && c.Values.Contains(webResourceId)))),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(rows)));
     }

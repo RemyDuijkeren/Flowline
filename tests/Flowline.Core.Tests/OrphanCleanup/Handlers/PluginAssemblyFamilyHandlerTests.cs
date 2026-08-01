@@ -53,7 +53,7 @@ public class PluginAssemblyFamilyHandlerTests
     {
         var entity = new Entity(entityLogicalName, id) { [nameAttribute] = name };
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == entityLogicalName && q.ColumnSet.Columns.Contains(nameAttribute)),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == entityLogicalName && q.ColumnSet.Columns.Contains(nameAttribute))),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([entity])));
     }
@@ -66,7 +66,7 @@ public class PluginAssemblyFamilyHandlerTests
         }).ToList();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly" && q.ColumnSet.Columns.Contains("packageid")),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginassembly" && q.ColumnSet.Columns.Contains("packageid"))),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(entities)));
     }
@@ -80,7 +80,7 @@ public class PluginAssemblyFamilyHandlerTests
         }).ToList();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep" && q.ColumnSet.Columns.Contains("statecode")),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "sdkmessageprocessingstep" && q.ColumnSet.Columns.Contains("statecode"))),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(entities)));
     }
@@ -91,10 +91,18 @@ public class PluginAssemblyFamilyHandlerTests
     {
         var entities = ids.Select(id => new Entity(entityLogicalName, id)).ToList();
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == entityLogicalName
-                    && q.Criteria.Conditions.Any(c => c.AttributeName == filterAttribute)),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == entityLogicalName
+                    && q.Criteria.Conditions.Any(c => c.AttributeName == filterAttribute))),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(entities)));
+    }
+
+    [Fact]
+    public void Status_IsAuto()
+    {
+        // Cross-environment id-drift false positive is fixed upstream (assemblies resolved by portable
+        // name), so only a genuinely-removed assembly reaches this handler — safe for unattended auto-delete.
+        Assert.Equal(HandlerStatus.Auto, _handler.Status);
     }
 
     [Fact]
@@ -401,7 +409,7 @@ public class PluginAssemblyFamilyHandlerTests
         var assemblyId = Guid.NewGuid();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly" && q.ColumnSet.Columns.Contains("packageid")),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginassembly" && q.ColumnSet.Columns.Contains("packageid"))),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new FaultException<OrganizationServiceFault>(new OrganizationServiceFault())));
 
@@ -419,7 +427,7 @@ public class PluginAssemblyFamilyHandlerTests
         var assemblyId = Guid.NewGuid();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly" && q.ColumnSet.Columns.Contains("packageid")),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginassembly" && q.ColumnSet.Columns.Contains("packageid"))),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("network timeout")));
 
@@ -611,7 +619,7 @@ public class PluginAssemblyFamilyHandlerTests
         SetupPackageIds((assemblyId, packageId));
         SetupChildIds("plugintype", "pluginassemblyid", typeId);
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "customapi" && q.Criteria.Conditions.Any(c => c.AttributeName == "plugintypeid")),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "customapi" && q.Criteria.Conditions.Any(c => c.AttributeName == "plugintypeid"))),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new FaultException<OrganizationServiceFault>(new OrganizationServiceFault())));
 
@@ -632,7 +640,7 @@ public class PluginAssemblyFamilyHandlerTests
         SetupPackageIds((assemblyId, packageId));
         SetupChildIds("plugintype", "pluginassemblyid", typeId);
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "customapi" && q.Criteria.Conditions.Any(c => c.AttributeName == "plugintypeid")),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "customapi" && q.Criteria.Conditions.Any(c => c.AttributeName == "plugintypeid"))),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new FaultException<OrganizationServiceFault>(new OrganizationServiceFault())));
 
@@ -651,7 +659,7 @@ public class PluginAssemblyFamilyHandlerTests
         SetupPackageIds((assemblyId, packageId));
         SetupChildIds("plugintype", "pluginassemblyid", typeId);
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "customapi" && q.Criteria.Conditions.Any(c => c.AttributeName == "plugintypeid")),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "customapi" && q.Criteria.Conditions.Any(c => c.AttributeName == "plugintypeid"))),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("network timeout")));
 

@@ -13,6 +13,10 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <!-- NSubstitute's Arg.Is<T>(Expression<Predicate<T?>>) makes the lambda parameter nullable, tripping
+         CS8602 on every q => q.Prop matcher. ArgMatchers.Matching<T>(Predicate<T>) takes a non-null
+         parameter, so `Arg.Is(Matching<T>(x => ...))` is the null-clean equivalent. Static-imported repo-wide. -->
+    <Using Include="NSubstitute.ArgMatchers" Static="true" />
   </ItemGroup>
 
   <ItemGroup>

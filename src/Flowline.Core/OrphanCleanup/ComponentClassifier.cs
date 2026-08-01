@@ -8,7 +8,10 @@ public enum ComponentAction { AutoDelete, Manual }
 /// S_new candidates parsed from a solution's unpacked source. <see cref="EntityLogicalNames"/> holds
 /// entity roots that Solution.xml records by schemaName instead of id. <see cref="NamedComponents"/> holds
 /// every other type recorded by schemaName instead of id (e.g. WebResource — its id is not portable
-/// across environments, so pac always records it by name) — callers with a live connection must resolve
+/// across environments, so pac always records it by name), plus the simple name of each plugin assembly
+/// (type 91) — recorded with both a GUID id and a strong-name schemaName, but its GUID isn't portable
+/// either, so it's harvested here by name in addition to its GUID in <see cref="Components"/>. Callers
+/// with a live connection must resolve
 /// both to live ids and fold them into the orphan-diff "in solution" set themselves.
 /// See <see cref="ComponentClassifier.ParseSolutionXmlComponents"/>.
 /// </summary>
@@ -110,6 +113,22 @@ public static class ComponentClassifier
             if (Guid.TryParse(component.Attribute("id")?.Value, out var id))
             {
                 components.Add((id, type));
+
+                // Plugin assemblies (type 91) are the one non-portable component Solution.xml records with
+                // BOTH a GUID id and a strong-name schemaName. push/import re-mint the GUID per environment,
+                // so a live assembly's id never matches the committed one and GUID-only matching false-flags
+                // a live, in-solution assembly as an orphan. Additionally harvest the simple assembly name
+                // (strong-name up to the first comma) so CompareAsync resolves it live by name via
+                // NameResolvableTypes[91] — the same portable-identity path WebResource/Entity/Role already
+                // use — alongside, not instead of, the GUID. See
+                // docs/test-findings/deploy-false-positive-orphan-package-assembly-guid-not-portable.md.
+                if (type == PluginAssembly)
+                {
+                    var strongName = component.Attribute("schemaName")?.Value;
+                    if (!string.IsNullOrEmpty(strongName))
+                        namedComponents.Add((PluginAssembly, SimpleAssemblyName(strongName)));
+                }
+
                 continue;
             }
 
@@ -123,6 +142,19 @@ public static class ComponentClassifier
         }
 
         return new SolutionXmlComponents(components.AsReadOnly(), entityLogicalNames.AsReadOnly(), namedComponents.AsReadOnly());
+    }
+
+    // Strong name -> simple assembly name: "Cr07982.Backend, Version=0.0.0.0, Culture=neutral,
+    // PublicKeyToken=48c2f23af73ee643" -> "Cr07982.Backend". pluginassembly.name in Dataverse holds
+    // exactly this simple name, so it's what NameResolvableTypes[91] matches against live. A schemaName
+    // with no comma (defensive — a real assembly strong-name always has one) is returned whole.
+    // Known trade-off: two live assemblies sharing a simple name but differing by PublicKeyToken both
+    // match a single source name and are both treated as in-solution — accepted (Dataverse doesn't
+    // support duplicate assembly names in one package); revisit if same-name/different-token surfaces.
+    static string SimpleAssemblyName(string strongName)
+    {
+        var comma = strongName.IndexOf(',');
+        return comma < 0 ? strongName.Trim() : strongName[..comma].Trim();
     }
 
     /// <summary>

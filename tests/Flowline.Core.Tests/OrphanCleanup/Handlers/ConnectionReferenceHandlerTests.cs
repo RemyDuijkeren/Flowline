@@ -48,7 +48,7 @@ public class ConnectionReferenceHandlerTests : IDisposable
         if (logicalName != null) entity["connectionreferencelogicalname"] = logicalName;
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "connectionreference"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "connectionreference")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([entity])));
     }
@@ -132,7 +132,7 @@ public class ConnectionReferenceHandlerTests : IDisposable
         var candidateId = Guid.NewGuid();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "connectionreference"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "connectionreference")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("connectionreference table unavailable")));
 
@@ -152,12 +152,12 @@ public class ConnectionReferenceHandlerTests : IDisposable
         var botId = Guid.NewGuid();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "connectionreference"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "connectionreference")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("connectionreference table unavailable")));
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "bot"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "bot")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("bot", botId) { ["schemaname"] = "msdyn_salesCopilot" } // publishedon unset — draft
@@ -181,7 +181,7 @@ public class ConnectionReferenceHandlerTests : IDisposable
         var candidateId = Guid.NewGuid();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "connectionreference"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "connectionreference")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new FaultException<OrganizationServiceFault>(new OrganizationServiceFault())));
 
@@ -197,7 +197,7 @@ public class ConnectionReferenceHandlerTests : IDisposable
         var candidateId = Guid.NewGuid();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "connectionreference"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "connectionreference")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("network timeout")));
 
@@ -253,7 +253,7 @@ public class ConnectionReferenceHandlerTests : IDisposable
         WriteConnectionReferencesXml(_dataverseSolutionSrcRoot, "av_sharepoint");
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "connectionreference"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "connectionreference")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("connectionreference", liveId) { ["connectionreferencelogicalname"] = "av_sharepoint" }

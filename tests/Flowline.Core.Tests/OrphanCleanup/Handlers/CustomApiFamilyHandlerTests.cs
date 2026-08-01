@@ -46,7 +46,7 @@ public class CustomApiFamilyHandlerTests : IDisposable
     {
         var entities = rows.Select(r => new Entity(entityLogicalName, r.Id) { ["name"] = r.Name }).ToList();
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == entityLogicalName),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == entityLogicalName)),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(entities)));
     }
@@ -113,7 +113,7 @@ public class CustomApiFamilyHandlerTests : IDisposable
         var entity = new Entity("customapi", candidateId) { ["name"] = null };
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "customapi"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "customapi")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([entity])));
 
@@ -135,7 +135,7 @@ public class CustomApiFamilyHandlerTests : IDisposable
         SetupTableNames("customapirequestparameter", (paramId, "av_GenuinelyRemovedParam"));
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "customapiresponseproperty"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "customapiresponseproperty")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("table unavailable")));
 
@@ -158,7 +158,7 @@ public class CustomApiFamilyHandlerTests : IDisposable
         var candidateId = Guid.NewGuid();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "customapi"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "customapi")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new FaultException<OrganizationServiceFault>(new OrganizationServiceFault())));
 
@@ -176,7 +176,7 @@ public class CustomApiFamilyHandlerTests : IDisposable
         var candidateId = Guid.NewGuid();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "customapi"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "customapi")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("network timeout")));
 
@@ -219,9 +219,11 @@ public class CustomApiFamilyHandlerTests : IDisposable
     }
 
     [Fact]
-    public void Status_IsGuarded()
+    public void Status_IsAuto()
     {
-        Assert.Equal(HandlerStatus.Guarded, _handler.Status);
+        // Matched by portable uniquename — a recreated API isn't flagged, only a genuinely-removed one
+        // reaches the handler, so unattended auto-delete is safe.
+        Assert.Equal(HandlerStatus.Auto, _handler.Status);
     }
 
     // -- ClaimedIds: recognized-but-clean vs genuinely-unrecognized --
@@ -254,7 +256,7 @@ public class CustomApiFamilyHandlerTests : IDisposable
         var entity = new Entity("customapi", candidateId) { ["name"] = null };
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "customapi"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "customapi")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([entity])));
 

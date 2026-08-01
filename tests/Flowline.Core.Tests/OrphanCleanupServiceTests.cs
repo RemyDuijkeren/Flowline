@@ -52,7 +52,7 @@ public class OrphanCleanupServiceTests : IDisposable
 
         // Default: no cross-solution membership
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" && q.LinkEntities.Count > 0),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "solutioncomponent" && q.LinkEntities.Count > 0)),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection()));
     }
@@ -166,9 +166,9 @@ public class OrphanCleanupServiceTests : IDisposable
         }).ToList();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q =>
+                Arg.Is(Matching<QueryExpression>(q =>
                     q.EntityName == "solutioncomponent" &&
-                    q.LinkEntities.Any(le => le.LinkToEntityName == "solution")),
+                    q.LinkEntities.Any(le => le.LinkToEntityName == "solution"))),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(entities)));
     }
@@ -181,7 +181,7 @@ public class OrphanCleanupServiceTests : IDisposable
         }).ToList();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "webresource"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "webresource")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(entities)));
     }
@@ -270,7 +270,7 @@ public class OrphanCleanupServiceTests : IDisposable
         }).ToList();
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "solutioncomponent" && q.Criteria.Conditions.Any(c => c.AttributeName == "objectid")),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "solutioncomponent" && q.Criteria.Conditions.Any(c => c.AttributeName == "objectid"))),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(entities)));
     }
@@ -285,7 +285,7 @@ public class OrphanCleanupServiceTests : IDisposable
         await AutoService(91, "pluginassembly").RunPreImportAsync(Ctx("Cr07982", [(Guid.NewGuid(), 0)]), default);
 
         await _serviceMock.Received(1).DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
-        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent")), Arg.Any<CancellationToken>());
     }
 
     // -- Auto-delete/CustomApi naming: show what's actually being deleted, not just a GUID --
@@ -309,7 +309,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("MySolution", (orphanId, 10036)); // env-specific CustomApi componenttype
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "customapi"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "customapi")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("customapi", orphanId) { ["name"] = "av_OldCustomApi" }
@@ -340,6 +340,83 @@ public class OrphanCleanupServiceTests : IDisposable
         Assert.Contains("No orphan components", _console.Output);
     }
 
+    // Writes a raw Solution.xml (parent-of-src folder returned) for cases WriteSolutionXmlFixture can't
+    // express — notably a RootComponent carrying BOTH an id and a schemaName, as plugin assemblies do.
+    string CreateRawSolutionFixture(string rootComponentsXml)
+    {
+        var dataverseSolutionFolder = Path.Combine(Path.GetTempPath(), $"flowline-test-{Guid.NewGuid():N}");
+        _autoCreatedDataverseSolutionFolders.Add(dataverseSolutionFolder);
+        var otherDir = Path.Combine(dataverseSolutionFolder, "src", "Other");
+        Directory.CreateDirectory(otherDir);
+        File.WriteAllText(Path.Combine(otherDir, "Solution.xml"), $"""
+            <?xml version="1.0" encoding="utf-8"?>
+            <ImportExportXml>
+              <SolutionManifest>
+                <UniqueName>MySolution</UniqueName>
+                <Version>1.0.0.0</Version>
+                <RootComponents>
+                  {rootComponentsXml}
+                </RootComponents>
+              </SolutionManifest>
+            </ImportExportXml>
+            """);
+        return dataverseSolutionFolder;
+    }
+
+    void SetupPluginAssemblyNames(params (Guid Id, string Name)[] assemblies)
+    {
+        var entities = assemblies.Select(a => new Entity("pluginassembly", a.Id) { ["name"] = a.Name }).ToList();
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginassembly" && q.Criteria.Conditions.Any(c => c.AttributeName == "name"))),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(entities)));
+    }
+
+    [Fact]
+    public async Task CompareAsync_PluginAssemblyIdDriftsButNameMatches_NotReportedAsOrphan()
+    {
+        // The core false positive: Solution.xml records a plugin assembly with a GUID that push/import
+        // re-mint per environment, so the committed id never matches the live one. Matching by GUID alone
+        // false-flagged the live, in-solution assembly as a deletable orphan. Resolving it live by its
+        // portable simple name (harvested from schemaName) fixes it. See
+        // deploy-false-positive-orphan-package-assembly-guid-not-portable.md.
+        var onDiskId = Guid.NewGuid();  // committed in Solution.xml
+        var liveId   = Guid.NewGuid();  // re-minted in the target environment
+        var folder = CreateRawSolutionFixture(
+            $"""<RootComponent type="91" id="{onDiskId}" schemaName="Cr07982.Backend, Version=0.0.0.0, Culture=neutral, PublicKeyToken=48c2f23af73ee643" />""");
+        SetupSolutionComponents("MySolution", (liveId, 91));
+        SetupPluginAssemblyNames((liveId, "Cr07982.Backend"));
+
+        var result = await _service.CompareAsync(folder, _serviceMock, "MySolution", "https://example.crm.dynamics.com", default);
+
+        Assert.False(result.Skipped);
+        Assert.Empty(result.Entries);
+        Assert.DoesNotContain(liveId.ToString(), _console.Output);
+        Assert.Contains("No orphan components", _console.Output);
+    }
+
+    [Fact]
+    public async Task CompareAsync_PluginAssemblyRenamedAway_StillReportedAsOrphan()
+    {
+        // Guards against the fix being too loose: a live, in-solution assembly whose simple name is NOT
+        // declared in source (renamed away, or a genuine leftover) must still be detected. Its name never
+        // matches the committed name, so it isn't folded into the in-solution set and stays an orphan.
+        var liveId = Guid.NewGuid();
+        var onDiskId = Guid.NewGuid();
+        var folder = CreateRawSolutionFixture(
+            $"""<RootComponent type="91" id="{onDiskId}" schemaName="Cr07982.RenamedAway, Version=0.0.0.0, Culture=neutral, PublicKeyToken=48c2f23af73ee643" />""");
+        SetupSolutionComponents("MySolution", (liveId, 91));
+        // Live assembly's name differs from the committed "Cr07982.RenamedAway", so the by-name query
+        // returns nothing for it (default empty EntityCollection) — no rescue.
+
+        var result = await _service.CompareAsync(folder, _serviceMock, "MySolution", "https://example.crm.dynamics.com", default);
+
+        Assert.False(result.Skipped);
+        var entry = Assert.Single(result.Entries);
+        Assert.Equal(liveId, entry.ObjectId);
+        Assert.Equal(91, entry.ComponentType);
+    }
+
     void SetupOptionSetMetadataId(string schemaName, Guid metadataId)
     {
         var metadata = new Microsoft.Xrm.Sdk.Metadata.OptionSetMetadata { Name = schemaName };
@@ -350,7 +427,7 @@ public class OrphanCleanupServiceTests : IDisposable
         };
 
         _serviceMock.ExecuteAsync(
-                Arg.Is<OrganizationRequest>(r => r.RequestName == "RetrieveOptionSet" && (string)r.Parameters["Name"] == schemaName),
+                Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "RetrieveOptionSet" && (string)r.Parameters["Name"] == schemaName)),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<OrganizationResponse>(response));
     }
@@ -426,7 +503,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("MySolution", (deletedId, 9));
 
         _serviceMock.ExecuteAsync(
-                Arg.Is<OrganizationRequest>(r => r.RequestName == "RetrieveOptionSet"),
+                Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "RetrieveOptionSet")),
                 Arg.Any<CancellationToken>())
             .Returns<OrganizationResponse>(_ => throw new System.ServiceModel.FaultException<OrganizationServiceFault>(
                 new OrganizationServiceFault()));
@@ -448,7 +525,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("MySolution", (liveId, 10036)); // env-specific CustomApi componenttype
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "customapi"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "customapi")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("customapi", liveId) { ["name"] = "av_AatYourService" }
@@ -486,12 +563,12 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("MySolution", (customApiId, 10036)); // env-specific CustomApi componenttype
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "bot"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "bot")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("bot table unavailable")));
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "customapi"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "customapi")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("customapi", customApiId) { ["name"] = "av_GenuinelyRemovedApi" }
@@ -518,12 +595,12 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("MySolution", (assemblyId, 91), (roleId, 20));
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "pluginassembly"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginassembly")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("pluginassembly table unavailable")));
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "role"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "role")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("role", roleId) { ["name"] = "Custom Sales Role" }
@@ -545,7 +622,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("MySolution", (orphanId, 10082)); // env-specific Bot componenttype
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "bot"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "bot")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("bot", orphanId) { ["schemaname"] = "msdyn_salesCopilot" }
@@ -581,7 +658,7 @@ public class OrphanCleanupServiceTests : IDisposable
         // in real orgs — e.g. schemaname="msdyn_salesCopilot" vs name="Sales Copilot Power Virtual
         // Agents Bot"). The report must show the resolved schemaname, not name.
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "bot"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "bot")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("bot", orphanId) { ["schemaname"] = "msdyn_salesCopilot", ["name"] = "Sales Copilot Power Virtual Agents Bot" }
@@ -614,7 +691,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("MySolution", (orphanId, 10082));
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "bot"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "bot")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("bot", orphanId) { ["schemaname"] = "msdyn_salesCopilot" }
@@ -639,7 +716,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("MySolution", (orphanId, 10082));
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "bot"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "bot")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("bot", orphanId) // detected, but schemaname never populated
@@ -664,7 +741,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("MySolution", (orphanId, 10082));
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "bot"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "bot")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("bot", orphanId) { ["schemaname"] = "msdyn_salesCopilot" }
@@ -696,7 +773,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("MySolution", (orphanId, 10064)); // env-specific ConnectionReference componenttype
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "connectionreference"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "connectionreference")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("connectionreference", orphanId) { ["connectionreferencelogicalname"] = "av_sharepoint" }
@@ -727,7 +804,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("MySolution", (orphanId, 10064));
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "connectionreference"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "connectionreference")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("connectionreference", orphanId) { ["connectionreferencelogicalname"] = "av_sharepoint" }
@@ -758,7 +835,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("MySolution", (orphanId, 10064));
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "connectionreference"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "connectionreference")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("connectionreference", orphanId) { ["connectionreferencelogicalname"] = "av_sharepoint" }
@@ -791,7 +868,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("MySolution", (orphanId, 10064));
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "connectionreference"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "connectionreference")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("connectionreference", orphanId) { ["connectionreferencelogicalname"] = "av_sharepoint" }
@@ -813,7 +890,7 @@ public class OrphanCleanupServiceTests : IDisposable
 
         await AutoService(91, "pluginassembly").RunPreImportAsync(Ctx("Cr07982", [(Guid.NewGuid(), 0)]), default);
 
-        await _serviceMock.Received(1).ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).ExecuteAsync(Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent")), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
     }
 
@@ -860,7 +937,7 @@ public class OrphanCleanupServiceTests : IDisposable
         };
 
         _serviceMock.ExecuteAsync(
-                Arg.Is<OrganizationRequest>(r => r.RequestName == "RetrieveEntity" && (string)r.Parameters["LogicalName"] == "account"),
+                Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "RetrieveEntity" && (string)r.Parameters["LogicalName"] == "account")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<OrganizationResponse>(response));
 
@@ -914,7 +991,7 @@ public class OrphanCleanupServiceTests : IDisposable
 
         SetupSolutionComponents("MySolution", (liveId, 20)); // 20 = Role
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "role"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "role")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("role", liveId) { ["name"] = "Custom Sales Role" }
@@ -941,7 +1018,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("MySolution", (roleId, 20)); // 20 = Role
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "role"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "role")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("role", roleId) { ["name"] = "Custom Sales Role" }
@@ -1019,7 +1096,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("MySolution", (orphanId, 10064));
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "connectionreference"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "connectionreference")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("connectionreference", orphanId) { ["connectionreferencelogicalname"] = "av_sharedcalendlyv2_bffc3" }
@@ -1056,7 +1133,7 @@ public class OrphanCleanupServiceTests : IDisposable
         };
 
         _serviceMock.ExecuteAsync(
-                Arg.Is<OrganizationRequest>(r => r.RequestName == "RetrieveEntity" && (string)r.Parameters["LogicalName"] == logicalName),
+                Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "RetrieveEntity" && (string)r.Parameters["LogicalName"] == logicalName)),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<OrganizationResponse>(response));
     }
@@ -1091,7 +1168,7 @@ public class OrphanCleanupServiceTests : IDisposable
         };
 
         _serviceMock.ExecuteAsync(
-                Arg.Is<OrganizationRequest>(r => r.RequestName == "RetrieveMetadataChanges"),
+                Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "RetrieveMetadataChanges")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<OrganizationResponse>(response));
     }
@@ -1247,7 +1324,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("MySolution", (viewId, 26));
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "savedquery"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "savedquery")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("savedquery", viewId) { ["name"] = "av_ActiveAccounts" }
@@ -1276,7 +1353,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("MySolution", (viewId, 26));
 
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "savedquery"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "savedquery")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("savedquery", viewId) { ["name"] = "av_ActiveAccounts" }
@@ -1654,7 +1731,7 @@ public class OrphanCleanupServiceTests : IDisposable
 
         Assert.Contains("would delete", _console.Output);
         await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
-        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent")), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1671,7 +1748,7 @@ public class OrphanCleanupServiceTests : IDisposable
         Assert.Contains("would delete", _console.Output);
         Assert.Contains("(--dry-run preview)", _console.Output);
         await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
-        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent")), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1689,7 +1766,7 @@ public class OrphanCleanupServiceTests : IDisposable
         Assert.False(result.Skipped);
         Assert.Single(result.Entries);
         await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
-        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent"), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent")), Arg.Any<CancellationToken>());
     }
 
     // -- U10: PrintReport groups automated entries by Prio (R1/R6), Prio1 first --
@@ -1706,7 +1783,7 @@ public class OrphanCleanupServiceTests : IDisposable
         SetupSolutionComponents("MySolution", (pluginAssemblyId, 91), (workflowId, 29), (webResourceId, 61));
         SetupWebResourceNames((webResourceId, "av_ext/old.js"));
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "workflow"),
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "workflow")),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("workflow", workflowId) { ["name"] = "MyFlow", ["statecode"] = new OptionSetValue(1) }

@@ -70,7 +70,7 @@ public class FormEventExecutorTests
 
         await _serviceMock.Received(1).UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>());
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml")), Arg.Any<CancellationToken>());
         Assert.DoesNotContain("unrecognized", _console.Output, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(handler, GetHandlersFromCapturedXml(captured, formId, FormEventType.OnLoad));
         Assert.Contains(library, GetLibrariesFromCapturedXml(captured, formId));
@@ -344,7 +344,7 @@ public class FormEventExecutorTests
 
         await _serviceMock.Received(2).UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml" && ((string)r.Parameters["ParameterXml"]).Contains("<entity>account</entity>")),
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml" && ((string)r.Parameters["ParameterXml"]).Contains("<entity>account</entity>"))),
             Arg.Any<CancellationToken>());
     }
 
@@ -366,7 +366,7 @@ public class FormEventExecutorTests
 
         Assert.Contains(handler, GetHandlersFromCapturedXml(captured, formId, FormEventType.OnLoad));
         await _serviceMock.DidNotReceive().ExecuteAsync(
-            Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>());
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml")), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -390,10 +390,10 @@ public class FormEventExecutorTests
         await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false);
 
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml" && ((string)r.Parameters["ParameterXml"]).Contains("<entity>account</entity>")),
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml" && ((string)r.Parameters["ParameterXml"]).Contains("<entity>account</entity>"))),
             Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml" && ((string)r.Parameters["ParameterXml"]).Contains("<entity>contact</entity>")),
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml" && ((string)r.Parameters["ParameterXml"]).Contains("<entity>contact</entity>"))),
             Arg.Any<CancellationToken>());
     }
 
@@ -414,9 +414,9 @@ public class FormEventExecutorTests
             new DataverseForm(formIdOk, "Account Ok", "account", BuildFormXml()));
         var plan = BuildPlan(formPlanFails, formPlanOk);
 
-        _serviceMock.UpdateAsync(Arg.Is<Entity>(e => e.Id == formIdFails), Arg.Any<CancellationToken>())
+        _serviceMock.UpdateAsync(Arg.Is(Matching<Entity>(e => e.Id == formIdFails)), Arg.Any<CancellationToken>())
             .Returns(Task.FromException(new FaultException<OrganizationServiceFault>(new OrganizationServiceFault())));
-        _serviceMock.UpdateAsync(Arg.Is<Entity>(e => e.Id == formIdOk), Arg.Any<CancellationToken>())
+        _serviceMock.UpdateAsync(Arg.Is(Matching<Entity>(e => e.Id == formIdOk)), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -425,8 +425,8 @@ public class FormEventExecutorTests
         Assert.Contains("1 form event operation(s) failed", ex.Message);
         Assert.Contains("Account Fails", _console.Output);
 
-        await _serviceMock.Received(1).UpdateAsync(Arg.Is<Entity>(e => e.Id == formIdFails), Arg.Any<CancellationToken>());
-        await _serviceMock.Received(1).UpdateAsync(Arg.Is<Entity>(e => e.Id == formIdOk), Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).UpdateAsync(Arg.Is(Matching<Entity>(e => e.Id == formIdFails)), Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).UpdateAsync(Arg.Is(Matching<Entity>(e => e.Id == formIdOk)), Arg.Any<CancellationToken>());
     }
 
     // Regression: a live push crashed with "Could not find color or style 'Publish'" — the failure summary
@@ -443,7 +443,7 @@ public class FormEventExecutorTests
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Fails", "account", BuildFormXml()));
         var plan = BuildPlan(formPlan);
 
-        _serviceMock.UpdateAsync(Arg.Is<Entity>(e => e.Id == formId), Arg.Any<CancellationToken>())
+        _serviceMock.UpdateAsync(Arg.Is(Matching<Entity>(e => e.Id == formId)), Arg.Any<CancellationToken>())
             .Returns(Task.FromException(new FaultException<OrganizationServiceFault>(
                 new OrganizationServiceFault(), "operation [Publish] failed unexpectedly")));
 
@@ -473,7 +473,7 @@ public class FormEventExecutorTests
         CaptureUpdatedFormXml();
 
         _serviceMock.ExecuteAsync(
-                Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml" && ((string)r.Parameters["ParameterXml"]).Contains("account")),
+                Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml" && ((string)r.Parameters["ParameterXml"]).Contains("account"))),
                 Arg.Any<CancellationToken>())
             .Returns<OrganizationResponse>(_ => throw new FaultException<OrganizationServiceFault>(new OrganizationServiceFault()));
 
@@ -484,10 +484,10 @@ public class FormEventExecutorTests
         Assert.Contains("account", _console.Output);
 
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml" && ((string)r.Parameters["ParameterXml"]).Contains("contact")),
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml" && ((string)r.Parameters["ParameterXml"]).Contains("contact"))),
             Arg.Any<CancellationToken>());
-        await _serviceMock.Received(1).UpdateAsync(Arg.Is<Entity>(e => e.Id == formIdA), Arg.Any<CancellationToken>());
-        await _serviceMock.Received(1).UpdateAsync(Arg.Is<Entity>(e => e.Id == formIdB), Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).UpdateAsync(Arg.Is(Matching<Entity>(e => e.Id == formIdA)), Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).UpdateAsync(Arg.Is(Matching<Entity>(e => e.Id == formIdB)), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -505,7 +505,7 @@ public class FormEventExecutorTests
         var plan = BuildPlan(formPlan);
         CaptureUpdatedFormXml();
 
-        _serviceMock.ExecuteAsync(Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>())
+        _serviceMock.ExecuteAsync(Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml")), Arg.Any<CancellationToken>())
             .Returns<OrganizationResponse>(_ => throw new FaultException<OrganizationServiceFault>(new OrganizationServiceFault(), "publish contention"));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -529,13 +529,13 @@ public class FormEventExecutorTests
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml(), RowVersion: "12345"));
         var plan = BuildPlan(formPlan);
 
-        _serviceMock.ExecuteAsync(Arg.Is<UpdateRequest>(r => r.Target.Id == formId), Arg.Any<CancellationToken>())
+        _serviceMock.ExecuteAsync(Arg.Is(Matching<UpdateRequest>(r => r.Target.Id == formId)), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new UpdateResponse() as OrganizationResponse));
 
         await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false);
 
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<UpdateRequest>(r => r.Target.Id == formId && r.Target.RowVersion == "12345" && r.ConcurrencyBehavior == ConcurrencyBehavior.IfRowVersionMatches),
+            Arg.Is(Matching<UpdateRequest>(r => r.Target.Id == formId && r.Target.RowVersion == "12345" && r.ConcurrencyBehavior == ConcurrencyBehavior.IfRowVersionMatches)),
             Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
     }
@@ -551,7 +551,7 @@ public class FormEventExecutorTests
         var snapshot = BuildSnapshot(new DataverseForm(formId, "Account Main", "account", BuildFormXml(), RowVersion: "12345"));
         var plan = BuildPlan(formPlan);
 
-        _serviceMock.ExecuteAsync(Arg.Is<UpdateRequest>(r => r.Target.Id == formId), Arg.Any<CancellationToken>())
+        _serviceMock.ExecuteAsync(Arg.Is(Matching<UpdateRequest>(r => r.Target.Id == formId)), Arg.Any<CancellationToken>())
             .Returns<OrganizationResponse>(_ => throw new FaultException<OrganizationServiceFault>(
                 new OrganizationServiceFault { ErrorCode = -2147088254 }, "The version of the existing record doesn't match the RowVersion property provided."));
 
@@ -780,7 +780,7 @@ public class FormEventExecutorTests
 
         await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().ExecuteAsync(
-            Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>());
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml")), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -833,7 +833,7 @@ public class FormEventExecutorTests
 
         await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().ExecuteAsync(
-            Arg.Is<OrganizationRequest>(r => r.RequestName == "PublishXml"), Arg.Any<CancellationToken>());
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml")), Arg.Any<CancellationToken>());
         // Regression: nothing to clean up must print nothing at all — no progress bar, no "no changes"
         // summary line — rather than rendering a "Cleaning forms" bar that jumps straight to 100% for
         // zero real work (confusing, reads as a hang or a no-op mistaken for done).
