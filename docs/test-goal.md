@@ -79,6 +79,12 @@ dry-run-only rule below does **not** apply. `flowline status` connects to Test f
   forces report-only. So "cleanup makes deploy succeed" is proven by a plain `deploy test`, not a flag.
 - **First-import non-interactive bypass = `--force first-import`** (`DeployCommand.cs:137-139`; valid
   specifiers `drift`/`first-import`/`all`). Dry-run only prints an info note and never hits the prompt.
+- **Independent Dataverse query = `pac env fetch`** (verified `pac` 2.9.3). Runs raw FetchXML against a
+  target, bypassing Flowline entirely — the out-of-band check that removes the "verified by Flowline's
+  own reads only" residual-confidence caveat. `pac env fetch --environment <url> --xml "<fetch><entity
+  name='customapi'><attribute name='uniquename'/></entity></fetch>"` (or `--xmlFile <path>`; `-env`/`-x`
+  aliases). Use it to confirm a component actually exists/gone in TEST after a deploy, not just that
+  Flowline reported it so.
 
 ### Results, 2026-07-31
 
@@ -219,8 +225,84 @@ re-run against an already-cloned/pushed/synced folder) where relevant.
 ### `init` (and interactive `clone`)
 
 Greenfield solution/publisher creation, added by the `init`/interactive-`clone` plan
-(`docs/plans/2026-08-01-001-feat-clone-init-greenfield-solution-plan.md`). Not yet exercised live —
-run this against DEV before trusting it.
+(`docs/plans/2026-08-01-001-feat-clone-init-greenfield-solution-plan.md`).
+
+**First live run 2026-08-01 (tool `0.14.1-alpha.0.14`, DEV).** Most of the matrix passed; one headline
+feature (interactive `clone`) was found **dead via the CLI** and fixed. Results, then the matrix:
+
+- **Greenfield create ✓ (new publisher)** — `flowline init FlowlineInitTest01 --dev <dev>
+  --publisher-prefix flx` in a fresh git folder: exit 0, `created (new publisher 'flx')`, pull 1m10s,
+  scaffold + Debug build, `✓ DEV set to …`. **Independently verified, not off the CLI's own line**:
+  `pac solution list` showed it unmanaged; the pulled `Solution/src/Other/Solution.xml` carried
+  `<Managed>0</Managed>`, `<CustomizationPrefix>flx</CustomizationPrefix>` and
+  `<CustomizationOptionValuePrefix>68688</CustomizationOptionValuePrefix>` (in 10000–99999, so the
+  SHA256-derived option-value prefix — the one create bit with zero prior coverage — works live); and
+  `.flowline` on disk carried both `DevUrl` and `Solution.UniqueName` (the 3367f8e write, so push/sync
+  can resolve it). Build is `(Debug)` by design — `buildRelease` only forces a Release build when
+  `IncludeManaged` is true (`FlowlineCommand.cs:293`), and an `init` solution is unmanaged; not a bug.
+- **Reuse existing prefix ✓** — same command with `--publisher-prefix flx` after the publisher already
+  existed: `created (reused publisher 'flx')`, no second publisher, exit 0.
+- **Duplicate-name refusal ✓** — re-running an existing unique name: `Solution '…' already exists in
+  this environment. Choose a different name.`, exit 15, refused before any write.
+- **DEV-only refusal ✓** — `init … --dev <prod-url>`: `'AutomateValue' (Production) isn't a Sandbox or
+  Developer environment …`, exit 15, refused before create. The message echoes the *real* resolved
+  type (`Production`, via `RetrieveCurrentOrganization` → `MapOrganizationType`), so it's a genuine
+  guard pass, not a null-lookup false positive.
+- **Name / display / prefix validation rejections ✓ (11 cases)** — C#-keyword (`… is a C# keyword`),
+  invalid-char and digit-start (`… only letters, digits, and underscores … start with a letter`),
+  `>65` (`… at most 65 characters … is 66`), `>256` display (`… at most 256 characters … got 257`),
+  `mscrm*` (`… must not start with 'mscrm' …`), 1-char / 9-char (`… must be 2-8 characters …`),
+  digit-start / non-alnum prefix (`… must be alphanumeric and start with a letter …`). All exit 15,
+  message names the specific rule.
+- **No-TTY errors ✓ (partial)** — missing `--dev` → `DEV environment is required — pass --dev <URL> …`;
+  missing `--publisher-prefix` → `Publisher prefix is required — pass --publisher-prefix <prefix> …`.
+  Both name the flag, exit 15, no hang. The **"`--dev` with no matching PAC profile → `pac auth
+  create`" case is NOT live-triggerable on this machine** — the single `OperatingSystem`/UNIVERSAL
+  profile is tenant-wide, so a foreign URL resolves the profile and fails later as `Dev environment
+  not found — check the URL or your PAC login.` (exit 10), never the no-profile branch. Code path
+  (`ProfileResolutionService`) unit-tested; live gap noted, not dressed up as a pass.
+
+- **BUG FOUND + FIXED (uncommitted): interactive `clone` was dead via the CLI.** `CloneCommand.Settings`
+  declared the positional as **required** (`[CommandArgument(0, "<solution>")]`), so `flowline clone`
+  with no args hit Spectre's own `missing required argument 'solution'` parse rejection *before*
+  `ExecuteFlowlineAsync` ran — making `ShouldPickOrCreate` (which keys off an empty `settings.Solution`)
+  unreachable. The whole U6 pick-or-create feature never ran from the CLI. The unit tests were green
+  because they call `ShouldPickOrCreate`/`PickOrCreateAsync` directly, **bypassing Spectre's arg
+  binding** — the exact layer that broke. Fix: `<solution>` → `[solution]` (optional). Verified the
+  non-interactive fall-through still errors cleanly on a null name (`GetAndCheckSolutionAsync(null,…)` →
+  clean `ConfigInvalid`; no role URL → `NotFound`), and grepped `CloneCommand` for null-assuming derefs
+  (none). Added a **Spectre-binding regression test** (`ManagedFlagBindingTests.Clone_NoSolutionArg_
+  BindsWithNullSolution`) that runs `app.Run([])` through a real `CommandApp` and asserts it binds with
+  a null `Solution` — fails pre-fix (parse rejection), passes post-fix. Full suite green **2109 passed
+  / 0 failed / 4 skipped** (Flowline.Tests 993, +1). Repacked, purged the NuGet cache for the
+  unchanged version string, reinstalled; live re-verified: `flowline clone` (no args, non-interactive)
+  now reaches the pipeline and returns `No unmanaged environment found — provide a --dev, --test,
+  --uat, or --prod URL …` (exit 3) instead of the parse error. **Uncommitted** in the Flowline source
+  tree, awaiting commit authorization (`CloneCommand.cs`, `ManagedFlagBindingTests.cs`). Meta-lesson:
+  a headline feature shipped dead because every test bypassed the arg-binding layer — any
+  positional-arg contract needs at least one test that goes through `CommandApp`.
+
+- **Minor finding, not fixed (low severity):** a syntactically invalid `--publisher-prefix` is rejected
+  only **after two Dataverse connects** (`SolutionCreateFlow.RunAsync:71`, past `ConnectAsync`), while
+  the solution name is rejected pre-connect. Fail-closed, no wrong result — just latency/UX. Writeup +
+  fix direction: `docs/test-findings/init-prefix-format-validated-after-connect.md`.
+
+**DEV state note:** publisher `flx` persists in DEV (the three test solutions were pac-deleted; a
+publisher has no cheap pac delete). A future **new-publisher** test must pick a *fresh* prefix — reusing
+`flx` silently exercises the reuse path and reads as a false "new publisher" pass.
+
+**Not covered live (explicit gaps):**
+- **Interactive `clone` pick-or-create menu** and **interactive publisher/name/env pickers** — this
+  agent harness has no TTY, so `IsInteractive()` is false and the prompts never render. Code path fully
+  read and the *gate* is now live-reachable (proven above), but the menu interaction itself
+  (pick-existing → role default Dev; create-new → routes to `SolutionCreateFlow`) is verified by unit
+  test only, never driven end-to-end.
+- **Privilege fault** (user lacking create rights → clear error, not raw SDK exception) — no
+  locked-down test user; code path only.
+- **`--dev` with no matching profile → `pac auth create`** — not triggerable with a universal profile
+  (above).
+
+Original matrix (all still relevant for a TTY-capable run):
 
 - **Greenfield create**: `flowline init <name> --dev <dev-url> --publisher-prefix <prefix>` against
   DEV — confirm a new publisher (when the prefix doesn't already exist) and an empty **unmanaged**

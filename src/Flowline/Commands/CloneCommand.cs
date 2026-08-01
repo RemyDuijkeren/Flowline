@@ -31,8 +31,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
     public sealed class Settings : FlowlineSettings
     {
-        [CommandArgument(0, "<solution>")]
-        [Description("Solution to clone into this repo")]
+        [CommandArgument(0, "[solution]")]
+        [Description("Solution to clone into this repo (omit to pick or create one interactively)")]
         public string? Solution { get; set; }
 
         [CommandOption("--prod <URL>")]
