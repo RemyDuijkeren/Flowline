@@ -179,8 +179,8 @@ app.Configure(config =>
     config.AddCommand<DeployCommand>("deploy")
           .WithDescription("Pack solution from repo and import into target environment (test, uat, prod, or URL). Requires clean git working directory.")
           .WithExample("deploy", "prod")
-          .WithExample("deploy", "test")
-          .WithExample("deploy", "https://contoso-test.crm4.dynamics.com/");
+          .WithExample("deploy", "https://contoso-test.crm4.dynamics.com/")
+          .WithExample("deploy", "test", "--path", "artifacts/ContosoCustomizations_1_2_0_0.zip");
 
     // copy/provision = Copy Source environment to destination environment
     config.AddCommand<ProvisionCommand>("provision")
@@ -204,20 +204,16 @@ app.Configure(config =>
     config.AddCommand<DriftCommand>("drift")
           .WithDescription("Compare committed source against a live environment (dev, test, uat, prod, or a URL) and report components present there but not declared in source. Read-only — never deletes or modifies anything. Run against prod/test for drift detection, or dev before sync/deploy as a preview.")
           .WithExample("drift", "prod")
-          .WithExample("drift", "dev")
           .WithExample("drift", "test")
           .WithExample("drift", "https://contoso-test.crm4.dynamics.com/");
 
-    // sln = the project's .sln/.slnx file. A branch rather than a flat 'sln-add' because the noun is
-    // the solution *file*, which collides with "solution" meaning the Dataverse artifact everywhere
-    // else in this CLI — 'flowline sln add' reads as a one-word substitution for the 'dotnet sln add'
-    // the user just watched fail.
+    // A branch rather than a flat 'sln-add' because 'flowline sln add' reads as a one-word substitution for the 'dotnet sln add'.
     config.AddBranch("sln", sln =>
     {
-        sln.SetDescription("Work with the project's solution file (.sln or .slnx).");
+        sln.SetDescription(".NET modify solution file (.sln or .slnx) command.");
 
         sln.AddCommand<SlnAddCommand>("add")
-           .WithDescription("Add a .cdsproj to an existing solution file. 'dotnet sln add' refuses .cdsproj files and exits 0 while doing it, so this writes the entry directly. Doesn't create a solution file — run 'dotnet new sln' first. Runs standalone: no Flowline project needed.")
+           .WithDescription("Add a .cdsproj to a solution file. 'dotnet sln add' can't add .cdsproj to a solution file, so this is the replacement for it.")
            .WithExample("sln", "add", "Solution/MySolution.cdsproj");
     });
 });

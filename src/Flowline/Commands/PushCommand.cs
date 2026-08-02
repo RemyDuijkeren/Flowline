@@ -46,7 +46,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         public PushScope[] Scopes { get; set; } = [];
 
         [CommandOption("-p|--pluginFile <PATH>")]
-        [Description("Prebuilt plugin file (.dll) to push without using a Flowline project")]
+        [Description("Prebuilt plugin file (.dll) or NuGet package (.nupkg) to push without using a Flowline project")]
         public string? PluginFile { get; set; }
 
         [CommandOption("-w|--webresources <PATH>")]
