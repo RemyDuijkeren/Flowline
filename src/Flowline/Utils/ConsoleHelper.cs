@@ -9,7 +9,8 @@ namespace Flowline.Utils;
 
 public static class ConsoleHelper
 {
-    internal static readonly Color s_welcomeColor = Color.Turquoise2; //Turquoise2, Plum4, DarkMagenta, DarkMagenta_1
+    //Turquoise2, HotPink2, Magenta1 (purple glow), MediumOrchid1, Orchid, Plum3
+    internal static readonly Color s_welcomeColor = Color.Orchid;
     internal static readonly string s_logo = // Future Smooth
             """
             ╭─╴╷  ╭─╮╷ ╷╷  ╷╭╮╷╭─╴

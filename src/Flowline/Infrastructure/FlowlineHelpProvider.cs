@@ -47,7 +47,6 @@ internal sealed class FlowlineHelpProvider(ICommandAppSettings settings) : HelpP
                
         if (command is null)
         {
-            // Future Smooth
             var welcomeText = new Text(ConsoleHelper.s_logo, new Style(ConsoleHelper.s_welcomeColor));
             
             yield return welcomeText;
