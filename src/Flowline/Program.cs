@@ -45,7 +45,7 @@ Console.CancelKeyPress += (_, e) =>
 {
     e.Cancel = true; // Prevent immediate process termination
     cancellationTokenSource.Cancel();
-    Console.WriteLine("Cancelled.");
+    Console.WriteLine("Cancelled. Panic button acknowledged.");
 };
 
 var runtimeOptions = new FlowlineRuntimeOptions();
@@ -82,7 +82,7 @@ Serilog.ILogger? serilogLogger = null;
 try
 {
     var logPath = FlowlineStoragePaths.GetLogsPath(runTime, args.FirstOrDefault());
-    try { Directory.CreateDirectory(Path.GetDirectoryName(logPath)!); } catch { } // Intentional: dir creation failure must not block launch (R16).
+    try { Directory.CreateDirectory(Path.GetDirectoryName(logPath)!); } catch { } // Intentional: log dir creation failure must not block launch.
     runtimeOptions.TelemetrySalt = new TelemetrySaltStore().LoadOrCreate();
     serilogLogger = new LoggerConfiguration()
         .MinimumLevel.Debug()
@@ -95,7 +95,7 @@ try
         .CreateLogger();
     Log.Logger = serilogLogger;
 }
-catch { } // Intentional: Serilog init failure must not block command launch (R16).
+catch { } // Intentional: Serilog init failure must not block command launch.
 services.AddLogging(b => b.ClearProviders().AddSerilog(serilogLogger));
 
 runtimeOptions.ArgsRedacted = SubprocessCapture.RedactSensitiveArgs(string.Join(" ", args));
@@ -151,7 +151,7 @@ app.Configure(config =>
 
     // init = create a brand-new publisher + empty unmanaged solution in DEV, then scaffold the repo
     config.AddCommand<InitCommand>("init")
-          .WithDescription("Create a new publisher (if needed) and an empty unmanaged solution in a DEV environment, then scaffold the repo around it. Front door for greenfield — no Dataverse solution exists yet.")
+          .WithDescription("Create an empty unmanaged solution and optional a new publisher in a DEV environment, then scaffold the repo around it. Front door for greenfield — no Dataverse solution exists yet.")
           .WithExample("init", "MySolution")
           .WithExample("init", "MySolution", "--dev", "https://contoso-dev.crm4.dynamics.com", "--publisher-prefix", "contoso");
 
@@ -171,6 +171,7 @@ app.Configure(config =>
     // Sync changes to local repo (export solution and unpack)
     config.AddCommand<SyncCommand>("sync")
           .WithDescription("Export solution from DEV, bump build version, and unpack to source-controlled XML. Run after testing changes in DEV. Requires no uncommitted changes in the unpacked solution source.")
+          .WithAlias("pull")
           .WithExample("sync")
           .WithExample("sync", "--managed", "--bump", "minor");
 

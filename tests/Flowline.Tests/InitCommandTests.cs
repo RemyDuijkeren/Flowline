@@ -1,8 +1,14 @@
 using System.ComponentModel;
 using System.Reflection;
 using Flowline.Commands;
+using Flowline.Core;
+using Flowline.Core.Services;
+using Flowline.Diagnostics;
+using Flowline.Services;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Spectre.Console.Cli;
+using Spectre.Console.Testing;
 
 namespace Flowline.Tests;
 
@@ -101,6 +107,72 @@ public class InitCommandTests
         captured.DisplayName.Should().BeNull();
         captured.PublisherPrefix.Should().BeNull();
         captured.PublisherName.Should().BeNull();
+    }
+
+    // Same trap clone's positional fell into: a REQUIRED "<name>" makes Spectre reject a bare
+    // `flowline init` at parse time, before ExecuteFlowlineAsync (and its name prompt) ever runs.
+    // Goes through real Spectre binding, which the ResolveNameAsync unit tests below bypass.
+    [Fact]
+    public void CommandApp_NoNameArg_BindsWithNullName()
+    {
+        var exitCode = BuildInitParseProbe().Run(["init"]);
+
+        exitCode.Should().Be(0);
+        CapturingInitSettingsCommand.Captured!.Name.Should().BeNull();
+    }
+
+    // ── Optional name: prompted interactively, refused with the argument named when there's no TTY ──
+
+    [Fact]
+    public async Task ResolveName_NameGiven_ReturnsItWithoutPrompting()
+    {
+        var (command, _) = MakeInitCommand();
+        // No prompt input queued on the TestConsole — prompting would throw instead of returning.
+
+        var name = await command.ResolveNameAsync("MySolution", CancellationToken.None);
+
+        name.Should().Be("MySolution");
+    }
+
+    [Fact]
+    public async Task ResolveName_NoName_NonInteractive_ThrowsNamingTheArgument()
+    {
+        var (command, _) = MakeInitCommand();
+        command.IsInteractiveOverride = () => false;
+
+        var act = () => command.ResolveNameAsync(null, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Which.Message.Should().Contain("init <name>");
+    }
+
+    [Fact]
+    public async Task ResolveName_NoName_Interactive_PromptsForIt()
+    {
+        var (command, console) = MakeInitCommand();
+        command.IsInteractiveOverride = () => true;
+        console.Input.PushTextWithEnter("PromptedSolution");
+
+        var name = await command.ResolveNameAsync(null, CancellationToken.None);
+
+        name.Should().Be("PromptedSolution");
+    }
+
+    static (InitCommand Command, TestConsole Console) MakeInitCommand()
+    {
+        var console = new TestConsole();
+        console.Profile.Capabilities.Interactive = true;
+        var connector = new DataverseConnector(console, new HttpClient());
+        var profileResolutionService = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions());
+        var capture = new SubprocessCapture(console);
+        var createSolutionService = new CreateSolutionService(console, capture);
+        var createEnvironmentResolver = new CreateEnvironmentResolver(console, profileResolutionService, capture);
+        var solutionCreateFlow = new SolutionCreateFlow(console, profileResolutionService, connector, new SolutionCreateService(), createSolutionService);
+
+        var command = new InitCommand(console, new FlowlineRuntimeOptions(), profileResolutionService,
+            NullLoggerFactory.Instance, capture, createEnvironmentResolver, solutionCreateFlow);
+
+        return (command, console);
     }
 
     // -- CommandApp parse seam, exit-code-only -- Spectre renders --help via AnsiConsole, not

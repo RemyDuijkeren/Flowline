@@ -834,9 +834,9 @@ public class CloneCommandTests
 
     const string DevUrl = "https://contoso-dev.crm4.dynamics.com";
 
-    static EnvironmentInfo MakeDevEnv() => new() { DisplayName = "Contoso Dev", EnvironmentUrl = DevUrl, Type = "Sandbox" };
+    static EnvironmentInfo MakeEnv(string type = "Sandbox") => new() { DisplayName = "Contoso Dev", EnvironmentUrl = DevUrl, Type = type };
 
-    static (CloneCommand Command, TestConsole Console) MakeCloneCommand()
+    static (CloneCommand Command, TestConsole Console) MakeCloneCommand(string envType = "Sandbox")
     {
         var console = new TestConsole();
         var connector = new DataverseConnector(console, new HttpClient());
@@ -849,7 +849,7 @@ public class CloneCommandTests
         var createSolutionService = new CreateSolutionService(console, capture);
         var createEnvironmentResolver = new CreateEnvironmentResolver(console, profileResolutionService, capture)
         {
-            GetEnvironmentInfoByUrlOverride = (_, _, _, _) => Task.FromResult<EnvironmentInfo?>(MakeDevEnv())
+            GetEnvironmentInfoByUrlOverride = (_, _, _, _) => Task.FromResult<EnvironmentInfo?>(MakeEnv(envType))
         };
         var solutionCreateFlow = new SolutionCreateFlow(console, profileResolutionService, connector, new SolutionCreateService(), createSolutionService);
 
@@ -991,12 +991,12 @@ public class CloneCommandTests
         captured.Value.Env.EnvironmentUrl.Should().Be(DevUrl);
     }
 
-    // ── PickOrCreateAsync: R17 — existing-solution pick confirms the .flowline role, defaulting DEV ──
+    // ── PickOrCreateAsync: R17 — a Sandbox source prompts the role, defaulting DEV ──
 
     [Fact]
-    public async Task PickOrCreateAsync_ExistingSolutionPick_ConfirmsRoleDefaultingDev()
+    public async Task PickOrCreateAsync_ExistingSolutionPickOnSandbox_PromptsRoleDefaultingDev()
     {
-        var (command, console) = MakeCloneCommand();
+        var (command, console) = MakeCloneCommand("Sandbox");
         command.GetSolutionsOverride = (_, _) => Task.FromResult(new List<SolutionInfo> { MakeSolution("CrO7982") });
 
         console.Interactive();
@@ -1017,5 +1017,51 @@ public class CloneCommandTests
         config.UatUrl.Should().BeNull();
         config.ProdUrl.Should().BeNull();
         console.Output.Should().Contain("DEV set to");
+    }
+
+    // ── PickOrCreateAsync: R17 — a Production source locks to the Prod role, no role prompt ──
+
+    [Fact]
+    public async Task PickOrCreateAsync_ExistingSolutionPickOnProduction_LocksProdRole_NoRolePrompt()
+    {
+        var (command, console) = MakeCloneCommand("Production");
+        command.GetSolutionsOverride = (_, _) => Task.FromResult(new List<SolutionInfo> { MakeSolution("CrO7982") });
+
+        console.Interactive();
+        console.Input.PushKey(ConsoleKey.Enter); // picks the only solution; role is locked to Prod, so no second prompt is consumed
+
+        var settings = MakeSettings(DevUrl);
+        var config = new ProjectConfig();
+        var (exitCode, env, projectSolution, _) = await command.PickOrCreateAsync(settings, "root", config, CancellationToken.None);
+
+        exitCode.Should().BeNull();
+        projectSolution!.UniqueName.Should().Be("CrO7982");
+        config.ProdUrl.Should().Be(DevUrl);
+        config.DevUrl.Should().BeNull();
+        console.Output.Should().Contain("PROD set to");
+    }
+
+    // ── PickOrCreateAsync: create-new on a non-DEV source advises init and exits (option b) ──
+
+    [Fact]
+    public async Task PickOrCreateAsync_CreateNewOnProductionSource_AdvisesInitAndExits()
+    {
+        var (command, console) = MakeCloneCommand("Production");
+        command.GetSolutionsOverride = (_, _) => Task.FromResult(new List<SolutionInfo> { MakeSolution("Existing") });
+        var createInvoked = false;
+        command.CreateFlowOverride = (_, _, _, _, _) => { createInvoked = true; return Task.FromResult(0); };
+
+        console.Interactive();
+        console.Input.PushKey(ConsoleKey.DownArrow); // move onto "+ Create new solution"
+        console.Input.PushKey(ConsoleKey.Enter);
+
+        var settings = MakeSettings(DevUrl);
+        var (exitCode, env, projectSolution, _) = await command.PickOrCreateAsync(settings, "root", new ProjectConfig(), CancellationToken.None);
+
+        exitCode.Should().Be(0);
+        createInvoked.Should().BeFalse();
+        env.Should().BeNull();
+        projectSolution.Should().BeNull();
+        console.Output.Should().Contain("flowline init");
     }
 }

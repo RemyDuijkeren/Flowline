@@ -17,6 +17,34 @@ Pattern: [thing] [action] [reason]. [next step].
 Flowline is a .NET Dataverse ALM CLI. It wraps PAC CLI primitives into a Git-based
 `clone -> push -> sync -> deploy` workflow for unmanaged solutions.
 
+### Source-of-truth model (default)
+
+By default Flowline treats **PROD as the source of truth** — PROD holds the *unmanaged*
+solution, and it plays the role `master` plays in Git. A **DEV environment is a branch of
+PROD**: you `provision dev` to spin one up, make changes there, then `deploy` to PROD
+("merge into master"), and optionally re-provision DEV for the next change. `sync` shows what
+changed in DEV against that PROD baseline.
+
+This is the default, not a requirement. Users who keep only *managed* in PROD and treat DEV
+as the truth are also supported — Flowline just doesn't assume it. Practical consequences:
+
+- **Clone** normally pulls from PROD (that's where the unmanaged source lives). Don't restrict
+  clone's environment choice to DEV-type environments, and don't assume the cloned-from
+  environment is the DEV role — in the default model it's PROD.
+- The **DEV-only guard** (Sandbox/Developer whitelist) applies to *greenfield create* writes
+  only, never to clone-existing, which writes nothing to Dataverse.
+
+Environment-type facts that constrain the flow (verified against `pac`):
+
+- `pac solution clone` and `pac solution sync` work against a **Developer** environment — a Developer
+  env is a valid clone/sync target.
+- `pac admin copy` **cannot target a Developer environment** (copying a Production or Sandbox into a
+  Developer env is disallowed). Because `provision` (`ProvisionCommand`) branches DEV from PROD via
+  `pac admin copy`, a *provisioned* DEV is always a **Sandbox**, never a Developer env. Developer envs
+  are usable as clone/sync sources but can't be `provision` targets.
+
+Background: https://automatevalue.com/blog/everyone-got-alm-wrong-in-dynamics-365-dataverse/
+
 ## Repository map
 
 - `Flowline.slnx` — main solution

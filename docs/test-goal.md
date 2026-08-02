@@ -282,11 +282,6 @@ feature (interactive `clone`) was found **dead via the CLI** and fixed. Results,
   a headline feature shipped dead because every test bypassed the arg-binding layer — any
   positional-arg contract needs at least one test that goes through `CommandApp`.
 
-- **Minor finding, not fixed (low severity):** a syntactically invalid `--publisher-prefix` is rejected
-  only **after two Dataverse connects** (`SolutionCreateFlow.RunAsync:71`, past `ConnectAsync`), while
-  the solution name is rejected pre-connect. Fail-closed, no wrong result — just latency/UX. Writeup +
-  fix direction: `docs/test-findings/init-prefix-format-validated-after-connect.md`.
-
 **DEV state note:** publisher `flx` persists in DEV (the three test solutions were pac-deleted; a
 publisher has no cheap pac delete). A future **new-publisher** test must pick a *fresh* prefix — reusing
 `flx` silently exercises the reuse path and reads as a false "new publisher" pass.

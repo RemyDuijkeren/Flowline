@@ -4,6 +4,7 @@ using Flowline.Core.Console;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Services;
+using Flowline.Utils;
 using Spectre.Console;
 using Microsoft.Extensions.Logging;
 using Spectre.Console.Cli;
@@ -19,8 +20,8 @@ public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 {
     public sealed class Settings : FlowlineSettings
     {
-        [CommandArgument(0, "<name>")]
-        [Description("Solution unique name to create")]
+        [CommandArgument(0, "[name]")]
+        [Description("Solution unique name to create (omit to enter one interactively)")]
         public string? Name { get; set; }
 
         [CommandOption("--dev <URL>")]
@@ -40,19 +41,27 @@ public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         public string? PublisherName { get; set; }
     }
 
+    /// <summary>Seam for testing — overrides ConsoleHelper.IsInteractive (global console capability
+    /// check can't be driven by an injected TestConsole).</summary>
+    internal Func<bool>? IsInteractiveOverride { get; set; }
+
     protected override bool RequiresProject => false;
     protected override string[] ValidForceSpecifiers => FlowlineSettings.ConfigOnlyValidSpecifiers;
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        // R14/R19: refuse a bad name before spending an interactive environment picker on it.
-        SolutionNameValidator.EnsureSolutionUniqueName(settings.Name);
+        var name = await ResolveNameAsync(settings.Name, cancellationToken);
 
-        var devEnv = await createEnvironmentResolver.ResolveAsync(settings.DevUrl, settings, cancellationToken);
+        // R14/R19: refuse a bad name before spending an interactive environment picker on it.
+        SolutionNameValidator.EnsureSolutionUniqueName(name);
+
+        var devEnv = await createEnvironmentResolver.ResolveCreateTargetAsync(settings.DevUrl, settings, cancellationToken);
+        if (devEnv is null)
+            return 0; // user chose "+ Create new environment" — resolver already emitted the provision advice
 
         var exitCode = await solutionCreateFlow.RunAsync(
             devEnv,
-            settings.Name!,
+            name,
             settings.DisplayName,
             settings.PublisherPrefix,
             settings.PublisherName,
@@ -68,4 +77,22 @@ public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         Console.Done("Created! Use 'push' and 'sync' to keep it in flow.");
         return 0;
     }
+
+    // The name argument is optional so `flowline init` alone works like `flowline clone` alone: prompt
+    // for it (same prompt clone's create-new path uses). Asked before the environment picker so the
+    // name-validation refusal (R14/R19) still lands before any picker time is spent. No flag, no TTY —
+    // error naming the argument rather than prompting into a dead terminal (R13).
+    internal async Task<string> ResolveNameAsync(string? name, CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(name))
+            return name;
+
+        if (!IsInteractive())
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                "Solution name is required — run 'flowline init <name>', or run this interactively to enter one.");
+
+        return await Console.PromptAsync(new TextPrompt<string>(FlowlineConsoleExtensions.Question("Solution unique name:")), cancellationToken);
+    }
+
+    bool IsInteractive() => IsInteractiveOverride?.Invoke() ?? ConsoleHelper.IsInteractive(settings: null);
 }

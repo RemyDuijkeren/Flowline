@@ -187,18 +187,34 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     internal async Task<(int? ExitCode, EnvironmentInfo? Env, ProjectSolution? ProjectSolution, SolutionInfo? SolutionInfo)> PickOrCreateAsync(
         Settings settings, string rootFolder, ProjectConfig config, CancellationToken cancellationToken)
     {
-        var devEnv = await createEnvironmentResolver.ResolveAsync(settings.DevUrl, settings, cancellationToken);
+        // Env-first (source-of-truth model): pick the environment to clone from, then its unmanaged
+        // solutions. Zero unmanaged means it's likely not the source of truth (managed-only PROD, or the
+        // wrong env) — guide and let the user re-pick. A flag-specified URL can't be re-picked, so fall
+        // through to the create-or-error choice instead of looping.
+        EnvironmentInfo devEnv;
+        List<SolutionInfo> unmanaged;
+        while (true)
+        {
+            devEnv = await createEnvironmentResolver.ResolveSourceAsync(settings.DevUrl, settings, cancellationToken);
 
-        var getSolutions = GetSolutionsOverride ?? ((url, ct) => PacUtils.GetSolutionsAsync(url, _capture, ct));
-        var allSolutions = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Checking solutions in [bold]{devEnv.DisplayName}[/]...",
-            _ => getSolutions(devEnv.EnvironmentUrl!, cancellationToken));
+            var getSolutions = GetSolutionsOverride ?? ((url, ct) => PacUtils.GetSolutionsAsync(url, _capture, ct));
+            var allSolutions = await Console.Status().FlowlineSpinner().StartAsync(
+                $"Checking solutions in [bold]{devEnv.DisplayName}[/]...",
+                _ => getSolutions(devEnv.EnvironmentUrl!, cancellationToken));
 
-        // R11: unmanaged only — clone doesn't support managed sources — with a note of how many were hidden.
-        var unmanaged = allSolutions.Where(s => !s.IsManaged).ToList();
-        var hiddenManagedCount = allSolutions.Count - unmanaged.Count;
-        if (hiddenManagedCount > 0)
-            Console.Info($"{hiddenManagedCount} managed solution{(hiddenManagedCount == 1 ? "" : "s")} hidden — clone supports unmanaged only.");
+            // R11: unmanaged only — clone doesn't support managed sources — with a note of how many were hidden.
+            unmanaged = allSolutions.Where(s => !s.IsManaged).ToList();
+            var hiddenManagedCount = allSolutions.Count - unmanaged.Count;
+            if (hiddenManagedCount > 0)
+                Console.Info($"{hiddenManagedCount} managed solution{(hiddenManagedCount == 1 ? "" : "s")} hidden — clone supports unmanaged only.");
+
+            if (unmanaged.Count > 0)
+                break;
+
+            Console.Info("No unmanaged solutions here — Flowline's source of truth is usually PROD with unmanaged. Pick the environment that holds yours.");
+            if (!string.IsNullOrWhiteSpace(settings.DevUrl) || !IsInteractive())
+                break; // can't re-pick a flag-specified env, or no TTY — let the create-new choice handle it
+        }
 
         // (Label, Solution) rather than SelectionPrompt<SolutionInfo?> — SelectionPrompt<T> requires
         // T : notnull, and the create-new choice has no solution to hang off (mirrors
@@ -218,8 +234,15 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
         if (selected.Solution is null)
         {
-            // R2: routes into the same orchestrator `init` uses — clone has no positional name in
-            // this branch (that's exactly what makes it reach the picker), so it asks for one.
+            // R2: create-new routes into the same orchestrator `init` uses. But create writes to Dataverse
+            // and is DEV-only — the env we resolved is the clone source (often PROD). If it isn't
+            // create-eligible, point at the front door rather than dead-ending on the flow's DEV guard.
+            if (!CreateEnvironmentResolver.IsCreateEligibleEnvironmentType(devEnv.Type))
+            {
+                Console.Info($"Creating a solution needs a DEV environment — '{devEnv.DisplayName}' ({devEnv.Type ?? "unknown"}) isn't one. Run 'flowline init <name>' to create one in DEV.");
+                return (0, null, null, null);
+            }
+
             var uniqueName = await Console.PromptAsync(new TextPrompt<string>(FlowlineConsoleExtensions.Question("Solution unique name:")), cancellationToken);
 
             var createFlow = CreateFlowOverride ?? ((env, name, root, cfg, ct) =>
@@ -232,10 +255,10 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             return (createExitCode, null, null, null);
         }
 
-        // R17: confirm which .flowline role this env saves under — Dev listed first so Enter alone
-        // accepts it, and the gate above only reaches here when no role is configured yet, so that
-        // default is unconditional.
-        var role = await PickRoleAsync(cancellationToken);
+        // R17: assign the .flowline role from the source env's type. Type-driven, not a free pick — the
+        // source-of-truth model means a Production source is the Prod role; the gate above only reaches
+        // here when no role is configured yet.
+        var role = await ResolveRoleAsync(devEnv, cancellationToken);
         _ = role switch
         {
             EnvironmentRole.Dev  => config.GetOrUpdateDevUrl(devEnv.EnvironmentUrl, settings),
@@ -253,20 +276,26 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         return (null, devEnv, projectSln, selected.Solution);
     }
 
-    async Task<EnvironmentRole> PickRoleAsync(CancellationToken cancellationToken)
+    // Type-driven role (R17, source-of-truth model): only a real Production env holds the Prod role; a
+    // Developer env is always Dev; everything else (Sandbox, or any other/unknown type) prompts among the
+    // non-prod roles, defaulting Dev — Prod is never offered here because only a Production-typed env earns it.
+    async Task<EnvironmentRole> ResolveRoleAsync(EnvironmentInfo env, CancellationToken cancellationToken)
     {
-        // (Label, Role) rather than SelectionPrompt<EnvironmentRole> directly — same reason as the
-        // solution/publisher pickers (SolutionCreateFlow.PickPublisherPrefixAsync): a bare Enter must
-        // land on whatever's listed first, and a raw enum choice risks resolving to default(T) instead.
+        if (string.Equals(env.Type, "Production", StringComparison.OrdinalIgnoreCase))
+            return EnvironmentRole.Prod;
+        if (string.Equals(env.Type, "Developer", StringComparison.OrdinalIgnoreCase))
+            return EnvironmentRole.Dev;
+
+        // (Label, Role) rather than SelectionPrompt<EnvironmentRole> directly — a bare Enter must land on
+        // whatever's listed first, and a raw enum choice risks resolving to default(T) instead.
         var choices = new (string Label, EnvironmentRole Role)[]
         {
             ("Dev", EnvironmentRole.Dev),
             ("Test", EnvironmentRole.Test),
             ("UAT", EnvironmentRole.Uat),
-            ("Prod", EnvironmentRole.Prod),
         };
         var prompt = new SelectionPrompt<(string Label, EnvironmentRole Role)>()
-            .Title(FlowlineConsoleExtensions.Question("Save this environment under which .flowline role?"))
+            .Title(FlowlineConsoleExtensions.Question($"Save [bold]{env.DisplayName}[/] under which .flowline role?"))
             .UseConverter(c => c.Label)
             .AddChoices(choices);
         return (await Console.PromptAsync(prompt, cancellationToken)).Role;
