@@ -152,7 +152,7 @@ export function onCreditLimitChange(executionContext) { ... }
 
 | Command                                                                                                       | What it does                                                                                 |
 |---------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|
-| [`clone [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#clone)               | Bootstrap an existing solution from Dataverse into the repo; run with no solution to pick one interactively, or create new |
+| [`clone [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#clone)               | Bootstrap an existing solution from Dataverse into the repo; run with no solution to pick one interactively |
 | [`init [name]`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#init)                     | Create a new publisher + empty solution in Dataverse (greenfield), then scaffold the repo; run with no name to be prompted |
 | [`push [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#push)                 | Build and sync code assets to DEV; or push standalone with `--pluginFile` / `--webresources` |
 | [`sync [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#sync)                 | Pull the current solution state from DEV into source control                                 |

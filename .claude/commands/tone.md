@@ -6,7 +6,7 @@ If no changed files, check `git diff --name-only HEAD~1` instead.
 
 **Step 2 — Find all CLI messages**
 In those files, find every call to:
-- `console.Ok(...)`, `console.Done(...)`, `console.Info(...)`, `console.Skip(...)`, `console.Verbose(...)`, `console.Warning(...)`, `console.Error(...)`
+- `console.Ok(...)`, `console.Done(...)`, `console.CannotContinue(...)`, `console.Info(...)`, `console.Skip(...)`, `console.Verbose(...)`, `console.Warning(...)`, `console.Error(...)`
 - `AnsiConsole.MarkupLine`, `AnsiConsole.Markup`
 - `ctx.Status(...)`, spinner label strings
 - `AnsiConsole.WriteLine`
@@ -24,6 +24,7 @@ For each message, check:
 - **Skip**: `console.Skip(...)` used? Phrased as "already there — skipping" or similar?
 - **Error**: `console.Error(...)` used? States what happened + what to do next? No passive voice?
 - **Finish line**: `console.Done(...)` used? One per command, last line only, emoji included, references next command?
+- **Graceful stop**: an early `return 0` that ends the command because the work belongs elsewhere — is it `console.CannotContinue(msg, nextStep)` rather than `console.Info(...)`/`console.Error(...)` or a pair of loose advice lines? Does `msg` state what can't happen, and does `nextStep` name a concrete command or place? Does the run end there — no `console.Done(...)` after it? Both arguments are markup-escaped by the helper, so flag any `[bold]`/`[dim]` markup passed into them.
 - **Verbose**: `console.Verbose(...)` used? After the clean line, not before?
 - **Vocabulary**: none of the banned words (see vocabulary cheat sheet in the guide)?
 - **Raw markup bypass**: raw `MarkupLine($"[green]...[/]")`, `[red]`, `[dim]`, `[yellow]` calls where a helper exists? Flag these — use the helper instead unless mixing styles within the line.
@@ -37,6 +38,7 @@ Agents parse CLI output to decide what to do next. Check:
   - Code 12 (DirtyWorkingDirectory): must say what to do, e.g. `Commit or stash changes first`
   - Code 14 (VersionConflict): must include `Add --force to overwrite`
   - Code 17 (ForceRequired): must include `Use --force to proceed`
+- **Graceful stops are exit 0**: a `console.CannotContinue(...)` run ends successfully, so the `Next:` string is the only signal an agent gets. It must be a runnable command (or a named place to go), not "try again" or "check your setup".
 - **No agent-opaque failures**: error messages must not say only "failed" or "error" without context. An agent receiving the message must know which resource failed and what action it should take (retry, fix config, add a flag, etc.).
 - **Help text (`.WithDescription`)**: must follow the what+trigger+state-change pattern — what the command does, when to run it, and what changes after. A one-line "Push plugins" description fails; "Build and register plugin assembly and web resources directly to DEV — skips pack/import. Run after plugin or web resource changes." passes.
 
@@ -47,7 +49,7 @@ For each violation, output exactly:
 file.cs:42 — [category] — violation description — suggested fix
 ```
 
-Categories: `spinner`, `ok`, `skip`, `error`, `finish-line`, `verbose`, `vocabulary`, `raw-markup`, `agent-actionable`, `agent-opaque`, `help-text`
+Categories: `spinner`, `ok`, `skip`, `error`, `finish-line`, `cannot-continue`, `verbose`, `vocabulary`, `raw-markup`, `agent-actionable`, `agent-opaque`, `help-text`
 
 If clean, output: `All messages pass tone and agent-readability check.`
 

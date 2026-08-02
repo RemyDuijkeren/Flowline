@@ -318,14 +318,16 @@ Original matrix (all still relevant for a TTY-capable run):
   on a login prompt.
 - **Duplicate-name refusal**: `<name>` matching a solution that already exists in the target
   environment is refused with a naming-conflict error before any write.
-- **Interactive `clone` pick-or-create**: `flowline clone` with no solution and no environment
-  configured — tenant-wide environment picker, then a list of the environment's unmanaged
-  solutions (managed ones hidden with a count) plus a "create new" choice; picking "create new"
-  routes into the same create path as `init`. Picking an existing solution confirms the `.flowline`
-  role to save it under, defaulting to DEV.
-- **`✓ DEV set to <env>` confirmation**: after a successful create + scaffold + build (via `init` or
-  interactive `clone`), confirm the chosen environment is written to the `DEV` role in `.flowline`
-  and the confirmation line names the environment.
+- **Interactive `clone` solution pick**: `flowline clone` with no solution and no environment
+  configured — tenant-wide environment picker (Default and Teams environments not listed), then a
+  list of the environment's unmanaged solutions (managed ones hidden with a count, the environment's
+  `Default` solution never listed). No "create new" choice — clone only adopts. Picking a solution
+  confirms the `.flowline` role to save it under, defaulting to DEV.
+- **Nothing to clone**: an environment with no unmanaged solution stops with `⏸ Nothing to clone in
+  '<env>'` plus a `Next:` line naming `flowline init <name>`, and exits `0`.
+- **`✓ DEV set to <env>` confirmation**: after a successful `init` create + scaffold + build, confirm
+  the chosen environment is written to the `DEV` role in `.flowline` and the confirmation line names
+  the environment.
 - **Post-create failure reporting**: if scaffold or build fails after the publisher/solution already
   exist in Dataverse, confirm Flowline reports the created publisher/solution identifiers for manual
   cleanup rather than discarding them silently.

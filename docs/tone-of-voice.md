@@ -33,6 +33,7 @@ convention. The glyph carries the meaning, so output skims by shape, not just by
 | `✗ ` | Error | red |
 | `↷ ` | Skip — already done | dim |
 | `· ` | Info — neutral detail | plain |
+| `⏸ ` | Stop — nothing left to do here, next step is yours | bold yellow |
 | `🚀` | Finish line | bold green |
 
 A leading `! ` (warning glyph) is not the same thing as the trailing `!` on the finish line
@@ -88,6 +89,18 @@ Red, direct, tell them what to do next. No passive voice. No blame.
 [red]Build failed — check the output above.[/]
 ```
 
+### Graceful stop *(the command can't go on, and that's not a failure)*
+Bold yellow `⏸ ` line, then a dim-labelled `Next:` line. For the case where the user did nothing wrong
+and nothing broke — the work just belongs to another command or another place. Exits `0`, so it's a
+stop, not an error: no red, no exception, no stack trace.
+```
+⏸ Can't create a DEV environment from here.
+Next: Run 'flowline provision dev --prod <prod-url>' to create DEV - or create a environment in the Power Platform admin center, then re-run 'flowline init'.
+```
+Rules: one per command, and it replaces the finish line — a run either stops or finishes, never both.
+The message says what can't happen; `Next:` names the concrete command (or place) that makes it happen.
+Both strings are markup-escaped by the helper, so write them as plain text — `[bold]` won't render.
+
 ### Finish line
 One per command, always last, earns its emoji. References the next command(s) so they know what's next.
 ```
@@ -122,7 +135,8 @@ ACT 3 — Do the work    (steps with spinners → dim skips or green completions
 4. **Errors stop the act immediately.** When an error fires, nothing else prints below it.
 
 5. **The finish line is always last and always alone.** It earns its weight by position. No blank
-   line needed before it.
+   line needed before it. A graceful stop (`⏸ ` + `Next:`) closes the run in its place when there's
+   nothing left for this command to do — the two never both appear.
 
 6. **No preamble.** Never announce what you're about to do with a plain line and then do it. The
    spinner label *is* the announcement.
@@ -202,6 +216,7 @@ Use `FlowlineConsoleExtensions` (namespace `Flowline.Core.Console`) instead of r
 |---|---|---|
 | Success | `console.Ok(msg)` | `MarkupLine($"[green]✓ {msg}[/]")` |
 | Finish line | `console.Done(msg)` | `MarkupLine($"[bold green]🚀 {msg}[/]")` |
+| Graceful stop | `console.CannotContinue(msg, nextStep)` | blank line, `[bold yellow]⏸ {msg}[/]`, then `[dim]Next:[/] {nextStep}` — both escaped, so pass plain text |
 | Info / neutral | `console.Info(msg)` | `MarkupLine($"· {msg}")` |
 | Skip / already done | `console.Skip(msg)` | `MarkupLine($"[dim]↷ {msg}[/]")` |
 | Verbose detail | `console.Verbose(msg)` | writes a dim, indented verbose line |

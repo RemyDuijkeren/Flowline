@@ -14,7 +14,7 @@ using Spectre.Console.Cli;
 namespace Flowline.Commands;
 
 public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture,
-    CreateSolutionService createSolutionService, CreateEnvironmentResolver createEnvironmentResolver, SolutionCreateFlow solutionCreateFlow) :
+    CreateSolutionService createSolutionService, CreateEnvironmentResolver createEnvironmentResolver) :
     FlowlineCommand<CloneCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture)
 {
     /// <summary>Seam for testing — overrides ConsoleHelper.IsInteractive (global console capability
@@ -25,14 +25,10 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     /// subprocess with no mocking seam of its own).</summary>
     internal Func<string, CancellationToken, Task<List<SolutionInfo>>>? GetSolutionsOverride { get; set; }
 
-    /// <summary>Seam for testing — overrides the "create new" routing into <see cref="SolutionCreateFlow"/>
-    /// (U5's own tests already cover the flow's internals; this only proves clone routes into it, per R2).</summary>
-    internal Func<EnvironmentInfo, string, string, ProjectConfig, CancellationToken, Task<int>>? CreateFlowOverride { get; set; }
-
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "[solution]")]
-        [Description("Solution to clone into this repo (omit to pick or create one interactively)")]
+        [Description("Solution to clone into this repo (omit to pick one interactively)")]
         public string? Solution { get; set; }
 
         [CommandOption("--prod <URL>")]
@@ -72,16 +68,16 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         ProjectSolution projectSln;
         SolutionInfo solutionInfo;
 
-        // U6/R2/R11/R17: no solution named, no role URL configured (this run's flags or a prior
-        // .flowline), interactive session — offer pick-existing-or-create-new instead of
+        // U6/R11/R17: no solution named, no role URL configured (this run's flags or a prior
+        // .flowline), interactive session — offer the environment + solution pickers instead of
         // FindUnmanagedSourceAsync's flag-driven error. Gated on all three so the existing
         // flag-driven path (solution named, or any role URL configured) behaves exactly as today (R13):
         // a non-interactive run always falls through to FindUnmanagedSourceAsync, so it raises the
         // same NotFound error it always has, never CreateEnvironmentResolver's differently-worded one.
-        if (ShouldPickOrCreate(settings, Config, IsInteractive()))
+        if (ShouldPickSolution(settings, Config, IsInteractive()))
         {
-            var (createExitCode, pickedEnv, pickedSln, pickedInfo) = await PickOrCreateAsync(settings, RootFolder, Config, cancellationToken);
-            if (createExitCode is { } pickExitCode)
+            var (pickExitCodeOrNull, pickedEnv, pickedSln, pickedInfo) = await PickSolutionAsync(settings, Config, cancellationToken);
+            if (pickExitCodeOrNull is { } pickExitCode)
                 return pickExitCode;
 
             (sourceEnv, projectSln, solutionInfo) = (pickedEnv!, pickedSln!, pickedInfo!);
@@ -174,23 +170,28 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     // U6/R13: pure — no I/O — so the gate itself is directly testable without a TestConsole or a
     // fully-constructed command. Interactivity is passed in rather than read here so callers (and
     // tests) control it explicitly instead of this reaching for the global console check.
-    internal static bool ShouldPickOrCreate(Settings settings, ProjectConfig config, bool isInteractive) =>
+    internal static bool ShouldPickSolution(Settings settings, ProjectConfig config, bool isInteractive) =>
         string.IsNullOrWhiteSpace(settings.Solution) && isInteractive && !AnyRoleUrlConfigured(config);
+
+    // The environment's Default solution is the catch-all every unmanaged component lands in — it's the
+    // environment, not a project, so it never belongs in the picker. Naming it explicitly
+    // (`flowline clone Default`) still works; this only shapes what the picker offers.
+    static bool IsDefaultSolution(SolutionInfo solution) =>
+        string.Equals(solution.SolutionUniqueName, "Default", StringComparison.OrdinalIgnoreCase);
 
     static bool AnyRoleUrlConfigured(ProjectConfig config) =>
         !string.IsNullOrWhiteSpace(config.ProdUrl) || !string.IsNullOrWhiteSpace(config.UatUrl) ||
         !string.IsNullOrWhiteSpace(config.TestUrl) || !string.IsNullOrWhiteSpace(config.DevUrl);
 
-    // U6: the pick-existing-or-create-new menu. Takes rootFolder/config explicitly (not RootFolder/
-    // Config) so it's callable — and testable — without running the base command pipeline that
-    // normally sets them, the same reason SolutionCreateFlow.RunAsync takes them as parameters.
-    internal async Task<(int? ExitCode, EnvironmentInfo? Env, ProjectSolution? ProjectSolution, SolutionInfo? SolutionInfo)> PickOrCreateAsync(
-        Settings settings, string rootFolder, ProjectConfig config, CancellationToken cancellationToken)
+    // U6: the environment + solution pickers. Takes config explicitly (not Config) so it's callable —
+    // and testable — without running the base command pipeline that normally sets it.
+    internal async Task<(int? ExitCode, EnvironmentInfo? Env, ProjectSolution? ProjectSolution, SolutionInfo? SolutionInfo)> PickSolutionAsync(
+        Settings settings, ProjectConfig config, CancellationToken cancellationToken)
     {
         // Env-first (source-of-truth model): pick the environment to clone from, then its unmanaged
         // solutions. Zero unmanaged means it's likely not the source of truth (managed-only PROD, or the
         // wrong env) — guide and let the user re-pick. A flag-specified URL can't be re-picked, so fall
-        // through to the create-or-error choice instead of looping.
+        // through to the stop below instead of looping.
         EnvironmentInfo devEnv;
         List<SolutionInfo> unmanaged;
         while (true)
@@ -203,8 +204,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
                 _ => getSolutions(devEnv.EnvironmentUrl!, cancellationToken));
 
             // R11: unmanaged only — clone doesn't support managed sources — with a note of how many were hidden.
-            unmanaged = allSolutions.Where(s => !s.IsManaged).ToList();
-            var hiddenManagedCount = allSolutions.Count - unmanaged.Count;
+            unmanaged = allSolutions.Where(s => !s.IsManaged && !IsDefaultSolution(s)).ToList();
+            var hiddenManagedCount = allSolutions.Count(s => s.IsManaged);
             if (hiddenManagedCount > 0)
                 Console.Info($"{hiddenManagedCount} managed solution{(hiddenManagedCount == 1 ? "" : "s")} hidden — clone supports unmanaged only.");
 
@@ -213,47 +214,26 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
             Console.Info("No unmanaged solutions here — Flowline's source of truth is usually PROD with unmanaged. Pick the environment that holds yours.");
             if (!string.IsNullOrWhiteSpace(settings.DevUrl) || !IsInteractive())
-                break; // can't re-pick a flag-specified env, or no TTY — let the create-new choice handle it
+                break; // can't re-pick a flag-specified env, or no TTY — stop instead of looping
         }
 
-        // (Label, Solution) rather than SelectionPrompt<SolutionInfo?> — SelectionPrompt<T> requires
-        // T : notnull, and the create-new choice has no solution to hang off (mirrors
-        // SolutionCreateFlow.PickPublisherPrefixAsync's (Label, Prefix) choice).
-        const string createNewLabel = "[italic]+ Create new solution[/]";
-        var choices = unmanaged
-            .Select(s => (Label: $"{s.SolutionUniqueName} — {s.FriendlyName}", Solution: (SolutionInfo?)s))
-            .Append((Label: createNewLabel, Solution: (SolutionInfo?)null))
-            .ToList();
+        // Creating a solution is `init`'s job, not clone's — clone adopts what's already in Dataverse.
+        // So an environment with nothing to adopt is the end of this command, not a menu with a
+        // create-new escape hatch (which, on a PROD source, would only fail the DEV-only create guard).
+        if (unmanaged.Count == 0)
+        {
+            Console.CannotContinue(
+                $"Nothing to clone in '{devEnv.DisplayName}' — no unmanaged solution there.",
+                "Run 'flowline init <name>' to create one in DEV, or re-run 'flowline clone' and pick the environment that holds your solution.");
+            return (0, null, null, null);
+        }
 
-        var prompt = new SelectionPrompt<(string Label, SolutionInfo? Solution)>()
-            .Title(FlowlineConsoleExtensions.Question("Pick a solution to clone, or create a new one:"))
-            .UseConverter(c => c.Label)
-            .AddChoices(choices);
+        var prompt = new SelectionPrompt<SolutionInfo>()
+            .Title(FlowlineConsoleExtensions.Question("Pick a solution to clone:"))
+            .UseConverter(s => $"{s.SolutionUniqueName} — {s.FriendlyName}")
+            .AddChoices(unmanaged);
 
         var selected = await Console.PromptAsync(prompt, cancellationToken);
-
-        if (selected.Solution is null)
-        {
-            // R2: create-new routes into the same orchestrator `init` uses. But create writes to Dataverse
-            // and is DEV-only — the env we resolved is the clone source (often PROD). If it isn't
-            // create-eligible, point at the front door rather than dead-ending on the flow's DEV guard.
-            if (!CreateEnvironmentResolver.IsCreateEligibleEnvironmentType(devEnv.Type))
-            {
-                Console.Info($"Creating a solution needs a DEV environment — '{devEnv.DisplayName}' ({devEnv.Type ?? "unknown"}) isn't one. Run 'flowline init <name>' to create one in DEV.");
-                return (0, null, null, null);
-            }
-
-            var uniqueName = await Console.PromptAsync(new TextPrompt<string>(FlowlineConsoleExtensions.Question("Solution unique name:")), cancellationToken);
-
-            var createFlow = CreateFlowOverride ?? ((env, name, root, cfg, ct) =>
-                solutionCreateFlow.RunAsync(env, name, null, null, null, root, cfg,
-                    (projectSln, dataverseSolutionFolder, slnFolder, ct2) =>
-                        ValidatePackAndBuildAsync(projectSln, dataverseSolutionFolder, slnFolder, buildRelease: true, skipBuild: false, ct2),
-                    ct));
-
-            var createExitCode = await createFlow(devEnv, uniqueName, rootFolder, config, cancellationToken);
-            return (createExitCode, null, null, null);
-        }
 
         // R17: assign the .flowline role from the source env's type. Type-driven, not a free pick — the
         // source-of-truth model means a Production source is the Prod role; the gate above only reaches
@@ -270,10 +250,10 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         var roleLabel = role switch { EnvironmentRole.Dev => "DEV", EnvironmentRole.Test => "TEST", EnvironmentRole.Uat => "UAT", EnvironmentRole.Prod => "PROD", _ => role.ToString() };
         Console.Ok($"{roleLabel} set to [bold]{devEnv.DisplayName}[/] ({devEnv.EnvironmentUrl})");
 
-        var projectSln = config.GetOrUpdateSolution(selected.Solution.SolutionUniqueName,
+        var projectSln = config.GetOrUpdateSolution(selected.SolutionUniqueName,
             settings.IncludeManaged.IsSet ? settings.IncludeManaged.Value : (bool?)null, settings)!;
 
-        return (null, devEnv, projectSln, selected.Solution);
+        return (null, devEnv, projectSln, selected);
     }
 
     // Type-driven role (R17, source-of-truth model): only a real Production env holds the Prod role; a

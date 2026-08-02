@@ -143,7 +143,9 @@ public class CreateEnvironmentResolver(
             // Neutral next-step tone, not a red error: env creation is `provision`'s job (scope boundary),
             // and the caller exits 0. Covers both the has-prod (branch a dev) and no-prod (make a sandbox)
             // cases, since provision requires a prod to copy from.
-            console.WriteLine("Run 'flowline provision dev --prod <prod-url>' to create DEV - or create a environment in the Power Platform admin center, then re-run 'flowline init'.");
+            console.CannotContinue(
+                "Can't create a DEV environment from here.",
+                "Run 'flowline provision dev --prod <prod-url>' to create DEV - or create a environment in the Power Platform admin center, then re-run 'flowline init'.");
             return null;
         }
 
@@ -166,7 +168,7 @@ public class CreateEnvironmentResolver(
                 "No environments to clone from — your tenant has only Default and Teams environments.");
 
         var prompt = new SelectionPrompt<EnvironmentInfo>()
-            .Title(FlowlineConsoleExtensions.Question("Pick the environment to clone from (usually PROD — your source of truth):"))
+            .Title(FlowlineConsoleExtensions.Question("Pick the environment to clone from (usually PROD — if it has unmanaged solutions):"))
             .UseConverter(e => $"{e.DisplayName} [dim]({e.Type ?? "unknown"})[/] — {e.EnvironmentUrl}")
             .AddChoices(selectable);
 

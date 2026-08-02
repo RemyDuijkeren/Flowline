@@ -36,11 +36,36 @@ Interactive testing + live `pac`/docs validation reshaped the environment/role h
 
 ---
 
+## Design revision 2 (2026-08-02, second interactive pass)
+
+Running the built commands against a live tenant reversed one product decision and tightened two pickers.
+These **supersede** the requirements and units below (patched inline, marked `[Reversed 2026-08-02 #2]`):
+
+- **`clone` no longer creates. Create belongs to `init`, full stop.** *(reverses KD1/R2.)* The
+  `+ Create new solution` choice sat in a picker reached from the **source-of-truth environment — usually
+  PROD** — where create is refused by the DEV-only guard the moment it's picked. An option that fails on
+  the environment it's most often offered from isn't an option. `clone` adopts what exists; an environment
+  with nothing unmanaged to adopt now ends the command with a `⏸` stop pointing at `flowline init <name>`
+  (exit 0), instead of a create-new dead end. `SolutionCreateFlow` keeps exactly one caller: `InitCommand`.
+- **`Default` and `Teams` environments are filtered out of clone's environment picker.** Neither is an ALM
+  environment; listing them offers a choice that can't produce a project. Blocklist, not whitelist —
+  unknown/null types stay listed rather than silently vanishing.
+- **The environment's `Default` solution is filtered out of clone's solution picker.** It's the catch-all
+  every unmanaged component lands in — the environment, not a project. Naming it explicitly
+  (`flowline clone Default`) still works; this only shapes what the picker offers.
+- **Both positionals are optional** — `init [name]` and `clone [solution]`. A required positional makes
+  Spectre reject a bare invocation at parse time, before the command body (and its prompts) ever runs, so
+  the interactive paths were unreachable from the CLI. `init` with no name prompts for it *before* the
+  environment picker, keeping the R14/R19 name refusal ahead of any picker time; with no TTY it errors
+  naming the argument (R13).
+
+---
+
 ## Product Contract
 
 ### Summary
 
-Add greenfield solution creation to Flowline. A shared create service stands up a publisher (reuse an existing one or create new) and an empty unmanaged solution in Dataverse via the SDK, then runs the existing clone scaffold. It is reached two ways: a discoverable `flowline init <name>` front door, and `clone`'s interactive "no solution → pick existing or create new" menu. When environment or solution are unspecified, `clone` prompts (tenant-wide environment pick, then solution pick-or-create); when flags fully specify inputs, it runs silent.
+Add greenfield solution creation to Flowline. A shared create service stands up a publisher (reuse an existing one or create new) and an empty unmanaged solution in Dataverse via the SDK, then runs the existing clone scaffold. **[Reversed 2026-08-02 #2]** It is reached one way — the `flowline init [name]` front door; `clone` adopts existing solutions and never creates. When environment or solution are unspecified, `clone` prompts (tenant-wide environment pick, then unmanaged-solution pick); when flags fully specify inputs, it runs silent.
 
 ### Problem Frame
 
@@ -50,7 +75,7 @@ Separately, `clone` is fully flag-driven. A user who runs it without a solution 
 
 ### Key Decisions
 
-- KD1. **Clone owns create; `init` is a thin discoverable alias.** The create path must exist inside `clone`'s interactive menu regardless, so a standalone `init` adds only a front door over logic that already exists — not a second implementation. *(session-settled: user-directed — chosen over standalone-`init` and clone-only: discoverability without duplicating scaffold logic.)* Governs R1, R2, R3.
+- KD1. **Clone owns create; `init` is a thin discoverable alias.** The create path must exist inside `clone`'s interactive menu regardless, so a standalone `init` adds only a front door over logic that already exists — not a second implementation. *(session-settled: user-directed — chosen over standalone-`init` and clone-only: discoverability without duplicating scaffold logic.)* Governs R1, R2, R3. **[Reversed 2026-08-02 #2]** `init` owns create outright — `clone`'s create-new choice is gone (it was offered from a usually-PROD source where the DEV-only guard refuses it). The shared-service split (KTD1) survives the reversal unchanged; `SolutionCreateFlow` simply has one caller now.
 - KD2. **Greenfield means Flowline creates the solution.** Starting state is nothing in Dataverse; Flowline creates publisher + empty unmanaged solution, not just adopting a portal-made one. *(session-settled: user-directed — chosen over portal-created-adoption.)* Governs R4, R7.
 - KD3. **Create via the SDK, then reuse the existing clone.** Two SDK `Create` calls (publisher if new + empty unmanaged solution) land the solution in DEV; `flowline clone` then pulls and scaffolds it unchanged. PAC was evaluated and rejected for the write: it has no create verb, and its only env-side create (`pac solution init` → pack → `import`) pays a multi-minute async import and forks the scaffold. Verified live that `pac solution sync` cannot substitute — it is a pull that errors on a missing solution and creates nothing. SDK create is a standard Dataverse API; being outside the documented CLI path does not make it fragile. *(session-settled: user-directed — chosen over pac init→import and over folding create into a smart `sync`.)* Governs R4, R5, R7.
 - KD4. **One `--publisher-prefix` param, reuse-or-create by prefix; PAC-aligned names.** A single flag drives both: an existing prefix is reused, a new prefix is created (friendly name deduced). The name mirrors `pac solution init`'s `--publisher-prefix` so users recognize it; an optional `--publisher-name` overrides the deduced friendly name on create. Long forms only — no short aliases (`-pp`/`-pn`). Interactively, a picker lists existing publishers plus a create-new option. *(session-settled: user-directed — single param, reuse-or-create, PAC-recognizable long names, no short aliases.)* Governs R5, R6.
@@ -63,8 +88,8 @@ Separately, `clone` is fully flag-driven. A user who runs it without a solution 
 
 **Command surface**
 
-- R1. `flowline init <name>` creates a greenfield solution and scaffolds the repo, jumping straight to the create path. Flags: `<name>` positional (the solution **unique name**, matching `clone <solution>`), `--dev <URL>` (target DEV environment; omitted → tenant env picker), `--display-name <text>` (friendly name; defaults to the unique name), `--publisher-prefix <prefix>` (reuse-or-create per R5, name matches `pac solution init`), optional `--publisher-name` (publisher friendly-name override).
-- R2. `flowline clone` with no solution named offers an interactive choice between picking an existing solution and creating a new one; the create choice reaches the same logic as `init`.
+- R1. `flowline init <name>` creates a greenfield solution and scaffolds the repo, jumping straight to the create path. Flags: `<name>` positional (the solution **unique name**, matching `clone <solution>`), `--dev <URL>` (target DEV environment; omitted → tenant env picker), `--display-name <text>` (friendly name; defaults to the unique name), `--publisher-prefix <prefix>` (reuse-or-create per R5, name matches `pac solution init`), optional `--publisher-name` (publisher friendly-name override). **[Revised 2026-08-02 #2]** The positional is **optional** (`init [name]`): omitted, it's prompted before the environment picker; with no TTY it errors naming the argument (R13).
+- R2. ~~`flowline clone` with no solution named offers an interactive choice between picking an existing solution and creating a new one; the create choice reaches the same logic as `init`.~~ **[Reversed 2026-08-02 #2]** `flowline clone` with no solution named lists the source environment's unmanaged solutions to pick from — **no create choice**. Creating a solution is `init`'s job alone; an environment with nothing unmanaged to adopt stops with a `⏸` line pointing at `flowline init <name>` and exits 0.
 - R3. Create logic lives in one shared service invoked by both `init` and `clone`; neither duplicates the scaffold path in `CloneCommand`.
 
 **Solution & publisher creation**
@@ -79,9 +104,9 @@ Separately, `clone` is fully flag-driven. A user who runs it without a solution 
 
 **Interactive selection**
 
-- R9. When no environment is specified, prompt with a tenant-wide environment picker. **[Revised 2026-08-02]** The framing differs by command: **init** frames it as picking this project's **DEV** environment and **filters the list to Sandbox+Developer** (plus a `+ Create new environment for DEV role` escape hatch → exit advising `flowline provision dev`); **clone** frames it as picking the **source of truth (usually PROD)** and lists **all** environment types (no filter — clone writes nothing). For the chosen environment, switch to an existing matching pac auth profile; Flowline never creates an auth profile or launches an interactive login — if no matching profile exists, it errors naming the `pac auth create` command to run.
+- R9. When no environment is specified, prompt with a tenant-wide environment picker. **[Revised 2026-08-02]** The framing differs by command: **init** frames it as picking this project's **DEV** environment and **filters the list to Sandbox+Developer** (plus a `+ Create new environment for DEV role` escape hatch → exit advising `flowline provision dev`); **clone** frames it as picking the **source of truth (usually PROD)** and lists **all** environment types (no role filter — clone writes nothing). **[Revised 2026-08-02 #2]** clone's picker does drop **`Default` and `Teams`** environments — neither is an ALM environment. Blocklist only: unknown/null types stay listed. For the chosen environment, switch to an existing matching pac auth profile; Flowline never creates an auth profile or launches an interactive login — if no matching profile exists, it errors naming the `pac auth create` command to run.
 - R10. The environment chosen for a create becomes the DEV role in `.flowline`, written only after the full create + scaffold + build succeeds (per R16). On writing it, Flowline confirms the designation with a line naming the environment (e.g. `✓ DEV set to <name> (<url>)`), so both the interactive picker and the silent `--dev` path surface that this environment is now the project's DEV.
-- R11. When cloning an existing solution with none named, resolve the source environment **first** (env-first ordering), then list the *unmanaged* solutions in it for the user to pick (via `pac solution list`), excluding managed ones with a note of how many were hidden — clone supports unmanaged only. **[Revised 2026-08-02]** If the chosen environment has **zero** unmanaged solutions, emit a source-of-truth hint (unmanaged usually lives in PROD) and re-prompt the environment picker rather than dead-ending.
+- R11. When cloning an existing solution with none named, resolve the source environment **first** (env-first ordering), then list the *unmanaged* solutions in it for the user to pick (via `pac solution list`), excluding managed ones with a note of how many were hidden — clone supports unmanaged only. **[Revised 2026-08-02]** If the chosen environment has **zero** unmanaged solutions, emit a source-of-truth hint (unmanaged usually lives in PROD) and re-prompt the environment picker rather than dead-ending. **[Revised 2026-08-02 #2]** The environment's **`Default`** solution is excluded from the list too (it's the catch-all holding every unmanaged component, not a project's solution) and isn't counted as a hidden *managed* one; naming it explicitly still works. When the list ends up empty and the picker can't be re-run (flag-specified env, or no TTY), stop with `⏸ Nothing to clone in '<env>'` + a `Next:` line naming `flowline init <name>`, exit 0.
 - R17. When an interactively-picked environment is used to clone an *existing* solution (not create), Flowline saves it under a `.flowline` role so later role-based commands (`push`/`sync`/`deploy`) resolve it correctly. **[Revised 2026-08-02]** The role is **type-driven**, not a free pick defaulting DEV: `Production→Prod` (locked, no prompt), `Developer→Dev` (locked), everything else (Sandbox/other/unknown) prompts among `{Dev,Test,UAT}` defaulting Dev. Prod is only ever assigned to a genuinely Production-typed environment.
 
 **Interactivity contract**
@@ -106,17 +131,17 @@ Separately, `clone` is fully flag-driven. A user who runs it without a solution 
   - **Outcome:** New publisher (if created) and unmanaged solution exist in the DEV environment; the repo is scaffolded and `dotnet build` passes.
   - **Covers R1, R4, R5, R6, R7, R8, R14, R15, R16, R18, R19.**
 
-- F2. `flowline clone` — fully interactive
+- F2. `flowline clone` — fully interactive **[Revised 2026-08-02 #2]**
   - **Trigger:** User runs `flowline clone` with no solution and no configured environment.
-  - **Steps:** Prompt the tenant-wide environment picker; then offer pick-an-existing-solution (listed from that environment) or create-new (routes into F1's create path).
-  - **Outcome:** Either an existing solution is cloned, or a new one is created — both end in a scaffolded repo.
+  - **Steps:** Prompt the tenant-wide environment picker (Default/Teams environments not listed); then list that environment's unmanaged solutions (managed hidden with a count, `Default` never listed) and pick one. Nothing to pick → `⏸` stop naming `flowline init <name>`, exit 0.
+  - **Outcome:** An existing solution is cloned into a scaffolded repo, or the command stops having created nothing.
   - **Covers R2, R9, R11, R17.**
 
 ### Acceptance Examples
 
 - AE1. **Covers R12.** **Given** `flowline init Sol --dev <dev-url> --publisher-prefix dwe`, **when** run, **then** it creates and scaffolds with no prompts.
 - AE2. **Covers R13.** **Given** a missing `--dev` and no TTY (CI or piped), **when** run, **then** it exits with an error naming the flag to pass, without hanging.
-- AE3. **Covers R8, R10.** **Given** a non-dev environment — chosen interactively **or** passed via `--dev` — **when** *create* is attempted (init, or clone's create-new), **then** it is refused after checking the environment type; a dev environment proceeds and becomes the DEV role on success. **[Revised 2026-08-02]** The refusal is **create-path only** — cloning an *existing* solution from a Production environment is allowed (and assigns the Prod role); the DEV-only guard never applies to clone-existing.
+- AE3. **Covers R8, R10.** **Given** a non-dev environment — chosen interactively **or** passed via `--dev` — **when** *create* is attempted (`init`; **[Revised 2026-08-02 #2]** clone no longer creates), **then** it is refused after checking the environment type; a dev environment proceeds and becomes the DEV role on success. **[Revised 2026-08-02]** The refusal is **create-path only** — cloning an *existing* solution from a Production environment is allowed (and assigns the Prod role); the DEV-only guard never applies to clone-existing.
 - AE4. **Covers R5.** **Given** `--publisher-prefix dwe` where `dwe` already exists, **when** create runs, **then** it reuses that publisher; a prefix that doesn't exist creates the publisher. With no flag, the picker lists existing publishers plus create-new.
 - AE5. **Covers R14.** **Given** a `<name>` that is a C# keyword, **when** create runs, **then** it refuses before creating anything in Dataverse.
 - AE6. **Covers R15.** **Given** `<name>` matches a solution already in the target environment, **when** create runs, **then** it refuses with a naming-conflict error before writing anything.
@@ -132,7 +157,7 @@ Separately, `clone` is fully flag-driven. A user who runs it without a solution 
 - Environment creation — `provision` already owns that (`src/Flowline/Commands/ProvisionCommand.cs`).
 - Folding create into a smart `flowline sync` (create-if-missing, option D) — a possible future direction, deferred now to keep `sync`'s pull-only semantics and dirty-tree/version guards intact.
 - Multi-environment DTAP role assignment during clone/init (picking several environments and tagging each dev/test/uat/prod) — deferred; the picker sets one environment (the DEV/source role), and test/uat/prod are configured later via the existing `--test`/`--uat`/`--prod` flags.
-- Non-interactive create through `clone` (a `clone --create` flag) — out. Flag-driven / scripted create is `flowline init` only; `clone`'s create-new is interactive-menu-only, so the two commands don't share a create flag surface.
+- Non-interactive create through `clone` (a `clone --create` flag) — out. Flag-driven / scripted create is `flowline init` only; `clone`'s create-new is interactive-menu-only, so the two commands don't share a create flag surface. **[Revised 2026-08-02 #2]** Widened: **all** create through `clone` is out, interactive included. `clone` adopts, `init` creates.
 
 ### Dependencies / Assumptions
 
@@ -162,7 +187,7 @@ Separately, `clone` is fully flag-driven. A user who runs it without a solution 
 
 ### Key Technical Decisions
 
-- KTD1. **Shared create flow + extracted scaffold; both commands call the flow, not each other.** A `SolutionCreateFlow` orchestrator (Flowline) runs the create sequence — validate names → SDK create → scaffold → build → DEV-role write / failure-report — and both `InitCommand` and `clone`'s create-new path call it, so neither command calls the other and the create logic exists once (R3). The scaffold half moves into a `CreateSolutionService`: the genuinely private `CloneCommand` methods (`SetupPluginsProjectAsync`, `SetupWebResourcesProjectAsync`, `CreateSolutionFileAsync`, `SeedWebResourceDistFromSrc`, `ScaffoldRootGitignore`, `ScaffoldAgentsFileAsync`, `ScaffoldClaudeFileAsync`). `ValidatePackAndBuildAsync` stays on the base `FlowlineCommand` (shared with `SyncCommand`) and is invoked by the command; `DataverseContextGenerator` is already a standalone class the flow calls, not moves. Behavior-preserving — `CloneCommand`'s tests are the guardrail. *(session-settled: user-approved — chosen over `init` calling `CloneCommand` directly.)* Per R3, R7.
+- KTD1. **Shared create flow + extracted scaffold; both commands call the flow, not each other.** A `SolutionCreateFlow` orchestrator (Flowline) runs the create sequence — validate names → SDK create → scaffold → build → DEV-role write / failure-report — and both `InitCommand` and `clone`'s create-new path call it, so neither command calls the other and the create logic exists once (R3). **[Revised 2026-08-02 #2]** `InitCommand` is now the only caller — the split still earns its keep (clone keeps using `CreateSolutionService` for the scaffold), but no create logic sits in `CloneCommand`. The scaffold half moves into a `CreateSolutionService`: the genuinely private `CloneCommand` methods (`SetupPluginsProjectAsync`, `SetupWebResourcesProjectAsync`, `CreateSolutionFileAsync`, `SeedWebResourceDistFromSrc`, `ScaffoldRootGitignore`, `ScaffoldAgentsFileAsync`, `ScaffoldClaudeFileAsync`). `ValidatePackAndBuildAsync` stays on the base `FlowlineCommand` (shared with `SyncCommand`) and is invoked by the command; `DataverseContextGenerator` is already a standalone class the flow calls, not moves. Behavior-preserving — `CloneCommand`'s tests are the guardrail. *(session-settled: user-approved — chosen over `init` calling `CloneCommand` directly.)* Per R3, R7.
 - KTD2. **Create the publisher and solution records through the Dataverse SDK.** Use `IOrganizationServiceAsync2` from `DataverseConnector.ConnectViaPacAsync` to create the publisher (when the prefix is new) and the empty unmanaged solution. *(session-settled: user-directed — per KD3; chosen over `pac init→pack→import` and over folding create into `sync`.)* Per R4, R5.
 - KTD3. **Derivation defaults for unspecified names and the option-value prefix.** When not supplied: (a) the solution display name is a *humanized* form of the unique name — split on underscores and camelCase boundaries into spaced words, keeping consecutive-capital acronym runs together (`MySolution`→`My Solution`, `DWE_Base`→`DWE Base`, `APIGateway`→`API Gateway`); (b) a new publisher's unique name and friendly name both default to the `--publisher-prefix` value (friendly overridable by `--publisher-name`); (c) the publisher `customizationoptionvalueprefix` (SystemRequired, 10000–99999) is derived deterministically from the prefix — silently, with no flag. Per R6; supports R4, R5. *(session-settled: user-directed.)*
 - KTD4. **Enforce DEV-only via an `EnvironmentInfo.Type` whitelist — on the create path only.** `pac admin list --json` returns a `Type` of `Production` / `Sandbox` / `Developer`. Allow only `Sandbox` and `Developer` as **create** targets; refuse everything else, including `Production` and any unrecognized or null type (satisfies R8's "non-dev — or unclassifiable"). **[Revised 2026-08-02]** The whitelist gates `ResolveCreateTargetAsync` (init + clone's create-new) only; `ResolveSourceAsync` (clone-existing) applies no type guard. Developer verified live to work with `pac solution clone`/`sync`, so it stays create-eligible. *(session-settled: user-directed — Sandbox+Developer, chosen over Developer-only.)* Per R8.
@@ -178,7 +203,6 @@ flowchart TB
   init[InitCommand · Flowline] --> resolver[CreateEnvironmentResolver · Flowline]
   clone[CloneCommand · Flowline] --> resolver
   init --> flow[SolutionCreateFlow · Flowline]
-  clone -. create new .-> flow
   flow --> validator[SolutionNameValidator · Core]
   flow --> createSvc[SolutionCreateService · Core/SDK]
   flow --> scaffold[CreateSolutionService · Flowline/scaffold]
@@ -187,6 +211,9 @@ flowchart TB
   resolver --> profiles[ProfileResolutionService · switch-only]
   createSvc --> conn[DataverseConnector · IOrganizationServiceAsync2]
 ```
+
+**[Revised 2026-08-02 #2]** The `clone ⇢ SolutionCreateFlow` edge is gone: `clone` reaches the resolver and
+the scaffold only, and `InitCommand` is the flow's single caller.
 
 `flowline init` flow with its refusal gates (F1):
 
@@ -216,7 +243,7 @@ flowchart TB
 
 ### Sequencing
 
-U1, U2, U3, U4 are independent and can proceed in parallel. U5 (the shared `SolutionCreateFlow` + `init`) depends on U1–U4. U6 (interactive `clone`) depends on U4 and U5. U7 (docs) depends on U5, U6.
+U1, U2, U3, U4 are independent and can proceed in parallel. U5 (the shared `SolutionCreateFlow` + `init`) depends on U1–U4. U6 (interactive `clone`) depends on U4 and U5 — **[Revised 2026-08-02 #2]** on U4 only, once clone's create arm is gone. U7 (docs) depends on U5, U6.
 
 ---
 
@@ -291,7 +318,7 @@ U1, U2, U3, U4 are independent and can proceed in parallel. U5 (the shared `Solu
 - **Requirements:** R1, R2 (create arm), R6, R10, R12, R13, R16.
 - **Dependencies:** U1, U2, U3, U4.
 - **Files:** create `src/Flowline/Services/SolutionCreateFlow.cs` and `src/Flowline/Commands/InitCommand.cs`; modify `src/Flowline/Program.cs`; tests `tests/Flowline.Tests/InitCommandTests.cs`, `tests/Flowline.Tests/SolutionCreateFlowTests.cs`.
-- **Approach:** `SolutionCreateFlow` (Flowline) takes a resolved DEV environment plus name/publisher inputs and runs: validate names (U2) → resolve publisher-prefix (flag, or prompt existing-or-create; no TTY → error, R5) → create records (U3) → scaffold (U1) → build → write DEV role and emit a `✓ DEV set to <env>` confirmation line (R10) → on post-create failure report created IDs (R16). Both `InitCommand` and `clone`'s create-new path call this flow, so neither command calls the other (KTD1). `InitCommand : FlowlineCommand<Settings>`, `RequiresProject=false`, Settings: positional `<name>` (unique name), `--dev`, `--display-name`, `--publisher-prefix`, `--publisher-name`; it validates, resolves env + guard (U4), then calls the flow. Prompt only for gaps (R12); deduce display and publisher friendly names (R6). Register in `Program.cs` before `clone` with a description and example.
+- **Approach:** `SolutionCreateFlow` (Flowline) takes a resolved DEV environment plus name/publisher inputs and runs: validate names (U2) → resolve publisher-prefix (flag, or prompt existing-or-create; no TTY → error, R5) → create records (U3) → scaffold (U1) → build → write DEV role and emit a `✓ DEV set to <env>` confirmation line (R10) → on post-create failure report created IDs (R16). Both `InitCommand` and `clone`'s create-new path call this flow, so neither command calls the other (KTD1). `InitCommand : FlowlineCommand<Settings>`, `RequiresProject=false`, Settings: positional `<name>` (unique name), `--dev`, `--display-name`, `--publisher-prefix`, `--publisher-name`; it validates, resolves env + guard (U4), then calls the flow. **[Revised 2026-08-02 #2]** The positional is declared `[name]`, not `<name>` — Spectre rejects a bare `flowline init` at parse time otherwise, before any prompt can run. Missing name → prompt (interactive) or error naming the argument (no TTY), resolved *before* the environment picker so the R14/R19 refusal still lands first. Prompt only for gaps (R12); deduce display and publisher friendly names (R6). Register in `Program.cs` before `clone` with a description and example.
 - **Patterns to follow:** `CloneCommand` structure; `AddCommand<>().WithDescription().WithExample()`; tone-of-voice glyphs for prompts, skips, errors, and the finish line.
 - **Test scenarios:**
   - Covers AE1. Full flags run with no prompts.
@@ -299,24 +326,26 @@ U1, U2, U3, U4 are independent and can proceed in parallel. U5 (the shared `Solu
   - Covers AE4 (picker arm). With no `--publisher-prefix` and an interactive session, the publisher picker lists existing publishers plus a create-new choice.
   - Covers AE3 (role-write arm). After a successful create + scaffold + build, the chosen environment is written to the DEV role in `.flowline` and a `✓ DEV set to <env>` line is emitted; on a post-create failure neither happens.
   - Display name defaults to the humanized unique name when `--display-name` is omitted (`DWE_Base`→`DWE Base`).
+  - **[Added 2026-08-02 #2]** A bare `flowline init` binds with a null name through real Spectre parsing; the name is then prompted interactively, or errors naming the argument with no TTY.
   - A post-create scaffold failure reports the created publisher/solution IDs (mocked create + failing scaffold, R16).
   - `init` is registered and `--help` lists the flags.
 - **Verification:** targeted tests green; `flowline init --help` shows the flags.
 
-### U6. Interactive `clone`: pick-or-create + unmanaged solution picker
+### U6. Interactive `clone`: unmanaged solution picker
 
-- **Goal:** `clone` with no solution prompts to pick an existing unmanaged solution or create a new one, and confirms the role for an existing-solution clone.
+- **Goal:** `clone` with no solution prompts to pick an existing unmanaged solution, and confirms the role for that clone.
 - **Requirements:** R2, R11, R17.
-- **Dependencies:** U4, U5 (the shared `SolutionCreateFlow`).
+- **Dependencies:** U4, U5 (the shared `SolutionCreateFlow`). **[Revised 2026-08-02 #2]** U5 dependency dropped with the create arm — U6 needs only U4.
 - **Files:** modify `src/Flowline/Commands/CloneCommand.cs`; add cases to `tests/Flowline.Tests/CloneCommandTests.cs`.
-- **Approach:** When no solution is named and the session is interactive: resolve the source env via `ResolveSourceAsync` (U4, all types, source-of-truth title); list unmanaged solutions (`GetSolutionsAsync`, filter `IsManaged == false`, note the hidden-managed count, R11) in a `SelectionPrompt` plus a "create new" choice that calls the shared `SolutionCreateFlow` (U5). For an existing-solution clone, assign the `.flowline` role from the env type (R17). No TTY with no solution keeps today's error path. **[Revised 2026-08-02]** Env-first with a re-pick loop on zero-unmanaged; role is type-driven (`Production→Prod`/`Developer→Dev` locked, else prompt `{Dev,Test,UAT}`); create-new only proceeds if the source is create-eligible, else advise `flowline init` and exit (option b).
-- **Patterns to follow:** `FindUnmanagedSourceAsync`; `SelectionPrompt`; tone-of-voice skip/idempotent lines.
+- **Approach:** When no solution is named and the session is interactive: resolve the source env via `ResolveSourceAsync` (U4, all types, source-of-truth title); list unmanaged solutions (`GetSolutionsAsync`, filter `IsManaged == false`, note the hidden-managed count, R11) in a `SelectionPrompt` plus a "create new" choice that calls the shared `SolutionCreateFlow` (U5). For an existing-solution clone, assign the `.flowline` role from the env type (R17). No TTY with no solution keeps today's error path. **[Revised 2026-08-02]** Env-first with a re-pick loop on zero-unmanaged; role is type-driven (`Production→Prod`/`Developer→Dev` locked, else prompt `{Dev,Test,UAT}`); create-new only proceeds if the source is create-eligible, else advise `flowline init` and exit (option b). **[Reversed 2026-08-02 #2]** No create-new choice at all: a plain `SelectionPrompt<SolutionInfo>` over the unmanaged list, with the environment's `Default` solution filtered out alongside the managed ones. Empty list with no re-pick available → `console.CannotContinue(...)` naming `flowline init <name>`, return exit 0. The gate and branch are renamed `ShouldPickSolution`/`PickSolutionAsync`, and `CloneCommand` drops its `SolutionCreateFlow` dependency and `CreateFlowOverride` seam. The positional is `[solution]`, not `<solution>` — required, Spectre rejects a bare `flowline clone` before the branch can run.
+- **Patterns to follow:** `FindUnmanagedSourceAsync`; `SelectionPrompt`; tone-of-voice skip/idempotent lines, and the `⏸`/`Next:` graceful-stop helper.
 - **Test scenarios:**
   - The picker lists only unmanaged solutions with a hidden-managed count (R11).
-  - The "create new" choice routes into the create path (R2).
+  - ~~The "create new" choice routes into the create path (R2).~~ **[Reversed 2026-08-02 #2]** Replaced by: the environment's `Default` solution is never listed (and isn't counted as hidden-managed); an environment with no unmanaged solution stops with a pointer to `flowline init` and exit 0, offering no create choice.
   - An existing-solution pick confirms the role, defaulting DEV (R17).
   - No-TTY with no solution keeps today's error (R13).
-- **Verification:** targeted tests green; a manual interactive run picks or creates.
+  - A bare `flowline clone` binds with a null solution through real Spectre parsing (otherwise the branch is unreachable).
+- **Verification:** targeted tests green; a manual interactive run picks a solution.
 
 ### U7. Docs, wiki, CHANGELOG, and live-matrix
 
@@ -324,7 +353,7 @@ U1, U2, U3, U4 are independent and can proceed in parallel. U5 (the shared `Solu
 - **Requirements:** delivery support for R1–R19 (Definition of Done docs criterion).
 - **Dependencies:** U5, U6.
 - **Files:** modify `README.md`, `docs/test-goal.md`, `CHANGES.md`; wiki `Command-Reference.md` and `Getting-Started.md` (sibling `..\Flowline.wiki\` if present).
-- **Approach:** Document `flowline init` and its flags and the interactive `clone` behavior; add init/create rows to the test matrix (greenfield create, validation rejections, DEV-only refusal on a Production-type env, no-TTY errors, duplicate-name refusal, interactive pick-or-create). If the wiki checkout is absent, report rather than silently skip.
+- **Approach:** Document `flowline init` and its flags and the interactive `clone` behavior; add init/create rows to the test matrix (greenfield create, validation rejections, DEV-only refusal on a Production-type env, no-TTY errors, duplicate-name refusal, interactive pick-or-create). If the wiki checkout is absent, report rather than silently skip. **[Revised 2026-08-02 #2]** Docs say clone *adopts only*: no create choice, `Default`/`Teams` environments and the `Default` solution absent from the pickers, optional positionals on both commands, and the nothing-to-clone stop.
 - **Execution note:** Docs unit. `Test expectation: none — documentation only.`
 - **Verification:** README/wiki/CHANGELOG reflect the new surface; the test-goal matrix is updated.
 
@@ -337,7 +366,7 @@ U1, U2, U3, U4 are independent and can proceed in parallel. U5 (the shared `Solu
 | Build | `dotnet build Flowline.slnx` | all units |
 | Full suite | `dotnet test Flowline.slnx` — must stay green; the `CloneCommand` suite is the U1 extraction guardrail | all |
 | Targeted | `dotnet test tests/Flowline.Core.Tests` (U2, U3); `dotnet test tests/Flowline.Tests` (U4–U6) | per unit |
-| Live matrix | `docs/test-goal.md` against DEV (`https://automatevalue-dev.crm4.dynamics.com`, disposable): greenfield create, name/prefix rejections, Production-type refusal, no-TTY errors, duplicate-name refusal, interactive pick-or-create | R4 / R8 / R13 / R15 create paths |
+| Live matrix | `docs/test-goal.md` against DEV (`https://automatevalue-dev.crm4.dynamics.com`, disposable): greenfield create, name/prefix rejections, Production-type refusal, no-TTY errors, duplicate-name refusal, interactive solution pick (**[Revised 2026-08-02 #2]** pick-only; plus the nothing-to-clone stop) | R4 / R8 / R13 / R15 create paths |
 | Tone | new prompts, errors, and finish lines follow `docs/tone-of-voice.md` (`/tone` if available) | U4–U6 |
 
 Acceptance-example coverage: AE1→U5, AE2→U4, AE3→U4 (refusal) + U5 (role write), AE4→U3 (reuse/create) + U5 (picker), AE5→U2, AE6→U3, AE7→U4, AE8→U5, AE9→U2.
@@ -350,7 +379,7 @@ Global:
 
 - R1–R19 satisfied; every AE has a covering unit test or live-matrix scenario (mapping above).
 - `dotnet test Flowline.slnx` green; `CloneCommand`'s existing tests pass unchanged (extraction is behavior-preserving).
-- `flowline init` is registered, `--help` is correct, and interactive `clone` pick-or-create works.
+- `flowline init` is registered, `--help` is correct, and interactive `clone` solution pick works (**[Revised 2026-08-02 #2]** pick-only — no create arm).
 - Greenfield create is verified live in DEV; the DEV-only guard refuses a Production-type env live.
 - `README.md`, wiki (`Command-Reference.md`, `Getting-Started.md`), and CHANGELOG are updated for the new command and flags.
 - New CLI text follows `docs/tone-of-voice.md`.
