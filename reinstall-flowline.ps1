@@ -11,7 +11,7 @@ Remove-Item ./artifacts/nupkg/*.nupkg, ./artifacts/nupkg/*.snupkg -ErrorAction S
 # changed but MSBuild's timestamp check decided not to recompile -- you then install a tool that
 # silently lacks your latest edit. --no-incremental on an explicit Release build guarantees fresh
 # IL; 'pack --no-build' then just zips that output (pack defaults to Release, matching the build).
-dotnet build -c Release --no-restore --no-incremental
-dotnet pack -c Release --no-build
+dotnet build src/Flowline/Flowline.csproj -c Release --no-restore --no-incremental
+dotnet pack src/Flowline/Flowline.csproj -c Release --no-build
 dotnet tool uninstall -g Flowline 2>$null
 dotnet tool install -g Flowline --source ./artifacts/nupkg --source https://api.nuget.org/v3/index.json --prerelease

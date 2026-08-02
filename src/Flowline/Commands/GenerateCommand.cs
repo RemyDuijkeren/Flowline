@@ -244,7 +244,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
 
         var outputLabel = Path.GetRelativePath(RootFolder, modelsFolder).Replace('\\', '/');
 
-        var (xrmContextAuth, resolvedSecret) = await ResolveXrmContextAuthAsync(resolvedGeneratorType, effectiveProfile, settings);
+        var (xrmContextAuth, resolvedSecret) = await ResolveXrmContextAuthAsync(resolvedGeneratorType, effectiveProfile, settings, cancellationToken);
 
         // --- Dispatch generator ---
         var generationContext = new GenerationContext(
@@ -303,7 +303,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         !File.Exists(Path.Combine(RootFolder, ProjectConfig.s_configFileName));
 
     async Task<(XrmContextAuth? XrmContextAuth, string? ResolvedSecret)> ResolveXrmContextAuthAsync(
-        GeneratorType generatorType, PacProfile effectiveProfile, Settings settings)
+        GeneratorType generatorType, PacProfile effectiveProfile, Settings settings, CancellationToken cancellationToken)
     {
         XrmContextAuth? xrmContextAuth = null;
         string? resolvedSecret = null;
@@ -324,7 +324,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
                 if (string.IsNullOrEmpty(effectiveProfile.ApplicationId))
                     throw new FlowlineException(ExitCode.NotAuthenticated,
                         "Service principal profile is missing ApplicationId — pass --client-id <CLIENT_ID> --client-secret <SECRET> to supply credentials directly.");
-                resolvedSecret = await secretResolver.ResolveAsync(effectiveProfile, settings.ClientSecret);
+                resolvedSecret = await secretResolver.ResolveAsync(effectiveProfile, settings.ClientSecret, cancellationToken);
                 xrmContextAuth = new XrmContextAuth.ClientSecret(effectiveProfile.ApplicationId, resolvedSecret);
             }
             else
@@ -337,7 +337,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         else if (generatorType is GeneratorType.XrmContext && effectiveProfile.IsServicePrincipal)
         {
             // XrmContext v4 SP: resolve secret for env injection (U6 uses context.ResolvedSecret)
-            resolvedSecret = await secretResolver.ResolveAsync(effectiveProfile, settings.ClientSecret);
+            resolvedSecret = await secretResolver.ResolveAsync(effectiveProfile, settings.ClientSecret, cancellationToken);
         }
 
         return (xrmContextAuth, resolvedSecret);

@@ -203,7 +203,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         // (Label, Solution) rather than SelectionPrompt<SolutionInfo?> — SelectionPrompt<T> requires
         // T : notnull, and the create-new choice has no solution to hang off (mirrors
         // SolutionCreateFlow.PickPublisherPrefixAsync's (Label, Prefix) choice).
-        const string createNewLabel = "+ Create new solution";
+        const string createNewLabel = "[italic]+ Create new solution[/]";
         var choices = unmanaged
             .Select(s => (Label: $"{s.SolutionUniqueName} — {s.FriendlyName}", Solution: (SolutionInfo?)s))
             .Append((Label: createNewLabel, Solution: (SolutionInfo?)null))
@@ -214,13 +214,13 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             .UseConverter(c => c.Label)
             .AddChoices(choices);
 
-        var selected = Console.Prompt(prompt);
+        var selected = await Console.PromptAsync(prompt, cancellationToken);
 
         if (selected.Solution is null)
         {
             // R2: routes into the same orchestrator `init` uses — clone has no positional name in
             // this branch (that's exactly what makes it reach the picker), so it asks for one.
-            var uniqueName = Console.Prompt(new TextPrompt<string>(FlowlineConsoleExtensions.Question("Solution unique name:")));
+            var uniqueName = await Console.PromptAsync(new TextPrompt<string>(FlowlineConsoleExtensions.Question("Solution unique name:")), cancellationToken);
 
             var createFlow = CreateFlowOverride ?? ((env, name, root, cfg, ct) =>
                 solutionCreateFlow.RunAsync(env, name, null, null, null, root, cfg,
@@ -235,7 +235,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         // R17: confirm which .flowline role this env saves under — Dev listed first so Enter alone
         // accepts it, and the gate above only reaches here when no role is configured yet, so that
         // default is unconditional.
-        var role = PickRole();
+        var role = await PickRoleAsync(cancellationToken);
         _ = role switch
         {
             EnvironmentRole.Dev  => config.GetOrUpdateDevUrl(devEnv.EnvironmentUrl, settings),
@@ -253,7 +253,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         return (null, devEnv, projectSln, selected.Solution);
     }
 
-    EnvironmentRole PickRole()
+    async Task<EnvironmentRole> PickRoleAsync(CancellationToken cancellationToken)
     {
         // (Label, Role) rather than SelectionPrompt<EnvironmentRole> directly — same reason as the
         // solution/publisher pickers (SolutionCreateFlow.PickPublisherPrefixAsync): a bare Enter must
@@ -269,7 +269,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
             .Title(FlowlineConsoleExtensions.Question("Save this environment under which .flowline role?"))
             .UseConverter(c => c.Label)
             .AddChoices(choices);
-        return Console.Prompt(prompt).Role;
+        return (await Console.PromptAsync(prompt, cancellationToken)).Role;
     }
 
     bool IsInteractive() => IsInteractiveOverride?.Invoke() ?? ConsoleHelper.IsInteractive(settings: null);

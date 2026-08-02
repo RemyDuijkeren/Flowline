@@ -65,7 +65,7 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
             .UseConverter(FormatCandidate)
             .AddChoices(candidates);
 
-        var selected = console.Prompt(prompt);
+        var selected = await console.PromptAsync(prompt, cancellationToken);
 
         await EnsureActiveProfileAsync(selected, cancellationToken);
         return selected;
@@ -77,24 +77,25 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
     async Task EnsureActiveProfileAsync(PacProfile profile, CancellationToken cancellationToken)
     {
         var isActive = IsProfileActiveOverride ?? dataverseConnector.IsProfileActive;
+        var allProfiles = GetPacProfilesOverride?.Invoke() ?? dataverseConnector.GetPacProfiles().ToList();
+        var index = ProfileIndex(profile, allProfiles);
+
         if (isActive(profile))
         {
-            EmitStatusLine(profile);
+            EmitStatusLine(profile, index);
             return;
         }
 
-        var allProfiles = GetPacProfilesOverride?.Invoke() ?? dataverseConnector.GetPacProfiles().ToList();
-
         if (runtimeOptions.AutoSwitchProfile)
         {
-            EmitStatusLine(profile);
+            EmitStatusLine(profile, index);
             await SwitchProfileAsync(profile, allProfiles, cancellationToken);
             return;
         }
 
         if (!IsInteractive())
         {
-            EmitStatusLine(profile);
+            EmitStatusLine(profile, index);
             throw BuildMismatchException(profile, allProfiles);
         }
 
@@ -102,8 +103,8 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
         // below already names the profile, and the prompt doesn't repeat the name a third time.
         ShowActiveVsTarget(allProfiles, isActive, profile);
 
-        var confirmed = console.Prompt(
-            new ConfirmationPrompt(FlowlineConsoleExtensions.Question("Switch active PAC auth profile?")) { DefaultValue = false });
+        var confirmed = await console.PromptAsync(
+            new ConfirmationPrompt(FlowlineConsoleExtensions.Question("Switch active PAC auth profile?")) { DefaultValue = false }, cancellationToken);
 
         if (!confirmed)
             throw BuildMismatchException(profile, allProfiles);
@@ -164,13 +165,26 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
     }
 
     // "Resolved", not "Using" — this fires before the active-profile guard runs, so the profile isn't
-    // necessarily active yet (that's exactly what the guard below may still need to fix).
-    void EmitStatusLine(PacProfile profile)
+    // necessarily active yet (that's exactly what the guard below may still need to fix). index is the
+    // profile's 1-based position in `pac auth list` (what `pac auth select --index <n>` takes) — shown
+    // so the user can cross-reference the resolved profile against that list; omitted when unresolved (-1).
+    void EmitStatusLine(PacProfile profile, int index)
     {
+        var pos = index > 0 ? $"#{index} " : "";
         var status = string.IsNullOrEmpty(profile.Name)
-            ? $"Resolved PAC auth profile ({Markup.Escape(profile.DisplayName)}, {Markup.Escape(profile.Kind ?? "")}) — {Markup.Escape(profile.EnvironmentLabel)}"
-            : $"Resolved PAC auth profile '{Markup.Escape(profile.DisplayName)}' ({Markup.Escape(profile.Kind ?? "")}) — {Markup.Escape(profile.EnvironmentLabel)}";
+            ? $"Resolved PAC auth profile {pos}({Markup.Escape(profile.DisplayName)}, {Markup.Escape(profile.Kind ?? "")}) — {Markup.Escape(profile.EnvironmentLabel)}"
+            : $"Resolved PAC auth profile {pos}'{Markup.Escape(profile.DisplayName)}' ({Markup.Escape(profile.Kind ?? "")}) — {Markup.Escape(profile.EnvironmentLabel)}";
         console.Info(status);
+    }
+
+    // 1-based position in the loaded profile list — matches `pac auth list` numbering and the
+    // --index arg from BuildAuthSelectArgs. Record value-equality, same as BuildAuthSelectArgs. -1 = not found.
+    static int ProfileIndex(PacProfile profile, IReadOnlyList<PacProfile> allProfiles)
+    {
+        for (var i = 0; i < allProfiles.Count; i++)
+            if (allProfiles[i] == profile)
+                return i + 1;
+        return -1;
     }
 
     static string FormatCandidate(PacProfile p) =>

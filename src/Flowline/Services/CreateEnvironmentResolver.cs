@@ -90,7 +90,7 @@ public class CreateEnvironmentResolver(
             .UseConverter(e => $"{e.DisplayName} [dim]({e.Type ?? "unknown"})[/] — {e.EnvironmentUrl}")
             .AddChoices(environments);
 
-        var selected = console.Prompt(prompt);
+        var selected = await console.PromptAsync(prompt, cancellationToken);
 
         EnsureCreateEligible(selected);
 

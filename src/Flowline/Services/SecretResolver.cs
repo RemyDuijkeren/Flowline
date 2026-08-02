@@ -18,21 +18,20 @@ public class SecretResolver(IAnsiConsole console)
     ///
     /// Security: the resolved value is never logged.
     /// </summary>
-    public Task<string> ResolveAsync(PacProfile profile, string? secretFlag)
+    public async Task<string> ResolveAsync(PacProfile profile, string? secretFlag, CancellationToken cancellationToken = default)
     {
         if (!string.IsNullOrEmpty(secretFlag))
-            return Task.FromResult(secretFlag);
+            return secretFlag;
 
         var envSecret = Environment.GetEnvironmentVariable("AZURE_CLIENT_SECRET");
         if (!string.IsNullOrEmpty(envSecret))
-            return Task.FromResult(envSecret);
+            return envSecret;
 
         if (IsInteractive())
         {
-            var secret = console.Prompt(
+            return await console.PromptAsync(
                 new TextPrompt<string>(FlowlineConsoleExtensions.Question($"Enter client secret for '{ResolveProfileLabel(profile)}' (client ID: {profile.ApplicationId}):"))
-                    .Secret());
-            return Task.FromResult(secret);
+                    .Secret(), cancellationToken);
         }
 
         throw new FlowlineException(ExitCode.NotAuthenticated,

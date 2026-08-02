@@ -149,7 +149,7 @@ public class SolutionCreateFlow(
         // (Label, Prefix) rather than SelectionPrompt<PublisherSummary?> — SelectionPrompt<T> requires
         // T : notnull, and the create-new choice has no publisher to hang off. A value-tuple choice
         // (a struct, so it's never null itself) carries a nullable Prefix instead.
-        var createNew = (Label: "+ Create new publisher", Prefix: (string?)null);
+        var createNew = (Label: "[italic]+ Create new publisher[/]", Prefix: (string?)null);
         var choices = publishers
             .Select(p => (Label: $"{p.Prefix} — {p.FriendlyName}", Prefix: (string?)p.Prefix))
             .Append(createNew)
@@ -160,11 +160,11 @@ public class SolutionCreateFlow(
             .UseConverter(c => c.Label)
             .AddChoices(choices);
 
-        var selected = console.Prompt(prompt);
+        var selected = await console.PromptAsync(prompt, cancellationToken);
         if (selected.Prefix is not null)
             return selected.Prefix;
 
-        return console.Prompt(new TextPrompt<string>(FlowlineConsoleExtensions.Question("New publisher prefix:")));
+        return await console.PromptAsync(new TextPrompt<string>(FlowlineConsoleExtensions.Question("New publisher prefix:")), cancellationToken);
     }
 
     // R16: the publisher/solution already exist in Dataverse once this fires — named so the user can

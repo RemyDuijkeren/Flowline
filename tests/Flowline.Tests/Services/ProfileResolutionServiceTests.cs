@@ -111,6 +111,19 @@ public class ProfileResolutionServiceTests
         console.Output.Should().Contain(EnvironmentUrl);
     }
 
+    [Fact]
+    public async Task ProfileFound_EmitsStatusLine_WithProfileIndex()
+    {
+        var profile = MakeProfile(name: "MyProfile", kind: "DATAVERSE");
+        // Profile sits 2nd in `pac auth list` — value-equal to the resolved one, so index resolves to #2.
+        var allProfiles = new List<PacProfile> { MakeProfile(name: "Other", kind: "DATAVERSE"), profile };
+        var svc = MakeService(out var console, new ProfileFound(profile), allProfiles: allProfiles);
+
+        await svc.ResolveAsync(EnvironmentUrl);
+
+        console.Output.Should().Contain("Resolved PAC auth profile #2 'MyProfile' (DATAVERSE)");
+    }
+
     // ── ProfileAmbiguous — non-interactive ───────────────────────────────────
 
     [Fact]

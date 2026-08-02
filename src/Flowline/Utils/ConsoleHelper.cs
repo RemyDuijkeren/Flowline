@@ -49,4 +49,9 @@ public static class ConsoleHelper
     public static bool Confirm(string prompt, bool defaultValue, FlowlineSettings? settings, string specifier) =>
         AnsiConsole.Console.ConfirmGated(prompt, defaultValue, settings?.HasForce(specifier) == true,
             $"Confirmation required but not in interactive mode. Use --force {specifier} to proceed.");
+
+    /// <inheritdoc cref="Confirm"/>
+    public static Task<bool> ConfirmAsync(string prompt, bool defaultValue, FlowlineSettings? settings, string specifier, CancellationToken cancellationToken) =>
+        AnsiConsole.Console.ConfirmGatedAsync(prompt, defaultValue, settings?.HasForce(specifier) == true,
+            $"Confirmation required but not in interactive mode. Use --force {specifier} to proceed.", cancellationToken);
 }
