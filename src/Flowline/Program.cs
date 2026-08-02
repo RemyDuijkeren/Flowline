@@ -23,6 +23,7 @@ using System.Reflection;
 using System.Text;
 using Flowline.Diagnostics;
 using ILogger = Serilog.ILogger;
+using Spectre.Console.Cli.Help;
 
 Console.OutputEncoding = Encoding.UTF8;
 
@@ -108,6 +109,9 @@ app.Configure(config =>
 {
     config.SetApplicationName("flowline");
     config.SetApplicationVersion(FlowlineVersion.Display);
+    // Must come after the name/version calls — HelpProvider snapshots settings in its constructor.
+    FlowlineHelpProvider.UseFlowlineHeaderColor(config.Settings.HelpProviderStyles!);
+    config.SetHelpProvider(new FlowlineHelpProvider(config.Settings));
 #if DEBUG
     config.PropagateExceptions();
     config.ValidateExamples();

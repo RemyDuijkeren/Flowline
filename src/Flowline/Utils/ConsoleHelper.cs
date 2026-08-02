@@ -10,15 +10,15 @@ namespace Flowline.Utils;
 public static class ConsoleHelper
 {
     internal static readonly Color s_welcomeColor = Color.Turquoise2; //Turquoise2, Plum4, DarkMagenta, DarkMagenta_1
-    public static void WelcomeScreen(IAnsiConsole console)
-    {
-        // Future Smooth
-        var welcomeText = new Text(
+    internal static readonly string s_logo = // Future Smooth
             """
             ╭─╴╷  ╭─╮╷ ╷╷  ╷╭╮╷╭─╴
             ├╴ │  │ ││╷││  ││╰┤├╴
             ╵  ╰─╴╰─╯╰┴╯╰─╴╵╵ ╵╰─╴
-            """, new Style(s_welcomeColor));
+            """;
+    public static void WelcomeScreen(IAnsiConsole console)
+    {
+        var welcomeText = new Text(s_logo, new Style(s_welcomeColor));
 
         console.Write(welcomeText);
         console.WriteLine();
