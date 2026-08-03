@@ -87,7 +87,7 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
     {
         ValidateForce(settings);
 
-        if (ConsoleHelper.IsInteractive(settings))
+        if (ConsoleHelper.IsInteractive())
             ConsoleHelper.WelcomeScreen(Console);
 
         try

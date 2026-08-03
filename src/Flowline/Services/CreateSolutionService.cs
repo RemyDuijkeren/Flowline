@@ -31,19 +31,6 @@ public class CreateSolutionService(IAnsiConsole console, SubprocessCapture captu
     /// </remarks>
     internal static string ScaffoldedDataverseSolutionFolder(string slnFolder) => Path.Combine(slnFolder, "Solution");
 
-    /// <summary>The C# reserved keywords, which cannot appear unescaped in a namespace declaration.</summary>
-    static readonly HashSet<string> s_csharpKeywords =
-    [
-        "abstract", "as", "base", "bool", "break", "byte", "case", "catch", "char", "checked", "class",
-        "const", "continue", "decimal", "default", "delegate", "do", "double", "else", "enum", "event",
-        "explicit", "extern", "false", "finally", "fixed", "float", "for", "foreach", "goto", "if",
-        "implicit", "in", "int", "interface", "internal", "is", "lock", "long", "namespace", "new", "null",
-        "object", "operator", "out", "override", "params", "private", "protected", "public", "readonly",
-        "ref", "return", "sbyte", "sealed", "short", "sizeof", "stackalloc", "static", "string", "struct",
-        "switch", "this", "throw", "true", "try", "typeof", "uint", "ulong", "unchecked", "unsafe",
-        "ushort", "using", "virtual", "void", "volatile", "while",
-    ];
-
     /// <summary>Why this solution name can't become a plugin namespace, or <c>null</c> if it can.</summary>
     /// <remarks>
     /// A Dataverse <c>uniquename</c> is <c>[A-Za-z0-9_]</c> starting with a letter or underscore, with no
@@ -59,7 +46,7 @@ public class CreateSolutionService(IAnsiConsole console, SubprocessCapture captu
     /// Case-sensitive on purpose: <c>Event</c> is a perfectly good namespace.
     /// </remarks>
     internal static string? DescribeCSharpKeywordCollision(string solutionName) =>
-        s_csharpKeywords.Contains(solutionName)
+        SolutionNameValidator.IsCSharpKeyword(solutionName)
             ? $"Solution name '{solutionName}' is a C# keyword, so the plugin namespace '{solutionName}.Plugins' won't compile. Rename the solution in Dataverse, then clone again."
             : null;
 

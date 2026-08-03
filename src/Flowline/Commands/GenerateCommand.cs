@@ -312,7 +312,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         {
             if (effectiveProfile.IsUniversal)
             {
-                if (!ConsoleHelper.IsInteractive(settings))
+                if (!ConsoleHelper.IsInteractive())
                     throw new FlowlineException(ExitCode.NotAuthenticated,
                         "xrmcontext3 uses ADAL browser OAuth for UNIVERSAL profiles — not available in non-interactive/CI mode. " +
                         "Pass --client-id <CLIENT_ID> --client-secret <SECRET> to authenticate as a service principal. " +

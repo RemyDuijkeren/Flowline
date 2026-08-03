@@ -31,7 +31,7 @@ public static class ConsoleHelper
         console.WriteLine();
     }
 
-    public static bool IsInteractive(FlowlineSettings? settings) =>
+    public static bool IsInteractive() =>
         !CiEnvironment.IsCi() && AnsiConsole.Profile.Capabilities.Interactive;
 
     internal static string? DetectCIPlatform()

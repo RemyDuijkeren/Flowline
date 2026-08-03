@@ -181,7 +181,7 @@ public class SolutionCreateFlow(
         console.Info($"Environment: [bold]{devEnv.DisplayName}[/] ({devEnv.EnvironmentUrl})");
     }
 
-    bool IsInteractive() => IsInteractiveOverride?.Invoke() ?? ConsoleHelper.IsInteractive(settings: null);
+    bool IsInteractive() => IsInteractiveOverride?.Invoke() ?? ConsoleHelper.IsInteractive();
 
     // KTD3(a): split on underscores and camelCase/acronym boundaries into spaced words, keeping
     // consecutive-capital acronym runs together. Two separate insertions, not one regex:

@@ -186,5 +186,5 @@ public class CreateEnvironmentResolver(
                 $"'{env.DisplayName}' ({env.Type ?? "unknown"}) isn't a Sandbox or Developer environment — create only runs against DEV-type environments.");
     }
 
-    bool IsInteractive() => IsInteractiveOverride?.Invoke() ?? ConsoleHelper.IsInteractive(settings: null);
+    bool IsInteractive() => IsInteractiveOverride?.Invoke() ?? ConsoleHelper.IsInteractive();
 }

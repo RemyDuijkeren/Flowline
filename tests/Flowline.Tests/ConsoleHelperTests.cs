@@ -111,7 +111,7 @@ public class ConsoleHelperTests
         try
         {
             // Act
-            bool result = ConsoleHelper.IsInteractive(null);
+            bool result = ConsoleHelper.IsInteractive();
 
             // Assert
             result.Should().BeFalse();
@@ -132,7 +132,7 @@ public class ConsoleHelperTests
         try
         {
             // Act
-            bool result = ConsoleHelper.IsInteractive(null);
+            bool result = ConsoleHelper.IsInteractive();
 
             // Assert
             result.Should().BeFalse();
@@ -153,7 +153,7 @@ public class ConsoleHelperTests
         try
         {
             // Act
-            bool result = ConsoleHelper.IsInteractive(null);
+            bool result = ConsoleHelper.IsInteractive();
 
             // Assert
             result.Should().BeFalse();

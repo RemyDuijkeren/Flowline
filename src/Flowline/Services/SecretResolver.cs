@@ -46,5 +46,5 @@ public class SecretResolver(IAnsiConsole console)
         : !string.IsNullOrWhiteSpace(profile.ApplicationId) ? profile.ApplicationId
         : "unknown";
 
-    protected virtual bool IsInteractive() => ConsoleHelper.IsInteractive(null);
+    protected virtual bool IsInteractive() => ConsoleHelper.IsInteractive();
 }

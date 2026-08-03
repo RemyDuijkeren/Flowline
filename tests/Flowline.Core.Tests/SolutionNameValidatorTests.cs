@@ -130,29 +130,6 @@ public class SolutionNameValidatorTests
         SolutionNameValidator.ValidatePublisherPrefix("1dwe").Should().NotBeNull();
     }
 
-    // --- Publisher unique name ---
-
-    [Theory]
-    [InlineData("dwe")]
-    [InlineData("_dwe")]
-    [InlineData("DWE_Publisher")]
-    public void ValidatePublisherUniqueName_ValidName_ReturnsNull(string name)
-    {
-        SolutionNameValidator.ValidatePublisherUniqueName(name).Should().BeNull();
-    }
-
-    [Fact]
-    public void ValidatePublisherUniqueName_ContainsSpace_ReturnsError()
-    {
-        SolutionNameValidator.ValidatePublisherUniqueName("dwe publisher").Should().NotBeNull();
-    }
-
-    [Fact]
-    public void ValidatePublisherUniqueName_StartsWithDigit_ReturnsError()
-    {
-        SolutionNameValidator.ValidatePublisherUniqueName("1dwe").Should().NotBeNull();
-    }
-
     // --- Throwing convenience wrappers ---
 
     [Fact]

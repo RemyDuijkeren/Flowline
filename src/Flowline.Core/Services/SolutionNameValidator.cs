@@ -19,7 +19,6 @@ public static class SolutionNameValidator
     static readonly Regex s_publisherPrefixPattern = new(@"^[A-Za-z][A-Za-z0-9]*$", RegexOptions.Compiled);
 
     /// <summary>The C# reserved keywords, which cannot appear unescaped in a namespace declaration.</summary>
-    /// <remarks>Mirrors <c>CloneCommand.s_csharpKeywords</c> — copied, not shared, so Core stays free of a Flowline reference.</remarks>
     static readonly HashSet<string> s_csharpKeywords =
     [
         "abstract", "as", "base", "bool", "break", "byte", "case", "catch", "char", "checked", "class",
@@ -45,10 +44,21 @@ public static class SolutionNameValidator
             return $"Solution unique name must be at most 65 characters — '{name}' is {name.Length}.";
         if (!s_uniqueNamePattern.IsMatch(name))
             return $"Solution unique name must contain only letters, digits, and underscores, and start with a letter or underscore — '{name}' doesn't.";
-        if (s_csharpKeywords.Contains(name))
+        if (IsCSharpKeyword(name))
             return $"Solution unique name '{name}' is a C# keyword, so the plugin namespace '{name}.Plugins' won't compile. Choose a different name.";
         return null;
     }
+
+    /// <summary>
+    /// Whether <paramref name="name"/> is a C# reserved keyword, and so can't become a plugin
+    /// namespace unescaped. Case-sensitive on purpose — <c>Event</c> is a perfectly good namespace.
+    /// </summary>
+    /// <remarks>
+    /// Public because clone needs the keyword rule alone, without the rest of
+    /// <see cref="ValidateSolutionUniqueName"/>: a cloned name comes from Dataverse and may
+    /// legitimately break rules init would refuse (over 65 characters, say).
+    /// </remarks>
+    public static bool IsCSharpKeyword(string? name) => name is not null && s_csharpKeywords.Contains(name);
 
     /// <summary>Throws <see cref="FlowlineException"/> (<see cref="ExitCode.ValidationFailed"/>) when <see cref="ValidateSolutionUniqueName"/> rejects <paramref name="name"/>.</summary>
     public static void EnsureSolutionUniqueName(string? name) => Ensure(ValidateSolutionUniqueName(name));
@@ -89,22 +99,6 @@ public static class SolutionNameValidator
 
     /// <summary>Throws <see cref="FlowlineException"/> (<see cref="ExitCode.ValidationFailed"/>) when <see cref="ValidatePublisherPrefix"/> rejects <paramref name="prefix"/>.</summary>
     public static void EnsurePublisherPrefix(string? prefix) => Ensure(ValidatePublisherPrefix(prefix));
-
-    /// <summary>
-    /// Validates a publisher unique name: <c>[A-Za-z0-9_]</c> only, starts with a letter or underscore.
-    /// Returns the violated rule, or <c>null</c> when valid.
-    /// </summary>
-    public static string? ValidatePublisherUniqueName(string? name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-            return "Publisher unique name is required.";
-        if (!s_uniqueNamePattern.IsMatch(name))
-            return $"Publisher unique name must contain only letters, digits, and underscores, and start with a letter or underscore — '{name}' doesn't.";
-        return null;
-    }
-
-    /// <summary>Throws <see cref="FlowlineException"/> (<see cref="ExitCode.ValidationFailed"/>) when <see cref="ValidatePublisherUniqueName"/> rejects <paramref name="name"/>.</summary>
-    public static void EnsurePublisherUniqueName(string? name) => Ensure(ValidatePublisherUniqueName(name));
 
     static void Ensure(string? error)
     {
