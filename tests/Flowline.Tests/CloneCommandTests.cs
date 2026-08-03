@@ -28,7 +28,7 @@ public class CloneCommandTests
             var dataverseSolutionFolder = Path.Combine(root, "Solution");
             Directory.CreateDirectory(dataverseSolutionFolder);
 
-            var result = CreateSolutionService.HasManagedContent(dataverseSolutionFolder);
+            var result = ProjectScaffolder.HasManagedContent(dataverseSolutionFolder);
 
             result.Should().BeFalse();
         }
@@ -48,7 +48,7 @@ public class CloneCommandTests
             Directory.CreateDirectory(srcFolder);
             File.WriteAllText(Path.Combine(srcFolder, "{guid}.xml"), "<form />");
 
-            var result = CreateSolutionService.HasManagedContent(Path.Combine(root, "Solution"));
+            var result = ProjectScaffolder.HasManagedContent(Path.Combine(root, "Solution"));
 
             result.Should().BeFalse();
         }
@@ -69,7 +69,7 @@ public class CloneCommandTests
             File.WriteAllText(Path.Combine(srcFolder, "{guid}.xml"), "<form />");
             File.WriteAllText(Path.Combine(srcFolder, "{guid}_managed.xml"), "<form />");
 
-            var result = CreateSolutionService.HasManagedContent(Path.Combine(root, "Solution"));
+            var result = ProjectScaffolder.HasManagedContent(Path.Combine(root, "Solution"));
 
             result.Should().BeTrue();
         }
@@ -111,7 +111,7 @@ public class CloneCommandTests
         var (root, slnPath, cdsprojPath) = CreateProject();
         try
         {
-            var (created, added) = await CreateSolutionService.AddDataverseSolutionProjectAsync(new MsBuildSolutionWriter(), root, slnPath, cdsprojPath);
+            var (created, added) = await ProjectScaffolder.AddDataverseSolutionProjectAsync(new MsBuildSolutionWriter(), root, slnPath, cdsprojPath);
 
             created.Should().BeTrue();
             added.Should().BeTrue();
@@ -137,7 +137,7 @@ public class CloneCommandTests
         var (root, slnPath, cdsprojPath) = CreateProject();
         try
         {
-            await CreateSolutionService.AddDataverseSolutionProjectAsync(new MsBuildSolutionWriter(), root, slnPath, cdsprojPath);
+            await ProjectScaffolder.AddDataverseSolutionProjectAsync(new MsBuildSolutionWriter(), root, slnPath, cdsprojPath);
 
             var dataverseSolutionFolder = Path.Combine(root, "Solution");
             File.Exists(cdsprojPath).Should().BeTrue("the project keeps its own name throughout");
@@ -156,9 +156,9 @@ public class CloneCommandTests
         try
         {
             var writer = new MsBuildSolutionWriter();
-            await CreateSolutionService.AddDataverseSolutionProjectAsync(writer, root, slnPath, cdsprojPath);
+            await ProjectScaffolder.AddDataverseSolutionProjectAsync(writer, root, slnPath, cdsprojPath);
 
-            var (created, added) = await CreateSolutionService.AddDataverseSolutionProjectAsync(writer, root, slnPath, cdsprojPath);
+            var (created, added) = await ProjectScaffolder.AddDataverseSolutionProjectAsync(writer, root, slnPath, cdsprojPath);
 
             created.Should().BeFalse();
             added.Should().BeFalse();
@@ -187,7 +187,7 @@ public class CloneCommandTests
 
             // Clone's guard only fires when the .cdsproj is missing, so the re-run walks straight past
             // it — no delete-and-re-clone demand — and finishes the wiring the interrupted run started.
-            var (created, added) = await CreateSolutionService.AddDataverseSolutionProjectAsync(new MsBuildSolutionWriter(), root, slnPath, cdsprojPath);
+            var (created, added) = await ProjectScaffolder.AddDataverseSolutionProjectAsync(new MsBuildSolutionWriter(), root, slnPath, cdsprojPath);
 
             created.Should().BeTrue();
             added.Should().BeTrue();
@@ -210,7 +210,7 @@ public class CloneCommandTests
             Directory.CreateDirectory(dataverseSolutionFolder);
             File.WriteAllText(Path.Combine(dataverseSolutionFolder, "OtherSolution.cdsproj"), "<Project />");
 
-            var message = CreateSolutionService.DescribeDataverseSolutionFolderWithoutCdsproj(dataverseSolutionFolder, "CrO7982.cdsproj");
+            var message = ProjectScaffolder.DescribeDataverseSolutionFolderWithoutCdsproj(dataverseSolutionFolder, "CrO7982.cdsproj");
 
             message.Should().Contain("OtherSolution.cdsproj").And.Contain("CrO7982.cdsproj").And.Contain("Rename");
             message.Should().NotContain("Delete", "a one-file rename fixes this — deleting the folder throws away a finished clone");
@@ -230,7 +230,7 @@ public class CloneCommandTests
             var dataverseSolutionFolder = Path.Combine(root, "Solution");
             Directory.CreateDirectory(dataverseSolutionFolder);
 
-            var message = CreateSolutionService.DescribeDataverseSolutionFolderWithoutCdsproj(dataverseSolutionFolder, "CrO7982.cdsproj");
+            var message = ProjectScaffolder.DescribeDataverseSolutionFolderWithoutCdsproj(dataverseSolutionFolder, "CrO7982.cdsproj");
 
             message.Should().Contain("CrO7982.cdsproj");
             message.Should().NotContain("Delete");
@@ -248,7 +248,7 @@ public class CloneCommandTests
     [Fact]
     public void SolutionFileName_ByDefault_IsSlnx()
     {
-        CreateSolutionService.SolutionFileName("CrO7982").Should().Be("CrO7982.slnx");
+        ProjectScaffolder.SolutionFileName("CrO7982").Should().Be("CrO7982.slnx");
     }
 
     [Fact]
@@ -257,7 +257,7 @@ public class CloneCommandTests
         // The flag is opt-in, so an untouched Settings must land on .slnx — the whole point of R7.
         var settings = new CloneCommand.Settings();
 
-        CreateSolutionService.SolutionFileName("CrO7982").Should().Be("CrO7982.slnx");
+        ProjectScaffolder.SolutionFileName("CrO7982").Should().Be("CrO7982.slnx");
     }
 
     /// <summary>
@@ -289,15 +289,15 @@ public class CloneCommandTests
                 "	EndGlobalSection",
                 "EndGlobal") + Environment.NewLine);
 
-        var slnFilePath = CreateSolutionService.ResolveSolutionFilePath(root, solutionName);
+        var slnFilePath = ProjectScaffolder.ResolveSolutionFilePath(root, solutionName);
 
         var writer = new MsBuildSolutionWriter();
-        await CreateSolutionService.AddDataverseSolutionProjectAsync(writer, root, slnFilePath, cdsprojPath);
+        await ProjectScaffolder.AddDataverseSolutionProjectAsync(writer, root, slnFilePath, cdsprojPath);
 
         foreach (var (folder, fileName) in new[]
                  {
-                     ("Plugins", CreateSolutionService.PluginsProjectFileName(solutionName)),
-                     ("WebResources", CreateSolutionService.WebResourcesProjectFileName(solutionName)),
+                     ("Plugins", ProjectScaffolder.PluginsProjectFileName(solutionName)),
+                     ("WebResources", ProjectScaffolder.WebResourcesProjectFileName(solutionName)),
                  })
         {
             Directory.CreateDirectory(Path.Combine(root, folder));
@@ -456,7 +456,7 @@ public class CloneCommandTests
     {
         // The underscore is kept: DWE_Base and DWEBase are two distinct legal solutions, and stripping
         // it collapses them onto one assembly name — the anonymity this naming exists to remove.
-        CreateSolutionService.PluginsProjectFileName(solutionName).Should().Be(expected);
+        ProjectScaffolder.PluginsProjectFileName(solutionName).Should().Be(expected);
     }
 
     [Theory]
@@ -464,7 +464,7 @@ public class CloneCommandTests
     [InlineData("DWE_Base", "DWE_Base.WebResources.csproj")]
     public void WebResourcesProjectFileName_TakesTheSolutionNameVerbatim(string solutionName, string expected)
     {
-        CreateSolutionService.WebResourcesProjectFileName(solutionName).Should().Be(expected);
+        ProjectScaffolder.WebResourcesProjectFileName(solutionName).Should().Be(expected);
     }
 
     [Fact]
@@ -510,7 +510,7 @@ public class CloneCommandTests
     [InlineData("params")]
     public void DescribeCSharpKeywordCollision_KeywordSolutionName_NamesTheKeywordAndTheNamespace(string solutionName)
     {
-        var message = CreateSolutionService.DescribeCSharpKeywordCollision(solutionName);
+        var message = ProjectScaffolder.DescribeCSharpKeywordCollision(solutionName);
 
         message.Should().NotBeNull();
         message.Should().Contain($"'{solutionName}'").And.Contain($"{solutionName}.Plugins");
@@ -524,7 +524,7 @@ public class CloneCommandTests
     [InlineData("MyEventStore")]
     public void DescribeCSharpKeywordCollision_UsableSolutionName_ReturnsNull(string solutionName)
     {
-        CreateSolutionService.DescribeCSharpKeywordCollision(solutionName).Should().BeNull();
+        ProjectScaffolder.DescribeCSharpKeywordCollision(solutionName).Should().BeNull();
     }
 
     // ── PluginsProjectAlreadyRegistered / WebResourcesProjectAlreadyRegistered ──
@@ -569,7 +569,7 @@ public class CloneCommandTests
         {
             var layout = await LoadLayoutAsync(root);
 
-            var result = CreateSolutionService.PluginsProjectAlreadyRegistered(Path.Combine(root, "Plugins"), layout);
+            var result = ProjectScaffolder.PluginsProjectAlreadyRegistered(Path.Combine(root, "Plugins"), layout);
 
             result.Should().BeFalse();
         }
@@ -589,7 +589,7 @@ public class CloneCommandTests
             File.WriteAllText(Path.Combine(root, "Plugins", "CrO7982.Plugins.csproj"), PluginProjectXml);
             var layout = await LoadLayoutAsync(root);
 
-            var result = CreateSolutionService.PluginsProjectAlreadyRegistered(Path.Combine(root, "Plugins"), layout);
+            var result = ProjectScaffolder.PluginsProjectAlreadyRegistered(Path.Combine(root, "Plugins"), layout);
 
             result.Should().BeTrue();
         }
@@ -608,7 +608,7 @@ public class CloneCommandTests
             // The default folder holds nothing -- only the solution file knows the plugin project moved.
             var layout = await LoadLayoutAsync(root, (Path.Combine("Backend", "CrO7982.Backend.csproj"), PluginProjectXml));
 
-            var result = CreateSolutionService.PluginsProjectAlreadyRegistered(Path.Combine(root, "Plugins"), layout);
+            var result = ProjectScaffolder.PluginsProjectAlreadyRegistered(Path.Combine(root, "Plugins"), layout);
 
             result.Should().BeTrue();
         }
@@ -627,7 +627,7 @@ public class CloneCommandTests
             var layout = await LoadLayoutAsync(root);
             var webresourcesCsproj = Path.Combine(root, "WebResources", "CrO7982.WebResources.csproj");
 
-            var result = CreateSolutionService.WebResourcesProjectAlreadyRegistered(webresourcesCsproj, layout);
+            var result = ProjectScaffolder.WebResourcesProjectAlreadyRegistered(webresourcesCsproj, layout);
 
             result.Should().BeFalse();
         }
@@ -647,7 +647,7 @@ public class CloneCommandTests
             var layout = await LoadLayoutAsync(root, (Path.Combine("Frontend", "ClientAssets.csproj"), WebResourcesProjectXml));
             var webresourcesCsproj = Path.Combine(root, "WebResources", "CrO7982.WebResources.csproj");
 
-            var result = CreateSolutionService.WebResourcesProjectAlreadyRegistered(webresourcesCsproj, layout);
+            var result = ProjectScaffolder.WebResourcesProjectAlreadyRegistered(webresourcesCsproj, layout);
 
             result.Should().BeTrue();
         }
@@ -672,7 +672,7 @@ public class CloneCommandTests
                 (Path.Combine("Beta", "Beta.csproj"), PlainCsprojXml));
             var webresourcesCsproj = Path.Combine(root, "WebResources", "CrO7982.WebResources.csproj");
 
-            var act = () => CreateSolutionService.WebResourcesProjectAlreadyRegistered(webresourcesCsproj, layout);
+            var act = () => ProjectScaffolder.WebResourcesProjectAlreadyRegistered(webresourcesCsproj, layout);
 
             act.Should().Throw<FlowlineException>().Which.ExitCode.Should().Be(ExitCode.ConfigInvalid);
         }
@@ -699,7 +699,7 @@ public class CloneCommandTests
             var webresourcesFolder = Path.Combine(root, "WebResources");
             var webresourcesCsproj = Path.Combine(webresourcesFolder, "CrO7982.WebResources.csproj");
 
-            var result = CreateSolutionService.ResolveExistingWebResourcesFolder(webresourcesFolder, webresourcesCsproj, layout);
+            var result = ProjectScaffolder.ResolveExistingWebResourcesFolder(webresourcesFolder, webresourcesCsproj, layout);
 
             result.Should().BeNull();
         }
@@ -721,7 +721,7 @@ public class CloneCommandTests
             File.WriteAllText(webresourcesCsproj, WebResourcesProjectXml);
             var layout = await LoadLayoutAsync(root, (Path.Combine("WebResources", "CrO7982.WebResources.csproj"), WebResourcesProjectXml));
 
-            var result = CreateSolutionService.ResolveExistingWebResourcesFolder(webresourcesFolder, webresourcesCsproj, layout);
+            var result = ProjectScaffolder.ResolveExistingWebResourcesFolder(webresourcesFolder, webresourcesCsproj, layout);
 
             result.Should().Be(webresourcesFolder);
         }
@@ -743,7 +743,7 @@ public class CloneCommandTests
             var webresourcesFolder = Path.Combine(root, "WebResources");
             var webresourcesCsproj = Path.Combine(webresourcesFolder, "CrO7982.WebResources.csproj");
 
-            var result = CreateSolutionService.ResolveExistingWebResourcesFolder(webresourcesFolder, webresourcesCsproj, layout);
+            var result = ProjectScaffolder.ResolveExistingWebResourcesFolder(webresourcesFolder, webresourcesCsproj, layout);
 
             result.Should().Be(movedFolder);
         }
@@ -794,7 +794,7 @@ public class CloneCommandTests
     [InlineData("DWE_Base")]
     public void BuildAgentsFileContent_NamesTheProjectFilesClonePutOnDisk(string solutionName)
     {
-        var content = CreateSolutionService.BuildAgentsFileContent(solutionName, $"{solutionName}.slnx", "Solution");
+        var content = ProjectScaffolder.BuildAgentsFileContent(solutionName, $"{solutionName}.slnx", "Solution");
 
         content.Should().Contain($"Solution/{solutionName}.cdsproj")
                .And.Contain($"Plugins/{solutionName}.Plugins.csproj")
@@ -805,7 +805,7 @@ public class CloneCommandTests
     [Fact]
     public void BuildAgentsFileContent_NeverMentionsTheOldDataverseSolutionFolder()
     {
-        var content = CreateSolutionService.BuildAgentsFileContent("CrO7982", "CrO7982.slnx", "Solution");
+        var content = ProjectScaffolder.BuildAgentsFileContent("CrO7982", "CrO7982.slnx", "Solution");
 
         content.Should().NotContain("Package/")
                .And.NotContain("Package.cdsproj")
@@ -818,7 +818,7 @@ public class CloneCommandTests
     {
         // The folder resolves from the solution file, so a project that moved its Dataverse solution
         // folder must not be handed instructions naming the folder clone would have created.
-        var content = CreateSolutionService.BuildAgentsFileContent("CrO7982", "CrO7982.slnx", "Dataverse");
+        var content = ProjectScaffolder.BuildAgentsFileContent("CrO7982", "CrO7982.slnx", "Dataverse");
 
         content.Should().Contain("Dataverse/CrO7982.cdsproj")
                .And.Contain("Dataverse/src/")
@@ -829,7 +829,7 @@ public class CloneCommandTests
     // No solution named, no role URL configured, interactive — offers the environment + solution
     // pickers instead of FindUnmanagedSourceAsync's flag-driven error. `ShouldPickSolution` is the pure
     // gate that decides whether that branch runs at all; `PickSolutionAsync` is the branch's own logic,
-    // exercised directly (like SolutionCreateFlowTests exercises `RunAsync`/`PickPublisherPrefixAsync`
+    // exercised directly (like InitCommandTests exercises `CreateSolutionAsync`/`PickPublisherPrefixAsync`
     // without going through the full command pipeline InitCommand sits on top of).
 
     const string DevUrl = "https://contoso-dev.crm4.dynamics.com";
@@ -851,14 +851,14 @@ public class CloneCommandTests
             GetPacProfilesOverride = () => [profile]
         };
         var capture = new SubprocessCapture(console);
-        var createSolutionService = new CreateSolutionService(console, capture);
+        var projectScaffolder = new ProjectScaffolder(console, capture);
         var createEnvironmentResolver = new CreateEnvironmentResolver(console, profileResolutionService, capture)
         {
             GetEnvironmentInfoByUrlOverride = (_, _, _, _) => Task.FromResult<EnvironmentInfo?>(MakeEnv(envType))
         };
 
         var command = new CloneCommand(console, new FlowlineRuntimeOptions(), profileResolutionService, NullLoggerFactory.Instance, capture,
-            createSolutionService, createEnvironmentResolver);
+            projectScaffolder, createEnvironmentResolver);
 
         return (command, console);
     }

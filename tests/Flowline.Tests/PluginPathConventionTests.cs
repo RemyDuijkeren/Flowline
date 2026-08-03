@@ -27,7 +27,7 @@ public class PluginPathConventionTests
     {
         ["src/Flowline.Core/Plugins/PluginProjectResolver.cs"] =
             "the discovery layer itself — owns the no-solution-file fallback candidate",
-        ["src/Flowline/Services/CreateSolutionService.cs"] =
+        ["src/Flowline/Services/ProjectScaffolder.cs"] =
             "scaffolding: creates the Plugins project, so it picks the name rather than discovering it " +
             "(moved out of CloneCommand.cs in U1 — clone and init share this scaffold service)",
         ["src/Flowline/Commands/GenerateCommand.cs"] =

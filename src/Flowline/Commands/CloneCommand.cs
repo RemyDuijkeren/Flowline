@@ -3,7 +3,6 @@ using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Models;
-using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Services;
 using Flowline.Utils;
@@ -14,7 +13,7 @@ using Spectre.Console.Cli;
 namespace Flowline.Commands;
 
 public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture,
-    CreateSolutionService createSolutionService, CreateEnvironmentResolver createEnvironmentResolver) :
+    ProjectScaffolder projectScaffolder, CreateEnvironmentResolver createEnvironmentResolver) :
     FlowlineCommand<CloneCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture)
 {
     /// <summary>Seam for testing — overrides PacUtils.GetSolutionsAsync (shells out to a real pac.exe
@@ -87,7 +86,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
         // Before anything is written: the solution name becomes a C# namespace in the scaffolded plugin
         // project, and a keyword there produces source that doesn't compile.
-        if (CreateSolutionService.DescribeCSharpKeywordCollision(projectSln.UniqueName) is { } keywordCollision)
+        if (ProjectScaffolder.DescribeCSharpKeywordCollision(projectSln.UniqueName) is { } keywordCollision)
             throw new FlowlineException(ExitCode.ValidationFailed, keywordCollision);
 
         Config.Save();
@@ -96,36 +95,16 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         var slnFolder = RootFolder;
         var solutionName = projectSln.UniqueName;
 
-        var cdsprojPath = Path.Combine(CreateSolutionService.ScaffoldedDataverseSolutionFolder(slnFolder), $"{solutionName}.cdsproj");
-        var slnFilePath = CreateSolutionService.ResolveSolutionFilePath(slnFolder, solutionName);
-        var slnFileName = Path.GetFileName(slnFilePath);
+        var slnFileName = await projectScaffolder.ScaffoldProjectAsync(projectSln, slnFolder, sourceEnv.EnvironmentUrl!,
+            solutionInfo.PublisherPrefix, cancellationToken);
 
-        await createSolutionService.CloneSolutionFromDataverseAsync(projectSln, slnFolder, cdsprojPath, sourceEnv.EnvironmentUrl!, cancellationToken);
-        await createSolutionService.CreateSolutionFileAsync(slnFolder, slnFilePath, cdsprojPath, cancellationToken);
-
-        // The .cdsproj entry CreateSolutionFileAsync just wrote makes the solution file loadable, so the
-        // scaffold-skip checks below can ask "is a plugin/WebResources project already registered under
-        // any name or location" instead of only "does the default folder hold one" — a project whose
-        // Plugins/WebResources project was legitimately moved/renamed (project-structure flexibility)
-        // resolves here the same way push/sync/deploy already discover it. Loaded once and reused by both
-        // setup calls, matching SolutionFileLayout's one-read contract.
-        var layout = await SolutionFileLayout.LoadAsync(slnFolder, cancellationToken);
-        await createSolutionService.SetupPluginsProjectAsync(slnFolder, slnFilePath, solutionName, layout, cancellationToken);
-        var webresourcesFolder = await createSolutionService.SetupWebResourcesProjectAsync(slnFolder, slnFilePath, solutionName, layout, cancellationToken);
-        createSolutionService.SeedWebResourceDistFromSrc(slnFolder, webresourcesFolder, solutionInfo.PublisherPrefix, projectSln.UniqueName);
-
-        createSolutionService.ScaffoldRootGitignore(slnFolder);
-
-        if (await ValidatePackAndBuildAsync(projectSln, CreateSolutionService.ScaffoldedDataverseSolutionFolder(slnFolder), slnFolder,
+        if (await ValidatePackAndBuildAsync(projectSln, ProjectScaffolder.ScaffoldedDataverseSolutionFolder(slnFolder), slnFolder,
                 buildRelease: true, skipBuild: false, cancellationToken) is { } exitCode)
         {
             return exitCode;
         }
 
-        await createSolutionService.ScaffoldAgentsFileAsync(slnFolder, projectSln.UniqueName, slnFileName, cancellationToken);
-        await createSolutionService.ScaffoldClaudeFileAsync(slnFolder, cancellationToken);
-        await new DataverseContextGenerator(Console).GenerateAsync(
-            Path.Combine(CreateSolutionService.ScaffoldedDataverseSolutionFolder(slnFolder), "src"), projectSln.UniqueName, RootFolder, cancellationToken);
+        await projectScaffolder.ScaffoldDocsAsync(slnFolder, solutionName, slnFileName, cancellationToken);
 
         Console.Done("Cloned! Use 'push' and 'sync' to keep it in flow. ヽ(•‿•)ノ");
         return 0;

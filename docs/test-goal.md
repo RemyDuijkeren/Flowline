@@ -1,940 +1,328 @@
 # Flowline CLI end-to-end test goal
 
-Full `clone → push → sync → sln add → deploy` matrix against a live Dataverse DEV/PROD pair,
-exercising real project-structure flexibility (move/rename/multi-project), not just the happy path.
-Use this as the `/goal` input for future test runs; update it with new learnings each time.
+Run the full `clone → push → sync → sln add → deploy` matrix against live Dataverse, exercising real
+project-structure flexibility (move/rename/multi-project), not just the happy path.
+
+Use this as the `/goal` input for a test run. Update it after each run — but keep it a *brief*: add
+what changes how the next run is conducted, not a log of what happened.
 
 ## Environment
 
 - DEV: `https://automatevalue-dev.crm4.dynamics.com`
-- TEST: `https://automatevalue-test.crm4.dynamics.com` — **real-deploy target** (see below)
+- TEST: `https://automatevalue-test.crm4.dynamics.com` — the **real-deploy target**
 - PROD: `https://automatevalue.crm4.dynamics.com`
-- Solutions: `Cr07982` (unmanaged; **is the env default solution** — see the deploy blocker note) and
-  `FlowlineDeployTest` (unmanaged; a normal, deletable solution created 2026-07-31 for real
-  deploy-to-TEST testing).
-- **Test workspaces — nested `solutions/<Name>/` layout (2026-07-31), one repo per solution.** Both live
-  under `C:\Code\FlowlineTests\solutions\` now (moved from the old flat `C:\Code\FlowlineTryOutByClaude`
-  / `E:\Code\TryOut\ClaudeFlowlineTest` paths), each a self-contained Flowline project with its own
-  `.flowline` and its own `.git` (co-located separate repos, per `docs/folder-structure.md` §4):
-  - `C:\Code\FlowlineTests\solutions\Cr07982\` — the project-structure-flexibility fixture (below).
-  - `C:\Code\FlowlineTests\solutions\FlowlineDeployTest\` — clean scaffold: one `[Step("account")]`
-    plugin (`AccountPostCreatePlugin`, package `av_FlowlineDeployTest.Plugins`) + one web resource,
-    `Flowline.Attributes 0.14.0`. Use this for deploy tests that need a **deletable** solution.
-  - Flowline resolves each project by walking up to the nearest `.flowline`, so run commands from inside
-    the specific solution's subfolder. Create/reset freely.
+- Auth: one `OperatingSystem`/UNIVERSAL PAC profile, tenant-wide. `flowline status` connects to all
+  three first try. No `pac auth create` needed.
 
-### Fixture state on `C:\Code\FlowlineTests\solutions\Cr07982\` (built 2026-07-29, keep it)
+Solutions:
 
-The project-structure-flexibility fixture now exists on this machine — don't rebuild it, and don't
-assume the scaffolded default layout when reading command output:
+- `Cr07982` — unmanaged, but **is the environment's default solution** (friendlyname "AV Default
+  Solution", system id `00000001-0000-0000-0001-00000000009b` on DEV *and* TEST). `pac solution
+  delete` refuses it. Never use it for anything needing a deletable solution.
+- `FlowlineDeployTest` — unmanaged, normal, deletable. Use this for first-import and delete scenarios.
 
-- `Backend/Cr07982.Backend.csproj` — the moved+renamed nupkg-mode plugin project (was
-  `Plugins/Cr07982.Plugins.csproj`; `PackageId`, `.snk` and folder all renamed, no "Plugins" left in
-  the name). Package in Dataverse: `av_Cr07982.Backend`.
-- `LegacyPlugins/Cr07982.LegacyPlugins.csproj` — a second, **classic/unpackaged** plugin project
-  (signed, plain `.dll`, no `Microsoft.PowerApps.MSBuild.Plugin`, no `PackageId`), holding
-  `LegacyAuditPostUpdatePlugin` on `contact`. It signs with a **copy of Backend's `.snk`**, which is a
-  different key than the `Cr07982.LegacyPlugins` already in DEV from the other machine — so a real push
-  hits the identity-changed gate and needs `--force recreate-assembly`. That is fixture history, not a
-  bug.
-- `ClientAssets/Cr07982.ClientAssets.csproj` — the moved+renamed WebResources project (no
-  "WebResources" substring anywhere).
-- Both plugin projects reference the **published** `Flowline.Attributes 0.12.0` from nuget.org, not the
-  current source tree — so attribute features newer than 0.12.0 aren't testable here without bumping it.
-- Git history in the workspace is a plain local repo with no remote (`phase1`…`phase4` commits).
+Workspaces — `C:\Code\FlowlineTests\solutions\<Name>\`, one self-contained Flowline project per
+solution, each with its own `.flowline` and `.git` (co-located separate repos, per
+`docs/folder-structure.md` §4). Run commands from inside the specific solution's folder; Flowline
+resolves by walking up to the nearest `.flowline`.
 
-## DEV mutation permissions
+- `Cr07982\` — the project-structure-flexibility fixture. **Keep it, don't rebuild it, and don't
+  assume the scaffolded default layout when reading output:**
+  - `Backend/Cr07982.Backend.csproj` — moved+renamed nupkg-mode plugin project (Dataverse package
+    `av_Cr07982.Backend`). No "Plugins" anywhere in the name.
+  - `LegacyPlugins/Cr07982.LegacyPlugins.csproj` — a second, **classic/unpackaged** plugin project
+    (signed, plain `.dll`). Signed with a *copy* of Backend's `.snk`, so a real push hits the
+    identity-changed gate and needs `--force recreate-assembly`. Fixture history, not a bug.
+  - `ClientAssets/Cr07982.ClientAssets.csproj` — moved+renamed WebResources project.
+  - Both plugin projects reference **published** `Flowline.Attributes 0.12.0`, so attribute features
+    newer than that aren't testable here without bumping it.
+- `FlowlineDeployTest\` — clean scaffold: one `[Step("account")]` plugin + one web resource.
 
-DEV already has web resources, plugins, and custom APIs from prior test runs — treat all of it as
-disposable test fixtures. Freely add, modify, or delete any component in DEV to exercise
-push/sync/delete/orphan-cleanup scenarios. No need to preserve or restore DEV state between runs.
+DEV and TEST components (assemblies, steps, Custom APIs, web resources) are disposable — add, modify
+and delete freely. No need to preserve state between runs. **DEV note:** publisher `flx` already
+exists; a new-publisher test must pick a *fresh* prefix or it silently exercises the reuse path.
 
-## TEST environment — the real-deploy target (added 2026-07-31)
+## Safety constraints
 
-`https://automatevalue-test.crm4.dynamics.com` (note **crm4**, matching DEV/PROD — the `.flowline`
-`TestUrl` is authoritative; an earlier note here said `crm.` in error) exists specifically so real
-(non-`--dry-run`) deployments can be exercised end-to-end. This is the one target where the
-dry-run-only rule below does **not** apply. `flowline status` connects to Test first try on the same
-`OperatingSystem` universal profile as Dev/Prod — no separate `pac auth create`.
-
-- **Real `deploy test` is allowed** — run it without `--dry-run` to actually import into TEST. Dry-run
-  stops short of `pac solution import` (and of post-import orphan cleanup), so update/cleanup were
-  never provable live before.
-- **Disposable-fixture status** — TEST components (assemblies, steps, Custom APIs, web resources) may
-  be freely added/modified/deleted, same as DEV. **But the solution itself cannot be pac-deleted**:
-  see the first-import blocker below.
-
-### Mechanics established live 2026-07-31 (read before running)
-
-- **A real TEST deploy is SLOW — always background it.** The `pac solution import` async op alone took
-  **~8 min** (7m53s) for `Cr07982`; with pack + checker + backup + publish + cleanup the whole command
-  runs **>10 min**. A 10-min foreground timeout **killed the CLI mid-publish** — the import had already
-  committed server-side but the post-import deferred-orphan delete never ran. Run `deploy test` with
-  `run_in_background` from the start and watch the printed log
-  (`…\Flowline\logs\<ts>-deploy.log`) for the `🚀`/error terminal line. Do **not** poll for "log idle"
-  — the publish/import async waits are silent for minutes, so an idle-detector fires a false "done".
-- **`deploy` has NO `--force delete-orphans` flag** (that's `push`). Orphan cleanup is automatic:
-  `ResolveRunMode` gives an unmanaged real deploy `RunMode.Normal`, which **deletes** orphans as part
-  of the deploy (pre-import for eligible, deferred ones retried post-import); `--no-delete` (or managed)
-  forces report-only. So "cleanup makes deploy succeed" is proven by a plain `deploy test`, not a flag.
-- **First-import non-interactive bypass = `--force first-import`** (`DeployCommand.cs:137-139`; valid
-  specifiers `drift`/`first-import`/`all`). Dry-run only prints an info note and never hits the prompt.
-- **Independent Dataverse query = `pac env fetch`** (verified `pac` 2.9.3). Runs raw FetchXML against a
-  target, bypassing Flowline entirely — the out-of-band check that removes the "verified by Flowline's
-  own reads only" residual-confidence caveat. `pac env fetch --environment <url> --xml "<fetch><entity
-  name='customapi'><attribute name='uniquename'/></entity></fetch>"` (or `--xmlFile <path>`; `-env`/`-x`
-  aliases). Use it to confirm a component actually exists/gone in TEST after a deploy, not just that
-  Flowline reported it so.
-
-### Results, 2026-07-31
-
-- **Dry-run pipeline ✓** — `deploy test --dry-run` ran DTAP (Dev predecessor), cached-artifact reuse,
-  solution checker (3 findings/0 Critical), a real backup labelled `flowline-dryrun-Cr07982-<ts>`,
-  orphan report with `(--dry-run preview)`, exit 0. `drift test` ✓ (read-only, exit 15 when drift
-  found).
-- **Update deploy ✓** — real `deploy test` imported 2.0.5 over 1.0.37; version advanced, real backup
-  `flowline-deploy-Cr07982-<ts>` (distinct label from dry-run), genuine orphan **step** deleted
-  pre-import. (The CLI was killed by the foreground-timeout mistake above after the import committed;
-  the update itself landed server-side.)
-- **Fresh first-import ✓ — live, on the `FlowlineDeployTest` fixture.** `deploy test --force first-import`
-  into a TEST that had never held the solution: the first-import confirmation was satisfied by `--force`
-  **without hanging** (log: `First deploy of 'FlowlineDeployTest' … Continue? (--force)`), checker 0
-  findings, backup `flowline-deploy-FlowlineDeployTest-<ts>`, `No solution components — skipping orphan
-  check` (correct — nothing there yet), **Deployed, exit 0**.
-  - Why a *new* fixture was needed: `Cr07982` **cannot** be deleted to reach a first-import state —
-    `pac solution delete` refuses it (`Attempting to delete a Common Data Services Default solution`)
-    because `Cr07982` carries friendlyname "AV Default Solution" and the system default-solution id
-    `00000001-0000-0000-0001-00000000009b` on **both** TEST and DEV. That is the fixture's identity, not
-    a TEST quirk or a Flowline bug — do not force a default-solution delete. So `FlowlineDeployTest` (a
-    normal, deletable solution) was created for this.
-- **Finding — orphan detection false-flags a live, in-solution plugin package assembly — FIXED and
-  live-verified on TEST 2026-08-01.** The fix harvests each plugin assembly's portable simple name from
-  `Solution.xml`'s `schemaName` (type 91) into the named-component set, so `CompareAsync` resolves the
-  live assembly by name via `NameResolvableTypes[91]` and no longer diffs it out as an orphan;
-  `PluginAssemblyFamilyHandler`/`CustomApiFamilyHandler` were promoted `Guarded`→`Auto`. Live on
-  `FlowlineDeployTest` (CLI `0.14.1-alpha.0.2`): `drift test` → `Orphan components (0)`, exit 0 (was 1
-  orphan, exit 15); real re-`deploy test` → 0 orphans pre-import, `🚀 Deployed!`, **exit 0** (was exit
-  18 PartialSuccess with a false manual-cleanup alarm). Full suite 2030 passed / 0 failed / 4 skipped.
-  Fix uncommitted in the Flowline source tree, awaiting commit authorization. Original writeup (now
-  marked FIXED): `docs/test-findings/deploy-false-positive-orphan-package-assembly-guid-not-portable.md`.
-- **Orphan handlers `Auto` detect+delete live-verified on TEST 2026-08-01** (closes the one gap the
-  false-positive fix left: does `Guarded`→`Auto` actually auto-delete a *genuine* orphan on the deploy
-  path, safely?). Method: plant a genuine CustomApi orphan (`av_DeployOrphan`) + a step-less package
-  plugin-assembly orphan (`av_FlowlineDeployTest.Extra`) into TEST via a real `deploy test`, then remove
-  both from source (push `--force delete-orphans`→sync→commit) and re-deploy. Default `deploy test`
-  (no `--force`) detected both (`CustomApi 'av_DeployOrphan' — delete` Prio2; `PluginPackage (owns
-  PluginAssembly 'FlowlineDeployTest.Extra') — delete` Prio3), **auto-deleted both, exit 0**, and a
-  follow-up `drift test` reported 0 orphans. Both foreign survivors — the in-source main package and
-  `av_KeepMe` (same `av_` prefix as the deleted API) — were untouched; `av_KeepMe`'s survival was
-  positively proven by removing it from source and re-running `drift test` (flagged live in TEST,
-  `av_KeepMe (263a20a1…)`, exit 15), so the prefix-wide over-delete regression did **not** recur.
-  Code-trace gate established that deploy's post-import deferred-delete reuses the same package-redirected
-  delete as pre-import, but a clean (unblocked) orphan deletes pre-import — so the **post-import deferred
-  path was verified by code trace, not live** (needs a dependency-blocked orphan). Detail in the finding
-  file's "`Auto` promotion live-verified" block.
-  The pre-fix analysis below is kept for the record:
-- **(pre-fix)** deploy path; sync-fixable on push/DEV. Plugin assemblies are matched **GUID-only** against the
-  on-disk `Solution.xml`, but the assembly's `pluginassemblyid` is non-portable: measured live it
-  differs in every place — on-disk `31d733bd…`, DEV `93ca7a81…`, TEST `10a1719c…` — because `push`
-  re-registers and `import` re-mints it, while the stable assembly **name** sits unused in the
-  RootComponent `schemaName`. **Reproduced read-only on two envs** (`drift dev` *and* `drift test`, no
-  deploy), which rules out a TEST/killed-deploy artifact — so this is *not* just "TEST re-minted"; it's
-  GUID-non-portability generally. On DEV a `sync` refreshes the ids and clears it (documented stale-src
-  behavior); on a **deploy target it's unfixable** — you can't `sync` a target and import re-mints
-  anyway. **Reproduced clean on the normal `FlowlineDeployTest` solution** (drift test flags its own
-  just-imported `av_FlowlineDeployTest.Plugins` package as the *only* orphan: live `1ec43993…` vs
-  committed `14c3bcbb…`) — default-solution identity ruled out. **Real-deploy impact now observed** (not
-  inferred): a re-`deploy test` acts on the false orphan, defers the package delete to post-import, then
-  the delete **fails** (`cannot be deleted because it is referenced by 1 other components` — the
-  just-reimported plugin type) → **exit 18 PartialSuccess** with a false "remove manually via maker
-  portal" about the user's own live plugin. So no data loss (dependency protects it), but **every
-  re-deploy exits 18** — breaks CI/CD green. Fix direction: match plugin assemblies by name (as
-  WebResource/CustomApi/Bot already are). Full writeup:
-  `docs/test-findings/deploy-false-positive-orphan-package-assembly-guid-not-portable.md`.
-- Still pass `--dry-run`/`drift` **first** on any new TEST scenario to preview, then re-run for real.
-
-## Safety constraints (hard limits)
-
-- PROD is off-limits for any real write. `deploy` supports `--dry-run` — **always** pass it for
-  every deploy test against PROD (and DEV, though `deploy dev` is rejected outright), no exceptions.
-  Never run a real `deploy` against PROD. **TEST is the exception** — real `deploy test` is
-  explicitly allowed, see the section above. Also still useful everywhere: `flowline drift <target>`
-  (genuinely read-only, even lighter-weight) as an additional preview alongside `--dry-run`.
+- **PROD: never a real write.** Always `--dry-run`. `flowline drift prod` is the even lighter preview.
+- **TEST: real `deploy test` is allowed and expected** — that is what the environment is for.
+- **Never force a default-solution delete.** `pac solution delete` refuses `Cr07982` because it carries
+  the system default-solution identity. That is the fixture's nature, not a TEST quirk or a Flowline
+  bug — do not look for a way around the refusal. Use `FlowlineDeployTest` when you need a deletable
+  solution.
 - Never force-push, never touch remote git state.
-- Never commit in the Flowline source repo (`Code/Flowline/`) without being
-  explicitly asked, even mid-session.
+- Never commit in the Flowline source repo without being explicitly asked.
+
+## Running the tests
+
+- **A real TEST deploy takes >10 min** (the `pac solution import` async op alone ~8 min). Always run
+  it backgrounded and watch the printed log for the terminal `🚀`/error line. Do **not** poll for "log
+  idle" — the import/publish waits are silent for minutes and an idle-detector fires a false "done".
+  A foreground timeout that kills the CLI mid-publish leaves the import committed but post-import
+  cleanup unrun.
+- Long `clone`/`sync` exports also take minutes. Background them.
+- **Verify out-of-band with `pac env fetch`** — raw FetchXML against a target, bypassing Flowline
+  entirely: `pac env fetch --environment <url> --xml "<fetch><entity name='customapi'><attribute
+  name='uniquename'/></entity></fetch>"`. Use it to confirm a component really exists or is really
+  gone, rather than trusting Flowline's own read of it.
+  - Watch the `like` escape: `!` is **not** a FetchXML escape character. `value='av!_%'` matches
+    nothing and reads as "none exist". Use `value='av_%'` or `[_]`. Be suspicious of any
+    "No results returned." that confirms what you expected.
+- Commit between test phases so `sync`'s dirty-check behaves predictably.
 
 ## Bug-fix policy
 
-- On any bug/exception in Flowline source: attempt a fix if the root cause is clear and small
-  (parsing error, null ref, obvious logic slip, wrong error-exit-code, misleading message). Re-run
-  the exact failing scenario to confirm, then continue.
-- **Verify the fix against the actual test/spec before committing to it** — one earlier "fix" this
-  session (changing `[DefaultValue(true)]` to `false` on `--managed`) broke existing, correct,
-  already-tested behavior (`ManagedFlagBindingTests`). Always run the full test suite after a fix,
-  before rebuilding the CLI, and revert immediately if anything regresses.
-- Don't fix anything requiring architectural judgment or deeper investigation (e.g. a false-positive
-  orphan-assembly detection rooted in a PAC unpack naming quirk, or a raw unhandled
-  `FaultException` surfacing through a rare Dataverse-side conflict) — log it as a finding instead.
-- Run the full solution test suite (`dotnet test Flowline.slnx`) after every fix, not just the
-  directly affected test file — cheap and has caught real regressions.
-- After any fix: rebuild (`dotnet pack src/Flowline/Flowline.csproj -c Release`) and reinstall the
-  global tool (`dotnet tool uninstall -g flowline` then `dotnet tool install -g flowline --add-source
-  <nupkg-dir> --version <exact-version>` — pin the exact version explicitly, since `dotnet tool
-  install -g flowline` with no version/source can silently resolve the real published package from
-  nuget.org instead of the local build) before re-testing live.
+- Fix inline when the root cause is clear and small (parsing slip, null ref, wrong exit code,
+  misleading message). Re-run the exact failing scenario to confirm.
+- **Verify the fix against the actual test/spec first.** One past "fix" (flipping `[DefaultValue]` on
+  `--managed`) broke correct, already-tested behavior. Run `dotnet test Flowline.slnx` — the *full*
+  suite, not the affected file — after every fix, and revert immediately on any regression.
+- Don't fix anything needing architectural judgment or deeper investigation. Log it as a finding.
+- **Baseline is 2125 passed / 0 failed / 4 skipped.** A red test is a real regression — treat it as one.
+  The 4 skips are the live-MSAL `ConnectViaPacAsync_*` tests, which carry an explicit `Skip` reason.
+- After a fix, rebuild and reinstall before re-testing live:
+  `dotnet pack src/Flowline/Flowline.csproj -c Release`, then `dotnet tool uninstall -g flowline` and
+  `dotnet tool install -g flowline --add-source <nupkg-dir> --version <exact-version>`. **Pin the
+  exact version** — without it, install can silently resolve the published package from nuget.org.
+  Purge the NuGet cache if the version string didn't change.
 
 ## Test matrix
 
-Cover both **fresh state** (wipe the test workspace, start clean) and **reused state** (idempotent
-re-run against an already-cloned/pushed/synced folder) where relevant.
+Cover both **fresh state** (wipe the workspace, start clean) and **reused state** (idempotent re-run
+against an already-cloned/pushed/synced folder) where relevant.
 
 ### `clone`
 
 - Fresh empty folder, with/without each env URL (`--dev`, `--prod`, `--uat`, `--test`), with/without
   `--managed`.
-- Idempotent re-clone into an already-cloned folder (expect skip messages, no errors).
-- Requires an existing git repo first (`git init`) — this is intentional, not a bug.
-- Managed-solution rejection, C#-keyword solution-name rejection (harder to trigger live without a
-  matching real Dataverse solution — check the code path directly if a live repro isn't practical).
-- Note: `--managed` bare (no value) sets `true`; `--managed false` explicitly resets; omitting the
-  flag entirely leaves it unset, which downstream code treats as `false`. The CLI help's "DEFAULT"
-  column reflects what bare `--managed` resolves to, not the omitted-flag default — don't "fix" this
-  without re-running `ManagedFlagBindingTests` first.
-- **Bug found and fixed this run (2026-07-23)**: idempotent re-clone of a project whose
-  Plugins/WebResources projects were legitimately moved+renamed (this test workspace's own
-  project-structure-flexibility history) used to scaffold brand-new duplicate default-named
-  `Plugins/`/`WebResources/` projects and register them into the solution file — `clone`'s own
-  scaffold-skip check used a hardcoded literal folder name instead of `SolutionFileLayout` discovery,
-  unlike `push`/`sync`/`deploy`. Fixed (design confirmed with the user first, not assumed): the skip
-  check now also asks `SolutionFileLayout`, OR'd with the original literal-folder check; a genuine
-  WebResources tie or any other layout-load failure propagates and stops clone rather than silently
-  falling back to scaffold. Live re-verified against the exact repro — now correctly prints "already
-  there — skipping" for both, solution file untouched. A separate issue surfaced during
-  re-verification and is now also fixed: `SeedWebResourceDistFromSrc` used to hardcode the
-  `WebResources/public` seed destination, leaving stray untracked files when the real WebResources
-  project had moved. `SetupWebResourcesProjectAsync` now returns the WebResources project's real
-  folder (existing or freshly scaffolded) and the seed step writes into that instead of guessing.
-  Live re-verified against the same repro — seed check now correctly evaluates the real project's
-  `public/` folder, no stray `WebResources/` folder created. Full details:
-  `docs/test-findings/clone-idempotent-reclone-duplicates-moved-plugins-webresources.md`.
-- Fresh-state matrix (empty folder × env-URL combos × `--managed`) and the managed/C#-keyword
-  rejection cases: **not re-verified live this run** — covered by existing unit tests
-  (`CloneCommandTests.cs`) only this round.
+- Idempotent re-clone into an already-cloned folder → skip messages, no errors, no duplicate
+  `Plugins/`/`WebResources/` projects even when the real ones were moved/renamed, solution file
+  untouched.
+- Managed-solution rejection; C#-keyword solution-name rejection (hard to trigger live without a
+  matching real solution — check the code path if no practical repro).
+- Interactive pick (no solution named, no env configured, TTY): tenant-wide environment picker, then
+  that environment's **unmanaged** solutions (managed hidden with a count, the environment's
+  `Default` solution never listed). **No "create new" choice — clone only adopts.** Picking confirms
+  which `.flowline` role to save the environment under.
+- Nothing to clone: an environment with no unmanaged solution stops with `⏸ Nothing to clone in
+  '<env>'` plus a `Next:` line naming `flowline init <name>`, exit 0.
+- Review the generated `AGENTS.md` as the artifact an agent will be steered by — accurate against
+  current CLI behavior, right command order, hazards named.
 
-### `init` (and interactive `clone`)
+### `init`
 
-Greenfield solution/publisher creation, added by the `init`/interactive-`clone` plan
-(`docs/plans/2026-08-01-001-feat-clone-init-greenfield-solution-plan.md`).
+- **Greenfield create** against DEV: new publisher + empty **unmanaged** solution land in Dataverse,
+  then the repo scaffolds and builds identically to a `clone`. Verify independently (`pac solution
+  list`, `Solution/src/Other/Solution.xml`), not off the CLI's own success line.
+- Reusing an existing `--publisher-prefix` instead of creating one.
+- **Validation rejections, before any Dataverse write**: `--publisher-prefix mscrmx`, 1-char and
+  9-char prefixes, non-alphanumeric / non-letter-start prefix; a `<name>` that's a C# keyword, has
+  invalid characters, or starts with a digit; a `<name>` over 65 chars; a `--display-name` over 256.
+- **DEV-only refusal**: targeting a Production-type environment must refuse before any create call;
+  Sandbox/Developer proceeds.
+- **No-TTY errors**: missing `--dev` and missing `--publisher-prefix` each error naming the flag,
+  never derive one, never hang.
+- **Duplicate-name refusal** before any write.
+- **`✓ DEV set to <env>`** written to `.flowline` only after create + scaffold + build all succeed —
+  and the created solution recorded too, so a later push/sync can resolve it.
+- **Post-create failure reporting**: if scaffold or build fails after the records exist in Dataverse,
+  the created publisher/solution identifiers are reported for manual cleanup, not silently dropped.
+- Interactive pickers (environment, publisher, name).
 
-**First live run 2026-08-01 (tool `0.14.1-alpha.0.14`, DEV).** Most of the matrix passed; one headline
-feature (interactive `clone`) was found **dead via the CLI** and fixed. Results, then the matrix:
+### `push` — test **both modes**, they have different validation surfaces
 
-- **Greenfield create ✓ (new publisher)** — `flowline init FlowlineInitTest01 --dev <dev>
-  --publisher-prefix flx` in a fresh git folder: exit 0, `created (new publisher 'flx')`, pull 1m10s,
-  scaffold + Debug build, `✓ DEV set to …`. **Independently verified, not off the CLI's own line**:
-  `pac solution list` showed it unmanaged; the pulled `Solution/src/Other/Solution.xml` carried
-  `<Managed>0</Managed>`, `<CustomizationPrefix>flx</CustomizationPrefix>` and
-  `<CustomizationOptionValuePrefix>68688</CustomizationOptionValuePrefix>` (in 10000–99999, so the
-  SHA256-derived option-value prefix — the one create bit with zero prior coverage — works live); and
-  `.flowline` on disk carried both `DevUrl` and `Solution.UniqueName` (the 3367f8e write, so push/sync
-  can resolve it). Build is `(Debug)` by design — `buildRelease` only forces a Release build when
-  `IncludeManaged` is true (`FlowlineCommand.cs:293`), and an `init` solution is unmanaged; not a bug.
-- **Reuse existing prefix ✓** — same command with `--publisher-prefix flx` after the publisher already
-  existed: `created (reused publisher 'flx')`, no second publisher, exit 0.
-- **Duplicate-name refusal ✓** — re-running an existing unique name: `Solution '…' already exists in
-  this environment. Choose a different name.`, exit 15, refused before any write.
-- **DEV-only refusal ✓** — `init … --dev <prod-url>`: `'AutomateValue' (Production) isn't a Sandbox or
-  Developer environment …`, exit 15, refused before create. The message echoes the *real* resolved
-  type (`Production`, via `RetrieveCurrentOrganization` → `MapOrganizationType`), so it's a genuine
-  guard pass, not a null-lookup false positive.
-- **Name / display / prefix validation rejections ✓ (11 cases)** — C#-keyword (`… is a C# keyword`),
-  invalid-char and digit-start (`… only letters, digits, and underscores … start with a letter`),
-  `>65` (`… at most 65 characters … is 66`), `>256` display (`… at most 256 characters … got 257`),
-  `mscrm*` (`… must not start with 'mscrm' …`), 1-char / 9-char (`… must be 2-8 characters …`),
-  digit-start / non-alnum prefix (`… must be alphanumeric and start with a letter …`). All exit 15,
-  message names the specific rule.
-- **No-TTY errors ✓ (partial)** — missing `--dev` → `DEV environment is required — pass --dev <URL> …`;
-  missing `--publisher-prefix` → `Publisher prefix is required — pass --publisher-prefix <prefix> …`.
-  Both name the flag, exit 15, no hang. The **"`--dev` with no matching PAC profile → `pac auth
-  create`" case is NOT live-triggerable on this machine** — the single `OperatingSystem`/UNIVERSAL
-  profile is tenant-wide, so a foreign URL resolves the profile and fails later as `Dev environment
-  not found — check the URL or your PAC login.` (exit 10), never the no-profile branch. Code path
-  (`ProfileResolutionService`) unit-tested; live gap noted, not dressed up as a pass.
+**Project mode** (inside a Flowline project folder):
 
-- **BUG FOUND + FIXED (uncommitted): interactive `clone` was dead via the CLI.** `CloneCommand.Settings`
-  declared the positional as **required** (`[CommandArgument(0, "<solution>")]`), so `flowline clone`
-  with no args hit Spectre's own `missing required argument 'solution'` parse rejection *before*
-  `ExecuteFlowlineAsync` ran — making `ShouldPickOrCreate` (which keys off an empty `settings.Solution`)
-  unreachable. The whole U6 pick-or-create feature never ran from the CLI. The unit tests were green
-  because they call `ShouldPickOrCreate`/`PickOrCreateAsync` directly, **bypassing Spectre's arg
-  binding** — the exact layer that broke. Fix: `<solution>` → `[solution]` (optional). Verified the
-  non-interactive fall-through still errors cleanly on a null name (`GetAndCheckSolutionAsync(null,…)` →
-  clean `ConfigInvalid`; no role URL → `NotFound`), and grepped `CloneCommand` for null-assuming derefs
-  (none). Added a **Spectre-binding regression test** (`ManagedFlagBindingTests.Clone_NoSolutionArg_
-  BindsWithNullSolution`) that runs `app.Run([])` through a real `CommandApp` and asserts it binds with
-  a null `Solution` — fails pre-fix (parse rejection), passes post-fix. Full suite green **2109 passed
-  / 0 failed / 4 skipped** (Flowline.Tests 993, +1). Repacked, purged the NuGet cache for the
-  unchanged version string, reinstalled; live re-verified: `flowline clone` (no args, non-interactive)
-  now reaches the pipeline and returns `No unmanaged environment found — provide a --dev, --test,
-  --uat, or --prod URL …` (exit 3) instead of the parse error. **Uncommitted** in the Flowline source
-  tree, awaiting commit authorization (`CloneCommand.cs`, `ManagedFlagBindingTests.cs`). Meta-lesson:
-  a headline feature shipped dead because every test bypassed the arg-binding layer — any
-  positional-arg contract needs at least one test that goes through `CommandApp`.
+- Full push (default scope), dry-run and real. Idempotent re-run → "Nothing to push — already up to
+  date."
+- Each `--scope` individually: `all`, `webresources`, `formevents`, `plugins`, `assemblyonly`.
+- `--scope assemblyonly --scope plugins` together → rejected (mutually exclusive).
+- `--no-delete`, `--no-build`, `--no-publish` — each prints its own "skipping (--flag active)" line.
+- Non-interactive gates: an unrecognized form-event handler requires `--force delete-form-handlers`;
+  an orphaned plugin assembly requires `--force delete-orphans`. Both must name the flag, not hang.
+- Real create/update/delete paths — drive them by actually adding a `[Step]` class, editing a web
+  resource, and deleting one.
 
-**DEV state note:** publisher `flx` persists in DEV (the three test solutions were pac-deleted; a
-publisher has no cheap pac delete). A future **new-publisher** test must pick a *fresh* prefix — reusing
-`flx` silently exercises the reuse path and reads as a false "new publisher" pass.
+**Standalone mode** (`--pluginFile`/`--webresources`, from *outside* a project folder):
 
-**Not covered live (explicit gaps):**
-- **Interactive `clone` pick-or-create menu** and **interactive publisher/name/env pickers** — this
-  agent harness has no TTY, so `IsInteractive()` is false and the prompts never render. Code path fully
-  read and the *gate* is now live-reachable (proven above), but the menu interaction itself
-  (pick-existing → role default Dev; create-new → routes to `SolutionCreateFlow`) is verified by unit
-  test only, never driven end-to-end.
-- **Privilege fault** (user lacking create rights → clear error, not raw SDK exception) — no
-  locked-down test user; code path only.
-- **`--dev` with no matching profile → `pac auth create`** — not triggerable with a universal profile
-  (above).
-
-Original matrix (all still relevant for a TTY-capable run):
-
-- **Greenfield create**: `flowline init <name> --dev <dev-url> --publisher-prefix <prefix>` against
-  DEV — confirm a new publisher (when the prefix doesn't already exist) and an empty **unmanaged**
-  solution land in Dataverse, then the repo scaffolds and builds identically to a `clone`.
-- Reusing an existing `--publisher-prefix` (already present in DEV) instead of creating a new
-  publisher.
-- **Name/prefix validation rejections**, before any Dataverse write: `--publisher-prefix mscrmx`
-  (starts with `mscrm`), a 1-char prefix (too short), a 9-char prefix (too long), a
-  non-alphanumeric or non-letter-start prefix; a `<name>` that's a C# keyword; a `<name>` with
-  invalid characters (outside `[A-Za-z0-9_]`) or a digit-start; a `<name>` over 65 characters; a
-  `--display-name` over 256 characters.
-- **DEV-only refusal**: `flowline init` targeting a Production-type environment — via `--dev` or
-  the interactive picker — must refuse before any create call; a Sandbox/Developer environment
-  proceeds.
-- **No-TTY errors** (CI or piped stdin): missing `--dev` errors naming the flag; missing
-  `--publisher-prefix` errors naming the flag (never derives one from `<name>`); a `--dev`
-  environment with no matching PAC auth profile errors naming `pac auth create`, without blocking
-  on a login prompt.
-- **Duplicate-name refusal**: `<name>` matching a solution that already exists in the target
-  environment is refused with a naming-conflict error before any write.
-- **Interactive `clone` solution pick**: `flowline clone` with no solution and no environment
-  configured — tenant-wide environment picker (Default and Teams environments not listed), then a
-  list of the environment's unmanaged solutions (managed ones hidden with a count, the environment's
-  `Default` solution never listed). No "create new" choice — clone only adopts. Picking a solution
-  confirms the `.flowline` role to save it under, defaulting to DEV.
-- **Nothing to clone**: an environment with no unmanaged solution stops with `⏸ Nothing to clone in
-  '<env>'` plus a `Next:` line naming `flowline init <name>`, and exits `0`.
-- **`✓ DEV set to <env>` confirmation**: after a successful `init` create + scaffold + build, confirm
-  the chosen environment is written to the `DEV` role in `.flowline` and the confirmation line names
-  the environment.
-- **Post-create failure reporting**: if scaffold or build fails after the publisher/solution already
-  exist in Dataverse, confirm Flowline reports the created publisher/solution identifiers for manual
-  cleanup rather than discarding them silently.
-- **Privilege fault**: a user lacking create privileges on publisher/solution gets a clear error
-  naming the missing permission, not a raw SDK exception — harder to trigger live without a
-  locked-down test user; check the code path directly if a live repro isn't practical (same caveat
-  as the `clone` C#-keyword case above).
-
-### `push` — test **both modes explicitly**, they have different validation surfaces
-
-**Project mode** (inside a cloned Flowline project folder):
-- Full push (default scope), dry-run and real.
-- Idempotency: re-running immediately after a real push should show "no changes."
-- Each `--scope` value individually: `all`, `webresources`, `formevents`, `plugins`, `assemblyonly`.
-- Invalid combo: `--scope assemblyonly --scope plugins` together → must reject
-  (mutually exclusive).
-- `--no-delete`, `--no-build`, `--no-publish`.
-- Non-interactive confirmation gates: an unrecognized form-event handler requires
-  `--force delete-form-handlers`; an orphaned plugin assembly requires `--force delete-orphans`.
-  Confirm both are clearly reported and require the flag rather than silently proceeding or hanging.
-- **Fixed** (2026-07-22, verified in source): the double form-events spinner now reads distinctly
-  ("Checking form events..." vs "Registering form events...") — the underlying double-fetch is by
-  design, not a bug. `docs/test-findings/push-form-events-snapshot-fetched-twice.md`.
-- **Project mode fully live-verified 2026-07-29** against DEV, dry-run *and* real: default scope,
-  idempotent re-run ("Nothing to push — already up to date."), all five `--scope` values individually,
-  the mutually-exclusive combo (exit 15), `--no-build` / `--no-delete` / `--no-publish` (each printing
-  its own "skipping (--flag active)" line), and real create/update/delete paths driven by actually
-  adding a `[Step]` plugin class, editing a web resource, and deleting one. Web-resource counts are
-  right, including `1 remove(s) … (still in other solution)` where a delete is not safe. The
-  **`--force delete-form-handlers` gate is the one project-mode item still unverified** — it needs a
-  Dataverse form whose handler points at a function no longer in local source, which this fixture has
-  no cheap way to construct.
-
-**Standalone mode** (`--pluginFile`/`--webresources`, run from *outside* a Flowline project folder):
-- Rejected when run *inside* a Flowline project folder (`.flowline` present) — must error clearly.
-- Solution name is required as the first positional argument in standalone mode.
+- Rejected when run inside a Flowline project folder.
+- Solution name required as the first positional.
 - `--scope plugins`/`assemblyonly` requires `--pluginFile`; `--scope webresources`/`formevents`
-  requires `--webresources` — validate the error message names the missing flag, not a generic
-  "no Flowline project found" (which is what you get if you omit `--pluginFile`/`--webresources`
-  *and* the scope flag, since without either standalone flag there's no way to detect standalone
-  intent at all — that's expected, not a bug).
-- **Fixed** (2026-07-22, verified in source: `PluginService.cs` now throws `FlowlineException` on a
-  `packageid`-owned assembly before any Dataverse write, in both classic-assembly write paths).
-  `docs/test-findings/standalone-push-pluginpackage-raw-faultexception.md`.
-- **Live-verified this run (2026-07-23), project mode, `--dry-run`**: ran against both plugin projects
-  in this workspace. `Cr07982.Backend` (moved/renamed nupkg-mode plugin project) succeeded cleanly.
-  `Cr07982.LegacyPlugins` (classic/unpackaged) hit the classic-vs-package conflict guard with the
-  expected clean friendly error — confirms that guard works correctly, not a bug.
-- **Live-verified this run (2026-07-23), standalone mode negative cases**: run inside a Flowline
-  project folder → rejected with the exact "cannot be used inside a Flowline project folder" message.
-  Missing solution name positional arg → rejected. `--scope webresources` with `--pluginFile` only
-  (once auth/env resolution passed) → `"--scope webresources/formevents requires --webresources."`.
-  `--scope plugins` with `--webresources` only → `"--scope plugins/assemblyonly requires
-  --pluginFile."`. Both name the missing flag exactly, not a generic project-not-found message. Note:
-  the scope/flag-mismatch check runs *after* env-URL and auth-profile resolution in
-  `PushCommand.ExecuteAsync` (`ResolveStandaloneEnvironmentUrl` before `ResolveScope`), so reaching it
-  live requires a resolvable `--dev`/auth profile first — not a bug, just an ordering note for future
-  live repro.
+  requires `--webresources` — the error must name the missing flag.
+- **Standalone's pushed set is the single artifact**, so every *other* assembly in the solution is an
+  orphan by definition, and `--force delete-orphans` would delete a live sibling. Deliberate, not a
+  bug — but it makes standalone the cheapest way to manufacture an orphan on demand for testing.
 
 ### `sync`
 
-- Clean tree: full sync, confirm the diff/drift summary looks right.
-- Dirty tree: must reject with a clear message naming `Solution/src/...`, and the message must be
-  **plain text, not raw Spectre markup tags** — this broke once (`ConsolePath.FormatRelativePath`'s
-  markup embedded directly into a `FlowlineException` message, which gets escaped before display).
-- `--bump patch|minor|major|none`, verify the version actually changes as expected.
+- Clean tree: full sync, diff/drift summary correct.
+- Dirty tree: rejects naming `Solution/src/...`, message **plain text, not raw Spectre markup**.
+- `--bump patch|minor|major|none` — verify the version actually changes.
 - `--no-build`.
-- Non-interactive `--managed` reconfirmation gate when the flag conflicts with the already-configured
-  value — must reject cleanly, not hang or silently apply.
-- If the WebResources project was moved/renamed since the last sync, confirm drift correctly still
-  finds it (see "Project-structure flexibility" below) rather than reporting phantom drift.
-- **Live-verified this run (2026-07-23)**: full `sync` against DEV succeeded (~4 min), version bumped
-  2.0.3→2.0.4, drift detection accurate for the real fixture state. Dirty-tree rejection re-confirmed
-  with a plain entity-file change under `Solution/src/` — exit 12, clean plain-text message, no
-  Dataverse contact.
-- `--bump patch|minor|major|none`, `--no-build`, and the non-interactive `--managed` reconfirmation
-  gate: **not re-verified live this run** — see prior session's `sync bump tests` git history in the
-  test workspace (commit `516b445`) for earlier live coverage; not re-run this round.
+- Non-interactive `--managed` reconfirmation gate when the flag conflicts with the configured value —
+  rejects cleanly *before* the long export, no hang.
+- A moved/renamed WebResources project must still be found, not reported as phantom drift.
 
 ### `sln add`
 
-- Valid `.cdsproj` add, idempotent re-add ("already in ... — skipping", not an error).
-- Wrong extension (`.csproj` → points at `dotnet sln add` instead).
+- Valid `.cdsproj` add; idempotent re-add → "already in ... — skipping", not an error.
+- Wrong extension (`.csproj`) → points at `dotnet sln add`.
 - Nonexistent path.
-- No solution file in the **exact** folder → must error, and must **not** search parent folders
-  (regression test for the walk-up incident — run this specific case in an isolated subfolder inside
-  the test workspace, per the safety note above). **Live-verified (2026-07-23)**: ran in
-  `ClaudeFlowlineTest/tmp-sln-add-negative-test/` (isolated throwaway subfolder, deleted after) with a
-  genuine `.cdsproj` present — error named the exact folder searched
-  (`E:\Code\TryOut\ClaudeFlowlineTest\tmp-sln-add-negative-test`), no parent-folder mention; confirmed
-  `E:\Code\TryOut\handwritten-backup.slnx` (the file the original incident modified) untouched.
-- For `.csproj` (non-`.cdsproj`) additions to the solution file, use `dotnet sln add` — that's the
-  correct tool, not `flowline sln add`.
-- **Live-verified this run (2026-07-23)**: idempotent re-add of the already-present `.cdsproj` →
-  `"already in Cr07982.slnx — skipping"`, exit 0. Wrong extension (a real `.csproj`) →
-  `"'Cr07982.Backend.csproj' is a C# project — use 'dotnet sln add' for those..."`, exit 15.
-  Nonexistent path → `"No project at '...' — check the path."`, exit 3. Workspace tree confirmed
-  unchanged (`git status --short` clean) after all three.
+- **No solution file in the exact folder → error naming that exact folder, and must not search parent
+  folders.** Regression test for the walk-up incident — run it in an isolated throwaway subfolder and
+  confirm the parent's solution file is untouched.
 
-### `deploy` — always with `--dry-run`, per the safety constraints above
+### `deploy`
 
-- Invalid target name (not `prod`/`uat`/`test`/`dev` and not a URL) → must give a clean validation
-  error, not an opaque `MsalServiceException`/AADSTS stack trace (this was a real bug: garbage target
-  strings fell through to being used as an OAuth token scope). **Live-verified (2026-07-23)**:
-  `deploy garbage-target-xyz --dry-run` → clean `'garbage-target-xyz' isn't a known target...` error,
-  exit 15.
-- `dev` as a deploy target → must be rejected ("use sync, not deploy") — the DTAP gate blocks this
-  before `--dry-run` even becomes relevant, and blocks it **regardless of `--dry-run`** — `deploy dev`
-  is never a valid target at all, dry-run or real. (Corrects this doc's earlier "run against DEV"
-  wording below — there's no such thing; `flowline drift dev` is the DEV-target preview tool instead.)
-  **Live-verified**: `deploy dev --dry-run` → `Dev is a development environment — use 'sync'...`,
-  exit 15, no Dataverse contact.
-- Dirty git tree → must reject before contacting *any* target environment. Note the dirty-check scope
-  is `Solution/src/` (the Dataverse-solution folder) only — dirtying `Plugins/`/`Backend/` etc. does
-  **not** trigger it, since deploy packs the Dataverse solution, not the plugin assembly.
-  **Live-verified**: dirtying `Solution/src/Other/Customizations.xml` and running
-  `deploy prod --dry-run` → rejects immediately after the prerequisites check (no "Checking prod..."
-  line at all — zero Dataverse contact), plain-text message naming the file, exit 12.
-- Full `--dry-run` run against PROD: confirm it runs every pre-flight check — DTAP gate, git-clean,
-  local plugin/web-resource drift, packing, the solution checker gate, and the orphan-cleanup report —
-  and takes a labeled environment backup before stopping short of import. Confirm the backup label is
-  actually `flowline-dryrun-<solution>-<timestamp>`, distinct from a real deploy's
-  `flowline-deploy-<solution>-<timestamp>` (`PacUtils.BuildBackupLabel`). Confirm the final message
-  reads "Dry run complete — ... would deploy cleanly ..." and exit code is 0. **Live-verified**: ran
-  `deploy prod --dry-run --skip-dtap-check --force drift -a` (DTAP predecessor check and local drift
-  both bypassed via flags — see profile-ambiguity note below) against real PROD. Full pipeline ran:
-  packed fresh ("No cached build yet"), solution checker ("3 findings, 0 Critical"), real
-  `pac admin backup` call confirmed via `--verbose` (returned a genuine Environment Id/Backup Expiry
-  record), label was exactly `flowline-dryrun-Cr07982-20260723T005539Z`, orphan report showed 2 real
-  Prio1 orphans (`Plugins` assembly + one step — stale from an earlier plugin-project rename, expected
-  given this workspace's git history) with "would delete" phrasing and the `(--dry-run preview)` hint,
-  final line exactly `🚀 Dry run complete — 'Cr07982' would deploy cleanly to AutomateValue. Run
-  without --dry-run to make it real.`, exit 0.
-- Confirm `--dry-run` never calls `pac solution import`, never runs post-import cleanup, and never
-  emits a CI artifact-publish signal (`##vso[artifact.upload...]` line or a `$GITHUB_OUTPUT` write) —
-  check console output for the absence of both. **Live-verified**: none of the three appeared in any
-  `--dry-run` run's output (verbose or not) — output stops at the completion message.
-- First-import scenario under `--dry-run` (target has no existing copy of the solution yet): confirm
-  it prints an informational note ("the real deploy will ask you to confirm...") instead of blocking
-  on the interactive first-import confirmation prompt — `--dry-run` never performs the irreversible
-  action that prompt guards, so it can't hang waiting for input. **Not live-tested this run** — no
-  practical way to construct a genuine "never deployed here before" target against the two real
-  configured environments (both already have `Cr07982`). Covered by
-  `DeployCommandFirstImportTests.cs` instead (unit-level, same pattern this doc already uses for the
-  C#-keyword-solution-name case).
-- `--dry-run` combined with `--no-delete`: confirm orphan cleanup still only reports, never deletes —
-  `--dry-run` alone already forces report-only mode (`ResolveRunMode` gives dry-run precedence over
-  `--no-delete`/managed), so this combo should behave identically to `--dry-run` alone. **Live-verified**:
-  ran the same PROD scenario with `--no-delete` added — identical output (same 2 orphans, same
-  `(--dry-run preview)` hint, not `(--no-delete active)`), confirming dry-run precedence.
-- `flowline drift <target>` as an additional, even-lighter-weight read-only preview alongside
-  `deploy --dry-run` — confirm it still works against both DEV and PROD with zero drift on a clean
-  repo. **Live-verified against PROD only** (partial): `drift prod` reported the same 2 orphans as
-  `deploy --dry-run`'s report, consistent between the two mechanisms, exit 15 (drift found). Not yet
-  run against DEV or on a genuinely clean/zero-drift repo state.
-- **Operational blocker — resolved (2026-07-23)**: the previous run hit two PAC auth profiles
-  resolving to the same Dev URL, blocking the DTAP gate's predecessor check (worked around with
-  `--skip-dtap-check`). The user removed the duplicate profile between sessions. **Live-verified this
-  run**: `deploy prod --dry-run` (no `--skip-dtap-check`) now runs the real predecessor check —
-  correctly rejected when Dev was at solution version 2.0.3.0 but the local package's DTAP gate
-  version was 2.0.2.0 (a real, expected mismatch at that point in testing, not a bug). See "Operational
-  notes" below for the full profile-ambiguity resolution and the `status` fix it surfaced.
-- **New bug found and fixed this run** (unrelated to `--dry-run` itself, surfaced by verbose-mode
-  testing): `console.Verbose(...)` leaked raw `[bold]...[/]` Spectre markup tags when fed
-  `ConsolePath.ShortenPath`'s output (the "Loaded N PAC auth profile(s) from ..." line). Root cause,
-  fix, and live re-verification: `docs/test-findings/verbose-shortenpath-leaks-raw-markup-tags.md`.
-- **Re-verified live 2026-07-29, and the earlier `--force drift`/`--skip-dtap-check` workarounds are no
-  longer needed**: `deploy prod --dry-run` with **no** force/skip flags ran the whole pipeline clean —
-  DTAP gate (Dev 2.0.5 vs local 2.0.5), git-clean, local drift, fresh pack, solution checker
-  ("3 findings, 0 Critical"), a real `pac admin backup` labelled exactly
-  `flowline-dryrun-Cr07982-20260729T073411Z`, and an orphan report of 2 Prio1 orphans with the
-  `(--dry-run preview)` hint. Final line `🚀 Dry run complete — 'Cr07982' would deploy cleanly to
-  AutomateValue.`, exit 0. Grepped the same output for `solution import`, `##vso`, and `GITHUB_OUTPUT`
-  — none present, so `--dry-run` still performs no import and emits no CI artifact signal. The
-  `--force drift` that earlier sessions needed was **the phantom-drift bug**
-  (`docs/test-findings/webresource-drift-solution-name-derived-from-repo-folder.md`), not an
-  environment quirk.
-- `drift dev` **live-verified 2026-07-29** (the DEV half that was previously untested): reports orphans
-  correctly and exits 15 when it finds any. Worth knowing for both agents and humans — drift compares
-  Dataverse against the **committed `Solution/src/`**, not against local build output, so anything
-  pushed but not yet `sync`ed shows up as an orphan. That is correct behavior, not a false positive.
+- Invalid target name → clean validation error, not an opaque MSAL/AADSTS stack trace.
+- `dev` as a target → rejected ("use sync, not deploy"), **regardless of `--dry-run`**. Use
+  `flowline drift dev` as the DEV-target preview instead.
+- Dirty git tree → rejects before contacting any environment. Scope of the dirty check is
+  `Solution/src/` only — dirtying `Plugins/`/`Backend/` does not trigger it.
+- **Full `--dry-run` against PROD**: every pre-flight runs (DTAP gate, git-clean, local drift, pack,
+  solution checker, orphan report) and a labeled backup is taken before stopping short of import.
+  Backup label must be `flowline-dryrun-<solution>-<ts>`, distinct from a real deploy's
+  `flowline-deploy-<solution>-<ts>`.
+- Confirm `--dry-run` never calls `pac solution import`, never runs post-import cleanup, and emits no
+  CI artifact signal (`##vso[artifact.upload...]`, `$GITHUB_OUTPUT`) — grep the output for all three.
+- `--dry-run` + `--no-delete` → identical to `--dry-run` alone (dry-run takes precedence, so the
+  report reads `(--dry-run preview)`, not `(--no-delete active)`).
+- **Orphan cleanup on deploy is automatic, not flag-driven.** `ResolveRunMode`: dry-run wins over
+  everything; `--no-delete` or a managed solution forces report-only; an unmanaged real deploy gets
+  `RunMode.Normal`, which **deletes** (pre-import where possible, deferred ones retried post-import).
+  So "cleanup makes the deploy succeed" is proven by a plain `deploy test`. `deploy`'s valid force
+  specifiers are `drift` / `first-import` / `delete-orphans` / `all` — but `delete-orphans` does **not**
+  mean the same thing here as on `push`. It gates exactly one unattributable case: a Custom API with no
+  `plugintypeid` at all. Everything else deletes (or reports) based on run mode alone.
+- **Real `deploy test`** — update over an existing version, and a fresh first-import on
+  `FlowlineDeployTest` with `--force first-import`.
+- Orphan detect + delete on the deploy path, and a follow-up `drift test` showing 0 orphans. **Assert
+  a foreign component survives** — see the lesson below.
 
-### Project-structure flexibility (`SolutionFileLayout` / multi-project support)
+### Project-structure flexibility (`SolutionFileLayout` / multi-project)
 
-This is the core of the "big folder-structure change" — test it thoroughly, not just the scaffolded
-default layout:
+- **Move + rename the Plugins project** (folder, `.csproj`, `.snk`, `PackageId` — no "Plugins" left in
+  the name): `push` must still discover it via solution-file membership + `IPlugin`/`CodeActivity`
+  reflection, not folder convention.
+- **Move + rename the WebResources project**: resolved via elimination + weighted signals (NoTargets
+  SDK, `dist/`, bundler config, `package.json` build script, web assets) — never a false negative.
+- **Two plugin projects, mixed shapes** — one nupkg, one classic/unpackaged — both discovered, built
+  and registered in **one** push. `PluginPackageMode.Auto` resolves per project.
+- **Two WebResources candidates**: an exact top-score tie throws `ConfigInvalid` naming both. A
+  *weaker* second candidate is correctly not flagged — the resolver picks the clear winner. Design,
+  not a bug.
+- **Zero plugin projects**: default scope skips silently; explicit `--scope plugins` errors.
+- **Zero WebResources projects**: loud warning, plugins still pushed, no throw.
+- **Orphan/drift across renames**: the old assembly/package name becomes a genuine orphan — push must
+  name it and gate deletion behind `--force delete-orphans`.
 
-- **Move + rename the Plugins project**: relocate the folder and rename the `.csproj` (and its
-  `.snk`, `PackageId`) to something with no "Plugins" in the name at all. `push` must still discover
-  it via solution-file membership + `IPlugin`/`CodeActivity` reflection, build the right output, and
-  register under the new package/assembly name — not by folder-name convention.
-- **Move + rename the WebResources project**: relocate + rename so the folder name contains no
-  "WebResources" substring either. Must still resolve via elimination + weighted signals (NoTargets
-  SDK, `dist/`, bundler config, `package.json` build script, web asset files) — never a silent
-  false-negative.
-- **Two plugin projects, mixed shapes**: one nupkg-based (`PluginPackageMode.Auto` resolving to
-  nupkg — the common shape for a project referencing `Microsoft.PowerApps.MSBuild.Plugin` with a
-  `PackageId`), one classic/unpackaged (plain `.dll`, no NuGet packaging, signed assembly required —
-  Dataverse rejects unsigned plugin assemblies with "Public assembly must have public key token").
-  Both must discover, build, and register independently in **one** `flowline push` run —
-  `PluginPackageMode.Auto` resolves per-project based on that project's own build output shape, not
-  a single fixed shape for the whole solution.
-- **Two WebResources-candidate projects**: a genuine ambiguity (matching score — same NoTargets SDK +
-  `dist/` + bundler config + `package.json` build script signals on both) must throw `ConfigInvalid`
-  naming both candidates. A *weak* second candidate (fewer matching signals) is correctly **not**
-  flagged — the resolver only throws on an exact top-score tie, not merely "two plausible
-  candidates"; it silently picks the clear winner. Don't mistake that design choice for a bug.
-- **Zero plugin projects**: a solution with a Dataverse package + WebResources project but no plugin
-  project at all must resolve fine, no error — `push` simply has nothing to register (R8/AE9).
-  **Live-verified**: initially this was a real bug — default-scope (`all`) `push` threw
-  `"No plugin project found..."` instead of skipping silently, because the throw condition didn't
-  distinguish an implicit default scope from an explicit `--scope plugins`/`assemblyonly` request.
-  Fixed in `PushCommand.PrepareProjectPluginsForPushAsync` (only throw when `settings.Scopes.Length >
-  0`, i.e. the user actually asked for a plugins-only push). Confirmed after the fix: default-scope
-  push with zero plugin projects succeeds (skips plugin work, pushes WebResources normally); explicit
-  `--scope plugins` with zero plugin projects still correctly throws; `sync`/`drift` both already
-  handled zero plugin projects fine without any fix needed.
-- **Zero WebResources projects**: a solution with plugins but no WebResources project at all must
-  resolve to `null` and skip web-resource work with a **loud warning**, not throw (R5, softened —
-  WebResources is expected but not required). **Live-verified, works correctly as designed**:
-  `push` prints `"Warning: No WebResources project found — skipping web resources. Plugins are still
-  pushed."` and completes normally with just the plugin work.
-- **Orphan/drift detection across renames**: after renaming a plugin project, the old assembly/package
-  name becomes a genuine orphan in Dataverse — confirm `push`'s orphan warnings correctly name it and
-  gate deletion behind `--force delete-orphans`.
-- **Fixed and live-verified (2026-07-23)**: a classic (non-package) plugin assembly whose `.NET
-  AssemblyName` contains a period used to get a **false-positive orphan flag** in `sync`/`push`/`deploy`
-  drift checks — potentially dangerous (`--force delete-orphans` could delete a live registration).
-  `PluginWebResourceDriftChecker` now resolves each unpacked `PluginAssemblies/` DLL to its true name
-  (companion `<dll>.data.xml` `FullName`, simple name before the first comma) before comparing, falling
-  back to the on-disk filename when metadata is absent/unreadable — so `Cr07982.LegacyPlugins` (unpacked
-  dot-stripped as `Cr07982LegacyPlugins.dll`) now matches build output and is no longer flagged. 5 new
-  regression tests, full suite green (bar the 2 pre-existing live-MSAL `ConnectToDataverseAsync_*`
-  failures, unrelated). Fix rebuilt + reinstalled + confirmed present in the running binary this run.
-  **Live-verified against real PAC output**: with Flowline's own MSAL session expired, the check was
-  routed through PAC's still-valid connection — `pac solution export --name Cr07982` (DEV) +
-  `pac solution unpack`. Real output confirmed the exact bug shape: `Cr07982.LegacyPlugins` unpacks
-  dot-stripped to `Cr07982LegacyPlugins.dll`, its `.data.xml` carries `FullName` as an attribute on the
-  root `<PluginAssembly>` element (`Cr07982.LegacyPlugins, Version=1.0.0.0, ...`) plus a UTF-8 BOM. A
-  throwaway probe drove the **deployed** `CheckAsync` against the real exported folder → **empty (no
-  orphan)**; discriminating (without the fix the dot-stripped key wouldn't match). Full `sync`/`push`/`drift`
-  command runs still pending Flowline auth, but they invoke the exact code path the probe exercised.
-  Uncommitted in the source working tree; awaits explicit commit authorization. Details:
-  `docs/test-findings/false-positive-orphan-dotted-classic-assembly-name.md` (file since deleted with
-  the other resolved findings — see the note in Operational notes).
-- **Whole section live-verified end-to-end on 2026-07-29** with the fixture described under
-  "Environment" above, all in real `push` runs against DEV:
-  - Move+rename of **both** projects: discovered purely through the solution file
-    (`Building Backend…`, `Building ClientAssets…`), built, and registered under the new package name
-    `av_Cr07982.Backend`. No folder-name convention involved.
-  - **Two plugin projects, mixed shapes, one push**: `Cr07982.Backend` (nupkg) and
-    `Cr07982.LegacyPlugins` (classic, signed, plain `.dll`) both planned and registered independently
-    in a single `flowline push --scope plugins`, each with its own plan tree —
-    `PluginPackageMode.Auto` resolved per project as documented.
-  - Orphan detection across the rename named the stale assemblies (`Plugins.dll`,
-    `Cr07982.Plugins.dll`) and their cascades, and gated deletion behind `--force delete-orphans`
-    (report-only, exit 0, without it). The deletion half **was broken for package-owned orphans** and is
-    now **fixed and live-verified (2026-07-29, session 5)** — see
-    `docs/test-findings/push-delete-orphans-fails-on-package-owned-assembly.md`. Dataverse refuses a
-    direct `pluginassembly` delete while `packageid` is set, and clearing the children does not unlock
-    it; push now deletes the owning `pluginpackage` when that package owns nothing but orphans, and
-    refuses without touching anything when it owns more. `av_Plugins` and `av_Cr07982.Plugins` were both
-    cleared from DEV this way, exit 0, with `av_Cr07982.Backend` (pushed by the same run) untouched.
-  - Zero plugin projects, zero WebResources projects, and the tied two-candidate WebResources
-    ambiguity all behaved exactly as this section specifies (details in Operational notes, session 4).
-  - Note on the classic path, **superseded the same day**: push's per-assembly orphan check used to run
-    for the classic assembly only, so a nupkg-mode push never emitted these warnings, and the stated
-    rationale was "deploy's orphan cleanup covers the package case". That rationale is **wrong for DEV** —
-    `deploy` imports into a *target* environment and `deploy dev` is rejected outright, so DEV's only
-    cleanup tool is `push`, and a nupkg-only solution had no orphan pass anywhere. Both orphan passes now
-    run on the package path too; see session 5 in Operational notes.
+## Output modes — run every phase both without and with `--verbose`
 
-## Output modes: run every phase both without and with `-v`/`--verbose`
+- **Without** — what a normal user sees. Judge as a UX reviewer: clean, consistent, no leaked internal
+  detail, nothing that reads as unfinished.
+- **With** — the real step-by-step work. Confirm the extra detail is accurate and reflects the actual
+  Dataverse calls, not a restatement of the summary.
+- **Every run writes a full log**, capturing the verbose detail regardless of the console filter. For a
+  subset of runs, skip `--verbose` and read the log instead — that validates the "log has everything"
+  guarantee independently. The path is `<storage-root>/Flowline/logs/<yyyy-MM-ddTHHmmss>Z-<command>.log`
+  and is **only printed when the command fails** (non-zero exit or an unhandled exception), so a
+  successful run leaves an agent to construct the path itself.
 
-Every command in the test matrix above gets run twice: once plain, once with `--verbose`. These
-exercise different UX contracts and both need explicit judgment, not just "did it not crash":
+## Agent UX — judge every command as an AI agent would consume it
 
-- **Without `--verbose`** — this is what a normal user sees. Judge it as a UX reviewer would: is the
-  output clean, well-formatted, free of noise/clutter, and does it read as polished/professional
-  output? Flag anything that looks unfinished, inconsistent, or like leaked internal detail.
-- **With `--verbose`** — this exposes the real step-by-step work (`VerboseRenderable` output that's
-  otherwise filtered from the console by `VerboseFilterHook`
-  (`src/Flowline.Core/Console/VerboseFilterHook.cs`)). Confirm the extra detail is accurate, actually
-  reflects the real Dataverse calls/results made, and isn't just restating the non-verbose summary.
-- **Possible finding, not confirmed this run (2026-07-23)**: verbose `push` output for a WebResources
-  project with a rollup build step showed mojibake (`ΓåÆ` instead of `→`) and literal ANSI escape codes
-  in the passed-through npm/rollup build log. Couldn't conclusively attribute this to Flowline vs. this
-  session's own Bash-tool terminal (cp437) — needs re-confirmation from a real interactive terminal
-  before treating as a real bug. `docs/test-findings/verbose-build-output-mojibake-cp437.md`.
-- `--verbose` is a convenience, not a requirement for auditing: every run also writes a full log file
-  (path is printed at the end of every invocation, verbose or not — see
-  `FlowlineStoragePaths.GetLogsPath` via `src/Flowline/Program.cs`), and `LoggingRenderHook`
-  (`src/Flowline.Core/Console/LoggingRenderHook.cs`) captures `VerboseRenderable` content into that
-  log regardless of the console's verbose filter. So: for a subset of runs, skip `--verbose` entirely
-  and instead open the printed log file afterward to confirm the same step-by-step detail is present
-  there — this validates the "log has everything" guarantee independently of the console flag.
+A large share of invocations come from an agent, not a human. Different consumer, different failure
+modes. Judge from your own position — you *are* the consumer.
 
-## Agent UX: judge every command as an AI coding agent would consume it
+- **Never blocks.** No command may wait on a prompt without a TTY. Every gate needs a flag equivalent,
+  an invalid `--force` value must list the valid specifiers, and a gated hazard must fail *naming the
+  flag*. A hang burns the whole session, not one command.
+- **Exit codes are the primary signal** — distinct, stable, same meaning every time. Record the exit
+  code for every matrix case. Flag any two different failure classes collapsing onto one code.
+  `drift` returning 15 *because drift was found* is intentional.
+- **Output survives capture.** Anything an agent must extract — log paths, URLs, versions — must
+  survive as one unbroken token.
+- **Machine-readable mode** — note where its absence forces brittle prose parsing.
+- **Errors must be actionable verbatim** — the literal next command (`git init`, `pac auth create
+  --url <url>`, `dotnet sln add`, `--force delete-orphans`), not a description of one.
+- **Repeated runs must be honest** — "already up to date / skipping", never a silent re-do.
 
-A large share of Flowline invocations happen from an AI agent (Claude Code, Copilot, an unattended CI
-agent), not a human at a terminal. That is a *different* consumer with different failure modes than
-the plain/`--verbose` human split above, so it gets its own explicit pass: for every command in the
-matrix, ask "could an agent drive this reliably, unattended, and correctly interpret what came back?"
+## Behaviors that look like bugs but aren't
 
-Test-run this pass from the agent's own position (the agent running this test goal *is* the consumer —
-use that directly as evidence, don't simulate it).
+Don't re-report these.
 
-What to check, and what counts as a defect:
+- `drift` exits **15 when drift is found**. Success, not an error.
+- `drift`/`deploy` compare Dataverse against the **committed `Solution/src/`**, not build output — so
+  anything pushed but not yet `sync`ed shows as an orphan. Correct.
+- `deploy dev` is rejected outright. There is no valid dev deploy, dry-run or not.
+- An `init`-created solution builds in **Debug**. A Release build needs both the caller asking for one
+  *and* `IncludeManaged` — an init solution is unmanaged, so Debug is correct.
+- `--managed` bare sets `true`; `--managed false` resets; omitting it leaves it unset, treated as
+  `false`. The help's DEFAULT column shows what *bare* `--managed` resolves to. Don't "fix" without
+  re-running `ManagedFlagBindingTests`.
+- `clone` requires an existing git repo first.
+- `push` scope/flag-mismatch validation runs *after* env-URL and auth resolution, so reaching it live
+  needs a resolvable `--dev` first.
+- `deploy` resolves the project *before* validating the target.
+- The git repo/remote pre-flight is TTL-cached, so "No remote configured" shows on the first run and
+  not the next. An agent diffing two runs will notice.
+- Under `--dry-run` *with* `--force delete-orphans`, the warning still says "Use --force
+  delete-orphans to delete". Cosmetic; the message keys off `willDelete`, which dry-run forces false.
+- Plugin **package** content syncs by content, not version — the `.nupkg` version can stay fixed while
+  code changes apply normally, and a package's name/version can't be changed after create. The
+  classic-assembly version rules don't carry over.
+- Commands act on the current directory with no `--project`/`--path`, so a harness that resets cwd
+  must wrap every call.
 
-- **Never blocks.** No command may wait on an interactive prompt when stdin isn't a TTY. Every
-  confirmation gate must have a flag equivalent (`--force <specifier>`, `--dry-run`,
-  `-a/--auto-select-auth-profile`), an invalid `--force` value must list the valid specifiers, and a
-  gated hazard must *fail with the flag named* rather than hang. A hang is the single worst agent-UX
-  failure — it burns the whole session, not one command.
-- **Exit codes are the agent's primary signal.** They must be distinct, stable across runs, and mean
-  the same thing every time (e.g. 3 not-found, 11 no-project/no-repo, 12 dirty tree, 15 validation).
-  Record the exit code for every case in the matrix; flag any two genuinely different failure classes
-  that collapse onto one code, and any success path that returns non-zero (`drift` returning 15 when
-  drift is *found* is intentional — document it as such so agents don't read it as an error).
-- **Output survives capture.** An agent captures stdout/stderr as plain text with no TTY. Anything the
-  agent must extract programmatically — log file paths, environment URLs, solution names, version
-  numbers — must survive that capture as a single unbroken token. **Known-bad today: Spectre wraps at
-  ~80 columns when not attached to a TTY, splitting the printed log path and the example URLs in
-  `--help` mid-token across lines.** Judge how bad that is per command and whether a
-  width/no-wrap/`NO_COLOR`-style escape hatch exists.
-- **Machine-readable mode.** Check whether any command offers structured output (`--json`, porcelain,
-  or an exit-code-plus-file contract) and, if not, note where an agent is forced into brittle prose
-  parsing — the drift/orphan report and the push plan tree are the highest-value candidates.
-- **Working-directory coupling.** Commands act on the current directory with no `--project`/`--path`
-  argument, and some agent harnesses reset cwd between calls, so every invocation needs its own
-  `cd`/`Push-Location` wrapper. Confirm whether that is genuinely unavoidable and whether errors name
-  the *exact* folder they searched (they must — that is what lets an agent self-correct).
-- **Errors must be actionable verbatim.** The message should contain the literal next command
-  (`git init`, `pac auth create --url <url>`, `dotnet sln add`, `--force delete-orphans`), not a
-  description of one. An agent copies the named command; a paraphrase makes it guess.
-- **Repeated runs must be honest.** Idempotent re-runs have to say "already up to date / skipping", not
-  silently re-do work — an agent has no way to tell a no-op from a repeat write except by the text.
-  Watch for cached pre-flight checks changing the output between two otherwise-identical runs (the git
-  repo/remote check is TTL-cached, so the "No remote configured" warning appears on the first run and
-  vanishes on the next — correct by design, but an agent diffing two runs will notice).
-- **`clone` generates `AGENTS.md`** into the user's project. Review it as the artifact an agent will
-  actually be steered by: is it accurate against current CLI behavior, and does it tell an agent the
-  right command order and the hazards?
+## Known gaps — not coverable on this machine
 
-### First pass, 2026-07-29 — what this surface already gets right, and the two real gaps
+State these explicitly in the report rather than quietly skipping them.
 
-Judged from an agent actually driving the whole matrix through captured stdout, no TTY.
+- **Interactive pickers** (clone solution pick, init publisher/name/environment) — no TTY in an agent
+  harness, so `IsInteractive()` is false and prompts never render. Unit-tested only.
+- **Privilege fault** (user lacking create rights → clean error, not a raw SDK exception) — no
+  locked-down test user.
+- **`--dev` with no matching PAC profile → `pac auth create`** — not triggerable with a single
+  tenant-wide universal profile; a foreign URL resolves the profile and fails later as `Dev
+  environment not found` instead.
+- **`--force delete-form-handlers`** — needs a Dataverse form whose handler points at a function no
+  longer in source; no cheap way to construct it on this fixture.
 
-Good, and worth not regressing:
+## Lessons worth carrying into the next run
 
-- **Nothing ever blocked.** Every gate hit this run — `--force recreate-assembly`,
-  `--force delete-orphans`, `--force config` on `sync --managed`, `--force drift`, first-import —
-  failed fast with the flag named in the message instead of waiting on a prompt.
-- **Exit codes are usable as the primary signal** and were stable across ~40 invocations:
-  3 not-found, 11 no-project / bad config / ambiguous layout, 12 dirty tree, 15 validation,
-  17 force-required. `drift` returning 15 *because drift was found* is the one that needs documenting
-  rather than fixing — it is not an error.
-- **Errors name the literal next command** (`git init`, `dotnet sln add`, `--force <specifier>`,
-  `pac auth create --url …`), which is exactly what lets an agent self-correct without guessing.
-- **Every run writes a full log** whose `[DBG]` content matches what `--verbose` would have shown
-  (verified against a plain `deploy` run's log), and it scrubs URLs/emails to hashes. An agent can skip
-  `--verbose` entirely and read the log.
-- **`AGENTS.md` is accurate**, including the line saying the solution file outranks the folder list —
-  which is what keeps an agent from "fixing" a deliberately moved project back.
+- **A passing test that bypasses a layer proves nothing about that layer.** Interactive `clone`
+  shipped dead because a required positional made Spectre reject the bare command before the code
+  ever ran — and every test called the methods directly. Any positional-arg contract needs at least
+  one test through a real `CommandApp`.
+- **Make the probe throw.** "The update succeeded" does not prove a plugin ran — a silently skipped
+  step looks identical. Only a marker exception discriminates.
+- **Assert that a foreign component survives**, on every path that deletes anything. A prefix-wide
+  Custom API delete once removed every API sharing the publisher prefix, silently, because the cascade
+  preview only listed plugin types and steps.
+- **The two orphan passes overlap by design** — a change to one has to be checked against the other,
+  or a refused orphan gets deleted a pass later in the same run.
+- **Check the vendor docs before writing "the platform doesn't support X"** into a finding. One search
+  would have caught a wrong claim that got committed.
 
-Gaps found:
+## Findings workflow
 
-- **Output is hard-wrapped at 80 columns with no escape hatch**, splitting the printed log path and
-  `--help`'s example URLs mid-token. `COLUMNS` has no effect.
-  `docs/test-findings/agent-ux-output-hard-wrapped-at-80-columns.md`.
-- **No machine-readable mode anywhere** — no `--json`/porcelain on drift, the orphan report, or the
-  push plan, so prose parsing is the only option and the prose is reflowed. Same finding.
-- Minor, no finding filed: commands act on the current directory with no `--project`/`--path`, so an
-  agent whose harness resets cwd must wrap every call (`Push-Location`); and PAC's pass-through
-  progress lines (`Syncing solution… (execution time: …)`) become ~60 near-identical lines in a
-  captured `sync`, since the spinner cannot repaint without a TTY.
+Every issue not fixed inline gets its own file in `docs/test-findings/`, named by slug. Each covers:
+status (fixed/not fixed), severity, exact repro, root cause as far as understood, and suggested fix
+direction with why it wasn't done inline. This document only ever *references* a finding by path and a
+one-line summary — never duplicates the writeup.
 
-## Operational notes
+Before a run, skim `docs/test-findings/` for issues that may now be fixed (re-verify, then update or
+delete the file) and decide whether any still-open finding should be promoted to a fix.
 
-- **PAC MSAL auth blocker — RESOLVED (2026-07-29), don't plan around it any more.** Sessions 2-3
-  (2026-07-23) were blocked entirely: Flowline failed every connect with `Session expired for
-  'remy@automatevalue.com'` because PAC 2.9's own connect/refresh never wrote user tokens back to the
-  shared `tokencache_msalv3.dat` that `DataverseConnector` read, and the suspected cause was a WAM/OS
-  broker Flowline didn't opt into. That suspicion was right and the fix has since landed
-  (`e22b6df fix(auth): connect via WAM broker for PAC OperatingSystem-type profiles`). **Live state
-  2026-07-29**: one unnamed `UNIVERSAL` profile of kind `OperatingSystem` (`remy@automatevalue.com`);
-  `flowline status` connects to **both** Dev and Prod first try, no browser login, no `pac auth create`.
-  Every live phase of this run went through it. Verbose output confirms the mechanism —
-  `Token acquired silently for remy@automatevalue.com (expires …)`.
-- **The `ConnectToDataverseAsync_*` tests now SKIP, they do not fail.** Baseline at HEAD is
-  **1965 passed / 0 failed / 4 skipped**. Every older note in this document that says "bar the 2
-  pre-existing live-MSAL failures" is stale — a red test is now a real regression, treat it as one.
-- **Finding-file references in this document are historical.** Commit `403ecc7` deleted the finding
-  files for issues that were fixed, so most paths cited in the sections above no longer exist
-  (`clone-idempotent-reclone-*`, `push-form-events-*`, `standalone-push-pluginpackage-*`,
-  `verbose-shortenpath-*`, `false-positive-orphan-dotted-*`, `pac-2.9-user-token-*`,
-  `status-empty-profile-name-*`, `connect-verbose-empty-profile-name-*`). The prose describing each
-  fix is kept because it is still true; the paths are not. `docs/test-findings/` is the authority for
-  what is currently open.
-- **Offline matrix re-verified this run (session 3, against the rebuilt binary w/ the dotted-classic
-  fix)** — everything reachable without a Dataverse connection, all matching prior documented behavior:
-  `clone` in a non-git folder → `No Git repo found...`, exit 11. `sln add` **5/5**: valid add (`✓ ...
-  added`, exit 0), idempotent re-add (`↷ ... already in ... — skipping`, exit 0), wrong extension
-  `.csproj` (`... is a C# project — use 'dotnet sln add'...`, exit 15), nonexistent path (`No project
-  at '...' — check the path.`, exit 3), and the **walk-up regression** (subfolder w/ no solution file
-  whose parent has one → errors naming the exact folder, parent `.slnx` untouched, exit 3). `push`
-  standalone inside a `.flowline` project → `--pluginFile and --webresources cannot be used inside a
-  Flowline project folder...`, exit 15; standalone missing/nonexistent plugin file → `Plugin file not
-  found: ...`, exit 3. Confirmed ordering (not a bug): `deploy` resolves the project **before** target
-  validation (folder w/ `.slnx` but no `.flowline` → `No Flowline project found`, exit 11), and `push`
-  scope mutual-exclusion / scope-flag-mismatch run **after** auth resolution (hit session-expiry before
-  the check) — both remain live-only. Not re-reachable offline: full clone/push/sync/deploy pipeline,
-  dotted-classic live verify, verbose-vs-plain output judgment — all need live auth.
-- **PAC auth profile ambiguity — resolved (2026-07-23)**: the user removed the duplicate PAC auth
-  profile that caused the ambiguity block described below; the DTAP gate's predecessor check now runs
-  live cleanly without `--skip-dtap-check` (confirmed: it correctly rejected a real version mismatch,
-  Dev at 2.0.3.0 vs local gate version 2.0.2.0 — correct behavior, not a bug).
-- **New bug found and fixed this run (2026-07-23)**: while cleaning up the duplicate profile, `flowline
-  status` printed `PAC auth profile mismatch — active identity may not be ''` (empty quotes) for the
-  one remaining unnamed profile — PAC's `authprofiles_v2.json` gives an unnamed profile `Name: ""`
-  (empty string, not null), so `StatusCommand.FormatProfileNote`'s bare `??` chain never fell through
-  to `User`. Fixed with an explicit `IsNullOrWhiteSpace`-based fallback; live re-verified (now prints
-  the real user email). Not yet committed — needs explicit commit authorization.
-  `docs/test-findings/status-empty-profile-name-breaks-fallback.md`.
-- **Second instance of the same bug, found and fixed this run (2026-07-23)**: `--verbose` output for
-  `push`/`sync`/`deploy` (any command connecting via PAC) showed `Connecting via PAC auth profile ''`
-  for the same unnamed profile shape — same `Name ?? User` root cause, different call site
-  (`DataverseConnector.ConnectViaPacAsync`). Fixed with an extracted `ResolveProfileLabel` helper,
-  live re-verified. Not yet committed. `docs/test-findings/connect-verbose-empty-profile-name-shows-blank.md`.
-  A proactive grep sweep for the same `Name ?? ...` pattern across `src/` (per the "discovered this
-  one by accident" risk) found and fixed two more instances of the identical bug —
-  `DataverseConnector.cs:233` (rare AADSTS tenant-mismatch error message) and `SecretResolver.cs`
-  (service-principal client-secret prompt, `Name ?? ApplicationId`) — both unit-tested but not
-  live-verified (their trigger conditions aren't practical to contrive against real Dataverse).
-  Confirmed no further instances: `ProfileResolutionService.cs`/`PacUtils.cs` already handle this
-  correctly.
-- **Historical note (superseded by the fix above)**: this machine previously had multiple PAC auth
-  profiles that could resolve to the same environment URL (an unnamed one and a named one). Commands
-  error ("Multiple PAC auth profiles match ... run: pac auth select --index <n>") rather than guess —
-  resolve with `pac auth select --index <n>` before proceeding, or pass
-  `-a`/`--auto-select-auth-profile` to let Flowline switch automatically for that one command.
-- **Run of 2026-07-29 (session 4, `C:\Code\FlowlineTryOutByClaude`, tool packed from HEAD +
-  fixes)** — first fully live run since the auth fix. What it established, beyond the per-section
-  notes above:
-  - **Three bugs found and fixed, all with regression tests, suite green at 1974/0/4**:
-    phantom web-resource drift (`docs/test-findings/webresource-drift-solution-name-derived-from-repo-folder.md`),
-    `--version` reporting the 4-part file version (`docs/test-findings/version-flag-shows-file-version-not-package-version.md`),
-    and raw `[bold]…[/]` markup leaking into two exception messages (`PluginService.cs:886`/`:902`).
-  - **Three findings logged, not fixed**: dry-run summary omits the package/assembly content update;
-    `push --force delete-orphans` fails on a package-owned orphan *after* deleting its children;
-    stale-`.nupkg` guard trips on the normal build path after any MinVer bump. Plus one agent-UX
-    finding (80-column hard wrap). (All three have since been fixed — the first two in commits
-    `2c90248`/`7890ed2`, the package-owned orphan in session 5 below.)
-  - **The `--force drift` workaround in the deploy section above is now explained**: it was the
-    phantom-drift bug, not an environment quirk. With the fix, `deploy prod --dry-run` runs the local
-    drift check clean and needs neither `--force drift` nor `--skip-dtap-check`.
-  - **Mojibake finding closed as not-ours** — reproduces with plain `dotnet build`, no Flowline in the
-    chain (`docs/test-findings/verbose-build-output-mojibake-cp437.md`).
-  - **Gates verified live**: `--force recreate-assembly` (exit 17, message names the flag),
-    `--force delete-orphans` (report-only without it, exit 0), `sync --managed` against a conflicting
-    `IncludeManaged` (exit 17, `Use --force config`, rejected **before** the ~4-minute export, no
-    hang), two tied WebResources candidates (exit 11, names both projects), zero plugin projects
-    (default scope skips silently, explicit `--scope plugins` → exit 3), zero WebResources projects
-    (loud warning, plugins still pushed).
-  - **Idempotent re-clone over the moved/renamed fixture**: correctly skipped both projects, created
-    no duplicate `Plugins/`/`WebResources/`, left the solution file untouched, and self-healed the
-    missing `AGENTS.md`/`CLAUDE.md`. The 2026-07-23 fix holds on this machine too.
-  - **Not covered this run**: `--bump minor|major`, `--managed` on `clone`, the C#-keyword
-    solution-name rejection, first-import `--dry-run` against a target that has never seen the
-    solution, and a systematic plain-vs-`--verbose` pass over *every* command (verbose was judged on
-    `push --scope webresources` and `drift dev` only).
-- **Run of 2026-07-29 (session 5, targeted — package-owned orphan fix only)**, tool packed and
-  reinstalled as `0.13.1-alpha.0.14`, workspace `C:\Code\FlowlineTryOutByClaude`:
-  - **One finding promoted to a fix**: `push --force delete-orphans` on a package-owned orphan. Push now
-    deletes the owning `pluginpackage` (the only thing Dataverse lets you delete — clearing children does
-    *not* unlock the assembly delete) when that package owns nothing but orphans, and refuses without
-    touching anything, naming the package, when it owns more. Six regression tests; full suite green at
-    **1988 passed / 0 failed / 4 skipped**.
-  - **Second-order bug caught during review, worth remembering as a pattern**: `WarnOrphanStepsAsync`
-    runs immediately after `WarnOrphanAssembliesAsync` and selects steps by "owning assembly not in this
-    push" — which a *refused* orphan is by definition. It would have deleted the very children the
-    refusal protected, one pass later, in the same run. The two orphan passes overlap by design; any
-    change to one has to be checked against the other.
-  - **Live-verified**: report-only run names each package in the `--force delete-orphans` hint (exit 0,
-    nothing deleted); the real run cleared `av_Plugins` and `av_Cr07982.Plugins` plus their assemblies
-    and cascades at **exit 0** (previously exit 1 with a raw Dataverse fault after committing the child
-    deletes); `av_Cr07982.Backend`, updated by the same run, survived; an immediate re-run prints no
-    orphan warnings. Run log carries the same lines with no markup leakage.
-  - **Not covered this run**: the refusal branch live — it needs a package owning both an orphan and an
-    unaccounted-for assembly, i.e. a multi-assembly package, which this fixture's
-    one-project-one-package shape cannot produce without a hand-crafted two-DLL nupkg. Unit-tested only.
-    Nothing else in the matrix was re-run: this was a targeted fix verification, not a full pass.
-  - **Follow-up in the same session — the nupkg-only orphan gap, closed.** `push` now runs both orphan
-    passes on the plugin-package path too. The old rationale for skipping them (KTD16: a multi-assembly
-    package reading its own secondary assemblies as orphans) died when `ExcludePushedAssemblies` started
-    taking the whole pushed set; the package path also unions in its own reflected assembly names so the
-    guarantee no longer depends on the caller. **Live-verified**: a standalone push of only the Backend
-    `.nupkg` now reports `Cr07982.LegacyPlugins` as an orphan (exit 0, report-only) where it previously
-    printed nothing at all, and a normal project-mode push still reports no orphans, because both
-    projects are in the pushed set. Note what that first case means and why it is deliberate: in
-    standalone mode the pushed set is just the one artifact, so every *other* assembly in the solution is
-    an orphan by definition — the same invocation with `--force delete-orphans` would delete a live
-    sibling. Standalone classic push has always behaved that way; the package path now matches it.
-  - **Critical pre-existing bug this uncovered — orphan cleanup deleted every Custom API under the
-    publisher prefix.** A snapshot's plugin types, steps and images are assembly-scoped, but its
-    `CustomApis`/`RequestParams`/`ResponseProps` are resolved **prefix-wide**
-    (`PluginReader.GetRegisteredCustomApisAsync` filters on `uniquename BeginsWith "<prefix>_"`).
-    `WarnOrphanAssembliesAsync` deleted that whole list, so clearing one orphan assembly under
-    `--force delete-orphans` deleted every Custom API sharing the publisher prefix — other projects',
-    other repos' — and did it **silently**, because the cascade preview only ever listed plugin types,
-    steps and images. It now deletes only Custom APIs bound to the orphan's own plugin types, and lists
-    them in the cascade. This lived on the classic path all along; adding the package path is what made
-    an existing test fail and exposed it. **Lesson for future runs: an assertion that a foreign Custom
-    API survives is worth having on every path that deletes anything.**
-  - **DEV state note**: DEV had no `av_`-prefixed Custom APIs left by the time this was found, so nothing
-    could be shown to have been lost — but the destructive path did run before the fix, and it cannot be
-    ruled out that the earlier `--force delete-orphans` run silently deleted `av_AatYourService` (still
-    present in the committed `Solution/src/CustomAPIs/`). DEV is disposable; noted for honesty, and
-    because a `sync` will surface it as drift.
-  - **Custom API fix live-verified afterwards, with a discriminating probe.** Technique worth reusing:
-    plant a `[CustomApi]` class in *each* plugin project (`av_BackendProbe` in the package project,
-    `av_LegacyProbe` in the classic one — same publisher prefix, different assemblies), then run a
-    **standalone** push of only the package `.nupkg` with `--force delete-orphans`. Standalone mode's
-    pushed set is the single artifact, so the classic assembly becomes an orphan on demand — no project
-    renaming or fixture surgery needed. Result: the cascade printed and deleted `av_LegacyProbe` and left
-    `av_BackendProbe` alone; before the fix both would have gone, unprinted. The `--dry-run` variant
-    printed the same four `would delete (cascade)` lines and changed nothing (re-queried to confirm).
-    Fixture and DEV restored afterwards: orphaned assembly re-pushed, probe classes deleted, final push
-    removed their APIs, and DEV re-verified back to two assemblies / two steps / no `av_` APIs.
-  - **Watch the FetchXML `like` escape — it produced a false negative this run.** `value='av!_%'` was
-    used to mean "literal underscore"; `!` is not a FetchXML escape character, so the filter matched
-    nothing and an earlier check concluded "no `av_` Custom APIs exist" without actually looking. Use
-    `value='av_%'` (treating `_` as a single-character wildcard) or `[_]`, and be suspicious of any
-    "No results returned." that confirms what you expected.
-  - **Minor, pre-existing, no finding filed**: under `--dry-run` *with* `--force delete-orphans` the
-    orphan warning still reads "Use --force delete-orphans to delete" — the flag was passed. `willDelete`
-    is false in dry-run, and the message keys off that rather than off the flag. Harmless but reads as if
-    the user forgot something they did.
-  - **New finding, now half fixed**: changing which assemblies an *existing* plugin package contains
-    breaks the push, in both directions.
-    `docs/test-findings/changing-a-plugin-packages-assemblies-breaks-push.md`. **Dropping** an assembly
-    is fixed and live-verified — push clears the dropped assembly's steps and Custom APIs before the
-    content update, which is the remedy Microsoft documents; the exact repro that died on `Unable to
-    delete … due to 1 step(s)` now exits 0 with the assembly and its step gone. **Adding** an assembly
-    to an existing package is still broken and stays a finding — but the fix is now scoped, not open.
-  - **Self-registration works — proven by probe, and it changes the recommended fix.** A `pluginassembly`
-    row can be created by hand under an existing package: `isolationmode` must be Sandbox (Dataverse
-    rejects the create outright otherwise — *"not allowed to be registered in full-trust mode"*), the row
-    lands with zero plugin types, and the **next content update populates them**. After that an ordinary
-    `push` exits 0 and registers the assembly's step. **And it really executes**: the probe plugin was
-    made to throw a marker exception, and a real contact update returned that exact marker — so the
-    sandbox loads the type out of the package content for a hand-registered assembly. That beats the
-    delete-and-recreate alternative, which destroys every assembly, type and step registration in the
-    package and churns every GUID.
-  - **Technique note — make the probe throw.** The first runtime check used the no-op plugin and
-    "update succeeded" was recorded as evidence. It wasn't: a silently skipped step looks identical.
-    Only the throwing version discriminated. Same lesson as the vacuous-test checks elsewhere in this
-    session; it applies to live probes too.
-  - **Plugin package content is synced by content, not by version — don't guess otherwise.** Microsoft:
-    "The version of the plug-in package or plug-in assembly is not a factor in any upgrade behaviors",
-    and the package's name and version cannot be changed after create at all. Confirmed across this
-    session: the fixture's `.nupkg` version stayed `0.0.0-alpha.0.4` while code changes, new classes,
-    new Custom APIs and removed classes all applied normally. The classic-assembly rules
-    (build/revision = in-place upgrade, major/minor = a different assembly) govern solution import of
-    *classic* assemblies and do **not** carry over to packages.
-  - **A first guess in that finding was wrong, and the correction is the lesson.** It originally claimed
-    Dataverse registers only one `pluginassembly` per package. Microsoft documents the opposite ("any
-    assemblies that contain classes that implement the `IPlugin` interface are registered"), and a
-    from-scratch package create does register both. The real constraint is narrower: on *update* of an
-    existing package Dataverse never enumerates new assemblies, and dropping one fails if its plugin
-    types still have steps. **Check the vendor docs before writing "the platform doesn't support X" into
-    a finding** — one search would have caught it, and the wrong version was committed.
-  - **Both remaining orphan branches got live-verified along the way**, using the two-DLL package that
-    investigation produced: the **shared-package refusal** (drop one DLL from a two-assembly package —
-    the dropped assembly is an orphan while its package still owns the live one the same push registers;
-    push refused and deleted nothing) and the **fully-owned multi-assembly collapse** (both assemblies
-    orphaned → one package delete, not two). Nothing in the orphan work is unverified live any more.
-  - **Message corrected from that run**: the refusal warning said the package "owns assemblies this
-    solution doesn't", which is wrong for the commonest shape — the solution does have the other
-    assembly, it just isn't an orphan. Now reads "owns assemblies that aren't orphans — not deleting it".
-- Git hygiene in the test workspace: commit between test phases so `sync`'s dirty-check behaves
-  predictably, and use `git checkout --`/`git status` before any destructive reset.
-- Long-running commands (`clone`'s Dataverse export, `sync`'s export) can take several minutes — run
-  them in the background and wait for completion rather than assuming a short timeout means failure.
-
-## Way of working: unfixed findings
-
-Every bug/issue found that isn't fixed inline (per the bug-fix policy above) gets its own file in
-`docs/test-findings/`, named by slug (e.g. `false-positive-orphan-dotted-classic-assembly-name.md`),
-not bundled into a single report. Each file should cover:
-
-- **Status** (fixed/not fixed) and **severity**.
-- **Repro** — exact steps/commands.
-- **Root cause**, as far as it's understood.
-- **Suggested fix direction**, if any, and why it wasn't attempted inline.
-
-This test-goal document only ever *references* a finding file by path and a one-line summary — it
-does not duplicate the full writeup. Before starting a new run, skim `docs/test-findings/` for
-issues that might now be fixed (re-verify, then delete or update the file accordingly) and check
-whether any still-open finding should be promoted to a fix this run instead.
+**Currently open:** `agent-ux-output-hard-wrapped-at-80-columns.md` — non-TTY output hard-wraps at 80
+columns with no escape hatch, splitting log paths and `--help` URLs mid-token; `COLUMNS` has no
+effect. There is also no machine-readable mode (`--json`/porcelain) anywhere, so prose parsing of
+reflowed prose is an agent's only option. Same finding.
 
 ## Deliverable
 
 A findings report: what was tested, what passed, what failed and was fixed (with the fix and its
-regression test), and a `docs/test-findings/<slug>.md` file for each finding that needed human
-judgment instead. Update this file with anything newly learned before the next run.
+regression test), and a `docs/test-findings/<slug>.md` for each finding needing human judgment.
 
-The report must also state, explicitly and without hedging, **what was not covered** — every matrix
-item skipped and why. A run that reports only its successes is indistinguishable from a run that
-covered everything, which is the failure mode this whole document exists to prevent.
+It must also state, explicitly and without hedging, **what was not covered** — every matrix item
+skipped and why. A run that reports only its successes is indistinguishable from a run that covered
+everything, which is the failure mode this document exists to prevent.

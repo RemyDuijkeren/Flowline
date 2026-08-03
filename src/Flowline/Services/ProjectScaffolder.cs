@@ -9,14 +9,13 @@ using Spectre.Console;
 
 namespace Flowline.Services;
 
-// U1: the scaffold half of clone extracted out of CloneCommand so both `clone` (now) and `init`
-// (a later unit) can run it without either command calling the other (KTD1, R3, R7). A pure
-// extraction — every method here is behavior-identical to its former CloneCommand private method;
-// CloneCommand's existing test suite is the guardrail.
+// The scaffold half of clone, extracted out of CloneCommand so both `clone` and `init` can run it
+// without either command calling the other (KTD1, R3, R7). ScaffoldProjectAsync/ScaffoldDocsAsync
+// are the entry points; everything else is a step one of them runs.
 //
-// No ILogger here yet: none of the moved methods logged before the move, and an unused parameter
-// would just be a warning. U5's SolutionCreateFlow can add it when it has a real logging need.
-public class CreateSolutionService(IAnsiConsole console, SubprocessCapture capture)
+// No ILogger here: none of the scaffold steps logged when they were CloneCommand private methods,
+// and an unused parameter would just be a warning.
+public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
 {
     readonly MsBuildSolutionWriter _solutionWriter = new();
 
@@ -68,6 +67,48 @@ public class CreateSolutionService(IAnsiConsole console, SubprocessCapture captu
         ".env*",
         "!.env.example",
     ];
+
+    /// <summary>
+    /// Pulls the solution's XML from Dataverse and scaffolds the project around it — everything that
+    /// has to exist before the build. Shared verbatim by <c>clone</c> (a solution already in Dataverse)
+    /// and <c>init</c> (one it just created there), so the two commands can't drift into scaffolding
+    /// different projects.
+    /// </summary>
+    /// <returns>The solution file name, for <see cref="ScaffoldDocsAsync"/>.</returns>
+    internal async Task<string> ScaffoldProjectAsync(ProjectSolution projectSln, string slnFolder, string environmentUrl,
+        string? publisherPrefix, CancellationToken cancellationToken)
+    {
+        var solutionName = projectSln.UniqueName;
+        var cdsprojPath = Path.Combine(ScaffoldedDataverseSolutionFolder(slnFolder), $"{solutionName}.cdsproj");
+        var slnFilePath = ResolveSolutionFilePath(slnFolder, solutionName);
+
+        await CloneSolutionFromDataverseAsync(projectSln, slnFolder, cdsprojPath, environmentUrl, cancellationToken);
+        await CreateSolutionFileAsync(slnFolder, slnFilePath, cdsprojPath, cancellationToken);
+
+        // The .cdsproj entry CreateSolutionFileAsync just wrote makes the solution file loadable, so the
+        // scaffold-skip checks below can ask "is a plugin/WebResources project already registered under
+        // any name or location" instead of only "does the default folder hold one" — a project whose
+        // Plugins/WebResources project was legitimately moved/renamed (project-structure flexibility)
+        // resolves here the same way push/sync/deploy already discover it. Loaded once and reused by both
+        // setup calls, matching SolutionFileLayout's one-read contract.
+        var layout = await SolutionFileLayout.LoadAsync(slnFolder, cancellationToken);
+        await SetupPluginsProjectAsync(slnFolder, slnFilePath, solutionName, layout, cancellationToken);
+        var webresourcesFolder = await SetupWebResourcesProjectAsync(slnFolder, slnFilePath, solutionName, layout, cancellationToken);
+        SeedWebResourceDistFromSrc(slnFolder, webresourcesFolder, publisherPrefix, solutionName);
+        ScaffoldRootGitignore(slnFolder);
+
+        return Path.GetFileName(slnFilePath);
+    }
+
+    /// <summary>The agent-facing docs — written only after the build succeeded, so a project that never
+    /// compiled doesn't get instructions describing it.</summary>
+    internal async Task ScaffoldDocsAsync(string slnFolder, string solutionName, string slnFileName, CancellationToken cancellationToken)
+    {
+        await ScaffoldAgentsFileAsync(slnFolder, solutionName, slnFileName, cancellationToken);
+        await ScaffoldClaudeFileAsync(slnFolder, cancellationToken);
+        await new DataverseContextGenerator(console).GenerateAsync(
+            Path.Combine(ScaffoldedDataverseSolutionFolder(slnFolder), "src"), solutionName, slnFolder, cancellationToken);
+    }
 
     internal void ScaffoldRootGitignore(string slnFolder)
     {

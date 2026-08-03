@@ -74,10 +74,9 @@ OrphanHandlerRegistration.RegisterOrphanHandlers(services);
 services.AddSingleton<OrphanCleanupService>();
 services.AddSingleton<IPostDeployService>(sp => sp.GetRequiredService<OrphanCleanupService>());
 services.AddSingleton<SubprocessCapture>();
-services.AddSingleton<CreateSolutionService>();
+services.AddSingleton<ProjectScaffolder>();
 services.AddSingleton<SolutionCreateService>();
 services.AddSingleton<CreateEnvironmentResolver>();
-services.AddSingleton<SolutionCreateFlow>();
 
 Serilog.ILogger? serilogLogger = null;
 try
