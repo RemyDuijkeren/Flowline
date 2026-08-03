@@ -104,8 +104,7 @@ public class SolutionCreateFlowTests
     [Fact]
     public async Task RunAsync_NoPublisherPrefix_NonInteractive_ThrowsNamingFlag_WithoutConnecting()
     {
-        var (flow, _, orgService) = MakeFlow();
-        flow.IsInteractiveOverride = () => false;
+        var (flow, _, orgService) = MakeFlow(); // TestConsole is non-interactive by default
         var root = CreateTempRoot();
         try
         {

@@ -188,7 +188,9 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         {
             var hasTestOrUat = !string.IsNullOrEmpty(Config!.TestUrl) || !string.IsNullOrEmpty(Config.UatUrl);
             var cacheMessage = BuildCacheStatusMessage(cacheOutcome, sln.UniqueName, cacheEntry?.CommitSha, currentCommitSha,
-                cacheEntry?.Managed ?? false, sln.IncludeManaged, CiEnvironment.IsCi(), hasTestOrUat);
+                // Only shapes the message's wording (pipeline framing is noise in CI) — never gates a
+                // prompt, so an env-var probe is right here rather than a console capability check.
+                cacheEntry?.Managed ?? false, sln.IncludeManaged, ConsoleHelper.DetectCIPlatform() is not null, hasTestOrUat);
             if (cacheOutcome == CacheOutcome.Hit)
                 Console.Skip(cacheMessage);
             else

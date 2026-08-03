@@ -60,35 +60,25 @@ public class FlowlineConsoleExtensionsTests
     [Fact]
     public void ConfirmGated_NonInteractiveNoForce_ThrowsForceRequiredWithGivenMessage()
     {
-        var saved = FormEventTestHelpers.SaveAndClearCiVars();
-        try
-        {
-            var console = new TestConsole(); // TestConsole defaults to non-interactive.
+        var console = new TestConsole(); // TestConsole defaults to non-interactive.
 
-            var act = () => console.ConfirmGated("Continue?", false, force: false, "confirmation required");
+        var act = () => console.ConfirmGated("Continue?", false, force: false, "confirmation required");
 
-            act.Should().Throw<FlowlineException>()
-                .Where(e => e.ExitCode == ExitCode.ForceRequired && e.Message == "confirmation required");
-        }
-        finally { FormEventTestHelpers.RestoreCiVars(saved); }
+        act.Should().Throw<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.ForceRequired && e.Message == "confirmation required");
     }
 
     [Fact]
     public void ConfirmGated_InteractiveNoForce_InvokesBeforePromptThenReturnsPromptAnswer()
     {
-        var saved = FormEventTestHelpers.SaveAndClearCiVars();
-        try
-        {
-            var console = new TestConsole();
-            console.Interactive();
-            console.Input.PushTextWithEnter("y");
-            var beforePromptCalled = false;
+        var console = new TestConsole();
+        console.Interactive();
+        console.Input.PushTextWithEnter("y");
+        var beforePromptCalled = false;
 
-            var result = console.ConfirmGated("Continue?", false, force: false, "unreachable", beforePrompt: () => beforePromptCalled = true);
+        var result = console.ConfirmGated("Continue?", false, force: false, "unreachable", beforePrompt: () => beforePromptCalled = true);
 
-            beforePromptCalled.Should().BeTrue();
-            result.Should().BeTrue();
-        }
-        finally { FormEventTestHelpers.RestoreCiVars(saved); }
+        beforePromptCalled.Should().BeTrue();
+        result.Should().BeTrue();
     }
 }

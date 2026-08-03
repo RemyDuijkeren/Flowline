@@ -21,10 +21,6 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
     /// <summary>Seam for testing — set to override DataverseConnector.GetPacProfiles.</summary>
     internal Func<IReadOnlyList<PacProfile>>? GetPacProfilesOverride { get; set; }
 
-    /// <summary>Seam for testing — set to override ConsoleHelper.IsInteractive (the global console
-    /// capability check can't be driven by an injected TestConsole).</summary>
-    internal Func<bool>? IsInteractiveOverride { get; set; }
-
     /// <summary>Seam for testing — set to override PacUtils.SelectAuthProfileAsync (which shells out
     /// to a real pac.exe subprocess with no mocking seam of its own).</summary>
     internal Func<PacProfile, IReadOnlyList<PacProfile>, CancellationToken, Task>? SelectAuthProfileOverride { get; set; }
@@ -154,7 +150,7 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
             ? $"({Markup.Escape(p.DisplayName)}) — {Markup.Escape(p.EnvironmentLabel)}"
             : $"'{Markup.Escape(p.DisplayName)}' — {Markup.Escape(p.EnvironmentLabel)}";
 
-    bool IsInteractive() => IsInteractiveOverride?.Invoke() ?? ConsoleHelper.IsInteractive();
+    bool IsInteractive() => console.Profile.Capabilities.Interactive;
 
     FlowlineException BuildNotFoundError(string environmentUrl)
     {

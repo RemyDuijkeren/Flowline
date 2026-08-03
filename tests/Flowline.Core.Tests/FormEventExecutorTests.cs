@@ -180,12 +180,7 @@ public class FormEventExecutorTests
         _console.Interactive();
         _console.Input.PushTextWithEnter("y");
 
-        var savedCiVars = SaveAndClearCiVars();
-        try
-        {
-            await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false);
-        }
-        finally { RestoreCiVars(savedCiVars); }
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false);
 
         var written = GetHandlersFromCapturedXml(captured, formId, FormEventType.OnLoad);
         Assert.Contains(recognized, written);
@@ -221,12 +216,7 @@ public class FormEventExecutorTests
         _console.Interactive();
         _console.Input.PushTextWithEnter("n");
 
-        var savedCiVars = SaveAndClearCiVars();
-        try
-        {
-            await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false);
-        }
-        finally { RestoreCiVars(savedCiVars); }
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: false, dryRun: false, cleanupOnly: false);
 
         var writtenA = GetHandlersFromCapturedXml(captured, formIdA, FormEventType.OnLoad);
         Assert.Contains(existingRecognized, writtenA);
@@ -308,12 +298,7 @@ public class FormEventExecutorTests
         _console.Interactive();
         // No input pushed — if force didn't short-circuit before the prompt, TestConsole would throw on the empty queue.
 
-        var savedCiVars = SaveAndClearCiVars();
-        try
-        {
-            await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: true, dryRun: false, cleanupOnly: false);
-        }
-        finally { RestoreCiVars(savedCiVars); }
+        await _executor.ExecuteAsync(_serviceMock, snapshot, plan, force: true, dryRun: false, cleanupOnly: false);
 
         Assert.DoesNotContain("found on tracked forms", _console.Output, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("(--force)", _console.Output);

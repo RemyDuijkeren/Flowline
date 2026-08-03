@@ -37,10 +37,6 @@ public class CreateEnvironmentResolver(
         !string.Equals(type, "Default", StringComparison.OrdinalIgnoreCase) &&
         !string.Equals(type, "Teams", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Seam for testing — overrides ConsoleHelper.IsInteractive (global console capability
-    /// check can't be driven by an injected TestConsole).</summary>
-    internal Func<bool>? IsInteractiveOverride { get; set; }
-
     /// <summary>Seam for testing — overrides PacUtils.GetEnvironmentsAsync (shells out to a real
     /// pac.exe subprocess with no mocking seam of its own).</summary>
     internal Func<CancellationToken, Task<List<EnvironmentInfo>>>? GetEnvironmentsOverride { get; set; }
@@ -186,5 +182,5 @@ public class CreateEnvironmentResolver(
                 $"'{env.DisplayName}' ({env.Type ?? "unknown"}) isn't a Sandbox or Developer environment — create only runs against DEV-type environments.");
     }
 
-    bool IsInteractive() => IsInteractiveOverride?.Invoke() ?? ConsoleHelper.IsInteractive();
+    bool IsInteractive() => console.Profile.Capabilities.Interactive;
 }

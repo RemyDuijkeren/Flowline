@@ -7,12 +7,6 @@ using Spectre.Console.Testing;
 
 namespace Flowline.Tests.Services;
 
-/// <summary>Test double that overrides IsInteractive() to avoid reading static AnsiConsole.Profile.</summary>
-file sealed class FakeSecretResolver(TestConsole console, bool interactive) : SecretResolver(console)
-{
-    protected override bool IsInteractive() => interactive;
-}
-
 public class SecretResolverTests
 {
     static PacProfile SpProfile(string applicationId = "app-id", string? name = "MyProfile") =>
@@ -81,7 +75,7 @@ public class SecretResolverTests
         try
         {
             Environment.SetEnvironmentVariable("AZURE_CLIENT_SECRET", null);
-            var resolver = new FakeSecretResolver(new TestConsole(), interactive: false);
+            var resolver = new SecretResolver(new TestConsole()); // TestConsole is non-interactive by default
 
             var act = async () => await resolver.ResolveAsync(SpProfile(), secretFlag: null);
 
@@ -101,7 +95,7 @@ public class SecretResolverTests
         try
         {
             Environment.SetEnvironmentVariable("AZURE_CLIENT_SECRET", null);
-            var resolver = new FakeSecretResolver(new TestConsole(), interactive: false);
+            var resolver = new SecretResolver(new TestConsole()); // TestConsole is non-interactive by default
 
             var act = async () => await resolver.ResolveAsync(SpProfile(), secretFlag: null);
 
@@ -123,7 +117,7 @@ public class SecretResolverTests
         try
         {
             Environment.SetEnvironmentVariable("AZURE_CLIENT_SECRET", null);
-            var resolver = new FakeSecretResolver(new TestConsole(), interactive: false);
+            var resolver = new SecretResolver(new TestConsole()); // TestConsole is non-interactive by default
 
             var act = async () => await resolver.ResolveAsync(SpProfile(applicationId: "app-id", name: ""), secretFlag: null);
 
@@ -141,16 +135,14 @@ public class SecretResolverTests
     [Fact]
     public async Task ResolveAsync_NoFlag_NoEnvVar_Interactive_PromptsAndReturnsInput()
     {
-        // FakeSecretResolver bypasses the static AnsiConsole check so the test
-        // doesn't rely on global state.
         var original = Environment.GetEnvironmentVariable("AZURE_CLIENT_SECRET");
         try
         {
             Environment.SetEnvironmentVariable("AZURE_CLIENT_SECRET", null);
 
-            var testConsole = new TestConsole();
+            var testConsole = new TestConsole().Interactive();
             testConsole.Input.PushTextWithEnter("prompt-secret");
-            var resolver = new FakeSecretResolver(testConsole, interactive: true);
+            var resolver = new SecretResolver(testConsole);
 
             var result = await resolver.ResolveAsync(SpProfile(), secretFlag: null);
 

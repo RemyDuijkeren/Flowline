@@ -137,8 +137,7 @@ public class InitCommandTests
     [Fact]
     public async Task ResolveName_NoName_NonInteractive_ThrowsNamingTheArgument()
     {
-        var (command, _) = MakeInitCommand();
-        command.IsInteractiveOverride = () => false;
+        var (command, _) = MakeInitCommand(interactive: false);
 
         var act = () => command.ResolveNameAsync(null, CancellationToken.None);
 
@@ -150,7 +149,6 @@ public class InitCommandTests
     public async Task ResolveName_NoName_Interactive_PromptsForIt()
     {
         var (command, console) = MakeInitCommand();
-        command.IsInteractiveOverride = () => true;
         console.Input.PushTextWithEnter("PromptedSolution");
 
         var name = await command.ResolveNameAsync(null, CancellationToken.None);
@@ -158,10 +156,12 @@ public class InitCommandTests
         name.Should().Be("PromptedSolution");
     }
 
-    static (InitCommand Command, TestConsole Console) MakeInitCommand()
+    // Interactivity comes from the injected console's capabilities — most tests want a TTY, so this
+    // defaults to interactive and the no-TTY tests opt out.
+    static (InitCommand Command, TestConsole Console) MakeInitCommand(bool interactive = true)
     {
         var console = new TestConsole();
-        console.Profile.Capabilities.Interactive = true;
+        console.Profile.Capabilities.Interactive = interactive;
         var connector = new DataverseConnector(console, new HttpClient());
         var profileResolutionService = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions());
         var capture = new SubprocessCapture(console);

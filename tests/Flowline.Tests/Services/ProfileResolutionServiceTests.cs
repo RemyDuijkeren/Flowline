@@ -23,12 +23,12 @@ public class ProfileResolutionServiceTests
         Func<PacProfile, bool>? isProfileActiveOverride = null)
     {
         console = new TestConsole();
+        if (isInteractive) console.Interactive();
         var connector = new DataverseConnector(console, new HttpClient());
         var svc = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions { AutoSwitchProfile = autoSwitchProfile })
         {
             FindBestProfileOverride = _ => resolvedResult,
             IsProfileActiveOverride = isProfileActiveOverride ?? (_ => isProfileActive),
-            IsInteractiveOverride = () => isInteractive,
             GetPacProfilesOverride = () => allProfiles ?? []
         };
         return svc;
@@ -134,20 +134,12 @@ public class ProfileResolutionServiceTests
             MakeProfile(name: "Alpha", kind: "DATAVERSE"),
             MakeProfile(name: "Beta", kind: "UNIVERSAL")
         };
-        // CI env var makes ConsoleHelper.IsInteractive return false
-        Environment.SetEnvironmentVariable("CI", "true");
-        try
-        {
-            var svc = MakeService(out _, new ProfileAmbiguous(candidates));
-            var act = () => svc.ResolveAsync(EnvironmentUrl);
+        // MakeService's TestConsole is non-interactive unless isInteractive is passed.
+        var svc = MakeService(out _, new ProfileAmbiguous(candidates));
+        var act = () => svc.ResolveAsync(EnvironmentUrl);
 
-            await act.Should().ThrowAsync<FlowlineException>()
-                .Where(ex => ex.ExitCode == ExitCode.NotAuthenticated);
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("CI", null);
-        }
+        await act.Should().ThrowAsync<FlowlineException>()
+            .Where(ex => ex.ExitCode == ExitCode.NotAuthenticated);
     }
 
     [Fact]
@@ -158,21 +150,13 @@ public class ProfileResolutionServiceTests
             MakeProfile(name: "Alpha", kind: "DATAVERSE"),
             MakeProfile(name: "Beta", kind: "UNIVERSAL")
         };
-        Environment.SetEnvironmentVariable("CI", "true");
-        try
-        {
-            var svc = MakeService(out _, new ProfileAmbiguous(candidates));
+        var svc = MakeService(out _, new ProfileAmbiguous(candidates));
 
-            var ex = await Assert.ThrowsAsync<FlowlineException>(() => svc.ResolveAsync(EnvironmentUrl));
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() => svc.ResolveAsync(EnvironmentUrl));
 
-            ex.Message.Should().Contain("Alpha");
-            ex.Message.Should().Contain("Beta");
-            ex.Message.Should().Contain("pac auth select");
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("CI", null);
-        }
+        ex.Message.Should().Contain("Alpha");
+        ex.Message.Should().Contain("Beta");
+        ex.Message.Should().Contain("pac auth select");
     }
 
     // ── ProfileNotFound ──────────────────────────────────────────────────────
@@ -268,7 +252,6 @@ public class ProfileResolutionServiceTests
         {
             FindBestProfileOverride = _ => new ProfileFound(profile),
             IsProfileActiveOverride = _ => false,
-            IsInteractiveOverride = () => false,
             GetPacProfilesOverride = () => [profile]
         };
 
@@ -381,7 +364,6 @@ public class ProfileResolutionServiceTests
         var connector = new DataverseConnector(console, new HttpClient());
         var svc = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions { AutoSwitchProfile = true })
         {
-            IsInteractiveOverride = () => false,
             GetPacProfilesOverride = () => [profileA, profileB],
             IsProfileActiveOverride = p => { activeChecks.Add(p.Name!); return switched.Contains(p.Name!); },
             SelectAuthProfileOverride = (p, _, _) => { switchCalls++; switched.Add(p.Name!); return Task.CompletedTask; }

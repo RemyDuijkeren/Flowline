@@ -31,14 +31,12 @@ public static class ConsoleHelper
         console.WriteLine();
     }
 
-    public static bool IsInteractive() =>
-        !CiEnvironment.IsCi() && AnsiConsole.Profile.Capabilities.Interactive;
-
     internal static string? DetectCIPlatform()
     {
         if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != null) return "github";
         if (Environment.GetEnvironmentVariable("TF_BUILD") != null) return "azuredevops";
         if (Environment.GetEnvironmentVariable("JENKINS_URL") != null) return "jenkins";
+        if (Environment.GetEnvironmentVariable("TEAMCITY_VERSION") != null) return "teamcity";
         if (Environment.GetEnvironmentVariable("CI") != null) return "unknown";
         return null;
     }

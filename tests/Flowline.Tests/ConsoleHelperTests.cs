@@ -16,58 +16,56 @@ public class ConsoleStaticSwapCollection;
 [Collection(nameof(ConsoleStaticSwapCollection))]
 public class ConsoleHelperTests
 {
+    // Non-interactivity is now a console capability, not an env-var probe — a default TestConsole
+    // (Interactive = false) is what makes these the "no TTY" cases.
+    static IDisposable NonInteractiveConsole()
+    {
+        var previous = AnsiConsole.Console;
+        AnsiConsole.Console = new TestConsole();
+        return new Restore(() => AnsiConsole.Console = previous);
+    }
+
+    sealed class Restore(Action onDispose) : IDisposable
+    {
+        public void Dispose() => onDispose();
+    }
+
     [Fact]
     public void Confirm_NonInteractive_ForceContainsConfig_ReturnsTrueWithoutPrompting()
     {
-        var saved = SaveAndClearCiVars();
-        Environment.SetEnvironmentVariable("CI", "true");
-        try
-        {
-            var settings = new FlowlineSettings { Force = ["config"] };
-            ConsoleHelper.Confirm("Overwrite it?", false, settings, "config").Should().BeTrue();
-        }
-        finally { RestoreCiVars(saved); }
+        using var _ = NonInteractiveConsole();
+
+        var settings = new FlowlineSettings { Force = ["config"] };
+        ConsoleHelper.Confirm("Overwrite it?", false, settings, "config").Should().BeTrue();
     }
 
     [Fact]
     public void Confirm_NonInteractive_ForceContainsAll_ReturnsTrueWithoutPrompting()
     {
-        var saved = SaveAndClearCiVars();
-        Environment.SetEnvironmentVariable("CI", "true");
-        try
-        {
-            var settings = new FlowlineSettings { Force = ["all"] };
-            ConsoleHelper.Confirm("Overwrite it?", false, settings, "config").Should().BeTrue();
-        }
-        finally { RestoreCiVars(saved); }
+        using var _ = NonInteractiveConsole();
+
+        var settings = new FlowlineSettings { Force = ["all"] };
+        ConsoleHelper.Confirm("Overwrite it?", false, settings, "config").Should().BeTrue();
     }
 
     [Fact]
     public void Confirm_NonInteractive_ForceEmpty_ThrowsForceRequiredNamingConfig()
     {
-        var saved = SaveAndClearCiVars();
-        Environment.SetEnvironmentVariable("CI", "true");
-        try
-        {
-            var settings = new FlowlineSettings { Force = [] };
-            var act = () => ConsoleHelper.Confirm("Overwrite it?", false, settings, "config");
-            act.Should().Throw<FlowlineException>()
-                .Where(e => e.ExitCode == ExitCode.ForceRequired && e.Message.Contains("--force config"));
-        }
-        finally { RestoreCiVars(saved); }
+        using var _ = NonInteractiveConsole();
+
+        var settings = new FlowlineSettings { Force = [] };
+        var act = () => ConsoleHelper.Confirm("Overwrite it?", false, settings, "config");
+        act.Should().Throw<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.ForceRequired && e.Message.Contains("--force config"));
     }
 
     [Fact]
     public void Confirm_NonInteractive_ForceContainsMatchingSpecifier_ReturnsTrueWithoutPrompting()
     {
-        var saved = SaveAndClearCiVars();
-        Environment.SetEnvironmentVariable("CI", "true");
-        try
-        {
-            var settings = new FlowlineSettings { Force = ["first-import"] };
-            ConsoleHelper.Confirm("Continue?", false, settings, "first-import").Should().BeTrue();
-        }
-        finally { RestoreCiVars(saved); }
+        using var _ = NonInteractiveConsole();
+
+        var settings = new FlowlineSettings { Force = ["first-import"] };
+        ConsoleHelper.Confirm("Continue?", false, settings, "first-import").Should().BeTrue();
     }
 
     [Fact]
@@ -90,80 +88,18 @@ public class ConsoleHelperTests
     [Fact]
     public void Confirm_NonInteractive_ForceContainsDifferentSpecifier_ThrowsNamingRequestedSpecifier()
     {
-        var saved = SaveAndClearCiVars();
-        Environment.SetEnvironmentVariable("CI", "true");
-        try
-        {
-            var settings = new FlowlineSettings { Force = ["config"] };
-            var act = () => ConsoleHelper.Confirm("Continue?", false, settings, "first-import");
-            act.Should().Throw<FlowlineException>()
-                .Where(e => e.ExitCode == ExitCode.ForceRequired && e.Message.Contains("--force first-import"));
-        }
-        finally { RestoreCiVars(saved); }
+        using var _ = NonInteractiveConsole();
+
+        var settings = new FlowlineSettings { Force = ["config"] };
+        var act = () => ConsoleHelper.Confirm("Continue?", false, settings, "first-import");
+        act.Should().Throw<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.ForceRequired && e.Message.Contains("--force first-import"));
     }
 
-    [Fact]
-    public void IsInteractive_ShouldReturnFalse_WhenCiEnvVarIsSet()
-    {
-        // Arrange
-        Environment.SetEnvironmentVariable("CI", "true");
-
-        try
-        {
-            // Act
-            bool result = ConsoleHelper.IsInteractive();
-
-            // Assert
-            result.Should().BeFalse();
-        }
-        finally
-        {
-            // Cleanup
-            Environment.SetEnvironmentVariable("CI", null);
-        }
-    }
-
-    [Fact]
-    public void IsInteractive_ShouldReturnFalse_WhenGithubActionsEnvVarIsSet()
-    {
-        // Arrange
-        Environment.SetEnvironmentVariable("GITHUB_ACTIONS", "true");
-
-        try
-        {
-            // Act
-            bool result = ConsoleHelper.IsInteractive();
-
-            // Assert
-            result.Should().BeFalse();
-        }
-        finally
-        {
-            // Cleanup
-            Environment.SetEnvironmentVariable("GITHUB_ACTIONS", null);
-        }
-    }
-
-    [Fact]
-    public void IsInteractive_ShouldReturnFalse_WhenTfBuildEnvVarIsSet()
-    {
-        // Arrange
-        Environment.SetEnvironmentVariable("TF_BUILD", "true");
-
-        try
-        {
-            // Act
-            bool result = ConsoleHelper.IsInteractive();
-
-            // Assert
-            result.Should().BeFalse();
-        }
-        finally
-        {
-            // Cleanup
-            Environment.SetEnvironmentVariable("TF_BUILD", null);
-        }
-    }
+    // The three IsInteractive_ShouldReturnFalse_When*EnvVarIsSet tests were removed with
+    // ConsoleHelper.IsInteractive itself — interactivity is Spectre's Capabilities.Interactive now,
+    // which its own CI profile enrichers already drive. DetectCIPlatform below still reads env vars,
+    // but only to name the platform, never to gate a prompt.
 
     static readonly string[] s_ciVars = ["GITHUB_ACTIONS", "TF_BUILD", "JENKINS_URL", "CI"];
 

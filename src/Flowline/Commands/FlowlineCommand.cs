@@ -84,7 +84,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         using var activity = FlowlineActivitySource.Source.StartActivity(context.Name);
         Logger.LogInformation("Command: {Command} {Args}", context.Name, argsOnly);
 
-        if (ShowWelcome && ConsoleHelper.IsInteractive() && FlowlineValidator.Default.ShouldShowWelcomeScreen(settings.NoCache))
+        if (ShowWelcome && Console.Profile.Capabilities.Interactive && FlowlineValidator.Default.ShouldShowWelcomeScreen(settings.NoCache))
             ConsoleHelper.WelcomeScreen(Console);
 
         await CheckSetupAsync(settings, cancellationToken);

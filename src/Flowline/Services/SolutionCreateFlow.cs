@@ -23,10 +23,6 @@ public class SolutionCreateFlow(
     SolutionCreateService solutionCreateService,
     CreateSolutionService createSolutionService)
 {
-    /// <summary>Seam for testing — overrides ConsoleHelper.IsInteractive (global console capability
-    /// check can't be driven by an injected TestConsole).</summary>
-    internal Func<bool>? IsInteractiveOverride { get; set; }
-
     /// <summary>Seam for testing — overrides DataverseConnector.ConnectViaPacAsync (a real MSAL token
     /// acquisition with no mocking seam of its own).</summary>
     internal Func<PacProfile, string, CancellationToken, Task<IOrganizationServiceAsync2>>? ConnectOverride { get; set; }
@@ -181,7 +177,7 @@ public class SolutionCreateFlow(
         console.Info($"Environment: [bold]{devEnv.DisplayName}[/] ({devEnv.EnvironmentUrl})");
     }
 
-    bool IsInteractive() => IsInteractiveOverride?.Invoke() ?? ConsoleHelper.IsInteractive();
+    bool IsInteractive() => console.Profile.Capabilities.Interactive;
 
     // KTD3(a): split on underscores and camelCase/acronym boundaries into spaced words, keeping
     // consecutive-capital acronym runs together. Two separate insertions, not one regex:

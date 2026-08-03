@@ -53,7 +53,7 @@ public static class FlowlineConsoleExtensions
             return true;
         }
 
-        if (CiEnvironment.IsCi() || !console.Profile.Capabilities.Interactive)
+        if (!console.Profile.Capabilities.Interactive)
             throw new FlowlineException(ExitCode.ForceRequired, nonInteractiveMessage);
 
         beforePrompt?.Invoke();
@@ -70,7 +70,7 @@ public static class FlowlineConsoleExtensions
             return true;
         }
 
-        if (CiEnvironment.IsCi() || !console.Profile.Capabilities.Interactive)
+        if (!console.Profile.Capabilities.Interactive)
             throw new FlowlineException(ExitCode.ForceRequired, nonInteractiveMessage);
 
         beforePrompt?.Invoke();

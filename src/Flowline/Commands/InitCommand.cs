@@ -41,10 +41,6 @@ public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         public string? PublisherName { get; set; }
     }
 
-    /// <summary>Seam for testing — overrides ConsoleHelper.IsInteractive (global console capability
-    /// check can't be driven by an injected TestConsole).</summary>
-    internal Func<bool>? IsInteractiveOverride { get; set; }
-
     protected override bool RequiresProject => false;
     protected override string[] ValidForceSpecifiers => FlowlineSettings.ConfigOnlyValidSpecifiers;
 
@@ -95,5 +91,5 @@ public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         return await Console.PromptAsync(new TextPrompt<string>(FlowlineConsoleExtensions.Question("Solution unique name:")), cancellationToken);
     }
 
-    bool IsInteractive() => IsInteractiveOverride?.Invoke() ?? ConsoleHelper.IsInteractive();
+    bool IsInteractive() => Console.Profile.Capabilities.Interactive;
 }

@@ -13,9 +13,12 @@ public class CreateEnvironmentResolverTests
 {
     const string DevUrl = "https://contoso-dev.crm4.dynamics.com";
 
-    static CreateEnvironmentResolver MakeResolver(ProfileResolutionService? profileResolutionService = null)
+    // Interactivity now comes from the injected console's capabilities — TestConsole is non-interactive
+    // by default, and .Interactive() flips it.
+    static CreateEnvironmentResolver MakeResolver(ProfileResolutionService? profileResolutionService = null, bool interactive = false)
     {
         var console = new TestConsole();
+        if (interactive) console.Interactive();
         var connector = new DataverseConnector(console, new HttpClient());
         profileResolutionService ??= new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions());
         return new CreateEnvironmentResolver(console, profileResolutionService, new SubprocessCapture(console));
@@ -83,8 +86,7 @@ public class CreateEnvironmentResolverTests
     [Fact]
     public async Task ResolveSource_OnlyDefaultAndTeamsEnvironments_Throws()
     {
-        var resolver = MakeResolver();
-        resolver.IsInteractiveOverride = () => true;
+        var resolver = MakeResolver(interactive: true);
         resolver.GetEnvironmentsOverride = _ => Task.FromResult(new List<EnvironmentInfo>
         {
             new() { DisplayName = "Personal Productivity", EnvironmentUrl = DevUrl, Type = "Default" },
@@ -104,8 +106,7 @@ public class CreateEnvironmentResolverTests
     [Fact]
     public async Task ResolveCreateTarget_NoDevUrl_NonInteractive_ThrowsNamingDevFlag_WithoutPrompting()
     {
-        var resolver = MakeResolver();
-        resolver.IsInteractiveOverride = () => false;
+        var resolver = MakeResolver(); // non-interactive
         // No SelectionPrompt/environment-list seam is configured — if the resolver tried to prompt
         // or fetch environments anyway, it would throw a different failure instead of this specific
         // FlowlineException, so *this* exception is itself proof it never reached the picker path.
@@ -125,8 +126,7 @@ public class CreateEnvironmentResolverTests
         var connector = new DataverseConnector(console, new HttpClient());
         var profileResolutionService = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions())
         {
-            FindBestProfileOverride = _ => new ProfileNotFound(DevUrl),
-            IsInteractiveOverride = () => false
+            FindBestProfileOverride = _ => new ProfileNotFound(DevUrl)
         };
         var resolver = new CreateEnvironmentResolver(console, profileResolutionService, new SubprocessCapture(console));
 
@@ -181,8 +181,7 @@ public class CreateEnvironmentResolverTests
     [Fact]
     public async Task ResolveSource_NoUrl_NonInteractive_Throws_WithoutPrompting()
     {
-        var resolver = MakeResolver();
-        resolver.IsInteractiveOverride = () => false;
+        var resolver = MakeResolver(); // non-interactive
 
         var act = () => resolver.ResolveSourceAsync(sourceUrl: null, new FlowlineSettings(), CancellationToken.None);
 

@@ -17,10 +17,6 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     CreateSolutionService createSolutionService, CreateEnvironmentResolver createEnvironmentResolver) :
     FlowlineCommand<CloneCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture)
 {
-    /// <summary>Seam for testing — overrides ConsoleHelper.IsInteractive (global console capability
-    /// check can't be driven by an injected TestConsole).</summary>
-    internal Func<bool>? IsInteractiveOverride { get; set; }
-
     /// <summary>Seam for testing — overrides PacUtils.GetSolutionsAsync (shells out to a real pac.exe
     /// subprocess with no mocking seam of its own).</summary>
     internal Func<string, CancellationToken, Task<List<SolutionInfo>>>? GetSolutionsOverride { get; set; }
@@ -281,5 +277,5 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         return (await Console.PromptAsync(prompt, cancellationToken)).Role;
     }
 
-    bool IsInteractive() => IsInteractiveOverride?.Invoke() ?? ConsoleHelper.IsInteractive();
+    bool IsInteractive() => Console.Profile.Capabilities.Interactive;
 }
