@@ -24,7 +24,7 @@ On a match, proactively offer: *"This looks like a `<tool>` project — want me 
 
 ## Guide
 
-Every guide follows the same two-phase strategy: **Phase 1 (standalone)** replaces the old tool for plugin push, web resource push, and type generation with no project restructuring — run `flowline push <Solution> --pluginFile <dll> --dev <url>` / `--webresources <folder>` from a folder with no `.flowline`, always with `--dry-run` first. **Phase 2 (project)** runs `flowline clone`/`init` to adopt the `.flowline` config and folder convention, then replaces the old tool's registration syntax with Flowline attributes. Don't skip straight to Phase 2 — confirm Phase 1 is stable first, per each guide's own recommendation.
+Every guide follows the same two-phase strategy: **Phase 1 (standalone)** replaces the old tool for plugin push, web resource push, and type generation with no project restructuring — run `flowline push <Solution> --pluginFile <dll|nupkg> --dev <url>` / `--webresources <folder>` from a folder with no `.flowline`, always with `--dry-run` first. **Phase 2 (project)** runs `flowline clone` (the solution already exists in Dataverse, which is the normal migration case) or `flowline init` (only if it doesn't) to adopt the `.flowline` config and folder convention, then replaces the old tool's registration syntax with Flowline attributes. Don't skip straight to Phase 2 — confirm Phase 1 is stable first, per each guide's own recommendation.
 
 ### From spkl (`Flowline.wiki/13-Migration-from-spkl.md`)
 
