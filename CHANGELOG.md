@@ -7,15 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-08-03
+
 ### Added
 
-- **`flowline init [name]`**: creates a new publisher (or reuses one) and an empty unmanaged solution in a DEV environment via the Dataverse SDK, then runs the same scaffold `clone` does. `--dev <url>` targets the environment (omit for a tenant-wide interactive picker); `--publisher-prefix <prefix>` reuses an existing publisher or creates one — required, prompted interactively, or the command fails naming the flag with no TTY; `--display-name`/`--publisher-name` override the display and publisher names Flowline otherwise derives from `<name>`/`<prefix>`. `<name>` itself is optional: omit it and Flowline prompts for it (with no TTY it fails naming the argument). Create only runs against Sandbox/Developer environments — Production is refused — and Flowline never creates a `pac auth` profile, only switches to an existing one (erroring naming `pac auth create` when none matches).
-- **`flowline clone` is now interactive when run with no solution**: it prompts a tenant-wide environment picker (framed as choosing your DEV/source-of-truth environment, listing every type except Default and Teams), then lists that environment's unmanaged solutions to pick from — managed ones are hidden with a count, and the environment's `Default` solution is never listed. Creating a solution isn't offered here: clone adopts what's already in Dataverse, so an environment with nothing unmanaged stops with a pointer to `flowline init <name>`.
-- **`deploy --force delete-orphans`**: opt a deploy into deleting orphaned components that it otherwise leaves in the report (today: web resources, custom APIs and plugin assemblies). `--force all` covers it too.
+- **`flowline init [name]`**: creates a publisher and an empty unmanaged solution in DEV, then scaffolds the repo around it — the greenfield counterpart to `clone`. `--dev <url>` picks the environment, `--publisher-prefix <prefix>` the publisher; omit either and Flowline prompts, or fails naming the flag with no TTY. `--display-name` and `--publisher-name` override the names derived from `<name>` and `<prefix>`. Runs against Sandbox and Developer environments only.
+
+- **`flowline clone` with no solution name is now interactive**: pick an environment, then pick one of its unmanaged solutions. Managed ones are hidden with a count, and the environment's `Default` solution is never listed. Clone only adopts — an environment with nothing to adopt points you at `flowline init`.
+
+- **`deploy --force delete-orphans`**: delete orphaned components that `deploy` otherwise only reports. Today that means web resources. `--force all` covers it too.
+
+- **`flowline pull`**: alias for `flowline sync`.
+
+- **Branded `--help`**: logo, version and tagline on `flowline --help`, coloured section headers, and a docs link on every help screen.
 
 ### Changed
 
-- **`deploy` no longer deletes orphans automatically.** By default it now reports orphaned components and leaves them in place — pass `--force delete-orphans` to delete the ones it can, and the rest are surfaced for manual removal. This avoids removing a component the cleanup can't yet identify with full confidence, including a false-positive that flagged a live, just-imported nupkg plugin package as an orphan (`docs/test-findings/deploy-false-positive-orphan-package-assembly-guid-not-portable.md`) — now surfaced, not auto-deleted. Orphans left in place read as `detected, not auto-removed` and are counted separately in the summary.
+- **Orphan cleanup is graded per component type.** What `deploy` does with an orphan now depends on how confidently Flowline can identify it:
+  - **Deleted automatically** — plugin assemblies, Custom APIs.
+  - **Deleted only with `--force delete-orphans`** — web resources.
+  - **Reported for you to remove by hand** — bots, connection references, tables, security roles, workflows.
+
+  Anything left in place reads as `detected, not auto-removed` and is counted separately in the deploy summary.
+
+- **`push --pluginFile` documents its `.nupkg` support**: the flag already accepted a NuGet package as well as a `.dll`; only the help text was out of date. `deploy`, `drift` and `sln add` descriptions were tightened too.
+
+### Fixed
+
+- **`deploy` could delete a live plugin assembly as an orphan**, including a freshly imported `.nupkg` package. Assemblies are now matched by name instead of by an id that changes per environment, so genuine orphans are still cleaned and live ones are left alone.
+
+- **`init` didn't record the solution it created**, so the next `push` or `sync` in a fresh project couldn't find one. It's written to `.flowline` now.
+
+- **Ctrl+C at a prompt could hang** instead of cancelling. Prompts now unwind.
+
+- **`init --force config` did nothing.** Running `init` over a `.flowline` that named a different DEV URL told you to pass `--force config`, and passing it failed the same way. It now approves the overwrite.
 
 ## [0.14.0] - 2026-07-31
 
@@ -389,7 +414,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions CI and release workflows.
 
 
-[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.14.0...HEAD
+[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.15.0...HEAD
+[0.15.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.14.0...0.15.0
 [0.14.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.13.0...0.14.0
 [0.13.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.12.0...0.13.0
 [0.12.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.11.0...0.12.0
