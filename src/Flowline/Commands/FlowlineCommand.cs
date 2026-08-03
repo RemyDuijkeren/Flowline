@@ -4,6 +4,7 @@ using Flowline.Core.Console;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
+using Flowline.Infrastructure;
 using Flowline.Services;
 using Flowline.Utils;
 using Flowline.Validation;
@@ -85,7 +86,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         Logger.LogInformation("Command: {Command} {Args}", context.Name, argsOnly);
 
         if (ShowWelcome && Console.Profile.Capabilities.Interactive && FlowlineValidator.Default.ShouldShowWelcomeScreen(settings.NoCache))
-            ConsoleHelper.WelcomeScreen(Console);
+            Console.WriteWelcomeScreen();
 
         await CheckSetupAsync(settings, cancellationToken);
         Logger.LogInformation("Setup check: {Duration}", FormatDuration(sw.Elapsed));

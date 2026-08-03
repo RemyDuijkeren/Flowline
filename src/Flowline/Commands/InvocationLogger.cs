@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Services;
 using Flowline.Logging;
 using Flowline.Utils;
 using Microsoft.Extensions.Logging;
@@ -16,7 +17,7 @@ internal static class InvocationLogger
         if (tv is null) return;
 
         var cfg = config ?? new ProjectConfig();
-        var ciPlatform = ConsoleHelper.DetectCIPlatform();
+        var ciPlatform = CiPlatform.Detect();
         var ci = ciPlatform is not null;
 
         var envTiers = new List<string>(4);

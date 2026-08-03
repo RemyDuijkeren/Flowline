@@ -5,6 +5,7 @@ using Flowline.Core.Console;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
+using Flowline.Infrastructure;
 using Flowline.Utils;
 using Flowline.Validation;
 using Microsoft.Extensions.Logging;
@@ -88,7 +89,7 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
         ValidateForce(settings);
 
         if (Console.Profile.Capabilities.Interactive)
-            ConsoleHelper.WelcomeScreen(Console);
+            Console.WriteWelcomeScreen();
 
         try
         {

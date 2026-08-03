@@ -26,7 +26,7 @@ public class FlowlineSettings : CommandSettings
         Force.Contains(specifier, StringComparer.OrdinalIgnoreCase) || Force.Contains("all", StringComparer.OrdinalIgnoreCase);
 
     // Shared by clone/generate/provision/drift — their only force-gated hazard is the cross-cutting
-    // config-overwrite check (ConsoleHelper.Confirm), so their vocabulary is identical.
+    // config-overwrite check (SettingsConsoleExtensions.Confirm), so their vocabulary is identical.
     internal static readonly string[] ConfigOnlyValidSpecifiers = ["config", "all"];
 
     internal static void ValidateForce(string[] force, string[] validSpecifiers, string commandName)

@@ -34,13 +34,13 @@ public sealed class LoggingRenderHook(ILogger<LoggingRenderHook> logger) : IRend
     private static LogLevel? DetectLevel(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
-        if (text.StartsWith(FlowlineConsoleExtensions.OkPrefix) ||
-            text.StartsWith(FlowlineConsoleExtensions.InfoPrefix) ||
-            text.StartsWith(FlowlineConsoleExtensions.SkipPrefix) ||
-            text.StartsWith(FlowlineConsoleExtensions.DonePrefix))
+        if (text.StartsWith(FlowlineTheme.OkPrefix) ||
+            text.StartsWith(FlowlineTheme.InfoPrefix) ||
+            text.StartsWith(FlowlineTheme.SkipPrefix) ||
+            text.StartsWith(FlowlineTheme.DonePrefix))
             return LogLevel.Information;
-        if (text.StartsWith(FlowlineConsoleExtensions.WarningPrefix)) return LogLevel.Warning;
-        if (text.StartsWith(FlowlineConsoleExtensions.ErrorPrefix)) return LogLevel.Error;
+        if (text.StartsWith(FlowlineTheme.WarningPrefix)) return LogLevel.Warning;
+        if (text.StartsWith(FlowlineTheme.ErrorPrefix)) return LogLevel.Error;
         return LogLevel.Debug;
     }
 }

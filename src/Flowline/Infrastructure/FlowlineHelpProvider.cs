@@ -1,3 +1,4 @@
+using Flowline.Core.Console;
 using Flowline.Utils;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -31,7 +32,7 @@ internal sealed class FlowlineHelpProvider(ICommandAppSettings settings) : HelpP
     /// </remarks>
     internal static void UseFlowlineHeaderColor(HelpProviderStyle styles)
     {
-        var header = new Style(ConsoleHelper.s_welcomeColor);
+        var header = new Style(FlowlineTheme.PrimaryColor);
 
         // Default populates all six sub-styles, so no null checks.
         styles.Description!.Header = header;
@@ -47,14 +48,14 @@ internal sealed class FlowlineHelpProvider(ICommandAppSettings settings) : HelpP
                
         if (command is null)
         {
-            var welcomeText = new Text(ConsoleHelper.s_logo, new Style(ConsoleHelper.s_welcomeColor));
+            var welcomeText = new Text(FlowlineTheme.TextLogo, new Style(FlowlineTheme.PrimaryColor));
             
             yield return welcomeText;
             yield return Text.NewLine;
         }
         
         var version = FlowlineVersion.Display;
-        var versionText = new Text($"Flowline CLI v{version} - Dataverse ALM: clone → push → sync → deploy", new Style(ConsoleHelper.s_welcomeColor));
+        var versionText = new Text($"Flowline CLI v{version} - Dataverse ALM: clone → push → sync → deploy", new Style(FlowlineTheme.PrimaryColor));
         yield return versionText;
         yield return Text.NewLine;
         yield return Text.NewLine;

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Flowline.Core;
+using Flowline.Infrastructure;
 using Flowline.Utils;
 using Spectre.Console;
 
@@ -58,7 +59,7 @@ public class ProjectConfig
         if (get() != input)
         {
             AnsiConsole.MarkupLine($"[yellow]{label} is already set: [bold]{get()}[/][/]");
-            if (!ConsoleHelper.Confirm("Overwrite it?", false, settings, "config"))
+            if (!AnsiConsole.Console.Confirm("Overwrite it?", false, settings, "config"))
             {
                 AnsiConsole.MarkupLine($"[dim]Keeping {label} as-is: [link]{get()}[/][/]");
                 return get();
@@ -136,7 +137,7 @@ public class ProjectConfig
         {
             AnsiConsole.MarkupLine($"[yellow]{Solution.UniqueName} is already set to managed: {Solution.IncludeManaged}[/]");
 
-            if (!ConsoleHelper.Confirm("Overwrite it?", false, settings, "config"))
+            if (!AnsiConsole.Console.Confirm("Overwrite it?", false, settings, "config"))
             {
                 AnsiConsole.MarkupLine("[dim]Keeping solution config as-is[/]");
                 return Solution;

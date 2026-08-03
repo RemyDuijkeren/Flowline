@@ -7,6 +7,7 @@ using CliWrap;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
+using Flowline.Infrastructure;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
@@ -134,7 +135,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             {
                 Console.Info(BuildFirstImportDryRunNote(sln.UniqueName, targetEnv.DisplayName!, sln.IncludeManaged));
             }
-            else if (!await ConsoleHelper.ConfirmAsync(BuildFirstImportPrompt(sln.UniqueName, targetEnv.DisplayName!, sln.IncludeManaged), false, settings, "first-import", cancellationToken))
+            else if (!await AnsiConsole.Console.ConfirmAsync(BuildFirstImportPrompt(sln.UniqueName, targetEnv.DisplayName!, sln.IncludeManaged), false, settings, "first-import", cancellationToken))
             {
                 Console.Info("Deploy cancelled. Re-run with --force first-import to skip this confirmation.");
                 return (int)ExitCode.Cancelled;
@@ -190,7 +191,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             var cacheMessage = BuildCacheStatusMessage(cacheOutcome, sln.UniqueName, cacheEntry?.CommitSha, currentCommitSha,
                 // Only shapes the message's wording (pipeline framing is noise in CI) — never gates a
                 // prompt, so an env-var probe is right here rather than a console capability check.
-                cacheEntry?.Managed ?? false, sln.IncludeManaged, ConsoleHelper.DetectCIPlatform() is not null, hasTestOrUat);
+                cacheEntry?.Managed ?? false, sln.IncludeManaged, CiPlatform.Detect() is not null, hasTestOrUat);
             if (cacheOutcome == CacheOutcome.Hit)
                 Console.Skip(cacheMessage);
             else
@@ -559,7 +560,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             // to whatever directory the agent happened to run the command from.
             var fullPackagePath = Path.GetFullPath(packagePath);
 
-            switch (ConsoleHelper.DetectCIPlatform())
+            switch (CiPlatform.Detect())
             {
                 case "azuredevops":
                     // KTD3: raw System.Console, never the injected IAnsiConsole — Console.MarkupLine would
