@@ -46,6 +46,7 @@ public class SolutionCreateFlow(
         string? publisherNameInput,
         string rootFolder,
         ProjectConfig config,
+        FlowlineSettings settings,
         Func<ProjectSolution, string, string, CancellationToken, Task<int?>> validatePackAndBuildAsync,
         CancellationToken cancellationToken = default)
     {
@@ -115,8 +116,11 @@ public class SolutionCreateFlow(
 
         // R10: the DEV role is written only once create + scaffold + build all succeeded.
         // Record the created solution too, so a later push/sync can resolve it from .flowline.
-        config.GetOrUpdateSolution(uniqueName, includeManaged: false);
-        config.GetOrUpdateDevUrl(devEnv.EnvironmentUrl);
+        // settings is threaded in so the config-overwrite gate these two share can actually be
+        // approved: without it, running init over an existing .flowline that names a different DEV URL
+        // told you to pass --force config, and passing it changed nothing (HasForce is read off settings).
+        config.GetOrUpdateSolution(uniqueName, includeManaged: false, settings);
+        config.GetOrUpdateDevUrl(devEnv.EnvironmentUrl, settings);
         config.Save(rootFolder);
         console.Ok($"DEV set to [bold]{devEnv.DisplayName}[/] ({devEnv.EnvironmentUrl})");
 

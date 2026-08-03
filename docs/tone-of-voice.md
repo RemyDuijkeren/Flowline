@@ -27,13 +27,13 @@ convention. The glyph carries the meaning, so output skims by shape, not just by
 
 | Glyph | Meaning | Color |
 |---|---|---|
-| `✓ ` | Success | green |
-| `? ` | Question — needs your answer | bold cyan |
-| `! ` | Warning — heads up, not fatal | yellow |
-| `✗ ` | Error | red |
-| `↷ ` | Skip — already done | dim |
-| `· ` | Info — neutral detail | plain |
-| `⏸ ` | Stop — nothing left to do here, next step is yours | bold yellow |
+| `✓` | Success | green |
+| `?` | Question — needs your answer | bold cyan |
+| `!` | Warning — heads up, not fatal | yellow |
+| `✗` | Error | red |
+| `↷` | Skip — already done | dim |
+| `·` | Info — neutral detail | plain |
+| `→` | Stop — nothing left to do here, next step is yours | bold yellow |
 | `🚀` | Finish line | bold green |
 
 A leading `! ` (warning glyph) is not the same thing as the trailing `!` on the finish line

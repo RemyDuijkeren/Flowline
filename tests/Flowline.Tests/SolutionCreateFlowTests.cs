@@ -29,10 +29,15 @@ public class SolutionCreateFlowTests
     {
         var console = new TestConsole();
         var connector = new DataverseConnector(console, new HttpClient());
+        var profile = new PacProfile { Name = "Contoso", Resource = DevUrl };
         var profileResolutionService = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions())
         {
-            FindBestProfileOverride = _ => new ProfileFound(new PacProfile { Name = "Contoso", Resource = DevUrl }),
-            IsProfileActiveOverride = _ => true
+            FindBestProfileOverride = _ => new ProfileFound(profile),
+            IsProfileActiveOverride = _ => true,
+            // Without this, EnsureActiveProfileAsync falls through to the real
+            // DataverseConnector.GetPacProfiles(), which reads authprofiles_v2.json off disk — present
+            // on a dev machine, absent on a CI runner.
+            GetPacProfilesOverride = () => [profile]
         };
 
         var orgService = Substitute.For<IOrganizationServiceAsync2>();
@@ -86,7 +91,7 @@ public class SolutionCreateFlowTests
         var root = CreateTempRoot();
         try
         {
-            var act = () => flow.RunAsync(MakeDevEnv(), "class", null, "acme", null, root, new ProjectConfig(), s_succeedingBuild, CancellationToken.None);
+            var act = () => flow.RunAsync(MakeDevEnv(), "class", null, "acme", null, root, new ProjectConfig(), new FlowlineSettings(), s_succeedingBuild, CancellationToken.None);
 
             (await act.Should().ThrowAsync<FlowlineException>()).Which.Message.Should().Contain("keyword");
             await orgService.DidNotReceiveWithAnyArgs().RetrieveMultipleAsync(default!, default);
@@ -104,7 +109,7 @@ public class SolutionCreateFlowTests
         var root = CreateTempRoot();
         try
         {
-            var act = () => flow.RunAsync(MakeDevEnv(), "MySolution", null, null, null, root, new ProjectConfig(), s_succeedingBuild, CancellationToken.None);
+            var act = () => flow.RunAsync(MakeDevEnv(), "MySolution", null, null, null, root, new ProjectConfig(), new FlowlineSettings(), s_succeedingBuild, CancellationToken.None);
 
             (await act.Should().ThrowAsync<FlowlineException>()).Which.Message.Should().Contain("--publisher-prefix");
             await orgService.DidNotReceiveWithAnyArgs().RetrieveMultipleAsync(default!, default);
@@ -166,7 +171,7 @@ public class SolutionCreateFlowTests
             SeedScaffoldedRoot(root, "MySolution");
             var config = new ProjectConfig();
 
-            var exitCode = await flow.RunAsync(MakeDevEnv(), "MySolution", null, "acme", null, root, config, s_succeedingBuild, CancellationToken.None);
+            var exitCode = await flow.RunAsync(MakeDevEnv(), "MySolution", null, "acme", null, root, config, new FlowlineSettings(), s_succeedingBuild, CancellationToken.None);
 
             exitCode.Should().Be(0);
             config.DevUrl.Should().Be(DevUrl);
@@ -193,12 +198,65 @@ public class SolutionCreateFlowTests
             SeedScaffoldedRoot(root, "MySolution");
             var config = new ProjectConfig();
 
-            var exitCode = await flow.RunAsync(MakeDevEnv(), "MySolution", null, "acme", null, root, config, FailingBuild(13), CancellationToken.None);
+            var exitCode = await flow.RunAsync(MakeDevEnv(), "MySolution", null, "acme", null, root, config, new FlowlineSettings(), FailingBuild(13), CancellationToken.None);
 
             exitCode.Should().Be(13);
             config.DevUrl.Should().BeNull();
             config.Solution.Should().BeNull();
             console.Output.Should().Contain(publisherId.ToString()).And.Contain(solutionId.ToString());
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    // ── --force config actually reaches the config-overwrite gate ────────────
+    // Regression: RunAsync used to drop `settings` on the floor, so running init over a .flowline
+    // naming a different DEV URL failed telling you to pass --force config — and passing it changed
+    // nothing, because HasForce is read off the settings that never arrived.
+
+    [Fact]
+    public async Task RunAsync_ExistingDifferentDevUrl_WithForceConfig_OverwritesIt()
+    {
+        var (flow, _, orgService) = MakeFlow();
+        orgService.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "publisher")), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([new Entity("publisher", Guid.NewGuid())])));
+        orgService.CreateAsync(Arg.Is(Matching<Entity>(e => e.LogicalName == "solution")), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(Guid.NewGuid()));
+
+        var root = CreateTempRoot();
+        try
+        {
+            SeedScaffoldedRoot(root, "MySolution");
+            var config = new ProjectConfig { DevUrl = "https://stale-dev.crm4.dynamics.com" };
+            var settings = new FlowlineSettings { Force = ["config"] };
+
+            var exitCode = await flow.RunAsync(MakeDevEnv(), "MySolution", null, "acme", null, root, config, settings, s_succeedingBuild, CancellationToken.None);
+
+            exitCode.Should().Be(0);
+            config.DevUrl.Should().Be(DevUrl);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task RunAsync_ExistingDifferentDevUrl_WithoutForce_NonInteractive_ThrowsNamingForceConfig()
+    {
+        var (flow, _, orgService) = MakeFlow();
+        orgService.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "publisher")), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([new Entity("publisher", Guid.NewGuid())])));
+        orgService.CreateAsync(Arg.Is(Matching<Entity>(e => e.LogicalName == "solution")), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(Guid.NewGuid()));
+
+        var root = CreateTempRoot();
+        try
+        {
+            SeedScaffoldedRoot(root, "MySolution");
+            var config = new ProjectConfig { DevUrl = "https://stale-dev.crm4.dynamics.com" };
+
+            var act = () => flow.RunAsync(MakeDevEnv(), "MySolution", null, "acme", null, root, config, new FlowlineSettings(), s_succeedingBuild, CancellationToken.None);
+
+            var ex = (await act.Should().ThrowAsync<FlowlineException>()).Which;
+            ex.ExitCode.Should().Be(ExitCode.ForceRequired);
+            ex.Message.Should().Contain("--force config");
         }
         finally { Directory.Delete(root, recursive: true); }
     }

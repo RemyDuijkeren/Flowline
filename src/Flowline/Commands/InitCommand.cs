@@ -67,6 +67,7 @@ public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             settings.PublisherName,
             RootFolder,
             Config!,
+            settings,
             (projectSln, dataverseSolutionFolder, slnFolder, ct) =>
                 ValidatePackAndBuildAsync(projectSln, dataverseSolutionFolder, slnFolder, buildRelease: true, skipBuild: false, ct),
             cancellationToken);

@@ -840,10 +840,15 @@ public class CloneCommandTests
     {
         var console = new TestConsole();
         var connector = new DataverseConnector(console, new HttpClient());
+        var profile = new PacProfile { Name = "Contoso", Resource = DevUrl };
         var profileResolutionService = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions())
         {
-            FindBestProfileOverride = _ => new ProfileFound(new PacProfile { Name = "Contoso", Resource = DevUrl }),
-            IsProfileActiveOverride = _ => true
+            FindBestProfileOverride = _ => new ProfileFound(profile),
+            IsProfileActiveOverride = _ => true,
+            // Without this, EnsureActiveProfileAsync falls through to the real
+            // DataverseConnector.GetPacProfiles(), which reads authprofiles_v2.json off disk — present
+            // on a dev machine, absent on a CI runner.
+            GetPacProfilesOverride = () => [profile]
         };
         var capture = new SubprocessCapture(console);
         var createSolutionService = new CreateSolutionService(console, capture);

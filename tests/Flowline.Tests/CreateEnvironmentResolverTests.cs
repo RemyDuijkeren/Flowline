@@ -29,7 +29,11 @@ public class CreateEnvironmentResolverTests
         profiles = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions())
         {
             FindBestProfileOverride = _ => new ProfileFound(profile),
-            IsProfileActiveOverride = _ => true
+            IsProfileActiveOverride = _ => true,
+            // Without this, EnsureActiveProfileAsync falls through to the real
+            // DataverseConnector.GetPacProfiles(), which reads authprofiles_v2.json off disk — present
+            // on a dev machine, absent on a CI runner.
+            GetPacProfilesOverride = () => [profile]
         };
         return new CreateEnvironmentResolver(console, profiles, new SubprocessCapture(console))
         {
