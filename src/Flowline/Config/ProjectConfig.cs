@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Flowline.Core;
+using Flowline.Core.Console;
 using Flowline.Infrastructure;
 using Flowline.Utils;
 using Spectre.Console;
@@ -50,7 +51,7 @@ public class ProjectConfig
         {
             if (settings is { Verbose: true })
             {
-                AnsiConsole.MarkupLine($"[dim]{label}: [bold]{get()}[/][/]");
+                AnsiConsole.Console.Verbose($"{label}: [bold]{get()}[/]");
             }
 
             return get();
@@ -58,13 +59,13 @@ public class ProjectConfig
 
         if (get() != input)
         {
-            AnsiConsole.MarkupLine($"[yellow]{label} is already set: [bold]{get()}[/][/]");
+            AnsiConsole.Console.Warning($"{label} is already set: [bold]{get()}[/]");
             if (!AnsiConsole.Console.Confirm("Overwrite it?", false, settings, "config"))
             {
                 AnsiConsole.MarkupLine($"[dim]Keeping {label} as-is: [link]{get()}[/][/]");
                 return get();
             }
-            AnsiConsole.MarkupLine($"[green]{label} updated[/]");
+            AnsiConsole.Console.Ok($"{label} updated");
         }
 
         set(input);
@@ -118,7 +119,7 @@ public class ProjectConfig
             uniqueName = Solution.UniqueName;
             if (settings is { Verbose: true })
             {
-                AnsiConsole.MarkupLine($"[dim]Solution: [bold]{uniqueName}[/][/]");
+                AnsiConsole.Console.Verbose($"Solution: [bold]{uniqueName}[/]");
             }
         }
 
@@ -135,14 +136,14 @@ public class ProjectConfig
 
         if (includeManaged.HasValue && Solution.IncludeManaged != includeManaged.Value)
         {
-            AnsiConsole.MarkupLine($"[yellow]{Solution.UniqueName} is already set to managed: {Solution.IncludeManaged}[/]");
+            AnsiConsole.Console.Warning($"{Solution.UniqueName} is already set to managed: {Solution.IncludeManaged}");
 
             if (!AnsiConsole.Console.Confirm("Overwrite it?", false, settings, "config"))
             {
-                AnsiConsole.MarkupLine("[dim]Keeping solution config as-is[/]");
+                AnsiConsole.Console.Verbose("Keeping solution config as-is");
                 return Solution;
             }
-            AnsiConsole.MarkupLine("[green]Solution config updated[/]");
+            AnsiConsole.Console.Ok("Solution config updated");
             return AddOrUpdateSolution(new ProjectSolution
             {
                 UniqueName = uniqueName,
@@ -172,8 +173,8 @@ public class ProjectConfig
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Failed to read configuration: {ex.Message}");
-            return null;
+            throw new FlowlineException(ExitCode.ConfigInvalid,
+                $"Failed to read configuration '{configPath}': {ex.Message}", ex);
         }
 
         ValidateSchema(json, configPath);
@@ -268,8 +269,8 @@ public class ProjectConfig
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine("[red]Failed to save configuration.[/]");
-            AnsiConsole.WriteException(ex);
+            throw new FlowlineException(ExitCode.ConfigInvalid, 
+                $"Failed to save configuration '{configPath}': {ex.Message}", ex);
         }
     }
 }
