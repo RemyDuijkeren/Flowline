@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Flowline.Services;
 using Spectre.Console.Testing;
@@ -218,6 +219,31 @@ public class DataverseContextGeneratorTests
         result.Should().Contain("`av_contact_team`");
     }
 
+    // Shape taken verbatim from a real `pac solution sync` unpack (Other/Relationships/Account.xml):
+    // Name attribute, <EntityRelationshipType>OneToMany</EntityRelationshipType>, Name-suffixed elements.
+    [Fact]
+    public void ReadRelationships_PacUnpackFormat_OneToMany_RendersNamesAndType()
+    {
+        const string xml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <EntityRelationships xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+              <EntityRelationship Name="dwe_account_Bedrijf_account">
+                <EntityRelationshipType>OneToMany</EntityRelationshipType>
+                <ReferencingEntityName>Account</ReferencingEntityName>
+                <ReferencedEntityName>Account</ReferencedEntityName>
+                <ReferencingAttributeName>dwe_Bedrijf</ReferencingAttributeName>
+              </EntityRelationship>
+            </EntityRelationships>
+            """;
+
+        var result = DataverseContextGenerator.ReadRelationships(xml);
+
+        result.Should().Contain("`dwe_account_Bedrijf_account`");
+        result.Should().Contain("OneToMany");
+        result.Should().Contain("`dwe_Bedrijf`");
+        result.Should().NotContain("ManyToManyRelationship");
+    }
+
     [Fact]
     public void ReadRelationships_NullInput_ReturnsNull() =>
         DataverseContextGenerator.ReadRelationships(null).Should().BeNull();
@@ -288,6 +314,45 @@ public class DataverseContextGeneratorTests
 
         result.Should().Contain("`visiblefield`");
         result.Should().NotContain("`hiddenfield`");
+    }
+
+    // Shape taken from a real `pac solution sync` unpack: hidden cells are visible="false" (not
+    // invisible="true"), and cells this solution takes off the form carry solutionaction="Removed".
+    // Repeated fields come from a lookup plus its quick view.
+    [Fact]
+    public void ReadForm_PacUnpackFormat_ExcludesHiddenAndRemoved_AndDedupes()
+    {
+        const string xml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <form>
+              <tabs>
+                <tab name="SUMMARY_TAB">
+                  <labels><label languagecode="1043" description="Klantgegevens" /></labels>
+                  <columns><column><sections>
+                    <section name="ACCOUNT_INFORMATION">
+                      <rows><row>
+                        <cell datafieldname="dwe_voornaam" solutionaction="Added" />
+                        <cell datafieldname="dwe_aanhefafkorting" visible="false" solutionaction="Added" />
+                        <cell datafieldname="telephone1" solutionaction="Removed" />
+                        <cell datafieldname="primarycontactid" />
+                        <cell><control datafieldname="primarycontactid" /></cell>
+                      </row></rows>
+                    </section>
+                  </sections></column></columns>
+                </tab>
+              </tabs>
+            </form>
+            """;
+
+        var result = DataverseContextGenerator.ReadForm(xml, "main")!;
+
+        result.Should().Contain("**Klantgegevens**");
+        result.Should().Contain("`dwe_voornaam`");
+        result.Should().NotContain("`dwe_aanhefafkorting`");
+        result.Should().NotContain("`telephone1`");
+        Regex.Matches(result, "`primarycontactid`").Count.Should().Be(1);
+        // No <labels> on the section — nothing to read, so the raw section name shows.
+        result.Should().Contain("- ACCOUNT_INFORMATION:");
     }
 
     [Fact]
@@ -562,6 +627,75 @@ public class DataverseContextGeneratorTests
             var bytes = File.ReadAllBytes(expectedPath);
             (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
                 .Should().BeFalse("output must be UTF-8 without BOM");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    // A --packagetype Both unpack leaves a "{guid}_managed.xml" twin beside every form; without the
+    // exclusion the generator rendered each form twice.
+    [Fact]
+    public async Task GenerateAsync_ManagedTwinForm_RendersFormOnce()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        var packageSrc = Path.Combine(root, "Solution", "src");
+        var mainFormDir = Path.Combine(packageSrc, "Entities", "Contact", "FormXml", "main");
+        Directory.CreateDirectory(Path.Combine(packageSrc, "Other"));
+        Directory.CreateDirectory(mainFormDir);
+
+        File.WriteAllText(Path.Combine(packageSrc, "Other", "Solution.xml"), """
+            <?xml version="1.0"?>
+            <ImportExportXml>
+              <SolutionManifest>
+                <UniqueName>MySolution</UniqueName>
+                <Version>1.0.0.0</Version>
+                <Publisher><CustomizationPrefix>ms</CustomizationPrefix></Publisher>
+              </SolutionManifest>
+            </ImportExportXml>
+            """);
+
+        File.WriteAllText(Path.Combine(packageSrc, "Entities", "Contact", "Entity.xml"), """
+            <?xml version="1.0" encoding="utf-8"?>
+            <Entity>
+              <Name LocalizedName="Contact" OriginalName="">contact</Name>
+              <EntityInfo>
+                <entity Name="contact">
+                  <EntitySetName>contacts</EntitySetName>
+                  <attributes>
+                    <attribute>
+                      <LogicalName>av_linkedin</LogicalName>
+                      <Name>av_linkedin</Name>
+                      <Type>nvarchar</Type>
+                      <IsCustomField>1</IsCustomField>
+                    </attribute>
+                  </attributes>
+                </entity>
+              </EntityInfo>
+            </Entity>
+            """);
+
+        const string formXml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <form>
+              <tabs>
+                <tab name="general">
+                  <sections>
+                    <section name="details">
+                      <rows><row><cell><control datafieldname="av_linkedin" /></cell></row></rows>
+                    </section>
+                  </sections>
+                </tab>
+              </tabs>
+            </form>
+            """;
+        File.WriteAllText(Path.Combine(mainFormDir, "{11111111-1111-1111-1111-111111111111}.xml"), formXml);
+        File.WriteAllText(Path.Combine(mainFormDir, "{11111111-1111-1111-1111-111111111111}_managed.xml"), formXml);
+
+        try
+        {
+            await new DataverseContextGenerator(new TestConsole()).GenerateAsync(packageSrc, "MySolution", root);
+
+            var content = File.ReadAllText(Path.Combine(root, "docs", "DATAVERSE_CONTEXT.md"));
+            Regex.Matches(content, @"^### Form: ", RegexOptions.Multiline).Count.Should().Be(1);
         }
         finally { Directory.Delete(root, recursive: true); }
     }

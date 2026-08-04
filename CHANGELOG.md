@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`DATAVERSE_CONTEXT.md` no longer renders every form twice on managed projects**: a `--packagetype Both` unpack writes a `{guid}_managed.xml` twin beside each form, and the generator read both. Managed twins are now skipped for forms and views.
+
+- **Form sections in `DATAVERSE_CONTEXT.md` no longer list hidden or deleted fields**: `pac` writes hidden cells as `visible="false"`, but the generator only looked for `invisible="true"` — an attribute a real unpack never contains. Cells this solution takes off the form (`solutionaction="Removed"`) are skipped too, and a field that appears twice in one section (a lookup plus its quick view) is listed once.
+
+- **1:N relationship tables in `DATAVERSE_CONTEXT.md` are no longer empty**: the generator read element names that `pac` does not write, so every row rendered blank and mislabelled `ManyToManyRelationship`. It now reads the real unpack format (`Name` attribute, `EntityRelationshipType`, `Referencing*Name`/`Referenced*Name`). N:N element names are still unverified against a real unpack.
+
 ## [0.15.0] - 2026-08-03
 
 ### Added

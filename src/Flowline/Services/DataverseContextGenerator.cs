@@ -128,11 +128,13 @@ public class DataverseContextGenerator(IAnsiConsole console)
                 }
 
                 // Forms
+                // A --packagetype Both unpack writes a "{guid}_managed.xml" twin next to each form, so a
+                // plain "*.xml" glob renders every form twice. Same exclusion list the change summary uses.
                 foreach (var formType in new[] { "main", "quick", "card" })
                 {
                     var formDir = Path.Combine(entityDir, "FormXml", formType);
                     if (!Directory.Exists(formDir)) continue;
-                    foreach (var formFile in Directory.EnumerateFiles(formDir, "*.xml").OrderBy(f => f))
+                    foreach (var formFile in Directory.EnumerateFiles(formDir, "*.xml").Where(f => !SolutionChangeSummary.IsExcluded(f)).OrderBy(f => f))
                     {
                         var formXml = TryReadFile(formFile);
                         if (formXml == null) continue;
@@ -145,7 +147,7 @@ public class DataverseContextGenerator(IAnsiConsole console)
                 var savedQueriesDir = Path.Combine(entityDir, "SavedQueries");
                 if (Directory.Exists(savedQueriesDir))
                 {
-                    foreach (var viewFile in Directory.EnumerateFiles(savedQueriesDir, "*.xml").OrderBy(f => f))
+                    foreach (var viewFile in Directory.EnumerateFiles(savedQueriesDir, "*.xml").Where(f => !SolutionChangeSummary.IsExcluded(f)).OrderBy(f => f))
                     {
                         var viewXml = TryReadFile(viewFile);
                         if (viewXml == null) continue;
@@ -330,18 +332,24 @@ public class DataverseContextGenerator(IAnsiConsole console)
 
             foreach (var rel in relationships)
             {
-                var schemaName = (string?)rel.Element("SchemaName") ?? string.Empty;
-                var relType    = (string?)rel.Element("RelationshipType") ?? string.Empty;
+                // PAC writes the schema name as a Name attribute, the type as <EntityRelationshipType>
+                // (spelled "OneToMany", no "Relationship" suffix), and Name-suffixed entity/attribute
+                // elements. The un-suffixed spellings are kept as fallbacks on the 1:N path.
+                var schemaName = (string?)rel.Attribute("Name") ?? (string?)rel.Element("SchemaName") ?? string.Empty;
+                var relType    = (string?)rel.Element("EntityRelationshipType") ?? (string?)rel.Element("RelationshipType") ?? string.Empty;
 
-                if (relType.Equals("OneToManyRelationship", StringComparison.OrdinalIgnoreCase) ||
-                    relType.Equals("ManyToOneRelationship",  StringComparison.OrdinalIgnoreCase))
+                if (relType.StartsWith("OneToMany", StringComparison.OrdinalIgnoreCase) ||
+                    relType.StartsWith("ManyToOne",  StringComparison.OrdinalIgnoreCase))
                 {
-                    var referenced  = (string?)rel.Element("ReferencedEntity") ?? string.Empty;
-                    var referencing = (string?)rel.Element("ReferencingEntity") ?? string.Empty;
-                    var lookup      = (string?)rel.Element("ReferencingAttribute") ?? string.Empty;
+                    var referenced  = (string?)rel.Element("ReferencedEntityName") ?? (string?)rel.Element("ReferencedEntity") ?? string.Empty;
+                    var referencing = (string?)rel.Element("ReferencingEntityName") ?? (string?)rel.Element("ReferencingEntity") ?? string.Empty;
+                    var lookup      = (string?)rel.Element("ReferencingAttributeName") ?? (string?)rel.Element("ReferencingAttribute") ?? string.Empty;
                     var related     = relType.Contains("OneToMany", StringComparison.OrdinalIgnoreCase) ? referencing : referenced;
                     sb.AppendLine($"| `{schemaName}` | {relType} | `{related}` | `{lookup}` |");
                 }
+                // ponytail: N:N element names below are unverified against a real unpack — no sample
+                // solution on hand has an N:N. If they turn out to be Name-suffixed like the 1:N ones,
+                // these rows render blank the same way the 1:N rows used to.
                 else // N:N
                 {
                     var entity1   = (string?)rel.Element("Entity1LogicalName") ?? string.Empty;
@@ -378,7 +386,13 @@ public class DataverseContextGenerator(IAnsiConsole console)
                     var secLabel = GetLocalizedName(section.Element("labels")) ?? (string?)section.Attribute("name") ?? "Section";
                     foreach (var cell in section.Descendants("cell"))
                     {
+                        // PAC writes hidden cells as visible="false"; "invisible" never appears in a
+                        // real unpack but stays as a fallback. On a form shared with other solutions
+                        // every cell carries a solutionaction marker describing this solution's
+                        // contribution — "Removed" means this solution takes the cell off the form.
+                        if ((string?)cell.Attribute("visible") == "false") continue;
                         if ((string?)cell.Attribute("invisible") == "true") continue;
+                        if ((string?)cell.Attribute("solutionaction") == "Removed") continue;
                         var fieldName = (string?)cell.Attribute("datafieldname")
                                      ?? (string?)cell.Element("control")?.Attribute("datafieldname");
                         if (string.IsNullOrEmpty(fieldName)) continue;
@@ -400,7 +414,8 @@ public class DataverseContextGenerator(IAnsiConsole console)
                 sb.AppendLine();
                 foreach (var secGroup in tabGroup.GroupBy(f => f.section))
                 {
-                    sb.AppendLine($"- {secGroup.Key}: {string.Join(", ", secGroup.Select(f => $"`{f.field}`"))}");
+                    // A section can hold the same field twice (a lookup plus its quick-view control).
+                    sb.AppendLine($"- {secGroup.Key}: {string.Join(", ", secGroup.Select(f => f.field).Distinct().Select(f => $"`{f}`"))}");
                 }
                 sb.AppendLine();
             }
