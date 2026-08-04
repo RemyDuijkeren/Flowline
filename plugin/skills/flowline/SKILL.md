@@ -38,6 +38,19 @@ environment is a branch of it. So `clone` normally pulls from PROD, `push`/`sync
 `deploy` promotes DEV's work onward. A team keeping only managed in PROD and treating DEV as truth is
 also supported — don't assume either way beyond what `.flowline` says.
 
+`flowline provision [dev|test|uat]` is how a DEV gets branched off PROD — it copies PROD into the
+target with `pac admin copy`, creating the environment as a **Sandbox** when it doesn't exist yet —
+so a provisioned DEV is always a Sandbox. A Developer environment is a fine `clone`/`sync` source but
+can't be reached this way. Copy mode defaults to
+minimal (schema, no data) for `dev` and full for `test`/`uat`; `--copy full|minimal` overrides.
+An existing target is refused unless you pass `--allow-overwrite`.
+
+Re-provisioning is the intended way to resync DEV with PROD after promoting — but **it is slow**:
+typically 30 minutes to 2 hours, and Flowline raises `pac`'s wait ceiling to 8 hours for the rare
+long copy rather than because one is expected. In practice you make several changes against one DEV and
+re-provision only when it has drifted far enough from PROD to be misleading. Never suggest it as a
+routine post-deploy step.
+
 ## Core loop
 
 1. **Edit code.** Registration intent lives in the code, never in the Plugin Registration Tool:
@@ -47,6 +60,8 @@ also supported — don't assume either way beyond what `.flowline` says.
    - JS web resources: `// flowline:onload`, `onsave`, `onchange`, `depends`, plus tab
      (`tabstatechange`) and IFRAME (`onreadystatecomplete`) events. Append `[order:N]` to fix
      cross-file handler order, `[bulkEdit]` (onload only) to toggle the library's bulk-edit setting.
+   - Generated early-bound classes under `Models/` are `flowline generate` output — never hand-edit
+     them, and see the `flowline-generate` skill when they're stale, missing, or won't compile.
 2. `flowline push --dry-run` → read the printed plan (creates, updates, deletes, orphans) and show it
    to the user before anything mutating. It ends with `Air push complete`; nothing was written.
 3. `flowline push` → deterministic sync to DEV, including orphan cleanup. A second run says
@@ -59,7 +74,8 @@ also supported — don't assume either way beyond what `.flowline` says.
 `flowline drift <env>` is the read-only preview of what a deploy would flag — safe against prod at any
 time. `flowline status` reports environments, auth and git state without touching anything.
 
-If the solution's schema changed, run `flowline generate` to refresh early-bound types before building.
+If the solution's schema changed *and* the plugin code uses early-bound types, run `flowline generate`
+before building — see the `flowline-generate` skill. Late-bound plugins never need it.
 
 ## Contract
 
@@ -87,6 +103,30 @@ If the solution's schema changed, run `flowline generate` to refresh early-bound
   `<root>/Flowline/logs/<yyyy-MM-ddTHHmmss>Z-<command>.log`, where `<root>` is `%LOCALAPPDATA%` on
   Windows, else `$XDG_CACHE_HOME`, else `~/.cache`. Reading the log is the alternative to re-running
   with `--verbose`.
+
+## What `sync` writes, and how to read it
+
+Every `sync` rewrites two files in the repo. Both are generated output — edit the source, never these.
+
+**`CHANGES.md`** — the same tree `sync` prints, as a file: components added, modified, or removed in
+DEV since the last commit. It describes *this sync*, so it is replaced every run, not appended to.
+
+**`docs/DATAVERSE_CONTEXT.md`** — a schema digest built from `Solution/src/`. Read it for logical
+names, types, option set values, and which columns a form or view uses.
+
+Its one limit, and it causes real mistakes: **it documents what the solution owns, not what a user
+sees.** A form's XML carries only the cells this solution touches, so a field that exists on the
+form but was never customized here simply isn't listed — its absence is not evidence it doesn't
+exist. Conversely a listed field can still be hidden at runtime by a form script. Confirm against
+Dataverse before concluding a column or control is missing.
+
+Two more reading notes:
+
+- `~ entity metadata` in a change report means the entity's XML changed without a listed
+  attribute-level change — often ordering or a dependency block, not a customization.
+- Flipping `--managed` changes the *extraction format* (`Solution.xml` goes `<Managed>0</Managed>` →
+  `2`), so the first sync after it reports a large one-time diff that isn't a customization change.
+  Commit it once and move on.
 
 ## Orphan cleanup — what actually gets deleted
 
