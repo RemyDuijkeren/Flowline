@@ -97,9 +97,9 @@ public static class PluginProjectResolver
     /// drops only when the project file's own text makes it certain, and defers to reflection otherwise:
     /// a plugin project whose SDK reference arrives from <c>Directory.Build.props</c> or transitively
     /// through a <c>ProjectReference</c> carries none of the marker strings in its own csproj, and
-    /// dropping it on that absence is a guess. The target-framework check runs first and stays
-    /// unconditional because <c>&lt;TargetFramework&gt;</c> is the project's own declaration — nothing a
-    /// props file or a project reference adds can make a <c>net10.0</c> project a plugin project.
+    /// dropping it on that absence is a guess. The target-framework and test-SDK checks run first and stay
+    /// unconditional because both read the project's own declaration — nothing a props file or a project
+    /// reference adds can make a <c>net10.0</c> project, or a test project, a plugin project.
     /// </remarks>
     public static string? DescribePreFilterSkip(string projectFilePath)
     {
@@ -108,6 +108,20 @@ public static class PluginProjectResolver
         var frameworks = ReadTargetFrameworks(text);
         if (frameworks.Count > 0 && !frameworks.Any(f => f.StartsWith("net4", StringComparison.OrdinalIgnoreCase)))
             return $"targets {string.Join(", ", frameworks)}, not .NET Framework";
+
+        // Unconditional for the same reason <TargetFramework> is: the test SDK is the project's own
+        // declaration, and nothing a props file or a ProjectReference adds makes a test project a plugin
+        // project. Without it a plugin test project reaches reflection and is classified as one — it
+        // references Microsoft.CrmSdk to compile against the SDK, and its ProjectReference copies the
+        // assembly under test into its own bin/Release, which FindOutputAssemblies then reads as this
+        // project's plugin assembly. The result is the same assembly pushed twice, from two projects.
+        //
+        // Microsoft.NET.Test.Sdk alone, deliberately: it is what makes `dotnet test` work, so every test
+        // project carries it, and unlike a framework name or a *.Tests filename it cannot appear on a real
+        // plugin project. A drop here is final and the discovered set drives the orphan sweeps, so the
+        // marker has to be one that never misfires.
+        if (text.Contains("Microsoft.NET.Test.Sdk", StringComparison.OrdinalIgnoreCase))
+            return "references Microsoft.NET.Test.Sdk — a test project, not a plugin project";
 
         // Microsoft.CrmSdk is in the list because that's the package name real projects reference
         // (Microsoft.CrmSdk.CoreAssemblies) — the Microsoft.Xrm.Sdk assembly it delivers never appears in

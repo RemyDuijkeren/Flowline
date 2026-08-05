@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A plugin test project is no longer pushed as a second plugin project**: a `.Tests` project targeting .NET Framework passed every discovery check — it references the CrmSdk to compile, and its `ProjectReference` copies the assembly under test into its own `bin/Release`, where reflection found the plugin types. The same assembly was pushed twice, and under the default `Auto` packaging mode the second push was a bare `.dll` (the test project produces no `.nupkg`) even where the first was a package. Any project referencing `Microsoft.NET.Test.Sdk` is now skipped on the project file alone, before it is built. Test projects that carry no `Microsoft.NET.Test.Sdk` reference — xunit v3, TUnit, `EnableMSTestRunner` — are not covered, but those need a modern target framework, which discovery already drops.
+
+- **`generate` no longer derives its namespace from a test project**: the namespace comes from the first discovered plugin project that declares a `RootNamespace` or `PackageId`, and a `Plugins.Tests` folder sorts ahead of `Plugins`. With the test project no longer discovered, projects in that layout now derive from the real plugin project. Set `Solution.Generate.Namespace` in `.flowline` to pin it explicitly.
+
 - **`DATAVERSE_CONTEXT.md` no longer renders every form twice on managed projects**: a `--packagetype Both` unpack writes a `{guid}_managed.xml` twin beside each form, and the generator read both. Managed twins are now skipped for forms and views.
 
 - **Form sections in `DATAVERSE_CONTEXT.md` no longer list hidden or deleted fields**: `pac` writes hidden cells as `visible="false"`, but the generator only looked for `invisible="true"` — an attribute a real unpack never contains. Cells this solution takes off the form (`solutionaction="Removed"`) are skipped too, and a field that appears twice in one section (a lookup plus its quick view) is listed once.

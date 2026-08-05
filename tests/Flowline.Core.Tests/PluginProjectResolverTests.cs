@@ -171,6 +171,23 @@ public class PluginProjectResolverTests : IDisposable
     }
 
     [Fact]
+    public void DescribePreFilterSkip_WithAPluginTestProject_ShouldDropIt()
+    {
+        // The shape a real plugin test project has: net4x to match the assembly under test, a CrmSdk
+        // reference to compile against the SDK, and a ProjectReference to the plugin project. Every other
+        // branch of the filter lets it through — the SDK marker is present and so is the ProjectReference —
+        // so without the test-SDK check it reaches reflection, where the plugin DLL its ProjectReference
+        // copied into bin/Release makes it read as a second plugin project.
+        var projectPath = WriteProject("Plugins.Tests", "Plugins.Tests.csproj",
+            "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net48</TargetFramework></PropertyGroup>" +
+            "<ItemGroup><PackageReference Include=\"Microsoft.CrmSdk.CoreAssemblies\" Version=\"9.0.2\" />" +
+            "<PackageReference Include=\"Microsoft.NET.Test.Sdk\" Version=\"17.11.1\" /></ItemGroup>" +
+            "<ItemGroup><ProjectReference Include=\"..\\Plugins\\Plugins.csproj\" /></ItemGroup></Project>");
+
+        PluginProjectResolver.DescribePreFilterSkip(projectPath).Should().Contain("Microsoft.NET.Test.Sdk");
+    }
+
+    [Fact]
     public void DescribePreFilterSkip_WithModernTargetFrameworkAndAProjectReference_ShouldStillDrop()
     {
         // The deferral covers the SDK-marker check only. <TargetFramework> is the project's own
