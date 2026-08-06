@@ -359,13 +359,13 @@ public class FormEventRenameAdvisorTests : IDisposable
         const string library = "av_/lib.js";
         const string attribute = "creditlimit";
 
-        var expectedId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.OnChange, "onCreditlimitChange", library, attribute);
+        var expectedId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.OnChange, "onChangeCreditlimit", library, attribute);
         var xdoc = System.Xml.Linq.XDocument.Parse(BuildFormXml());
         FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnChange,
-            new List<FormEventHandler> { new("onCreditlimitChange", library, expectedId, "") }, attribute);
+            new List<FormEventHandler> { new("onChangeCreditlimit", library, expectedId, "") }, attribute);
 
         var annotation = new ResolvedFormEventAnnotation(
-            new FormEventAnnotation(entity, oldName, FormEventType.OnChange, null, null, attribute), library, "function onCreditlimitChange() {}", "src/lib.ts");
+            new FormEventAnnotation(entity, oldName, FormEventType.OnChange, null, null, attribute), library, "function onChangeCreditlimit() {}", "src/lib.ts");
 
         var solutionForms = new List<DataverseForm>
         {
@@ -399,7 +399,7 @@ public class FormEventRenameAdvisorTests : IDisposable
         // Annotation targets "creditlimit", not "revenue" — its expected id (derived with attribute
         // "creditlimit") will never match the "revenue"-scoped handler above, id collision aside.
         var annotation = new ResolvedFormEventAnnotation(
-            new FormEventAnnotation(entity, oldName, FormEventType.OnChange, null, null, "creditlimit"), library, "function onCreditlimitChange() {}", "src/lib.ts");
+            new FormEventAnnotation(entity, oldName, FormEventType.OnChange, null, null, "creditlimit"), library, "function onChangeCreditlimit() {}", "src/lib.ts");
 
         // Two candidates on the entity — otherwise the sole-survivor (hedged) signal would independently
         // fire and mask what this test is actually isolating (self-tag's attribute-keyed non-match).
@@ -480,13 +480,13 @@ public class FormEventRenameAdvisorTests : IDisposable
         const string library = "av_/lib.js";
         const string attribute = "creditlimit";
 
-        var expectedId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.OnChange, "onCreditlimitChange", library, attribute);
+        var expectedId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.OnChange, "onChangeCreditlimit", library, attribute);
         var xdoc = System.Xml.Linq.XDocument.Parse(BuildFormXml());
         FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnChange,
-            new List<FormEventHandler> { new("onCreditlimitChange", library, expectedId, "") }, attribute);
+            new List<FormEventHandler> { new("onChangeCreditlimit", library, expectedId, "") }, attribute);
 
         var annotation = new ResolvedFormEventAnnotation(
-            new FormEventAnnotation(entity, oldName, FormEventType.OnChange, null, null, attribute), library, "function onCreditlimitChange() {}", "src/lib.ts");
+            new FormEventAnnotation(entity, oldName, FormEventType.OnChange, null, null, attribute), library, "function onChangeCreditlimit() {}", "src/lib.ts");
 
         var solutionForms = new List<DataverseForm>
         {
@@ -509,13 +509,13 @@ public class FormEventRenameAdvisorTests : IDisposable
         const string library = "av_/lib.js";
         const string tabName = "Summary";
 
-        var expectedId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.TabStateChange, "onSummaryTabStateChange", library, tabName);
+        var expectedId = FormEventDeterministicId.ForHandler(entity, oldName, FormEventType.TabStateChange, "tabStateChangeSummary", library, tabName);
         var xdoc = System.Xml.Linq.XDocument.Parse("""<form><tabs><tab name="Summary"><columns><column width="100%" /></columns></tab></tabs></form>""");
         FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.TabStateChange,
-            new List<FormEventHandler> { new("onSummaryTabStateChange", library, expectedId, "") }, tabName);
+            new List<FormEventHandler> { new("tabStateChangeSummary", library, expectedId, "") }, tabName);
 
         var annotation = new ResolvedFormEventAnnotation(
-            new FormEventAnnotation(entity, oldName, FormEventType.TabStateChange, null, null, tabName), library, "function onSummaryTabStateChange() {}", "src/lib.ts");
+            new FormEventAnnotation(entity, oldName, FormEventType.TabStateChange, null, null, tabName), library, "function tabStateChangeSummary() {}", "src/lib.ts");
 
         var solutionForms = new List<DataverseForm>
         {
@@ -549,9 +549,9 @@ public class FormEventRenameAdvisorTests : IDisposable
         FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnReadyStateComplete,
             new List<FormEventHandler> { new("onMyFrameReadyStateComplete", library, expectedId, "") }, controlId);
 
-        // Explicit function name (not the default-derived "on" + PascalCase(IFRAME_myFrame) +
-        // "ReadyStateComplete", which would PascalCase past the underscore) — keeps this test isolated to
-        // self-tag matching, not name-derivation behavior.
+        // Explicit function name (not the default-derived "onReadyStateComplete" +
+        // PascalCase(IFRAME_myFrame), which would PascalCase past the underscore) — keeps this test
+        // isolated to self-tag matching, not name-derivation behavior.
         var annotation = new ResolvedFormEventAnnotation(
             new FormEventAnnotation(entity, oldName, FormEventType.OnReadyStateComplete, "onMyFrameReadyStateComplete", null, controlId), library, "function onMyFrameReadyStateComplete() {}", "src/lib.ts");
 

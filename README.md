@@ -141,7 +141,7 @@ Beyond the sync itself, Flowline reads `// flowline:...` comment annotations str
 export function onLoad(executionContext) { ... }
 
 // flowline:onchange account "Account Main" creditlimit
-export function onCreditLimitChange(executionContext) { ... }
+export function onChangeCreditlimit(executionContext) { ... }
 ```
 
 **[Push WebResources wiki](https://github.com/RemyDuijkeren/Flowline/wiki/05-Push-WebResources)**

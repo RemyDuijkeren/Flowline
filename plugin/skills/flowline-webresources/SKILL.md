@@ -65,14 +65,15 @@ Grammar:
 - `//! flowline:…` and `/*! flowline:… */` are also recognized. The block form is the one that
   reliably survives minification.
 
-Default function names when you omit one:
+Default function names when you omit one — one rule for all five: **camelCase the directive token,
+then append the PascalCased scope token.**
 
 | Directive               | Default                                                       |
 |-------------------------|---------------------------------------------------------------|
-| `onload` / `onsave`     | `onLoad` / `onSave`                                           |
-| `onchange`              | `on` + PascalCase attribute **with publisher prefix stripped** + `Change` — `new_credit_limit` → `onCreditLimitChange` |
-| `tabstatechange`        | `on` + PascalCase tab name + `TabStateChange`                  |
-| `onreadystatecomplete`  | `on` + PascalCase control id + `ReadyStateComplete`            |
+| `onload` / `onsave`     | `onLoad` / `onSave` (no scope token, nothing appended)        |
+| `onchange`              | `onChange` + PascalCase attribute **with publisher prefix stripped** — `new_credit_limit` → `onChangeCreditLimit` |
+| `tabstatechange`        | `tabStateChange` + PascalCase tab name — `Summary` → `tabStateChangeSummary` |
+| `onreadystatecomplete`  | `onReadyStateComplete` + PascalCase control id — `myFrame` → `onReadyStateCompleteMyFrame` |
 
 The prefix strip applies to `onchange` only — tab and IFRAME names are maker-assigned form-design
 names, not schema names, so nothing is stripped there.

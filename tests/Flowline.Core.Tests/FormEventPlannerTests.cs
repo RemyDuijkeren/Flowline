@@ -563,20 +563,20 @@ public class FormEventPlannerTests
     // --- flowline:onchange ---
 
     [Fact]
-    public void Plan_OnChangeNoFunctionSingleLowercaseAttribute_DefaultsToOnAttributeChange()
+    public void Plan_OnChangeNoFunctionSingleLowercaseAttribute_DefaultsToOnChangeAttribute()
     {
         var formXml = BuildFormXml();
         var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
 
         var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnChange, null, null, "creditlimit");
-        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/lib.js", "function onCreditlimitChange() {}", "src/lib.ts");
+        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/lib.js", "function onChangeCreditlimit() {}", "src/lib.ts");
 
         var snapshot = BuildSnapshot([resolved], ("account", "Account Main", form));
 
         var plan = _planner.Plan(snapshot);
 
         var entry = Assert.Single(plan.Forms);
-        Assert.Single(entry.DesiredHandlers, h => h.FunctionName == "onCreditlimitChange");
+        Assert.Single(entry.DesiredHandlers, h => h.FunctionName == "onChangeCreditlimit");
     }
 
     [Fact]
@@ -586,14 +586,14 @@ public class FormEventPlannerTests
         var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
 
         var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnChange, null, null, "new_credit_limit");
-        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/lib.js", "function onCreditLimitChange() {}", "src/lib.ts");
+        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/lib.js", "function onChangeCreditLimit() {}", "src/lib.ts");
 
         var snapshot = BuildSnapshot([resolved], ("account", "Account Main", form));
 
         var plan = _planner.Plan(snapshot);
 
         var entry = Assert.Single(plan.Forms);
-        Assert.Single(entry.DesiredHandlers, h => h.FunctionName == "onCreditLimitChange");
+        Assert.Single(entry.DesiredHandlers, h => h.FunctionName == "onChangeCreditLimit");
     }
 
     [Fact]
@@ -603,14 +603,14 @@ public class FormEventPlannerTests
         var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
 
         var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnChange, null, null, "cr507_risk_rating");
-        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/lib.js", "function onRiskRatingChange() {}", "src/lib.ts");
+        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/lib.js", "function onChangeRiskRating() {}", "src/lib.ts");
 
         var snapshot = BuildSnapshot([resolved], ("account", "Account Main", form));
 
         var plan = _planner.Plan(snapshot);
 
         var entry = Assert.Single(plan.Forms);
-        Assert.Single(entry.DesiredHandlers, h => h.FunctionName == "onRiskRatingChange");
+        Assert.Single(entry.DesiredHandlers, h => h.FunctionName == "onChangeRiskRating");
     }
 
     [Fact]
@@ -683,14 +683,14 @@ public class FormEventPlannerTests
         var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", xdoc.ToString());
 
         var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnChange, null, null, "creditlimit");
-        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/lib.js", "function onCreditlimitChange() {}", "src/lib.ts");
+        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/lib.js", "function onChangeCreditlimit() {}", "src/lib.ts");
 
         var snapshot = BuildSnapshot([resolved], ("account", "Account Main", form));
 
         var plan = _planner.Plan(snapshot);
 
         Assert.Contains(plan.Forms, e => e.Event == FormEventType.OnChange && e.Attribute == "creditlimit"
-            && e.DesiredHandlers.Any(h => h.FunctionName == "onCreditlimitChange"));
+            && e.DesiredHandlers.Any(h => h.FunctionName == "onChangeCreditlimit"));
         Assert.Contains(plan.Forms, e => e.Event == FormEventType.OnChange && e.Attribute == "revenue" && e.DesiredHandlers.Count == 0);
     }
 
@@ -707,7 +707,7 @@ public class FormEventPlannerTests
         var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", xdoc.ToString());
 
         var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnChange, null, null, "creditlimit");
-        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/keep.js", "function onCreditlimitChange() {}", "src/keep.ts");
+        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/keep.js", "function onChangeCreditlimit() {}", "src/keep.ts");
 
         var snapshot = BuildSnapshotUntrackedLibrary([resolved], "av_/untracked.js", ("account", "Account Main", form));
 
@@ -989,7 +989,7 @@ public class FormEventPlannerTests
 
         var annotation = new ResolvedFormEventAnnotation(
             new FormEventAnnotation("account", "Account Main", FormEventType.TabStateChange, null, null, "Summary"),
-            "av_/lib.js", "function onSummaryTabStateChange() {}", "src/lib.ts");
+            "av_/lib.js", "function tabStateChangeSummary() {}", "src/lib.ts");
 
         var snapshot = BuildSnapshot([annotation], ("account", "Account Main", form));
 
@@ -997,7 +997,7 @@ public class FormEventPlannerTests
 
         var entry = Assert.Single(plan.Forms, e => e.Event == FormEventType.TabStateChange);
         Assert.Equal("Summary", entry.Attribute);
-        Assert.Single(entry.DesiredHandlers, h => h.FunctionName == "onSummaryTabStateChange");
+        Assert.Single(entry.DesiredHandlers, h => h.FunctionName == "tabStateChangeSummary");
     }
 
     [Fact]
@@ -1052,7 +1052,7 @@ public class FormEventPlannerTests
 
         var annotation = new ResolvedFormEventAnnotation(
             new FormEventAnnotation("account", "Account Main", FormEventType.OnReadyStateComplete, null, null, "IFRAME_myFrame"),
-            "av_/lib.js", "function onMyFrameReadyStateComplete() {}", "src/lib.ts");
+            "av_/lib.js", "function onReadyStateCompleteMyFrame() {}", "src/lib.ts");
 
         var snapshot = BuildSnapshot([annotation], ("account", "Account Main", form));
 
@@ -1060,7 +1060,7 @@ public class FormEventPlannerTests
 
         var entry = Assert.Single(plan.Forms, e => e.Event == FormEventType.OnReadyStateComplete);
         Assert.Equal("myFrame", entry.Attribute);
-        Assert.Single(entry.DesiredHandlers, h => h.FunctionName == "onMyFrameReadyStateComplete");
+        Assert.Single(entry.DesiredHandlers, h => h.FunctionName == "onReadyStateCompleteMyFrame");
     }
 
     // --- Interleave-preserving merge (product decision: OOB/foreign handlers outrank Flowline ordering) ---

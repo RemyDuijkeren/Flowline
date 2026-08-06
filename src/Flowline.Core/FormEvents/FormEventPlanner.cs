@@ -455,20 +455,24 @@ public class FormEventPlanner(IAnsiConsole console)
         return (requestedFunctionName, DeriveAutoNamespace(resolved.LibraryName), isExplicit);
     }
 
-    // Default onChange function name is "on" + PascalCased attribute (publisher prefix stripped) +
-    // "Change" — e.g. "creditlimit" -> "onCreditlimitChange", "new_credit_limit" -> "onCreditLimitChange".
-    // Tab/IFRAME default names never strip a publisher prefix — tab and IFRAME control names are
-    // maker-assigned form-design names, not Dataverse schema attribute names, so there's no prefix
+    // Default function name is event-first: camelCased directive token + PascalCased scope token —
+    // e.g. "flowline:onchange ... creditlimit" -> "onChangeCreditlimit". One rule across all five
+    // events, so the name is derivable from the annotation without memorizing a per-event suffix; the
+    // zero-scope events (onload/onsave) are the same rule with nothing appended.
+    //
+    // onChange strips the publisher prefix ("new_credit_limit" -> "onChangeCreditLimit") because an
+    // attribute token is a Dataverse schema name and carries one. Tab/IFRAME scopes never strip —
+    // those are maker-assigned form-design control names, not schema names, so there's no prefix
     // convention to strip.
     static string DeriveDefaultFunctionName(FormEventType evt, string? attribute) => evt switch
     {
         FormEventType.OnLoad => "onLoad",
         FormEventType.OnSave => "onSave",
-        FormEventType.OnChange => "on" + ToPascalCase(StripPublisherPrefix(attribute!)) + "Change",
-        FormEventType.TabStateChange => "on" + ToPascalCase(attribute!) + "TabStateChange",
+        FormEventType.OnChange => "onChange" + ToPascalCase(StripPublisherPrefix(attribute!)),
+        FormEventType.TabStateChange => "tabStateChange" + ToPascalCase(attribute!),
         // Normalized so the default name is stable regardless of whether the annotation (or a prior
         // FormXml scan) spelled the control id with or without the maker-assigned "IFRAME_" prefix.
-        FormEventType.OnReadyStateComplete => "on" + ToPascalCase(FormXmlEventSerializer.NormalizeIframeControlId(attribute!)) + "ReadyStateComplete",
+        FormEventType.OnReadyStateComplete => "onReadyStateComplete" + ToPascalCase(FormXmlEventSerializer.NormalizeIframeControlId(attribute!)),
         _ => throw new ArgumentOutOfRangeException(nameof(evt))
     };
 

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Default form-event handler names are now event-first** (breaking): `on<Attribute>Change` becomes `onChange<Attribute>`, `on<TabName>TabStateChange` becomes `tabStateChange<TabName>`, and `on<ControlName>ReadyStateComplete` becomes `onReadyStateComplete<ControlName>`. One rule now covers all five directives — camelCase the directive token, append the PascalCased scope token — instead of three per-event suffixes that each moved the `on` somewhere different. `onload`/`onsave` are unchanged, and the `onchange`-only publisher-prefix strip still applies (`new_credit_limit` → `onChangeCreditLimit`). Rename the exported function, or pin the old name explicitly in the annotation. The function name feeds the handler's deterministic id, so the first `push` after renaming replaces each affected registration rather than updating it in place.
+
 ### Fixed
 
 - **A plugin test project is no longer pushed as a second plugin project**: a `.Tests` project targeting .NET Framework passed every discovery check — it references the CrmSdk to compile, and its `ProjectReference` copies the assembly under test into its own `bin/Release`, where reflection found the plugin types. The same assembly was pushed twice, and under the default `Auto` packaging mode the second push was a bare `.dll` (the test project produces no `.nupkg`) even where the first was a package. Any project referencing `Microsoft.NET.Test.Sdk` is now skipped on the project file alone, before it is built. Test projects that carry no `Microsoft.NET.Test.Sdk` reference — xunit v3, TUnit, `EnableMSTestRunner` — are not covered, but those need a modern target framework, which discovery already drops.
