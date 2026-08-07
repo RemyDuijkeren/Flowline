@@ -51,7 +51,7 @@ What sets Flowline apart:
 dotnet tool install --global Flowline
 ```
 
-Prerequisites: [.NET SDK](https://dot.net) 10 or later, [Git](https://git-scm.com), and [PAC CLI](https://learn.microsoft.com/en-us/power-platform/developer/cli/introduction):
+Prerequisites: [.NET SDK](https://dot.net) 10 or later, [Git](https://git-scm.com), and [PAC CLI](https://learn.microsoft.com/en-us/power-platform/developer/cli/introduction).
 
 Authenticate using PAC CLI before using Flowline:
 
