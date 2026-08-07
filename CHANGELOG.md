@@ -5,27 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.16.0] - 2026-08-07
 
 ### Added
 
-- **A JavaScript starter in the scaffolded WebResources project**: `src/example-js.js` sits beside `src/example.ts`, so a project that doesn't want TypeScript has something to rename instead of a file to translate. Rollup, ESLint, and `tsconfig.json` already handled `.js` entry points — only the example was missing. It is named `example-js.js` rather than `example.js` because Rollup keys both the output filename and the IIFE global off the entry point's stem: two entry points sharing one stem overwrite each other in `dist/`.
+- **A JavaScript starter in the scaffolded WebResources project**: `src/example-js.js` sits beside `src/example.ts`, so a project that doesn't want TypeScript has something to rename. Rollup, ESLint, and `tsconfig.json` already handled `.js` entry points — only the example was missing.
 
 ### Changed
 
-- **Default form-event handler names are now event-first** (breaking): `on<Attribute>Change` becomes `onChange<Attribute>`, `on<TabName>TabStateChange` becomes `tabStateChange<TabName>`, and `on<ControlName>ReadyStateComplete` becomes `onReadyStateComplete<ControlName>`. One rule now covers all five directives — camelCase the directive token, append the PascalCased scope token — instead of three per-event suffixes that each moved the `on` somewhere different. `onload`/`onsave` are unchanged, and the `onchange`-only publisher-prefix strip still applies (`new_credit_limit` → `onChangeCreditLimit`). Rename the exported function, or pin the old name explicitly in the annotation. The function name feeds the handler's deterministic id, so the first `push` after renaming replaces each affected registration rather than updating it in place.
+- **Default form-event handler names are now event-first** (breaking): `on<Attribute>Change` becomes `onChange<Attribute>`, `on<TabName>TabStateChange` becomes `tabStateChange<TabName>`, and `on<ControlName>ReadyStateComplete` becomes `onReadyStateComplete<ControlName>`. `onload`/`onsave` are unchanged. Rename the exported function, or pin the old name explicitly in the annotation — the first `push` after renaming replaces each affected registration rather than updating it in place.
 
 ### Fixed
 
-- **A plugin test project is no longer pushed as a second plugin project**: a `.Tests` project targeting .NET Framework passed every discovery check — it references the CrmSdk to compile, and its `ProjectReference` copies the assembly under test into its own `bin/Release`, where reflection found the plugin types. The same assembly was pushed twice, and under the default `Auto` packaging mode the second push was a bare `.dll` (the test project produces no `.nupkg`) even where the first was a package. Any project referencing `Microsoft.NET.Test.Sdk` is now skipped on the project file alone, before it is built. Test projects that carry no `Microsoft.NET.Test.Sdk` reference — xunit v3, TUnit, `EnableMSTestRunner` — are not covered, but those need a modern target framework, which discovery already drops.
+- **A plugin test project is no longer pushed as a second plugin project**: a `.Tests` project targeting .NET Framework passed every discovery check, so the assembly under test was pushed twice — the second time as a bare `.dll` even where the first was a `.nupkg`. Any project referencing `Microsoft.NET.Test.Sdk` is now skipped before it is built.
 
-- **`generate` no longer derives its namespace from a test project**: the namespace comes from the first discovered plugin project that declares a `RootNamespace` or `PackageId`, and a `Plugins.Tests` folder sorts ahead of `Plugins`. With the test project no longer discovered, projects in that layout now derive from the real plugin project. Set `Solution.Generate.Namespace` in `.flowline` to pin it explicitly.
+- **`generate` no longer derives its namespace from a test project**: with test projects out of discovery, a `Plugins.Tests`/`Plugins` layout now derives from the real plugin project. Set `Solution.Generate.Namespace` in `.flowline` to pin it explicitly.
+
+- **A `.flowline` that can't be read or written now fails the command**: a read error was swallowed and a save error printed a stack trace while the run carried on. Both now exit with a config error naming the file.
 
 - **`DATAVERSE_CONTEXT.md` no longer renders every form twice on managed projects**: a `--packagetype Both` unpack writes a `{guid}_managed.xml` twin beside each form, and the generator read both. Managed twins are now skipped for forms and views.
 
-- **Form sections in `DATAVERSE_CONTEXT.md` no longer list hidden or deleted fields**: `pac` writes hidden cells as `visible="false"`, but the generator only looked for `invisible="true"` — an attribute a real unpack never contains. Cells this solution takes off the form (`solutionaction="Removed"`) are skipped too, and a field that appears twice in one section (a lookup plus its quick view) is listed once.
+- **Form sections in `DATAVERSE_CONTEXT.md` no longer list hidden or deleted fields**: hidden cells (`visible="false"`) and cells this solution takes off the form (`solutionaction="Removed"`) are skipped, and a field appearing twice in one section is listed once.
 
-- **1:N relationship tables in `DATAVERSE_CONTEXT.md` are no longer empty**: the generator read element names that `pac` does not write, so every row rendered blank and mislabelled `ManyToManyRelationship`. It now reads the real unpack format (`Name` attribute, `EntityRelationshipType`, `Referencing*Name`/`Referenced*Name`). N:N element names are still unverified against a real unpack.
+- **1:N relationship tables in `DATAVERSE_CONTEXT.md` are no longer empty**: the generator read element names that `pac` does not write, so every row rendered blank and mislabelled `ManyToManyRelationship`. It now reads the real unpack format.
 
 ## [0.15.0] - 2026-08-03
 
@@ -434,7 +436,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions CI and release workflows.
 
 
-[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.15.0...HEAD
+[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.16.0...HEAD
+[0.16.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.15.0...0.16.0
 [0.15.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.14.0...0.15.0
 [0.14.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.13.0...0.14.0
 [0.13.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.12.0...0.13.0
