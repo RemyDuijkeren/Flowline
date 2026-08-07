@@ -4,8 +4,12 @@
     "module": "ES2022",
     "lib": ["ES2022", "DOM"],
     "types": ["xrm"],
+    "rootDir": "./src",
+    "outDir": "./dist",
     "noEmit": true,
     "strict": true,
+    "allowJs": true,
+    "checkJs": false,
     "ignoreDeprecations": "6.0"
   },
   "include": ["src/**/*"]

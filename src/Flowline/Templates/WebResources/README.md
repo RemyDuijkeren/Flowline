@@ -34,11 +34,13 @@ npm run build
 dotnet build  # incremental, via MSBuild target
 ```
 
-## Writing TypeScript
+## Writing TypeScript or JavaScript
 
-Root `.ts` files in `src/` are entry points — one per Dataverse form or event. Write each script as an [ES module](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules). Shared code goes in `src/modules/`.
+Root `.ts` and `.js` files in `src/` are entry points — one per Dataverse form or event. Write each script as an [ES module](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules). Shared code goes in `src/modules/`. Both languages build through the same pipeline, so you can mix them or drop the one you don't use — `src/` ships with `example.ts` and `example-js.js` to start from.
 
-Rollup bundles each entry point to a named IIFE in `dist/`. The IIFE name is the PascalCase filename: `my-script.ts` → `MyScript`. Register event handlers in Dataverse as `MyScript.onLoad` (or `Prefix.MyScript.onLoad` if `namespacePrefix` is set in `rollup.config.mjs`).
+Rollup bundles each entry point to a named IIFE in `dist/`. The IIFE name is the PascalCase filename: `my-script.ts` → `MyScript`. That name comes from the filename alone, so two entry points may not share a stem — `account.ts` and `account.js` would both build to `dist/account.js` and clobber each other.
+
+Register event handlers in Dataverse as `MyScript.onLoad` (or `Prefix.MyScript.onLoad` if `namespacePrefix` is set in `rollup.config.mjs`).
 
 Example entry point:
 
@@ -46,6 +48,18 @@ Example entry point:
 import { hide } from './modules/common'
 
 export function onLoad(executionContext: Xrm.Events.EventContext): void {
+    const formContext = executionContext.getFormContext();
+    hide("fax", formContext);
+}
+```
+
+The same in JavaScript — [JSDoc](https://www.typescriptlang.org/docs/handbook/jsdoc-supported-types.html) types are optional and give you editor completion without a build step:
+
+```javascript
+import { hide } from './modules/common'
+
+/** @param {Xrm.Events.EventContext} executionContext */
+export function onLoad(executionContext) {
     const formContext = executionContext.getFormContext();
     hide("fax", formContext);
 }

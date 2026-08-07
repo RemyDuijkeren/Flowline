@@ -641,6 +641,7 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
 
                 Directory.CreateDirectory(Path.Combine(webresourcesFolder, "src", "modules"));
                 await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.src.example.ts", Path.Combine(webresourcesFolder, "src", "example.ts"), cancellationToken);
+                await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.src.example-js.js", Path.Combine(webresourcesFolder, "src", "example-js.js"), cancellationToken);
                 Directory.CreateDirectory(Path.Combine(webresourcesFolder, "public"));
                 Directory.CreateDirectory(Path.Combine(webresourcesFolder, "dist"));
 

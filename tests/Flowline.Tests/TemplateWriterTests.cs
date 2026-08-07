@@ -23,6 +23,7 @@ public class TemplateWriterTests : IDisposable
     [InlineData("Flowline.Templates.WebResources.eslint.config.mjs")]
     [InlineData("Flowline.Templates.WebResources.README.md")]
     [InlineData("Flowline.Templates.WebResources.src.example.ts")]
+    [InlineData("Flowline.Templates.WebResources.src.example-js.js")]
     public async Task WriteAsync_WritesFile_WhenResourceExists(string logicalName)
     {
         var targetPath = Path.Combine(_tempDir, Path.GetFileName(logicalName));

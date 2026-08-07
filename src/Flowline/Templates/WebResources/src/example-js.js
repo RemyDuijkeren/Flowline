@@ -1,14 +1,14 @@
-// Rename this file to match your Dataverse table (e.g. account.ts).
+// Rename this file to match your Dataverse table (e.g. account.js).
 // Export functions and register them as event handlers in Dataverse
-// using the IIFE name derived from the filename (e.g. Example.onLoad).
+// using the IIFE name derived from the filename (e.g. ExampleJs.onLoad).
 
 // flowline:onload account "Account"
 
 /**
-* OnLoad event handler.
-* @param {Xrm.Events.EventContext} executionContext The execution context
-*/
-export function onLoad(executionContext: Xrm.Events.EventContext): void {
+ * OnLoad event handler.
+ * @param {Xrm.Events.EventContext} executionContext The execution context
+ */
+export function onLoad(executionContext) {
     const formContext = executionContext.getFormContext();
 
     const nameAttr = formContext.getAttribute("name");
@@ -24,10 +24,10 @@ export function onLoad(executionContext: Xrm.Events.EventContext): void {
  * OnChange handler for Name.
  * @param {Xrm.Events.EventContext} executionContext The execution context
  */
-async function onChangeName(executionContext: Xrm.Events.EventContext): Promise<void> {
+async function onChangeName(executionContext) {
     const formContext = executionContext.getFormContext();
 
     // Dummy example — show the Fax field only once a name has been entered.
     const hasName = Boolean(formContext.getAttribute("name")?.getValue());
-    formContext.getControl<Xrm.Controls.StandardControl>("fax")?.setVisible(hasName);
+    formContext.getControl("fax")?.setVisible(hasName);
 }

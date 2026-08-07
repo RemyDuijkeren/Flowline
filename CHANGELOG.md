@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A JavaScript starter in the scaffolded WebResources project**: `src/example-js.js` sits beside `src/example.ts`, so a project that doesn't want TypeScript has something to rename instead of a file to translate. Rollup, ESLint, and `tsconfig.json` already handled `.js` entry points — only the example was missing. It is named `example-js.js` rather than `example.js` because Rollup keys both the output filename and the IIFE global off the entry point's stem: two entry points sharing one stem overwrite each other in `dist/`.
+
 ### Changed
 
 - **Default form-event handler names are now event-first** (breaking): `on<Attribute>Change` becomes `onChange<Attribute>`, `on<TabName>TabStateChange` becomes `tabStateChange<TabName>`, and `on<ControlName>ReadyStateComplete` becomes `onReadyStateComplete<ControlName>`. One rule now covers all five directives — camelCase the directive token, append the PascalCased scope token — instead of three per-event suffixes that each moved the `on` somewhere different. `onload`/`onsave` are unchanged, and the `onchange`-only publisher-prefix strip still applies (`new_credit_limit` → `onChangeCreditLimit`). Rename the exported function, or pin the old name explicitly in the annotation. The function name feeds the handler's deterministic id, so the first `push` after renaming replaces each affected registration rather than updating it in place.

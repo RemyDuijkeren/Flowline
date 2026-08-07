@@ -41,6 +41,9 @@
       <EmbeddedResource Include="Templates\WebResources\src\example.ts">
         <LogicalName>Flowline.Templates.WebResources.src.example.ts</LogicalName>
       </EmbeddedResource>
+      <EmbeddedResource Include="Templates\WebResources\src\example-js.js">
+        <LogicalName>Flowline.Templates.WebResources.src.example-js.js</LogicalName>
+      </EmbeddedResource>
     </ItemGroup>
 
     <ItemGroup>
