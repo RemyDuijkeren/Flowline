@@ -697,7 +697,42 @@ How the product answers §9's three costs, verified against the source:
   exists in `src/`. Solutions carrying connection references or environment variables therefore need
   their target values supplied another way before `deploy` can run unattended against them.
 
-Two questions §10 leaves open for the product:
+### Gaps and ownership
+
+A CLI in this space does not need to cover the whole surface: Power Platform Build Tools and the
+equivalent GitHub actions already ship tasks for Create / Delete / Copy / Reset / Backup / Restore
+Environment, Assign User, Import / Export / Pack / Unpack / Delete Solution, Set Solution Version,
+Apply Solution Upgrade, Checker, Publish Customizations, Add Solution Component, Set Connection
+Variables, and Deploy Package
+([Build Tools tasks](https://learn.microsoft.com/power-platform/alm/devops-build-tool-tasks)).
+
+The dividing line worth holding: **own what the model creates or promises; delegate generic pipeline
+plumbing.** Measured that way, three gaps belong to Flowline.
+
+| Gap | Why it belongs here | Severity |
+|---|---|---|
+| **Deployment settings file** (§6) | `deploy` *is* the import step, so the Build Tools task that supports `--settings-file` can't be delegated to without giving up `deploy`. Any solution carrying connection references or environment variables can't be deployed unattended. | Blocks a workload |
+| **Restore** | `BackupService` takes a labelled backup before every import, and §9 names environment backup as the only real rollback in the unmanaged model. The backup exists; nothing consumes it. | Incomplete promise |
+| **Deprovision** | `provision` creates environments and records their URLs in `.flowline`; nothing removes them. | Operator friction |
+
+Deprovision is narrower than it first appears: the §9 reset-on-drift loop is already served by
+`provision --allow-overwrite`, which copies over an existing environment. What is missing is
+end-of-feature teardown, and the capacity and licence cleanup that follows from treating
+environments as disposable branches. Guards it would need: refuse Production-type environments,
+refuse the configured prod URL specifically, and delete only environments `.flowline` records as
+Flowline-provisioned.
+
+Left to the pipeline, deliberately: security-role assignment after provisioning, solution deletion,
+Package Deployer artifacts, Power Pages upload and download, Catalog publishing, and test
+orchestration. None of these are obligations the model creates.
+
+One gap exists in no tooling on either side: **configuration and reference data migration** has no
+Build Tools task, and is handled by the Package Deployer or `pac data`. The model largely avoids it
+— `provision` copies production *including its data*, so a fresh branch environment starts with real
+data instead of needing a seed step. It only affects greenfield projects created with `init`, which
+have no production environment to copy from.
+
+Two further questions §10 leaves open for the product:
 
 - **Sprint transports (§10.2) are not modelled.** Flowline assumes one solution per project, which is
   the §10.1 state role. Supporting transports means a second artifact kind whose import must never
