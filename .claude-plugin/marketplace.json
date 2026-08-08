@@ -9,7 +9,7 @@
       "name": "flowline",
       "source": "./plugin",
       "description": "Dataverse ALM CLI — plugin registration, web resources, and solution deploy via Git-tracked, unmanaged solutions. Includes migration guidance off spkl, Daxif, PACX, and ALM Accelerator.",
-      "version": "0.1.0",
+      "version": "0.16.0",
       "author": {
         "name": "Remy Duijkeren"
       },
