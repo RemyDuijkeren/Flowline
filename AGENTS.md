@@ -13,6 +13,10 @@ Pattern: [thing] [action] [reason]. [next step].
 - [`README.md`](README.md) — product purpose, public workflow, and command surface
 - [`STRATEGY.md`](STRATEGY.md) — target problem, product boundaries, and architectural direction
 - [`CONCEPTS.md`](CONCEPTS.md) — shared domain vocabulary and project-specific concepts
+- [`docs/ALM-strategy.md`](docs/ALM-strategy.md) — how Dataverse ALM works: layers, environments,
+  versioning, import semantics, and the strategies teams run. Read before reasoning about managed
+  vs unmanaged, solution versioning, deploy semantics, or why Flowline's model differs from
+  Microsoft's default
 
 Flowline is a .NET Dataverse ALM CLI. It wraps PAC CLI primitives into a Git-based
 `clone -> push -> sync -> deploy` workflow for unmanaged solutions.
@@ -44,6 +48,11 @@ Environment-type facts that constrain the flow (verified against `pac`):
   are usable as clone/sync sources but can't be `provision` targets.
 
 Background: https://automatevalue.com/blog/everyone-got-alm-wrong-in-dynamics-365-dataverse/
+
+Full treatment in [`docs/ALM-strategy.md`](docs/ALM-strategy.md): §8.2 places this model against
+Microsoft's DEV-as-truth default, §9 covers what it costs (no delete propagation, no solution-level
+rollback, merge-behavior components), and §10.4 gives the rule for when managed solutions are
+actually required.
 
 ## Repository map
 
