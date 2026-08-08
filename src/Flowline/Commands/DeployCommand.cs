@@ -171,9 +171,14 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         // Managed solutions always import already published, so the flag would be pure overhead there —
         // never pass it for managed. Unmanaged imports can leave UI-affecting components (forms, views,
         // ribbons, sitemaps, web resources) in an unpublished state until something publishes them, so the
-        // flag is worth its (accepted) environment-wide cost there — Flowline's own unmanaged targets are
-        // documented as single-environment/DEV-like (see wiki "Managed vs unmanaged"), so in practice there's
-        // nothing else pending for that org-wide publish to sweep up anyway.
+        // flag is passed there and its environment-wide cost is accepted. That cost is not always trivial:
+        // ResolveDtapGate gates on version ordering only, never on managed/unmanaged, so an unmanaged deploy
+        // to a shared Test/UAT target is a supported path — and there the org-wide publish sweeps up every
+        // other pending customization in that environment, not just this solution's.
+        // The scoped alternative (not taken): drop --publish-changes and issue a solution-scoped
+        // PublishXmlRequest over this solution's components through the already-connected IOrganizationService,
+        // which publishes only what was imported. Costs building the component list from the packed solution;
+        // revisit if org-wide publish time on shared Test/UAT becomes a real complaint.
         var publishChanges = !sln.IncludeManaged;
         Logger.LogInformation("target={TargetUrl} solution={SolutionName} mode={RunMode} managed={Managed} stageAndUpgrade={StageAndUpgrade} publishChanges={PublishChanges} cacheOutcome={CacheOutcome}",
             targetUrl, sln.UniqueName, runMode, sln.IncludeManaged, useStageAndUpgrade, publishChanges, usingExplicitArtifact ? (CacheOutcome?)null : cacheOutcome);

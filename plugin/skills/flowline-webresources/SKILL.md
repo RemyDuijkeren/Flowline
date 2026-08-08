@@ -120,9 +120,8 @@ it lands in `dist/` untouched and skips Rollup entirely.
 2. **`flowline push --scope webresources --dry-run`** prints the plan without writing: which
    resources are added, updated, deleted, and which form handlers and dependencies get wired.
    Read the delete list — push makes Dataverse match `dist/` exactly.
-3. `--scope webresources` implies form-event registration. **`--scope formevents` alone** re-runs
-   only the registration against an already-pushed `dist/` — the right scope after editing nothing
-   but an annotation.
+3. `--scope webresources` covers form-event registration too — one scope for both, including a
+   push that changed nothing but an annotation.
 4. Push refuses to run on a missing or empty `dist/`, because that would delete every web resource
    in the solution. If you hit that error, the build didn't produce output — fix that, don't work
    around it.
@@ -133,7 +132,7 @@ it lands in `dist/` untouched and skips Rollup entirely.
 
 `flowline push <solution> --webresources <path> --dev <url>` pushes a loose folder with no
 `.flowline` and no repo. The solution name and `--dev` are required, nothing is built, and
-`--scope webresources`/`--scope formevents` *require* `--webresources`. Inside a project folder the
+`--scope webresources` *requires* `--webresources`. Inside a project folder the
 flag is rejected (exit 15) rather than guessed at — `cd` elsewhere or use project mode.
 
 ## Full reference

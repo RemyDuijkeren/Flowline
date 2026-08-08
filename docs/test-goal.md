@@ -135,7 +135,7 @@ against an already-cloned/pushed/synced folder) where relevant.
 
 - Full push (default scope), dry-run and real. Idempotent re-run → "Nothing to push — already up to
   date."
-- Each `--scope` individually: `all`, `webresources`, `formevents`, `plugins`, `assemblyonly`.
+- Each `--scope` individually: `all`, `webresources`, `plugins`, `assemblyonly`.
 - `--scope assemblyonly --scope plugins` together → rejected (mutually exclusive).
 - `--no-delete`, `--no-build`, `--no-publish` — each prints its own "skipping (--flag active)" line.
 - Non-interactive gates: an unrecognized form-event handler requires `--force delete-form-handlers`;
@@ -147,7 +147,7 @@ against an already-cloned/pushed/synced folder) where relevant.
 
 - Rejected when run inside a Flowline project folder.
 - Solution name required as the first positional.
-- `--scope plugins`/`assemblyonly` requires `--pluginFile`; `--scope webresources`/`formevents`
+- `--scope plugins`/`assemblyonly` requires `--pluginFile`; `--scope webresources`
   requires `--webresources` — the error must name the missing flag.
 - **Standalone's pushed set is the single artifact**, so every *other* assembly in the solution is an
   orphan by definition, and `--force delete-orphans` would delete a live sibling. Deliberate, not a

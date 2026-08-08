@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+
+- **`push --scope formevents`** (breaking): use `--scope webresources`, which already ran form event registration. The separate scope only skipped the web resource pass — and that pass writes nothing when `dist/` is unchanged, so it bought no fewer writes and no fewer publishes. Annotations are read from the built `dist/` folder, so the "edited only an annotation" case it was added for was already covered.
+
+### Fixed
+
+- **`push --no-publish` now warns whenever nothing publishes**, not only when web resources are out of scope. A plugin-only repo asks for web resources under the default scope but has no project to prepare, so the flag was silently inert.
+
 ## [0.16.0] - 2026-08-07
 
 ### Added

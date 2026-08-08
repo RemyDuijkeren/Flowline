@@ -147,7 +147,7 @@ some cleanup failed.
 
 ## Flags worth knowing
 
-- `push`: `--scope all|plugins|assemblyonly|webresources|formevents`, `--pluginFile <dll|nupkg>`,
+- `push`: `--scope all|plugins|assemblyonly|webresources`, `--pluginFile <dll|nupkg>`,
   `--webresources <path>`, `--no-build`, `--no-delete`, `--no-publish`, `--dry-run`, `--dev <url>`.
 - `deploy`: `--dry-run`, `--path <zip>`, `--no-delete`, `--no-backup`, `--skip-dtap-check`,
   `--skip-solution-check`.

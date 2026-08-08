@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ideation: What Flowline Users Need That Flowline Doesn't Have — Flowline CLI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#ffffff;--surface:#f8fafc;--border:#e2e8f0;
+  --text:#0f172a;--muted:#64748b;
+  --accent:#2563eb;--accent-soft:#eff6ff;--accent-text:#1d4ed8;
+  --ax1-bg:#f3e8ff;--ax1-text:#7c3aed;
+  --ax2-bg:#dbeafe;--ax2-text:#1d4ed8;
+  --ax3-bg:#ccfbf1;--ax3-text:#0f766e;
+  --ax4-bg:#ffedd5;--ax4-text:#c2410c;
+  --ax5-bg:#dcfce7;--ax5-text:#15803d;
+  --rej-bg:#fef2f2;--rej-text:#b91c1c;--rej-border:#fecaca;
+  --top-bg:#fffbeb;--top-border:#fde68a;--top-text:#92400e;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0f172a;--surface:#1a2540;--border:#2c3a5c;
+    --text:#e6ebf5;--muted:#93a1c0;
+    --accent:#7aa2ff;--accent-soft:#1a2748;--accent-text:#9dbcff;
+    --ax1-bg:#3a2560;--ax1-text:#d4b8ff;
+    --ax2-bg:#1c3560;--ax2-text:#9dbcff;
+    --ax3-bg:#0f3d3a;--ax3-text:#6fd8ce;
+    --ax4-bg:#4a2a0f;--ax4-text:#ffbd80;
+    --ax5-bg:#123a20;--ax5-text:#7de79b;
+    --rej-bg:#3a1616;--rej-text:#ff9c9c;--rej-border:#5c2222;
+    --top-bg:#3a2e0f;--top-border:#5c4a1e;--top-text:#ffd27a;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f172a;--surface:#1a2540;--border:#2c3a5c;
+  --text:#e6ebf5;--muted:#93a1c0;
+  --accent:#7aa2ff;--accent-soft:#1a2748;--accent-text:#9dbcff;
+  --ax1-bg:#3a2560;--ax1-text:#d4b8ff;
+  --ax2-bg:#1c3560;--ax2-text:#9dbcff;
+  --ax3-bg:#0f3d3a;--ax3-text:#6fd8ce;
+  --ax4-bg:#4a2a0f;--ax4-text:#ffbd80;
+  --ax5-bg:#123a20;--ax5-text:#7de79b;
+  --rej-bg:#3a1616;--rej-text:#ff9c9c;--rej-border:#5c2222;
+  --top-bg:#3a2e0f;--top-border:#5c4a1e;--top-text:#ffd27a;
+}
+:root[data-theme="light"]{
+  --bg:#ffffff;--surface:#f8fafc;--border:#e2e8f0;
+  --text:#0f172a;--muted:#64748b;
+  --accent:#2563eb;--accent-soft:#eff6ff;--accent-text:#1d4ed8;
+  --ax1-bg:#f3e8ff;--ax1-text:#7c3aed;
+  --ax2-bg:#dbeafe;--ax2-text:#1d4ed8;
+  --ax3-bg:#ccfbf1;--ax3-text:#0f766e;
+  --ax4-bg:#ffedd5;--ax4-text:#c2410c;
+  --ax5-bg:#dcfce7;--ax5-text:#15803d;
+  --rej-bg:#fef2f2;--rej-text:#b91c1c;--rej-border:#fecaca;
+  --top-bg:#fffbeb;--top-border:#fde68a;--top-text:#92400e;
+}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:1.6;color:var(--text);background:var(--bg)}
+.page{max-width:920px;margin-inline:auto;padding:48px 32px 80px}
+
+.doc-header{margin-bottom:36px;border-bottom:2px solid var(--border);padding-bottom:28px}
+.doc-eyebrow{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.doc-title{font-size:26px;font-weight:700;line-height:1.25;color:var(--text);margin-bottom:14px}
+.doc-dek{font-size:14.5px;color:var(--muted);max-width:70ch;margin-bottom:14px}
+.doc-meta{display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.doc-meta span strong{color:var(--text);font-weight:500}
+
+.stats-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:48px}
+.stat{background:var(--bg);padding:18px 16px;text-align:center}
+.stat-number{font-size:30px;font-weight:700;color:var(--accent);line-height:1}
+.stat-label{font-size:11px;font-weight:600;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.05em}
+
+section{margin-bottom:52px}
+.section-eyebrow{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+h2{font-size:19px;font-weight:700;color:var(--text);margin-bottom:18px}
+h3{font-size:15px;font-weight:700;color:var(--text);margin:18px 0 8px}
+
+.grounding-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.gc{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:18px}
+.gc h4{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:8px}
+.gc p,.gc ul{font-size:13.5px;color:var(--text);line-height:1.55}
+.gc p+p{margin-top:7px}
+.gc ul{padding-left:16px}
+.gc li{margin-bottom:3px}
+
+.axis-list{display:flex;flex-direction:column;gap:10px}
+.axis-item{display:flex;align-items:baseline;gap:10px}
+.axis-badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:100px;white-space:nowrap;letter-spacing:.03em;flex-shrink:0}
+.ax1{background:var(--ax1-bg);color:var(--ax1-text)}
+.ax2{background:var(--ax2-bg);color:var(--ax2-text)}
+.ax3{background:var(--ax3-bg);color:var(--ax3-text)}
+.ax4{background:var(--ax4-bg);color:var(--ax4-text)}
+.ax5{background:var(--ax5-bg);color:var(--ax5-text)}
+.axis-desc{font-size:13.5px;color:var(--text)}
+.axis-desc strong{font-weight:600}
+
+.jump-list{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 18px;margin-bottom:28px}
+.jump-list h4{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px}
+.jump-list ol{padding-left:18px}
+.jump-list li{margin-bottom:5px;font-size:13.5px}
+.jump-list li::marker{color:var(--muted)}
+.jump-list a{color:var(--accent-text);text-decoration:none}
+.jump-list a:hover{text-decoration:underline}
+
+.idea-card{border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:24px}
+.idea-card.top{border-color:var(--top-border);border-width:2px}
+.idea-header{padding:18px 22px 14px;border-bottom:1px solid var(--border)}
+.idea-rank{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin-bottom:5px}
+.idea-title{font-size:17px;font-weight:700;color:var(--text);margin-bottom:10px}
+.idea-title code{font-size:.88em}
+.idea-chips{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.chip{font-size:11.5px;font-weight:600;padding:3px 10px;border-radius:100px;border:1px solid transparent}
+.chip-top{background:var(--top-bg);color:var(--top-text);border-color:var(--top-border)}
+.chip-high{background:#f0fdf4;color:#16a34a;border-color:#bbf7d0}
+.chip-med{background:#fffbeb;color:#d97706;border-color:#fde68a}
+.chip-cx-low{background:#f0fdf4;color:#166534;border-color:#bbf7d0}
+.chip-cx-med{background:#fffbeb;color:#92400e;border-color:#fde68a}
+.chip-cx-high{background:#fef2f2;color:#b91c1c;border-color:#fecaca}
+
+.idea-body{padding:22px}
+.idea-field{margin-bottom:16px}
+.idea-field:last-child{margin-bottom:0}
+.idea-field dt{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:4px}
+.idea-field dd{font-size:14px;line-height:1.65;max-width:74ch}
+
+code{font-family:'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace;font-size:.875em;background:var(--surface);color:var(--text);padding:1px 5px;border-radius:4px;border:1px solid var(--border)}
+
+.diagram{margin:16px 0;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:18px;overflow-x:auto;display:flex;justify-content:center}
+.diagram svg{display:block;max-width:100%}
+
+.callout{border-radius:8px;padding:14px 18px;margin:14px 0;font-size:13.5px;line-height:1.6}
+.callout.tension{background:var(--top-bg);border:1px solid var(--top-border);color:var(--text)}
+.callout.tension .eyebrow{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--top-text);margin-bottom:6px;display:block}
+
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:9px 13px;border-bottom:2px solid var(--border)}
+td{padding:10px 13px;border-bottom:1px solid var(--border);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:nth-child(even) td{background:var(--surface)}
+td:first-child{font-weight:600;color:var(--muted);width:36px}
+
+footer.composition-signal{margin-top:60px;padding-top:20px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);text-align:center}
+
+@media(max-width:640px){
+  .grounding-grid{grid-template-columns:1fr}
+  .stats-strip{grid-template-columns:1fr 1fr}
+  .page{padding:28px 16px 56px}
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="doc-header">
+  <div class="doc-eyebrow">Ideation</div>
+  <h1 class="doc-title">What Flowline users need that Flowline doesn't have</h1>
+  <p class="doc-dek">Open-ended capability search across the whole command surface, filtered hard against what already ships and against fourteen prior ideation documents. Every surviving idea names the closest existing command and why it doesn't cover the gap.</p>
+  <div class="doc-meta">
+    <span><strong>Date</strong> <time datetime="2026-08-08">2026-08-08</time></span>
+    <span><strong>Topic</strong> flowline-capability-gaps</span>
+    <span><strong>Focus</strong> improvements or additions that would really help users, not yet in Flowline</span>
+    <span><strong>Mode</strong> repo-grounded</span>
+  </div>
+</header>
+
+<div class="stats-strip">
+  <div class="stat"><div class="stat-number">47</div><div class="stat-label">Raw ideas</div></div>
+  <div class="stat"><div class="stat-number">27</div><div class="stat-label">After dedupe</div></div>
+  <div class="stat"><div class="stat-number">7</div><div class="stat-label">Survivors</div></div>
+  <div class="stat"><div class="stat-number">5</div><div class="stat-label">Axes covered</div></div>
+</div>
+
+<section id="grounding-context">
+  <div class="section-eyebrow">Context</div>
+  <h2>Grounding Context</h2>
+  <div class="grounding-grid">
+    <div class="gc">
+      <h4>Codebase Context</h4>
+      <p>Flowline v1.0 (released 2026-08-01) wraps PAC CLI into a Git-based <code>clone → push → sync → deploy</code> loop for <strong>unmanaged</strong> solutions, with PROD as source of truth and DEV as a branch of PROD via <code>pac admin copy</code>.</p>
+      <p>Ten commands ship today: <code>init</code>, <code>clone</code>, <code>push</code>, <code>sync</code>, <code>deploy</code>, <code>provision</code>, <code>generate</code>, <code>status</code>, <code>drift</code>, <code>sln add</code>. Attribute-driven plugin and Custom API registration, web-resource sync with form-event auto-wiring, DTAP gates, orphan cleanup, typed exit codes and observability waves 1–1.5 are all already in place.</p>
+      <p>This maturity is why the search had to go past the obvious: most of the surface-level gaps a generic scan would name are already closed.</p>
+    </div>
+    <div class="gc">
+      <h4>Documented costs of the model</h4>
+      <p><a href="https://github.com/RemyDuijkeren/Flowline/blob/master/docs/ALM-strategy.md">docs/ALM-strategy.md</a> §9 names four costs the unmanaged / PROD-as-truth model accepts:</p>
+      <ul>
+        <li>Deletion does not propagate — imports are additive</li>
+        <li>No solution-level rollback — imports are destructive</li>
+        <li>Merge-behavior components (forms, sitemap, ribbon, app modules) merge rather than replace</li>
+        <li>Drift discipline required — no managed-layer audit trail</li>
+      </ul>
+      <p>Three of the seven survivors below attack one of these directly. That is deliberate: these are the costs the product signed up for, and the ones where tooling — not a model change — is the available lever.</p>
+    </div>
+    <div class="gc">
+      <h4>Prior exploration (14 documents, May–July 2026)</h4>
+      <p>Seven themes recur across two or more prior ideation docs: Solution Checker integration, multi-solution support, configuration management, DTAP enforcement, observability, CI/CD integration, and artifact integrity.</p>
+      <p>Overlap with a prior doc did not disqualify an idea — most were never built, so they remain "not yet in Flowline." But each surviving idea states which prior doc it touches and what this run adds. Ideas that only re-treaded were cut.</p>
+    </div>
+    <div class="gc">
+      <h4>External context</h4>
+      <p><strong>ALM Accelerator is deprecated</strong> — Microsoft Learn states no new features are being added and issues are no longer reviewed. Its replacement, Power Platform Pipelines, has no source-code integration and no code-first development.</p>
+      <p><strong>Native Dataverse Git integration</strong> (GA) cannot rebuild a solution from repo sources, has no merge/compare/conflict resolution, binds solution to branch immutably, and is Azure DevOps only.</p>
+      <p>The mid-tier is vacated. The questions Flowline is structurally positioned to answer — "what will this deploy change, and has the target drifted?" — are the exact ones the sanctioned tools cannot.</p>
+    </div>
+  </div>
+
+  <div class="callout tension">
+    <span class="eyebrow">The YAML question, settled</span>
+    <strong>YAML is not available through <code>clone</code> or <code>sync</code></strong> — which is the entire path Flowline's loop runs on, so the format is out of reach whatever <code>pack</code> can auto-detect. This confirms the internal 2026-05-19 conclusion rather than overturning it, and it resolves a genuine documentation conflict: Microsoft Learn's source-control page describes <code>pac solution pack</code>/<code>unpack</code> supporting YAML by auto-detection from 2.4.1, while a separate Learn FAQ states clone, unpack and sync do not. Local inspection of <code>pac</code> 2.9.3 found no format flag on <code>pack</code>, <code>unpack</code> or <code>clone</code>, which was consistent with either reading. The consequence follows from two facts rather than from one claim: Microsoft's own format comparison records that the XML source format carries no canvas app (<code>.msapp</code>) and no modern flow representation, and YAML — the format that does — is unreachable through the commands Flowline uses. So canvas apps and modern cloud flows stay outside what a Flowline repo can hold, and that reads as a boundary of the approach rather than a backlog item.
+  </div>
+</section>
+
+<section id="topic-axes">
+  <div class="section-eyebrow">Surface map</div>
+  <h2>Topic Axes</h2>
+  <div class="axis-list">
+    <div class="axis-item"><span class="axis-badge ax1">Axis 1</span><span class="axis-desc"><strong>Deploy &amp; promotion</strong> — <code>deploy</code>, <code>drift</code>, orphan cleanup, DTAP gates, backups, solution checker. Owns deployment settings, connection references and environment variables.</span></div>
+    <div class="axis-item"><span class="axis-badge ax2">Axis 2</span><span class="axis-desc"><strong>DEV inner loop</strong> — <code>push</code>, <code>sync</code>, <code>generate</code>, build, dry-run; how fast and safely a change round-trips between DEV, the machine, and committed source.</span></div>
+    <div class="axis-item"><span class="axis-badge ax3">Axis 3</span><span class="axis-desc"><strong>Environment lifecycle</strong> — <code>provision</code>, <code>init</code>, <code>clone</code>, the <code>.flowline</code> environment registry, environment types, PAC auth profiles, <code>status</code>.</span></div>
+    <div class="axis-item"><span class="axis-badge ax4">Axis 4</span><span class="axis-desc"><strong>Component coverage</strong> — which Dataverse component types Flowline can register, carry, or clean up.</span></div>
+    <div class="axis-item"><span class="axis-badge ax5">Axis 5</span><span class="axis-desc"><strong>Team, CI &amp; comprehension</strong> — multiple developers on one DEV, XML diff noise, unattended runs, agent consumability, onboarding.</span></div>
+  </div>
+</section>
+
+<section id="ranked-ideas">
+  <div class="section-eyebrow">The set</div>
+  <h2>Ranked Ideas</h2>
+
+  <div class="jump-list">
+    <h4>Jump to</h4>
+    <ol>
+      <li><a href="#idea-1">Preflight the import against the target's own metadata</a></li>
+      <li><a href="#idea-2">One per-target state manifest</a></li>
+      <li><a href="#idea-3">Environments as data, and disposable</a></li>
+      <li><a href="#idea-4">Keep the change record sync already computes — and let it carry deletions</a></li>
+      <li><a href="#idea-5"><code>push --watch</code> for the inner loop</a></li>
+      <li><a href="#idea-6">Act on declared deletions with a dependency-ordered deleter</a></li>
+      <li><a href="#idea-7">Resolve auth before any Dataverse write</a></li>
+    </ol>
+  </div>
+
+  <article class="idea-card top" id="idea-1">
+    <div class="idea-header">
+      <div class="idea-rank">1. Top pick</div>
+      <div class="idea-title">Preflight the import against the target's own metadata</div>
+      <div class="idea-chips">
+        <span class="chip chip-top">TOP PICK</span>
+        <span class="axis-badge ax1">Axis 1 · Deploy &amp; promotion</span>
+        <span class="chip chip-high">Confidence 85%</span>
+        <span class="chip chip-cx-low">Complexity Low</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field"><dt>Description</dt><dd>Before <code>deploy</code> imports anything, hand the packed solution's required-component list to Dataverse's own <code>RetrieveMissingComponents</code> message against the target and fail fast with a named list of what the target lacks. The response carries both the dependent component and the required solution name, so the error becomes actionable rather than diagnostic: "<code>account.new_region</code> is required by form <code>Account Main</code> but absent in prod." Runs in seconds against a live connection, writes nothing.</dd></div>
+        <div class="idea-field"><dt>Basis</dt><dd><code>external:</code> Microsoft's <code>RetrieveMissingComponentsRequest</code> is documented as taking the solution file's required-component list, querying the target organization, and returning what is absent — verified independently by two agents this run against Microsoft Learn. <code>direct:</code> a grep of <code>src/</code> for <code>RetrieveMissingComponents</code>, <code>MissingComponent</code> and <code>RetrieveDependenciesForDelete</code> returns nothing — Flowline never asks. Missing-dependency failures on import are one of the two most consistently reported Dataverse ALM frustrations in independent community sources.</dd></div>
+        <div class="idea-field"><dt>Rationale</dt><dd>Every guard Flowline ships today validates <em>Flowline's own</em> preconditions — drift, DTAP order, solution type, dirty working tree. None validates the payload against the target's actual metadata. That asymmetry means the failures users actually hit are discovered mid-import, in the worst possible position: a partially applied unmanaged import against an environment with no solution-level rollback. This is the highest ratio of pain removed to code written in the whole set, and the mechanism is one SDK call.</dd>
+          <div class="diagram">
+            <svg viewBox="0 0 640 250" width="640" height="250" role="img" aria-label="Today, a deploy fails partway through a long import with a GUID error and no rollback; with preflight, a missing component is named in seconds before anything is written.">
+              <text x="14" y="22" font-family="Inter,sans-serif" font-size="12" font-weight="700" style="fill:var(--muted)">TODAY</text>
+              <rect x="14" y="36" width="96" height="40" rx="6" fill="#e2e8f0" stroke="#cbd5e1"/>
+              <text x="62" y="61" font-family="Inter,sans-serif" font-size="12" fill="#0f172a" text-anchor="middle">pack</text>
+              <path d="M114 56 H140" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar)"/>
+              <rect x="144" y="36" width="300" height="40" rx="6" fill="#e2e8f0" stroke="#cbd5e1"/>
+              <text x="294" y="61" font-family="Inter,sans-serif" font-size="12" fill="#0f172a" text-anchor="middle">import runs · minutes to tens of minutes</text>
+              <path d="M448 56 H474" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar)"/>
+              <rect x="478" y="36" width="148" height="40" rx="6" fill="#fecaca" stroke="#f87171"/>
+              <text x="552" y="53" font-family="Inter,sans-serif" font-size="11.5" fill="#7f1d1d" text-anchor="middle">fails on a GUID</text>
+              <text x="552" y="68" font-family="Inter,sans-serif" font-size="11.5" fill="#7f1d1d" text-anchor="middle">no rollback</text>
+              <text x="478" y="98" font-family="Inter,sans-serif" font-size="11" style="fill:var(--rej-text)">target left partially written</text>
+
+              <line x1="14" y1="124" x2="626" y2="124" stroke="#e2e8f0" stroke-width="1"/>
+
+              <text x="14" y="152" font-family="Inter,sans-serif" font-size="12" font-weight="700" style="fill:var(--accent)">WITH PREFLIGHT</text>
+              <rect x="14" y="166" width="96" height="40" rx="6" fill="#e2e8f0" stroke="#cbd5e1"/>
+              <text x="62" y="191" font-family="Inter,sans-serif" font-size="12" fill="#0f172a" text-anchor="middle">pack</text>
+              <path d="M114 186 H140" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar)"/>
+              <rect x="144" y="166" width="186" height="40" rx="6" fill="#eff6ff" stroke="#93c5fd"/>
+              <text x="237" y="184" font-family="Inter,sans-serif" font-size="11.5" fill="#1d4ed8" text-anchor="middle">RetrieveMissingComponents</text>
+              <text x="237" y="198" font-family="Inter,sans-serif" font-size="11.5" fill="#1d4ed8" text-anchor="middle">seconds · read-only</text>
+              <path d="M334 186 H360" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar)"/>
+              <rect x="364" y="166" width="130" height="40" rx="6" fill="#fef3c7" stroke="#fcd34d"/>
+              <text x="429" y="184" font-family="Inter,sans-serif" font-size="11.5" fill="#92400e" text-anchor="middle">named component</text>
+              <text x="429" y="198" font-family="Inter,sans-serif" font-size="11.5" fill="#92400e" text-anchor="middle">nothing written</text>
+              <path d="M498 186 H524" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar)"/>
+              <rect x="528" y="166" width="98" height="40" rx="6" fill="#dcfce7" stroke="#86efac"/>
+              <text x="577" y="191" font-family="Inter,sans-serif" font-size="12" fill="#166534" text-anchor="middle">fix, then import</text>
+              <defs><marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#94a3b8"/></marker></defs>
+            </svg>
+          </div>
+        </div>
+        <div class="idea-field"><dt>Not already present</dt><dd><code>deploy --dry-run</code> skips the import but validates only Flowline's own gates. <code>--skip-solution-check</code> relates to Solution Checker, which is static analysis of the source and knows nothing about the target org's inventory. <code>drift</code> compares committed source against a target for <em>changes</em> — a component can be entirely drift-free and still fail to import for a dependency it never touched.</dd></div>
+        <div class="idea-field"><dt>Prior art overlap</dt><dd>The 2026-07-03 pipeline-dashboard doc proposed a "pre-flight manifest gate" and the 2026-06-07 deploy doc proposed "config drift pre-flight" — both about presenting Flowline's own gate verdicts more legibly. Neither contemplated asking the target what it is missing. That is the addition.</dd></div>
+        <div class="idea-field"><dt>Downsides</dt><dd>Diagnosis only — unlike a package manager, Flowline cannot then install the missing first-party dependency for you. Adds a round trip to every deploy, so it likely wants to be skippable. And it does not catch data-dependent import failures, only metadata ones.</dd></div>
+      </dl>
+    </div>
+  </article>
+
+  <article class="idea-card" id="idea-2">
+    <div class="idea-header">
+      <div class="idea-rank">2</div>
+      <div class="idea-title">One per-target state manifest — connection references, environment variables, and workflow state</div>
+      <div class="idea-chips">
+        <span class="axis-badge ax1">Axis 1 · Deploy &amp; promotion</span>
+        <span class="chip chip-high">Confidence 90%</span>
+        <span class="chip chip-cx-med">Complexity Medium</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field"><dt>Description</dt><dd>Three separately-tracked gaps reduce to one shape: "declare what target-specific state should be true after import." Connection references and environment variables have no Flowline binding at all. Classic workflows and business process flows silently reset to Draft on every import. Flow ownership assignment was proposed and never built. Rather than three flags with three schemas, define one per-target manifest that <code>deploy</code> reads automatically, and populate it by auto-discovery from the packed solution rather than by hand-authoring.</dd></div>
+        <div class="idea-field"><dt>Basis</dt><dd><code>direct:</code> <a href="https://github.com/RemyDuijkeren/Flowline/blob/master/docs/ALM-strategy.md">docs/ALM-strategy.md</a>:696-699 — "Deployment settings file — not implemented. No <code>--settings-file</code> or <code>create-settings</code> usage exists in <code>src/</code>." <code>direct:</code> <a href="https://github.com/RemyDuijkeren/Flowline/blob/master/STRATEGY.md">STRATEGY.md</a>:114 — "Restore state of workflows on deploy (<code>--no-restore</code> flag) — post-v1." <code>direct:</code> a deploy-state brainstorm records the consequence plainly: automations that were active stop running with no warning and no error, and teams find out when a business process fails. <code>external:</code> connection references failing to update via deployment-settings files is an open issue against Microsoft's own build tools, so the naive "just call the PAC settings file" path has known sharp edges.</dd></div>
+        <div class="idea-field"><dt>Rationale</dt><dd>This is the one gap that blocks unattended CI/CD outright for any solution using flows or connectors — every other deploy feature already assumes an environment-agnostic artifact, and this is the assumption that breaks. It also converts a silent production-breakage class (automations quietly stopping) into something the tool handles by default rather than behind an opt-in flag. Worth checking before designing: <strong><code>pac solution create-settings</code> already exists</strong> in the installed PAC 2.9.3 — "Create a settings file from solution zip or solution folder." The generation primitive is on disk and unwrapped, which makes this materially cheaper than it looks.</dd></div>
+        <div class="idea-field"><dt>Not already present</dt><dd>No <code>--settings-file</code> flag exists anywhere in the command surface, and nothing auto-discovers required references from a packed solution. <code>IPostDeployService</code> ships, but it is a DI hook a developer implements in C# — not a declarative file a non-developer can edit per environment. That distinction is the whole point.</dd></div>
+        <div class="idea-field"><dt>Prior art overlap</dt><dd>The most re-treaded ground in the corpus: the 2026-07-01 post-deploy doc proposed workflow-state snapshots and secure config injection; the 2026-07-02 ALM Accelerator doc ranked per-env deployment settings files in its top seven. Both assumed hand-authored files and separate mechanisms. What this run adds is the consolidation — one schema, one read path, auto-derived — plus the observation that it is a recurring top-ranked idea that has now gone unbuilt across three documents, which is itself worth asking about.</dd></div>
+        <div class="idea-field"><dt>Downsides</dt><dd>Secrets. A manifest committed to git that carries connection values has a real security surface, so the schema needs an explicit split between what is declarative and what stays a code hook or an environment-variable lookup. Combining three concerns into one file also risks a schema that serves none of them cleanly.</dd></div>
+      </dl>
+    </div>
+  </article>
+
+  <article class="idea-card" id="idea-3">
+    <div class="idea-header">
+      <div class="idea-rank">3</div>
+      <div class="idea-title">Environments as data, and disposable</div>
+      <div class="idea-chips">
+        <span class="axis-badge ax3">Axis 3 · Environment lifecycle</span>
+        <span class="chip chip-med">Confidence 75%</span>
+        <span class="chip chip-cx-high">Complexity High</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field"><dt>Description</dt><dd>Three moves that only pay off together. <strong>Represent</strong>: replace the four fixed URL properties and the closed <code>EnvironmentRole</code> enum with a named registry carrying a tier, so promotion order derives from the topology rather than a switch. <strong>Create cheaply</strong>: implement the second provisioning strategy already noted in the code — import the solution into an empty environment instead of copying the whole environment. <strong>Reclaim</strong>: stamp a lease at creation, surface it in <code>status</code>, and offer reclaim or renewal on expiry.</dd>
+          <div class="diagram">
+            <svg viewBox="0 0 640 210" width="640" height="210" role="img" aria-label="Today .flowline holds four fixed URL slots and adding a fifth environment requires editing six files; a registry makes environments data, which in turn enables cheap creation by solution import and reclaim by lease.">
+              <text x="14" y="20" font-family="Inter,sans-serif" font-size="12" font-weight="700" style="fill:var(--muted)">TODAY</text>
+              <rect x="14" y="32" width="180" height="126" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+              <text x="104" y="52" font-family="'JetBrains Mono',monospace" font-size="11.5" fill="#0f172a" text-anchor="middle">.flowline</text>
+              <text x="34" y="76" font-family="'JetBrains Mono',monospace" font-size="11" fill="#475569">DevUrl</text>
+              <text x="34" y="94" font-family="'JetBrains Mono',monospace" font-size="11" fill="#475569">TestUrl</text>
+              <text x="34" y="112" font-family="'JetBrains Mono',monospace" font-size="11" fill="#475569">UatUrl</text>
+              <text x="34" y="130" font-family="'JetBrains Mono',monospace" font-size="11" fill="#475569">ProdUrl</text>
+              <text x="34" y="150" font-family="Inter,sans-serif" font-size="10.5" style="fill:var(--rej-text)">a 5th = 6 files edited</text>
+
+              <path d="M204 95 H244" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar3)"/>
+
+              <text x="256" y="20" font-family="Inter,sans-serif" font-size="12" font-weight="700" style="fill:var(--ax3-text)">REGISTRY</text>
+              <rect x="252" y="32" width="150" height="126" rx="8" fill="#ccfbf1" stroke="#5eead4"/>
+              <text x="327" y="52" font-family="'JetBrains Mono',monospace" font-size="11.5" fill="#0f172a" text-anchor="middle">environments[]</text>
+              <text x="270" y="76" font-family="'JetBrains Mono',monospace" font-size="11" fill="#115e59">name · url</text>
+              <text x="270" y="94" font-family="'JetBrains Mono',monospace" font-size="11" fill="#115e59">tier · type</text>
+              <text x="270" y="112" font-family="'JetBrains Mono',monospace" font-size="11" fill="#115e59">lease</text>
+              <text x="270" y="136" font-family="Inter,sans-serif" font-size="10.5" fill="#0f766e">a 5th = one entry</text>
+
+              <path d="M412 76 H448" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar3)"/>
+              <path d="M412 122 H448" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar3)"/>
+
+              <rect x="452" y="46" width="174" height="46" rx="6" fill="#eff6ff" stroke="#93c5fd"/>
+              <text x="539" y="65" font-family="Inter,sans-serif" font-size="11.5" fill="#1d4ed8" text-anchor="middle">create by solution import</text>
+              <text x="539" y="81" font-family="Inter,sans-serif" font-size="11.5" fill="#1d4ed8" text-anchor="middle">minutes, not hours</text>
+
+              <rect x="452" y="102" width="174" height="46" rx="6" fill="#dcfce7" stroke="#86efac"/>
+              <text x="539" y="121" font-family="Inter,sans-serif" font-size="11.5" fill="#166534" text-anchor="middle">reclaim on lease expiry</text>
+              <text x="539" y="137" font-family="Inter,sans-serif" font-size="11.5" fill="#166534" text-anchor="middle">provision gets an inverse</text>
+
+              <text x="14" y="186" font-family="Inter,sans-serif" font-size="11" style="fill:var(--muted)">Representation first — cheap creation and reclaim are both blocked behind it.</text>
+              <defs><marker id="ar3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#94a3b8"/></marker></defs>
+            </svg>
+          </div>
+        </div>
+        <div class="idea-field"><dt>Basis</dt><dd><code>direct:</code> <code>ProjectConfig.cs</code>:16-19 holds <code>ProdUrl</code>, <code>UatUrl</code>, <code>TestUrl</code>, <code>DevUrl</code> as four fixed properties, and <code>FlowlineCommand.cs</code>:20 defines a closed <code>EnvironmentRole</code> enum — both confirmed verbatim by an independent verifier. A convention doc dated 2026-06-06 records that adding a fifth named environment means editing six files, and that omitting one leaves that command silently broken for the new role. <code>direct:</code> <code>ProvisionCommand.cs</code>:193-194 carries the strategy as a verbatim TODO: "add a different strategy where we import solution(s) from prod, instead of copying the whole environment. should be much faster. also for reset the environment. ⇒ use this path also for Development environments." <code>direct:</code> <code>ProvisionCommand.cs</code>:133 has reset as a dead comment with no implementation. <code>external:</code> DHCP leases — a finite pool with clients that acquire unilaterally and vanish without releasing is solved by expiry-by-default, not by better bookkeeping.</dd></div>
+        <div class="idea-field"><dt>Rationale</dt><dd>The registry is load-bearing for a whole class of ambitions — per-developer DEV, per-branch environments, ephemeral rehearsal targets, a second UAT region — each of which currently pays the six-file tax on top of its own cost. The import-based strategy has a bonus the code comment already spotted: <code>pac admin copy</code> cannot target a Developer environment, but a solution import can, which turns Developer environments into valid provision targets and changes the licensing position for a team. And <code>provision</code> creating environments that nothing ever reclaims is an asymmetry someone noticed and dropped.</dd></div>
+        <div class="idea-field"><dt>Not already present</dt><dd><code>provision --copy {full,metadata}</code> selects between two <code>pac admin copy</code> breadths — both are whole-environment copies, neither is a mechanism change. <code>--allow-overwrite</code> overwrites an environment you are already reusing; it neither tracks nor releases. <code>status</code> shows URLs, login state and versions, but not environment type, provisioning state, age, or ownership.</dd></div>
+        <div class="idea-field"><dt>Prior art overlap</dt><dd>None. Environment representation appears in the corpus only as a <em>documented workaround</em> — the 2026-06-06 convention doc explains how to survive the six-file edit, never proposes removing it. Provisioning strategy and teardown appear in no ideation doc at all; the TODO is the only record.</dd></div>
+        <div class="idea-field"><dt>Downsides</dt><dd>A breaking <code>.flowline</code> schema change with a migration path, best spent while usage is still early. Data seeding is the open question on import-based provisioning — a copy carries data, an import does not, and deciding what a DEV actually needs is a product conversation. The related idea of making provision non-blocking (the code concedes the copy "keeps running regardless" of Ctrl-C, with an eight-hour wait cap) belongs here too, but adds cross-invocation operation state, which the codebase currently has none of.</dd></div>
+      </dl>
+    </div>
+  </article>
+
+  <article class="idea-card" id="idea-4">
+    <div class="idea-header">
+      <div class="idea-rank">4</div>
+      <div class="idea-title">Keep the change record sync already computes — and let it carry deletions</div>
+      <div class="idea-chips">
+        <span class="axis-badge ax5">Axis 5 · Team, CI &amp; comprehension</span>
+        <span class="chip chip-high">Confidence 90%</span>
+        <span class="chip chip-cx-med">Complexity Medium</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field"><dt>Description</dt><dd>Flowline computes a structured model of what changed and keeps only a prose rendering of it. <code>SyncCommand.cs</code>:162 calls <code>SolutionChangeSummary.WriteChangesFileAsync</code> after every sync, which <strong>overwrites</strong> <code>CHANGES.md</code> — so the model itself is discarded and the only durable trace is that file's git history. <code>OrphanCleanupService.CompareAsync</code> produces a second, independent component-level model for <code>drift</code> and <code>deploy</code>, also console-only. Persist both as a versioned artifact, keep <code>CHANGES.md</code> as one rendering of it, and treat the model's <code>Deleted</code> rows as declared deletion intent.</dd>
+          <div class="diagram">
+            <svg viewBox="0 0 620 200" width="620" height="200" role="img" aria-label="SolutionChangeSummary and CompareResult are computed then discarded at the console; persisting them feeds CHANGES.md, release notes, and CI receipts.">
+              <rect x="14" y="30" width="150" height="34" rx="6" fill="#f1f5f9" stroke="#cbd5e1"/>
+              <text x="89" y="52" font-family="'JetBrains Mono',monospace" font-size="10.5" fill="#0f172a" text-anchor="middle">SolutionChangeSummary</text>
+              <rect x="14" y="80" width="150" height="34" rx="6" fill="#f1f5f9" stroke="#cbd5e1"/>
+              <text x="89" y="102" font-family="'JetBrains Mono',monospace" font-size="10.5" fill="#0f172a" text-anchor="middle">CompareResult</text>
+
+              <path d="M168 47 H208" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar4)"/>
+              <path d="M168 97 H208" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar4)"/>
+
+              <rect x="212" y="52" width="92" height="40" rx="6" fill="#fecaca" stroke="#f87171"/>
+              <text x="258" y="70" font-family="Inter,sans-serif" font-size="11.5" fill="#7f1d1d" text-anchor="middle">console</text>
+              <text x="258" y="85" font-family="Inter,sans-serif" font-size="11.5" fill="#7f1d1d" text-anchor="middle">discarded</text>
+
+              <text x="212" y="122" font-family="Inter,sans-serif" font-size="11" style="fill:var(--rej-text)">today</text>
+
+              <path d="M308 72 H346" stroke="#2563eb" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#ar4b)"/>
+              <rect x="350" y="52" width="96" height="40" rx="6" fill="#eff6ff" stroke="#93c5fd"/>
+              <text x="398" y="77" font-family="'JetBrains Mono',monospace" font-size="11" fill="#1d4ed8" text-anchor="middle">change.json</text>
+
+              <path d="M450 72 H482" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar4)"/>
+              <rect x="486" y="14" width="120" height="28" rx="6" fill="#dcfce7" stroke="#86efac"/>
+              <text x="546" y="32" font-family="Inter,sans-serif" font-size="11" fill="#166534" text-anchor="middle">CHANGES.md (today)</text>
+              <rect x="486" y="46" width="120" height="28" rx="6" fill="#dcfce7" stroke="#86efac"/>
+              <text x="546" y="64" font-family="Inter,sans-serif" font-size="11" fill="#166534" text-anchor="middle">release notes</text>
+              <rect x="486" y="78" width="120" height="28" rx="6" fill="#dcfce7" stroke="#86efac"/>
+              <text x="546" y="96" font-family="Inter,sans-serif" font-size="11" fill="#166534" text-anchor="middle">CI deploy receipt</text>
+              <rect x="486" y="110" width="120" height="28" rx="6" fill="#ffedd5" stroke="#fdba74"/>
+              <text x="546" y="128" font-family="Inter,sans-serif" font-size="11" fill="#7c2d12" text-anchor="middle">tombstones</text>
+
+              <text x="14" y="162" font-family="Inter,sans-serif" font-size="11" style="fill:var(--muted)">The analysis is already paid for, deletions included. The gap is a write.</text>
+              <text x="14" y="180" font-family="Inter,sans-serif" font-size="11" style="fill:var(--muted)">Deploy stamps the commit it shipped, so unapplied deletions are a SHA range.</text>
+              <defs>
+                <marker id="ar4" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#94a3b8"/></marker>
+                <marker id="ar4b" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2563eb"/></marker>
+              </defs>
+            </svg>
+          </div>
+        </div>
+        <div class="idea-field"><dt>Basis</dt><dd><code>direct:</code> <code>SyncCommand.cs</code>:162 — <code>await summary.WriteChangesFileAsync(slnFolder, projectSln.UniqueName, devEnv.DisplayName, cancellationToken)</code>, run after every sync and overwriting rather than appending. <code>direct:</code> the summary already models deletion as a first-class state: <code>ChangeStatus { Added, Modified, Deleted }</code>, detected both for whole components (git status code <code>'D'</code> in <code>ClassifyFileStatus</code>) and for sub-components — <code>DiffEntityAttributes</code> emits <code>new SubChange(name, ChangeStatus.Deleted)</code> for every attribute present in the old XML and absent from the new. <code>direct:</code> it already consults git for exactly this purpose: <code>ResolveXmlNameAsync</code> runs <code>git log -n1 --format=%H</code> to recover the name of a component that no longer exists on disk, and <code>GetHeadXmlAsync</code> runs <code>git show HEAD:&lt;path&gt;</code> to obtain the prior version for diffing. <code>direct:</code> the generated output is prose — <code>- `av_oldfield`</code> beneath an <code>### Account</code> heading, with no component type and no identifier — and nothing in the codebase reads it back. <code>direct:</code> <code>DriftCommand.cs</code>:48 calls <code>orphanCleanupService.CompareAsync(...)</code> and uses the result for console rendering and exit-code selection only.</dd></div>
+        <div class="idea-field"><dt>Rationale</dt><dd>The expensive part already runs on every <code>sync</code>: Flowline <em>witnesses</em> deletions, and at the moment where the evidence is strongest. Sync compares a fresh DEV export against the previously committed source from the same environment lineage, so absence there means "removed." Deploy-time orphan detection compares source against a <em>different</em> environment, where absence is ambiguous — which is exactly why workflows, bots, connection references, roles and tables sit in the report-only tier. Capturing what sync already knows converts inference into declaration, and the missing piece is a write, not an analysis.
+          <p style="margin-top:10px">Git also answers the question the deletion story could not: when is it safe to stop carrying a tombstone? If <code>deploy</code> stamps the commit it shipped into the target, "deletions this environment has not applied" is the set of deletion records between that stamped SHA and HEAD. No aging heuristic, no per-environment confirmation table — which promotes the commit-stamp idea from a nicety to the mechanism that makes the rest work.</p>
+        </div>
+        <div class="idea-field"><dt>Not already present</dt><dd>No <code>--json</code> or structured output on <code>sync</code> or <code>drift</code>; the model is rendered and dropped. <code>CHANGES.md</code> <em>is</em> generated (not, as first assessed, a static file a human maintains) — but it is overwritten each sync, carries no component type or identifier, and is never read back, so it is a rendering rather than a record. Reconstructing deletions from it would mean parsing generated prose out of <code>git log -p</code> diffs.</dd></div>
+        <div class="idea-field"><dt>Prior art overlap</dt><dd>The 2026-07-03 pipeline-dashboard doc proposed a "deploy receipt JSON" and the dashboard doc a versioned <code>--json</code> schema — both scoped to <code>deploy</code> and framed as output formatting. The 2026-06-07 deploy doc proposed <code>--prune</code>, refining inference rather than replacing it. What this adds is the observation that the raw material — including deletion state — is already computed in <code>sync</code>, so the work is persistence, not analysis.</dd></div>
+        <div class="idea-field"><dt>Downsides</dt><dd>Scope limit worth naming up front: sync-derived deletions only cover components that live in <code>Solution/src/</code>. That happens to align well with the report-only tier, but it does <em>not</em> cover plugin types and steps, which <code>push</code> registers from the assembly and which never appear in solution XML — those still need inference. SHA-range logic also assumes linear history and degrades under squash, rebase, or force-push, so it needs a fallback rather than an assumption. And unifying <code>SolutionChangeSummary</code> with <code>CompareResult</code> is a cleaner substrate but a bigger refactor than persisting them separately; a published schema is a compatibility commitment either way.</dd></div>
+      </dl>
+    </div>
+  </article>
+
+  <article class="idea-card" id="idea-5">
+    <div class="idea-header">
+      <div class="idea-rank">5</div>
+      <div class="idea-title"><code>push --watch</code> for the inner loop</div>
+      <div class="idea-chips">
+        <span class="axis-badge ax2">Axis 2 · DEV inner loop</span>
+        <span class="chip chip-med">Confidence 70%</span>
+        <span class="chip chip-cx-med">Complexity Medium</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field"><dt>Description</dt><dd>The web-resource loop today is <code>npm run build</code> → <code>flowline push</code> → repeat, by hand, all day. A watch mode holds one authenticated session, watches the build output, content-hashes each candidate, pushes only what changed, and debounces the publish.</dd></div>
+        <div class="idea-field"><dt>Basis</dt><dd><code>direct:</code> a repo-wide search finds no <code>--watch</code> flag and no <code>FileSystemWatcher</code> anywhere under <code>src/</code> — confirmed independently by the verifier. <code>direct:</code> the content-hash-skip principle this depends on is already shipped and already load-bearing in a design decision: <a href="https://github.com/RemyDuijkeren/Flowline/blob/master/CHANGELOG.md">CHANGELOG.md</a>:12, on removing <code>push --scope formevents</code>, states "The separate scope only skipped the web resource pass — and that pass writes nothing when <code>dist/</code> is unchanged, so it bought no fewer writes."</dd></div>
+        <div class="idea-field"><dt>Rationale</dt><dd>This is the highest-frequency command in the entire workflow — every UI code change round-trips through it, dozens of times a day, per developer. Every other idea in this set is experienced weekly at best. Most of the win is not the build: it is the CLI start, the auth-profile guard, and the enumeration running once instead of a hundred times.</dd></div>
+        <div class="idea-field"><dt>Not already present</dt><dd><code>push --scope webresources --no-build</code> is the fastest path available today and is still a full process start with a full auth guard per cycle. <code>--dry-run</code> is single-shot. Nothing loops.</dd></div>
+        <div class="idea-field"><dt>Prior art overlap</dt><dd>None. The inner loop's latency appears in no prior ideation doc; the 2026-05-15 sync work addressed guards and dry-run, which is orthogonal.</dd></div>
+        <div class="idea-field"><dt>Downsides</dt><dd>A genuine architectural conflict, not a hypothetical one. A documented pattern ties <code>OrphanCleanupService</code>'s mutable-state safety explicitly to Flowline being single-command-per-process, and states that Flowline "cannot be safely server-ified or run simultaneous deployments." A long-lived watch process is the first thing to press on that invariant, so the design has to be built around it — most plausibly by keeping the watcher a thin loop that still isolates each push, rather than by holding engine state across cycles.</dd></div>
+      </dl>
+    </div>
+  </article>
+
+  <article class="idea-card" id="idea-6">
+    <div class="idea-header">
+      <div class="idea-rank">6</div>
+      <div class="idea-title">Act on declared deletions with a dependency-ordered deleter</div>
+      <div class="idea-chips">
+        <span class="axis-badge ax4">Axis 4 · Component coverage</span>
+        <span class="chip chip-med">Confidence 70%</span>
+        <span class="chip chip-cx-high">Complexity High</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field"><dt>Description</dt><dd>The acting half of the deletion story. Idea 4 supplies the intent — deletion records captured at sync, reviewed in the pull request that carries them, and bounded by the target's stamped commit. This is what consumes them: one deleter that asks Dataverse for the dependency graph, orders topologically, and deletes, replacing the per-family handler zoo. Data-bearing types stay guarded regardless of declared intent.</dd>
+          <div class="diagram">
+            <svg viewBox="0 0 620 210" width="620" height="210" role="img" aria-label="Inference cannot distinguish deleted-upstream from never-existed, so most component types stay report-only; a declared tombstone supplies intent and a dependency-graph query supplies ordering.">
+              <text x="14" y="20" font-family="Inter,sans-serif" font-size="12" font-weight="700" style="fill:var(--muted)">INFERENCE (TODAY)</text>
+              <rect x="14" y="32" width="112" height="34" rx="6" fill="#f1f5f9" stroke="#cbd5e1"/>
+              <text x="70" y="54" font-family="Inter,sans-serif" font-size="11.5" fill="#0f172a" text-anchor="middle">source ↔ target</text>
+              <path d="M130 49 H162" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar6)"/>
+              <rect x="166" y="32" width="128" height="34" rx="6" fill="#fef3c7" stroke="#fcd34d"/>
+              <text x="230" y="54" font-family="Inter,sans-serif" font-size="11.5" fill="#92400e" text-anchor="middle">absent — but why?</text>
+              <path d="M298 49 H330" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar6)"/>
+              <rect x="334" y="32" width="150" height="34" rx="6" fill="#fecaca" stroke="#f87171"/>
+              <text x="409" y="54" font-family="Inter,sans-serif" font-size="11.5" fill="#7f1d1d" text-anchor="middle">report only · delete by hand</text>
+              <text x="14" y="86" font-family="Inter,sans-serif" font-size="11" style="fill:var(--rej-text)">Deleted upstream, or never existed here? Inference can't tell — so it can't authorise destruction.</text>
+
+              <line x1="14" y1="104" x2="606" y2="104" stroke="#e2e8f0" stroke-width="1"/>
+
+              <text x="14" y="130" font-family="Inter,sans-serif" font-size="12" font-weight="700" style="fill:var(--ax4-text)">DECLARATION</text>
+              <rect x="14" y="142" width="112" height="34" rx="6" fill="#ffedd5" stroke="#fdba74"/>
+              <text x="70" y="164" font-family="Inter,sans-serif" font-size="11.5" fill="#7c2d12" text-anchor="middle">recorded at sync</text>
+              <path d="M130 159 H162" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar6)"/>
+              <rect x="166" y="142" width="128" height="34" rx="6" fill="#eff6ff" stroke="#93c5fd"/>
+              <text x="230" y="164" font-family="Inter,sans-serif" font-size="11.5" fill="#1d4ed8" text-anchor="middle">reviewed in the PR</text>
+              <path d="M298 159 H330" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar6)"/>
+              <rect x="334" y="142" width="150" height="34" rx="6" fill="#dcfce7" stroke="#86efac"/>
+              <text x="409" y="164" font-family="Inter,sans-serif" font-size="11.5" fill="#166534" text-anchor="middle">dependency-ordered delete</text>
+              <path d="M488 159 H520" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar6)"/>
+              <rect x="524" y="142" width="82" height="34" rx="6" fill="#fef3c7" stroke="#fcd34d"/>
+              <text x="565" y="164" font-family="Inter,sans-serif" font-size="11.5" fill="#92400e" text-anchor="middle">data types</text>
+              <text x="524" y="192" font-family="Inter,sans-serif" font-size="10.5" style="fill:var(--ax4-text)">stay guarded</text>
+              <defs><marker id="ar6" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#94a3b8"/></marker></defs>
+            </svg>
+          </div>
+        </div>
+        <div class="idea-field"><dt>Basis</dt><dd><code>external:</code> tombstones in Cassandra, Dynamo and CRDTs exist because of exactly the constraint <a href="https://github.com/RemyDuijkeren/Flowline/blob/master/docs/ALM-strategy.md">ALM-strategy.md</a> §9 names as cost #1 — in an additive store, absence is ambiguous, and every such system resolves it by replicating the deletion as a positive record. <code>direct:</code> Flowline's report-only tier is that ambiguity made visible: the workflow, bot, connection-reference, role and entity-family handlers all detect and report but never delete, graded in the changelog as "reported for you to remove by hand." They are report-only <em>because inference is not trustworthy enough to authorise destruction</em> — which is precisely what a declaration removes. <code>direct:</code> a grep confirms no <code>RetrieveDependencies*</code> call anywhere in <code>src/</code>; the two-phase ordering is hand-derived, and hand-deriving it produced a real bug in v0.14 (orphan assembly deletion blocked by step dependencies).</dd></div>
+        <div class="idea-field"><dt>Rationale</dt><dd>This attacks the model's first documented cost at the root rather than the symptom, and it is the only route in the set that could shrink the manual-removal tier without Flowline getting better at guessing. It is also the rarer kind of change: it deletes code, replacing a hand-maintained ordering with the platform's own answer to the same question. Its scope shrank once idea 4 absorbed the intent-capture half — what remains is the machinery, and the machinery is where the risk actually lives.</dd></div>
+        <div class="idea-field"><dt>Not already present</dt><dd><code>--force delete-orphans</code> lowers the <em>bar</em> on an inference; it does not supply intent, and it does not change how the ordering is derived. Adding a component type to cleanup today means adding a handler.</dd></div>
+        <div class="idea-field"><dt>Prior art overlap</dt><dd>The 2026-06-07 deploy doc proposed <code>--prune</code> and the 2026-06-10 orphan work documented the two-phase pipeline — both refine inference. This replaces the ordering derivation and acts on declared intent instead.</dd></div>
+        <div class="idea-field"><dt>Downsides</dt><dd>Replacing a shipped, bug-hardened subsystem is the kind of rewrite that earns scrutiny before it earns a branch, and it is the reason this ranks below the record that feeds it. The tier structure must survive the change: data-bearing types (tables, columns, roles) stay guarded regardless of declared intent, because losing rows is categorically unlike unregistering a plugin step. And it inherits idea 4's scope limit — plugin types and steps never appear in solution XML, so those still arrive by inference rather than declaration.</dd></div>
+      </dl>
+    </div>
+  </article>
+
+  <article class="idea-card" id="idea-7">
+    <div class="idea-header">
+      <div class="idea-rank">7</div>
+      <div class="idea-title">Resolve auth before any Dataverse write</div>
+      <div class="idea-chips">
+        <span class="axis-badge ax3">Axis 3 · Environment lifecycle</span>
+        <span class="chip chip-high">Confidence 90%</span>
+        <span class="chip chip-cx-low">Complexity Low</span>
+      </div>
+    </div>
+    <div class="idea-body">
+      <dl>
+        <div class="idea-field"><dt>Description</dt><dd><code>provision</code> and <code>init</code> can create real Dataverse objects — an environment, a publisher, a solution — and only then discover the PAC auth profile is missing or ambiguous, because profile resolution is switch-only and never offers to create one. Move validation ahead of the first write, and offer to create the profile inline when none matches.</dd></div>
+        <div class="idea-field"><dt>Basis</dt><dd><code>direct:</code> <code>CreateEnvironmentResolver.cs</code>:81 — the resolver is documented in-code as "switch-only," erroring by naming <code>pac auth create</code> and never creating a profile or launching a login. <code>direct:</code> <code>InitCommand.cs</code>:202 is the consequence, told to the user after a failed Dataverse write: "clean up manually, or retry", naming the publisher ID, solution ID and environment. Both confirmed verbatim by an independent verifier.</dd></div>
+        <div class="idea-field"><dt>Rationale</dt><dd>Six commands share one resolution path, so this is a root-cause fix in the repo's own idiom — a smaller diff than improving six error messages, and it eliminates the entire half-created-environment support class rather than documenting it. It is also the cheapest item in the set after idea 4.</dd></div>
+        <div class="idea-field"><dt>Not already present</dt><dd><code>--auto-select-auth-profile</code> disambiguates among <em>existing</em> profiles for unattended runs. It does not create a missing one, and it does nothing to move the failure point earlier. <code>status</code> detects mismatch and ambiguity, but only at check time — after <code>provision</code> or <code>clone</code> may already have written.</dd></div>
+        <div class="idea-field"><dt>Prior art overlap</dt><dd>None. Auth-profile creation and its sequencing relative to writes appear in no prior ideation doc.</dd></div>
+        <div class="idea-field"><dt>Downsides</dt><dd>An interactive profile-creation prompt is exactly wrong in CI, where there is no TTY — so the fallback behaviour needs deciding alongside the feature, not after it. The ordering change also touches a cross-cutting precondition used by every write path, which is a wider blast radius than the size of the fix suggests.</dd></div>
+      </dl>
+    </div>
+  </article>
+</section>
+
+<section id="rejection-summary">
+  <div class="section-eyebrow">What was cut</div>
+  <h2>Rejection Summary</h2>
+  <table>
+    <thead><tr><th>#</th><th>Idea</th><th>Reason rejected</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Dry-run emits a consumable plan file, <code>--plan</code> applies it</td><td>Folded into idea 1 — same "know before you import" need; the plan artifact is the heavier follow-on once preflight proves the appetite, and it commits to a versioned schema.</td></tr>
+      <tr><td>2</td><td>Workflow and BPF state restoration, default-on</td><td>Folded into idea 2 — it is one of the three concerns the per-target manifest carries; building it as its own flag is the duplication that idea argues against.</td></tr>
+      <tr><td>3</td><td>Environment registry as data · import-based provisioning · leases and reclaim · non-blocking provision</td><td>Merged into idea 3 — each is weak alone and the registry is the acknowledged prerequisite for the rest.</td></tr>
+      <tr><td>4</td><td>Tombstones as a new hand-authored source artifact</td><td>Folded into idea 4, and simplified out of existence in the process — <code>sync</code> already detects deletions (<code>ChangeStatus.Deleted</code>) and already reads git history to name components that no longer exist on disk, so the intent record is a persistence change on existing work rather than a new artifact for developers to author.</td></tr>
+      <tr><td>5</td><td>Deferred-defect register for items Flowline cannot fix</td><td>Folded into idea 4 — once the change record persists, "detected but not remediated" is a state on it, not a second file with its own aging policy.</td></tr>
+      <tr><td>6</td><td>Rehearsal deploy against a disposable PROD clone</td><td>Too expensive relative to likely value — the doc's own evidence puts a copy at ~30 minutes and up to 8 hours, so this cannot be the pre-deploy tier it was pitched as. Revisit only if import-based provisioning (idea 3) makes clones cheap.</td></tr>
+      <tr><td>7</td><td>Delta deploy <code>--since &lt;git-ref&gt;</code></td><td>Feasibility rests on unverified Dataverse behaviour — whether a component-subset import preserves solution membership for omitted components. The idea correctly self-gated on this; it is a spike, not a direction.</td></tr>
+      <tr><td>8</td><td>Per-component-family truth ownership (<code>forms: target</code>, <code>plugins: source</code>)</td><td>Basis refuted by verification — the cited <code>DeployCommand.cs</code>:463 message covers local uncommitted plugin and web-resource drift, not target-side merge-behavior components, so the "trains reflexive <code>--force drift</code>" argument conflates two unrelated checks.</td></tr>
+      <tr><td>9</td><td>Component-aware diff surface via a git <code>textconv</code> driver</td><td>Its premise now holds — YAML is unavailable through <code>clone</code>/<code>sync</code>, so XML tooling really is the only path — but the mechanism helps least where the pain is worst: per-blob textconv does nothing for the two monolithic <code>Other/</code> files, which is where diff noise concentrates. Worth reopening with a different delivery for those two files.</td></tr>
+      <tr><td>10</td><td>Shared-DEV authorship via <code>modifiedby</code></td><td>The field is real, but its semantics most likely track when a component was associated to the solution, not when its content was last edited — which is the question that matters. Needs verification before it is a direction.</td></tr>
+      <tr><td>11</td><td><code>push --undo</code> compensating journal</td><td>Self-scoped to last-writer-only and dependent on the unverified authorship idea above; narrow value as stated, and it introduces the first cross-invocation state in the codebase.</td></tr>
+      <tr><td>12</td><td>Remediate merge-behavior components via direct metadata-API patch</td><td>The gap is real and unmitigated, but the load-bearing mechanism — that a direct PATCH bypasses solution-merge semantics — was not confirmed. Promote once verified; it would be a strong candidate.</td></tr>
+      <tr><td>13</td><td>Environment-vs-environment diff</td><td>Real gap with real GUI-only prior art, but it overlaps <code>status</code> and <code>drift</code> enough that the boundary needs settling first; held behind idea 4, which supplies the change model it would render.</td></tr>
+      <tr><td>14</td><td>Stamp the deploying commit SHA into the target</td><td>Promoted into idea 4 rather than cut — it is the purge mechanism the deletion story was missing, since "deletions this environment has not applied" becomes the range between the stamped SHA and HEAD. It still carries its own open question: writing Flowline metadata into a customer's solution record is a footprint decision.</td></tr>
+      <tr><td>15</td><td><code>[Webhook]</code> / <code>[ServiceEndpoint]</code> registration attributes</td><td>Sound and low-risk, but narrow — a clean extension of an existing pattern rather than a direction worth choosing between. Good candidate for opportunistic work, not for this shortlist.</td></tr>
+      <tr><td>16</td><td>Branch ↔ environment binding in <code>.flowline</code></td><td>Depends entirely on idea 3's registry; revisit as a follow-on once environments are data.</td></tr>
+      <tr><td>17</td><td><code>--ci github|ado</code> pipeline scaffolding</td><td>Below the ambition floor — the basis is fine and it was proposed before, but a team would build it rather than debate it.</td></tr>
+      <tr><td>18</td><td>MCP / stateful protocol surface</td><td>Thinnest grounding in the set, and self-declared as valuable only paired with resumable operations — effectively the same idea at a second altitude, at high implementation cost for uncertain demand.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<footer class="composition-signal">Composed 2026-08-08 by ce-ideate from the Flowline repository at <code>f3b4c6b</code>, 14 prior ideation documents, and external research.</footer>
+
+</div>
+</body>
+</html>
