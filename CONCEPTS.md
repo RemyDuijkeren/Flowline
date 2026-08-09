@@ -11,7 +11,7 @@ A membership record that tracks which objects (plugin assemblies, web resources,
 A platform record that tracks when one solution component references another — for example, when a plugin step references a plugin type. Distinct from a [[Solution component]] (which records membership in a solution): removing a component from a solution does not clear its dependency records. Dataverse enforces these records during deletion — the dependency check fires before any cascade runs — so the required component cannot be deleted while any dependent component still holds a reference to it.
 
 ### Missing dependency
-A component the solution references but does not itself contain, so it must already exist in whatever environment the solution is imported into. Recorded by the source environment at export time in the `MissingDependencies` element of `solution.xml`, carrying the component's schema name, display name, and owning solution — and, for first-party components, the application package and version. Survives unpack into committed solution source and travels back into the packed artifact, which is what makes it answerable without a live export. Distinct from a [[Component dependency]], which is a live platform record rather than a declaration inside a solution file.
+A component the solution references but does not itself contain, so it must already exist in whatever environment the solution is imported into. Recorded by the source environment at export time in the solution manifest, carrying the component's schema name, display name, and owning solution — and, for first-party components, the application package and version. Survives unpack into [[Unpacked solution source]] and travels back into the [[Packed solution]], which is what makes it answerable without a live export. Distinct from a [[Component dependency]], which is a live platform record rather than a declaration inside a solution file.
 
 ### Missing component
 A [[Missing dependency]] that the *target* environment turns out not to have. The distinction is the filter: missing dependencies are a property of the solution and are the same everywhere, while missing components are a property of one target and are what actually blocks an import there.
@@ -25,6 +25,15 @@ A Dataverse solution whose components can be created, modified, and deleted indi
 
 ### Solution import action
 Whether a solution import is treated as an **Update** (adds and modifies components, never removes any) or an **Upgrade** (also removes components no longer present in the imported version). Upgrade only applies to managed solutions, and only when a prior version of the same solution already exists in the target — a first-time install has nothing to upgrade from and is always a plain Update. [[Unmanaged solution]] imports are always additive regardless of which action is chosen.
+
+### Packed solution
+A solution in its single-archive transport form — what a pack produces, what an import consumes, and what a deploy artifact is. Its manifest sits at the archive root. This is the form that carries the [[Missing dependency]] list, so it is the form a target environment can be asked about without a live export.
+*Avoid:* solution zip (ambiguous — a zipped-up [[Unpacked solution source]] tree is also a zip and does not behave the same)
+
+### Unpacked solution source
+The same solution exploded into per-component files for source control — what a clone or sync writes and what is committed, diffed, and reviewed. Its manifest is nested under a well-known subfolder rather than sitting at the root, and its per-component files follow the [[Local-source identity shape]] patterns.
+
+The two forms are not interchangeable, and conflating them is a live failure mode: code that reads inside an archive must target the packed layout, because the nested path only exists in source.
 
 ### Local-source identity shape
 The pattern by which a solution component's identity is recorded in unpacked solution source, used by [[Orphan component]] detection to check whether a live component is still declared locally. Three shapes recur across component types: an id embedded directly in the component's own file and mirrored by `id` in Solution.xml (e.g. Role); a schemaname/uniquename-keyed folder with no GUID anywhere locally (e.g. CustomApi, Bot); and a declaration inline within Customizations.xml's own named section, also with no GUID (e.g. ConnectionReference). A component type is only trusted for removal recommendations once its shape has a verified local-source check with test coverage for both directions — still-declared components suppressed, genuinely-removed components reported.
