@@ -199,4 +199,45 @@ public class MissingComponentCheckServiceTests : IDisposable
         var thrown = await act.Should().ThrowAsync<FlowlineException>();
         thrown.Which.ExitCode.Should().Be(ExitCode.ValidationFailed);
     }
+
+    [Fact]
+    public void MapMissingComponents_Null_ReturnsEmptyList()
+    {
+        var results = MissingComponentCheckService.MapMissingComponents(null);
+
+        results.Should().BeEmpty();
+    }
+
+    // FIX 1 end-to-end: a clean run must remove a report left behind by an earlier blocked run
+    // against this same target — the file's presence always describes the latest outcome.
+    [Fact]
+    public async Task RunPreImportAsync_CleanRun_RemovesPreExistingReportForThatTarget()
+    {
+        var ctx = Ctx();
+        var reportPath = MissingComponentReport.GetReportPath(ctx.PackagePath, ctx.Solution.EnvironmentUrl);
+        File.WriteAllText(reportPath, "stale report from an earlier blocked run");
+        SetUpResponse(_serviceMock, []);
+
+        await _service.RunPreImportAsync(ctx, CancellationToken.None);
+
+        File.Exists(reportPath).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_BlockedRun_LeavesReportOnDiskWithExpectedEntries()
+    {
+        var ctx = Ctx();
+        var missing = new[] { Component("new_field", "Field", "ContosoSolution", 2) };
+        SetUpResponse(_serviceMock, missing);
+
+        try { await _service.RunPreImportAsync(ctx, CancellationToken.None); }
+        catch (FlowlineException) { /* expected — blocked deploy */ }
+
+        var reportPath = MissingComponentReport.GetReportPath(ctx.PackagePath, ctx.Solution.EnvironmentUrl);
+        File.Exists(reportPath).Should().BeTrue();
+        var content = File.ReadAllText(reportPath);
+        content.Should().Contain("new_field");
+        content.Should().Contain(ctx.Solution.Name);
+        content.Should().Contain(ctx.Solution.EnvironmentUrl);
+    }
 }

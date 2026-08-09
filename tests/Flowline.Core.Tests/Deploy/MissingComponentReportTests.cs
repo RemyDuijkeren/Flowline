@@ -5,6 +5,9 @@ namespace Flowline.Core.Tests.Deploy;
 
 public class MissingComponentReportTests : IDisposable
 {
+    const string TargetUrl = "https://example.crm.dynamics.com";
+    const string SolutionName = "MySolution";
+
     readonly string _packagePath;
 
     public MissingComponentReportTests()
@@ -31,7 +34,7 @@ public class MissingComponentReportTests : IDisposable
     {
         var unreachable = Path.Combine(Path.GetTempPath(), $"flowline-absent-{Guid.NewGuid():N}", "Sln.zip");
 
-        var reportPath = MissingComponentReport.Write(unreachable, [Result(1)]);
+        var reportPath = MissingComponentReport.Write(unreachable, TargetUrl, SolutionName, [Result(1)]);
 
         reportPath.Should().BeNull();
     }
@@ -51,7 +54,7 @@ public class MissingComponentReportTests : IDisposable
     {
         var unreachable = Path.Combine(Path.GetTempPath(), $"flowline-absent-{Guid.NewGuid():N}", "Sln.zip");
 
-        var act = () => MissingComponentReport.ClearReport(unreachable);
+        var act = () => MissingComponentReport.ClearReport(unreachable, TargetUrl);
 
         act.Should().NotThrow();
     }
@@ -74,7 +77,7 @@ public class MissingComponentReportTests : IDisposable
     {
         var results = Enumerable.Range(1, 12).Select(Result).ToList();
 
-        var reportPath = MissingComponentReport.Write(_packagePath, results);
+        var reportPath = MissingComponentReport.Write(_packagePath, TargetUrl, SolutionName, results);
 
         reportPath.Should().NotBeNull();
         var content = File.ReadAllText(reportPath!);
@@ -85,10 +88,10 @@ public class MissingComponentReportTests : IDisposable
     [Fact]
     public void ClearReport_PreExistingReport_RemovesIt()
     {
-        var reportPath = MissingComponentReport.GetReportPath(_packagePath);
+        var reportPath = MissingComponentReport.GetReportPath(_packagePath, TargetUrl);
         File.WriteAllText(reportPath, "stale report from an earlier blocked run");
 
-        MissingComponentReport.ClearReport(_packagePath);
+        MissingComponentReport.ClearReport(_packagePath, TargetUrl);
 
         File.Exists(reportPath).Should().BeFalse();
     }
@@ -96,7 +99,7 @@ public class MissingComponentReportTests : IDisposable
     [Fact]
     public void ClearReport_NoExistingReport_IsNoOpAndDoesNotThrow()
     {
-        var act = () => MissingComponentReport.ClearReport(_packagePath);
+        var act = () => MissingComponentReport.ClearReport(_packagePath, TargetUrl);
 
         act.Should().NotThrow();
     }
@@ -134,5 +137,101 @@ public class MissingComponentReportTests : IDisposable
         for (var i = 1; i <= 3; i++)
             message.Should().Contain($"new_field{i}");
         message.Should().NotContain("more");
+    }
+
+    // FIX 6: the block message must offer the same escape hatch as the transport-failure message —
+    // a developer who believes the block is wrong needs a route out.
+    [Fact]
+    public void RenderFailureMessage_NamesTheSkipFlag()
+    {
+        var message = MissingComponentReport.RenderFailureMessage([Result(1)], @"C:\artifacts\missing-components.txt");
+
+        message.Should().Contain("--skip-component-check");
+    }
+
+    // Exact truncation boundary: 5 shows all with no "more" line, 6 shows five plus one "more" line.
+    [Fact]
+    public void RenderFailureMessage_ExactlyFive_RendersAllWithNoMoreLine()
+    {
+        var results = Enumerable.Range(1, 5).Select(Result).ToList();
+
+        var message = MissingComponentReport.RenderFailureMessage(results, @"C:\artifacts\missing-components.txt");
+
+        for (var i = 1; i <= 5; i++)
+            message.Should().Contain($"new_field{i}");
+        message.Should().NotContain("more");
+    }
+
+    [Fact]
+    public void RenderFailureMessage_ExactlySix_RendersFivePlusOneMoreLine()
+    {
+        var results = Enumerable.Range(1, 6).Select(Result).ToList();
+
+        var message = MissingComponentReport.RenderFailureMessage(results, @"C:\artifacts\missing-components.txt");
+
+        for (var i = 1; i <= 5; i++)
+            message.Should().Contain($"new_field{i}");
+        message.Should().NotContain("new_field6");
+        message.Should().Contain("...and 1 more");
+    }
+
+    // An unmapped component type must never leak the raw integer into the rendered line. Uses
+    // digit-free literals (not the Result(i) helper, whose names end in digits) so NotMatchRegex(@"\d")
+    // only fails on the type number leaking through.
+    [Fact]
+    public void FormatComponentLine_UnmappedComponentType_RendersWithNoNumericArtifact()
+    {
+        var result = new MissingComponentResult("new_field", "Field", "ContosoSolution", 9999, "new_entity", "Entity");
+
+        var line = MissingComponentReport.FormatComponentLine(result);
+
+        line.Should().NotMatchRegex(@"\d");
+    }
+
+    // FIX 1: two different targets sharing the same package must resolve to different report paths,
+    // and clearing one must not touch the other's report.
+    [Fact]
+    public void GetReportPath_DifferentTargets_ResolveToDifferentPaths()
+    {
+        var prodPath = MissingComponentReport.GetReportPath(_packagePath, "https://contoso.crm4.dynamics.com");
+        var testPath = MissingComponentReport.GetReportPath(_packagePath, "https://contoso-test.crm4.dynamics.com");
+
+        prodPath.Should().NotBe(testPath);
+    }
+
+    [Fact]
+    public void ClearReport_TwoTargets_ClearingOneLeavesTheOtherOnDisk()
+    {
+        const string prodUrl = "https://contoso.crm4.dynamics.com";
+        const string testUrl = "https://contoso-test.crm4.dynamics.com";
+
+        MissingComponentReport.Write(_packagePath, prodUrl, SolutionName, [Result(1)]);
+        var testReportPath = MissingComponentReport.Write(_packagePath, testUrl, SolutionName, [Result(2)]);
+
+        MissingComponentReport.ClearReport(_packagePath, prodUrl);
+
+        File.Exists(MissingComponentReport.GetReportPath(_packagePath, prodUrl)).Should().BeFalse();
+        File.Exists(testReportPath!).Should().BeTrue();
+    }
+
+    // FIX 5: a relative/bare-filename package path must still resolve to an absolute report path.
+    [Fact]
+    public void GetReportPath_RelativePackagePath_ResolvesToAnAbsolutePath()
+    {
+        var reportPath = MissingComponentReport.GetReportPath("sol.zip", TargetUrl);
+
+        Path.IsPathRooted(reportPath).Should().BeTrue();
+    }
+
+    // FIX 1: the written report carries the solution and target it was checked against, so a reader
+    // can tell what run produced it.
+    [Fact]
+    public void Write_IncludesSolutionNameAndTargetUrlInHeader()
+    {
+        var reportPath = MissingComponentReport.Write(_packagePath, TargetUrl, SolutionName, [Result(1)]);
+
+        var content = File.ReadAllText(reportPath!);
+        content.Should().Contain(SolutionName);
+        content.Should().Contain(TargetUrl);
     }
 }

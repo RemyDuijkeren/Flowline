@@ -1,20 +1,30 @@
 using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Core.Deploy;
+using Flowline.Core.OrphanCleanup;
 using Flowline.Core.Services;
+using Flowline.Diagnostics;
 using Flowline.Services;
+using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
+using Spectre.Console;
 
 namespace Flowline.Tests;
 
 public class DeployCommandPostDeployTests
 {
-    // Mirrors the Program.cs registration order, which is the pre-import run order.
-    static IEnumerable<IPostDeployService> RegisteredServices() =>
-    [
-        new MissingComponentCheckService(null!),
-        new SolutionCheckService(null!, null!),
-        new BackupService(null!, null!)
-    ];
+    // Builds the real DI registration from Program.cs (PostDeployServiceRegistration) rather than a
+    // hand-written mirror list — a mirror can silently drift from the actual registration (it already
+    // had, missing OrphanCleanupService). This resolves exactly what Program.cs wires up.
+    static List<IPostDeployService> RegisteredServices()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IAnsiConsole>());
+        services.AddSingleton<SubprocessCapture>();
+        PostDeployServiceRegistration.RegisterPostDeployServices(services);
+
+        return services.BuildServiceProvider().GetServices<IPostDeployService>().ToList();
+    }
 
     [Theory]
     [InlineData(0, false)]     // no failures
@@ -36,10 +46,11 @@ public class DeployCommandPostDeployTests
     {
         var active = DeployCommand.ResolveActiveServices(RegisteredServices(), new DeployCommand.Settings());
 
-        active.Should().HaveCount(3);
+        active.Should().HaveCount(4);
         active[0].Should().BeOfType<MissingComponentCheckService>();
         active[1].Should().BeOfType<SolutionCheckService>();
         active[2].Should().BeOfType<BackupService>();
+        active[3].Should().BeOfType<OrphanCleanupService>();
     }
 
     [Fact]
@@ -64,7 +75,7 @@ public class DeployCommandPostDeployTests
         var active = DeployCommand.ResolveActiveServices(RegisteredServices(), settings);
 
         active[0].Should().BeOfType<MissingComponentCheckService>();
-        active.Should().HaveCount(2);
+        active.Should().HaveCount(3);
     }
 
     [Fact]
@@ -74,7 +85,9 @@ public class DeployCommandPostDeployTests
 
         var active = DeployCommand.ResolveActiveServices(RegisteredServices(), settings);
 
-        active.Should().ContainSingle().Which.Should().BeOfType<SolutionCheckService>();
+        active.Should().HaveCount(2);
+        active[0].Should().BeOfType<SolutionCheckService>();
+        active[1].Should().BeOfType<OrphanCleanupService>();
     }
 
     [Fact]

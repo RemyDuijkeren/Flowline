@@ -14,20 +14,22 @@ public class MissingComponentCheckService(IAnsiConsole console) : IPostDeploySer
 {
     public async Task RunPreImportAsync(PostDeployContext context, CancellationToken ct)
     {
-        var zipBytes = await File.ReadAllBytesAsync(context.PackagePath, ct).ConfigureAwait(false);
-
         RetrieveMissingComponentsResponse response;
         try
         {
+            var zipBytes = await File.ReadAllBytesAsync(context.PackagePath, ct).ConfigureAwait(false);
             response = (RetrieveMissingComponentsResponse)await console.Status().FlowlineSpinner()
                 .StartAsync("Checking target for missing components...",
                     _ => context.Service.ExecuteAsync(new RetrieveMissingComponentsRequest { CustomizationFile = zipBytes }, ct))
                 .ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             // R12/KTD7: a preflight that can't run fails distinctly from one that ran and found
             // components missing — different ExitCode, different wording, names the skip flag.
+            // The filter also consults the token, not just the exception type: a client-side timeout
+            // surfaces as OperationCanceledException/TaskCanceledException without ever signalling the
+            // caller's token, and that must classify as "check couldn't run", not "user cancelled".
             throw new FlowlineException(ExitCode.ConnectionFailed,
                 $"Missing-component check couldn't run against the target ({ex.Message}) — use --skip-component-check to deploy without it.", ex);
         }
@@ -36,12 +38,12 @@ public class MissingComponentCheckService(IAnsiConsole console) : IPostDeploySer
 
         if (results.Count == 0)
         {
-            MissingComponentReport.ClearReport(context.PackagePath);
+            MissingComponentReport.ClearReport(context.PackagePath, context.Solution.EnvironmentUrl);
             console.Ok("No missing components.");
             return;
         }
 
-        var reportPath = MissingComponentReport.Write(context.PackagePath, results);
+        var reportPath = MissingComponentReport.Write(context.PackagePath, context.Solution.EnvironmentUrl, context.Solution.Name, results);
         throw new FlowlineException(ExitCode.ValidationFailed, MissingComponentReport.RenderFailureMessage(results, reportPath));
     }
 

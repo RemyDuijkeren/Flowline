@@ -69,17 +69,9 @@ services.AddSingleton<IGenerator, XrmContextGenerator>();
 services.AddSingleton<PluginService>();
 services.AddSingleton<WebResourceService>();
 services.AddSingleton<FormEventService>();
-// Registration order is the pre-import run order (DeployCommand.ResolveActiveServices preserves it).
-// The missing-component gate must stay first: it is a seconds-long read-only check, and running it
-// ahead of the solution checker and the environment backup is what stops a deploy that cannot succeed
-// before that slower work is spent. Do not reorder these three without reading R13 in
-// docs/plans/2026-08-09-001-feat-deploy-import-preflight-plan.md.
-services.AddSingleton<IPostDeployService, MissingComponentCheckService>();
-services.AddSingleton<IPostDeployService, SolutionCheckService>();
-services.AddSingleton<IPostDeployService, BackupService>();
-OrphanHandlerRegistration.RegisterOrphanHandlers(services);
-services.AddSingleton<OrphanCleanupService>();
-services.AddSingleton<IPostDeployService>(sp => sp.GetRequiredService<OrphanCleanupService>());
+// Single registration site (R13) — DeployCommandPostDeployTests resolves the real provider from this
+// same method, so the ordering guarantee can't drift from a hand-written test mirror.
+PostDeployServiceRegistration.RegisterPostDeployServices(services);
 services.AddSingleton<SubprocessCapture>();
 services.AddSingleton<ProjectScaffolder>();
 services.AddSingleton<SolutionCreateService>();
@@ -258,4 +250,26 @@ void WriteExceptionContext(Exception ex, ILogger? logger)
 
     if (ex.HelpLink is not null)
         AnsiConsole.MarkupLine($"[dim][link={ex.HelpLink}]See: {Markup.Escape(ex.HelpLink)}[/][/]");
+}
+
+namespace Flowline
+{
+    // R13: single registration site for the pre-import service ordering guarantee — the missing-component
+    // gate must stay first (a seconds-long read-only check), ahead of the solution checker and the
+    // environment backup, so a doomed deploy stops before that slower work is spent. Do not reorder these
+    // three without reading R13 in docs/plans/2026-08-09-001-feat-deploy-import-preflight-plan.md.
+    // DeployCommandPostDeployTests resolves a real ServiceProvider from this method, so the ordering
+    // guarantee can't drift from a hand-written test mirror.
+    internal static class PostDeployServiceRegistration
+    {
+        public static void RegisterPostDeployServices(IServiceCollection services)
+        {
+            services.AddSingleton<IPostDeployService, MissingComponentCheckService>();
+            services.AddSingleton<IPostDeployService, SolutionCheckService>();
+            services.AddSingleton<IPostDeployService, BackupService>();
+            OrphanHandlerRegistration.RegisterOrphanHandlers(services);
+            services.AddSingleton<OrphanCleanupService>();
+            services.AddSingleton<IPostDeployService>(sp => sp.GetRequiredService<OrphanCleanupService>());
+        }
+    }
 }
