@@ -18,4 +18,18 @@ public class DeployCommandPostDeployTests
     [InlineData(1, true)]      // single Critical finding aborts the gate
     public void ShouldAbort_ReturnsExpected(int criticalCount, bool expected) =>
         SolutionCheckService.ShouldAbort(criticalCount).Should().Be(expected);
+
+    [Fact]
+    public void SkipComponentCheck_DefaultsToFalse() =>
+        new DeployCommand.Settings().SkipComponentCheck.Should().BeFalse();
+
+    [Fact]
+    public void SkipComponentCheck_SetIndependentlyOfTheOtherSkipFlags()
+    {
+        var settings = new DeployCommand.Settings { SkipComponentCheck = true };
+
+        settings.SkipComponentCheck.Should().BeTrue();
+        settings.SkipSolutionCheck.Should().BeFalse();
+        settings.NoBackup.Should().BeFalse();
+    }
 }

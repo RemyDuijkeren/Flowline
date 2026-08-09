@@ -42,6 +42,13 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         [DefaultValue(false)]
         public bool SkipSolutionCheck { get; set; } = false;
 
+        // Deliberately not --skip-dependency-check: `pac solution import` already uses that name for a
+        // narrower product-update check, and reusing it would read as the same thing.
+        [CommandOption("--skip-component-check")]
+        [Description("Skip the missing-component gate that checks the target before importing")]
+        [DefaultValue(false)]
+        public bool SkipComponentCheck { get; set; } = false;
+
         [CommandOption("--no-backup")]
         [Description("Skip the pre-deploy environment backup")]
         [DefaultValue(false)]
