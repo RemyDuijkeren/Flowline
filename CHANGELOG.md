@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`deploy` now checks the target for missing components before importing**: an import fails when the solution references something the target doesn't have, and Dataverse stops at the *first* unresolvable dependency — so you fix one, re-sync, re-import, and get told about the next. The new gate asks the target which required components are absent and reports all of them in one pass, before anything is written. The terminal names the first five with the solution that owns each, and the full list goes to a report beside the packed artifact; a clean run clears a stale report. The owning solution is what tells you which fix applies, so the failure names both routes — install the missing solution or app in the target, or drop the dependency in DEV and `sync` — rather than guessing. It runs ahead of the solution checker and the backup so a doomed deploy stops before the slow work, and it writes nothing to the target. A check that can't run (no privileges, no connection) is reported differently, with its own exit code, so a permissions problem never reads as a broken solution. Skip it with `--skip-component-check`.
+
 ### Removed
 
 - **`push --scope formevents`** (breaking): use `--scope webresources`, which already ran form event registration. The separate scope only skipped the web resource pass — and that pass writes nothing when `dist/` is unchanged, so it bought no fewer writes and no fewer publishes. Annotations are read from the built `dist/` folder, so the "edited only an annotation" case it was added for was already covered.
