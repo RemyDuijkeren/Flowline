@@ -81,6 +81,14 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         return services.Where(s => !IsSkipped(s)).ToList();
     }
 
+    // FIX A: best-effort, matching MissingComponentReport.ClearReport's own tolerance for IO failure —
+    // clearing a stale report is a courtesy, never a reason to fail a deploy that's already skipping the gate.
+    internal static void ClearComponentCheckReportIfSkipped(bool skipComponentCheck, string packagePath, string targetUrl)
+    {
+        if (skipComponentCheck)
+            MissingComponentReport.ClearReport(packagePath, targetUrl);
+    }
+
     // "drift" is this command's local force hazard (skip drift validation) — distinct from the
     // unrelated `flowline drift` CLI command, which reports drift for any environment read-only.
     internal static readonly string[] ValidSpecifiers = ["drift", "first-import", "delete-orphans", "all"];
@@ -258,6 +266,12 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             var postDeployContext = new PostDeployContext(service, solutionInfo, runMode, packagePath, tmpUnpackDir, settings.HasForce("delete-orphans"));
 
             var activeServices = ResolveActiveServices(postDeployServices, settings);
+
+            // FIX A: a skip means "no current verdict" — a report left by an earlier blocked run against
+            // this target no longer describes anything real, so skipping must clear it rather than let a
+            // stale block survive (e.g. the missing app gets installed, then the next deploy runs with
+            // --skip-component-check and would otherwise still show the old report as if it were current).
+            ClearComponentCheckReportIfSkipped(settings.SkipComponentCheck, packagePath, targetEnv.EnvironmentUrl!);
 
             foreach (var postDeployService in activeServices)
                 await postDeployService.RunPreImportAsync(postDeployContext, cancellationToken);

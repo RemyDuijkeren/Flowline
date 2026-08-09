@@ -1,3 +1,4 @@
+using System.ServiceModel;
 using Microsoft.Crm.Sdk.Messages;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
@@ -239,5 +240,85 @@ public class MissingComponentCheckServiceTests : IDisposable
         content.Should().Contain("new_field");
         content.Should().Contain(ctx.Solution.Name);
         content.Should().Contain(ctx.Solution.EnvironmentUrl);
+    }
+
+    // FIX C: a privilege fault is a permanent problem, not a transport hiccup — a script retrying on
+    // ConnectionFailed would loop forever against it, so it needs its own ExitCode and wording.
+    [Fact]
+    public async Task RunPreImportAsync_PrivilegeDeniedFault_ThrowsNotAuthenticated_WithDistinctMessage()
+    {
+        _serviceMock.ExecuteAsync(Arg.Any<RetrieveMissingComponentsRequest>(), Arg.Any<CancellationToken>())
+            .Returns<Task<OrganizationResponse>>(_ => throw new FaultException<OrganizationServiceFault>(
+                new OrganizationServiceFault { ErrorCode = unchecked((int)0x80040220) }, "Principal user is missing prvReadSolution privilege"));
+
+        var act = async () => await _service.RunPreImportAsync(Ctx(), CancellationToken.None);
+
+        var thrown = await act.Should().ThrowAsync<FlowlineException>();
+        thrown.Which.ExitCode.Should().Be(ExitCode.NotAuthenticated);
+        thrown.Which.Message.Should().Contain("privilege");
+        thrown.Which.Message.Should().Contain("--skip-component-check");
+        thrown.Which.Message.Should().NotBe(MissingComponentCheckService.BuildConnectionFailedMessage("Principal user is missing prvReadSolution privilege", 0));
+    }
+
+    // A fault that isn't a privilege problem must keep going through the transport-failure path —
+    // only the privilege family gets the NotAuthenticated treatment.
+    [Fact]
+    public async Task RunPreImportAsync_NonPrivilegeFault_StillThrowsConnectionFailed()
+    {
+        _serviceMock.ExecuteAsync(Arg.Any<RetrieveMissingComponentsRequest>(), Arg.Any<CancellationToken>())
+            .Returns<Task<OrganizationResponse>>(_ => throw new FaultException<OrganizationServiceFault>(
+                new OrganizationServiceFault { ErrorCode = unchecked((int)0x80040265) }, "Generic SQL error"));
+
+        var act = async () => await _service.RunPreImportAsync(Ctx(), CancellationToken.None);
+
+        var thrown = await act.Should().ThrowAsync<FlowlineException>();
+        thrown.Which.ExitCode.Should().Be(ExitCode.ConnectionFailed);
+    }
+
+    [Fact]
+    public void IsPrivilegeFault_PrivilegeDeniedErrorCode_ReturnsTrue()
+    {
+        var fault = new FaultException<OrganizationServiceFault>(
+            new OrganizationServiceFault { ErrorCode = unchecked((int)0x80040220) }, "denied");
+
+        MissingComponentCheckService.IsPrivilegeFault(fault).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsPrivilegeFault_AccessDeniedMessageText_ReturnsTrue()
+    {
+        var fault = new FaultException<OrganizationServiceFault>(
+            new OrganizationServiceFault(), "Access is Denied");
+
+        MissingComponentCheckService.IsPrivilegeFault(fault).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsPrivilegeFault_UnrelatedFault_ReturnsFalse()
+    {
+        var fault = new FaultException<OrganizationServiceFault>(
+            new OrganizationServiceFault { ErrorCode = unchecked((int)0x80040265) }, "Generic SQL error");
+
+        MissingComponentCheckService.IsPrivilegeFault(fault).Should().BeFalse();
+    }
+
+    // FIX B: the ceiling is unmeasured, so the size line must only appear once it's plausibly relevant —
+    // a small payload that fails is a real connectivity/auth problem, not a transport-size issue.
+    [Fact]
+    public void BuildConnectionFailedMessage_LargePayload_NamesTheSize()
+    {
+        var message = MissingComponentCheckService.BuildConnectionFailedMessage("timed out", 40L * 1024 * 1024);
+
+        message.Should().Contain("MB");
+        message.Should().Contain("--skip-component-check");
+    }
+
+    [Fact]
+    public void BuildConnectionFailedMessage_SmallPayload_DoesNotMentionSize()
+    {
+        var message = MissingComponentCheckService.BuildConnectionFailedMessage("timed out", 1024);
+
+        message.Should().NotContain("MB");
+        message.Should().Contain("--skip-component-check");
     }
 }

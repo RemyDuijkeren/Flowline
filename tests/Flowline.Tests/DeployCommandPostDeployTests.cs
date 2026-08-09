@@ -90,6 +90,52 @@ public class DeployCommandPostDeployTests
         active[1].Should().BeOfType<OrphanCleanupService>();
     }
 
+    // FIX A: skipping the gate means "no current verdict" — a report an earlier blocked run left for
+    // this target must not survive a run that never re-checked it.
+    [Fact]
+    public void ClearComponentCheckReportIfSkipped_Skipped_RemovesExistingReportForThatTarget()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"flowline-deploy-clear-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var packagePath = Path.Combine(dir, "MySolution_1_0_0_0.zip");
+            const string targetUrl = "https://example.crm.dynamics.com";
+            var reportPath = MissingComponentReport.GetReportPath(packagePath, targetUrl);
+            File.WriteAllText(reportPath, "stale report from an earlier blocked run");
+
+            DeployCommand.ClearComponentCheckReportIfSkipped(true, packagePath, targetUrl);
+
+            File.Exists(reportPath).Should().BeFalse();
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void ClearComponentCheckReportIfSkipped_NotSkipped_LeavesExistingReportInPlace()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"flowline-deploy-clear-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var packagePath = Path.Combine(dir, "MySolution_1_0_0_0.zip");
+            const string targetUrl = "https://example.crm.dynamics.com";
+            var reportPath = MissingComponentReport.GetReportPath(packagePath, targetUrl);
+            File.WriteAllText(reportPath, "stale report from an earlier blocked run");
+
+            DeployCommand.ClearComponentCheckReportIfSkipped(false, packagePath, targetUrl);
+
+            File.Exists(reportPath).Should().BeTrue();
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
     [Fact]
     public void SkipComponentCheck_DefaultsToFalse() =>
         new DeployCommand.Settings().SkipComponentCheck.Should().BeFalse();
