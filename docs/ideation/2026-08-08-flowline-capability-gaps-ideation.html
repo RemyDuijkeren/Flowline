@@ -119,6 +119,12 @@ h3{font-size:15px;font-weight:700;color:var(--text);margin:18px 0 8px}
 .chip-cx-low{background:#f0fdf4;color:#166534;border-color:#bbf7d0}
 .chip-cx-med{background:#fffbeb;color:#92400e;border-color:#fde68a}
 .chip-cx-high{background:#fef2f2;color:#b91c1c;border-color:#fecaca}
+.chip-done{background:var(--ax5-bg);color:var(--ax5-text)}
+.idea-card.done{border-color:var(--ax5-text)}
+.impl-note{background:var(--ax5-bg);border:1px solid var(--ax5-text);border-radius:8px;padding:12px 14px;margin-bottom:18px}
+.impl-note .impl-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--ax5-text);margin-bottom:6px}
+.impl-note p{margin:0 0 8px}
+.impl-note p:last-child{margin-bottom:0}
 
 .idea-body{padding:22px}
 .idea-field{margin-bottom:16px}
@@ -232,7 +238,7 @@ footer.composition-signal{margin-top:60px;padding-top:20px;border-top:1px solid 
   <div class="jump-list">
     <h4>Jump to</h4>
     <ol>
-      <li><a href="#idea-1">Preflight the import against the target's own metadata</a></li>
+      <li><a href="#idea-1">Preflight the import against the target's own metadata</a> <span class="chip chip-done">IMPLEMENTED</span></li>
       <li><a href="#idea-2">One per-target state manifest</a></li>
       <li><a href="#idea-3">Environments as data, and disposable</a></li>
       <li><a href="#idea-4">Keep the change record sync already computes — and let it carry deletions</a></li>
@@ -242,11 +248,12 @@ footer.composition-signal{margin-top:60px;padding-top:20px;border-top:1px solid 
     </ol>
   </div>
 
-  <article class="idea-card top" id="idea-1">
+  <article class="idea-card top done" id="idea-1">
     <div class="idea-header">
       <div class="idea-rank">1. Top pick</div>
       <div class="idea-title">Preflight the import against the target's own metadata</div>
       <div class="idea-chips">
+        <span class="chip chip-done">IMPLEMENTED</span>
         <span class="chip chip-top">TOP PICK</span>
         <span class="axis-badge ax1">Axis 1 · Deploy &amp; promotion</span>
         <span class="chip chip-high">Confidence 85%</span>
@@ -254,6 +261,12 @@ footer.composition-signal{margin-top:60px;padding-top:20px;border-top:1px solid 
       </div>
     </div>
     <div class="idea-body">
+      <div class="impl-note">
+        <div class="impl-label">Implemented — 2026-08-09</div>
+        <p>Shipped as the missing-component gate on <code>deploy</code>, behind <code>--skip-component-check</code>. Merged to <code>master</code> at <code>073dca1</code>. Plan: <code>docs/plans/2026-08-09-001-feat-deploy-import-preflight-plan.md</code>.</p>
+        <p><strong>One thing below is wrong.</strong> The card treats the class the maker portal already lists as out of scope. That exclusion was dropped during scoping: the portal's remediation page and its Install buttons never appear on a CLI deploy, so a first-party dependency costs a Flowline user exactly what any other missing component costs. The gate blocks on everything and names the owning solution, which is what tells you whether to install it in the target or drop the dependency in DEV.</p>
+        <p><strong>Two claims were confirmed by measurement</strong>, one was not. Verified live: the message does filter against the target rather than echo the solution file back, and identity comes back as names rather than GUIDs. Not confirmed: "runs in seconds" holds for ordinary solutions (~6s at 0.5 MB) but cost tracks payload size — 32 MB costs ~112s and 64 MB ~217s, with no rejection observed at any size. See <code>docs/solutions/tooling-decisions/retrieve-missing-components-payload-cost.md</code>.</p>
+      </div>
       <dl>
         <div class="idea-field"><dt>Description</dt><dd>Before <code>deploy</code> imports anything, hand the packed solution's required-component list to Dataverse's own <code>RetrieveMissingComponents</code> message against the target and fail fast with a named list of what the target lacks. The response carries both the dependent component and the required solution name, so the error becomes actionable rather than diagnostic: "<code>account.new_region</code> is required by form <code>Account Main</code> but absent in prod." Runs in seconds against a live connection, writes nothing.</dd></div>
         <div class="idea-field"><dt>Basis</dt><dd><code>external:</code> Microsoft's <code>RetrieveMissingComponentsRequest</code> is documented as taking the solution file's required-component list, querying the target organization, and returning what is absent — verified independently by two agents this run against Microsoft Learn. <code>direct:</code> a grep of <code>src/</code> for <code>RetrieveMissingComponents</code>, <code>MissingComponent</code> and <code>RetrieveDependenciesForDelete</code> returns nothing — Flowline never asks. Missing-dependency failures on import are one of the two most consistently reported Dataverse ALM frustrations in independent community sources.</dd></div>
