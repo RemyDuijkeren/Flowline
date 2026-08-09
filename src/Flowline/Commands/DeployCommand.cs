@@ -7,6 +7,7 @@ using CliWrap;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
+using Flowline.Core.Deploy;
 using Flowline.Infrastructure;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
@@ -63,6 +64,21 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         [Description("Run every deploy pre-flight check and back up the target, without importing the solution")]
         [DefaultValue(false)]
         public bool DryRun { get; set; } = false;
+    }
+
+    // Extracted from ExecuteFlowlineAsync so the skip flags and — more importantly — the pre-import
+    // ordering can be asserted directly. R13 requires the missing-component gate to run ahead of the
+    // solution checker and the environment backup, and that guarantee is bought entirely by DI
+    // registration order in Program.cs. Preserving the incoming order here is therefore load-bearing:
+    // reordering the registrations, or sorting this list, silently breaks R13 with no compile error.
+    internal static List<IPostDeployService> ResolveActiveServices(IEnumerable<IPostDeployService> services, Settings settings)
+    {
+        bool IsSkipped(IPostDeployService s) =>
+            settings.SkipComponentCheck && s is MissingComponentCheckService ||
+            settings.SkipSolutionCheck && s is SolutionCheckService ||
+            settings.NoBackup && s is BackupService;
+
+        return services.Where(s => !IsSkipped(s)).ToList();
     }
 
     // "drift" is this command's local force hazard (skip drift validation) — distinct from the
@@ -241,11 +257,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             var solutionInfo = new DeploySolutionInfo(sln.UniqueName, targetEnv.EnvironmentUrl!, sln.IncludeManaged, existingSolutionInTarget);
             var postDeployContext = new PostDeployContext(service, solutionInfo, runMode, packagePath, tmpUnpackDir, settings.HasForce("delete-orphans"));
 
-            bool IsSkipped(IPostDeployService s) =>
-                settings.SkipSolutionCheck && s is SolutionCheckService ||
-                settings.NoBackup && s is BackupService;
-
-            var activeServices = postDeployServices.Where(s => !IsSkipped(s)).ToList();
+            var activeServices = ResolveActiveServices(postDeployServices, settings);
 
             foreach (var postDeployService in activeServices)
                 await postDeployService.RunPreImportAsync(postDeployContext, cancellationToken);

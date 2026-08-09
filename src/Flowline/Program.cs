@@ -2,6 +2,7 @@ using Flowline;
 using Flowline.Commands;
 using Flowline.Core;
 using Flowline.Core.Console;
+using Flowline.Core.Deploy;
 using Flowline.Core.Services;
 using Flowline.Core.FormEvents;
 using Flowline.Core.OrphanCleanup;
@@ -68,6 +69,12 @@ services.AddSingleton<IGenerator, XrmContextGenerator>();
 services.AddSingleton<PluginService>();
 services.AddSingleton<WebResourceService>();
 services.AddSingleton<FormEventService>();
+// Registration order is the pre-import run order (DeployCommand.ResolveActiveServices preserves it).
+// The missing-component gate must stay first: it is a seconds-long read-only check, and running it
+// ahead of the solution checker and the environment backup is what stops a deploy that cannot succeed
+// before that slower work is spent. Do not reorder these three without reading R13 in
+// docs/plans/2026-08-09-001-feat-deploy-import-preflight-plan.md.
+services.AddSingleton<IPostDeployService, MissingComponentCheckService>();
 services.AddSingleton<IPostDeployService, SolutionCheckService>();
 services.AddSingleton<IPostDeployService, BackupService>();
 OrphanHandlerRegistration.RegisterOrphanHandlers(services);
