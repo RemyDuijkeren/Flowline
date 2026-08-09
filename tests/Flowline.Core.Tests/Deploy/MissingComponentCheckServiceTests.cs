@@ -302,14 +302,17 @@ public class MissingComponentCheckServiceTests : IDisposable
         MissingComponentCheckService.IsPrivilegeFault(fault).Should().BeFalse();
     }
 
-    // FIX B: the ceiling is unmeasured, so the size line must only appear once it's plausibly relevant —
-    // a small payload that fails is a real connectivity/auth problem, not a transport-size issue.
+    // Live measurement found no rejection at any size up to 64.5 MB — the cost is duration, which scales
+    // with payload size. So the size line appears only once the wait is long enough to look like a hang,
+    // and must not claim a size limit that was never observed.
     [Fact]
-    public void BuildConnectionFailedMessage_LargePayload_NamesTheSize()
+    public void BuildConnectionFailedMessage_LargePayload_NamesTheSizeAndBlamesDurationNotALimit()
     {
         var message = MissingComponentCheckService.BuildConnectionFailedMessage("timed out", 40L * 1024 * 1024);
 
         message.Should().Contain("MB");
+        message.Should().Contain("timed out");
+        message.Should().NotContainEquivalentOf("limit");
         message.Should().Contain("--skip-component-check");
     }
 
@@ -320,5 +323,24 @@ public class MissingComponentCheckServiceTests : IDisposable
 
         message.Should().NotContain("MB");
         message.Should().Contain("--skip-component-check");
+    }
+
+    // A multi-minute wait with a bare "Checking..." label reads as a hang. The label is the only
+    // announcement the tone guide allows, so the size warning belongs there.
+    [Fact]
+    public void BuildSpinnerLabel_LargePayload_WarnsAboutTheWait()
+    {
+        var label = MissingComponentCheckService.BuildSpinnerLabel(40L * 1024 * 1024);
+
+        label.Should().Contain("40 MB");
+        label.Should().ContainEquivalentOf("minutes");
+    }
+
+    [Fact]
+    public void BuildSpinnerLabel_SmallPayload_StaysPlain()
+    {
+        var label = MissingComponentCheckService.BuildSpinnerLabel(1024);
+
+        label.Should().Be("Checking target for missing components...");
     }
 }

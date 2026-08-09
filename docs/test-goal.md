@@ -69,11 +69,43 @@ for the review finding that one report was being shared across every promotion s
 - Skipping the gate clears that target's stale report.
 - Ordering held: the gate ran ahead of the other pre-import work in every run.
 
+## Payload size
+
+The open question was whether a large solution exceeds the inline message limit, forcing teams to
+disable the gate permanently. Measured against TEST by padding one real solution with an
+incompressible entry, so every zip carried an identical required-component list (12,786 entries)
+and only size varied:
+
+| Payload | Duration | Result |
+|---|---|---|
+| 0.5 MB | 5.7 s | 0 missing |
+| 1.5 MB | 6.0 s | 0 missing |
+| 8.5 MB | 26.5 s | 0 missing |
+| 32.5 MB | 111.7 s | 0 missing |
+| 64.5 MB | 216.9 s | 0 missing |
+
+**Nothing was rejected at any size.** The concern was the wrong shape — there is no observed ceiling
+up to 64.5 MB, so nothing forces a team onto the skip flag. The real cost is duration: a 64 MB
+solution adds over three and a half minutes to every deploy.
+
+It also corrects an assumption the plan carried. Cost was expected to track the number of required
+components; it tracks payload size. Every zip above held the same dependency list, and going from
+0.5 MB to 8.5 MB still moved the call from ~6s to ~27s.
+
+Two changes followed:
+
+- The failure message no longer claims a large payload "may exceed the inline message limit" — that
+  limit was never observed. It names the size and points at duration, which makes a client timeout
+  the plausible cause instead.
+- Above 8 MB the spinner label carries the size and says the wait runs to minutes, so a slow check
+  does not read as a hang.
+
+Still untested at size: whether the check and `pac solution import` diverge somewhere beyond
+64.5 MB, and how the check behaves when dependency count and payload size are large independently —
+they were never varied separately above 0.5 MB.
+
 ## Not covered
 
-- **The inline payload ceiling.** The check sends the packed solution in one message; the import it
-  guards uses chunked upload. The test solution is ~14 KB, nowhere near any limit. The discriminating
-  test is a >50 MB artifact — compare `pac solution import` success against the check.
 - **False-positive rate.** Every component the gate reported was one that was genuinely absent. No
   case has been observed where it reports something the target actually has, and the gate blocks by
   design, so a false positive is a hard stop.
@@ -82,20 +114,33 @@ for the review finding that one report was being shared across every promotion s
 - **Ordering against the solution checker and backup specifically.** Both were skipped to isolate the
   gate. Their relative order is covered by the unit test that resolves the real DI container.
 
-## Unrelated bug found
+## Build configuration matters when testing the CLI
 
-`deploy --path <zip>` is broken, independently of this change. `ReadArtifactSolutionManifest`
-(`src/Flowline/Commands/DeployCommand.cs`) looks for an `Other/Solution.xml` entry, but a packed
+A `FlowlineException` from a pre-import gate first appeared as `Unhandled exception. …` with a full
+stack trace, which read like broken error handling. It was not. `Program.cs` calls
+`config.PropagateExceptions()` inside `#if DEBUG`, and propagation beats the `SetExceptionHandler`
+that renders `Error: <message>` with a typed `ExitCode`. The same commit built `-c Release` produced
+the correct output.
+
+**Verify user-facing CLI output from a Release build.** A Debug build makes correct error handling
+look broken. This is now recorded in `AGENTS.md` under Build and verification.
+
+## Unrelated bug found — since fixed
+
+`deploy --path <zip>` was broken, independently of this change. `ReadArtifactSolutionManifest`
+(`src/Flowline/Commands/DeployCommand.cs`) looked for an `Other/Solution.xml` entry, but a packed
 solution zip carries `solution.xml` at the root — `Other/Solution.xml` is the *unpacked source*
-layout. Every real packed artifact fails the manifest read:
+layout, so every real packed artifact failed the manifest read:
 
 ```
 Error: No Other/Solution.xml entry found in artifact '…\FlowlineDeployTest_unmanaged.zip'
        — is this a valid packed solution zip?
 ```
 
-Confirmed present on the base commit and untouched by this branch. Not fixed here — it is outside
-this change's scope.
+Confirmed present on the base commit and unrelated to the gate. Fixed on this branch: the manifest
+read now accepts the packed layout first and falls back to the unpacked one, matching entry names
+case-insensitively since `ZipArchive.GetEntry` is an exact string match. Verified end-to-end — a
+`deploy --path` against a real packed artifact now reads the manifest and runs the gate.
 
 ## Cleanup
 

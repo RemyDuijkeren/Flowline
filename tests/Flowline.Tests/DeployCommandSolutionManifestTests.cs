@@ -161,6 +161,61 @@ public class DeployCommandSolutionManifestTests
         result.Managed.Should().BeTrue();
     }
 
+    // Regression: `pac solution pack` puts solution.xml at the zip root — `Other/Solution.xml` is the
+    // *unpacked source* layout. Looking only in Other/ rejected every real packed artifact, so
+    // `deploy --path <zip>` could never read a manifest it was actually handed.
+    [Fact]
+    public void ReadArtifactSolutionManifest_ReadsPackedLayout_SolutionXmlAtZipRoot()
+    {
+        using var tmp = new TempArtifactZip(zip => WriteManifest(zip, "solution.xml", "3.1.4.1", managed: "0"));
+
+        var result = DeployCommand.ReadArtifactSolutionManifest(tmp.ZipPath);
+
+        result.Version.Should().Be("3.1.4.1");
+        result.Managed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ReadArtifactSolutionManifest_ReadsPackedLayout_RegardlessOfEntryCasing()
+    {
+        using var tmp = new TempArtifactZip(zip => WriteManifest(zip, "Solution.xml", "5.0.0.0", managed: "1"));
+
+        var result = DeployCommand.ReadArtifactSolutionManifest(tmp.ZipPath);
+
+        result.Version.Should().Be("5.0.0.0");
+        result.Managed.Should().BeTrue();
+    }
+
+    // A packed zip carries both a root solution.xml and other entries; the root one wins.
+    [Fact]
+    public void ReadArtifactSolutionManifest_PrefersRootSolutionXml_WhenBothLayoutsPresent()
+    {
+        using var tmp = new TempArtifactZip(zip =>
+        {
+            WriteManifest(zip, "solution.xml", "9.9.9.9", managed: "0");
+            WriteManifest(zip, "Other/Solution.xml", "1.1.1.1", managed: "1");
+        });
+
+        var result = DeployCommand.ReadArtifactSolutionManifest(tmp.ZipPath);
+
+        result.Version.Should().Be("9.9.9.9");
+    }
+
+    static void WriteManifest(ZipArchive zip, string entryName, string version, string managed)
+    {
+        var entry = zip.CreateEntry(entryName);
+        using var writer = new StreamWriter(entry.Open());
+        writer.Write($"""
+            <?xml version="1.0" encoding="utf-8"?>
+            <ImportExportXml>
+              <SolutionManifest>
+                <Version>{version}</Version>
+                <Managed>{managed}</Managed>
+              </SolutionManifest>
+            </ImportExportXml>
+            """);
+    }
+
     private static XDocument SolutionXml(string version, string managed) =>
         XDocument.Parse($"""
             <?xml version="1.0" encoding="utf-8"?>

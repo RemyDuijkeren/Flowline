@@ -18,7 +18,12 @@ public class MissingComponentCheckService(IAnsiConsole console) : IPostDeploySer
     // by chunked-uploading large solutions, so this check can fail at the transport layer above some
     // size while the import it guards would still succeed. That true ceiling has never been measured;
     // this is a conservative diagnostic trigger for the failure message below, not a verified limit.
-    const long LargePayloadBytes = 32L * 1024 * 1024; // 32 MB
+    // Measured against a live environment on 2026-08-09, padding one real solution to each size so the
+    // required-component list stayed identical: 0.5 MB ~6s, 1.5 MB ~6s, 8.5 MB ~27s, 32.5 MB ~112s,
+    // 64.5 MB ~217s. No rejection at any size — the cost is duration, and it tracks payload size rather
+    // than dependency count (every one of those zips carried the same 12,786 required components).
+    // 8 MB is where the wait stops being incidental (~25s+), so that's where the label warns.
+    const long SlowPayloadBytes = 8L * 1024 * 1024;
 
     public async Task RunPreImportAsync(PostDeployContext context, CancellationToken ct)
     {
@@ -29,7 +34,7 @@ public class MissingComponentCheckService(IAnsiConsole console) : IPostDeploySer
             var zipBytes = await File.ReadAllBytesAsync(context.PackagePath, ct).ConfigureAwait(false);
             payloadBytes = zipBytes.Length;
             response = (RetrieveMissingComponentsResponse)await console.Status().FlowlineSpinner()
-                .StartAsync("Checking target for missing components...",
+                .StartAsync(BuildSpinnerLabel(payloadBytes),
                     _ => context.Service.ExecuteAsync(new RetrieveMissingComponentsRequest { CustomizationFile = zipBytes }, ct))
                 .ConfigureAwait(false);
         }
@@ -69,13 +74,26 @@ public class MissingComponentCheckService(IAnsiConsole console) : IPostDeploySer
     // FIX B: names the payload size only once it's plausibly the cause — below the threshold, the
     // fault is far more likely a real connectivity/auth problem, and appending a size line there would
     // point every failure at the wrong culprit.
+    // The whole solution goes inline in one message, and the call's duration tracks that payload's size.
+    // The spinner label carries the size once it's big enough for the wait to look like a hang — the
+    // label is the announcement, so this stays one spinner and one verdict line.
+    internal static string BuildSpinnerLabel(long payloadBytes) =>
+        payloadBytes >= SlowPayloadBytes
+            ? $"Checking target for missing components ({FormatMb(payloadBytes)} — large solutions take a few minutes)..."
+            : "Checking target for missing components...";
+
     internal static string BuildConnectionFailedMessage(string exceptionMessage, long payloadBytes)
     {
-        var sizeNote = payloadBytes >= LargePayloadBytes
-            ? $" Payload was {payloadBytes / (1024.0 * 1024.0):0.#} MB — a large solution may exceed the service's inline message limit."
+        // Deliberately not "exceeded a size limit" — no rejection was observed at any size tested up to
+        // 64.5 MB. What a large payload does is take proportionally longer, which is what makes a client
+        // timeout the plausible cause rather than a hard ceiling.
+        var sizeNote = payloadBytes >= SlowPayloadBytes
+            ? $" The solution is {FormatMb(payloadBytes)}, and the check slows in proportion to that, so it may have timed out."
             : "";
         return $"Missing-component check couldn't run against the target ({exceptionMessage}).{sizeNote} Use --skip-component-check to deploy without it.";
     }
+
+    static string FormatMb(long bytes) => $"{bytes / (1024.0 * 1024.0):0.#} MB";
 
     // FIX C: PrivilegeDenied (0x80040220) is the documented Dataverse SDK code for "missing prvXxx
     // privilege" faults; the message-text checks catch the access-denied variants that don't surface

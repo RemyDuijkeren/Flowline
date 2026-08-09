@@ -832,8 +832,8 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         using (archive)
         {
-            var entry = archive.GetEntry("Other/Solution.xml")
-                ?? throw new FlowlineException(ExitCode.NotFound, $"No Other/Solution.xml entry found in artifact '{zipPath}' — is this a valid packed solution zip?");
+            var entry = FindSolutionManifestEntry(archive)
+                ?? throw new FlowlineException(ExitCode.NotFound, $"No solution.xml entry found in artifact '{zipPath}' — is this a valid packed solution zip?");
 
             XDocument doc;
             try
@@ -845,10 +845,19 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             {
                 // Entry exists but its content isn't well-formed XML — distinct from "entry missing" above,
                 // since this means the zip is packed but corrupted rather than not a solution zip at all.
-                throw new FlowlineException(ExitCode.ValidationFailed, $"'{zipPath}': Other/Solution.xml is not valid XML.");
+                throw new FlowlineException(ExitCode.ValidationFailed, $"'{zipPath}': {entry.FullName} is not valid XML.");
             }
 
             return ParseSolutionManifest(doc);
         }
     }
+
+    // A *packed* solution zip — what `pac solution pack` produces and what --path is actually handed —
+    // carries solution.xml at the root. `Other/Solution.xml` is the *unpacked source* layout, so looking
+    // only there rejected every real artifact. Both are accepted: root first, since that's the packed
+    // shape, then the unpacked one for a zipped-up source tree. Matching is case-insensitive because
+    // ZipArchive.GetEntry is an exact string match and casing varies by producer.
+    internal static ZipArchiveEntry? FindSolutionManifestEntry(ZipArchive archive) =>
+        archive.Entries.FirstOrDefault(e => e.FullName.Equals("solution.xml", StringComparison.OrdinalIgnoreCase))
+        ?? archive.Entries.FirstOrDefault(e => e.FullName.Replace('\\', '/').Equals("Other/Solution.xml", StringComparison.OrdinalIgnoreCase));
 }

@@ -103,6 +103,11 @@ For unfamiliar work, read only relevant context in this order:
 - Treat `.github/workflows/ci.yml` as source of truth for CI configuration.
 - Do not edit generated output in `bin/`, `obj/`, `artifacts/`, or `.nupkg/`.
 - Preserve unrelated working-tree changes.
+- **Run the CLI from a Release build when checking user-facing output.** `Program.cs` calls
+  `config.PropagateExceptions()` inside `#if DEBUG`, and propagation beats the `SetExceptionHandler`
+  that renders `Error: <message>` with a typed `ExitCode`. So a Debug build prints a raw stack trace
+  for every `FlowlineException` — correct error handling looks broken. Use `-c Release` to verify
+  messages, wording, or exit codes; use Debug only when you want the stack trace.
 
 ## Definition of done
 
