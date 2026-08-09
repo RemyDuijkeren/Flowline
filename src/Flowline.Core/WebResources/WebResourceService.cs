@@ -29,12 +29,12 @@ public class WebResourceService(IAnsiConsole console)
         var snapshot = await console.Status().FlowlineSpinner().StartAsync("Lookup web resources...", _ =>
             _reader.LoadSnapshotAsync(service, webresourceRoot, solutionName, cancellationToken)).ConfigureAwait(false);
         WriteSnapshotVerbose(snapshot);
-        console.Ok($"Web resources found ({snapshot.DataverseResources.Count} Dataverse, {snapshot.LocalResources.Count} local)");
+        console.Info($"Web resources found ({snapshot.DataverseResources.Count} Dataverse, {snapshot.LocalResources.Count} local)");
 
         // Phase 2: Plan registration (pure, synchronous)
         var plan = _planner.Plan(snapshot);
         WritePlanReport(plan, PlanReportMode.Verbose, publishAfterSync);
-        console.Ok(plan.TotalChanges > 0
+        console.Info(plan.TotalChanges > 0
             ? $"Web resource plan ready: {plan.Creates.Count} creates, {plan.Updates.Count} updates, {plan.Deletes.Count} deletes"
             : "Web resource plan ready: no changes");
 

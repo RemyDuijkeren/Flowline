@@ -1,6 +1,7 @@
+using System.IO.Compression;
 using System.Reflection;
 using System.Reflection.Emit;
-using System.Security.Cryptography;
+using System.Text;
 using Flowline;
 using Flowline.Attributes;
 using Flowline.Core;
@@ -1765,8 +1766,11 @@ public class PluginServiceTests
 
     // -- SyncSolutionFromPackageAsync (pluginpackage / NuGet path) --
 
-    private static readonly byte[] NupkgBytes = [1, 2, 3, 4, 5];
-    private static string NupkgHash => Convert.ToHexString(SHA256.HashData(NupkgBytes));
+    // A real zip, not arbitrary bytes: change detection reads the package's lib/ payload out of the
+    // container, so a stand-in that isn't a valid archive can't reach the code under test.
+    private static readonly byte[] NupkgBytes =
+        BuildNupkg("fixed-for-tests", new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero), "1.0.0", ("lib/net462/MyPlugin.dll", [1, 2, 3, 4, 5]));
+    private static string NupkgHash => PluginService.ComputeNupkgPayloadHash(NupkgBytes);
 
     private static List<PluginAssemblyMetadata> PackageAssemblies(string name = "MyPlugin", string version = "1.0.0.0") =>
         [new(name, $"{name}, Version={version}", new byte[] { 9, 9, 9 }, "dll-hash-unused", version, null, "neutral", [])];
@@ -3391,5 +3395,72 @@ public class PluginServiceTests
         var path = Path.Combine(dir, $"{assemblyName}.dll");
         ab.Save(path);
         return path;
+    }
+
+    // The regression these three guard: hashing the .nupkg file's own bytes made the package path
+    // re-upload on every push, because NuGet rewrites the container on every pack even when nothing
+    // recompiled. A byte-level assertion can't catch that — only a hash that ignores the container can.
+    [Fact]
+    public void ComputeNupkgPayloadHash_ContainerRewrittenPayloadUnchanged_ReturnsSameHash()
+    {
+        var dllA = new byte[] { 1, 2, 3 };
+        var dllB = new byte[] { 4, 5, 6 };
+
+        // Same lib/ payload, every piece of container metadata NuGet regenerates per pack differs:
+        // psmdcp entry name (a fresh GUID each time), entry timestamps, nuspec version and commit,
+        // plus the zip's entry ordering.
+        var first = BuildNupkg("e232950058a2411e9a6e612767e508fa", new DateTimeOffset(2026, 7, 29, 15, 24, 9, TimeSpan.Zero), "0.0.0-alpha.0.2",
+            ("lib/net462/A.dll", dllA), ("lib/net462/B.dll", dllB));
+        var second = BuildNupkg("040c161ca1674247b7b108de80bfd68b", new DateTimeOffset(2026, 8, 8, 17, 18, 16, TimeSpan.Zero), "0.0.0-alpha.0.4",
+            ("lib/net462/B.dll", dllB), ("lib/net462/A.dll", dllA));
+
+        first.Should().NotEqual(second, "the two packages must differ at the byte level or the test proves nothing");
+        PluginService.ComputeNupkgPayloadHash(first).Should().Be(PluginService.ComputeNupkgPayloadHash(second));
+    }
+
+    [Fact]
+    public void ComputeNupkgPayloadHash_LibContentChanged_ReturnsDifferentHash()
+    {
+        var stamp = new DateTimeOffset(2026, 8, 8, 17, 18, 16, TimeSpan.Zero);
+        var before = BuildNupkg("abc", stamp, "1.0.0", ("lib/net462/A.dll", [1, 2, 3]));
+        var after = BuildNupkg("abc", stamp, "1.0.0", ("lib/net462/A.dll", [1, 2, 4]));
+
+        PluginService.ComputeNupkgPayloadHash(before).Should().NotBe(PluginService.ComputeNupkgPayloadHash(after));
+    }
+
+    [Fact]
+    public void ComputeNupkgPayloadHash_LibEntryRenamed_ReturnsDifferentHash()
+    {
+        var stamp = new DateTimeOffset(2026, 8, 8, 17, 18, 16, TimeSpan.Zero);
+        var before = BuildNupkg("abc", stamp, "1.0.0", ("lib/net462/A.dll", [1, 2, 3]));
+        var after = BuildNupkg("abc", stamp, "1.0.0", ("lib/net462/Renamed.dll", [1, 2, 3]));
+
+        PluginService.ComputeNupkgPayloadHash(before).Should().NotBe(PluginService.ComputeNupkgPayloadHash(after));
+    }
+
+    // Mirrors the real .nupkg layout observed from `dotnet pack`: container metadata entries plus a
+    // lib/<tfm>/ payload. Only the parts that vary per pack are parameterised.
+    static byte[] BuildNupkg(string psmdcpGuid, DateTimeOffset stamp, string nuspecVersion, params (string Name, byte[] Content)[] libEntries)
+    {
+        using var ms = new MemoryStream();
+        using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            void Add(string name, byte[] content)
+            {
+                var entry = zip.CreateEntry(name);
+                entry.LastWriteTime = stamp;
+                using var stream = entry.Open();
+                stream.Write(content);
+            }
+
+            Add("_rels/.rels", "rels"u8.ToArray());
+            Add("Pkg.nuspec", Encoding.UTF8.GetBytes($"<version>{nuspecVersion}</version>"));
+            Add("[Content_Types].xml", "types"u8.ToArray());
+            Add($"package/services/metadata/core-properties/{psmdcpGuid}.psmdcp", "props"u8.ToArray());
+            foreach (var (name, content) in libEntries)
+                Add(name, content);
+        }
+
+        return ms.ToArray();
     }
 }

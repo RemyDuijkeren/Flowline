@@ -116,6 +116,14 @@ For unfamiliar work, read only relevant context in this order:
 
 Always apply tone-of-voice rules when writing any user-facing CLI message. Full guide: `docs/tone-of-voice.md`.
 
+## Agent-drivable command surface
+
+Most Flowline runs are unattended. When adding or changing a command, flag, prompt,
+confirmation, exit code, or help text, follow
+[`.claude/skills/cli-for-agents/SKILL.md`](.claude/skills/cli-for-agents/SKILL.md) — it maps each
+rule (flag-first input, `ConfirmGated`, scoped `--force`, `--dry-run`, `ExitCode` selection,
+`CannotContinue`) to the existing Flowline mechanism, so none get reinvented.
+
 ## Optional agent commands
 
 - `/tone` — reviews CLI messages in changed files against the tone-of-voice guide.

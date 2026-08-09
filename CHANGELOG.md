@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`push` no longer re-uploads an unchanged plugin package**: change detection hashed the `.nupkg` file's own bytes, and NuGet rewrites the container on every pack — a fresh GUID in the psmdcp entry name, pack-time timestamps on every entry, and the nuspec's version and commit — so the hash never matched even on a build that recompiled nothing. Every push hit this, because `push` deletes the package before building and pack rebuilds the container from scratch. It now hashes the package's `lib/` payload, which is what Dataverse consumes. The first push after upgrading re-uploads once, then settles. A push after a commit still uploads: MinVer stamps the new version into the assembly itself, so the payload genuinely changed.
+
 - **`push --no-publish` now warns whenever nothing publishes**, not only when web resources are out of scope. A plugin-only repo asks for web resources under the default scope but has no project to prepare, so the flag was silently inert.
 
 ## [0.16.0] - 2026-08-07

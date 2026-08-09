@@ -10,6 +10,12 @@ A membership record that tracks which objects (plugin assemblies, web resources,
 ### Component dependency
 A platform record that tracks when one solution component references another — for example, when a plugin step references a plugin type. Distinct from a [[Solution component]] (which records membership in a solution): removing a component from a solution does not clear its dependency records. Dataverse enforces these records during deletion — the dependency check fires before any cascade runs — so the required component cannot be deleted while any dependent component still holds a reference to it.
 
+### Missing dependency
+A component the solution references but does not itself contain, so it must already exist in whatever environment the solution is imported into. Recorded by the source environment at export time in the `MissingDependencies` element of `solution.xml`, carrying the component's schema name, display name, and owning solution — and, for first-party components, the application package and version. Survives unpack into committed solution source and travels back into the packed artifact, which is what makes it answerable without a live export. Distinct from a [[Component dependency]], which is a live platform record rather than a declaration inside a solution file.
+
+### Missing component
+A [[Missing dependency]] that the *target* environment turns out not to have. The distinction is the filter: missing dependencies are a property of the solution and are the same everywhere, while missing components are a property of one target and are what actually blocks an import there.
+
 ### Orphan component
 A solution component present in the Dataverse environment that is absent from the local solution source. Orphans accumulate because unmanaged solution imports are additive — Dataverse never removes components during import.
 

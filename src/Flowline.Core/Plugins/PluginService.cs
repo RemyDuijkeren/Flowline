@@ -1,4 +1,6 @@
+using System.IO.Compression;
 using System.Security.Cryptography;
+using System.Text;
 using Flowline.Core.Models;
 using Flowline.Core.Console;
 using Flowline.Core.Services;
@@ -63,7 +65,7 @@ public class PluginService(IAnsiConsole console)
                     .StartAsync($"Looking up solution [bold]{solutionName}[/]...",
                         _ => _solutionReader.GetSupportedSolutionInfoAsync(service, solutionName, cancellationToken))
                     .ConfigureAwait(false);
-        console.Info("Solution found and supported");
+        console.Info($"Solution [bold]{solutionName}[/] found in Dataverse and supported");
 
         var query = new QueryExpression("pluginassembly")
         {
@@ -149,15 +151,15 @@ public class PluginService(IAnsiConsole console)
                     .StartAsync($"Looking up solution [bold]{solutionName}[/]...",
                         _ => _solutionReader.GetSupportedSolutionInfoAsync(service, solutionName, cancellationToken))
                     .ConfigureAwait(false);
-        console.Info("Solution found");
+        console.Info($"Solution [bold]{solutionName}[/] found in Dataverse and supported");
 
         // Phase 1: Get or register assembly
         var (assembly, needsUpdate, cascadeDeleteCount) = await console.Status().FlowlineSpinner()
-            .StartAsync("Lookup or add assembly", _ => GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, forceRecreateAssembly, cancellationToken))
+            .StartAsync($"Lookup or add assembly [bold]{metadata.Name}[/] ({metadata.Version})...", _ => GetOrRegisterAssemblyAsync(service, metadata, solutionName, runMode, forceRecreateAssembly, cancellationToken))
             .ConfigureAwait(false);
         console.Info(needsUpdate
             ? $"Assembly [bold]{metadata.Name}[/] ({metadata.Version}) found but needs content update"
-            : $"Assembly [bold]{metadata.Name}[/] ({metadata.Version}) found");
+            : $"Assembly [bold]{metadata.Name}[/] ({metadata.Version}) found or added");
 
         var blockedAssemblyIds = await WarnOrphanAssembliesAsync(service, metadata.Name, pushedAssemblyNames, solutionName, forceDeleteOrphans, runMode, cancellationToken).ConfigureAwait(false);
         await WarnOrphanStepsAsync(service, metadata.Name, pushedAssemblyNames, blockedAssemblyIds, solutionName, forceDeleteOrphans, runMode, cancellationToken).ConfigureAwait(false);
@@ -370,7 +372,7 @@ public class PluginService(IAnsiConsole console)
             .StartAsync($"Looking up solution [bold]{solutionName}[/]...",
                 _ => _solutionReader.GetSupportedSolutionInfoAsync(service, solutionName, cancellationToken))
             .ConfigureAwait(false);
-        console.Info("Solution found");
+        console.Info($"Solution [bold]{solutionName}[/] found in Dataverse and supported");
 
         // Union in this package's own reflected assembly names rather than trusting the caller's set —
         // a caller that passes null (or only the primary name) would otherwise have the package's
@@ -397,9 +399,9 @@ public class PluginService(IAnsiConsole console)
         var packageResult = await service.RetrieveMultipleAsync(packageQuery, cancellationToken).ConfigureAwait(false);
         var existingPackage = packageResult.Entities.FirstOrDefault();
 
-        // R4: hash the whole local .nupkg file's bytes (not one DLL) — catches dependency-only changes
-        // a per-DLL hash would miss. Compared against the marker on the primary assembly's description.
-        var hash = Convert.ToHexString(SHA256.HashData(nupkgContent));
+        // R4: hash the package's whole lib/ payload (not one DLL) — catches dependency-only changes a
+        // per-DLL hash would miss. Compared against the marker on the primary assembly's description.
+        var hash = ComputeNupkgPayloadHash(nupkgContent);
         var storedHash = existingAssembly != null ? ParseStoredHash(existingAssembly.GetAttributeValue<string>("description")) : null;
 
         if (existingPackage != null && storedHash == hash)
@@ -766,8 +768,10 @@ public class PluginService(IAnsiConsole console)
                 ["content"] = Convert.ToBase64String(nupkgContent)
             };
 
-            var response = (CreateResponse)await service.ExecuteAsync(
-                new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName }, cancellationToken).ConfigureAwait(false);
+            var response = (CreateResponse)await console.Status().FlowlineSpinner()
+                .StartAsync($"Uploading package [bold]{packageUniqueName}[/]...",
+                    _ => service.ExecuteAsync(new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName }, cancellationToken))
+                .ConfigureAwait(false);
 
             console.Ok($"Package [bold]{packageUniqueName}[/] ({primary.Version}) added");
             return response.id;
@@ -780,7 +784,10 @@ public class PluginService(IAnsiConsole console)
             ["content"] = Convert.ToBase64String(nupkgContent)
         };
 
-        await service.UpdateAsync(updateEntity, cancellationToken).ConfigureAwait(false);
+        await console.Status().FlowlineSpinner()
+            .StartAsync($"Uploading package [bold]{packageUniqueName}[/]...",
+                _ => service.UpdateAsync(updateEntity, cancellationToken))
+            .ConfigureAwait(false);
         console.Ok($"Package [bold]{packageUniqueName}[/] updated");
         return existingPackage.Id;
     }
@@ -1801,6 +1808,43 @@ public class PluginService(IAnsiConsole console)
     // owns this, its pass handles it".
     static IReadOnlySet<Guid> AllPluginTypeIds(IEnumerable<(PluginAssemblyMetadata Metadata, Entity? Assembly, RegistrationSnapshot? Snapshot)> snapshots) =>
         snapshots.Where(s => s.Snapshot != null).SelectMany(s => s.Snapshot!.PluginTypes.Values.Select(t => t.Id)).ToHashSet();
+
+    // Change detection for the package path. Hashes the .nupkg's lib/ payload, never the file's own
+    // bytes: the container is not reproducible, so a whole-file hash never matches and every push
+    // re-uploaded. Verified against real packs — NuGet writes a fresh GUID into the psmdcp entry NAME
+    // (package/services/metadata/core-properties/<guid>.psmdcp) on every pack, stamps pack-time
+    // timestamps into every zip entry, and the nuspec carries the MinVer version plus the git commit.
+    // Any one of those defeats a byte hash on a build that recompiled nothing. No pack switch turns
+    // them off — the psmdcp GUID comes from System.IO.Packaging. And it fires on every single push,
+    // not occasionally: PushCommand.ClearStalePackages deletes the .nupkg before the build, so pack's
+    // own incremental check never gets to skip and the container is always rebuilt from scratch.
+    //
+    // lib/ is the boundary because it is exactly what Dataverse consumes: a plugin package carries its
+    // dependencies inline there, so dependency-only changes still register. The nuspec is deliberately
+    // excluded — the only field of it Flowline writes is pluginpackage.version, which is create-time
+    // only (KTD4/R5a), so a version-only bump has no update to apply and must not force a re-upload.
+    internal static string ComputeNupkgPayloadHash(byte[] nupkgContent)
+    {
+        using var zip = new ZipArchive(new MemoryStream(nupkgContent), ZipArchiveMode.Read);
+        using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+
+        // Entry names are part of the hash — a renamed DLL is a content change even when the bytes of
+        // every entry are unchanged. Ordinal sort so zip ordering can't shift the result.
+        var buffer = new byte[81920];
+        foreach (var entry in zip.Entries
+                                 .Where(e => e.FullName.StartsWith("lib/", StringComparison.Ordinal))
+                                 .OrderBy(e => e.FullName, StringComparer.Ordinal))
+        {
+            sha.AppendData(Encoding.UTF8.GetBytes(entry.FullName));
+
+            using var stream = entry.Open();
+            int read;
+            while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+                sha.AppendData(buffer, 0, read);
+        }
+
+        return Convert.ToHexString(sha.GetHashAndReset());
+    }
 
     static string? ParseStoredHash(string? description)
     {

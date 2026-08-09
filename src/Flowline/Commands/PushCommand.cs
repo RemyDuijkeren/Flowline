@@ -332,7 +332,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     /// tell whose output they're reading.
     /// </remarks>
     internal static string? DescribePluginPushHeader(IReadOnlyList<PluginPushTarget> targets, int index) =>
-        targets.Count <= 1 ? null : $"[bold]{targets[index].ProjectName}[/] — pushing";
+        targets.Count <= 1 ? null : $"#{index + 1} [bold]{targets[index].ProjectName}[/] — pushing";
 
     /// <summary>
     /// Failure message for one project in a multi-project push: what broke, and what the org holds now.
