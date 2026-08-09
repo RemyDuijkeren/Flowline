@@ -119,6 +119,7 @@ Verified on 2026-08-09 against live DEV and TEST environments, using packed arti
 - The platform genuinely queries the target rather than echoing the file back. Two dependencies were injected into a packed solution — one fabricated, one a real first-party component. Only the fabricated one was returned; the real one was resolved silently because the target has it.
 - The response is human-readable. For the missing component itself, `SchemaName`, `DisplayName`, and the owning `Solution` come back populated. The dependent component carries `SchemaName` and `DisplayName` but returned an empty `Solution`, so R6's owning-solution field is reliable for what is missing, not for what needs it.
 - The gate costs 7.3–7.5 seconds for a 497 KB solution carrying 12,786 required components, and 1.3 seconds for a 14 KB solution. That is the per-deploy cost R3's skip flag exists to let a developer decline.
+- Cost scales with payload size, not with the number of required components. Measured by padding one solution to each size so its required-component list stayed identical: 0.5 MB ~6s, 1.5 MB ~6s, 8.5 MB ~27s, 32.5 MB ~112s, 64.5 MB ~217s. No size was rejected, so the constraint on a large solution is a multi-minute wait rather than a ceiling.
 
 Assumptions not yet verified:
 
@@ -294,7 +295,7 @@ U1 and U2 are independent. U3 depends on U2 for the result shape it renders. U4 
 
 - **A false positive hard-blocks a deploy that would have worked.** The most severe risk, because the gate is authoritative by decision. Verification produced one true positive and one true negative; the false-positive rate is unmeasured. Mitigation is the skip flag, and the failure message naming it.
 - **Registration order is an implicit contract.** A future contributor reordering the DI block silently breaks R13 with no compile error. Mitigation: U4 extracts the active-service resolution into a testable seam and asserts the ordering there, plus a comment at the registration site naming why the order matters. Note that the extraction touches existing deploy code for a feature only this gate needs — it must be behavior-preserving.
-- **Payload behavior above 497 KB is unmeasured.** The request carries the solution file inline. The likely driver is the number of required components rather than zip size, so the measured 12,786-entry case is the more meaningful bound. Revisit if a real solution exceeds it noticeably.
+- **A large solution makes every deploy wait minutes.** Measured to 64.5 MB with no rejection, but duration tracks payload size closely — 32.5 MB costs ~112s and 64.5 MB ~217s on top of every deploy. The earlier guess that dependency count drives the cost was wrong: all the measured payloads carried the same 12,786 required components. Mitigation is partial — the spinner names the size so the wait doesn't read as a hang, and `--skip-component-check` remains the opt-out. A team whose solution is large enough will feel the gate's cost on every promotion, which is the case for revisiting whether it should stay on by default.
 - **The report file's directory may not be writable.** It is derived from the package path. Mitigation: a write failure must not mask the component verdict — the block still fires and the message says the report could not be written.
 
 ---
