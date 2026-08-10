@@ -109,6 +109,21 @@ For unfamiliar work, read only relevant context in this order:
   for every `FlowlineException` — correct error handling looks broken. Use `-c Release` to verify
   messages, wording, or exit codes; use Debug only when you want the stack trace.
 
+## Branching
+
+**Never create a branch on your own initiative.** Ask whether the work should land on `master` or on
+its own branch, and let the size of the work set the recommendation:
+
+- **Small work** — a bug fix, a test alignment, a doc edit, a one-file change. Does not justify a
+  branch; default to `master`.
+- **Bigger work** — a feature, a multi-file refactor, anything spanning several commits. Warrants a
+  branch, with a worktree alongside it.
+- **`/ce-work` is the signal** that the work is big enough to warrant branch + worktree. Set that up
+  without asking.
+
+Being told "commit" is not authorization to branch. Ask before the first commit of a task, name which
+option you'd recommend, and say why.
+
 ## Definition of done
 
 - Changed behavior has focused test coverage.
