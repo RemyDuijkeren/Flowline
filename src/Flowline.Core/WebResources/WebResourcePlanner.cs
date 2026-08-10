@@ -20,6 +20,7 @@ public class WebResourcePlanner(IAnsiConsole console)
         var dataverseNames = snapshot.DataverseResources.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var targetSolutionName = snapshot.Solution.UniqueName;
         var ownershipViolations = new List<string>();
+        var (referencedNames, ambiguousReferences) = CollectDependsOnReferences(snapshot);
 
         // Don't exist in this solution — create, or add to solution if already in Dataverse globally
         foreach (var name in localNames.Except(dataverseNames, StringComparer.OrdinalIgnoreCase))
@@ -36,6 +37,26 @@ public class WebResourcePlanner(IAnsiConsole console)
                                  || existing.Ownership.HasManagedSolutionReference;
                 if (foreignOwned)
                 {
+                    // KTD4/R7: a foreign-owned resource some local file explicitly declares via
+                    // // flowline:depends is a reference, not a collision — skip it instead of blocking.
+                    if (referencedNames.Contains(name))
+                    {
+                        plan.Skips.Add(new WebResourcePlanAction(name, WebResourceAction.Skip, Id: existing.Id,
+                            SolutionName: string.Join(", ", existing.Ownership.OwningSolutionNames),
+                            Reason: "referenced via // flowline:depends, not owned"));
+                        continue;
+                    }
+
+                    // An ambiguous bare annotation resolves to the unqualified raw name (never equal to
+                    // this CRM name), so it would otherwise fall through to the co-management message
+                    // below, which misdescribes the real problem — surface it as its own error instead.
+                    if (ambiguousReferences.TryGetValue(name, out var rawNames))
+                    {
+                        foreach (var rawName in rawNames)
+                            ownershipViolations.Add(DescribeAmbiguousReference(local.RelativePath, name, rawName));
+                        continue;
+                    }
+
                     ownershipViolations.Add(DescribeOwnershipViolation(local.RelativePath, name, existing.Ownership));
                     continue;
                 }
@@ -177,20 +198,68 @@ public class WebResourcePlanner(IAnsiConsole console)
             : $"'{relativePath}': '{name}' is already owned by {owners} — cross-solution co-management isn't supported. Reference it with // flowline:depends instead.";
     }
 
+    // R7's ambiguous case: the annotation would have declared this file as depends-only, but its raw
+    // name matches multiple candidates so it can't be matched to this CRM name automatically.
+    static string DescribeAmbiguousReference(string relativePath, string name, string rawName) =>
+        $"'{relativePath}': '{name}' is owned by another solution and only referenced by an ambiguous " +
+        $"'// flowline:depends {rawName}' annotation — fully qualify it (e.g. 'av_ns/{rawName}') so Flowline can match it and skip this file.";
+
+    // Builds the set of CRM names referenced by any local file's // flowline:depends annotations, once
+    // per Plan call, using the same suffix-qualification rule as ResolveQualifiedName. Ambiguous raw
+    // names (matching 2+ candidates) are kept separately, keyed by each candidate they could mean, so
+    // the global-orphan loop can tell "not referenced" apart from "referenced ambiguously" (R7 step 4).
+    static (HashSet<string> Referenced, Dictionary<string, List<string>> Ambiguous) CollectDependsOnReferences(
+        WebResourceSyncSnapshot snapshot)
+    {
+        var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var ambiguous = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var local in snapshot.LocalResources.Values)
+        {
+            foreach (var rawName in local.DependsOn.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                var candidates = ResolveCandidates(rawName, snapshot);
+                if (candidates.Count == 1)
+                {
+                    referenced.Add(candidates[0]);
+                }
+                else if (candidates.Count > 1)
+                {
+                    foreach (var candidate in candidates)
+                    {
+                        if (!ambiguous.TryGetValue(candidate, out var rawNames))
+                            ambiguous[candidate] = rawNames = [];
+                        rawNames.Add(rawName);
+                    }
+                }
+            }
+        }
+
+        return (referenced, ambiguous);
+    }
+
+    // Exact match first (rawName is already a fully-qualified key); otherwise suffix-match a bare
+    // filename against every known name so "lib.js" resolves to "av_ns/lib.js". Returns 0, 1, or many
+    // candidates — callers decide what to do with each case.
+    static List<string> ResolveCandidates(string rawName, WebResourceSyncSnapshot snapshot)
+    {
+        if (snapshot.LocalResources.ContainsKey(rawName) || snapshot.DataverseResources.ContainsKey(rawName))
+            return [rawName];
+
+        var suffix = "/" + rawName;
+        return snapshot.LocalResources.Keys
+            .Concat(snapshot.DataverseResources.Keys)
+            .Where(k => k.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     // Maker Portal stores the fully-qualified webresource name (e.g. "av_ns/example1.js") in Library@name,
     // not the bare filename typed in a // flowline:depends annotation — qualify it so dependencies
     // added via Flowline resolve the same way as ones added manually in the Maker Portal.
     string ResolveQualifiedName(string rawName, WebResourceSyncSnapshot snapshot)
     {
-        if (snapshot.LocalResources.ContainsKey(rawName) || snapshot.DataverseResources.ContainsKey(rawName))
-            return rawName;
-
-        var suffix = "/" + rawName;
-        var matches = snapshot.LocalResources.Keys
-            .Concat(snapshot.DataverseResources.Keys)
-            .Where(k => k.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var matches = ResolveCandidates(rawName, snapshot);
 
         if (matches.Count == 1)
             return matches[0];

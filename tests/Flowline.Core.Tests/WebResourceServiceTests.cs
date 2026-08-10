@@ -459,6 +459,123 @@ public class WebResourceServiceTests : IDisposable
             Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "AddSolutionComponent")), Arg.Any<CancellationToken>());
     }
 
+    // --- U3: // flowline:depends as a reference-only declaration (R7) ---
+
+    [Fact]
+    public async Task SyncSolutionAsync_ForeignOwnedOrphanReferencedByDepends_ShouldSkipNotThrowAndKeepDependencyXml()
+    {
+        var webResourceId = Guid.NewGuid();
+        File.WriteAllText(Path.Combine(_webresourceRoot, "shared.js"), "new content");
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+            "// flowline:depends my_MySolution/shared.js\ncode();");
+        SetupGlobalOrphans(RemoteWebResource(webResourceId, "my_MySolution/shared.js", "old content"));
+        SetupOwnership(webResourceId, ("OtherSolution", false));
+        var createdId = Guid.NewGuid();
+        var createResponse = new CreateResponse();
+        createResponse.Results["id"] = createdId;
+        _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(createResponse));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
+
+        // shared.js itself: no create/update/adopt
+        await _serviceMock.DidNotReceive().UpdateAsync(
+            Arg.Is(Matching<Entity>(e => e.Id == webResourceId)), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(
+            Arg.Is(Matching<OrganizationRequest>(r =>
+                r.RequestName == "AddSolutionComponent" && (Guid)r["ComponentId"] == webResourceId)),
+            Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(
+            Arg.Is(Matching<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_MySolution/shared.js")),
+            Arg.Any<CancellationToken>());
+        Assert.Contains("my_MySolution/shared.js", _console.Output);
+        Assert.Contains("kept", _console.Output);
+
+        // form.js still pushed, still carries the dependency
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is(Matching<CreateRequest>(r =>
+                r.Target.GetAttributeValue<string>("name") == "my_MySolution/form.js" &&
+                r.Target.GetAttributeValue<string>("dependencyxml")!.Contains("my_MySolution/shared.js"))),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_ForeignOwnedOrphanReferencedByBareDependsName_ShouldSkip()
+    {
+        var webResourceId = Guid.NewGuid();
+        File.WriteAllText(Path.Combine(_webresourceRoot, "shared.js"), "new content");
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+            "// flowline:depends shared.js\ncode();");
+        SetupGlobalOrphans(RemoteWebResource(webResourceId, "my_MySolution/shared.js", "old content"));
+        SetupOwnership(webResourceId, ("OtherSolution", false));
+        var createResponse = new CreateResponse();
+        createResponse.Results["id"] = Guid.NewGuid();
+        _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(createResponse));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
+
+        await _serviceMock.DidNotReceive().UpdateAsync(
+            Arg.Is(Matching<Entity>(e => e.Id == webResourceId)), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(
+            Arg.Is(Matching<OrganizationRequest>(r =>
+                r.RequestName == "AddSolutionComponent" && (Guid)r["ComponentId"] == webResourceId)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_ForeignOwnedOrphanReferencedByAmbiguousDependsName_ShouldThrowFullyQualifyMessage()
+    {
+        var webResourceId = Guid.NewGuid();
+        File.WriteAllText(Path.Combine(_webresourceRoot, "dupe.js"), "new content");
+        var subDir = Directory.CreateDirectory(Path.Combine(_webresourceRoot, "sub"));
+        File.WriteAllText(Path.Combine(subDir.FullName, "dupe.js"), "// other file");
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+            "// flowline:depends dupe.js\ncode();");
+        SetupGlobalOrphans(RemoteWebResource(webResourceId, "my_MySolution/dupe.js", "old content"));
+        SetupOwnership(webResourceId, ("OtherSolution", false));
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
+
+        Assert.Equal(ExitCode.ValidationFailed, ex.ExitCode);
+        // TestConsole word-wraps output, so check the two words separately rather than as one phrase.
+        var combined = ex.Message + _console.Output;
+        Assert.Contains("dupe.js", combined);
+        Assert.Contains("fully", combined, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("qualify", combined, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ambiguous", combined, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("co-management", combined, StringComparison.OrdinalIgnoreCase);
+
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "AddSolutionComponent")), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_GlobalOrphanUnownedButReferencedByDepends_ShouldAdoptNormally()
+    {
+        // KTD4 table row 3: referenced + owned by nobody → push normally, depends is load-order only.
+        var webResourceId = Guid.NewGuid();
+        File.WriteAllText(Path.Combine(_webresourceRoot, "shared.js"), "new content");
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"),
+            "// flowline:depends my_MySolution/shared.js\ncode();");
+        SetupGlobalOrphans(RemoteWebResource(webResourceId, "my_MySolution/shared.js", "old content"));
+        var createResponse = new CreateResponse();
+        createResponse.Results["id"] = Guid.NewGuid();
+        _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(createResponse));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
+
+        await _serviceMock.Received(1).UpdateAsync(
+            Arg.Is(Matching<Entity>(e => e.Id == webResourceId)), Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is(Matching<OrganizationRequest>(r =>
+                r.RequestName == "AddSolutionComponent" && (Guid)r["ComponentId"] == webResourceId)),
+            Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task SyncSolutionAsync_SolutionNotFound_ShouldThrow()
     {
