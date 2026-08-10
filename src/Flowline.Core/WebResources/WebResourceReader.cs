@@ -65,7 +65,7 @@ public class WebResourceReader(IAnsiConsole console)
             .ToList();
 
         var globalOrphans = orphanNames.Count > 0
-            ? await GetGlobalWebResourcesByNameAsync(service, orphanNames, cancellationToken).ConfigureAwait(false)
+            ? await GetGlobalWebResourcesByNameAsync(service, orphanNames, solutionName, cancellationToken).ConfigureAwait(false)
             : new Dictionary<string, DataverseWebResource>(StringComparer.OrdinalIgnoreCase).AsReadOnly();
 
         var backfilledLocals = BackfillUnresolvedTypes(localResourcesTask.Result, dataverseResourcesDict, globalOrphans, suppressWarnings);
@@ -331,7 +331,8 @@ public class WebResourceReader(IAnsiConsole console)
         var unmanaged = solutionRefs.Where(s => s.IsManaged == false).ToList();
         var isInCurrent = unmanaged.Any(s => string.Equals(s.Name, currentSolutionName, StringComparison.OrdinalIgnoreCase));
         var hasManagedReference = solutionRefs.Any(s => s.IsManaged);
-        return new WebResourceOwnership(unmanaged.Count, isInCurrent, hasManagedReference);
+        var owningSolutionNames = solutionRefs.Select(s => s.Name!).ToList();
+        return new WebResourceOwnership(unmanaged.Count, isInCurrent, hasManagedReference, owningSolutionNames);
     }
 
     static DataverseWebResource ToDataverseWebResource(Entity entity, WebResourceOwnership ownership) =>
@@ -348,6 +349,7 @@ public class WebResourceReader(IAnsiConsole console)
     static async Task<IReadOnlyDictionary<string, DataverseWebResource>> GetGlobalWebResourcesByNameAsync(
         IOrganizationServiceAsync2 service,
         IEnumerable<string> names,
+        string solutionName,
         CancellationToken cancellationToken)
     {
         var query = new QueryExpression("webresource")
@@ -357,8 +359,15 @@ public class WebResourceReader(IAnsiConsole console)
         query.Criteria.AddCondition("name", ConditionOperator.In, names.Cast<object>().ToArray());
 
         var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
-        return result.Entities
-            .Select(e => ToDataverseWebResource(e, new WebResourceOwnership(0, false)))
+
+        var ownershipTasks = result.Entities.Select(async entity =>
+        {
+            var ownership = await GetOwnershipAsync(service, entity.Id, solutionName, cancellationToken).ConfigureAwait(false);
+            return ToDataverseWebResource(entity, ownership);
+        });
+
+        var resources = await Task.WhenAll(ownershipTasks).ConfigureAwait(false);
+        return resources
             .ToDictionary(r => r.Name, r => r, StringComparer.OrdinalIgnoreCase)
             .AsReadOnly();
     }

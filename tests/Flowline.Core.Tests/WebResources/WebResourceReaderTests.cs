@@ -159,6 +159,83 @@ public class WebResourceReaderTests : IDisposable
         snapshot.LocalResources["dwe_Logoromeo"].Type.Should().Be(WebResourceType.Jpg);
     }
 
+    // --- U1: global-orphan ownership resolution ---
+
+    [Fact]
+    public async Task LoadSnapshotAsync_OrphanOwnedByOneUnmanagedSolution_ResolvesOwnership()
+    {
+        var orphanId = Guid.NewGuid();
+        File.WriteAllText(Path.Combine(_webresourceRoot, "shared.js"), "content");
+        SetupGlobalOrphans(RemoteWebResource(orphanId, "my_MySolution/shared.js", WebResourceType.Js));
+        SetupOwnership(orphanId, ("OtherSolution", false));
+
+        var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        var ownership = snapshot.GlobalOrphans["my_MySolution/shared.js"].Ownership;
+        ownership.NonDefaultUnmanagedSolutionCount.Should().Be(1);
+        ownership.IsInCurrentUnmanagedSolution.Should().BeFalse();
+        ownership.HasManagedSolutionReference.Should().BeFalse();
+        ownership.OwningSolutionNames.Should().Equal("OtherSolution");
+    }
+
+    [Fact]
+    public async Task LoadSnapshotAsync_OrphanOwnedByManagedSolution_ResolvesOwnership()
+    {
+        var orphanId = Guid.NewGuid();
+        File.WriteAllText(Path.Combine(_webresourceRoot, "shared.js"), "content");
+        SetupGlobalOrphans(RemoteWebResource(orphanId, "my_MySolution/shared.js", WebResourceType.Js));
+        SetupOwnership(orphanId, ("ManagedBase", true));
+
+        var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        var ownership = snapshot.GlobalOrphans["my_MySolution/shared.js"].Ownership;
+        ownership.HasManagedSolutionReference.Should().BeTrue();
+        ownership.OwningSolutionNames.Should().Equal("ManagedBase");
+    }
+
+    [Fact]
+    public async Task LoadSnapshotAsync_OrphanOwnedByTwoUnmanagedSolutions_CarriesBothNames()
+    {
+        var orphanId = Guid.NewGuid();
+        File.WriteAllText(Path.Combine(_webresourceRoot, "shared.js"), "content");
+        SetupGlobalOrphans(RemoteWebResource(orphanId, "my_MySolution/shared.js", WebResourceType.Js));
+        SetupOwnership(orphanId, ("SolutionA", false), ("SolutionB", false));
+
+        var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        var ownership = snapshot.GlobalOrphans["my_MySolution/shared.js"].Ownership;
+        ownership.NonDefaultUnmanagedSolutionCount.Should().Be(2);
+        ownership.OwningSolutionNames.Should().Equal("SolutionA", "SolutionB");
+    }
+
+    [Fact]
+    public async Task LoadSnapshotAsync_OrphanWithNoSolutionComponentRows_ReportsEmptyOwnership()
+    {
+        var orphanId = Guid.NewGuid();
+        File.WriteAllText(Path.Combine(_webresourceRoot, "shared.js"), "content");
+        SetupGlobalOrphans(RemoteWebResource(orphanId, "my_MySolution/shared.js", WebResourceType.Js));
+        // No SetupOwnership call — default mock returns an empty EntityCollection for any query.
+
+        var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        var ownership = snapshot.GlobalOrphans["my_MySolution/shared.js"].Ownership;
+        ownership.NonDefaultUnmanagedSolutionCount.Should().Be(0);
+        ownership.IsInCurrentUnmanagedSolution.Should().BeFalse();
+        ownership.HasManagedSolutionReference.Should().BeFalse();
+        ownership.OwningSolutionNames.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task LoadSnapshotAsync_NoGlobalOrphans_NeverQueriesOwnership()
+    {
+        // No local files at all → no orphan names → GetGlobalWebResourcesByNameAsync (and therefore
+        // GetOwnershipAsync) is never invoked.
+        await _reader.LoadSnapshotAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        await _serviceMock.DidNotReceive().RetrieveMultipleAsync(
+            Arg.Is(Matching<QueryExpression>(q => q.EntityName == "solutioncomponent")), Arg.Any<CancellationToken>());
+    }
+
     void SetupSolution(string solutionName, string prefix)
     {
         var solution = new Entity("solution", Guid.NewGuid())

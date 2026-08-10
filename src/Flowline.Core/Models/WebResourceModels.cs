@@ -68,7 +68,14 @@ public record DataverseWebResource(
     WebResourceOwnership Ownership,
     string? DependencyXml = null);
 
-public record WebResourceOwnership(int NonDefaultUnmanagedSolutionCount, bool IsInCurrentUnmanagedSolution, bool HasManagedSolutionReference = false);
+public record WebResourceOwnership(
+    int NonDefaultUnmanagedSolutionCount,
+    bool IsInCurrentUnmanagedSolution,
+    bool HasManagedSolutionReference = false,
+    IReadOnlyList<string>? OwningSolutionNames = null)
+{
+    public IReadOnlyList<string> OwningSolutionNames { get; init; } = OwningSolutionNames ?? [];
+}
 
 public record WebResourceSyncSnapshot(
     DataverseSolutionInfo Solution,
