@@ -44,13 +44,8 @@ public class WebResourceReader(IAnsiConsole console)
         // dataverseResourcesDict is built before EnrichDependencies (not after, as in the original
         // ordering) because the fallback type backfill below needs it, and EnrichDependencies' LCID/RESX
         // matching needs to see the backfilled types, not the pre-backfill ones.
-        var ownershipTasks = baseResourcesTask.Result.Select(async entity =>
-        {
-            var ownership = await GetOwnershipAsync(service, entity.Id, solutionName, cancellationToken).ConfigureAwait(false);
-            return ToDataverseWebResource(entity, ownership);
-        });
-
-        var dataverseResources = await Task.WhenAll(ownershipTasks).ConfigureAwait(false);
+        var dataverseResources = await ResolveOwnershipBoundedAsync(
+            service, baseResourcesTask.Result, solutionName, cancellationToken).ConfigureAwait(false);
         var dataverseResourcesDict = dataverseResources
             .ToDictionary(r => r.Name, r => r, StringComparer.OrdinalIgnoreCase)
             .AsReadOnly();
@@ -340,6 +335,35 @@ public class WebResourceReader(IAnsiConsole console)
         return new WebResourceOwnership(unmanaged.Count, isInCurrent, hasManagedReference, owningSolutionNames);
     }
 
+    // One solutioncomponent query per web resource, capped. Both callers previously fanned out with an
+    // unbounded Task.WhenAll, which is fine for a handful of files but issues one concurrent request per
+    // resource on a cold or bootstrap push where every local file is new — enough to hit Dataverse's
+    // per-user service-protection limits. 8 matches WebResourceExecutor.MaxParallelism, which already
+    // governs the write phases against the same org.
+    const int MaxOwnershipParallelism = 8;
+
+    static async Task<DataverseWebResource[]> ResolveOwnershipBoundedAsync(
+        IOrganizationServiceAsync2 service,
+        IEnumerable<Entity> entities,
+        string solutionName,
+        CancellationToken cancellationToken)
+    {
+        using var gate = new SemaphoreSlim(MaxOwnershipParallelism);
+
+        var tasks = entities.Select(async entity =>
+        {
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var ownership = await GetOwnershipAsync(service, entity.Id, solutionName, cancellationToken).ConfigureAwait(false);
+                return ToDataverseWebResource(entity, ownership);
+            }
+            finally { gate.Release(); }
+        });
+
+        return await Task.WhenAll(tasks).ConfigureAwait(false);
+    }
+
     static DataverseWebResource ToDataverseWebResource(Entity entity, WebResourceOwnership ownership) =>
         new(
             entity.Id,
@@ -365,13 +389,8 @@ public class WebResourceReader(IAnsiConsole console)
 
         var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
 
-        var ownershipTasks = result.Entities.Select(async entity =>
-        {
-            var ownership = await GetOwnershipAsync(service, entity.Id, solutionName, cancellationToken).ConfigureAwait(false);
-            return ToDataverseWebResource(entity, ownership);
-        });
-
-        var resources = await Task.WhenAll(ownershipTasks).ConfigureAwait(false);
+        var resources = await ResolveOwnershipBoundedAsync(
+            service, result.Entities, solutionName, cancellationToken).ConfigureAwait(false);
         return resources
             .ToDictionary(r => r.Name, r => r, StringComparer.OrdinalIgnoreCase)
             .AsReadOnly();

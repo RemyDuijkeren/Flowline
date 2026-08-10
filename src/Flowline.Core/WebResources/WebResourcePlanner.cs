@@ -41,27 +41,7 @@ public class WebResourcePlanner(IAnsiConsole console)
                                  || existing.Ownership.HasManagedSolutionReference;
                 if (foreignOwned)
                 {
-                    // KTD4/R7: a foreign-owned resource some local file explicitly declares via
-                    // // flowline:depends is a reference, not a collision — skip it instead of blocking.
-                    if (referencedNames.Contains(name))
-                    {
-                        plan.Skips.Add(new WebResourcePlanAction(name, WebResourceAction.Skip, Id: existing.Id,
-                            Reason: ReferencedNotOwnedReason,
-                            OwningSolutions: string.Join(", ", existing.Ownership.OwningSolutionNames)));
-                        continue;
-                    }
-
-                    // An ambiguous bare annotation resolves to the unqualified raw name (never equal to
-                    // this CRM name), so it would otherwise fall through to the co-management message
-                    // below, which misdescribes the real problem — surface it as its own error instead.
-                    if (ambiguousReferences.TryGetValue(name, out var rawNames))
-                    {
-                        foreach (var rawName in rawNames)
-                            ownershipViolations.Add(DescribeAmbiguousReference(local.RelativePath, name, rawName));
-                        continue;
-                    }
-
-                    ownershipViolations.Add(DescribeOwnershipViolation(local.RelativePath, name, existing.Ownership));
+                    PlanForeignOwned(local, existing, name, referencedNames, ambiguousReferences, plan, ownershipViolations);
                     continue;
                 }
 
@@ -193,6 +173,41 @@ public class WebResourcePlanner(IAnsiConsole console)
     // Managed-only (no unmanaged owner) never mentions co-management — that word implies two solutions
     // both legitimately maintaining the resource, which isn't the ISV/first-party case (KTD2). Any
     // unmanaged owner does, since that's the actual co-management hazard being blocked (KTD1).
+    // A global orphan another solution owns has three possible outcomes, and keeping them together here
+    // rather than inline in Plan's loop is what makes the ownership policy readable as one thing. Adds to
+    // plan.Skips or to violations; never plans a write.
+    static void PlanForeignOwned(
+        LocalWebResource local,
+        DataverseWebResource existing,
+        string name,
+        HashSet<string> referencedNames,
+        Dictionary<string, HashSet<string>> ambiguousReferences,
+        WebResourceSyncPlan plan,
+        List<string> ownershipViolations)
+    {
+        // KTD4/R7: a resource some local file explicitly declares via // flowline:depends is a
+        // reference, not a collision — skip it instead of blocking.
+        if (referencedNames.Contains(name))
+        {
+            plan.Skips.Add(new WebResourcePlanAction(name, WebResourceAction.Skip, Id: existing.Id,
+                Reason: ReferencedNotOwnedReason,
+                OwningSolutions: string.Join(", ", existing.Ownership.OwningSolutionNames)));
+            return;
+        }
+
+        // An ambiguous bare annotation resolves to the unqualified raw name (never equal to this CRM
+        // name), so it would otherwise fall through to the co-management message below, which
+        // misdescribes the real problem — surface it as its own error instead.
+        if (ambiguousReferences.TryGetValue(name, out var rawNames))
+        {
+            foreach (var rawName in rawNames)
+                ownershipViolations.Add(DescribeAmbiguousReference(local.RelativePath, name, rawName));
+            return;
+        }
+
+        ownershipViolations.Add(DescribeOwnershipViolation(local.RelativePath, name, existing.Ownership));
+    }
+
     // These strings reach console.Error, which parses Spectre markup — escape every interpolated value.
     // A relative path is free-form and may legally contain '['.
     static string DescribeOwnershipViolation(string relativePath, string name, WebResourceOwnership ownership)
