@@ -89,6 +89,11 @@ A Custom API and a plugin step both carry a `plugintypeid`, but the reference ru
 ### Positive attribution
 The rule governing when `push` may delete a Custom API: only when the API's `plugintypeid` is a plugin type the current pass owns *and* source no longer declares that API. Everything else is left alone and reported under `--verbose` — an API implemented by a plugin type outside the push is another project's, and an API with no `plugintypeid` at all may be a contract awaiting an implementation, so it goes behind `--force delete-orphans` like every other unknown. The rule exists because the sweep's input is publisher-wide (see [[Custom API ownership inversion]]), which makes "we don't know whose this is" the normal case rather than the exceptional one. Widening a known-plugin-type-id set to make more APIs look owned is the failure mode this replaces: it treats "we know this is dead" and "we can't tell whose this is" as the same signal. Note the contrast with a [[Orphan component]] sweep over assemblies or steps, which is assembly-scoped and can safely reason about absence.
 
+The same rule governs writes, not only deletes: adopting a [[Global orphan]] is refused unless the
+record can be shown to belong to no other solution. Wherever a resource is reachable by more than one
+action, the rule has to hold on each of them independently — a guard on the deleting path is not a
+guard on the writing one.
+
 ## Deploy Pipeline
 
 ### Post-deploy service
@@ -109,6 +114,22 @@ The Dataverse-assigned global identifier for a web resource, composed of a publi
 forward-slash-separated path (e.g., `av_ext/forms/account.js`). Logical names are globally unique
 within the environment. Flowline auto-prefixes local filenames with the solution's publisher prefix
 unless the file is inside a folder whose name already starts with a publisher prefix (verbatim mode).
+
+### Global orphan
+A local web resource whose [[Logical name]] already exists somewhere in the environment but not in
+the solution being pushed. Because logical names are globally unique, the record cannot be created —
+it can only be adopted into the solution, or left alone.
+
+Adoption is gated on ownership, not on absence. A global orphan no other non-default solution owns
+is adopted freely: that is how a solution first built outside Flowline takes over records that were
+created by hand. One another solution owns is refused, because writing to it would overwrite content
+that solution maintains and adopting it would leave two solutions layering the same record, where
+whichever deploys last silently wins. A [[Dependency annotation]] naming it is the author's
+declaration that the reference is deliberate and ownership is not being claimed, which downgrades the
+refusal to a skip. Note the direction is the opposite of an [[Orphan component]]: that one is present
+in the environment and absent from source, this one is present in source and absent from the
+solution. Both apply [[Positive attribution]] — act only on what can be affirmatively shown to be
+ours.
 
 ### LCID suffix
 The four-digit locale code embedded in RESX filenames (e.g., `.1033.resx` for English, `.1041.resx`
@@ -184,3 +205,9 @@ sequentially, in the FormXml list order, with a hard cap of 50 handlers per even
 both: handler write order follows annotation-encounter order by default, with an optional `[order:N]`
 annotation modifier for explicit cross-file sequencing; exceeding the 50-handler cap for one event
 fails the push before any Dataverse write.
+
+## Flagged ambiguities
+
+- "Orphan" carries two directions and they are not the same thing — an [[Orphan component]] is in the
+  environment and missing from source; a [[Global orphan]] is in source and missing from the solution.
+  A sweep written for one is not safe for the other.

@@ -172,7 +172,7 @@ app.Configure(config =>
 
     // Sync changes to local repo (export solution and unpack)
     config.AddCommand<SyncCommand>("sync")
-          .WithDescription("Export solution from DEV, bump build version, and unpack to source-controlled XML. Run after testing changes in DEV. Requires no uncommitted changes in the unpacked solution source.")
+          .WithDescription("Export solution from DEV, bump build version, and unpack to source-controlled XML. Run after testing changes in DEV. Requires no uncommitted changes in the unpacked solution source. Alias: pull")
           .WithAlias("pull")
           .WithExample("sync")
           .WithExample("sync", "--managed", "--bump", "minor");
