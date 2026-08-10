@@ -495,12 +495,12 @@ public class PushCommandTests : IDisposable
     }
 
     [Fact]
-    public void DescribePluginPushHeader_WithTwoProjects_ShouldNameEachProject()
+    public void DescribePluginPushHeader_WithTwoProjects_ShouldNumberAndNameEachProject()
     {
         PushCommand.PluginPushTarget[] targets = [Target("Plugins.Sales", "Sales"), Target("Plugins.Support", "Support")];
 
-        PushCommand.DescribePluginPushHeader(targets, 0).Should().Be("[bold]Plugins.Sales[/] — pushing");
-        PushCommand.DescribePluginPushHeader(targets, 1).Should().Be("[bold]Plugins.Support[/] — pushing");
+        PushCommand.DescribePluginPushHeader(targets, 0).Should().Be("#1 [bold]Plugins.Sales[/] — pushing");
+        PushCommand.DescribePluginPushHeader(targets, 1).Should().Be("#2 [bold]Plugins.Support[/] — pushing");
     }
 
     // -- Per-project failure: names which one, and what the org holds now --
