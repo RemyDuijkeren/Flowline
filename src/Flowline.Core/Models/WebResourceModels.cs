@@ -89,7 +89,10 @@ public record WebResourcePlanAction(
     Entity? Entity = null,
     Guid? Id = null,
     string? SolutionName = null,
-    string? Reason = null);
+    string? Reason = null,
+    // Solutions that own the resource — distinct from SolutionName, which is the solution an action
+    // targets. Only set on a reference-only Skip, where naming the owner is the point of the warning.
+    string? OwningSolutions = null);
 
 public class WebResourceSyncPlan
 {

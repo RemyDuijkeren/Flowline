@@ -55,7 +55,7 @@ public class WebResourceService(IAnsiConsole console)
         }
 
         // Phase 3: Execute the plan
-        await _executor.ExecuteAsync(service, plan, publishAfterSync, runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
+        await _executor.ExecuteAsync(service, plan, webresourceRoot, publishAfterSync, runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
         return true;
     }
 

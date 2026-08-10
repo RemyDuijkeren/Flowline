@@ -138,6 +138,8 @@ public class WebResourceServiceTests : IDisposable
         await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "RemoveSolutionComponent")), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().DeleteAsync("webresource", webResourceId, Arg.Any<CancellationToken>());
         Assert.Contains("ownership unclear", _console.Output);
+        // U4/R8: an ordinary skip (not the reference-only kind) stays neutral, not a warning.
+        Assert.DoesNotContain("not pushed", _console.Output);
     }
 
     [Fact]
@@ -488,8 +490,10 @@ public class WebResourceServiceTests : IDisposable
         await _serviceMock.DidNotReceive().ExecuteAsync(
             Arg.Is(Matching<CreateRequest>(r => r.Target.GetAttributeValue<string>("name") == "my_MySolution/shared.js")),
             Arg.Any<CancellationToken>());
+        // U4/R8: reference-only skip renders as a warning, not a neutral "kept" skip line.
         Assert.Contains("my_MySolution/shared.js", _console.Output);
-        Assert.Contains("kept", _console.Output);
+        Assert.Contains("OtherSolution", _console.Output);
+        Assert.Contains("not pushed", _console.Output);
 
         // form.js still pushed, still carries the dependency
         await _serviceMock.Received(1).ExecuteAsync(
@@ -497,6 +501,74 @@ public class WebResourceServiceTests : IDisposable
                 r.Target.GetAttributeValue<string>("name") == "my_MySolution/form.js" &&
                 r.Target.GetAttributeValue<string>("dependencyxml")!.Contains("my_MySolution/shared.js"))),
             Arg.Any<CancellationToken>());
+    }
+
+    // --- U4: reference-only skip is a warning, not a neutral skip (R8) ---
+
+    [Fact]
+    public async Task SyncSolutionAsync_ForeignOwnedOrphanReferencedByDepends_ShouldAdviseRemovingFromResolvedFolder()
+    {
+        // Short, distinctive folder name — TestConsole word-wraps output, and a long GUID temp
+        // path can split across lines, so a full-path Contains() check would be unreliable.
+        var resolvedRoot = Path.Combine(Path.GetTempPath(), "ResolvedFolder_" + Guid.NewGuid());
+        Directory.CreateDirectory(resolvedRoot);
+        try
+        {
+            var webResourceId = Guid.NewGuid();
+            File.WriteAllText(Path.Combine(resolvedRoot, "shared.js"), "new content");
+            File.WriteAllText(Path.Combine(resolvedRoot, "form.js"),
+                "// flowline:depends my_MySolution/shared.js\ncode();");
+            SetupGlobalOrphans(RemoteWebResource(webResourceId, "my_MySolution/shared.js", "old content"));
+            SetupOwnership(webResourceId, ("OtherSolution", false));
+            _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+                .Returns(_ => { var r = new CreateResponse(); r.Results["id"] = Guid.NewGuid(); return Task.FromResult<OrganizationResponse>(r); });
+
+            var result = await _service.SyncSolutionAsync(_serviceMock, resolvedRoot, "MySolution", publishAfterSync: false);
+
+            // Push still succeeds — the skip is a warning, not a failure.
+            Assert.True(result);
+            Assert.Contains("Remove it", _console.Output);
+            Assert.Contains("ResolvedFolder_", _console.Output);
+        }
+        finally
+        {
+            Directory.Delete(resolvedRoot, true);
+        }
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_ForeignOwnedOrphanReferencedByDepends_ShouldNameCustomFolderNotDist()
+    {
+        var customRoot = Path.Combine(Path.GetTempPath(), "CustomWebResources_" + Guid.NewGuid());
+        Directory.CreateDirectory(customRoot);
+        try
+        {
+            var webResourceId = Guid.NewGuid();
+            File.WriteAllText(Path.Combine(customRoot, "shared.js"), "new content");
+            File.WriteAllText(Path.Combine(customRoot, "form.js"),
+                "// flowline:depends my_MySolution/shared.js\ncode();");
+            SetupGlobalOrphans(RemoteWebResource(webResourceId, "my_MySolution/shared.js", "old content"));
+            SetupOwnership(webResourceId, ("OtherSolution", false));
+            _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+                .Returns(_ => { var r = new CreateResponse(); r.Results["id"] = Guid.NewGuid(); return Task.FromResult<OrganizationResponse>(r); });
+
+            await _service.SyncSolutionAsync(_serviceMock, customRoot, "MySolution", publishAfterSync: false);
+
+            Assert.Contains("CustomWebResources_", _console.Output);
+            Assert.DoesNotContain("dist", _console.Output, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(customRoot, true);
+        }
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_NoGlobalOrphans_ShouldNotPrintReferencedNotOwnedWarning()
+    {
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
+
+        Assert.DoesNotContain("not pushed", _console.Output);
     }
 
     [Fact]

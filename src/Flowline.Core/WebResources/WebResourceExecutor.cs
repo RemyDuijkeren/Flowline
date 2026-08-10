@@ -17,6 +17,7 @@ public class WebResourceExecutor(IAnsiConsole console)
     public async Task ExecuteAsync(
         IOrganizationServiceAsync2 service,
         WebResourceSyncPlan plan,
+        string webresourceRoot,
         bool publishAfterSync,
         bool save,
         CancellationToken cancellationToken = default)
@@ -24,7 +25,13 @@ public class WebResourceExecutor(IAnsiConsole console)
         var publishIds = new List<Guid>();
         var failures = new List<(string Name, Exception Error)>();
 
-        foreach (var a in plan.Skips) console.Skip($"Web resource '{a.Name}' kept ({a.Reason})");
+        foreach (var a in plan.Skips)
+        {
+            if (a.Reason == WebResourcePlanner.ReferencedNotOwnedReason)
+                WarnReferencedNotOwned(a, webresourceRoot);
+            else
+                console.Skip($"Web resource '{a.Name}' kept ({a.Reason})");
+        }
 
         // Create web resources — sequential, so no lock needed for progress
         if (plan.Creates.Count > 0)
@@ -88,6 +95,19 @@ public class WebResourceExecutor(IAnsiConsole console)
                 console.Error($"'{name}' — {ex.Message}");
             throw new InvalidOperationException($"{failures.Count} web resource operation(s) failed.");
         }
+    }
+
+    // R8: a foreign-owned resource kept only because a local file references it via
+    // // flowline:depends isn't a neutral skip — the file sitting in the web resource folder is
+    // dead weight the user will keep re-creating on every push. Name the folder that was actually
+    // resolved (webresourceRoot), never a hardcoded "dist/" — --webresources overrides it.
+    void WarnReferencedNotOwned(WebResourcePlanAction a, string webresourceRoot)
+    {
+        // Escape every interpolated value: console.Warning/MarkupLine parse Spectre markup, and a
+        // folder path is free-form user input (--webresources) that may legally contain '['.
+        var folder = Markup.Escape(webresourceRoot.Replace('\\', '/').TrimEnd('/') + "/");
+        console.Warning($"'{Markup.Escape(a.Name)}' is owned by '{Markup.Escape(a.OwningSolutions ?? "another solution")}' — not pushed.");
+        console.MarkupLine($"  The dependency's declared, so the file isn't needed in {folder}. Remove it.");
     }
 
     // Shared by the Updates/AddsToSolution/Deletes/RemovesFromSolution phases — each is a

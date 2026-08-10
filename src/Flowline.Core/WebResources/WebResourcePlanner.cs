@@ -9,6 +9,10 @@ namespace Flowline.Core.WebResources;
 
 public class WebResourcePlanner(IAnsiConsole console)
 {
+    // Shared with WebResourceExecutor, which needs to tell this skip reason apart from others
+    // (e.g. "ownership unclear") to render it as a warning instead of a neutral skip line.
+    internal const string ReferencedNotOwnedReason = "referenced via // flowline:depends, not owned";
+
     static readonly Regex ValidFilePathRegex = new(@"^[a-zA-Z0-9_.\-]+(/[a-zA-Z0-9_.\-]+)*$", RegexOptions.Compiled);
 
     public WebResourceSyncPlan Plan(WebResourceSyncSnapshot snapshot)
@@ -42,8 +46,8 @@ public class WebResourcePlanner(IAnsiConsole console)
                     if (referencedNames.Contains(name))
                     {
                         plan.Skips.Add(new WebResourcePlanAction(name, WebResourceAction.Skip, Id: existing.Id,
-                            SolutionName: string.Join(", ", existing.Ownership.OwningSolutionNames),
-                            Reason: "referenced via // flowline:depends, not owned"));
+                            Reason: ReferencedNotOwnedReason,
+                            OwningSolutions: string.Join(", ", existing.Ownership.OwningSolutionNames)));
                         continue;
                     }
 
@@ -189,20 +193,30 @@ public class WebResourcePlanner(IAnsiConsole console)
     // Managed-only (no unmanaged owner) never mentions co-management — that word implies two solutions
     // both legitimately maintaining the resource, which isn't the ISV/first-party case (KTD2). Any
     // unmanaged owner does, since that's the actual co-management hazard being blocked (KTD1).
+    // These strings reach console.Error, which parses Spectre markup — escape every interpolated value.
+    // A relative path is free-form and may legally contain '['.
     static string DescribeOwnershipViolation(string relativePath, string name, WebResourceOwnership ownership)
     {
-        var owners = string.Join(", ", ownership.OwningSolutionNames.Select(o => $"'{o}'"));
+        var owners = string.Join(", ", ownership.OwningSolutionNames.Select(o => $"'{Markup.Escape(o)}'"));
+        var path = Markup.Escape(relativePath);
+        var crmName = Markup.Escape(name);
 
         return ownership.NonDefaultUnmanagedSolutionCount == 0
-            ? $"'{relativePath}': '{name}' is owned by managed solution {owners} — Flowline won't create an unmanaged layer over it. Reference it with // flowline:depends instead."
-            : $"'{relativePath}': '{name}' is already owned by {owners} — cross-solution co-management isn't supported. Reference it with // flowline:depends instead.";
+            ? $"'{path}': '{crmName}' is owned by managed solution {owners} — Flowline won't create an unmanaged layer over it. Reference it with // flowline:depends instead."
+            : $"'{path}': '{crmName}' is already owned by {owners} — cross-solution co-management isn't supported. Reference it with // flowline:depends instead.";
     }
 
     // R7's ambiguous case: the annotation would have declared this file as depends-only, but its raw
     // name matches multiple candidates so it can't be matched to this CRM name automatically.
-    static string DescribeAmbiguousReference(string relativePath, string name, string rawName) =>
-        $"'{relativePath}': '{name}' is owned by another solution and only referenced by an ambiguous " +
-        $"'// flowline:depends {rawName}' annotation — fully qualify it (e.g. 'av_ns/{rawName}') so Flowline can match it and skip this file.";
+    static string DescribeAmbiguousReference(string relativePath, string name, string rawName)
+    {
+        var path = Markup.Escape(relativePath);
+        var crmName = Markup.Escape(name);
+        var raw = Markup.Escape(rawName);
+
+        return $"'{path}': '{crmName}' is owned by another solution and only referenced by an ambiguous " +
+               $"'// flowline:depends {raw}' annotation — fully qualify it (e.g. 'av_ns/{raw}') so Flowline can match it and skip this file.";
+    }
 
     // Builds the set of CRM names referenced by any local file's // flowline:depends annotations, once
     // per Plan call, using the same suffix-qualification rule as ResolveQualifiedName. Ambiguous raw
