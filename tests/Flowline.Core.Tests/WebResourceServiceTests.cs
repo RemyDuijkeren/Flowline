@@ -649,6 +649,61 @@ public class WebResourceServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SyncSolutionAsync_ReferenceOnlySkipIsOnlyPlanContent_ShouldStillWarn()
+    {
+        // Regression: TotalChanges excludes Skips, so a plan whose ONLY content is a reference-only
+        // skip took the TotalChanges == 0 early return. form.js already matches Dataverse exactly
+        // (content, displayname, deps) so it produces no create/update — the referenced global orphan
+        // is the plan's only entry, forcing the exact steady-state path that dropped the warning.
+        var formId = Guid.NewGuid();
+        var sharedId = Guid.NewGuid();
+        const string formContent = "// flowline:depends my_MySolution/shared.js\ncode();";
+        const string depXml = """<Dependencies><Dependency componentType="WebResource"><Library name="my_MySolution/shared.js" displayName="shared.js" languagecode="" description="" libraryUniqueId="{0e58647c-5eb8-e4cc-b94d-19e6acb09469}"/></Dependency></Dependencies>""";
+        SetupWebResources(RemoteWebResourceWithDepXml(formId, "my_MySolution/form.js", formContent, depXml));
+        SetupOwnership(formId, ("MySolution", false));
+        SetupGlobalOrphans(RemoteWebResource(sharedId, "my_MySolution/shared.js", "old content"));
+        SetupOwnership(sharedId, ("OtherSolution", false));
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"), formContent);
+        File.WriteAllText(Path.Combine(_webresourceRoot, "shared.js"), "new content");
+
+        var result = await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
+
+        Assert.False(result); // TotalChanges == 0 early-return path
+        Assert.Contains("shared.js", _console.Output);
+        Assert.Contains("OtherSolution", _console.Output);
+        Assert.Contains("not pushed", _console.Output);
+        Assert.Contains("Remove it", _console.Output);
+
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_AutoMatchedResxDependency_ShouldNotExemptForeignOwnership()
+    {
+        // Regression: the ownership exemption used to gate on DependsOn, which AutoMatchResxDependencies
+        // enriches by folder-qualified base-name match with no annotation behind it. A JS+RESX pair
+        // sharing a base name ("Form.js" / "Form.1033.resx") must NOT silently downgrade the foreign-owned
+        // RESX's ownership block to a warning — nothing in source declares the dependency.
+        var resxId = Guid.NewGuid();
+        File.WriteAllText(Path.Combine(_webresourceRoot, "Form.js"), "code();"); // no // flowline:depends
+        File.WriteAllText(Path.Combine(_webresourceRoot, "Form.1033.resx"), "");
+        SetupGlobalOrphans(RemoteWebResource(resxId, "my_MySolution/Form.1033.resx", "old content"));
+        SetupOwnership(resxId, ("OtherSolution", false));
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
+
+        Assert.Equal(ExitCode.ValidationFailed, ex.ExitCode);
+        var combined = ex.Message + _console.Output;
+        Assert.Contains("Form.1033.resx", combined);
+        Assert.Contains("OtherSolution", combined);
+
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task SyncSolutionAsync_SolutionNotFound_ShouldThrow()
     {
         _serviceMock.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "solution")), Arg.Any<CancellationToken>())

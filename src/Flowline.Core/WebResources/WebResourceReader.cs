@@ -56,7 +56,10 @@ public class WebResourceReader(IAnsiConsole console)
             .AsReadOnly();
 
         // Local files not in this solution may exist globally under a different solution — look them up
-        // to plan AddToSolution instead of Create (Dataverse enforces global name uniqueness), and so
+        // so the planner can pick one of three outcomes: adopt (AddToSolution instead of Create, since
+        // Dataverse enforces global name uniqueness) when nothing else owns the record, block when
+        // another solution does, or skip when it does but a // flowline:depends annotation declares the
+        // reference. Ownership resolved here is what separates those cases. Also so
         // Tier 1 backfill below can adopt a foreign-solution record's type too instead of guessing one
         // via Tier 2. Computed off the raw local names (backfill/enrichment never add or remove keys),
         // so this can run before backfill instead of after.
@@ -135,7 +138,9 @@ public class WebResourceReader(IAnsiConsole console)
                 : resource.DependsOn;
 
             backfilled ??= localResources.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
-            backfilled[name] = resource with { Type = resolvedType, DependsOn = dependsOn };
+            // AnnotatedDependsOn tracks DependsOn here because both come straight from the parser —
+            // this is the raw annotation set, before any enrichment runs.
+            backfilled[name] = resource with { Type = resolvedType, DependsOn = dependsOn, AnnotatedDependsOn = dependsOn };
 
             if (!suppressWarnings)
                 console.Warning(

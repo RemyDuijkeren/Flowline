@@ -222,15 +222,19 @@ public class WebResourcePlanner(IAnsiConsole console)
     // per Plan call, using the same suffix-qualification rule as ResolveQualifiedName. Ambiguous raw
     // names (matching 2+ candidates) are kept separately, keyed by each candidate they could mean, so
     // the global-orphan loop can tell "not referenced" apart from "referenced ambiguously" (R7 step 4).
-    static (HashSet<string> Referenced, Dictionary<string, List<string>> Ambiguous) CollectDependsOnReferences(
+    static (HashSet<string> Referenced, Dictionary<string, HashSet<string>> Ambiguous) CollectDependsOnReferences(
         WebResourceSyncSnapshot snapshot)
     {
         var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var ambiguous = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var ambiguous = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
+        // AnnotatedDependsOn, not DependsOn: exempting a foreign-owned resource from the ownership block
+        // is only defensible when the author actually declared the reference in source. DependsOn also
+        // carries names AutoMatchResxDependencies synthesized from a base-name match, which would let a
+        // JS+RESX pair silently downgrade the block to a warning with nothing reviewable behind it.
         foreach (var local in snapshot.LocalResources.Values)
         {
-            foreach (var rawName in local.DependsOn.Distinct(StringComparer.OrdinalIgnoreCase))
+            foreach (var rawName in local.AnnotatedDependsOn.Distinct(StringComparer.OrdinalIgnoreCase))
             {
                 var candidates = ResolveCandidates(rawName, snapshot);
                 if (candidates.Count == 1)
@@ -239,10 +243,12 @@ public class WebResourcePlanner(IAnsiConsole console)
                 }
                 else if (candidates.Count > 1)
                 {
+                    // A HashSet, not a List: the same ambiguous bare name in two local files would
+                    // otherwise be reported twice and inflate the violation count in the summary.
                     foreach (var candidate in candidates)
                     {
                         if (!ambiguous.TryGetValue(candidate, out var rawNames))
-                            ambiguous[candidate] = rawNames = [];
+                            ambiguous[candidate] = rawNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                         rawNames.Add(rawName);
                     }
                 }

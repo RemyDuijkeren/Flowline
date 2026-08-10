@@ -56,7 +56,23 @@ public record DependencyLibrary(string Name, string DisplayName, Guid LibraryUni
         StringComparer.OrdinalIgnoreCase.GetHashCode(Name);
 }
 
-public record LocalWebResource(string Name, string RelativePath, string Path, string DisplayName, WebResourceType Type, string? Content, IReadOnlyList<string> DependsOn);
+// AnnotatedDependsOn is the raw `// flowline:depends` lines exactly as written in source. DependsOn
+// starts as the same set but is enriched downstream — AutoMatchResxDependencies adds RESX names by
+// base-name match with no annotation behind them, and ExpandLcidDependencies rewrites bare RESX
+// references into LCID variants. Anything that must answer "did the author actually declare this?"
+// has to read AnnotatedDependsOn; DependsOn answers "what load-order dependencies get registered".
+public record LocalWebResource(
+    string Name,
+    string RelativePath,
+    string Path,
+    string DisplayName,
+    WebResourceType Type,
+    string? Content,
+    IReadOnlyList<string> DependsOn,
+    IReadOnlyList<string>? AnnotatedDependsOn = null)
+{
+    public IReadOnlyList<string> AnnotatedDependsOn { get; init; } = AnnotatedDependsOn ?? DependsOn;
+}
 
 public record DataverseWebResource(
     Guid Id,

@@ -38,10 +38,12 @@ public class WebResourceService(IAnsiConsole console)
             ? $"Web resource plan ready: {plan.Creates.Count} creates, {plan.Updates.Count} updates, {plan.Deletes.Count} deletes"
             : "Web resource plan ready: no changes");
 
+        // TotalChanges deliberately excludes Skips — a skip-only plan has nothing to execute, so it must
+        // not be dragged into the executor. But its skips still have to be rendered the same way, or the
+        // reference-only warning is silently lost in exactly the steady state that produces it.
         if (plan.TotalChanges == 0)
         {
-            foreach (var a in plan.Skips)
-                console.Skip($"Web resource '{a.Name}' kept ({a.Reason})");
+            WebResourceExecutor.RenderSkips(console, plan.Skips, webresourceRoot);
 
             console.Skip("Web resources already up to date — skipping");
             return false;
@@ -51,6 +53,7 @@ public class WebResourceService(IAnsiConsole console)
         if (runMode == RunMode.DryRun)
         {
             WritePlanReport(plan, PlanReportMode.DryRun, publishAfterSync);
+            WebResourceExecutor.RenderSkips(console, plan.Skips, webresourceRoot);
             return true;
         }
 
