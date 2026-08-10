@@ -22,11 +22,22 @@ public class PluginTypeMetadataScanner(IAnsiConsole console)
 
     // Messages that support entity images.
     // https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#define-entity-images
+    // That page's table omits CreateMultiple/UpdateMultiple; the bulk messages do support images, but only
+    // via IPluginExecutionContext4's PreEntityImagesCollection/PostEntityImagesCollection, which is
+    // documented separately:
+    // https://learn.microsoft.com/en-us/power-apps/developer/data-platform/write-plugin-multiple-operation
     private static readonly HashSet<string> ImageSupportedMessages =
     [
         "Assign", "Create", "CreateMultiple", "Delete", "DeliverIncoming", "DeliverPromote",
         "Merge", "Route", "Send", "SetState", "Update", "UpdateMultiple"
     ];
+
+    // Rendered into user-facing errors — derived from the set above so the two can't drift apart.
+    private static string ImageSupportedMessageList => string.Join(", ", ImageSupportedMessages.Order());
+
+    // Pre-images are meaningless on a creation message: the record does not exist before the operation.
+    // Matches the bulk twin too — CreateMultiple has the same semantics as Create here.
+    private static bool IsCreationMessage(string message) => message is "Create" or "CreateMultiple";
 
     /// <summary>KD2's test on its own: does <paramref name="assembly"/> carry any plugin-bearing type?</summary>
     /// <remarks>
@@ -374,7 +385,7 @@ public class PluginTypeMetadataScanner(IAnsiConsole console)
             var stepFilter = msg is "Update" or "UpdateMultiple" ? filteringColumns : null;
             if (stepFilter != null) anyFilterCompatible = true;
 
-            var preImageOk = msg != "Create" && ImageSupportedMessages.Contains(msg);
+            var preImageOk = !IsCreationMessage(msg) && ImageSupportedMessages.Contains(msg);
             var postImageOk = msg != "Delete" && s == (int)ProcessingStage.PostOperation && ImageSupportedMessages.Contains(msg);
 
             var stepImages = new List<PluginImageMetadata>();
@@ -610,15 +621,15 @@ public class PluginTypeMetadataScanner(IAnsiConsole console)
         if (!ImageSupportedMessages.Contains(message))
             throw new InvalidOperationException(
                 $"{className}: entity images are not supported for the {message} message. " +
-                $"Supported: Assign, Create, Delete, DeliverIncoming, DeliverPromote, Merge, Route, Send, SetState, Update. " +
+                $"Supported: {ImageSupportedMessageList}. " +
                 $"See https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#define-entity-images");
 
         var hasPreImage = images.Any(i => i.ImageType == (int)ImageType.PreImage);
         var hasPostImage = images.Any(i => i.ImageType == (int)ImageType.PostImage);
 
-        if (hasPreImage && message == "Create")
+        if (hasPreImage && IsCreationMessage(message))
             throw new InvalidOperationException(
-                $"{className}: [PreImage] cannot be used on a Create step — the record does not exist before Create. " +
+                $"{className}: [PreImage] cannot be used on a {message} step — the record does not exist before it is created. " +
                 $"See https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in#define-entity-images");
 
         if (hasPostImage && message == "Delete")
@@ -645,7 +656,7 @@ public class PluginTypeMetadataScanner(IAnsiConsole console)
         if (!hasPreImage || anyPreImageCompatible) return;
         throw new InvalidOperationException(
             $"{className}: [PreImage] is present but none of the [[Handles]] registrations support pre-images. " +
-            $"Remove [PreImage] or add a non-Create [[Handles]] on a supported message.");
+            $"Remove [PreImage] or add a [[Handles]] on a supported message other than Create or CreateMultiple.");
     }
 
     internal static void ValidateMultiHandlesPostImage(string className, bool hasPostImage, bool anyPostImageCompatible)

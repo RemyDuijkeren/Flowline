@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`push --no-publish` now warns whenever nothing publishes**, not only when web resources are out of scope. A plugin-only repo asks for web resources under the default scope but has no project to prepare, so the flag was silently inert.
 
+- **`[PreImage]` on a `CreateMultiple` step is now rejected**, matching the existing rule for `Create` — the record doesn't exist before it's created, so a pre-image can't be populated either way. The guard tested the message name for equality against `Create`, so the bulk twin slipped past it. The single-step path raised a confusing late error; the multi-`[Handles]` path was worse, silently attaching the image to a step that can never supply it. Both now route through one predicate.
+
+- **The "entity images are not supported" error no longer contradicts itself**: its list of supported messages was hardcoded and had drifted from the actual allowlist, telling you `CreateMultiple` and `UpdateMultiple` were unsupported when both accept images. The message is now derived from the allowlist it validates against.
+
 ## [0.16.0] - 2026-08-07
 
 ### Added

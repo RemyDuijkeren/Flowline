@@ -805,6 +805,30 @@ public class PluginAssemblyReaderTests
     }
 
     [Fact]
+    public void ValidateImages_PreImageOnCreateMultiple_Throws()
+    {
+        var images = new List<PluginImageMetadata> { new("Pre Image", "preimage", (int)ImageType.PreImage, "name") };
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            PluginTypeMetadataScanner.ValidateImages("MockPreCreateMultiplePlugin", "CreateMultiple", (int)ProcessingStage.PostOperation, images));
+
+        Assert.Contains("CreateMultiple", ex.Message);
+        Assert.Contains("does not exist before it is created", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateImages_UnsupportedMessage_NamesBulkMessagesAsSupported()
+    {
+        var images = new List<PluginImageMetadata> { new("Post Image", "postimage", (int)ImageType.PostImage, "name") };
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            PluginTypeMetadataScanner.ValidateImages("MockPlugin", "Associate", (int)ProcessingStage.PostOperation, images));
+
+        Assert.Contains("CreateMultiple", ex.Message);
+        Assert.Contains("UpdateMultiple", ex.Message);
+    }
+
+    [Fact]
     public void ValidateImages_ImageOnUpdateMultiple_DoesNotThrow()
     {
         var images = new List<PluginImageMetadata> { new("Pre Image", "preimage", (int)ImageType.PreImage, "name") };
