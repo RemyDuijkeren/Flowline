@@ -375,6 +375,91 @@ public class WebResourceServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SyncSolutionAsync_GlobalOrphanOwnedByOtherUnmanagedSolution_ShouldThrowBeforeMutating()
+    {
+        var webResourceId = Guid.NewGuid();
+        File.WriteAllText(Path.Combine(_webresourceRoot, "shared.js"), "new content");
+        SetupGlobalOrphans(RemoteWebResource(webResourceId, "my_MySolution/shared.js", "old content"));
+        SetupOwnership(webResourceId, ("OtherSolution", false));
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
+
+        Assert.Equal(ExitCode.ValidationFailed, ex.ExitCode);
+        var combined = ex.Message + _console.Output;
+        Assert.Contains("shared.js", combined);
+        Assert.Contains("my_MySolution/shared.js", combined);
+        Assert.Contains("OtherSolution", combined);
+        Assert.Contains("co-management", combined, StringComparison.OrdinalIgnoreCase);
+
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "AddSolutionComponent")), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml")), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_GlobalOrphanOwnedSolelyByManagedSolution_ShouldThrowNamingManagedOwnerNotCoManagement()
+    {
+        var webResourceId = Guid.NewGuid();
+        File.WriteAllText(Path.Combine(_webresourceRoot, "shared.js"), "new content");
+        SetupGlobalOrphans(RemoteWebResource(webResourceId, "my_MySolution/shared.js", "old content"));
+        // Pinned: zero unmanaged owners, managed reference only — WebResourceOwnership(0, false, true).
+        // A count-only predicate (NonDefaultUnmanagedSolutionCount > 0) would miss this and silently adopt.
+        SetupOwnership(webResourceId, ("ManagedVendor", true));
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
+
+        Assert.Equal(ExitCode.ValidationFailed, ex.ExitCode);
+        var combined = ex.Message + _console.Output;
+        Assert.Contains("ManagedVendor", combined);
+        Assert.DoesNotContain("co-management", combined, StringComparison.OrdinalIgnoreCase);
+
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        await _serviceMock.DidNotReceive().ExecuteAsync(
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "AddSolutionComponent")), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_TwoGlobalOrphansForeignOwned_ShouldThrowNamingBoth()
+    {
+        var id1 = Guid.NewGuid();
+        var id2 = Guid.NewGuid();
+        File.WriteAllText(Path.Combine(_webresourceRoot, "shared1.js"), "content 1");
+        File.WriteAllText(Path.Combine(_webresourceRoot, "shared2.js"), "content 2");
+        SetupGlobalOrphans(
+            RemoteWebResource(id1, "my_MySolution/shared1.js", "old 1"),
+            RemoteWebResource(id2, "my_MySolution/shared2.js", "old 2"));
+        SetupOwnership(id1, ("OtherSolution", false));
+        SetupOwnership(id2, ("OtherSolution", false));
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
+
+        var combined = ex.Message + _console.Output;
+        Assert.Contains("shared1.js", combined);
+        Assert.Contains("shared2.js", combined);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_GlobalOrphanForeignOwnedIdenticalContent_ShouldStillThrow()
+    {
+        var webResourceId = Guid.NewGuid();
+        var content = "same content";
+        File.WriteAllText(Path.Combine(_webresourceRoot, "shared.js"), content);
+        SetupGlobalOrphans(RemoteWebResource(webResourceId, "my_MySolution/shared.js", content));
+        SetupOwnership(webResourceId, ("OtherSolution", false));
+
+        await Assert.ThrowsAsync<FlowlineException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
+
+        await _serviceMock.DidNotReceive().ExecuteAsync(
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "AddSolutionComponent")), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task SyncSolutionAsync_SolutionNotFound_ShouldThrow()
     {
         _serviceMock.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "solution")), Arg.Any<CancellationToken>())

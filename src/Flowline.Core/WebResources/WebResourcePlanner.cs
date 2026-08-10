@@ -19,6 +19,7 @@ public class WebResourcePlanner(IAnsiConsole console)
         var localNames = snapshot.LocalResources.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var dataverseNames = snapshot.DataverseResources.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var targetSolutionName = snapshot.Solution.UniqueName;
+        var ownershipViolations = new List<string>();
 
         // Don't exist in this solution — create, or add to solution if already in Dataverse globally
         foreach (var name in localNames.Except(dataverseNames, StringComparer.OrdinalIgnoreCase))
@@ -27,6 +28,18 @@ public class WebResourcePlanner(IAnsiConsole console)
 
             if (snapshot.GlobalOrphans.TryGetValue(name, out var existing))
             {
+                // A global orphan owned by another solution (unmanaged or managed) would otherwise be
+                // silently overwritten and adopted below — block it instead. IsInCurrentUnmanagedSolution
+                // is never checked: orphanNames is by construction the set of local names absent from the
+                // current solution, so a record found here can never already be a current-solution member.
+                var foreignOwned = existing.Ownership.NonDefaultUnmanagedSolutionCount > 0
+                                 || existing.Ownership.HasManagedSolutionReference;
+                if (foreignOwned)
+                {
+                    ownershipViolations.Add(DescribeOwnershipViolation(local.RelativePath, name, existing.Ownership));
+                    continue;
+                }
+
                 // clearDependencyXmlWhenUnchanged: false — unlike the exists-in-both branch below, a
                 // global orphan's Entity never already carries a stale dependencyxml value to clear.
                 if (TryBuildUpdate(local, existing, snapshot, clearDependencyXmlWhenUnchanged: false, out var reasonGlobal))
@@ -47,6 +60,15 @@ public class WebResourcePlanner(IAnsiConsole console)
                 WebResourceAction.Create,
                 Entity: entity,
                 SolutionName: targetSolutionName));
+        }
+
+        if (ownershipViolations.Count > 0)
+        {
+            foreach (var violation in ownershipViolations)
+                console.Error(violation);
+
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"{ownershipViolations.Count} web resource file(s) are owned by another solution.");
         }
 
         // Exist in both, update them if needed
@@ -141,6 +163,18 @@ public class WebResourcePlanner(IAnsiConsole console)
                 result.Add(new DependencyLibrary(name, ResolveDisplayName(name, snapshot), Guid.NewGuid()));
         }
         return result;
+    }
+
+    // Managed-only (no unmanaged owner) never mentions co-management — that word implies two solutions
+    // both legitimately maintaining the resource, which isn't the ISV/first-party case (KTD2). Any
+    // unmanaged owner does, since that's the actual co-management hazard being blocked (KTD1).
+    static string DescribeOwnershipViolation(string relativePath, string name, WebResourceOwnership ownership)
+    {
+        var owners = string.Join(", ", ownership.OwningSolutionNames.Select(o => $"'{o}'"));
+
+        return ownership.NonDefaultUnmanagedSolutionCount == 0
+            ? $"'{relativePath}': '{name}' is owned by managed solution {owners} — Flowline won't create an unmanaged layer over it. Reference it with // flowline:depends instead."
+            : $"'{relativePath}': '{name}' is already owned by {owners} — cross-solution co-management isn't supported. Reference it with // flowline:depends instead.";
     }
 
     // Maker Portal stores the fully-qualified webresource name (e.g. "av_ns/example1.js") in Library@name,
