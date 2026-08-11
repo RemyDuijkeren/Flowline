@@ -120,6 +120,9 @@ h3{font-size:15px;font-weight:700;color:var(--text);margin:18px 0 8px}
 .chip-cx-med{background:#fffbeb;color:#92400e;border-color:#fde68a}
 .chip-cx-high{background:#fef2f2;color:#b91c1c;border-color:#fecaca}
 .chip-done{background:var(--ax5-bg);color:var(--ax5-text)}
+.chip-planned{background:#dbeafe;color:#1d4ed8;border-color:#93c5fd}
+.impl-note.planned{background:#eff6ff;border-color:#93c5fd}
+.impl-note.planned .impl-label{color:#1d4ed8}
 .idea-card.done{border-color:var(--ax5-text)}
 .impl-note{background:var(--ax5-bg);border:1px solid var(--ax5-text);border-radius:8px;padding:12px 14px;margin-bottom:18px}
 .impl-note .impl-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--ax5-text);margin-bottom:6px}
@@ -242,7 +245,7 @@ footer.composition-signal{margin-top:60px;padding-top:20px;border-top:1px solid 
       <li><a href="#idea-2">One per-target state manifest</a></li>
       <li><a href="#idea-3">Environments as data, and disposable</a></li>
       <li><a href="#idea-4">Keep the change record sync already computes — and let it carry deletions</a></li>
-      <li><a href="#idea-5"><code>push --watch</code> for the inner loop</a></li>
+      <li><a href="#idea-5"><code>push --watch</code> for the inner loop</a> <span class="chip chip-planned">PLANNED</span></li>
       <li><a href="#idea-6">Act on declared deletions with a dependency-ordered deleter</a></li>
       <li><a href="#idea-7">Resolve auth before any Dataverse write</a></li>
     </ol>
@@ -461,12 +464,17 @@ footer.composition-signal{margin-top:60px;padding-top:20px;border-top:1px solid 
       <div class="idea-rank">5</div>
       <div class="idea-title"><code>push --watch</code> for the inner loop</div>
       <div class="idea-chips">
+        <span class="chip chip-planned">PLANNED</span>
         <span class="axis-badge ax2">Axis 2 · DEV inner loop</span>
         <span class="chip chip-med">Confidence 70%</span>
         <span class="chip chip-cx-med">Complexity Medium</span>
       </div>
     </div>
     <div class="idea-body">
+      <div class="impl-note planned">
+        <div class="impl-label">Planned — 2026-08-08</div>
+        <p>Plan written, not yet implemented: <code>docs/plans/2026-08-08-001-feat-push-watch-mode-plan.md</code> (implementation-ready). Scope is watch mode for <code>push</code> only — one-shot <code>push</code>, <code>sync</code>, and <code>deploy</code> semantics unchanged, and Flowline does not take over building.</p>
+      </div>
       <dl>
         <div class="idea-field"><dt>Description</dt><dd>The web-resource loop today is <code>npm run build</code> → <code>flowline push</code> → repeat, by hand, all day. A watch mode holds one authenticated session, watches the build output, content-hashes each candidate, pushes only what changed, and debounces the publish.</dd></div>
         <div class="idea-field"><dt>Basis</dt><dd><code>direct:</code> a repo-wide search finds no <code>--watch</code> flag and no <code>FileSystemWatcher</code> anywhere under <code>src/</code> — confirmed independently by the verifier. <code>direct:</code> the content-hash-skip principle this depends on is already shipped and already load-bearing in a design decision: <a href="https://github.com/RemyDuijkeren/Flowline/blob/master/CHANGELOG.md">CHANGELOG.md</a>:12, on removing <code>push --scope formevents</code>, states "The separate scope only skipped the web resource pass — and that pass writes nothing when <code>dist/</code> is unchanged, so it bought no fewer writes."</dd></div>
