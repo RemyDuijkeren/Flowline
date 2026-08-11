@@ -54,6 +54,18 @@ public class WebResourceServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SyncSolutionAsync_SnapshotTrees_RenderSideBySide()
+    {
+        File.WriteAllText(Path.Combine(_webresourceRoot, "local.js"), "console.log('local');");
+        SetupWebResources(RemoteWebResource(Guid.NewGuid(), "my_remote.js", "console.log('remote');"));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false, runMode: RunMode.DryRun);
+
+        Assert.Contains(_console.Lines, l => l.Contains("Local (1)") && l.Contains("Dataverse (1)"));
+        Assert.Contains(_console.Lines, l => l.Contains("my_MySolution") && l.Contains("my_remote.js"));
+    }
+
+    [Fact]
     public async Task SyncSolutionAsync_CreateNewWebResource_ShouldCreateAndPublishTargeted()
     {
         File.WriteAllText(Path.Combine(_webresourceRoot, "test.js"), "console.log('test');");

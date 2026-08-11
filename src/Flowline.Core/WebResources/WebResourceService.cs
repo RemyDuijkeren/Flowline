@@ -34,9 +34,12 @@ public class WebResourceService(IAnsiConsole console)
         // Phase 2: Plan registration (pure, synchronous)
         var plan = _planner.Plan(snapshot);
         WritePlanReport(plan, PlanReportMode.Verbose, publishAfterSync);
-        console.Info(plan.TotalChanges > 0
-            ? $"Web resource plan ready: {plan.Creates.Count} creates, {plan.Updates.Count} updates, {plan.Deletes.Count} deletes"
-            : "Web resource plan ready: no changes");
+        // Counts every executable bucket, not just create/update/delete — a solution-only add or remove
+        // is a real change, and listing three zeros next to it reads as "nothing happened".
+        console.Info($"Web resource plan ready: {PlanReportFormatting.JoinCounts(
+            (plan.Deletes.Count, "delete(s)"), (plan.RemovesFromSolution.Count, "remove(s)"),
+            (plan.Creates.Count, "create(s)"), (plan.Updates.Count, "update(s)"),
+            (plan.AddsToSolution.Count, "add(s)"))}");
 
         // TotalChanges deliberately excludes Skips — a skip-only plan has nothing to execute, so it must
         // not be dragged into the executor. But its skips still have to be rendered the same way, or the
@@ -62,11 +65,29 @@ public class WebResourceService(IAnsiConsole console)
         return true;
     }
 
+    // Local left, Dataverse right — the two sides are read against each other, and stacked trees put the
+    // matching names a screen apart. The left column needs an explicit width: Tree measures greedily (it
+    // reports the full available width as its maximum), so an auto-sized column stretches to half the
+    // terminal and leaves a gap the eye has to jump.
     void WriteSnapshotVerbose(WebResourceSyncSnapshot snapshot)
     {
-        console.Verbose(BuildResourceTree($"Dataverse ({snapshot.DataverseResources.Count})", snapshot.DataverseResources.Keys));
-        console.Verbose(BuildResourceTree($"Local ({snapshot.LocalResources.Count})", snapshot.LocalResources.Keys));
+        var localLabel = $"Local ({snapshot.LocalResources.Count})";
+        var grid = new Grid();
+        grid.AddColumn(new GridColumn().PadRight(4).Width(TreeWidth(localLabel, snapshot.LocalResources.Keys)));
+        grid.AddColumn();
+        grid.AddRow(
+            BuildResourceTree(localLabel, snapshot.LocalResources.Keys),
+            BuildResourceTree($"Dataverse ({snapshot.DataverseResources.Count})", snapshot.DataverseResources.Keys));
+
+        console.Verbose(grid);
     }
+
+    // Widest rendered line: every tree level costs 4 columns of guides ("├── ", "│   ") before the name.
+    // Folder segments get their own line, so a long folder under short files still sets the width.
+    static int TreeWidth(string label, IEnumerable<string> names) =>
+        names.SelectMany(n => n.Split('/').Select((segment, depth) => (depth + 1) * 4 + segment.Length))
+            .Append(label.Length)
+            .Max();
 
     static Tree BuildResourceTree(string label, IEnumerable<string> names)
     {

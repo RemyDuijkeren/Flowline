@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`push` no longer overwrites a web resource another solution owns** (breaking): a local file whose logical name matched a resource outside the current solution had its content replaced with the local copy and was pulled into the solution, with no check on who owned it. Both teams' pushes then fought over the same record — each one silently reverting the other — and the adopting solution shipped its copy downstream on every deploy. Push now refuses, naming the file, the logical name, and the owning solution, and reports every offending file in one pass before anything reaches Dataverse. A resource owned by a *managed* solution is refused for a different reason and says so: writing to it would create an unmanaged layer over the vendor's component. A resource that exists but belongs to no other solution is still adopted, so adopting a solution built outside Flowline is unaffected. To reference a shared resource without owning it, declare it with `// flowline:depends` and keep the file out of the web resource folder.
 
+- **Verbose web resource snapshot trees now print side by side**: Local on the left, Dataverse on the right, so the two lists can be compared without scrolling between them.
+
 - **`// flowline:depends` now also means "I don't own this"**: a resource another solution owns that some local file declares as a dependency is skipped rather than blocking the push — no create, no update, no adoption — and the referencing file still registers the dependency. Because the file in the web resource folder is then doing nothing, the skip warns and says to remove it, rather than passing silently and letting you re-create the condition on the next push. An ambiguous bare annotation name — one matching several candidates — is rejected with a message asking you to fully qualify it, instead of being reported as a co-management conflict it isn't.
 
 ### Removed
@@ -24,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`push` no longer re-uploads an unchanged plugin package**: change detection hashed the `.nupkg` file's own bytes, and NuGet rewrites the container on every pack — a fresh GUID in the psmdcp entry name, pack-time timestamps on every entry, and the nuspec's version and commit — so the hash never matched even on a build that recompiled nothing. Every push hit this, because `push` deletes the package before building and pack rebuilds the container from scratch. It now hashes the package's `lib/` payload, which is what Dataverse consumes. The first push after upgrading re-uploads once, then settles. A push after a commit still uploads: MinVer stamps the new version into the assembly itself, so the payload genuinely changed.
+
+- **The web resource plan line now counts solution adds and removes**: a push that only added a resource to the solution or removed one from it reported "0 creates, 0 updates, 0 deletes" while the run below it removed two resources. The line now lists every non-zero bucket — deletes, removes, creates, updates, adds — and says "no changes" when there are none, matching the verbose summary right above it.
 
 - **`push --no-publish` now warns whenever nothing publishes**, not only when web resources are out of scope. A plugin-only repo asks for web resources under the default scope but has no project to prepare, so the flag was silently inert.
 
