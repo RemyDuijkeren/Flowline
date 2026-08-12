@@ -178,78 +178,98 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
     {
         var (sNew, entityLogicalNames, namedComponents) = ComponentClassifier.ParseLocalSource(dataverseSolutionSrcRoot);
 
-        var sOld = await console.Status().FlowlineSpinner()
-            .StartAsync($"Querying orphan components in [bold]{solutionName}[/]...",
-                _ => QuerySolutionComponentsAsync(service, solutionName, ct))
-            .ConfigureAwait(false);
+        // One spinner for the whole comparison, retitled per phase. The component query is the smaller
+        // half of the wait — identity resolution and handler dispatch behind it are a dozen-plus further
+        // round trips — so a spinner scoped to the query alone tore the live display down and left the
+        // rest looking hung (measured at ~8s of silence against a real solution). Console writes from
+        // inside here (skips, warnings, handler notes) render above the spinner; the report itself prints
+        // after it closes.
+        CompareResult? earlyResult = null;
+        IReadOnlyList<OrphanEntry> entries = [];
 
-        if (sOld.Count == 0)
-        {
-            console.Skip("No solution components in Dataverse — skipping orphan check.");
-            return new CompareResult([], Skipped: true);
-        }
+        await console.Status().FlowlineSpinner().StartAsync(
+            $"Querying orphan components in [bold]{solutionName}[/]...",
+            async ctx =>
+            {
+                var sOld = await QuerySolutionComponentsAsync(service, solutionName, ct).ConfigureAwait(false);
 
-        var sNewIds = sNew.Select(c => c.ObjectId).ToHashSet();
+                if (sOld.Count == 0)
+                {
+                    console.Skip("No solution components in Dataverse — skipping orphan check.");
+                    earlyResult = new CompareResult([], Skipped: true);
+                    return;
+                }
 
-        if (sNew.Count == 0)
-        {
-            console.Warning("No components in Solution.xml — orphan check skipped to prevent mass deletion.");
-            return new CompareResult([], Skipped: true);
-        }
+                var sNewIds = sNew.Select(c => c.ObjectId).ToHashSet();
 
-        // Entity roots in Solution.xml are recorded by schemaName, not MetadataId — resolve them live
-        // so entity components aren't misdiagnosed as orphans. See ComponentClassifier.ParseSolutionXmlComponents.
-        if (entityLogicalNames.Count > 0)
-        {
-            var resolvedEntityIds = await ResolveEntityMetadataIdsAsync(service, entityLogicalNames, ct).ConfigureAwait(false);
-            sNewIds.UnionWith(resolvedEntityIds);
-        }
+                if (sNew.Count == 0)
+                {
+                    console.Warning("No components in Solution.xml — orphan check skipped to prevent mass deletion.");
+                    earlyResult = new CompareResult([], Skipped: true);
+                    return;
+                }
 
-        // Other types recorded by schemaName instead of id (e.g. WebResource — its id is not portable
-        // across environments, so pac always records it by name) — resolve live for the same reason.
-        //
-        // Role isn't schemaName-declared in Solution.xml (it carries a raw id, see ComponentClassifier),
-        // but its raw id isn't portable either — Dataverse reconciles security roles by name on import
-        // when a role of that name already exists in the target. Its local name comes from the unpacked
-        // Roles/<name>.xml file instead and is folded into the same by-name resolution, additively
-        // alongside the raw id already captured in sNew.
-        var roleNames = ComponentClassifier.ScanRoleNames(dataverseSolutionSrcRoot);
-        var resolvableNamedComponents = roleNames.Count == 0
-            ? namedComponents
-            : namedComponents.Concat(roleNames.Select(name => (ComponentType: RoleComponentType, SchemaName: name))).ToList();
+                ctx.Phase($"Resolving component ids in [bold]{solutionName}[/]...");
 
-        if (resolvableNamedComponents.Count > 0)
-        {
-            var resolvedNamedIds = await ResolveNamedComponentIdsAsync(service, resolvableNamedComponents, ct).ConfigureAwait(false);
-            sNewIds.UnionWith(resolvedNamedIds);
-        }
+                // Entity roots in Solution.xml are recorded by schemaName, not MetadataId — resolve them live
+                // so entity components aren't misdiagnosed as orphans. See ComponentClassifier.ParseSolutionXmlComponents.
+                if (entityLogicalNames.Count > 0)
+                {
+                    var resolvedEntityIds = await ResolveEntityMetadataIdsAsync(service, entityLogicalNames, ct).ConfigureAwait(false);
+                    sNewIds.UnionWith(resolvedEntityIds);
+                }
 
-        // OptionSet roots are also schemaName-declared, but OptionSet is metadata, not a data-table row,
-        // so ResolveNamedComponentIdsAsync can't resolve it. Resolve via RetrieveOptionSetRequest
-        // instead and fold into sNewIds before the orphan diff runs.
-        var optionSetSchemaNames = namedComponents
-            .Where(c => c.ComponentType == OptionSetComponentType)
-            .Select(c => c.SchemaName)
-            .ToList();
-        if (optionSetSchemaNames.Count > 0)
-        {
-            var resolvedOptionSetIds = await ResolveOptionSetMetadataIdsAsync(service, optionSetSchemaNames, ct).ConfigureAwait(false);
-            sNewIds.UnionWith(resolvedOptionSetIds);
-        }
+                // Other types recorded by schemaName instead of id (e.g. WebResource — its id is not portable
+                // across environments, so pac always records it by name) — resolve live for the same reason.
+                //
+                // Role isn't schemaName-declared in Solution.xml (it carries a raw id, see ComponentClassifier),
+                // but its raw id isn't portable either — Dataverse reconciles security roles by name on import
+                // when a role of that name already exists in the target. Its local name comes from the unpacked
+                // Roles/<name>.xml file instead and is folded into the same by-name resolution, additively
+                // alongside the raw id already captured in sNew.
+                var roleNames = ComponentClassifier.ScanRoleNames(dataverseSolutionSrcRoot);
+                var resolvableNamedComponents = roleNames.Count == 0
+                    ? namedComponents
+                    : namedComponents.Concat(roleNames.Select(name => (ComponentType: RoleComponentType, SchemaName: name))).ToList();
 
-        var orphans = sOld
-            .Where(c => !sNewIds.Contains(c.ObjectId))
-            .Where(c => !ComponentClassifier.IsWellKnownSystemComponent(c.ObjectId))
-            .ToList();
+                if (resolvableNamedComponents.Count > 0)
+                {
+                    var resolvedNamedIds = await ResolveNamedComponentIdsAsync(service, resolvableNamedComponents, ct).ConfigureAwait(false);
+                    sNewIds.UnionWith(resolvedNamedIds);
+                }
 
-        if (orphans.Count == 0)
-        {
-            console.Ok("No orphan components.");
-            return new CompareResult([]);
-        }
+                // OptionSet roots are also schemaName-declared, but OptionSet is metadata, not a data-table row,
+                // so ResolveNamedComponentIdsAsync can't resolve it. Resolve via RetrieveOptionSetRequest
+                // instead and fold into sNewIds before the orphan diff runs.
+                var optionSetSchemaNames = namedComponents
+                    .Where(c => c.ComponentType == OptionSetComponentType)
+                    .Select(c => c.SchemaName)
+                    .ToList();
+                if (optionSetSchemaNames.Count > 0)
+                {
+                    var resolvedOptionSetIds = await ResolveOptionSetMetadataIdsAsync(service, optionSetSchemaNames, ct).ConfigureAwait(false);
+                    sNewIds.UnionWith(resolvedOptionSetIds);
+                }
 
-        var detectionContext = new DetectionContext(dataverseSolutionSrcRoot, service, solutionName, environmentUrl, mode, entityLogicalNames, deleteOrphansConsent);
-        var entries = await DispatchToHandlersAsync(detectionContext, namedComponents, orphans, ct).ConfigureAwait(false);
+                var orphans = sOld
+                    .Where(c => !sNewIds.Contains(c.ObjectId))
+                    .Where(c => !ComponentClassifier.IsWellKnownSystemComponent(c.ObjectId))
+                    .ToList();
+
+                if (orphans.Count == 0)
+                {
+                    console.Ok("No orphan components.");
+                    earlyResult = new CompareResult([]);
+                    return;
+                }
+
+                ctx.Phase($"Checking {orphans.Count} orphan candidate{(orphans.Count == 1 ? "" : "s")}...");
+
+                var detectionContext = new DetectionContext(dataverseSolutionSrcRoot, service, solutionName, environmentUrl, mode, entityLogicalNames, deleteOrphansConsent);
+                entries = await DispatchToHandlersAsync(detectionContext, namedComponents, orphans, ct).ConfigureAwait(false);
+            }).ConfigureAwait(false);
+
+        if (earlyResult != null) return earlyResult;
 
         PrintReport(entries, mode, solutionName, environmentUrl, noDeleteHint, managedUpgrade);
 

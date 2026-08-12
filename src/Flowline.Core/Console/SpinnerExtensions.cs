@@ -20,6 +20,17 @@ public static class SpinnerExtensions
                          .SpinnerStyle(new Style(foreground: s_spinnerColor)));
     }
 
+    extension(StatusContext ctx)
+    {
+        /// <summary>
+        /// Retitles a running spinner for the next phase of a multi-step wait, keeping the Flowline
+        /// spinner colour that <see cref="FlowlineStatus"/> applied to the opening label — a bare
+        /// <c>ctx.Status(...)</c> drops it.
+        /// </summary>
+        public void Phase(string statusText)
+            => ctx.Status($"[{s_spinnerColor}]{statusText}[/]");
+    }
+
     extension<T>(Task<T> task)
     {
         /// <summary>
