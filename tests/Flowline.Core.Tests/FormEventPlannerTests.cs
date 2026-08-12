@@ -500,6 +500,109 @@ public class FormEventPlannerTests
         Assert.Empty(entry.UnrecognizedHandlers);
     }
 
+    // --- R9: FormEventFormPlan.DroppedLibraryNames (currentLibraries minus DesiredLibraries) ---
+
+    [Fact]
+    public void Plan_CurrentLibraryNoLongerNeeded_ReportedInDroppedLibraryNames()
+    {
+        // Same setup as Plan_LibraryWithNoHandlerReferencingIt_RemovedRegardlessOfOwnership — proves the
+        // library leaving DesiredLibraries is also surfaced as a drop, not just absent from the desired set.
+        var orphanLibrary = new FormLibrary("av_/orphan.js", FormEventDeterministicId.ForLibrary("av_/orphan.js"));
+        var currentLibraries = new HashSet<FormLibrary> { orphanLibrary };
+        var formXml = BuildFormXml(libraries: currentLibraries);
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, null, null);
+        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/newlib.js", "function onLoad() {}", "src/newlib.ts");
+
+        var snapshot = BuildSnapshot([resolved], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.NotNull(entry.DroppedLibraryNames);
+        Assert.Contains("av_/orphan.js", entry.DroppedLibraryNames);
+        Assert.DoesNotContain("av_/newlib.js", entry.DroppedLibraryNames);
+    }
+
+    [Fact]
+    public void Plan_LibrarySetUnchanged_ReportsEmptyDroppedLibraryNames()
+    {
+        // Same setup as Plan_ParametersChangedOnOtherwiseIdenticalHandler_ProducesPlanEntryWithNewParameters
+        // — a plan entry IS emitted (Parameters changed), but the library set itself is identical before
+        // and after, so nothing should show up as dropped.
+        var handlerId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/lib.js");
+        var current = new HashSet<FormEventHandler> { new("onLoad", "av_/lib.js", handlerId, "oldParams") };
+        var libraries = new HashSet<FormLibrary> { new("av_/lib.js", FormEventDeterministicId.ForLibrary("av_/lib.js")) };
+        var formXml = BuildFormXml(FormEventType.OnLoad, current, libraries);
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, null, "newParams");
+        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/lib.js", "function onLoad() {}", "src/lib.ts");
+
+        var snapshot = BuildSnapshot([resolved], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.NotNull(entry.DroppedLibraryNames);
+        Assert.Empty(entry.DroppedLibraryNames);
+    }
+
+    [Fact]
+    public void Plan_LibraryStillNeededByOtherEvent_NotInDroppedLibraryNames()
+    {
+        // Same setup as Plan_LibraryStillNeededByOtherEvent_NotRemovedEvenWhenThisEventsHandlerWasOrphaned
+        // — the library must not be reported as dropped just because ONE event's handler on it was orphaned
+        // when the OTHER event still needs it.
+        var staleOnLoadId = FormEventDeterministicId.ForHandler("account", "Account Main", FormEventType.OnLoad, "onLoad", "av_/shared.js");
+        var currentOnLoad = new HashSet<FormEventHandler> { new("onLoad", "av_/shared.js", staleOnLoadId, "") };
+        var currentOnSave = new List<FormEventHandler> { new("onSave", "av_/shared.js", Guid.NewGuid(), "") }; // kept via annotation below
+
+        var xdoc = XDocument.Parse(BuildFormXml(FormEventType.OnLoad, currentOnLoad));
+        FormXmlEventSerializer.SetHandlers(xdoc, FormEventType.OnSave, currentOnSave);
+        FormXmlEventSerializer.SetLibraries(xdoc, new HashSet<FormLibrary> { new("av_/shared.js", Guid.NewGuid()) });
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", xdoc.ToString());
+
+        var onSaveAnnotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnSave, "onSave", null);
+        var onSaveResolved = new ResolvedFormEventAnnotation(onSaveAnnotation, "av_/shared.js", "function onSave() {}", "src/shared.ts");
+
+        var snapshot = BuildSnapshot([onSaveResolved], ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var onLoadEntry = Assert.Single(plan.Forms, e => e.Event == FormEventType.OnLoad);
+        Assert.NotNull(onLoadEntry.DroppedLibraryNames);
+        Assert.DoesNotContain("av_/shared.js", onLoadEntry.DroppedLibraryNames);
+    }
+
+    [Fact]
+    public void Plan_UntrackedLibraryWithZeroReferences_NotInDroppedLibraryNamesEvenWhenPlanEntryEmitted()
+    {
+        // Same untracked/foreign library as Plan_UntrackedLibraryWithNoHandlerReferencingIt_
+        // NeverRemovedOutsideProjectBoundary, but paired with a brand-new annotation elsewhere on the form
+        // so a plan entry actually emits — proves the untracked library is never reported as dropped, even
+        // though nothing currently references it, because it sits outside Flowline's tracked-library
+        // boundary (R15).
+        var foreignLibrary = new FormLibrary("msdyn_/Account/AssetCommon.Account.Library.js",
+            FormEventDeterministicId.ForLibrary("msdyn_/Account/AssetCommon.Account.Library.js"));
+        var currentLibraries = new HashSet<FormLibrary> { foreignLibrary };
+        var formXml = BuildFormXml(libraries: currentLibraries);
+        var form = new DataverseForm(Guid.NewGuid(), "Account Main", "account", formXml);
+
+        var annotation = new FormEventAnnotation("account", "Account Main", FormEventType.OnLoad, null, null);
+        var resolved = new ResolvedFormEventAnnotation(annotation, "av_/newlib.js", "function onLoad() {}", "src/newlib.ts");
+
+        var snapshot = BuildSnapshotUntrackedLibrary([resolved], "msdyn_/Account/AssetCommon.Account.Library.js", ("account", "Account Main", form));
+
+        var plan = _planner.Plan(snapshot);
+
+        var entry = Assert.Single(plan.Forms);
+        Assert.Contains(entry.DesiredLibraries, l => l.Name == "msdyn_/Account/AssetCommon.Account.Library.js"); // kept — untracked boundary
+        Assert.NotNull(entry.DroppedLibraryNames);
+        Assert.DoesNotContain("msdyn_/Account/AssetCommon.Account.Library.js", entry.DroppedLibraryNames);
+    }
+
     [Fact]
     public void Plan_UntrackedLibraryWithNoHandlerReferencingIt_NeverRemovedOutsideProjectBoundary()
     {

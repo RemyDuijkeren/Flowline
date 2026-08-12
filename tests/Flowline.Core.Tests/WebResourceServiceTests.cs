@@ -1435,6 +1435,79 @@ public class WebResourceServiceTests : IDisposable
             Arg.Any<CancellationToken>());
     }
 
+    // --- U6/R9: dry-run subtracts a form-event cleanup's same-push library drops from reported dependents ---
+
+    [Fact]
+    public async Task SyncSolutionAsync_DryRun_OmitsFormWhoseDroppedLibraryIsThisResource()
+    {
+        var webResourceId = Guid.NewGuid();
+        var formId = Guid.NewGuid();
+        SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/delete.js", "old"));
+        SetupOwnership(webResourceId, ("MySolution", false));
+        SetupDependencies(webResourceId, DependencyRecord(60, formId, "System Form"));
+
+        var drops = new Dictionary<Guid, IReadOnlySet<string>>
+        {
+            [formId] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "my_MySolution/delete.js" }
+        };
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false,
+            runMode: RunMode.DryRun, formLibraryDropsByFormId: drops);
+
+        // Subtracted down to an empty (checked, nothing outstanding) list — neither the "still has
+        // dependents" warning nor the "dependency check failed" one applies.
+        Assert.DoesNotContain("still has dependents", _console.Output);
+        Assert.DoesNotContain("dependency check failed", _console.Output);
+        Assert.Contains("Deletes (1)", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_DryRun_KeepsFormWhenDropSetNamesADifferentResource()
+    {
+        // The form's cleanup pass dropped some OTHER library, not this resource's — the dependent must
+        // still show up, proving the subtraction keys on the resource's own name, not just form identity.
+        var webResourceId = Guid.NewGuid();
+        var formId = Guid.NewGuid();
+        SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/delete.js", "old"));
+        SetupOwnership(webResourceId, ("MySolution", false));
+        SetupDependencies(webResourceId, DependencyRecord(60, formId, "System Form"));
+
+        var drops = new Dictionary<Guid, IReadOnlySet<string>>
+        {
+            [formId] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "my_MySolution/other.js" }
+        };
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false,
+            runMode: RunMode.DryRun, formLibraryDropsByFormId: drops);
+
+        Assert.Contains("still has dependents", _console.Output);
+        Assert.Contains("System Form", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_RealPush_ReportsDependentsRegardlessOfDropSet()
+    {
+        // A real (non-dry-run) push already wrote the cleanup pass's removals before this plan is built —
+        // RetrieveDependenciesForDelete itself no longer reports the form, so the subtraction inside
+        // ApplyDependencyChecksAsync must never run here; passing a drop set must not change anything.
+        var webResourceId = Guid.NewGuid();
+        var formId = Guid.NewGuid();
+        SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/delete.js", "old"));
+        SetupOwnership(webResourceId, ("MySolution", false));
+        SetupDependencies(webResourceId, DependencyRecord(60, formId, "System Form"));
+
+        var drops = new Dictionary<Guid, IReadOnlySet<string>>
+        {
+            [formId] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "my_MySolution/delete.js" }
+        };
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false,
+            formLibraryDropsByFormId: drops);
+
+        Assert.Contains("still has dependents", _console.Output);
+        Assert.Contains("System Form", _console.Output);
+    }
+
     void SetupSolution(string solutionName, string prefix, bool isManaged = false, Guid? parentSolutionId = null)
     {
         var solution = new Entity("solution", Guid.NewGuid())

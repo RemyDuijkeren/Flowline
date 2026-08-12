@@ -53,7 +53,7 @@ public class FormEventServiceTests : IDisposable
 
         var result = await _service.CleanupOrphanedAsync(_serviceMock, _webresourceRoot, "MySolution", force: false, dryRun: false);
 
-        Assert.False(result);
+        Assert.False(result.Changed);
         await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().ExecuteAsync(
             Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml")), Arg.Any<CancellationToken>());
@@ -187,7 +187,7 @@ public class FormEventServiceTests : IDisposable
 
         var result = await _service.CleanupOrphanedAsync(_serviceMock, _webresourceRoot, "MySolution", force: false, dryRun: true);
 
-        Assert.True(result);
+        Assert.True(result.Changed);
         await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
         await _serviceMock.DidNotReceive().ExecuteAsync(
             Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "PublishXml")), Arg.Any<CancellationToken>());
@@ -204,7 +204,7 @@ public class FormEventServiceTests : IDisposable
 
         var result = await _service.CleanupOrphanedAsync(_serviceMock, _webresourceRoot, "MySolution", force: false, dryRun: false);
 
-        Assert.False(result);
+        Assert.False(result.Changed);
         Assert.DoesNotContain("already up to date", _console.Output);
     }
 
@@ -225,7 +225,7 @@ public class FormEventServiceTests : IDisposable
         var cleanupResult = await _service.CleanupOrphanedAsync(_serviceMock, _webresourceRoot, "MySolution", force: false, dryRun: true);
         var registerResult = await _service.RegisterAsync(_serviceMock, _webresourceRoot, "MySolution", force: false, dryRun: true);
 
-        Assert.True(cleanupResult);
+        Assert.True(cleanupResult.Changed);
         Assert.True(registerResult);
 
         var occurrences = _console.Output.Split("Handlers added").Length - 1;
@@ -244,7 +244,7 @@ public class FormEventServiceTests : IDisposable
         var cleanupResult = await _service.CleanupOrphanedAsync(_serviceMock, _webresourceRoot, "MySolution", force: false, dryRun: false);
         var registerResult = await _service.RegisterAsync(_serviceMock, _webresourceRoot, "MySolution", force: false, dryRun: false);
 
-        Assert.False(cleanupResult);
+        Assert.False(cleanupResult.Changed);
         Assert.False(registerResult);
 
         var occurrences = _console.Output.Split("malformed flowline annotation").Length - 1;
@@ -283,7 +283,7 @@ public class FormEventServiceTests : IDisposable
         var cleanupResult = await _service.CleanupOrphanedAsync(_serviceMock, _webresourceRoot, "MySolution", force: false, dryRun: false);
         var registerResult = await _service.RegisterAsync(_serviceMock, _webresourceRoot, "MySolution", force: false, dryRun: false);
 
-        Assert.True(cleanupResult);
+        Assert.True(cleanupResult.Changed);
         Assert.True(registerResult);
         Assert.Equal(2, writtenFormXmlInCallOrder.Count);
 

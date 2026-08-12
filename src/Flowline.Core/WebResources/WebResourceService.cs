@@ -18,6 +18,12 @@ public class WebResourceService(IAnsiConsole console)
         string solutionName,
         bool publishAfterSync = true,
         RunMode runMode = RunMode.Normal,
+        // R9: per-form library drop sets from FormEventService.CleanupOrphanedAsync's same-push cleanup
+        // pass (FormEventCleanupResult.DroppedLibraryNamesByFormId), keyed by form id. Only consulted
+        // under --dry-run (ApplyDependencyChecksAsync) — a real push already wrote cleanup's removals
+        // before this plan is built, so RetrieveDependenciesForDelete itself no longer reports the form,
+        // making the subtraction a no-op there regardless of whether this is passed.
+        IReadOnlyDictionary<Guid, IReadOnlySet<string>>? formLibraryDropsByFormId = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(webresourceRoot))
@@ -37,7 +43,7 @@ public class WebResourceService(IAnsiConsole console)
         // R2/R3: dependency check runs once per Deletes/RemovesFromSolution entry, after planning and
         // before the plan report, so the same result serves both the dry-run preview and the real push
         // (KD5). The planner stays pure and synchronous — this happens here, not inside Plan(...).
-        await ApplyDependencyChecksAsync(service, plan, runMode, cancellationToken).ConfigureAwait(false);
+        await ApplyDependencyChecksAsync(service, plan, runMode, formLibraryDropsByFormId, cancellationToken).ConfigureAwait(false);
 
         WritePlanReport(plan, PlanReportMode.Verbose, publishAfterSync);
         // Counts every executable bucket, not just create/update/delete — a solution-only add or remove
@@ -75,7 +81,8 @@ public class WebResourceService(IAnsiConsole console)
     // R2: Skips are never checked — nothing is deleted or removed for them. Skip the request round-trip
     // entirely when both delete buckets are empty, so a plan with nothing to remove issues no requests.
     static async Task ApplyDependencyChecksAsync(
-        IOrganizationServiceAsync2 service, WebResourceSyncPlan plan, RunMode runMode, CancellationToken cancellationToken)
+        IOrganizationServiceAsync2 service, WebResourceSyncPlan plan, RunMode runMode,
+        IReadOnlyDictionary<Guid, IReadOnlySet<string>>? formLibraryDropsByFormId, CancellationToken cancellationToken)
     {
         // --no-delete keeps every candidate, so nothing is at risk and the executor warns about
         // nothing. Running the lookup anyway would spend a request per candidate on a result no one
@@ -90,12 +97,34 @@ public class WebResourceService(IAnsiConsole console)
         var results = await WebResourceDependencyChecker.CheckAsync(service, ids, cancellationToken).ConfigureAwait(false);
         var dependentsById = results.ToDictionary(r => r.WebResourceId, r => r.Dependents);
 
+        // R9: under --dry-run only, a dependent that's a form whose same-push cleanup pass already
+        // dropped THIS resource's library entry is excluded — the cleanup write hasn't landed yet in a
+        // dry run, so RetrieveDependenciesForDelete still reports it, but it won't actually be there once
+        // the run applies for real. A real push never reaches this branch: cleanup already wrote before
+        // this plan was built, so the checker itself no longer reports the form — passing a drop set here
+        // is a no-op, not a double-count.
+        var dropsForDryRun = runMode == RunMode.DryRun ? formLibraryDropsByFormId : null;
+
         // Replace in place with `with` — WebResourcePlanAction is a positional record, the list stays
         // the same reference, only the entries carrying the new dependents change.
         for (var i = 0; i < plan.Deletes.Count; i++)
-            plan.Deletes[i] = plan.Deletes[i] with { Dependents = dependentsById[plan.Deletes[i].Id!.Value] };
+            plan.Deletes[i] = plan.Deletes[i] with { Dependents = SubtractDroppedFormLibraries(dependentsById[plan.Deletes[i].Id!.Value], plan.Deletes[i].Name, dropsForDryRun) };
         for (var i = 0; i < plan.RemovesFromSolution.Count; i++)
-            plan.RemovesFromSolution[i] = plan.RemovesFromSolution[i] with { Dependents = dependentsById[plan.RemovesFromSolution[i].Id!.Value] };
+            plan.RemovesFromSolution[i] = plan.RemovesFromSolution[i] with { Dependents = SubtractDroppedFormLibraries(dependentsById[plan.RemovesFromSolution[i].Id!.Value], plan.RemovesFromSolution[i].Name, dropsForDryRun) };
+    }
+
+    // dependents null (unchecked — R11/KTD8) must stay null, never collapse to an empty list. dropsByFormId
+    // null (no cleanup pass ran this push, or not a dry run) is a no-op pass-through.
+    static IReadOnlyList<WebResourceDependent>? SubtractDroppedFormLibraries(
+        IReadOnlyList<WebResourceDependent>? dependents, string resourceName,
+        IReadOnlyDictionary<Guid, IReadOnlySet<string>>? dropsByFormId)
+    {
+        if (dependents is null || dropsByFormId is null)
+            return dependents;
+
+        return dependents
+            .Where(d => !(dropsByFormId.TryGetValue(d.ObjectId, out var dropped) && dropped.Contains(resourceName)))
+            .ToList();
     }
 
     // Local left, Dataverse right — the two sides are read against each other, and stacked trees put the

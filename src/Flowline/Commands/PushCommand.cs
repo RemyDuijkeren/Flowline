@@ -220,10 +220,15 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             // KTD12: cleanup runs before web resources are created/updated/deleted — removes stale/orphaned
             // form event handlers (R14) so a pending web-resource delete never trips Dataverse's
             // "referenced by N other components" dependency fault.
-            pushedChanges |= await formEventService.CleanupOrphanedAsync(conn, webResourcesSyncFolder, solutionName, settings.HasForce("delete-form-handlers"), dryRun, publishAfterSync, formEventCachePath, cancellationToken).ConfigureAwait(false);
+            var cleanupResult = await formEventService.CleanupOrphanedAsync(conn, webResourcesSyncFolder, solutionName, settings.HasForce("delete-form-handlers"), dryRun, publishAfterSync, formEventCachePath, cancellationToken).ConfigureAwait(false);
+            pushedChanges |= cleanupResult.Changed;
 
             Logger.LogInformation("Pushing web resources: {Folder}", webResourcesSyncFolder);
-            pushedChanges |= await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder, solutionName, publishAfterSync: publishAfterSync, runMode: runMode, cancellationToken: cancellationToken).ConfigureAwait(false);
+            // R9: cleanup's per-form library drops let a dry-run's dependency check exclude a form whose
+            // reference this same push's cleanup pass already dropped — WebResourceService only consults
+            // this under --dry-run (a real push already wrote the drop before this plan is built).
+            pushedChanges |= await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder, solutionName, publishAfterSync: publishAfterSync, runMode: runMode,
+                formLibraryDropsByFormId: cleanupResult.DroppedLibraryNamesByFormId, cancellationToken: cancellationToken).ConfigureAwait(false);
 
             if (settings.NoPublish)
                 Console.Skip("Publish — skipping (--no-publish active).");

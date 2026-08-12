@@ -86,6 +86,12 @@ public record UnrecognizedHandler(FormEventHandler Handler, string ProposedAnnot
 // callers must de-duplicate by identity without discarding position (Distinct-style, not ToHashSet).
 // BulkEditEnabled is only meaningful for OnLoad plans (BehaviorInBulkEditForm is a whole-event attribute,
 // not per-handler) — the OR-across-annotations union the planner computes for the form's onload event.
+// DroppedLibraryNames (R9): currentLibraries minus DesiredLibraries, by name — the set of this form's
+// library entries that leave <formLibraries> on this push. Computed once per form (same value on every
+// plan entry that form emits, mirroring DesiredLibraries itself) so WebResourceService's dry-run
+// dependency check can ask "is resource R's library leaving form F" without re-deriving the diff.
+// Nullable only so existing positional-constructor call sites that predate R9 keep compiling — the
+// planner itself always supplies a real (possibly empty) set.
 public record FormEventFormPlan(
     Guid FormId,
     string EntityLogicalName,
@@ -95,7 +101,15 @@ public record FormEventFormPlan(
     IReadOnlySet<UnrecognizedHandler> UnrecognizedHandlers,
     IReadOnlySet<FormLibrary> DesiredLibraries,
     string? Attribute = null,
-    bool BulkEditEnabled = false);
+    bool BulkEditEnabled = false,
+    IReadOnlySet<string>? DroppedLibraryNames = null);
+
+// Widened cleanup-pass result (R9): Changed preserves the bare bool signal PushCommand already keys
+// pushedChanges off of; DroppedLibraryNamesByFormId carries the same per-form drop sets the planner
+// computed, keyed by FormId, so PushCommand can hand them to WebResourceService's dry-run dependency
+// check. RegisterAsync keeps returning bare Task<bool> (unwraps .Changed) — only cleanup's result is
+// ever consumed beyond the flag.
+public record FormEventCleanupResult(bool Changed, IReadOnlyDictionary<Guid, IReadOnlySet<string>> DroppedLibraryNamesByFormId);
 
 public class FormEventSyncPlan
 {

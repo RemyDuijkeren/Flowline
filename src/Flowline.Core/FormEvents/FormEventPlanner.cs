@@ -143,6 +143,12 @@ public class FormEventPlanner(IAnsiConsole console)
             // ONE entry needs to carry it; an event with nothing of its own to do doesn't need its own
             // entry just because a DIFFERENT event on the same form needed a new/retired library.
             var librariesChangedForForm = !desiredLibraries.SetEquals(currentLibraries);
+
+            // R9: currentLibraries minus desiredLibraries, by name — the library entries this form's push
+            // actually drops from <formLibraries>. Same value for every plan entry this form emits, same
+            // reasoning as desiredLibraries above.
+            var droppedLibraryNames = new HashSet<string>(currentLibraries.Select(l => l.Name), StringComparer.OrdinalIgnoreCase);
+            droppedLibraryNames.ExceptWith(desiredLibraries.Select(l => l.Name));
             var anyEntryEmitted = false;
 
             foreach (var result in perEventResults)
@@ -170,7 +176,8 @@ public class FormEventPlanner(IAnsiConsole console)
                     result.Unrecognized,
                     desiredLibraries,
                     result.Attribute,
-                    result.BulkEditEnabled));
+                    result.BulkEditEnabled,
+                    droppedLibraryNames));
             }
 
             // Narrow fallback: a form-wide library change with no individual event flagged — e.g. a library
@@ -189,7 +196,8 @@ public class FormEventPlanner(IAnsiConsole console)
                     result.Unrecognized,
                     desiredLibraries,
                     result.Attribute,
-                    result.BulkEditEnabled));
+                    result.BulkEditEnabled,
+                    droppedLibraryNames));
             }
         }
 

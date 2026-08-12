@@ -24,7 +24,10 @@ public class FormEventService(IAnsiConsole console)
     // a pending web-resource delete never trips Dataverse's "referenced by N other components" fault.
     // cleanupOnly narrows the plan's writes to already-safe removals only (see FormEventExecutor.BuildFormXml)
     // — it never adds a handler/library reference that isn't already on the form.
-    public Task<bool> CleanupOrphanedAsync(
+    // R9: returns the widened FormEventCleanupResult (not just the bool RegisterAsync exposes) so
+    // PushCommand can hand its per-form DroppedLibraryNamesByFormId to WebResourceService's dry-run
+    // dependency check.
+    public Task<FormEventCleanupResult> CleanupOrphanedAsync(
         IOrganizationServiceAsync2 service,
         string webresourceRoot,
         string solutionName,
@@ -36,8 +39,9 @@ public class FormEventService(IAnsiConsole console)
         SyncAsync(service, webresourceRoot, solutionName, force, dryRun, cleanupOnly: true, publishAfterSync, formEventCachePath, cancellationToken);
 
     // Registration pass — runs strictly after web resources are pushed, so new/updated handlers can only
-    // ever reference libraries that already exist in Dataverse.
-    public Task<bool> RegisterAsync(
+    // ever reference libraries that already exist in Dataverse. Its own behavior doesn't change with R9 —
+    // it just unwraps the same widened result down to the bare bool it always returned.
+    public async Task<bool> RegisterAsync(
         IOrganizationServiceAsync2 service,
         string webresourceRoot,
         string solutionName,
@@ -46,9 +50,9 @@ public class FormEventService(IAnsiConsole console)
         bool publishAfterSync = true,
         string? formEventCachePath = null,
         CancellationToken cancellationToken = default) =>
-        SyncAsync(service, webresourceRoot, solutionName, force, dryRun, cleanupOnly: false, publishAfterSync, formEventCachePath, cancellationToken);
+        (await SyncAsync(service, webresourceRoot, solutionName, force, dryRun, cleanupOnly: false, publishAfterSync, formEventCachePath, cancellationToken).ConfigureAwait(false)).Changed;
 
-    async Task<bool> SyncAsync(
+    async Task<FormEventCleanupResult> SyncAsync(
         IOrganizationServiceAsync2 service,
         string webresourceRoot,
         string solutionName,
@@ -84,18 +88,28 @@ public class FormEventService(IAnsiConsole console)
             // push doesn't print the same "up-to-date" line twice (once per phase).
             if (!cleanupOnly)
                 console.Skip("Form event handlers already up to date — skipping");
-            return false;
+            return new FormEventCleanupResult(false, EmptyDroppedLibraryNamesByFormId);
         }
+
+        // R9: per-form drop set (currentLibraries minus DesiredLibraries, computed once per form by the
+        // planner — see FormEventFormPlan.DroppedLibraryNames) needed at every exit below this point,
+        // including the dry-run-cleanup exit R9 actually depends on.
+        var droppedLibraryNamesByFormId = plan.Forms
+            .GroupBy(f => f.FormId)
+            .ToDictionary(g => g.Key, IReadOnlySet<string> (g) => g.First().DroppedLibraryNames ?? new HashSet<string>());
 
         // FormEventExecutor's dry-run preview never consults cleanupOnly — it prints and returns before
         // that point — so the plan (identical for both phases) would render the exact same preview twice.
         // Only the registration pass surfaces it; the cleanup pass just signals "has pending changes"
         // silently.
         if (dryRun && cleanupOnly)
-            return true;
+            return new FormEventCleanupResult(true, droppedLibraryNamesByFormId);
 
         // Phase 3: Execute the plan.
         await _executor.ExecuteAsync(service, snapshot, plan, force, dryRun, cleanupOnly, publishAfterSync, cancellationToken).ConfigureAwait(false);
-        return true;
+        return new FormEventCleanupResult(true, droppedLibraryNamesByFormId);
     }
+
+    static readonly IReadOnlyDictionary<Guid, IReadOnlySet<string>> EmptyDroppedLibraryNamesByFormId =
+        new Dictionary<Guid, IReadOnlySet<string>>();
 }
