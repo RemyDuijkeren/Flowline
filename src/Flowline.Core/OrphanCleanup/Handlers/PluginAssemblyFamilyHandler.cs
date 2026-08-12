@@ -21,7 +21,7 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
     // making unattended auto-delete safe.
     public HandlerStatus Status => HandlerStatus.Auto;
 
-    // Same entityLogicalName/idAttribute/nameAttribute triples as OrphanCleanupService.NameResolvableTypes'
+    // Same entityLogicalName/idAttribute/nameAttribute triples as ComponentTypeCatalog.NameResolvableTypes'
     // 91/90/92/93 rows, used for live display-name resolution.
     static readonly Dictionary<int, (string EntityLogicalName, string IdAttribute, string NameAttribute)> Lookups = new()
     {
