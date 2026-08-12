@@ -260,7 +260,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var tmpUnpackDir = Directory.CreateTempSubdirectory("flowline-deploy-").FullName;
         try
         {
-            await PacUtils.UnpackSolutionAsync(packagePath, tmpUnpackDir, _capture, cancellationToken);
+            await PacUtils.UnpackSolutionAsync(packagePath, tmpUnpackDir, sln.IncludeManaged, _capture, cancellationToken);
 
             var solutionInfo = new DeploySolutionInfo(sln.UniqueName, targetEnv.EnvironmentUrl!, sln.IncludeManaged, existingSolutionInTarget);
             var postDeployContext = new PostDeployContext(service, solutionInfo, runMode, packagePath, tmpUnpackDir, settings.HasForce("delete-orphans"));

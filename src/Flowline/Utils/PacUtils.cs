@@ -234,7 +234,9 @@ public static class PacUtils
         AnsiConsole.Console.Ok($"Solution synced from Dataverse in {duration}");
     }
 
-    public static async Task UnpackSolutionAsync(string zipPath, string destinationFolder, SubprocessCapture capture, CancellationToken cancellationToken)
+    // `pac solution unpack` defaults --packagetype to Unmanaged and fails outright ("Solution package type
+    // did not match requested type") on a managed zip, so the caller's managed flag has to be passed through.
+    public static async Task UnpackSolutionAsync(string zipPath, string destinationFolder, bool managed, SubprocessCapture capture, CancellationToken cancellationToken)
     {
         var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
         var result = await capture.Apply(
@@ -245,6 +247,7 @@ public static class PacUtils
                 .Add("unpack")
                 .Add("--zipfile").Add(zipPath)
                 .Add("--folder").Add(destinationFolder)
+                .Add("--packagetype").Add(managed ? "Managed" : "Unmanaged")
                 .Add("--allowWrite").Add("true")
                 .Add("--allowDelete").Add("true"))
             .WithValidation(CommandResultValidation.None))
