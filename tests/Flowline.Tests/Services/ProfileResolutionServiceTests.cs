@@ -112,6 +112,27 @@ public class ProfileResolutionServiceTests
     }
 
     [Fact]
+    public async Task ProfileFound_UniversalFallback_StatusLineNamesResolvedEnvironmentNotTheProfilesOwn()
+    {
+        // FindBestProfile returns a UNIVERSAL profile when no profile's URL matches, and that profile
+        // carries whatever environment it was created against. Printing its label made `deploy uat` read
+        // as if it were connecting to DEV.
+        var profile = MakeProfile(name: null, kind: "UNIVERSAL", resource: "https://automatevalue-dev.crm4.dynamics.com")
+            with { FriendlyName = "AutomateValue Dev" };
+        var target = "https://automatevalue-acc.crm4.dynamics.com";
+        var svc = MakeService(out var console, new ProfileFound(profile));
+
+        await svc.ResolveAsync(target);
+
+        // Scoped to the status line — the verbose "Matched profile" line above it still names the
+        // profile's own URL on purpose, that's the debug detail it exists for.
+        var statusLine = console.Output.Split("Resolved PAC auth profile")[1];
+        statusLine.Should().Contain(target);
+        statusLine.Should().NotContain("automatevalue-dev");
+        statusLine.Should().NotContain("AutomateValue Dev");
+    }
+
+    [Fact]
     public async Task ProfileFound_EmitsStatusLine_WithProfileIndex()
     {
         var profile = MakeProfile(name: "MyProfile", kind: "DATAVERSE");

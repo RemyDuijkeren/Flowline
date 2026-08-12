@@ -33,17 +33,17 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
 
         return result switch
         {
-            ProfileFound found       => await HandleFound(found.Profile, cancellationToken),
+            ProfileFound found       => await HandleFound(found.Profile, environmentUrl, cancellationToken),
             ProfileAmbiguous ambig   => await HandleAmbiguousAsync(ambig.Candidates, environmentUrl, cancellationToken),
             ProfileNotFound notFound => throw BuildNotFoundError(notFound.EnvironmentUrl),
             _                        => throw new InvalidOperationException($"Unexpected ProfileResolutionResult: {result.GetType().Name}")
         };
     }
 
-    async Task<PacProfile> HandleFound(PacProfile profile, CancellationToken cancellationToken)
+    async Task<PacProfile> HandleFound(PacProfile profile, string environmentUrl, CancellationToken cancellationToken)
     {
         console.Verbose($"Matched profile: {profile.DisplayName}, Kind: {profile.Kind}, URL: {profile.Resource}");
-        await EnsureActiveProfileAsync(profile, cancellationToken);
+        await EnsureActiveProfileAsync(profile, environmentUrl, cancellationToken);
         return profile;
     }
 
@@ -63,14 +63,14 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
 
         var selected = await console.PromptAsync(prompt, cancellationToken);
 
-        await EnsureActiveProfileAsync(selected, cancellationToken);
+        await EnsureActiveProfileAsync(selected, environmentUrl, cancellationToken);
         return selected;
     }
 
     // R2/R3/R4/R5: guard the resolved profile against PAC CLI's globally active profile. Runs once
     // per ResolveAsync call (R8) — nothing is cached across calls, so a command resolving multiple
     // URLs re-checks independently each time.
-    async Task EnsureActiveProfileAsync(PacProfile profile, CancellationToken cancellationToken)
+    async Task EnsureActiveProfileAsync(PacProfile profile, string environmentUrl, CancellationToken cancellationToken)
     {
         var isActive = IsProfileActiveOverride ?? dataverseConnector.IsProfileActive;
         var allProfiles = GetPacProfilesOverride?.Invoke() ?? dataverseConnector.GetPacProfiles().ToList();
@@ -78,20 +78,20 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
 
         if (isActive(profile))
         {
-            EmitStatusLine(profile, index);
+            EmitStatusLine(profile, index, environmentUrl);
             return;
         }
 
         if (runtimeOptions.AutoSwitchProfile)
         {
-            EmitStatusLine(profile, index);
+            EmitStatusLine(profile, index, environmentUrl);
             await SwitchProfileAsync(profile, allProfiles, cancellationToken);
             return;
         }
 
         if (!IsInteractive())
         {
-            EmitStatusLine(profile, index);
+            EmitStatusLine(profile, index, environmentUrl);
             throw BuildMismatchException(profile, allProfiles);
         }
 
@@ -164,14 +164,29 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
     // necessarily active yet (that's exactly what the guard below may still need to fix). index is the
     // profile's 1-based position in `pac auth list` (what `pac auth select --index <n>` takes) — shown
     // so the user can cross-reference the resolved profile against that list; omitted when unresolved (-1).
-    void EmitStatusLine(PacProfile profile, int index)
+    //
+    // The trailing environment is the one being resolved *for*, never the profile's own. They're the same
+    // thing on a URL match, and there the profile's label is richer (it carries the friendly name). They
+    // are not the same on the UNIVERSAL fallback (FindBestProfile takes any universal profile when no URL
+    // matches), where the profile's label names whatever environment it was created against — printing
+    // that read as "deploy is connecting to DEV" on a run whose target was ACC.
+    void EmitStatusLine(PacProfile profile, int index, string environmentUrl)
     {
         var pos = index > 0 ? $"#{index} " : "";
-        var status = string.IsNullOrEmpty(profile.Name)
-            ? $"Resolved PAC auth profile {pos}({Markup.Escape(profile.DisplayName)}, {Markup.Escape(profile.Kind ?? "")}) — {Markup.Escape(profile.EnvironmentLabel)}"
-            : $"Resolved PAC auth profile {pos}'{Markup.Escape(profile.DisplayName)}' ({Markup.Escape(profile.Kind ?? "")}) — {Markup.Escape(profile.EnvironmentLabel)}";
-        console.Info(status);
+        var identity = string.IsNullOrEmpty(profile.Name)
+            ? $"({Markup.Escape(profile.DisplayName)}, {Markup.Escape(profile.Kind ?? "")})"
+            : $"'{Markup.Escape(profile.DisplayName)}' ({Markup.Escape(profile.Kind ?? "")})";
+        var environment = ProfileMatchesEnvironment(profile, environmentUrl)
+            ? Markup.Escape(profile.EnvironmentLabel)
+            : $"for {Markup.Escape(environmentUrl.TrimEnd('/'))}";
+
+        console.Info($"Resolved PAC auth profile {pos}{identity} — {environment}");
     }
+
+    // Same comparison FindBestProfile uses to match a profile to a URL, so the two can't disagree about
+    // whether this profile belongs to the environment being resolved.
+    static bool ProfileMatchesEnvironment(PacProfile profile, string environmentUrl) =>
+        profile.Resource?.TrimEnd('/').Equals(environmentUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase) == true;
 
     // 1-based position in the loaded profile list — matches `pac auth list` numbering and the
     // --index arg from BuildAuthSelectArgs. Record value-equality, same as BuildAuthSelectArgs. -1 = not found.
