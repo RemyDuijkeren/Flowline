@@ -41,7 +41,7 @@ public enum ExitCode
     /// <summary>Validation failed: drift detected, missing dependencies, or schema mismatch. Check error output.</summary>
     ValidationFailed = 15,
 
-    /// <summary>PAC CLI 60-minute operation limit exceeded. Retry or check environment health.</summary>
+    /// <summary>An operation timed out: a Dataverse request got no response, or the PAC CLI 60-minute operation limit was exceeded. The write may still have landed — re-run the command to check and finish, or check environment health.</summary>
     Timeout = 16,
 
     /// <summary>Destructive or overwriting operation requires --force in non-interactive mode.</summary>

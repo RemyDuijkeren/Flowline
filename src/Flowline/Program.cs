@@ -128,6 +128,16 @@ app.Configure(config =>
                 WriteExceptionContext(fe, serilogLogger);
                 AnsiConsole.MarkupLine(logLink);
                 return (int)fe.ExitCode;
+            // A Dataverse request timeout is an environment condition, not a Flowline bug, so it
+            // gets the same clean treatment as a FlowlineException. It has to sit above the
+            // OperationCanceledException arm: the HttpClient path throws TaskCanceledException,
+            // which would otherwise be reported as a user Ctrl+C and exit 130.
+            case var _ when DataverseTimeout.Matches(ex, cancellationTokenSource.IsCancellationRequested):
+                serilogLogger?.Error(ex, "Dataverse request timed out");
+                AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(DataverseTimeout.Message)}");
+                AnsiConsole.MarkupLine($"[dim]{Markup.Escape(DataverseTimeout.NextStep(args.FirstOrDefault()))}[/]");
+                AnsiConsole.MarkupLine(logLink);
+                return (int)ExitCode.Timeout;
             case OperationCanceledException:
                 serilogLogger?.Information("Command cancelled by user");
                 return (int)ExitCode.Cancelled;
