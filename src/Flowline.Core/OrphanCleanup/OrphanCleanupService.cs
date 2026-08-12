@@ -10,6 +10,7 @@ using Flowline.Core.OrphanCleanup.Handlers;
 using Flowline.Core.Console;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
+using Flowline.Core.WebResources;
 
 namespace Flowline.Core.OrphanCleanup;
 
@@ -30,7 +31,12 @@ public sealed record OrphanEntry(
     // Set for findings from a Report handler (or a Guarded handler with no delete-orphans consent):
     // surfaced in the report but never executed. ExecuteInOrderAsync skips these, so a report-only
     // entry can never be deleted even if it carries Action.Delete.
-    bool ReportOnly = false);
+    bool ReportOnly = false,
+    // R10: WebResource (componenttype 61) entries only — resolved by WebResourceDependencyChecker
+    // against the action the orchestrator already decided (delete vs remove-from-solution). Null means
+    // either "not a WebResource entry" (never checked) or "checked, lookup faulted" (unchecked) — the
+    // report distinguishes the two via ComponentType, same as WebResourceDependencyResult upstream.
+    IReadOnlyList<WebResourceDependent>? Dependents = null);
 
 // Skipped distinguishes "ran and found nothing" (false) from "an empty-input guard short-circuited
 // before comparing" (true) — a read-only caller like DriftCommand must not conflate the two.
@@ -341,6 +347,15 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
             ? await GetCrossSolutionMembershipAsync(service, deleteCandidateIds, ct).ConfigureAwait(false)
             : [];
 
+        // R10/KD6: resolved here, before the synchronous projection below decides Delete vs
+        // RemoveFromSolution — every componenttype-61 finding gets checked regardless of ReportOnly, so
+        // a report-only entry (the moment the operator is deciding) still carries its dependents.
+        var webResourceFindingIds = findings.Where(f => f.ComponentType == WebResourceComponentType).Select(f => f.ObjectId).ToList();
+        var webResourceDependentsById = webResourceFindingIds.Count > 0
+            ? (await WebResourceDependencyChecker.CheckAsync(service, webResourceFindingIds, ct).ConfigureAwait(false))
+                .ToDictionary(r => r.WebResourceId, r => r.Dependents)
+            : new Dictionary<Guid, IReadOnlyList<WebResourceDependent>?>();
+
         // Sorted once here — cross-family via FamilyOrder/familyIndexById, then per-family via
         // SequenceHint — so downstream consumers just use this order.
         return findings
@@ -361,7 +376,9 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
                 // stay actionable. Silent findings never reach here (excluded in MergeResult).
                 var reportOnly = IsReportOnly(_orderedHandlers[familyIndexById[f.ObjectId]].Status, detectionContext.DeleteOrphansConsent);
 
-                return new OrphanEntry(f.ObjectId, f.ComponentType, f.DisplayName, action, f.EntityName, f.Priority, f.SequenceHint, f.Timing, reportOnly);
+                var dependents = f.ComponentType == WebResourceComponentType ? webResourceDependentsById.GetValueOrDefault(f.ObjectId) : null;
+
+                return new OrphanEntry(f.ObjectId, f.ComponentType, f.DisplayName, action, f.EntityName, f.Priority, f.SequenceHint, f.Timing, reportOnly, dependents);
             })
             .ToList();
     }
@@ -455,6 +472,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
 
     const int OptionSetComponentType = 9;
     const int RoleComponentType = 20;
+    const int WebResourceComponentType = 61;
 
     // OptionSet's own metadata-resolution path — separate from ResolveNamedComponentIdsAsync since
     // OptionSet has no backing table. Unlike ResolveEntityMetadataIdsAsync, failures are caught per-name
@@ -858,11 +876,13 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
                 if (entry.ReportOnly)
                 {
                     console.MarkupLine($"    [dim]{Markup.Escape(entry.DisplayName)} — detected, not auto-removed[/]");
+                    RenderWebResourceDependents(entry);
                     continue;
                 }
 
                 var label = mode.IsReportOnly() ? ReportOnlyLabel(entry.Action) : ActionLabel(entry.Action);
                 console.MarkupLine($"    [{ActionColor(entry.Action)}]{Markup.Escape(entry.DisplayName)} — {label}[/]");
+                RenderWebResourceDependents(entry);
             }
         }
 
@@ -887,6 +907,26 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         }
         else
             console.Skip($"{deleteCount} to delete, {removeCount} to remove from solution, {manual.Count} manual{reportOnlySuffix}");
+    }
+
+    // R10: mirrors WebResourceExecutor.RenderDependentLines' line shape so the push and orphan-cleanup
+    // surfaces read the same. Renders for report-only entries too — a report-only line is exactly when
+    // the operator is deciding. Null Dependents on a non-WebResource entry is simply "never checked" and
+    // renders nothing; null on a WebResource entry means the lookup faulted and must read as unchecked,
+    // never silently as clean.
+    void RenderWebResourceDependents(OrphanEntry entry)
+    {
+        if (entry.ComponentType != WebResourceComponentType) return;
+
+        if (entry.Dependents is { Count: > 0 } dependents)
+        {
+            foreach (var d in dependents)
+                console.MarkupLine(d.Name is not null
+                    ? $"      - {Markup.Escape(d.TypeLabel)} '{Markup.Escape(d.Name)}'"
+                    : $"      - {Markup.Escape(d.TypeLabel)} {d.ObjectId}");
+        }
+        else if (entry.Dependents is null)
+            console.MarkupLine("      [dim]Couldn't check for dependents.[/]");
     }
 
     static string SolutionsListUrl(string environmentUrl) =>

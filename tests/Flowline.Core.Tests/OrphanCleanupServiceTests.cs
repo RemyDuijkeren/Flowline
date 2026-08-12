@@ -1828,6 +1828,107 @@ public class OrphanCleanupServiceTests : IDisposable
         Assert.DoesNotContain("Prio2 — still running deleted logic", _console.Output);
     }
 
+    // -- U7/R10: orphan cleanup reports WebResourceDependencyChecker dependents on the entry itself --
+
+    void SetupDependenciesForDelete(Guid webResourceId, params Entity[] dependents) =>
+        _serviceMock.ExecuteAsync(
+                Arg.Is(Matching<Microsoft.Crm.Sdk.Messages.RetrieveDependenciesForDeleteRequest>(r => r!.ObjectId == webResourceId)),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(new Microsoft.Crm.Sdk.Messages.RetrieveDependenciesForDeleteResponse
+            {
+                Results = { ["EntityCollection"] = new EntityCollection(dependents.ToList()) }
+            }));
+
+    static Entity DependencyRecord(int type, Guid objectId) => new("dependency")
+    {
+        ["dependentcomponenttype"] = new OptionSetValue(type),
+        ["dependentcomponentobjectid"] = objectId
+    };
+
+    [Fact]
+    public async Task RunPreImportAsync_WebResourceConvertedToRemoveFromSolution_ReportsDependentsAgainstRemoval()
+    {
+        var orphanId = Guid.NewGuid();
+        var formId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 61)); // 61 = WebResource
+        SetupWebResourceNames((orphanId, "av_ext/shared.js"));
+        SetupCrossSolutionMembership(orphanId, "OtherSolution"); // forces Delete -> RemoveFromSolution
+        SetupDependenciesForDelete(orphanId, DependencyRecord(60, formId)); // 60 = Form
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "systemform")),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("systemform", formId) { ["name"] = "Account Main Form" }
+            ])));
+
+        // WebResource is Guarded — consent makes this an actionable removal, not a report-only surface.
+        await _service.RunPreImportAsync(
+            Ctx("MySolution", [(Guid.NewGuid(), 0)], deleteOrphansConsent: true), default);
+
+        Assert.Contains("remove from solution", _console.Output);
+        Assert.Contains("Account Main Form", _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_ReportOnlyWebResource_ReportsDependents()
+    {
+        var orphanId = Guid.NewGuid();
+        var formId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 61));
+        SetupWebResourceNames((orphanId, "av_ext/reportonly.js"));
+        SetupDependenciesForDelete(orphanId, DependencyRecord(60, formId));
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "systemform")),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([
+                new Entity("systemform", formId) { ["name"] = "Account Main Form" }
+            ])));
+
+        // No deleteOrphansConsent — WebResourceHandler (Guarded) surfaces this report-only, never executes.
+        await _service.RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Contains("detected, not auto-removed", _console.Output);
+        Assert.Contains("Account Main Form", _console.Output);
+        await _serviceMock.DidNotReceive().DeleteAsync("webresource", orphanId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_NonWebResourceOrphan_NoDependencyRequestIssued()
+    {
+        var orphanId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (orphanId, 91)); // 91 = PluginAssembly, not WebResource
+
+        await AutoService(91, "pluginassembly").RunPreImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        await _serviceMock.DidNotReceive().ExecuteAsync(
+            Arg.Any<Microsoft.Crm.Sdk.Messages.RetrieveDependenciesForDeleteRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_WebResourceDependencyLookupFaults_ReportsUncheckedAndOthersStillProcess()
+    {
+        var faultingId = Guid.NewGuid();
+        var okId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (faultingId, 61), (okId, 61));
+        SetupWebResourceNames((faultingId, "av_ext/faulting.js"), (okId, "av_ext/ok.js"));
+
+        _serviceMock.ExecuteAsync(
+                Arg.Is(Matching<Microsoft.Crm.Sdk.Messages.RetrieveDependenciesForDeleteRequest>(r => r!.ObjectId == faultingId)),
+                Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<OrganizationResponse>(
+                new System.ServiceModel.FaultException<OrganizationServiceFault>(new OrganizationServiceFault(), "dependency fault")));
+        SetupDependenciesForDelete(okId); // no dependents — Dataverse answered, found nothing
+
+        await _service.RunPreImportAsync(
+            Ctx("MySolution", [(Guid.NewGuid(), 0)], deleteOrphansConsent: true), default);
+
+        Assert.Contains("Couldn't check for dependents.", _console.Output);
+        // The fault degrades only the faulting resource's own check (KTD3/R11) — the rest of cleanup
+        // still runs, including the delete for both web resources.
+        await _serviceMock.Received(1).DeleteAsync("webresource", faultingId, Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).DeleteAsync("webresource", okId, Arg.Any<CancellationToken>());
+    }
+
     // Synthetic handler exercising the Silent-marker rendering path directly — no real handler ships
     // Silent this round, so no real handler can drive this scenario.
     sealed class FakeSilentHandler(int componentType, string displayName) : IOrphanHandler
