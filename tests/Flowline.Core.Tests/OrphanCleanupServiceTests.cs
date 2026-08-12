@@ -1927,6 +1927,11 @@ public class OrphanCleanupServiceTests : IDisposable
         // still runs, including the delete for both web resources.
         await _serviceMock.Received(1).DeleteAsync("webresource", faultingId, Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).DeleteAsync("webresource", okId, Arg.Any<CancellationToken>());
+        // The non-faulting resource has zero dependents (Dataverse checked, found nothing) — it must
+        // render with no dependents line at all, not as unchecked too. A single occurrence of "Couldn't
+        // check for dependents." (only for faultingId) catches a bug that degraded the whole batch.
+        var uncheckedCount = _console.Output.Split("Couldn't check for dependents.").Length - 1;
+        Assert.Equal(1, uncheckedCount);
     }
 
     // Synthetic handler exercising the Silent-marker rendering path directly — no real handler ships

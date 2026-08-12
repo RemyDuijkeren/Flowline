@@ -58,7 +58,7 @@ public class WebResourceExecutor(IAnsiConsole console)
             // either action (KD3), it only tells the operator what still points at the resource.
             // Skipped entirely under --no-delete (the `else` branch below) — nothing is at risk there,
             // so a "still has dependents" warning would be reporting on an action that never happens.
-            RenderDependentWarnings(console, plan.Deletes.Concat(plan.RemovesFromSolution));
+            RenderDependentWarnings(console, plan.Deletes.Concat(plan.RemovesFromSolution), dryRun: false);
 
             // Delete web resources — parallel, so lock needed for progress
             await RunPhaseAsync(plan.Deletes, "Deleting web resources", "deleted",
@@ -96,7 +96,9 @@ public class WebResourceExecutor(IAnsiConsole console)
             // the failure, no second RetrieveDependenciesForDelete request.
             foreach (var (action, ex) in failures)
             {
-                console.Error($"'{action.Name}' — {ex.Message}");
+                // R8: ex.Message can now carry Dataverse dependency-fault text that quotes component
+                // names — console.Error forwards to MarkupLine unescaped, so both interpolations need it.
+                console.Error($"'{Markup.Escape(action.Name)}' — {Markup.Escape(ex.Message)}");
                 if (action.Dependents is { Count: > 0 } dependents)
                     RenderDependentLines(console, dependents);
             }
@@ -136,13 +138,14 @@ public class WebResourceExecutor(IAnsiConsole console)
     // R4/R5/R7/R11: dependents were already looked up (WebResourceService.ApplyDependencyChecksAsync)
     // and hung off each Deletes/RemovesFromSolution entry before this ever runs — finding one never
     // blocks the delete or the removal, it only warns. Two call sites reuse this, mirroring RenderSkips:
-    // here (the real run) and WebResourceService's dry-run preview, so both read the same warning.
-    internal static void RenderDependentWarnings(IAnsiConsole console, IEnumerable<WebResourcePlanAction> actions)
+    // here (the real run, dryRun: false) and WebResourceService's dry-run preview (dryRun: true) — the
+    // flag only changes WarnDependents' verb tense, since dry-run warns about an action that never runs.
+    internal static void RenderDependentWarnings(IAnsiConsole console, IEnumerable<WebResourcePlanAction> actions, bool dryRun)
     {
         foreach (var a in actions)
         {
             if (a.Dependents is { Count: > 0 } dependents)
-                WarnDependents(console, a, dependents);
+                WarnDependents(console, a, dependents, dryRun);
             else if (a.Dependents is null)
                 // R11: a faulted lookup must read as "unverified", never silently as "no dependents".
                 console.Warning($"Couldn't check '{Markup.Escape(a.Name)}' for dependents.");
@@ -153,9 +156,13 @@ public class WebResourceExecutor(IAnsiConsole console)
     // line — both keep the record, but only StillInOtherSolutionReason leaves it held by a solution
     // that might not ship downstream. The risk goes on its own line rather than into the header:
     // one thought per line, and a header carrying it wraps on an 80-column terminal.
-    static void WarnDependents(IAnsiConsole console, WebResourcePlanAction a, IReadOnlyList<WebResourceDependent> dependents)
+    static void WarnDependents(IAnsiConsole console, WebResourcePlanAction a, IReadOnlyList<WebResourceDependent> dependents, bool dryRun)
     {
-        var verb = a.Action == WebResourceAction.Delete ? "deleting anyway" : "removing it anyway";
+        // Present tense for a real run (the action is about to happen); would-be phrasing under
+        // dry-run, where RenderDependentWarnings also runs but nothing actually gets deleted/removed.
+        var verb = a.Action == WebResourceAction.Delete
+            ? (dryRun ? "would delete it anyway" : "deleting anyway")
+            : (dryRun ? "would remove it anyway" : "removing it anyway");
         console.Warning($"'{Markup.Escape(a.Name)}' still has dependents — {verb}:");
 
         RenderDependentLines(console, dependents);

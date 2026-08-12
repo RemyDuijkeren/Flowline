@@ -1297,6 +1297,60 @@ public class WebResourceServiceTests : IDisposable
         Assert.DoesNotContain("Couldn't check", _console.Output);
     }
 
+    // FIX 1 regression: dependents used to render on two surfaces (WriteSection's plan-report copy and
+    // WebResourceExecutor.RenderDependentWarnings) — a bare Assert.Contains passes on a duplicate, so
+    // this counts occurrences of the dependent's own guid, which only WarnDependents ever prints.
+    [Fact]
+    public async Task SyncSolutionAsync_DryRunOneDependent_RendersExactlyOnce()
+    {
+        var webResourceId = Guid.NewGuid();
+        var depId = Guid.NewGuid();
+        SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/delete.js", "old"));
+        SetupOwnership(webResourceId, ("MySolution", false));
+        SetupDependencies(webResourceId, DependencyRecord(48, depId, "Ribbon Diff"));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false, runMode: RunMode.DryRun);
+
+        var occurrences = _console.Output.Split(depId.ToString()).Length - 1;
+        Assert.Equal(1, occurrences);
+    }
+
+    // FIX 2 regression: WritePlanReport's DryRun line delegate forwarded straight to console.Info
+    // (MarkupLine) without escaping. a.Name is Dataverse-controlled and can carry '[' — an unrecognized
+    // style token like "[Legacy]" throws a Spectre markup exception and aborts push --dry-run entirely.
+    // Named on the Dataverse side (RemoteWebResource), not a local file — a local name with this shape
+    // would be rejected earlier by the web-resource name validator, never reaching this code path.
+    [Fact]
+    public async Task SyncSolutionAsync_DryRunDeleteNameContainsInvalidMarkup_CompletesAndRendersEscaped()
+    {
+        var webResourceId = Guid.NewGuid();
+        const string markupName = "my_MySolution/[Legacy].js";
+        SetupWebResources(RemoteWebResource(webResourceId, markupName, "old"));
+        SetupOwnership(webResourceId, ("MySolution", false));
+        SetupDependencies(webResourceId); // checked, none found — isolates FIX 2 from the dependents renderer
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false, runMode: RunMode.DryRun);
+
+        Assert.Contains(markupName, _console.Output);
+    }
+
+    // FIX 1 regression, --no-delete half: ApplyDependencyChecksAsync returns early under NoDelete (no
+    // request issued, no risk), so every Delete/RemovesFromSolution entry keeps its default null
+    // Dependents. WriteSection used to read that null as "check failed — not verified" even though the
+    // check never ran at all. The plan report (PlanReportMode.Verbose) always renders regardless of
+    // RunMode, so this is reachable without --dry-run.
+    [Fact]
+    public async Task SyncSolutionAsync_NoDeleteMode_DoesNotReportDependencyCheckFailed()
+    {
+        var webResourceId = Guid.NewGuid();
+        SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/orphan.js", "old"));
+        SetupOwnership(webResourceId, ("MySolution", false));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false, runMode: RunMode.NoDelete);
+
+        Assert.DoesNotContain("dependency check failed", _console.Output);
+    }
+
     [Fact]
     public async Task SyncSolutionAsync_UnverifiedDependencyCheck_RendersAsUnchecked()
     {
@@ -1310,7 +1364,6 @@ public class WebResourceServiceTests : IDisposable
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false, runMode: RunMode.DryRun);
 
         Assert.Contains("Couldn't check 'my_MySolution/delete.js' for dependents.", _console.Output);
-        Assert.Contains("dependency check failed", _console.Output);
         Assert.DoesNotContain("still has dependents", _console.Output);
     }
 
@@ -1331,10 +1384,11 @@ public class WebResourceServiceTests : IDisposable
 
         // Both removals share the header; KTD5's distinction lives in the closing risk line, which is
         // what actually differs in urgency — and keeps each line inside an 80-column terminal.
-        Assert.Contains("'my_MySolution/managed.js' still has dependents — removing it anyway:", _console.Output);
+        // Would-be phrasing: this runs under RunMode.DryRun, where nothing is actually removed (FIX 6).
+        Assert.Contains("'my_MySolution/managed.js' still has dependents — would remove it anyway:", _console.Output);
         Assert.Contains("A managed solution holds it too, so it should ship downstream.", _console.Output);
 
-        Assert.Contains("'my_MySolution/other.js' still has dependents — removing it anyway:", _console.Output);
+        Assert.Contains("'my_MySolution/other.js' still has dependents — would remove it anyway:", _console.Output);
         Assert.Contains("Only another unmanaged solution holds it. That may not ship downstream.", _console.Output);
     }
 
@@ -1349,10 +1403,10 @@ public class WebResourceServiceTests : IDisposable
 
         await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
 
-        // Pinned to the warning sentence specifically — WriteSection's own (unescaped) a.Name line
-        // would pass a bare Assert.Contains(markupName, ...) too, since VerboseRenderable blanket-
-        // escapes that whole line regardless. Only WarnDependents' explicit Markup.Escape(a.Name)
-        // is under test here.
+        // Pinned to the warning sentence specifically — the plan report's own "Deletes" section also
+        // prints a.Name, but through console.Verbose's VerboseRenderable, which blanket-escapes that
+        // whole line regardless. A bare Assert.Contains(markupName, ...) would pass off that line too.
+        // Only WarnDependents' explicit Markup.Escape(a.Name) is under test here.
         Assert.Contains($"'{markupName}' still has dependents", _console.Output);
     }
 

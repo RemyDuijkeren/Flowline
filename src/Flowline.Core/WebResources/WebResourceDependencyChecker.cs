@@ -72,11 +72,25 @@ public static class WebResourceDependencyChecker
 
         // R4 step 3: one name lookup per distinct component type present on this resource's
         // dependents, not one per dependent record.
+        //
+        // FIX 4: this is cosmetic name enrichment, not the primary answer — the primary
+        // RetrieveDependenciesForDelete request above already succeeded, so a fault here (e.g.
+        // EntityNameLookup's deterministic >2000-id InvalidOperationException for a heavily-shared
+        // library) must not collapse an already-retrieved dependent list to "unchecked". Each type's
+        // lookup gets its own try/catch, falling back to an empty map for just that type — the
+        // nameless TypeLabel + ObjectId render path already exists for exactly this case.
         var namesByType = new Dictionary<int, Dictionary<Guid, string>>();
         foreach (var type in records.Select(r => r.Type).Distinct())
         {
-            namesByType[type] = await ComponentTypeCatalog.ResolveGroupNamesAsync(
-                service, type, records.Where(r => r.Type == type).Select(r => r.ObjectId), cancellationToken).ConfigureAwait(false);
+            try
+            {
+                namesByType[type] = await ComponentTypeCatalog.ResolveGroupNamesAsync(
+                    service, type, records.Where(r => r.Type == type).Select(r => r.ObjectId), cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                namesByType[type] = [];
+            }
         }
 
         var dependents = records

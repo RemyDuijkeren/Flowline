@@ -351,10 +351,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         // RemoveFromSolution — every componenttype-61 finding gets checked regardless of ReportOnly, so
         // a report-only entry (the moment the operator is deciding) still carries its dependents.
         var webResourceFindingIds = findings.Where(f => f.ComponentType == WebResourceComponentType).Select(f => f.ObjectId).ToList();
-        var webResourceDependentsById = webResourceFindingIds.Count > 0
-            ? (await WebResourceDependencyChecker.CheckAsync(service, webResourceFindingIds, ct).ConfigureAwait(false))
-                .ToDictionary(r => r.WebResourceId, r => r.Dependents)
-            : new Dictionary<Guid, IReadOnlyList<WebResourceDependent>?>();
+        var webResourceDependentsById = await GetWebResourceDependentsAsync(service, webResourceFindingIds, ct).ConfigureAwait(false);
 
         // Sorted once here — cross-family via FamilyOrder/familyIndexById, then per-family via
         // SequenceHint — so downstream consumers just use this order.
@@ -381,6 +378,28 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
                 return new OrphanEntry(f.ObjectId, f.ComponentType, f.DisplayName, action, f.EntityName, f.Priority, f.SequenceHint, f.Timing, reportOnly, dependents);
             })
             .ToList();
+    }
+
+    // This is an informational check backing RunPreImportAsync for every component family — an
+    // escaped exception here must not abort orphan detection for the whole deploy over it. Degrade to
+    // an empty lookup on fault, so every web resource entry renders unchecked (GetValueOrDefault below
+    // returns null) and the rest of the comparison still finishes. WebResourceDependencyChecker.CheckAsync
+    // already isolates per-resource Dataverse faults; this guards against a fault in the caller's own code.
+    static async Task<Dictionary<Guid, IReadOnlyList<WebResourceDependent>?>> GetWebResourceDependentsAsync(
+        IOrganizationServiceAsync2 service, IReadOnlyList<Guid> webResourceFindingIds, CancellationToken ct)
+    {
+        if (webResourceFindingIds.Count == 0)
+            return new Dictionary<Guid, IReadOnlyList<WebResourceDependent>?>();
+
+        try
+        {
+            return (await WebResourceDependencyChecker.CheckAsync(service, webResourceFindingIds, ct).ConfigureAwait(false))
+                .ToDictionary(r => r.WebResourceId, r => r.Dependents);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            return new Dictionary<Guid, IReadOnlyList<WebResourceDependent>?>();
+        }
     }
 
     // A surfaced finding is report-only (surfaced, never executed) when its handler is Report, or Guarded

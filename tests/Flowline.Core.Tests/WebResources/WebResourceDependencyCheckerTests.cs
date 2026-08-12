@@ -166,6 +166,52 @@ public class WebResourceDependencyCheckerTests
         Assert.Single(okResult.Dependents!);
     }
 
+    // FIX 4 regression: the per-type name lookup is cosmetic enrichment layered on top of an already-
+    // successful RetrieveDependenciesForDelete answer. A fault in just that enrichment (e.g. the
+    // EntityNameLookup >2000-id ceiling for a heavily-shared library) must degrade to the nameless
+    // label+id render, not collapse the whole result to unchecked.
+    [Fact]
+    public async Task CheckAsync_NameLookupFaultsButPrimaryRequestSucceeds_ReturnsDependentsNameless()
+    {
+        var webResourceId = Guid.NewGuid();
+        var formId = Guid.NewGuid();
+        SetupDependencies(webResourceId, DependencyRecord(60, formId, "Form"));
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is<QueryExpression>(q => q!.EntityName == "systemform"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("name lookup fault")));
+
+        var results = await WebResourceDependencyChecker.CheckAsync(_serviceMock, [webResourceId]);
+
+        var result = Assert.Single(results);
+        result.Checked.Should().BeTrue();
+        var dependent = Assert.Single(result.Dependents!);
+        dependent.TypeLabel.Should().Be("Form");
+        dependent.Name.Should().BeNull();
+        dependent.ObjectId.Should().Be(formId);
+    }
+
+    // Only the degrade-to-unchecked branch of CheckAsync's exception filter was covered before — real
+    // cancellation (token already cancelled) must propagate, not be swallowed as "check couldn't run".
+    [Fact]
+    public async Task CheckAsync_RealCancellation_Propagates()
+    {
+        var webResourceId = Guid.NewGuid();
+        using var cts = new CancellationTokenSource();
+
+        // Cancel from inside the stub, after gate.WaitAsync has already succeeded — cancelling up
+        // front would make WaitAsync itself throw, never reaching CheckOneAsync's exception filter.
+        _serviceMock.ExecuteAsync(Arg.Any<RetrieveDependenciesForDeleteRequest>(), Arg.Any<CancellationToken>())
+            .Returns<Task<OrganizationResponse>>(_ =>
+            {
+                cts.Cancel();
+                throw new OperationCanceledException(cts.Token);
+            });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            WebResourceDependencyChecker.CheckAsync(_serviceMock, [webResourceId], cts.Token));
+    }
+
     [Fact]
     public async Task CheckAsync_RequestCarriesComponentType61AndResourceId()
     {

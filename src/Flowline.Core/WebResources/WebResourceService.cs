@@ -69,7 +69,7 @@ public class WebResourceService(IAnsiConsole console)
         {
             WritePlanReport(plan, PlanReportMode.DryRun, publishAfterSync);
             WebResourceExecutor.RenderSkips(console, plan.Skips, webresourceRoot);
-            WebResourceExecutor.RenderDependentWarnings(console, plan.Deletes.Concat(plan.RemovesFromSolution));
+            WebResourceExecutor.RenderDependentWarnings(console, plan.Deletes.Concat(plan.RemovesFromSolution), dryRun: true);
             return true;
         }
 
@@ -93,24 +93,42 @@ public class WebResourceService(IAnsiConsole console)
         if (plan.Deletes.Count == 0 && plan.RemovesFromSolution.Count == 0)
             return;
 
-        var ids = plan.Deletes.Concat(plan.RemovesFromSolution).Select(a => a.Id!.Value);
-        var results = await WebResourceDependencyChecker.CheckAsync(service, ids, cancellationToken).ConfigureAwait(false);
-        var dependentsById = results.ToDictionary(r => r.WebResourceId, r => r.Dependents);
+        // KD3: the dependency check is informational, never gating — it must never fail the run.
+        // WebResourceDependencyChecker already isolates per-resource Dataverse faults, but this
+        // method's own code can still throw (duplicate-key ToDictionary, a null Id!.Value). Degrade
+        // every candidate to unchecked (Dependents = null) rather than letting SyncSolutionAsync fault.
+        try
+        {
+            var ids = plan.Deletes.Concat(plan.RemovesFromSolution).Select(a => a.Id!.Value);
+            var results = await WebResourceDependencyChecker.CheckAsync(service, ids, cancellationToken).ConfigureAwait(false);
+            var dependentsById = results.ToDictionary(r => r.WebResourceId, r => r.Dependents);
 
-        // R9: under --dry-run only, a dependent that's a form whose same-push cleanup pass already
-        // dropped THIS resource's library entry is excluded — the cleanup write hasn't landed yet in a
-        // dry run, so RetrieveDependenciesForDelete still reports it, but it won't actually be there once
-        // the run applies for real. A real push never reaches this branch: cleanup already wrote before
-        // this plan was built, so the checker itself no longer reports the form — passing a drop set here
-        // is a no-op, not a double-count.
-        var dropsForDryRun = runMode == RunMode.DryRun ? formLibraryDropsByFormId : null;
+            // R9: under --dry-run only, a dependent that's a form whose same-push cleanup pass already
+            // dropped THIS resource's library entry is excluded — the cleanup write hasn't landed yet in a
+            // dry run, so RetrieveDependenciesForDelete still reports it, but it won't actually be there once
+            // the run applies for real. A real push never reaches this branch: cleanup already wrote before
+            // this plan was built, so the checker itself no longer reports the form — passing a drop set here
+            // is a no-op, not a double-count.
+            var dropsForDryRun = runMode == RunMode.DryRun ? formLibraryDropsByFormId : null;
 
-        // Replace in place with `with` — WebResourcePlanAction is a positional record, the list stays
-        // the same reference, only the entries carrying the new dependents change.
-        for (var i = 0; i < plan.Deletes.Count; i++)
-            plan.Deletes[i] = plan.Deletes[i] with { Dependents = SubtractDroppedFormLibraries(dependentsById[plan.Deletes[i].Id!.Value], plan.Deletes[i].Name, dropsForDryRun) };
-        for (var i = 0; i < plan.RemovesFromSolution.Count; i++)
-            plan.RemovesFromSolution[i] = plan.RemovesFromSolution[i] with { Dependents = SubtractDroppedFormLibraries(dependentsById[plan.RemovesFromSolution[i].Id!.Value], plan.RemovesFromSolution[i].Name, dropsForDryRun) };
+            // Replace in place with `with` — WebResourcePlanAction is a positional record, the list stays
+            // the same reference, only the entries carrying the new dependents change.
+            for (var i = 0; i < plan.Deletes.Count; i++)
+                plan.Deletes[i] = plan.Deletes[i] with { Dependents = SubtractDroppedFormLibraries(dependentsById[plan.Deletes[i].Id!.Value], plan.Deletes[i].Name, dropsForDryRun) };
+            for (var i = 0; i < plan.RemovesFromSolution.Count; i++)
+                plan.RemovesFromSolution[i] = plan.RemovesFromSolution[i] with { Dependents = SubtractDroppedFormLibraries(dependentsById[plan.RemovesFromSolution[i].Id!.Value], plan.RemovesFromSolution[i].Name, dropsForDryRun) };
+        }
+        // Real cancellation must still propagate — only an escaped fault degrades to unchecked.
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            // The loop above may have partially applied before throwing (e.g. mid-way through the
+            // Deletes loop) — reset every candidate, not just the ones not yet touched, so a partial
+            // run never leaves some entries checked and others silently stale.
+            for (var i = 0; i < plan.Deletes.Count; i++)
+                plan.Deletes[i] = plan.Deletes[i] with { Dependents = null };
+            for (var i = 0; i < plan.RemovesFromSolution.Count; i++)
+                plan.RemovesFromSolution[i] = plan.RemovesFromSolution[i] with { Dependents = null };
+        }
     }
 
     // dependents null (unchecked — R11/KTD8) must stay null, never collapse to an empty list. dropsByFormId
@@ -183,9 +201,12 @@ public class WebResourceService(IAnsiConsole console)
 
     void WritePlanReport(WebResourceSyncPlan plan, PlanReportMode mode, bool publishAfterSync = false)
     {
+        // DryRun goes through console.Info, which forwards to MarkupLine without escaping — a.Name/
+        // a.Reason are Dataverse-controlled and can carry '[', so escape whole-line here. Verbose's
+        // VerboseRenderable already blanket-escapes, so escaping there too would double-escape.
         Action<string> line = mode == PlanReportMode.Verbose
             ? msg => console.Verbose(msg)
-            : console.Info;
+            : msg => console.Info(Markup.Escape(msg));
 
         var publishCount = publishAfterSync ? plan.PublishCount : 0;
         var counts = PlanReportFormatting.JoinCounts(
@@ -199,8 +220,8 @@ public class WebResourceService(IAnsiConsole console)
         WriteSection(line, "Creates", plan.Creates);
         WriteSection(line, "Updates", plan.Updates, withReason: true);
         WriteSection(line, "Add to solution", plan.AddsToSolution);
-        WriteSection(line, "Deletes", plan.Deletes, withDependents: true);
-        WriteSection(line, "Remove from solution", plan.RemovesFromSolution, withReason: true, withDependents: true);
+        WriteSection(line, "Deletes", plan.Deletes);
+        WriteSection(line, "Remove from solution", plan.RemovesFromSolution, withReason: true);
         WriteSection(line, "Skips", plan.Skips, withReason: true);
 
         if (publishCount > 0)
@@ -212,29 +233,17 @@ public class WebResourceService(IAnsiConsole console)
         console.Ok($"Dry run: {counts}. Run without --dry-run to apply.");
     }
 
-    // withDependents (R4): only Deletes/RemovesFromSolution ever carry a Dependents value — nesting
-    // each dependent under its resource here is the report's copy of the same data the executor warns
-    // with (WebResourceExecutor.RenderDependentWarnings). Left unescaped, matching the a.Name line
-    // above it: console.Verbose's VerboseRenderable already blanket-escapes the whole line, so escaping
-    // here too would double-escape in --verbose mode.
-    static void WriteSection(Action<string> line, string label, List<WebResourcePlanAction> actions, bool withReason = false, bool withDependents = false)
+    // R4: dependents render on exactly one surface — WebResourceExecutor.RenderDependentWarnings,
+    // called separately for both the dry-run preview and the real push (KD5). WriteSection used to
+    // nest a second, unescaped copy here, which double-rendered under --verbose/dry-run and printed
+    // its own "check failed" phrasing even under --no-delete, where the check never ran at all.
+    static void WriteSection(Action<string> line, string label, List<WebResourcePlanAction> actions, bool withReason = false)
     {
         if (actions.Count == 0)
             return;
 
         line($"  {label} ({actions.Count})");
         foreach (var a in actions.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
-        {
             line(withReason ? $"    - {a.Name} ({a.Reason})" : $"    - {a.Name}");
-
-            if (!withDependents)
-                continue;
-
-            if (a.Dependents is null)
-                line("      - dependency check failed — not verified");
-            else
-                foreach (var d in a.Dependents)
-                    line($"      - {d.TypeLabel} {(d.Name is not null ? $"'{d.Name}'" : d.ObjectId.ToString())}");
-        }
     }
 }
