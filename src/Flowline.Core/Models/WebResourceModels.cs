@@ -84,6 +84,19 @@ public record DataverseWebResource(
     WebResourceOwnership Ownership,
     string? DependencyXml = null);
 
+// One dependent found by WebResourceDependencyChecker (RetrieveDependenciesForDelete). Name is null
+// when the component type has no nameable backing table (e.g. ribbons) — R4 falls back to TypeLabel
+// + ObjectId in that case.
+public record WebResourceDependent(string TypeLabel, string? Name, Guid ObjectId);
+
+// Dependents is null when the dependency lookup itself faulted — distinct from an empty list, which
+// means Dataverse answered and found nothing. R11/KTD8: callers must not collapse "unchecked" into
+// "no dependents".
+public record WebResourceDependencyResult(Guid WebResourceId, IReadOnlyList<WebResourceDependent>? Dependents)
+{
+    public bool Checked => Dependents is not null;
+}
+
 public record WebResourceOwnership(
     int NonDefaultUnmanagedSolutionCount,
     bool IsInCurrentUnmanagedSolution,
