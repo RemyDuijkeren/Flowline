@@ -54,6 +54,12 @@ public class WebResourceExecutor(IAnsiConsole console)
 
         if (!save)
         {
+            // R5/R7: warn before the delete/remove actually runs — finding a dependent never blocks
+            // either action (KD3), it only tells the operator what still points at the resource.
+            // Skipped entirely under --no-delete (the `else` branch below) — nothing is at risk there,
+            // so a "still has dependents" warning would be reporting on an action that never happens.
+            RenderDependentWarnings(console, plan.Deletes.Concat(plan.RemovesFromSolution));
+
             // Delete web resources — parallel, so lock needed for progress
             await RunPhaseAsync(plan.Deletes, "Deleting web resources", "deleted",
                 a => $"Web resource '{a.Name}' deleted", failures,
@@ -118,6 +124,44 @@ public class WebResourceExecutor(IAnsiConsole console)
         var folder = Markup.Escape(webresourceRoot.Replace('\\', '/').TrimEnd('/') + "/");
         console.Warning($"'{Markup.Escape(a.Name)}' is owned by '{Markup.Escape(a.OwningSolutions ?? "another solution")}' — not pushed.");
         console.MarkupLine($"  The dependency's declared, so the file isn't needed in {folder}. Remove it.");
+    }
+
+    // R4/R5/R7/R11: dependents were already looked up (WebResourceService.ApplyDependencyChecksAsync)
+    // and hung off each Deletes/RemovesFromSolution entry before this ever runs — finding one never
+    // blocks the delete or the removal, it only warns. Two call sites reuse this, mirroring RenderSkips:
+    // here (the real run) and WebResourceService's dry-run preview, so both read the same warning.
+    internal static void RenderDependentWarnings(IAnsiConsole console, IEnumerable<WebResourcePlanAction> actions)
+    {
+        foreach (var a in actions)
+        {
+            if (a.Dependents is { Count: > 0 } dependents)
+                WarnDependents(console, a, dependents);
+            else if (a.Dependents is null)
+                // R11: a faulted lookup must read as "unverified", never silently as "no dependents".
+                console.Warning($"Couldn't check '{Markup.Escape(a.Name)}' for dependents.");
+        }
+    }
+
+    // KTD5: the two RemovesFromSolution reasons carry different risk, so each closes with its own
+    // line — both keep the record, but only StillInOtherSolutionReason leaves it held by a solution
+    // that might not ship downstream. The risk goes on its own line rather than into the header:
+    // one thought per line, and a header carrying it wraps on an 80-column terminal.
+    static void WarnDependents(IAnsiConsole console, WebResourcePlanAction a, IReadOnlyList<WebResourceDependent> dependents)
+    {
+        var verb = a.Action == WebResourceAction.Delete ? "deleting anyway" : "removing it anyway";
+        console.Warning($"'{Markup.Escape(a.Name)}' still has dependents — {verb}:");
+
+        foreach (var d in dependents)
+            console.MarkupLine(d.Name is not null
+                ? $"  - {Markup.Escape(d.TypeLabel)} '{Markup.Escape(d.Name)}'"
+                : $"  - {Markup.Escape(d.TypeLabel)} {d.ObjectId}");
+
+        if (a.Action == WebResourceAction.Delete)
+            return;
+
+        console.MarkupLine(a.Reason == WebResourcePlanner.OwnedByManagedSolutionReason
+            ? "  A managed solution holds it too, so it should ship downstream."
+            : "  Only another unmanaged solution holds it. That may not ship downstream.");
     }
 
     // Shared by the Updates/AddsToSolution/Deletes/RemovesFromSolution phases — each is a

@@ -17,7 +17,7 @@ public class ComponentTypeCatalogTests
         var service = Substitute.For<IOrganizationServiceAsync2>();
         var id = Guid.NewGuid();
         service.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "webresource"),
+                Arg.Is<QueryExpression>(q => q!.EntityName == "webresource"),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("webresource", id) { ["name"] = "av_ext/shared.js" }

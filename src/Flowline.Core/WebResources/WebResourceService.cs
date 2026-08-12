@@ -37,7 +37,7 @@ public class WebResourceService(IAnsiConsole console)
         // R2/R3: dependency check runs once per Deletes/RemovesFromSolution entry, after planning and
         // before the plan report, so the same result serves both the dry-run preview and the real push
         // (KD5). The planner stays pure and synchronous — this happens here, not inside Plan(...).
-        await ApplyDependencyChecksAsync(service, plan, cancellationToken).ConfigureAwait(false);
+        await ApplyDependencyChecksAsync(service, plan, runMode, cancellationToken).ConfigureAwait(false);
 
         WritePlanReport(plan, PlanReportMode.Verbose, publishAfterSync);
         // Counts every executable bucket, not just create/update/delete — a solution-only add or remove
@@ -63,6 +63,7 @@ public class WebResourceService(IAnsiConsole console)
         {
             WritePlanReport(plan, PlanReportMode.DryRun, publishAfterSync);
             WebResourceExecutor.RenderSkips(console, plan.Skips, webresourceRoot);
+            WebResourceExecutor.RenderDependentWarnings(console, plan.Deletes.Concat(plan.RemovesFromSolution));
             return true;
         }
 
@@ -74,8 +75,14 @@ public class WebResourceService(IAnsiConsole console)
     // R2: Skips are never checked — nothing is deleted or removed for them. Skip the request round-trip
     // entirely when both delete buckets are empty, so a plan with nothing to remove issues no requests.
     static async Task ApplyDependencyChecksAsync(
-        IOrganizationServiceAsync2 service, WebResourceSyncPlan plan, CancellationToken cancellationToken)
+        IOrganizationServiceAsync2 service, WebResourceSyncPlan plan, RunMode runMode, CancellationToken cancellationToken)
     {
+        // --no-delete keeps every candidate, so nothing is at risk and the executor warns about
+        // nothing. Running the lookup anyway would spend a request per candidate on a result no one
+        // reads. --dry-run is the opposite case: it warns, so it still pays.
+        if (runMode == RunMode.NoDelete)
+            return;
+
         if (plan.Deletes.Count == 0 && plan.RemovesFromSolution.Count == 0)
             return;
 
@@ -163,8 +170,8 @@ public class WebResourceService(IAnsiConsole console)
         WriteSection(line, "Creates", plan.Creates);
         WriteSection(line, "Updates", plan.Updates, withReason: true);
         WriteSection(line, "Add to solution", plan.AddsToSolution);
-        WriteSection(line, "Deletes", plan.Deletes);
-        WriteSection(line, "Remove from solution", plan.RemovesFromSolution, withReason: true);
+        WriteSection(line, "Deletes", plan.Deletes, withDependents: true);
+        WriteSection(line, "Remove from solution", plan.RemovesFromSolution, withReason: true, withDependents: true);
         WriteSection(line, "Skips", plan.Skips, withReason: true);
 
         if (publishCount > 0)
@@ -176,13 +183,29 @@ public class WebResourceService(IAnsiConsole console)
         console.Ok($"Dry run: {counts}. Run without --dry-run to apply.");
     }
 
-    static void WriteSection(Action<string> line, string label, List<WebResourcePlanAction> actions, bool withReason = false)
+    // withDependents (R4): only Deletes/RemovesFromSolution ever carry a Dependents value — nesting
+    // each dependent under its resource here is the report's copy of the same data the executor warns
+    // with (WebResourceExecutor.RenderDependentWarnings). Left unescaped, matching the a.Name line
+    // above it: console.Verbose's VerboseRenderable already blanket-escapes the whole line, so escaping
+    // here too would double-escape in --verbose mode.
+    static void WriteSection(Action<string> line, string label, List<WebResourcePlanAction> actions, bool withReason = false, bool withDependents = false)
     {
         if (actions.Count == 0)
             return;
 
         line($"  {label} ({actions.Count})");
         foreach (var a in actions.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
+        {
             line(withReason ? $"    - {a.Name} ({a.Reason})" : $"    - {a.Name}");
+
+            if (!withDependents)
+                continue;
+
+            if (a.Dependents is null)
+                line("      - dependency check failed — not verified");
+            else
+                foreach (var d in a.Dependents)
+                    line($"      - {d.TypeLabel} {(d.Name is not null ? $"'{d.Name}'" : d.ObjectId.ToString())}");
+        }
     }
 }

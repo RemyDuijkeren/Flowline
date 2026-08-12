@@ -13,6 +13,11 @@ public class WebResourcePlanner(IAnsiConsole console)
     // (e.g. "ownership unclear") to render it as a warning instead of a neutral skip line.
     internal const string ReferencedNotOwnedReason = "referenced via // flowline:depends, not owned";
 
+    // Shared with WebResourceExecutor (KTD5) — the dependents warning reads differently for each,
+    // so the exact Reason text has to be compared cross-file rather than duplicated as a literal.
+    internal const string OwnedByManagedSolutionReason = "owned by managed solution";
+    internal const string StillInOtherSolutionReason = "still in other solution";
+
     static readonly Regex ValidFilePathRegex = new(@"^[a-zA-Z0-9_.\-]+(/[a-zA-Z0-9_.\-]+)*$", RegexOptions.Compiled);
 
     public WebResourceSyncPlan Plan(WebResourceSyncSnapshot snapshot)
@@ -103,8 +108,8 @@ public class WebResourcePlanner(IAnsiConsole console)
                 (remote.Ownership is { IsInCurrentUnmanagedSolution: true, HasManagedSolutionReference: true }))
             {
                 var removeReason = remote.Ownership.HasManagedSolutionReference
-                    ? "owned by managed solution"
-                    : "still in other solution";
+                    ? OwnedByManagedSolutionReason
+                    : StillInOtherSolutionReason;
                 plan.RemovesFromSolution.Add(
                     new WebResourcePlanAction(name, WebResourceAction.RemoveFromSolution, Id: remote.Id, SolutionName: targetSolutionName, Reason: removeReason));
                 continue;

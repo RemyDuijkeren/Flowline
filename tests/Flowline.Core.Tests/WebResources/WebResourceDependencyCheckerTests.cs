@@ -27,7 +27,7 @@ public class WebResourceDependencyCheckerTests
 
     void SetupDependencies(Guid webResourceId, params Entity[] dependents) =>
         _serviceMock.ExecuteAsync(
-                Arg.Is<RetrieveDependenciesForDeleteRequest>(r => r.ObjectId == webResourceId),
+                Arg.Is<RetrieveDependenciesForDeleteRequest>(r => r!.ObjectId == webResourceId),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<OrganizationResponse>(new RetrieveDependenciesForDeleteResponse
             {
@@ -41,7 +41,7 @@ public class WebResourceDependencyCheckerTests
         var formId = Guid.NewGuid();
         SetupDependencies(webResourceId, DependencyRecord(60, formId, "Form"));
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "systemform"),
+                Arg.Is<QueryExpression>(q => q!.EntityName == "systemform"),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection([
                 new Entity("systemform", formId) { ["name"] = "Account Main Form" }
@@ -84,7 +84,7 @@ public class WebResourceDependencyCheckerTests
         var siteMapObjectId = Guid.NewGuid();
         SetupDependencies(webResourceId, DependencyRecord(62, siteMapObjectId)); // no formattedLabel
         _serviceMock.RetrieveMultipleAsync(
-                Arg.Is<QueryExpression>(q => q.EntityName == "sitemap"),
+                Arg.Is<QueryExpression>(q => q!.EntityName == "sitemap"),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection()));
 
@@ -115,7 +115,7 @@ public class WebResourceDependencyCheckerTests
         var formId = Guid.NewGuid();
 
         _serviceMock.ExecuteAsync(
-                Arg.Is<RetrieveDependenciesForDeleteRequest>(r => r.ObjectId == faultingId),
+                Arg.Is<RetrieveDependenciesForDeleteRequest>(r => r!.ObjectId == faultingId),
                 Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromException<OrganizationResponse>(
                 new FaultException<OrganizationServiceFault>(new OrganizationServiceFault(), "dependency fault")));
@@ -127,11 +127,11 @@ public class WebResourceDependencyCheckerTests
 
         var results = await WebResourceDependencyChecker.CheckAsync(_serviceMock, [faultingId, okId]);
 
-        var faultingResult = results.Single(r => r.WebResourceId == faultingId);
+        var faultingResult = results.Single(r => r!.WebResourceId == faultingId);
         faultingResult.Checked.Should().BeFalse();
         faultingResult.Dependents.Should().BeNull();
 
-        var okResult = results.Single(r => r.WebResourceId == okId);
+        var okResult = results.Single(r => r!.WebResourceId == okId);
         okResult.Checked.Should().BeTrue();
         Assert.Single(okResult.Dependents!);
     }
@@ -146,7 +146,7 @@ public class WebResourceDependencyCheckerTests
         var formId = Guid.NewGuid();
 
         _serviceMock.ExecuteAsync(
-                Arg.Is<RetrieveDependenciesForDeleteRequest>(r => r.ObjectId == faultingId),
+                Arg.Is<RetrieveDependenciesForDeleteRequest>(r => r!.ObjectId == faultingId),
                 Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromException<OrganizationResponse>(new InvalidOperationException("transport error")));
         SetupDependencies(okId, DependencyRecord(60, formId, "Form"));
@@ -157,11 +157,11 @@ public class WebResourceDependencyCheckerTests
 
         var results = await WebResourceDependencyChecker.CheckAsync(_serviceMock, [faultingId, okId]);
 
-        var faultingResult = results.Single(r => r.WebResourceId == faultingId);
+        var faultingResult = results.Single(r => r!.WebResourceId == faultingId);
         faultingResult.Checked.Should().BeFalse();
         faultingResult.Dependents.Should().BeNull();
 
-        var okResult = results.Single(r => r.WebResourceId == okId);
+        var okResult = results.Single(r => r!.WebResourceId == okId);
         okResult.Checked.Should().BeTrue();
         Assert.Single(okResult.Dependents!);
     }
@@ -175,7 +175,7 @@ public class WebResourceDependencyCheckerTests
         await WebResourceDependencyChecker.CheckAsync(_serviceMock, [webResourceId]);
 
         await _serviceMock.Received(1).ExecuteAsync(
-            Arg.Is<RetrieveDependenciesForDeleteRequest>(r => r.ComponentType == 61 && r.ObjectId == webResourceId),
+            Arg.Is<RetrieveDependenciesForDeleteRequest>(r => r!.ComponentType == 61 && r.ObjectId == webResourceId),
             Arg.Any<CancellationToken>());
     }
 

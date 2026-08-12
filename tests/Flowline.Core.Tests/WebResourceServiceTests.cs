@@ -1,4 +1,5 @@
 using System.ServiceModel;
+using Microsoft.Crm.Sdk.Messages;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Query;
@@ -24,6 +25,7 @@ public class WebResourceServiceTests : IDisposable
     {
         _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
         _console = new TestConsole();
+        _console.Profile.Width = 400; // avoid word-wrap splitting longer assertion substrings across lines
         _service = new WebResourceService(_console);
         _webresourceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(_webresourceRoot);
@@ -1215,6 +1217,22 @@ public class WebResourceServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SyncSolutionAsync_NoDeleteMode_IssuesNoDependencyRequests()
+    {
+        // --no-delete keeps the candidate, so nothing is at risk and nothing is warned about. Paying
+        // for a lookup whose result no one reads would be waste — unlike --dry-run, which does warn.
+        var webResourceId = Guid.NewGuid();
+        SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/delete.js", "old"));
+        SetupOwnership(webResourceId, ("MySolution", false));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false, runMode: RunMode.NoDelete);
+
+        await _serviceMock.DidNotReceive().ExecuteAsync(
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "RetrieveDependenciesForDelete")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task SyncSolutionAsync_DryRunAndRealRun_IssueSameDependencyChecks()
     {
         // Same snapshot, dry-run first then a real run — the dependency check must run identically
@@ -1238,6 +1256,118 @@ public class WebResourceServiceTests : IDisposable
             Arg.Is(Matching<OrganizationRequest>(r =>
                 r.RequestName == "RetrieveDependenciesForDelete" && (Guid)r["ObjectId"] == webResourceId)),
             Arg.Any<CancellationToken>());
+    }
+
+    // --- U4: dependents render in the plan report and push output (R4/R5/R6/R7/R11) ---
+
+    [Fact]
+    public async Task SyncSolutionAsync_DeleteWithTwoDependents_RendersBothUnderResource()
+    {
+        var webResourceId = Guid.NewGuid();
+        var dep1Id = Guid.NewGuid();
+        var dep2Id = Guid.NewGuid();
+        SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/delete.js", "old"));
+        SetupOwnership(webResourceId, ("MySolution", false));
+        SetupDependencies(webResourceId,
+            DependencyRecord(48, dep1Id, "Ribbon Diff"),
+            DependencyRecord(200, dep2Id, "SomeType"));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false, runMode: RunMode.DryRun);
+
+        Assert.Contains("Ribbon Diff", _console.Output);
+        Assert.Contains("SomeType", _console.Output);
+        Assert.Contains(dep1Id.ToString(), _console.Output);
+        Assert.Contains(dep2Id.ToString(), _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_DeleteWithNoDependents_AddsNoLineAndCountsUnchanged()
+    {
+        var webResourceId = Guid.NewGuid();
+        SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/delete.js", "old"));
+        SetupOwnership(webResourceId, ("MySolution", false));
+        SetupDependencies(webResourceId); // Dataverse checked, found nothing — empty, not null
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false, runMode: RunMode.DryRun);
+
+        Assert.Contains("Deletes (1)", _console.Output);
+        Assert.Contains("1 delete(s)", _console.Output);
+        Assert.DoesNotContain("still has dependents", _console.Output);
+        Assert.DoesNotContain("dependency check failed", _console.Output);
+        Assert.DoesNotContain("Couldn't check", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_UnverifiedDependencyCheck_RendersAsUnchecked()
+    {
+        // No SetupDependencies call — the constructor's Arg.Any<OrganizationRequest> stub returns a
+        // bare OrganizationResponse, so the cast to RetrieveDependenciesForDeleteResponse faults and
+        // this resource degrades to unchecked (R11): Dependents stays null.
+        var webResourceId = Guid.NewGuid();
+        SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/delete.js", "old"));
+        SetupOwnership(webResourceId, ("MySolution", false));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false, runMode: RunMode.DryRun);
+
+        Assert.Contains("Couldn't check 'my_MySolution/delete.js' for dependents.", _console.Output);
+        Assert.Contains("dependency check failed", _console.Output);
+        Assert.DoesNotContain("still has dependents", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_ManagedVsOtherSolutionRemoval_RenderDifferentText()
+    {
+        var managedId = Guid.NewGuid();
+        var otherId = Guid.NewGuid();
+        SetupWebResources(
+            RemoteWebResource(managedId, "my_MySolution/managed.js", "old"),
+            RemoteWebResource(otherId, "my_MySolution/other.js", "old"));
+        SetupOwnership(managedId, ("MySolution", false), ("msdyn_FieldService", true));
+        SetupOwnership(otherId, ("MySolution", false), ("SharedSolution", false));
+        SetupDependencies(managedId, DependencyRecord(48, Guid.NewGuid(), "Ribbon Diff"));
+        SetupDependencies(otherId, DependencyRecord(48, Guid.NewGuid(), "Ribbon Diff"));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false, runMode: RunMode.DryRun);
+
+        // Both removals share the header; KTD5's distinction lives in the closing risk line, which is
+        // what actually differs in urgency — and keeps each line inside an 80-column terminal.
+        Assert.Contains("'my_MySolution/managed.js' still has dependents — removing it anyway:", _console.Output);
+        Assert.Contains("A managed solution holds it too, so it should ship downstream.", _console.Output);
+
+        Assert.Contains("'my_MySolution/other.js' still has dependents — removing it anyway:", _console.Output);
+        Assert.Contains("Only another unmanaged solution holds it. That may not ship downstream.", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_DependentWarning_EscapesResourceName()
+    {
+        var webResourceId = Guid.NewGuid();
+        const string markupName = "my_MySolution/[red]HACK[/].js";
+        SetupWebResources(RemoteWebResource(webResourceId, markupName, "old"));
+        SetupOwnership(webResourceId, ("MySolution", false));
+        SetupDependencies(webResourceId, DependencyRecord(48, Guid.NewGuid(), "Ribbon Diff"));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
+
+        // Pinned to the warning sentence specifically — WriteSection's own (unescaped) a.Name line
+        // would pass a bare Assert.Contains(markupName, ...) too, since VerboseRenderable blanket-
+        // escapes that whole line regardless. Only WarnDependents' explicit Markup.Escape(a.Name)
+        // is under test here.
+        Assert.Contains($"'{markupName}' still has dependents", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_DependentsFound_StillDeletesAndExitsCleanly()
+    {
+        var webResourceId = Guid.NewGuid();
+        SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/delete.js", "old"));
+        SetupOwnership(webResourceId, ("MySolution", false));
+        SetupDependencies(webResourceId, DependencyRecord(48, Guid.NewGuid(), "Ribbon Diff"));
+
+        var result = await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
+
+        Assert.True(result);
+        await _serviceMock.Received(1).DeleteAsync("webresource", webResourceId, Arg.Any<CancellationToken>());
     }
 
     void SetupSolution(string solutionName, string prefix, bool isManaged = false, Guid? parentSolutionId = null)
@@ -1304,5 +1434,30 @@ public class WebResourceServiceTests : IDisposable
                     q.Criteria.Conditions.Any(c => c.AttributeName == "objectid" && c.Values.Contains(webResourceId)))),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(rows)));
+    }
+
+    // U4: mirrors WebResourceDependencyCheckerTests.SetupDependencies — an explicit stub here (rather
+    // than relying on the constructor's Arg.Any<OrganizationRequest> default) is what turns a resource
+    // from "unchecked" (the cast to RetrieveDependenciesForDeleteResponse faults) into "checked, these
+    // are the dependents".
+    void SetupDependencies(Guid webResourceId, params Entity[] dependents) =>
+        _serviceMock.ExecuteAsync(
+                Arg.Is<RetrieveDependenciesForDeleteRequest>(r => r!.ObjectId == webResourceId),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(new RetrieveDependenciesForDeleteResponse
+            {
+                Results = { ["EntityCollection"] = new EntityCollection(dependents.ToList()) }
+            }));
+
+    static Entity DependencyRecord(int type, Guid objectId, string? formattedLabel = null)
+    {
+        var entity = new Entity("dependency")
+        {
+            ["dependentcomponenttype"] = new OptionSetValue(type),
+            ["dependentcomponentobjectid"] = objectId
+        };
+        if (formattedLabel is not null)
+            entity.FormattedValues["dependentcomponenttype"] = formattedLabel;
+        return entity;
     }
 }
