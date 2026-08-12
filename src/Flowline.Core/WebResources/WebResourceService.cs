@@ -33,6 +33,12 @@ public class WebResourceService(IAnsiConsole console)
 
         // Phase 2: Plan registration (pure, synchronous)
         var plan = _planner.Plan(snapshot);
+
+        // R2/R3: dependency check runs once per Deletes/RemovesFromSolution entry, after planning and
+        // before the plan report, so the same result serves both the dry-run preview and the real push
+        // (KD5). The planner stays pure and synchronous — this happens here, not inside Plan(...).
+        await ApplyDependencyChecksAsync(service, plan, cancellationToken).ConfigureAwait(false);
+
         WritePlanReport(plan, PlanReportMode.Verbose, publishAfterSync);
         // Counts every executable bucket, not just create/update/delete — a solution-only add or remove
         // is a real change, and listing three zeros next to it reads as "nothing happened".
@@ -63,6 +69,26 @@ public class WebResourceService(IAnsiConsole console)
         // Phase 3: Execute the plan
         await _executor.ExecuteAsync(service, plan, webresourceRoot, publishAfterSync, runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
         return true;
+    }
+
+    // R2: Skips are never checked — nothing is deleted or removed for them. Skip the request round-trip
+    // entirely when both delete buckets are empty, so a plan with nothing to remove issues no requests.
+    static async Task ApplyDependencyChecksAsync(
+        IOrganizationServiceAsync2 service, WebResourceSyncPlan plan, CancellationToken cancellationToken)
+    {
+        if (plan.Deletes.Count == 0 && plan.RemovesFromSolution.Count == 0)
+            return;
+
+        var ids = plan.Deletes.Concat(plan.RemovesFromSolution).Select(a => a.Id!.Value);
+        var results = await WebResourceDependencyChecker.CheckAsync(service, ids, cancellationToken).ConfigureAwait(false);
+        var dependentsById = results.ToDictionary(r => r.WebResourceId, r => r.Dependents);
+
+        // Replace in place with `with` — WebResourcePlanAction is a positional record, the list stays
+        // the same reference, only the entries carrying the new dependents change.
+        for (var i = 0; i < plan.Deletes.Count; i++)
+            plan.Deletes[i] = plan.Deletes[i] with { Dependents = dependentsById[plan.Deletes[i].Id!.Value] };
+        for (var i = 0; i < plan.RemovesFromSolution.Count; i++)
+            plan.RemovesFromSolution[i] = plan.RemovesFromSolution[i] with { Dependents = dependentsById[plan.RemovesFromSolution[i].Id!.Value] };
     }
 
     // Local left, Dataverse right — the two sides are read against each other, and stacked trees put the

@@ -1159,6 +1159,87 @@ public class WebResourceServiceTests : IDisposable
             _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution"));
     }
 
+    // --- U3: dependency check runs once per Deletes/RemovesFromSolution entry, after planning (R2/R3) ---
+
+    [Fact]
+    public async Task SyncSolutionAsync_DeletesAndRemoves_IssueOneDependencyRequestPerEntry()
+    {
+        var deleteId = Guid.NewGuid();
+        var removeId = Guid.NewGuid();
+        SetupWebResources(
+            RemoteWebResource(deleteId, "my_MySolution/delete.js", "old"),
+            RemoteWebResource(removeId, "my_MySolution/remove.js", "old"));
+        SetupOwnership(deleteId, ("MySolution", false));
+        SetupOwnership(removeId, ("MySolution", false), ("SharedSolution", false));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
+
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is(Matching<OrganizationRequest>(r =>
+                r.RequestName == "RetrieveDependenciesForDelete" && (Guid)r["ObjectId"] == deleteId)),
+            Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is(Matching<OrganizationRequest>(r =>
+                r.RequestName == "RetrieveDependenciesForDelete" && (Guid)r["ObjectId"] == removeId)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_SkipsOnly_IssuesNoDependencyRequests()
+    {
+        var webResourceId = Guid.NewGuid();
+        SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/unknown.js", "old"));
+        SetupOwnership(webResourceId, ("ManagedBase", true)); // ownership unclear -> Skips only
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
+
+        await _serviceMock.DidNotReceive().ExecuteAsync(
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "RetrieveDependenciesForDelete")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_NoDeletesNoRemoves_IssuesNoDependencyRequests()
+    {
+        File.WriteAllText(Path.Combine(_webresourceRoot, "test.js"), "console.log('test');");
+        var createResponse = new CreateResponse();
+        createResponse.Results["id"] = Guid.NewGuid();
+        _serviceMock.ExecuteAsync(Arg.Any<CreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrganizationResponse>(createResponse));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution");
+
+        await _serviceMock.DidNotReceive().ExecuteAsync(
+            Arg.Is(Matching<OrganizationRequest>(r => r.RequestName == "RetrieveDependenciesForDelete")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_DryRunAndRealRun_IssueSameDependencyChecks()
+    {
+        // Same snapshot, dry-run first then a real run — the dependency check must run identically
+        // before the branch that distinguishes them, so both read the same result (KD5).
+        var webResourceId = Guid.NewGuid();
+        SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/orphan.js", "old"));
+        SetupOwnership(webResourceId, ("MySolution", false));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false, runMode: RunMode.DryRun);
+
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is(Matching<OrganizationRequest>(r =>
+                r.RequestName == "RetrieveDependenciesForDelete" && (Guid)r["ObjectId"] == webResourceId)),
+            Arg.Any<CancellationToken>());
+
+        _serviceMock.ClearReceivedCalls();
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
+
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is(Matching<OrganizationRequest>(r =>
+                r.RequestName == "RetrieveDependenciesForDelete" && (Guid)r["ObjectId"] == webResourceId)),
+            Arg.Any<CancellationToken>());
+    }
+
     void SetupSolution(string solutionName, string prefix, bool isManaged = false, Guid? parentSolutionId = null)
     {
         var solution = new Entity("solution", Guid.NewGuid())

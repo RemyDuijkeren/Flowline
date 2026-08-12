@@ -121,7 +121,12 @@ public record WebResourcePlanAction(
     string? Reason = null,
     // Solutions that own the resource — distinct from SolutionName, which is the solution an action
     // targets. Only set on a reference-only Skip, where naming the owner is the point of the warning.
-    string? OwningSolutions = null);
+    string? OwningSolutions = null,
+    // Populated by WebResourceDependencyChecker after planning, for Deletes/RemovesFromSolution entries
+    // only (R2). Null means unchecked — the check didn't run for this entry, or it faulted; distinct
+    // from an empty list, which means Dataverse checked and found nothing. KD5/KTD6: hung off the plan
+    // action itself so the dry-run preview and the executed run read the same result.
+    IReadOnlyList<WebResourceDependent>? Dependents = null);
 
 public class WebResourceSyncPlan
 {
