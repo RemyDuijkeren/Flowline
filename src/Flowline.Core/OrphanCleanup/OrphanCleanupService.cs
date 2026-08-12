@@ -119,20 +119,25 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
 
     // Derives the report reason from DeploySolutionInfo rather than a caller-supplied string —
     // presentation belongs to the service that owns the report. U5/KTD4: mode defaults to NoDelete so
-    // every pre-existing call site (and test) keeps its current behavior unmodified; DryRun short-circuits
-    // before the managed/unmanaged/exists-in-target branching, since --dry-run's "preview" framing
-    // dominates regardless of the solution's managed status.
+    // every pre-existing call site (and test) keeps its current behavior unmodified.
+    // A managed solution already installed in the target needs no hint at all: PrintReport's
+    // managed-upgrade wording names who removes the components, and that stays true under --dry-run, so
+    // it outranks the dry-run marker instead of being hidden by it.
     internal static string BuildReportOnlyHint(DeploySolutionInfo solution, RunMode mode = RunMode.NoDelete) =>
-        mode == RunMode.DryRun ? "(--dry-run preview)"
-        : !solution.IncludeManaged ? "(--no-delete active)"
-        : solution.ExistsInTarget ? "(managed — previewing what the upgrade import will remove)"
-        : "(managed — first install, cleanup runs on a later upgrade deploy)";
+        solution.IncludeManaged
+            ? solution.ExistsInTarget ? "" : "(managed — first install, cleanup runs on a later upgrade deploy)"
+        : mode == RunMode.DryRun ? "(--dry-run preview)"
+        : "(--no-delete active)";
 
     // Thin wrapper for DeployCommand, which already has a PostDeployContext for the IPostDeployService
     // fan-out. Delegates to the primitives overload below so the engine isn't coupled to deploy-only
     // fields like PackagePath.
     public Task<CompareResult> CompareAsync(PostDeployContext context, CancellationToken ct, string? noDeleteHint = "(--no-delete active)") =>
-        CompareAsync(context.DataverseSolutionSrcRoot, context.Service, context.Solution.Name, context.Solution.EnvironmentUrl, context.Mode, ct, noDeleteHint, context.DeleteOrphansConsent);
+        CompareAsync(context.DataverseSolutionSrcRoot, context.Service, context.Solution.Name, context.Solution.EnvironmentUrl, context.Mode, ct, noDeleteHint, context.DeleteOrphansConsent,
+            // Managed + already installed is exactly DeployCommand's --stage-and-upgrade condition, and a
+            // Dataverse Upgrade removes every component the new version drops — so nothing in this report
+            // is the operator's job on that path.
+            context.Solution.IncludeManaged && context.Solution.ExistsInTarget);
 
     // Convenience overload for read-only callers with no context of their own (e.g. DriftCommand) —
     // takes dataverseSolutionFolder (parent of src) and always runs RunMode.NoDelete.
@@ -165,7 +170,11 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         RunMode mode,
         CancellationToken ct,
         string? noDeleteHint = "(--no-delete active)",
-        bool deleteOrphansConsent = false)
+        bool deleteOrphansConsent = false,
+        // Reframes the report for a managed upgrade import, where Dataverse — not Flowline, not the
+        // operator — removes everything the new version drops. Defaults false so every other caller
+        // (DriftCommand, unmanaged deploys) keeps the action-oriented wording.
+        bool managedUpgrade = false)
     {
         var (sNew, entityLogicalNames, namedComponents) = ComponentClassifier.ParseLocalSource(dataverseSolutionSrcRoot);
 
@@ -242,7 +251,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         var detectionContext = new DetectionContext(dataverseSolutionSrcRoot, service, solutionName, environmentUrl, mode, entityLogicalNames, deleteOrphansConsent);
         var entries = await DispatchToHandlersAsync(detectionContext, namedComponents, orphans, ct).ConfigureAwait(false);
 
-        PrintReport(entries, mode, solutionName, environmentUrl, noDeleteHint);
+        PrintReport(entries, mode, solutionName, environmentUrl, noDeleteHint, managedUpgrade);
 
         return new CompareResult(entries);
     }
@@ -874,10 +883,16 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
     static readonly OrphanPriority[] PriorityOrder =
         [OrphanPriority.Prio1, OrphanPriority.Prio2, OrphanPriority.Prio3, OrphanPriority.None];
 
-    void PrintReport(IReadOnlyList<OrphanEntry> entries, RunMode mode, string solutionName, string environmentUrl, string? noDeleteHint = "(--no-delete active)")
+    // OrphanAction says what *Flowline* can do to a component through the SDK — it says nothing about
+    // Dataverse's own Upgrade, which removes every dropped component regardless of type. So on the managed
+    // upgrade path the Manual split is meaningless (nobody has to touch the maker portal) and those entries
+    // join the Prio groups instead, keeping the Prio1/2/3 triage the operator still needs.
+    const string ManagedUpgradeLabel = "removed by the managed upgrade";
+
+    void PrintReport(IReadOnlyList<OrphanEntry> entries, RunMode mode, string solutionName, string environmentUrl, string? noDeleteHint = "(--no-delete active)", bool managedUpgrade = false)
     {
-        var automated = entries.Where(e => e.Action != OrphanAction.Manual).ToList();
-        var manual = entries.Where(e => e.Action == OrphanAction.Manual).ToList();
+        var automated = managedUpgrade ? entries.ToList() : entries.Where(e => e.Action != OrphanAction.Manual).ToList();
+        List<OrphanEntry> manual = managedUpgrade ? [] : entries.Where(e => e.Action == OrphanAction.Manual).ToList();
 
         console.MarkupLine($"[bold]Orphan components ({entries.Count}):[/]");
 
@@ -894,12 +909,14 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
                 // delete wording, so nobody reads a report-only line as an action that ran or will run.
                 if (entry.ReportOnly)
                 {
-                    console.MarkupLine($"    [dim]{Markup.Escape(entry.DisplayName)} — detected, not auto-removed[/]");
+                    console.MarkupLine($"    [dim]{Markup.Escape(entry.DisplayName)} — {(managedUpgrade ? ManagedUpgradeLabel : "detected, not auto-removed")}[/]");
                     RenderWebResourceDependents(entry);
                     continue;
                 }
 
-                var label = mode.IsReportOnly() ? ReportOnlyLabel(entry.Action) : ActionLabel(entry.Action);
+                var label = managedUpgrade ? ManagedUpgradeLabel
+                    : mode.IsReportOnly() ? ReportOnlyLabel(entry.Action)
+                    : ActionLabel(entry.Action);
                 console.MarkupLine($"    [{ActionColor(entry.Action)}]{Markup.Escape(entry.DisplayName)} — {label}[/]");
                 RenderWebResourceDependents(entry);
             }
@@ -911,6 +928,13 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
             foreach (var entry in manual)
                 console.MarkupLine($"  [yellow]{Markup.Escape(entry.DisplayName)}[/] — remove manually via maker portal");
             console.MarkupLine($"  Open {SolutionsListUrl(environmentUrl)}, find '{solutionName}', and remove these from there.");
+        }
+
+        if (managedUpgrade)
+        {
+            console.Info("Components another solution owns only lose membership — they stay installed.");
+            console.Skip($"{entries.Count} component{(entries.Count == 1 ? "" : "s")} — the upgrade import removes {(entries.Count == 1 ? "it" : "them")}. Nothing to remove by hand.");
+            return;
         }
 
         // ReportOnly entries are excluded from the delete/remove counts — they are surfaced, not acted on.

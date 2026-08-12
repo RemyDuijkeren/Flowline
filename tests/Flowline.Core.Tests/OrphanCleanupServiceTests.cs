@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
@@ -70,7 +71,9 @@ public class OrphanCleanupServiceTests : IDisposable
     [Theory]
     [InlineData(false, false, "(--no-delete active)")]
     [InlineData(false, true, "(--no-delete active)")]
-    [InlineData(true, true, "(managed — previewing what the upgrade import will remove)")]
+    // Managed + already installed carries no hint: PrintReport's managed-upgrade wording says who removes
+    // the components, so a second reason phrase on the same line would only repeat it.
+    [InlineData(true, true, "")]
     [InlineData(true, false, "(managed — first install, cleanup runs on a later upgrade deploy)")]
     public void BuildReportOnlyHint_ReturnsExpected(bool includeManaged, bool existsInTarget, string expected)
     {
@@ -78,17 +81,18 @@ public class OrphanCleanupServiceTests : IDisposable
         Assert.Equal(expected, OrphanCleanupService.BuildReportOnlyHint(solution));
     }
 
-    // U5: DryRun short-circuits before the managed/unmanaged/exists-in-target branching regardless of
-    // combination — confirms the dry-run branch dominates, mirroring BuildReportOnlyHint_ReturnsExpected's cases.
+    // U5: DryRun only dominates where the managed status has nothing better to say. A managed solution's
+    // reason holds under --dry-run too (the upgrade is what removes the components either way), so it
+    // outranks the preview marker instead of being hidden by it.
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, true)]
-    [InlineData(true, false)]
-    public void BuildReportOnlyHint_DryRun_ReturnsPreviewRegardlessOfManagedStatus(bool includeManaged, bool existsInTarget)
+    [InlineData(false, false, "(--dry-run preview)")]
+    [InlineData(false, true, "(--dry-run preview)")]
+    [InlineData(true, true, "")]
+    [InlineData(true, false, "(managed — first install, cleanup runs on a later upgrade deploy)")]
+    public void BuildReportOnlyHint_DryRun_ManagedStatusOutranksPreviewMarker(bool includeManaged, bool existsInTarget, string expected)
     {
         var solution = new DeploySolutionInfo("MySolution", "https://example.crm.dynamics.com", includeManaged, existsInTarget);
-        Assert.Equal("(--dry-run preview)", OrphanCleanupService.BuildReportOnlyHint(solution, RunMode.DryRun));
+        Assert.Equal(expected, OrphanCleanupService.BuildReportOnlyHint(solution, RunMode.DryRun));
     }
 
     // PostDeployContext no longer carries LocalComponents/EntityLogicalNames/NamedComponents (KTD12) —
@@ -106,7 +110,8 @@ public class OrphanCleanupServiceTests : IDisposable
         IReadOnlyList<string>? entityLogicalNames = null,
         string? dataverseSolutionSrcRoot = null,
         IReadOnlyList<(int ComponentType, string SchemaName)>? namedComponents = null,
-        bool deleteOrphansConsent = false)
+        bool deleteOrphansConsent = false,
+        bool includeManaged = false)
     {
         string srcRoot;
         if (dataverseSolutionSrcRoot != null)
@@ -122,7 +127,7 @@ public class OrphanCleanupServiceTests : IDisposable
 
         WriteSolutionXmlFixture(srcRoot, localComponents, entityLogicalNames ?? [], namedComponents ?? []);
 
-        var solution = new DeploySolutionInfo(solutionName, "https://example.crm.dynamics.com", IncludeManaged: false, ExistsInTarget: true);
+        var solution = new DeploySolutionInfo(solutionName, "https://example.crm.dynamics.com", includeManaged, ExistsInTarget: true);
         return new(_serviceMock, solution, mode, "solution.zip", srcRoot, deleteOrphansConsent);
     }
 
@@ -1826,6 +1831,55 @@ public class OrphanCleanupServiceTests : IDisposable
         Assert.Contains("Prio3 — safe to clean up", _console.Output);
         Assert.DoesNotContain("Prio1 — blocks deployment", _console.Output);
         Assert.DoesNotContain("Prio2 — still running deleted logic", _console.Output);
+    }
+
+    // -- Managed upgrade: Dataverse removes the orphans, so the report says so instead of assigning work --
+
+    [Fact]
+    public async Task RunPreImportAsync_ManagedUpgrade_FramesEveryEntryAsRemovedByTheUpgrade()
+    {
+        // A managed solution already installed in the target imports as an Upgrade, which removes every
+        // component the new version drops — including the Manual-action ones Flowline can't touch via the
+        // SDK. So no maker-portal instruction, no "would delete" (Flowline deletes nothing here), and the
+        // Manual entries join the Prio groups rather than a separate "can't be removed automatically" block.
+        var webResourceId = Guid.NewGuid(); // 61 -> Prio3, Action.Delete
+        var entityId = Guid.NewGuid();      // 1  -> Prio3, Action.Manual
+
+        SetupSolutionComponents("MySolution", (webResourceId, 61), (entityId, 1));
+        SetupWebResourceNames((webResourceId, "av_ext/old.js"));
+
+        await _service.RunPreImportAsync(
+            Ctx("MySolution", [(Guid.NewGuid(), 0)], mode: RunMode.NoDelete, includeManaged: true), default);
+
+        // Substrings only — TestConsole wraps at 80 columns, so a whole rendered line isn't assertable.
+        Assert.Contains($"WebResource 'av_ext/old.js' ({webResourceId})", _console.Output);
+        Assert.Contains($"Entity {entityId}", _console.Output);
+        Assert.Equal(2, Regex.Matches(_console.Output, "removed by the managed upgrade").Count);
+        Assert.DoesNotContain("remove manually via maker portal", _console.Output);
+        Assert.DoesNotContain("would delete", _console.Output);
+        Assert.DoesNotContain("can't be removed automatically", _console.Output);
+
+        // Prio triage survives — it's what tells the operator which orphans are about to break their deploy.
+        Assert.Contains("Prio3 — safe to clean up", _console.Output);
+
+        Assert.Contains("only lose membership", _console.Output);
+        Assert.Contains("2 components — the upgrade import removes them.", _console.Output);
+    }
+
+    [Fact]
+    public async Task RunPreImportAsync_Unmanaged_KeepsManualBlockAndMakerPortalPointer()
+    {
+        // Guard on the other side of the branch: the unmanaged path still assigns the work, because there
+        // is no upgrade import to do it.
+        var entityId = Guid.NewGuid();
+        SetupSolutionComponents("MySolution", (entityId, 1));
+
+        await _service.RunPreImportAsync(
+            Ctx("MySolution", [(Guid.NewGuid(), 0)], mode: RunMode.NoDelete), default);
+
+        Assert.Contains("can't be removed automatically", _console.Output);
+        Assert.Contains("remove manually via maker portal", _console.Output);
+        Assert.DoesNotContain("removed by the managed upgrade", _console.Output);
     }
 
     // -- U7/R10: orphan cleanup reports WebResourceDependencyChecker dependents on the entry itself --
