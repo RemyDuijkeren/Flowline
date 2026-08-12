@@ -1370,6 +1370,71 @@ public class WebResourceServiceTests : IDisposable
         await _serviceMock.Received(1).DeleteAsync("webresource", webResourceId, Arg.Any<CancellationToken>());
     }
 
+    // --- U5: a delete fault reuses the dependents already resolved during planning (R8) ---
+
+    [Fact]
+    public async Task SyncSolutionAsync_DeleteFaultsWithDependents_RendersDependentsWithFailure()
+    {
+        var webResourceId = Guid.NewGuid();
+        var depId = Guid.NewGuid();
+        SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/delete.js", "old"));
+        SetupOwnership(webResourceId, ("MySolution", false));
+        SetupDependencies(webResourceId, DependencyRecord(48, depId, "Ribbon Diff"));
+        _serviceMock.DeleteAsync("webresource", webResourceId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new FaultException<OrganizationServiceFault>(new OrganizationServiceFault(), "referenced by other components")));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
+
+        Assert.Contains("1 web resource", ex.Message);
+        Assert.Contains("referenced by other components", _console.Output);
+        // The failure line itself uses the "✗" error prefix (FlowlineTheme.ErrorPrefix) — nothing
+        // else in this run's output uses it, so the tail after it isolates what this unit adds,
+        // separate from the pre-delete dependent warning (R5/R7, which also says "Ribbon Diff").
+        var afterFailure = _console.Output[(_console.Output.LastIndexOf('✗') + 1)..];
+        Assert.Contains("Ribbon Diff", afterFailure);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_DeleteFaultsWithoutDependents_RendersFailureAlone()
+    {
+        var webResourceId = Guid.NewGuid();
+        SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/delete.js", "old"));
+        SetupOwnership(webResourceId, ("MySolution", false));
+        SetupDependencies(webResourceId); // checked, none found
+        _serviceMock.DeleteAsync("webresource", webResourceId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new FaultException<OrganizationServiceFault>(new OrganizationServiceFault(), "Dataverse error")));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
+
+        Assert.Contains("1 web resource", ex.Message);
+        Assert.Contains("my_MySolution/delete.js", _console.Output);
+        Assert.Contains("Dataverse error", _console.Output);
+        Assert.DoesNotContain("still has dependents", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_DeleteFaults_IssuesNoSecondDependencyRequest()
+    {
+        var webResourceId = Guid.NewGuid();
+        SetupWebResources(RemoteWebResource(webResourceId, "my_MySolution/delete.js", "old"));
+        SetupOwnership(webResourceId, ("MySolution", false));
+        SetupDependencies(webResourceId, DependencyRecord(48, Guid.NewGuid(), "Ribbon Diff"));
+        _serviceMock.DeleteAsync("webresource", webResourceId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new FaultException<OrganizationServiceFault>(new OrganizationServiceFault(), "Dataverse error")));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false));
+
+        // Load-bearing: proves the fault path reuses the dependents resolved during planning rather
+        // than issuing a second RetrieveDependenciesForDelete request for this resource.
+        await _serviceMock.Received(1).ExecuteAsync(
+            Arg.Is(Matching<OrganizationRequest>(r =>
+                r.RequestName == "RetrieveDependenciesForDelete" && (Guid)r["ObjectId"] == webResourceId)),
+            Arg.Any<CancellationToken>());
+    }
+
     void SetupSolution(string solutionName, string prefix, bool isManaged = false, Guid? parentSolutionId = null)
     {
         var solution = new Entity("solution", Guid.NewGuid())

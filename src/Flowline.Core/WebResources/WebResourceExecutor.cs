@@ -23,7 +23,7 @@ public class WebResourceExecutor(IAnsiConsole console)
         CancellationToken cancellationToken = default)
     {
         var publishIds = new List<Guid>();
-        var failures = new List<(string Name, Exception Error)>();
+        var failures = new List<(WebResourcePlanAction Action, Exception Error)>();
 
         RenderSkips(console, plan.Skips, webresourceRoot);
 
@@ -91,8 +91,15 @@ public class WebResourceExecutor(IAnsiConsole console)
 
         if (failures.Count > 0)
         {
-            foreach (var (name, ex) in failures)
-                console.Error($"'{name}' — {ex.Message}");
+            // R8: reuse the dependents already resolved during planning (KD1) — a delete/remove that
+            // still faults on Dataverse's dependency check gets its held dependents rendered alongside
+            // the failure, no second RetrieveDependenciesForDelete request.
+            foreach (var (action, ex) in failures)
+            {
+                console.Error($"'{action.Name}' — {ex.Message}");
+                if (action.Dependents is { Count: > 0 } dependents)
+                    RenderDependentLines(console, dependents);
+            }
             throw new InvalidOperationException($"{failures.Count} web resource operation(s) failed.");
         }
     }
@@ -151,10 +158,7 @@ public class WebResourceExecutor(IAnsiConsole console)
         var verb = a.Action == WebResourceAction.Delete ? "deleting anyway" : "removing it anyway";
         console.Warning($"'{Markup.Escape(a.Name)}' still has dependents — {verb}:");
 
-        foreach (var d in dependents)
-            console.MarkupLine(d.Name is not null
-                ? $"  - {Markup.Escape(d.TypeLabel)} '{Markup.Escape(d.Name)}'"
-                : $"  - {Markup.Escape(d.TypeLabel)} {d.ObjectId}");
+        RenderDependentLines(console, dependents);
 
         if (a.Action == WebResourceAction.Delete)
             return;
@@ -162,6 +166,16 @@ public class WebResourceExecutor(IAnsiConsole console)
         console.MarkupLine(a.Reason == WebResourcePlanner.OwnedByManagedSolutionReason
             ? "  A managed solution holds it too, so it should ship downstream."
             : "  Only another unmanaged solution holds it. That may not ship downstream.");
+    }
+
+    // Shared by WarnDependents (U4) and the failure loop in ExecuteAsync (U5, R8) — same dependent
+    // line shape either way, so one list-of-dependents renderer serves both.
+    static void RenderDependentLines(IAnsiConsole console, IReadOnlyList<WebResourceDependent> dependents)
+    {
+        foreach (var d in dependents)
+            console.MarkupLine(d.Name is not null
+                ? $"  - {Markup.Escape(d.TypeLabel)} '{Markup.Escape(d.Name)}'"
+                : $"  - {Markup.Escape(d.TypeLabel)} {d.ObjectId}");
     }
 
     // Shared by the Updates/AddsToSolution/Deletes/RemovesFromSolution phases — each is a
@@ -172,7 +186,7 @@ public class WebResourceExecutor(IAnsiConsole console)
         string progressLabel,
         string verb,
         Func<WebResourcePlanAction, string> verboseMessage,
-        List<(string Name, Exception Error)> failures,
+        List<(WebResourcePlanAction Action, Exception Error)> failures,
         Func<WebResourcePlanAction, Task> perform,
         CancellationToken cancellationToken)
     {
@@ -182,7 +196,7 @@ public class WebResourceExecutor(IAnsiConsole console)
             ExecuteBoundedParallelAsync(actions, MaxParallelism, async action =>
             {
                 try { await perform(action).ConfigureAwait(false); }
-                catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action.Name, ex)); }
+                catch (FaultException<OrganizationServiceFault> ex) { lock (failures) failures.Add((action, ex)); }
             }, ctx.AddTask(progressLabel, maxValue: actions.Count), cancellationToken)).ConfigureAwait(false);
 
         foreach (var a in actions) console.Verbose(verboseMessage(a));
@@ -191,7 +205,7 @@ public class WebResourceExecutor(IAnsiConsole console)
 
     async Task<List<Guid>> ExecuteCreatesAsync(IOrganizationServiceAsync2 service,
         IEnumerable<WebResourcePlanAction> creates,
-        List<(string Name, Exception Error)> failures,
+        List<(WebResourcePlanAction Action, Exception Error)> failures,
         ProgressTask progressTask,
         CancellationToken cancellationToken)
     {
@@ -210,7 +224,7 @@ public class WebResourceExecutor(IAnsiConsole console)
                     cancellationToken).ConfigureAwait(false);
                 ids.Add(response.id);
             }
-            catch (FaultException<OrganizationServiceFault> ex) { failures.Add((action.Name, ex)); }
+            catch (FaultException<OrganizationServiceFault> ex) { failures.Add((action, ex)); }
             progressTask.Increment(1);
         }
 
