@@ -324,6 +324,7 @@
           "Microsoft.Identity.Client.Extensions.Msal": "[4.87.0, )",
           "Microsoft.PowerPlatform.Dataverse.Client": "[1.2.26, )",
           "Microsoft.VisualStudio.SolutionPersistence": "[1.0.52, )",
+          "NuGet.Versioning": "[7.9.0, )",
           "Spectre.Console": "[0.57.2, )",
           "System.Reflection.MetadataLoadContext": "[10.0.10, )",
           "System.Security.Cryptography.Xml": "[10.0.10, )"
@@ -405,6 +406,12 @@
         "requested": "[1.0.52, )",
         "resolved": "1.0.52",
         "contentHash": "oNv2JtYXhpdJrX63nibx1JT3uCESOBQ1LAk7Dtz/sr0+laW0KRM6eKp4CZ3MHDR2siIkKsY8MmUkeP5DKkQQ5w=="
+      },
+      "NuGet.Versioning": {
+        "type": "CentralTransitive",
+        "requested": "[7.9.0, )",
+        "resolved": "7.9.0",
+        "contentHash": "r4sZuVpVqwSBLe4qYDrnpScqdyctlRXg0HSF5OoCGkeBc8b+o8BBYHuI/u1RoWYX78PbieijU13TBt71/Xf3lw=="
       },
       "Serilog": {
         "type": "CentralTransitive",
