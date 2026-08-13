@@ -858,7 +858,7 @@ public class CloneCommandTests
         };
 
         var command = new CloneCommand(console, new FlowlineRuntimeOptions(), profileResolutionService, NullLoggerFactory.Instance, capture,
-            projectScaffolder, createEnvironmentResolver);
+            projectScaffolder, createEnvironmentResolver, new NuGetVersionClient(new HttpClient()));
 
         return (command, console);
     }

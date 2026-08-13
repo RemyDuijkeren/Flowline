@@ -2,6 +2,7 @@ using System.ComponentModel;
 using CliWrap;
 using Flowline.Core;
 using Flowline.Core.Console;
+using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Services;
 using Flowline.Utils;
@@ -16,7 +17,7 @@ public enum Role { Dev, Test, Uat }
 
 public enum CopyType { Minimal, Full }
 
-public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture) : FlowlineCommand<ProvisionCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture)
+public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient) : FlowlineCommand<ProvisionCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
 {
     public sealed class Settings : FlowlineSettings
     {

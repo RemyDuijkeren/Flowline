@@ -21,8 +21,8 @@ namespace Flowline.Commands;
 // project comes to exist, so there is no project yet to require.
 public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService,
     ILoggerFactory loggerFactory, SubprocessCapture capture, CreateEnvironmentResolver createEnvironmentResolver,
-    DataverseConnector dataverseConnector, SolutionCreateService solutionCreateService, ProjectScaffolder projectScaffolder) :
-    FlowlineCommand<InitCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture)
+    DataverseConnector dataverseConnector, SolutionCreateService solutionCreateService, ProjectScaffolder projectScaffolder, NuGetVersionClient nuGetVersionClient) :
+    FlowlineCommand<InitCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
 {
     /// <summary>Seam for testing — overrides DataverseConnector.ConnectViaPacAsync (a real MSAL token
     /// acquisition with no mocking seam of its own).</summary>

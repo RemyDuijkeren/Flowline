@@ -3,6 +3,7 @@ using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Models;
+using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Services;
 using Flowline.Utils;
@@ -13,8 +14,8 @@ using Spectre.Console.Cli;
 namespace Flowline.Commands;
 
 public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture,
-    ProjectScaffolder projectScaffolder, CreateEnvironmentResolver createEnvironmentResolver) :
-    FlowlineCommand<CloneCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture)
+    ProjectScaffolder projectScaffolder, CreateEnvironmentResolver createEnvironmentResolver, NuGetVersionClient nuGetVersionClient) :
+    FlowlineCommand<CloneCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
 {
     /// <summary>Seam for testing — overrides PacUtils.GetSolutionsAsync (shells out to a real pac.exe
     /// subprocess with no mocking seam of its own).</summary>

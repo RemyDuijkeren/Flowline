@@ -190,7 +190,7 @@ public class InitCommandTests
         var createEnvironmentResolver = new CreateEnvironmentResolver(console, profileResolutionService, capture);
 
         var command = new InitCommand(console, new FlowlineRuntimeOptions(), profileResolutionService,
-            NullLoggerFactory.Instance, capture, createEnvironmentResolver, connector, new SolutionCreateService(), projectScaffolder)
+            NullLoggerFactory.Instance, capture, createEnvironmentResolver, connector, new SolutionCreateService(), projectScaffolder, new NuGetVersionClient(new HttpClient()))
         {
             ConnectOverride = (_, _, _) => Task.FromResult(orgService),
             ValidatePackAndBuildOverride = s_succeedingBuild

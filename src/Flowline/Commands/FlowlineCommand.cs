@@ -19,10 +19,11 @@ namespace Flowline.Commands;
 
 public enum EnvironmentRole { Prod, Uat, Test, Dev }
 
-public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture) : AsyncCommand<TSettings>
+public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient) : AsyncCommand<TSettings>
     where TSettings : FlowlineSettings
 {
     protected readonly SubprocessCapture _capture = capture;
+    protected readonly NuGetVersionClient _nuGetVersionClient = nuGetVersionClient;
 
     public static string FormatDuration(TimeSpan elapsed) =>
         elapsed.TotalMinutes >= 1 ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds}s" :
@@ -108,6 +109,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     {
         ToolCheckResult? dotnet = null, pac = null, git = null;
         string? gitBranch = null;
+        string? newerVersion = null;
         await Console.Status().FlowlineSpinner().StartAsync("Checking your setup...", async ctx =>
         {
             git = await FlowlineValidator.Default.EnsureGitAsync(settings, cancellationToken);
@@ -116,6 +118,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
             gitBranch = await GitUtils.GetCurrentBranchAsync(_capture, cancellationToken);
             dotnet = await FlowlineValidator.Default.EnsureDotNetAsync(settings, cancellationToken);
             pac = await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
+            newerVersion = await UpdateNoticeChecker.CheckAsync(Console, FlowlineValidator.Default, _nuGetVersionClient, settings.NoCache, cancellationToken);
         });
 
         RuntimeOptions.ToolVersions = new FlowlineToolVersions(
@@ -128,6 +131,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         );
 
         Console.Ok("Prerequisites all good, let's go!");
+        UpdateNoticeChecker.PrintNotice(Console, newerVersion);
     }
 
     // Single source of truth for choosing between the four ProjectConfig.GetOrUpdate*Url wrappers —

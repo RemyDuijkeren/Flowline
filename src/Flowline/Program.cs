@@ -60,6 +60,7 @@ services.AddSingleton(runtimeOptions);
 services.AddSingleton<DataverseConnector>();
 services.AddSingleton<ProfileResolutionService>();
 services.AddSingleton<HttpClient>();
+services.AddSingleton<NuGetVersionClient>();
 services.AddSingleton<XrmContextToolProvider>();
 services.AddSingleton<XrmContextRunner>();
 services.AddSingleton<SecretResolver>();

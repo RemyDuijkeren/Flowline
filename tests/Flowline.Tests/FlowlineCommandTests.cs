@@ -93,8 +93,8 @@ public class FlowlineCommandTests
 
     // Minimal concrete subclass — FlowlineCommand<TSettings> is abstract, and ConnectToDataverseAsync /
     // GetAndCheckEnvironmentInfoAsync are protected, so a test-local subclass is the only seam available.
-    sealed class TestCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture)
-        : FlowlineCommand<FlowlineSettings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture)
+    sealed class TestCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient)
+        : FlowlineCommand<FlowlineSettings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
     {
         protected override Task<int> ExecuteFlowlineAsync(CommandContext context, FlowlineSettings settings, CancellationToken cancellationToken) =>
             Task.FromResult(0);
@@ -107,7 +107,7 @@ public class FlowlineCommandTests
     static TestCommand MakeCommand(ProfileResolutionService profileResolutionService)
     {
         var console = new TestConsole();
-        return new TestCommand(console, new FlowlineRuntimeOptions(), profileResolutionService, NullLoggerFactory.Instance, new SubprocessCapture(console));
+        return new TestCommand(console, new FlowlineRuntimeOptions(), profileResolutionService, NullLoggerFactory.Instance, new SubprocessCapture(console), new NuGetVersionClient(new HttpClient()));
     }
 
     [Fact]
