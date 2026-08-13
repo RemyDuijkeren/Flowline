@@ -9,6 +9,7 @@ namespace Flowline.Validation;
 public sealed class FlowlineValidator
 {
     static readonly TimeSpan WelcomeScreenTtl = TimeSpan.FromDays(1);
+    static readonly TimeSpan UpdateCheckTtl = TimeSpan.FromDays(1);
     static readonly TimeSpan ToolTtl = TimeSpan.FromDays(7);
     static readonly TimeSpan GitRepoTtl = TimeSpan.FromDays(1);
     static readonly TimeSpan EnvironmentTtl = TimeSpan.FromHours(12);
@@ -178,6 +179,29 @@ public sealed class FlowlineValidator
             return true;
         }
         return false;
+    }
+
+    // Split from a single ShouldShow-style method (unlike ShouldShowWelcomeScreen) because the NuGet
+    // query has to happen between the read and the write: the read must not stamp CheckedAtUtc itself.
+    public bool TryGetCachedUpdateVersion(bool noCache, out string? newerVersion)
+    {
+        newerVersion = null;
+        if (noCache) return false;
+
+        var cache = _store.Load();
+        if (cache.AvailableUpdate == null || !IsFresh(cache.AvailableUpdate.CheckedAtUtc, UpdateCheckTtl))
+            return false;
+
+        newerVersion = cache.AvailableUpdate.Value;
+        return true;
+    }
+
+    public void SaveUpdateCheck(string? newerVersion)
+    {
+        var cache = _store.Load();
+        cache.AvailableUpdate = NewEntry(newerVersion);
+        cache.FlowlineVersion = GetFlowlineVersion();
+        _store.Save(cache);
     }
 
     async Task<ToolCheckResult> GetOrRunToolCheckAsync(

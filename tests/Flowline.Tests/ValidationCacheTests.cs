@@ -217,4 +217,131 @@ public class ValidationCacheTests : IDisposable
 
     FlowlineValidator CreateValidator(ValidationProbes probes) =>
         new(new ValidationCacheStore(_cachePath), probes);
+
+    // Real file captured from the pre-U3 build (ValidationCache with no AvailableUpdate field) —
+    // proves a cache written by an older Flowline still loads once the new property is added.
+    const string PreExistingCacheJson = """
+        {
+          "SchemaVersion": 1,
+          "FlowlineVersion": "1.2.3",
+          "ToolChecks": {
+            "dotnet": {
+              "CheckedAtUtc": "2026-08-13T08:50:45.56708+00:00",
+              "Value": {
+                "Version": "9.0.100",
+                "InstallType": null
+              }
+            }
+          },
+          "GitRepos": {},
+          "Environments": {},
+          "Solutions": {},
+          "WelcomeShownAtUtc": "2026-08-13T08:50:45.5673969+00:00"
+        }
+        """;
+
+    [Fact]
+    public void Load_PreExistingCacheWithoutUpdateField_DoesNotResetSchemaOrDiscardToolChecks()
+    {
+        File.WriteAllText(_cachePath, PreExistingCacheJson);
+
+        var cache = new ValidationCacheStore(_cachePath).Load();
+
+        cache.SchemaVersion.Should().Be(1);
+        cache.ToolChecks.Should().ContainKey("dotnet");
+        cache.ToolChecks["dotnet"].Value.Version.Should().Be("9.0.100");
+        cache.AvailableUpdate.Should().BeNull();
+    }
+
+    [Fact]
+    public void TryGetCachedUpdateVersion_ReturnsFalseWhenNeverChecked()
+    {
+        var validator = CreateValidator(new ValidationProbes());
+
+        validator.TryGetCachedUpdateVersion(noCache: false, out var newerVersion).Should().BeFalse();
+        newerVersion.Should().BeNull();
+    }
+
+    [Fact]
+    public void TryGetCachedUpdateVersion_ReturnsTrueWhenCheckedWithinTtl()
+    {
+        var store = new ValidationCacheStore(_cachePath);
+        store.Save(new ValidationCache
+        {
+            AvailableUpdate = new ValidationCacheEntry<string?>
+            {
+                CheckedAtUtc = DateTimeOffset.UtcNow.AddHours(-2),
+                Value = "2.0.0"
+            }
+        });
+        var validator = new FlowlineValidator(store, new ValidationProbes());
+
+        validator.TryGetCachedUpdateVersion(noCache: false, out var newerVersion).Should().BeTrue();
+        newerVersion.Should().Be("2.0.0");
+    }
+
+    [Fact]
+    public void TryGetCachedUpdateVersion_ReturnsFalseWhenCheckedOverTtlAgo()
+    {
+        var store = new ValidationCacheStore(_cachePath);
+        store.Save(new ValidationCache
+        {
+            AvailableUpdate = new ValidationCacheEntry<string?>
+            {
+                CheckedAtUtc = DateTimeOffset.UtcNow.AddHours(-25),
+                Value = "2.0.0"
+            }
+        });
+        var validator = new FlowlineValidator(store, new ValidationProbes());
+
+        validator.TryGetCachedUpdateVersion(noCache: false, out var newerVersion).Should().BeFalse();
+    }
+
+    [Fact]
+    public void TryGetCachedUpdateVersion_NoCacheReturnsFalseEvenWhenFresh()
+    {
+        var store = new ValidationCacheStore(_cachePath);
+        store.Save(new ValidationCache
+        {
+            AvailableUpdate = new ValidationCacheEntry<string?>
+            {
+                CheckedAtUtc = DateTimeOffset.UtcNow.AddHours(-2),
+                Value = "2.0.0"
+            }
+        });
+        var validator = new FlowlineValidator(store, new ValidationProbes());
+
+        validator.TryGetCachedUpdateVersion(noCache: true, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void TryGetCachedUpdateVersion_NullValueWithFreshTimestamp_ReturnsTrueWithNullVersion()
+    {
+        var store = new ValidationCacheStore(_cachePath);
+        store.Save(new ValidationCache
+        {
+            AvailableUpdate = new ValidationCacheEntry<string?>
+            {
+                CheckedAtUtc = DateTimeOffset.UtcNow.AddHours(-2),
+                Value = null
+            }
+        });
+        var validator = new FlowlineValidator(store, new ValidationProbes());
+
+        validator.TryGetCachedUpdateVersion(noCache: false, out var newerVersion).Should().BeTrue();
+        newerVersion.Should().BeNull();
+    }
+
+    [Fact]
+    public void SaveUpdateCheck_ThenTryGetCachedUpdateVersion_RoundTrips()
+    {
+        var store = new ValidationCacheStore(_cachePath);
+        var validator = new FlowlineValidator(store, new ValidationProbes());
+
+        validator.SaveUpdateCheck("3.1.0");
+
+        validator.TryGetCachedUpdateVersion(noCache: false, out var newerVersion).Should().BeTrue();
+        newerVersion.Should().Be("3.1.0");
+        store.Load().AvailableUpdate!.CheckedAtUtc.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(5));
+    }
 }
