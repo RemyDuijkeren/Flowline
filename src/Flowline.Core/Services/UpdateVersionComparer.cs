@@ -16,12 +16,11 @@ public static class UpdateVersionComparer
     {
         if (!NuGetVersion.TryParse(runningVersion, out var running)) return null;
 
-        var candidates = publishedVersions
+        var newest = publishedVersions
             .Select(v => NuGetVersion.TryParse(v, out var parsed) ? parsed : null)
-            .Where(v => v != null && (running.IsPrerelease || !v.IsPrerelease))
-            .Select(v => v!);
-
-        var newest = candidates.OrderBy(v => v, VersionComparer.VersionRelease).LastOrDefault();
+            .OfType<NuGetVersion>()
+            .Where(v => running.IsPrerelease || !v.IsPrerelease)
+            .Max(VersionComparer.VersionRelease);
 
         return newest != null && newest > running ? newest.ToString() : null;
     }

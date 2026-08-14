@@ -9,6 +9,8 @@ public class NuGetVersionClientTests
 {
     private static readonly TimeSpan TestTimeout = TimeSpan.FromMilliseconds(50);
 
+    static NuGetVersionClient MakeClient(FakeHttpMessageHandler handler, TimeSpan? timeout = null) => new(new HttpClient(handler), timeout);
+
     [Fact]
     public async Task GetVersionsAsync_ReturnsVersionsInResponseOrder_WhenIndexIsWellFormed()
     {
@@ -17,7 +19,7 @@ public class NuGetVersionClientTests
             {
                 Content = new StringContent("""{"versions":["0.15.0","0.16.0","0.17.0-beta.1"]}"""),
             }));
-        var client = new NuGetVersionClient(new HttpClient(handler));
+        var client = MakeClient(handler);
 
         var versions = await client.GetVersionsAsync("flowline");
 
@@ -29,7 +31,7 @@ public class NuGetVersionClientTests
     {
         var handler = new FakeHttpMessageHandler((_, _) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)));
-        var client = new NuGetVersionClient(new HttpClient(handler));
+        var client = MakeClient(handler);
 
         var versions = await client.GetVersionsAsync("flowline");
 
@@ -41,7 +43,7 @@ public class NuGetVersionClientTests
     {
         var handler = new FakeHttpMessageHandler((_, _) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)));
-        var client = new NuGetVersionClient(new HttpClient(handler));
+        var client = MakeClient(handler);
 
         var versions = await client.GetVersionsAsync("flowline");
 
@@ -53,7 +55,7 @@ public class NuGetVersionClientTests
     {
         var handler = new FakeHttpMessageHandler((_, _) => Task.FromResult(
             new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("not json") }));
-        var client = new NuGetVersionClient(new HttpClient(handler));
+        var client = MakeClient(handler);
 
         var versions = await client.GetVersionsAsync("flowline");
 
@@ -65,7 +67,7 @@ public class NuGetVersionClientTests
     {
         var handler = new FakeHttpMessageHandler((_, _) => Task.FromResult(
             new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") }));
-        var client = new NuGetVersionClient(new HttpClient(handler));
+        var client = MakeClient(handler);
 
         var versions = await client.GetVersionsAsync("flowline");
 
@@ -76,7 +78,7 @@ public class NuGetVersionClientTests
     public async Task GetVersionsAsync_ReturnsNothing_WhenHandlerThrowsHttpRequestException()
     {
         var handler = new FakeHttpMessageHandler((_, _) => throw new HttpRequestException("offline"));
-        var client = new NuGetVersionClient(new HttpClient(handler));
+        var client = MakeClient(handler);
 
         var versions = await client.GetVersionsAsync("flowline");
 
@@ -91,7 +93,7 @@ public class NuGetVersionClientTests
             await Task.Delay(Timeout.Infinite, ct);
             return new HttpResponseMessage(HttpStatusCode.OK);
         });
-        var client = new NuGetVersionClient(new HttpClient(handler), TestTimeout);
+        var client = MakeClient(handler, TestTimeout);
 
         var versions = await client.GetVersionsAsync("flowline");
 
@@ -105,7 +107,7 @@ public class NuGetVersionClientTests
     {
         var handler = new FakeHttpMessageHandler((_, _) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
-        var client = new NuGetVersionClient(new HttpClient(handler));
+        var client = MakeClient(handler);
 
         var versions = await client.GetVersionsAsync("flowline", new CancellationToken(canceled: true));
 

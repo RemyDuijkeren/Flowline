@@ -56,6 +56,14 @@ public class UpdateVersionComparerTests
     }
 
     [Fact]
+    public void GetNewerVersion_ReturnsNothing_WhenPublishedListOnlyContainsRunningVersion()
+    {
+        // The ordinary already-up-to-date case, and the guard the cached-verdict recheck relies on.
+        UpdateVersionComparer.GetNewerVersion("0.16.0", ["0.16.0"])
+            .Should().BeNull();
+    }
+
+    [Fact]
     public void GetNewerVersion_ReturnsNothing_WhenPublishedListIsEmpty()
     {
         UpdateVersionComparer.GetNewerVersion("0.16.0", [])

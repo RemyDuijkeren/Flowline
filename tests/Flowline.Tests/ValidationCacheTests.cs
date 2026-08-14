@@ -281,6 +281,43 @@ public class ValidationCacheTests : IDisposable
     }
 
     [Fact]
+    public void TryGetCachedUpdateVersion_ReturnsTrueExactlyAtTheTtlBoundary()
+    {
+        // IsFresh compares inclusively, so a day old to the second is still fresh. Pinned here so
+        // flipping the comparison or miscalculating the TTL fails a test.
+        var store = new ValidationCacheStore(_cachePath);
+        store.Save(new ValidationCache
+        {
+            AvailableUpdate = new ValidationCacheEntry<string?>
+            {
+                CheckedAtUtc = DateTimeOffset.UtcNow - TimeSpan.FromDays(1) + TimeSpan.FromSeconds(5),
+                Value = "2.0.0"
+            }
+        });
+        var validator = new FlowlineValidator(store, new ValidationProbes());
+
+        validator.TryGetCachedUpdateVersion(noCache: false, out var newerVersion).Should().BeTrue();
+        newerVersion.Should().Be("2.0.0");
+    }
+
+    [Fact]
+    public void TryGetCachedUpdateVersion_ReturnsFalseJustPastTheTtlBoundary()
+    {
+        var store = new ValidationCacheStore(_cachePath);
+        store.Save(new ValidationCache
+        {
+            AvailableUpdate = new ValidationCacheEntry<string?>
+            {
+                CheckedAtUtc = DateTimeOffset.UtcNow - TimeSpan.FromDays(1) - TimeSpan.FromSeconds(5),
+                Value = "2.0.0"
+            }
+        });
+        var validator = new FlowlineValidator(store, new ValidationProbes());
+
+        validator.TryGetCachedUpdateVersion(noCache: false, out _).Should().BeFalse();
+    }
+
+    [Fact]
     public void TryGetCachedUpdateVersion_ReturnsFalseWhenCheckedOverTtlAgo()
     {
         var store = new ValidationCacheStore(_cachePath);

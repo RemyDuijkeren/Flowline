@@ -1,4 +1,5 @@
 using System.Net;
+using Flowline.Core.Console;
 using Flowline.Core.Services;
 using Flowline.Services;
 using Flowline.Utils;
@@ -115,9 +116,40 @@ public class UpdateNoticeTests
         UpdateNoticeChecker.PrintNotice(console, newerVersion);
 
         // '!' is the warning glyph and '✗' the error glyph (docs/tone-of-voice.md) — this is
-        // information, not a degraded run, so neither may appear.
+        // information, not a degraded run, so neither may appear. Assert the Info glyph positively too,
+        // or the test still passes if PrintNotice switches to Ok() or a bare WriteLine.
+        console.Output.Should().Contain(FlowlineTheme.InfoPrefix);
         console.Output.Should().NotContain("!");
         console.Output.Should().NotContain("✗");
+    }
+
+    [Fact]
+    public async Task CheckAsync_CachedVerdictAlreadyInstalled_ReportsNothing()
+    {
+        // The user took the advice and updated, but the cached entry is still inside its TTL. Serving it
+        // verbatim would say "X is out — you're on X" for the rest of the day.
+        var validator = MakeValidator();
+        validator.SaveUpdateCheck(FlowlineVersion.Display);
+        var handler = new FakeHandler((_, _) => throw new InvalidOperationException("cache hit should not fetch"));
+
+        var result = await UpdateNoticeChecker.CheckAsync(
+            MakeConsole(interactive: true), validator, MakeClient(handler), noCache: false, CancellationToken.None);
+
+        result.Should().BeNull();
+        handler.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task CheckAsync_CallerCancelled_DoesNotRecordABackOff()
+    {
+        // A Ctrl+C must not buy a day of silence the way a genuine network failure does.
+        var validator = MakeValidator();
+        var handler = new FakeHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+
+        await UpdateNoticeChecker.CheckAsync(
+            MakeConsole(interactive: true), validator, MakeClient(handler), noCache: false, new CancellationToken(canceled: true));
+
+        validator.TryGetCachedUpdateVersion(noCache: false, out _).Should().BeFalse();
     }
 
     [Fact]

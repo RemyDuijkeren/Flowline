@@ -9,9 +9,8 @@ namespace Flowline.Core.Services;
 /// </summary>
 public class NuGetVersionClient(HttpClient httpClient, TimeSpan? timeout = null)
 {
-    private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(2);
-
-    private readonly TimeSpan _timeout = timeout ?? DefaultTimeout;
+    // Constructor-injectable only so the cancellation test doesn't wait two real seconds.
+    private readonly TimeSpan _timeout = timeout ?? TimeSpan.FromSeconds(2);
 
     /// <summary>Raw version strings published for <paramref name="packageId"/>, in the order the
     /// index response carried them, or <c>null</c> on any failure.</summary>
@@ -36,8 +35,7 @@ public class NuGetVersionClient(HttpClient httpClient, TimeSpan? timeout = null)
                 .GetProperty("versions")
                 .EnumerateArray()
                 .Select(v => v.GetString())
-                .Where(v => v != null)
-                .Select(v => v!)
+                .OfType<string>()
                 .ToList();
         }
         catch

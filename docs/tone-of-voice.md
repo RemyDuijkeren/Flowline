@@ -130,6 +130,11 @@ ACT 3 — Do the work    (steps with spinners → dim skips or green completions
    (green success or red error). The spinner *was* the "working on it" — the outcome line is the
    verdict.
 
+   One sanctioned exception: the setup check may follow its verdict with the update notice
+   (`· Flowline <version> is out …`). That line reports on Flowline itself rather than on the
+   setup the spinner was checking, so it isn't a second verdict. It prints only on interactive
+   runs, and only while the running version is behind.
+
 3. **Skips are dim, not green.** A skipped step didn't succeed — it was already done.
 
 4. **Errors stop the act immediately.** When an error fires, nothing else prints below it.

@@ -23,7 +23,6 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     where TSettings : FlowlineSettings
 {
     protected readonly SubprocessCapture _capture = capture;
-    protected readonly NuGetVersionClient _nuGetVersionClient = nuGetVersionClient;
 
     public static string FormatDuration(TimeSpan elapsed) =>
         elapsed.TotalMinutes >= 1 ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds}s" :
@@ -118,7 +117,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
             gitBranch = await GitUtils.GetCurrentBranchAsync(_capture, cancellationToken);
             dotnet = await FlowlineValidator.Default.EnsureDotNetAsync(settings, cancellationToken);
             pac = await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
-            newerVersion = await UpdateNoticeChecker.CheckAsync(Console, FlowlineValidator.Default, _nuGetVersionClient, settings.NoCache, cancellationToken);
+            newerVersion = await UpdateNoticeChecker.CheckAsync(Console, FlowlineValidator.Default, nuGetVersionClient, settings.NoCache, cancellationToken);
         });
 
         RuntimeOptions.ToolVersions = new FlowlineToolVersions(
