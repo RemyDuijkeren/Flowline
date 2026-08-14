@@ -496,13 +496,12 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
 
         // NuGet's Pack step (produces the .nupkg the line above just found) has its own incremental check
         // that isn't aware of the recompiled DLL — if nothing else driving the nuspec changed (e.g. no new
-        // commit, since versioning is git-derived via MinVer), `dotnet build` recompiles the assembly but
-        // leaves a previously-packed, now-stale .nupkg in place. Detected using paths already resolved
-        // above (no new path assumptions); self-heals with one forced rebuild rather than silently pushing
-        // stale content or failing the push outright. Only meaningful right after a build we just ran.
-        if (didBuild && IsPackagePush(pushPath) && File.GetLastWriteTimeUtc(pushPath) < File.GetLastWriteTimeUtc(pluginsDll))
+        // commit, since versioning is git-derived via MinVer), a build recompiles the assembly but leaves a
+        // previously-packed, now-stale .nupkg in place. Detected using paths already resolved above (no new
+        // path assumptions); self-heals with one forced rebuild rather than silently pushing stale content.
+        if (NeedsRepack(pushPath, pluginsDll, didBuild))
         {
-            Console.Warning($"[bold]{ConsolePath.FormatRelativePath(pushPath)}[/] is older than the assembly just built — " +
+            Console.Warning($"[bold]{ConsolePath.FormatRelativePath(pushPath)}[/] doesn't carry the assembly just built — " +
                 "NuGet's Pack step didn't regenerate it (the package version likely didn't change). Forcing a full rebuild...");
             if (await DotNetUtils.BuildSolutionAsync(projectFolder, DotnetBuild.Release, _capture, cancellationToken, rebuild: true) != 0)
                 throw new FlowlineException(ExitCode.BuildFailed, $"{candidate.ProjectName} build failed — fix errors above.");
@@ -685,6 +684,35 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
                 note?.Invoke($"Could not remove {display}: {ex.Message}");
             }
         }
+    }
+
+    /// <summary>Is the resolved <c>.nupkg</c> stale against the built assembly, and can this push repack it?</summary>
+    /// <remarks>
+    /// The stale package is the same hazard <see cref="ClearStalePackages"/> prevents on the build path,
+    /// reaching the push from the one direction that path can't cover: with <c>--no-build</c> nothing
+    /// deletes the previous .nupkg and NuGet's Pack step never runs, so a package left over from an earlier
+    /// build of the same version is what gets pushed. Its payload hash then matches the marker Dataverse
+    /// already carries, the push takes the unchanged-content path, and every step registration derived from
+    /// that stale assembly reconciles to "no changes" — a silent no-op reporting success.
+    /// <para>
+    /// So a mismatch under <c>--no-build</c> throws instead of returning true: Flowline was told not to
+    /// build and repacking anyway would ignore that, while continuing would push content that isn't the
+    /// source in the working tree.
+    /// </para>
+    /// </remarks>
+    internal static bool NeedsRepack(string pushPath, string pluginsDll, bool didBuild)
+    {
+        if (!IsPackagePush(pushPath) || PluginAssemblyReader.PackageContainsAssembly(pushPath, pluginsDll))
+            return false;
+
+        if (!didBuild)
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"{ConsolePath.FormatRelativePath(pushPath, markup: false)} doesn't carry the assembly in " +
+                $"{ConsolePath.FormatRelativePath(pluginsDll, markup: false)} — it was packed from older code. " +
+                "NuGet's Pack step skips repacking when the package version didn't change. " +
+                "Delete the .nupkg and rebuild, or drop --no-build so Flowline can repack.");
+
+        return true;
     }
 
     internal static string ResolvePluginPushPath(string dllPath, string buildOutputRoot, PluginPackageMode mode)

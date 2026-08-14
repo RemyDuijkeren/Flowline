@@ -318,6 +318,72 @@ public class PushCommandTests : IDisposable
             .WithMessage("*Plugins.1.0.0.nupkg*Plugins.1.0.1.nupkg*");
     }
 
+    // -- NeedsRepack --
+    // The stale package ClearStalePackages prevents on the build path is unreachable under --no-build:
+    // nothing deletes the previous .nupkg, NuGet's Pack step never runs, and the leftover package pushes
+    // as if it were the built code — matching the payload hash Dataverse already holds, so the push takes
+    // the unchanged-content path and every step registration reconciles to "no changes" (issue #6).
+
+    [Fact]
+    public void NeedsRepack_StalePackageAfterOurOwnBuild_ShouldRepack()
+    {
+        var dll = WritePluginDll("built");
+        var nupkg = WriteNupkg("Plugins.1.0.0.nupkg", "packed from older code");
+
+        PushCommand.NeedsRepack(nupkg, dll, didBuild: true).Should().BeTrue();
+    }
+
+    [Fact]
+    public void NeedsRepack_StalePackageUnderNoBuild_ThrowsInsteadOfPushingStaleContent()
+    {
+        var dll = WritePluginDll("built");
+        var nupkg = WriteNupkg("Plugins.1.0.0.nupkg", "packed from older code");
+
+        var act = () => PushCommand.NeedsRepack(nupkg, dll, didBuild: false);
+
+        act.Should().Throw<Flowline.Core.FlowlineException>().WithMessage("*--no-build*");
+    }
+
+    [Fact]
+    public void NeedsRepack_PackageCarriesTheBuiltAssembly_ShouldNotRepack()
+    {
+        var dll = WritePluginDll("built");
+        var nupkg = WriteNupkg("Plugins.1.0.0.nupkg", "built");
+
+        PushCommand.NeedsRepack(nupkg, dll, didBuild: false).Should().BeFalse();
+    }
+
+    [Fact]
+    public void NeedsRepack_ClassicDllPush_ShouldNotRepack()
+    {
+        // No package to be stale against — the .dll IS what gets pushed.
+        var dll = WritePluginDll("built");
+
+        PushCommand.NeedsRepack(dll, dll, didBuild: false).Should().BeFalse();
+    }
+
+    string WritePluginDll(string content)
+    {
+        var publishDir = Path.Combine(_root, "bin", "Release", "net462", "publish");
+        Directory.CreateDirectory(publishDir);
+        var dll = Path.Combine(publishDir, "Plugins.dll");
+        File.WriteAllText(dll, content);
+        return dll;
+    }
+
+    string WriteNupkg(string fileName, string dllContent)
+    {
+        var buildOutputRoot = Path.Combine(_root, "bin", "Release");
+        Directory.CreateDirectory(buildOutputRoot);
+        var nupkg = Path.Combine(buildOutputRoot, fileName);
+
+        using var archive = ZipFile.Open(nupkg, ZipArchiveMode.Create);
+        using var writer = new StreamWriter(archive.CreateEntry("lib/net462/Plugins.dll").Open());
+        writer.Write(dllContent);
+
+        return nupkg;
+    }
+
     // -- ClearStalePackages --
     // dotnet pack embeds the version in the filename and never removes an earlier version's package, so
     // with MinVer (version moves on every commit) a normal `push` after a commit left two packages side

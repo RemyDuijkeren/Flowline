@@ -147,6 +147,31 @@ public class PluginAssemblyReader(IAnsiConsole console)
         return result;
     }
 
+    // Stale-package detection: does the .nupkg on disk actually carry the assembly that was just built?
+    // Compared by content rather than by file timestamp — the caller turns a mismatch into a hard stop
+    // under --no-build, so a false positive would block a legitimate push, and pack does not reliably
+    // leave the .nupkg newer than the DLL it packed.
+    //
+    // Matched on file name across every lib/<tfm>/ folder: a multi-targeted package holds one copy per
+    // tfm, and only the one the push actually reflects has to match, so any hash hit means fresh.
+    public static bool PackageContainsAssembly(string nupkgPath, string dllPath)
+    {
+        var builtHash = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(dllPath)));
+        var fileName = Path.GetFileName(dllPath);
+
+        using var archive = ZipFile.OpenRead(nupkgPath);
+        foreach (var entry in archive.Entries.Where(e =>
+                     e.FullName.StartsWith("lib/", StringComparison.OrdinalIgnoreCase) &&
+                     string.Equals(Path.GetFileName(e.FullName), fileName, StringComparison.OrdinalIgnoreCase)))
+        {
+            using var stream = entry.Open();
+            if (Convert.ToHexString(SHA256.HashData(stream)) == builtHash)
+                return true;
+        }
+
+        return false;
+    }
+
     // Extracts every *.dll under lib/ from a .nupkg (OPC zip) into destinationDir, preserving the
     // lib/<tfm>/ subfolder structure so DLLs from the same tfm land in the same directory.
     private static void ExtractLibDlls(string nupkgPath, string destinationDir)
