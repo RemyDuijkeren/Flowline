@@ -51,7 +51,8 @@ public class ProjectConfig
         {
             if (settings is { Verbose: true })
             {
-                AnsiConsole.Console.Verbose($"{label}: [bold]{get()}[/]");
+                // Verbose(string) escapes its message — markup here would print as literal [bold] tags.
+                AnsiConsole.Console.Verbose($"{label}: {get()}");
             }
 
             return get();
@@ -119,7 +120,7 @@ public class ProjectConfig
             uniqueName = Solution.UniqueName;
             if (settings is { Verbose: true })
             {
-                AnsiConsole.Console.Verbose($"Solution: [bold]{uniqueName}[/]");
+                AnsiConsole.Console.Verbose($"Solution: {uniqueName}");
             }
         }
 
