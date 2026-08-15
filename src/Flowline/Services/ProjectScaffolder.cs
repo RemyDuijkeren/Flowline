@@ -673,19 +673,50 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
     {
         Directory.CreateDirectory(webresourcesFolder);
 
-        await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.package.json", Path.Combine(webresourcesFolder, "package.json"), cancellationToken);
-        await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.rollup.config.mjs", Path.Combine(webresourcesFolder, "rollup.config.mjs"), cancellationToken);
-        await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.tsconfig.json", Path.Combine(webresourcesFolder, "tsconfig.json"), cancellationToken);
-        await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.eslint.config.mjs", Path.Combine(webresourcesFolder, "eslint.config.mjs"), cancellationToken);
-        await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.README.md", Path.Combine(webresourcesFolder, "README.md"), cancellationToken);
+        foreach (var (logicalName, relativePath) in s_webResourcesRootFiles)
+            await TemplateWriter.WriteAsync(logicalName, Path.Combine(webresourcesFolder, relativePath), cancellationToken);
 
         Directory.CreateDirectory(Path.Combine(webresourcesFolder, "src", "modules"));
-        await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.src.example.ts", Path.Combine(webresourcesFolder, "src", "example.ts"), cancellationToken);
-        await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.src.example-js.js", Path.Combine(webresourcesFolder, "src", "example-js.js"), cancellationToken);
+        foreach (var (logicalName, relativePath) in s_webResourcesSrcFiles)
+            await TemplateWriter.WriteAsync(logicalName, Path.Combine(webresourcesFolder, relativePath), cancellationToken);
+
         Directory.CreateDirectory(Path.Combine(webresourcesFolder, "public"));
         Directory.CreateDirectory(Path.Combine(webresourcesFolder, "dist"));
 
         // Written last -- see remarks above.
-        await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.WebResources.csproj", Path.Combine(webresourcesFolder, projectFileName), cancellationToken);
+        await TemplateWriter.WriteAsync(WebResourcesProjectLogicalName, Path.Combine(webresourcesFolder, projectFileName), cancellationToken);
     }
+
+    /// <summary>The template files that land at the root of the WebResources folder, in write order.</summary>
+    static readonly (string LogicalName, string RelativePath)[] s_webResourcesRootFiles =
+    [
+        ("Flowline.Templates.WebResources.package.json", "package.json"),
+        ("Flowline.Templates.WebResources.rollup.config.mjs", "rollup.config.mjs"),
+        ("Flowline.Templates.WebResources.tsconfig.json", "tsconfig.json"),
+        ("Flowline.Templates.WebResources.eslint.config.mjs", "eslint.config.mjs"),
+        ("Flowline.Templates.WebResources.README.md", "README.md"),
+    ];
+
+    /// <summary>The template files that land under <c>src/</c>, in write order.</summary>
+    static readonly (string LogicalName, string RelativePath)[] s_webResourcesSrcFiles =
+    [
+        ("Flowline.Templates.WebResources.src.example.ts", "src/example.ts"),
+        ("Flowline.Templates.WebResources.src.example-js.js", "src/example-js.js"),
+    ];
+
+    const string WebResourcesProjectLogicalName = "Flowline.Templates.WebResources.WebResources.csproj";
+
+    /// <summary>
+    /// Every path <see cref="WriteWebResourcesTemplateAsync"/> writes, relative to the WebResources folder,
+    /// for a project file named <paramref name="projectFileName"/>.
+    /// </summary>
+    /// <remarks>
+    /// Exists so a caller can check for collisions against the same list the writer uses instead of keeping
+    /// its own copy. <c>TemplateWriter</c> truncates rather than skipping, so a caller that guesses this list
+    /// and guesses it short silently destroys whatever it missed.
+    /// </remarks>
+    internal static IEnumerable<string> WebResourcesTemplateRelativePaths(string projectFileName) =>
+        s_webResourcesRootFiles.Concat(s_webResourcesSrcFiles)
+                               .Select(f => f.RelativePath.Replace('/', Path.DirectorySeparatorChar))
+                               .Append(projectFileName);
 }

@@ -57,6 +57,17 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
     /// <summary>The values <c>&lt;part&gt;</c> accepts. One today; the argument shape absorbs more without changing.</summary>
     static readonly string[] s_parts = ["webresources"];
 
+    /// <summary>The project file name standalone mode writes.</summary>
+    /// <remarks>
+    /// Generic, because standalone has no solution to name it after. Project mode uses
+    /// <see cref="ProjectScaffolder.WebResourcesProjectFileName"/> instead — that name is what reaches
+    /// Dataverse, and only a project has one.
+    /// </remarks>
+    internal const string StandaloneProjectFileName = "WebResources.csproj";
+
+    /// <summary>Where the WebResources project lives relative to the scaffold target.</summary>
+    internal const string WebResourcesFolderName = "WebResources";
+
     protected override bool RequiresProject => false;
 
     // Standalone mode runs in a folder that is not a Flowline project at all, so a welcome banner would
@@ -73,14 +84,80 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
     /// </remarks>
     protected override Task CheckSetupAsync(Settings settings, CancellationToken cancellationToken) => Task.CompletedTask;
 
-    protected override Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
+    protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         ValidatePart(settings.Part);
 
         var target = ResolveTarget(Directory.GetCurrentDirectory());
         AnnounceMode(target);
 
-        return Task.FromResult((int)ExitCode.Success);
+        if (target.Mode == ScaffoldMode.Standalone)
+            return await ScaffoldStandaloneAsync(target.Folder, cancellationToken);
+
+        return (int)ExitCode.Success;
+    }
+
+    /// <summary>Writes the template alone, under a generic project name, and names what to run next.</summary>
+    /// <remarks>
+    /// Takes the folder rather than reading <c>RootFolder</c> so the whole standalone path is exercisable
+    /// against a temp directory without running the base command pipeline — the same reason
+    /// <see cref="ResolveTarget"/> and <see cref="ValidatePart"/> are static.
+    /// </remarks>
+    internal async Task<int> ScaffoldStandaloneAsync(string folder, CancellationToken cancellationToken)
+    {
+        var webresourcesFolder = Path.Combine(folder, WebResourcesFolderName);
+
+        if (File.Exists(Path.Combine(webresourcesFolder, StandaloneProjectFileName)))
+        {
+            Console.Skip("WebResources project already there — skipping");
+            return (int)ExitCode.Success;
+        }
+
+        EnsureNoTemplateCollision(webresourcesFolder, StandaloneProjectFileName);
+
+        await ProjectScaffolder.WriteWebResourcesTemplateAsync(webresourcesFolder, StandaloneProjectFileName, cancellationToken);
+        Console.Ok($"{WebResourcesFolderName} project ready");
+
+        PrintNextSteps();
+        Console.Done("Scaffolded! Build it, then push it to Dataverse.");
+        return (int)ExitCode.Success;
+    }
+
+    /// <summary>Refuses to write over a file the template would land on.</summary>
+    /// <remarks>
+    /// The already-there check above only sees the project file. A folder holding template-named files
+    /// <em>without</em> one — someone else's <c>package.json</c>, a half-finished experiment — sails past it,
+    /// and <c>TemplateWriter</c> truncates rather than skipping, so writing would destroy whatever was there.
+    /// Checked against <see cref="ProjectScaffolder.WebResourcesTemplateRelativePaths"/> rather than a local
+    /// copy of the list, and checked before the first write so a refusal leaves nothing half-written.
+    ///
+    /// There is deliberately no <c>--force</c> to write over it: the command's whole job is to create
+    /// something that is not there yet, and a folder with a conflicting file is a different situation the
+    /// user should look at rather than overrule.
+    /// </remarks>
+    internal static void EnsureNoTemplateCollision(string webresourcesFolder, string projectFileName)
+    {
+        var collision = ProjectScaffolder.WebResourcesTemplateRelativePaths(projectFileName)
+                                         .FirstOrDefault(relative => File.Exists(Path.Combine(webresourcesFolder, relative)));
+
+        if (collision is null) return;
+
+        throw new FlowlineException(ExitCode.ConfigInvalid,
+            $"{Path.Combine(WebResourcesFolderName, collision)} is already here and scaffold won't write over it — move it aside, or scaffold somewhere else.");
+    }
+
+    /// <summary>Names the commands that carry a standalone scaffold through to a pushed web resource.</summary>
+    /// <remarks>
+    /// The push step needs two things this folder does not have and cannot invent: a Dataverse solution to
+    /// push into, and a PAC auth profile for the target environment — <c>ProfileResolutionService</c> fails
+    /// the run when no profile matches the URL, whatever <c>--dev</c> says. Naming both here is the
+    /// difference between a next step that runs and one that stops on its first line.
+    /// </remarks>
+    void PrintNextSteps()
+    {
+        Console.Info($"Build it: cd {WebResourcesFolderName} && npm install && npm run build");
+        Console.Info("Authenticate, if you haven't: pac auth create --environment <url>");
+        Console.Info($"Push it: flowline push <solution> --webresources ./{WebResourcesFolderName}/dist --dev <url>");
     }
 
     /// <summary>Refuses a part this command cannot write.</summary>
@@ -136,10 +213,10 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
     {
         if (target.Mode == ScaffoldMode.Standalone)
         {
-            Console.Info("No Flowline project here — writing the template on its own.");
+            Console.Ok("Standalone — no Flowline project here");
             return;
         }
 
-        Console.Info($"Flowline project found at {ConsolePath.FormatRelativePath(target.Folder)} — naming the project after its solution and registering it.");
+        Console.Ok($"Flowline project: {ConsolePath.FormatRelativePath(target.Folder)}");
     }
 }
