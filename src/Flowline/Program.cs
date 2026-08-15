@@ -220,6 +220,13 @@ app.Configure(config =>
           .WithExample("drift", "test")
           .WithExample("drift", "https://contoso-test.crm4.dynamics.com/");
 
+    // scaffold = write a project template locally; the only command here that never reaches Dataverse
+    config.AddCommand<ScaffoldCommand>("scaffold")
+          .WithAlias("new")
+          .WithDescription("Write a project template into this folder. Needs no Dataverse connection, no authentication, and no network. Outside a Flowline project it writes the template alone under a generic project name; inside one it names the project after the configured solution and registers it in the solution file. Skips and changes nothing when the project is already there. Alias: new")
+          .WithExample("scaffold", "webresources")
+          .WithExample("new", "webresources");
+
     // A branch rather than a flat 'sln-add' because 'flowline sln add' reads as a one-word substitution for the 'dotnet sln add'.
     config.AddBranch("sln", sln =>
     {
