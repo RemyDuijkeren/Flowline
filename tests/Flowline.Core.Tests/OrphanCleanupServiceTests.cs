@@ -2071,7 +2071,7 @@ public class OrphanCleanupServiceTests : IDisposable
     // Configurable-status, configurable-identity handler for provenance tests — the fakes above default
     // to LocalSourceIdentity.None (R12/KTD4's "no mapping" case), which ComponentSourceLocator.Locate
     // turns into "nothing to resolve" and never exercises a lookup at all.
-    sealed class FakeIdentityHandler(int componentType, string displayName, string entityName, LocalSourceIdentity identity, HandlerStatus status = HandlerStatus.Auto) : IOrphanHandler
+    sealed class FakeIdentityHandler(int componentType, string displayName, string entityName, LocalSourceIdentity identity, HandlerStatus status = HandlerStatus.Auto, OrphanAction action = OrphanAction.Delete) : IOrphanHandler
     {
         public HandlerStatus Status => status;
 
@@ -2082,7 +2082,7 @@ public class OrphanCleanupServiceTests : IDisposable
         {
             var claimed = candidates.Where(c => c.ComponentType == componentType).ToList();
             var findings = claimed
-                .Select(c => new HandlerFinding(c.ObjectId, c.ComponentType, displayName, OrphanAction.Delete, OrphanPriority.Prio3, SequenceHint: 0, OrphanTiming.PreImportEligible, EntityName: entityName) { Identity = identity })
+                .Select(c => new HandlerFinding(c.ObjectId, c.ComponentType, displayName, action, OrphanPriority.Prio3, SequenceHint: 0, OrphanTiming.PreImportEligible, EntityName: entityName) { Identity = identity })
                 .ToList();
             return Task.FromResult(new HandlerDetectionResult(findings, claimed.Select(c => c.ObjectId).ToHashSet()));
         }
@@ -2237,5 +2237,128 @@ public class OrphanCleanupServiceTests : IDisposable
         var withLookup = await BuildService(new FakeProvenanceLookup(_ => declared)).CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
 
         Assert.Equal(SelectExitCodeLikeDrift(withoutLookup), SelectExitCodeLikeDrift(withLookup));
+    }
+
+    // -- U5: verdict rendering (R5, R6, R7, R8, KD6, KTD7) --
+
+    [Fact]
+    public async Task CompareAsync_DeclaredVerdict_RendersAuthorDateAndCommitSubject()
+    {
+        var orphanId = Guid.NewGuid();
+        var date = new DateTimeOffset(2026, 3, 4, 0, 0, 0, TimeSpan.Zero);
+        var declared = ComponentProvenance.Declared("abc123", "Jane Doe", date, "drop unused role");
+        var service = new OrphanCleanupService(_console,
+            [new FakeIdentityHandler(20, "Role 'thing'", "role", LocalSourceIdentity.Role("thing"))],
+            new FakeProvenanceLookup(_ => declared));
+        SetupSolutionComponents("MySolution", (orphanId, 20));
+
+        await service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Contains("Jane Doe", _console.Output);
+        Assert.Contains("2026-03-04", _console.Output);
+        Assert.Contains("drop unused role", _console.Output);
+    }
+
+    [Fact]
+    public async Task CompareAsync_NeverInSourceVerdict_RendersAsSuch_MentionsNoCommit()
+    {
+        var orphanId = Guid.NewGuid();
+        var service = new OrphanCleanupService(_console,
+            [new FakeIdentityHandler(20, "Role 'thing'", "role", LocalSourceIdentity.Role("thing"))],
+            new FakeProvenanceLookup(_ => ComponentProvenance.NeverInSource));
+        SetupSolutionComponents("MySolution", (orphanId, 20));
+
+        await service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Contains("Never in source", _console.Output);
+        // No commit identity anywhere in the report — a real removal would have printed a sha-derived
+        // author/date/subject line, which NeverInSource never carries (ComponentProvenance.Removal is null).
+        Assert.DoesNotContain("Removed by", _console.Output);
+    }
+
+    [Fact]
+    public async Task CompareAsync_UndeterminedVerdict_RendersItsOwnWording_DistinctFromNeverInSourceWording()
+    {
+        // KD6: rendered as data, not asserted against a hardcoded string — the point is that the two
+        // verdicts' wording can never collapse into each other, whatever the exact copy ends up being.
+        async Task<string> RenderVerdictLineAsync(ComponentProvenance verdict)
+        {
+            var console = new TestConsole();
+            console.Profile.Width = 400;
+            var orphanId = Guid.NewGuid();
+            var service = new OrphanCleanupService(console,
+                [new FakeIdentityHandler(20, "Role 'thing'", "role", LocalSourceIdentity.Role("thing"))],
+                new FakeProvenanceLookup(_ => verdict));
+            SetupSolutionComponents("MySolution", (orphanId, 20));
+
+            await service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+            var lines = console.Output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+            var markerIndex = Array.FindIndex(lines, l => l.Contains("Role 'thing'"));
+            return lines[markerIndex + 1].Trim();
+        }
+
+        var undeterminedLine = await RenderVerdictLineAsync(ComponentProvenance.Undetermined);
+        var neverInSourceLine = await RenderVerdictLineAsync(ComponentProvenance.NeverInSource);
+
+        Assert.NotEqual(undeterminedLine, neverInSourceLine);
+        Assert.DoesNotContain("never", undeterminedLine, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("in source", undeterminedLine, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("couldn't", neverInSourceLine, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CompareAsync_DeclaredVerdict_CommitSubjectWithMarkupCharacters_RendersLiterally()
+    {
+        var orphanId = Guid.NewGuid();
+        const string subject = "fix[ci]: drop [bold]thing[/]";
+        var declared = ComponentProvenance.Declared("abc123", "Jane Doe", DateTimeOffset.UtcNow, subject);
+        var service = new OrphanCleanupService(_console,
+            [new FakeIdentityHandler(20, "Role 'thing'", "role", LocalSourceIdentity.Role("thing"))],
+            new FakeProvenanceLookup(_ => declared));
+        SetupSolutionComponents("MySolution", (orphanId, 20));
+
+        await service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Contains(subject, _console.Output);
+    }
+
+    [Fact]
+    public async Task CompareAsync_DeclaredVerdict_RendersUnderBothActionableAndReportOnlyBranches()
+    {
+        var actionableId = Guid.NewGuid();
+        var reportOnlyId = Guid.NewGuid();
+        var declared = ComponentProvenance.Declared("abc123", "Jane Doe", DateTimeOffset.UtcNow, "removed both");
+        var service = new OrphanCleanupService(_console,
+            [
+                new FakeIdentityHandler(20, "Role 'auto'", "role", LocalSourceIdentity.Role("auto")),
+                new FakeIdentityHandler(21, "Role 'reportonly'", "role", LocalSourceIdentity.Role("reportonly"), HandlerStatus.Report),
+            ],
+            new FakeProvenanceLookup(_ => declared));
+        SetupSolutionComponents("MySolution", (actionableId, 20), (reportOnlyId, 21));
+
+        var result = await service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Contains(result.Entries, e => e.ObjectId == actionableId && !e.ReportOnly);
+        Assert.Contains(result.Entries, e => e.ObjectId == reportOnlyId && e.ReportOnly);
+        Assert.Equal(2, Regex.Matches(_console.Output, Regex.Escape("removed both")).Count);
+    }
+
+    [Fact]
+    public async Task CompareAsync_DeclaredVerdict_RendersUnderManualList()
+    {
+        // Manual entries (RoleHandler-style "human review before removal") are still reported to the
+        // operator — R1 gives every reported orphan a verdict with no carve-out for that third list.
+        var orphanId = Guid.NewGuid();
+        var declared = ComponentProvenance.Declared("abc123", "Jane Doe", DateTimeOffset.UtcNow, "remove manually reviewed thing");
+        var service = new OrphanCleanupService(_console,
+            [new FakeIdentityHandler(20, "Role 'thing'", "role", LocalSourceIdentity.Role("thing"), action: OrphanAction.Manual)],
+            new FakeProvenanceLookup(_ => declared));
+        SetupSolutionComponents("MySolution", (orphanId, 20));
+
+        await service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Contains("can't be removed automatically", _console.Output);
+        Assert.Contains("remove manually reviewed thing", _console.Output);
     }
 }

@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using CliWrap;
+using CliWrap.Buffered;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
@@ -277,6 +278,12 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             // stale block survive (e.g. the missing app gets installed, then the next deploy runs with
             // --skip-component-check and would otherwise still show the old report as if it were current).
             ClearComponentCheckReportIfSkipped(settings.SkipComponentCheck, packagePath, targetEnv.EnvironmentUrl!);
+
+            // R11: a disclaimer about the orphan verdicts the loop below is about to print — never touches
+            // checkoutSolutionSrcRoot or any Provenance value the engine computed (KTD2: the engine's own
+            // report stays commit-agnostic). Silent on the trusted case, per tone-of-voice's "no preamble" —
+            // only the degraded routes have anything to say.
+            await PrintProvenanceTrustNoteAsync(usingExplicitArtifact, slnFolder, currentCommitSha, gateVersion, cancellationToken);
 
             foreach (var postDeployService in activeServices)
                 await postDeployService.RunPreImportAsync(postDeployContext, cancellationToken);
@@ -865,4 +872,99 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     internal static ZipArchiveEntry? FindSolutionManifestEntry(ZipArchive archive) =>
         archive.Entries.FirstOrDefault(e => e.FullName.Equals("solution.xml", StringComparison.OrdinalIgnoreCase))
         ?? archive.Entries.FirstOrDefault(e => e.FullName.Replace('\\', '/').Equals("Other/Solution.xml", StringComparison.OrdinalIgnoreCase));
+
+    // R11: how far the orphan report's verdicts can be trusted, stated from here rather than the engine
+    // (KTD2 keeps OrphanCleanupService's own report commit-agnostic). This never feeds back into
+    // checkoutSolutionSrcRoot or any Provenance value — it's a read-only probe run purely to decide which
+    // disclaimer (if any) to print before the report.
+    async Task PrintProvenanceTrustNoteAsync(bool usingExplicitArtifact, string slnFolder, string? currentCommitSha, string artifactVersion, CancellationToken ct)
+    {
+        if (!usingExplicitArtifact)
+        {
+            var note = BuildPackedRouteProvenanceNote(currentCommitSha);
+            if (note != null) Console.Info(note);
+            return;
+        }
+
+        // The real "inside a project" discriminator: not usingExplicitArtifact's own null `layout` (both
+        // --path sub-routes leave that null, see the comment above where it's resolved), but whether a
+        // solution file — and, past it, the checkout's own Solution/src — is resolvable from here at all.
+        // A CI checkout carrying only the artifact (no solution file) resolves neither and falls into the
+        // catch below, which is the stand-alone route.
+        try
+        {
+            var projectLayout = await SolutionFileLayout.LoadAsync(slnFolder, ct);
+            var dataverseSolutionFolder = projectLayout.DataverseSolutionFolder;
+            var foundInHistory = await SolutionVersionExistsInHistoryAsync(dataverseSolutionFolder, artifactVersion, slnFolder, _capture, ct);
+            Console.Warning(BuildPathInsideProjectProvenanceNote(foundInHistory, artifactVersion));
+        }
+        catch (FlowlineException)
+        {
+            Console.Skip(PathStandaloneProvenanceNote);
+        }
+    }
+
+    // Packed/cached route: dataverseSolutionFolder/src (the compare's own source) and checkoutSolutionSrcRoot
+    // (what the lookup searches) are the same checkout path, and ValidateGitCleanAsync already guarantees no
+    // uncommitted changes there — so the verdicts always describe exactly what's being imported. The one
+    // thing that can go unconfirmed is naming which commit that is: currentCommitSha is null when
+    // GetLastCommitShaForPathAsync couldn't resolve one for the deployment input paths. Null means: say so,
+    // rather than implying certainty about a specific sha. Non-null means: say nothing (KTD1's silent trusted
+    // case).
+    internal static string? BuildPackedRouteProvenanceNote(string? currentCommitSha) =>
+        currentCommitSha != null
+            ? null
+            : "Couldn't name the checkout's commit — orphan verdicts still describe this checkout.";
+
+    internal static string BuildPathInsideProjectProvenanceNote(bool versionFoundInHistory, string artifactVersion) =>
+        versionFoundInHistory
+            ? $"Artifact v{artifactVersion} matches this checkout's history — orphan verdicts assume that build, but a version match isn't proof."
+            : $"Artifact v{artifactVersion} isn't in this checkout's history — orphan verdicts describe the checkout, which may not be what this artifact holds.";
+
+    internal const string PathStandaloneProvenanceNote = "No project source here to check against — orphan verdicts are unresolved for this deploy.";
+
+    // R11: walks every commit that touched Other/Solution.xml in the checkout and reads each revision's
+    // <Version>, stopping at the first that equals the artifact's own version. A version match is not proof
+    // of provenance (two builds can share a version bump) — that caveat lives in the message above, not here.
+    // A malformed historical revision is skipped rather than failing the whole probe; ParseSolutionManifest's
+    // own "no Version element" throw is exactly that case.
+    internal static async Task<bool> SolutionVersionExistsInHistoryAsync(
+        string dataverseSolutionFolder, string version, string rootFolder, SubprocessCapture? capture, CancellationToken ct)
+    {
+        var gitPath = Path.GetRelativePath(rootFolder, Path.Combine(dataverseSolutionFolder, "src", "Other", "Solution.xml")).Replace('\\', '/');
+
+        // SolutionChangeSummary.ComputeAsync's own Run helper convention: capture is optional, and every
+        // invocation is suppressErrors — a probe commit or a path that never existed is an expected
+        // not-found outcome here, not a tool failure worth echoing.
+        Task<CliWrap.Buffered.BufferedCommandResult> Run(CliWrap.Command cmd) =>
+            (capture?.Apply(cmd, suppressErrors: true) ?? cmd).ExecuteBufferedAsync(ct);
+
+        var logResult = await Run(
+            Cli.Wrap("git")
+                .WithWorkingDirectory(rootFolder)
+                .WithArguments(args => args.Add("log").Add("--format=%H").Add("--").Add(gitPath))
+                .WithValidation(CommandResultValidation.None));
+        if (logResult.ExitCode != 0) return false;
+
+        var shas = logResult.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+        foreach (var sha in shas)
+        {
+            var showResult = await Run(
+                Cli.Wrap("git")
+                    .WithWorkingDirectory(rootFolder)
+                    .WithArguments(args => args.Add("show").Add($"{sha}:{gitPath}"))
+                    .WithValidation(CommandResultValidation.None));
+            if (showResult.ExitCode != 0) continue;
+
+            try
+            {
+                var doc = XmlHelpers.Parse(showResult.StandardOutput);
+                var (revisionVersion, _) = ParseSolutionManifest(doc);
+                if (revisionVersion == version) return true;
+            }
+            catch (FlowlineException) { /* revision predates a Version element, or is malformed — keep looking */ }
+        }
+
+        return false;
+    }
 }

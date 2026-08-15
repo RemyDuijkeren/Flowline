@@ -1001,6 +1001,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
                 {
                     console.MarkupLine($"    [dim]{Markup.Escape(entry.DisplayName)} — {(managedUpgrade ? ManagedUpgradeLabel : "detected, not auto-removed")}[/]");
                     RenderWebResourceDependents(entry);
+                    RenderProvenance(entry);
                     continue;
                 }
 
@@ -1009,6 +1010,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
                     : ActionLabel(entry.Action);
                 console.MarkupLine($"    [{ActionColor(entry.Action)}]{Markup.Escape(entry.DisplayName)} — {label}[/]");
                 RenderWebResourceDependents(entry);
+                RenderProvenance(entry);
             }
         }
 
@@ -1016,7 +1018,13 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         {
             console.Warning($"{manual.Count} component{(manual.Count == 1 ? "" : "s")} can't be removed automatically:");
             foreach (var entry in manual)
+            {
                 console.MarkupLine($"  [yellow]{Markup.Escape(entry.DisplayName)}[/] — remove manually via maker portal");
+                // R1/R5: Manual entries are reported to the operator same as automated ones — the operator
+                // still needs the verdict to decide whether "manual" means "go remove this" or "leave it".
+                // No branch of PrintReport is exempt from R1's "every orphan entry that reaches a report".
+                RenderProvenance(entry);
+            }
             console.MarkupLine($"  Open {SolutionsListUrl(environmentUrl)}, find '{solutionName}', and remove these from there.");
         }
 
@@ -1060,6 +1068,35 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         }
         else if (entry.Dependents is null)
             console.MarkupLine("      [dim]Couldn't check for dependents.[/]");
+    }
+
+    // R5/R6/R7/KTD7: verdict renders beside the existing dependents block, through this one report path —
+    // both PrintReport branches and the Manual list all call it, since R1 gives every reported orphan a
+    // verdict with no carve-out. Declared/NeverInSource are real answers so they render plain, the same
+    // way a resolved dependents line does; Undetermined is the degraded state and renders dim, mirroring
+    // RenderWebResourceDependents' "Couldn't check for dependents." treatment above. KD6: Undetermined's
+    // wording never uses "in source" or any other phrase NeverInSource also uses, so the two can't be
+    // misread as the same thing at a glance. Author and subject are arbitrary user text (R7) and must be
+    // escaped before they reach the console, same as DisplayName elsewhere in this file.
+    void RenderProvenance(OrphanEntry entry)
+    {
+        switch (entry.Provenance.Verdict)
+        {
+            case ProvenanceVerdict.Declared:
+                var removal = entry.Provenance.Removal!;
+                console.MarkupLine(
+                    $"      Removed by {Markup.Escape(removal.Author)} on {removal.Date:yyyy-MM-dd} — \"{Markup.Escape(removal.Subject)}\"");
+                break;
+            case ProvenanceVerdict.NeverInSource:
+                // States the fact, not a cause. A component with no removal in history may have been made
+                // in the maker portal or may simply predate the clone — the verdict can't tell those
+                // apart, so it doesn't claim to.
+                console.MarkupLine("      Never in source — this repo never declared it.");
+                break;
+            default: // Undetermined, and any future case that reaches here unhandled
+                console.MarkupLine("      [dim]Couldn't check history for this component.[/]");
+                break;
+        }
     }
 
     static string SolutionsListUrl(string environmentUrl) =>
