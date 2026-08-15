@@ -620,7 +620,8 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
     {
         // Create WebResources project if it doesn't exist
         var webresourcesFolder = Path.Combine(slnFolder, "WebResources");
-        var webresourcesCsproj = Path.Combine(webresourcesFolder, WebResourcesProjectFileName(solutionName));
+        var webresourcesCsprojName = WebResourcesProjectFileName(solutionName);
+        var webresourcesCsproj = Path.Combine(webresourcesFolder, webresourcesCsprojName);
         if (ResolveExistingWebResourcesFolder(webresourcesFolder, webresourcesCsproj, layout) is { } existingFolder)
         {
             console.Skip("WebResources project already there — skipping");
@@ -630,20 +631,7 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
         await console.Status().FlowlineSpinner().StartAsync(
             "Setting up WebResources project...", async ctx =>
             {
-                Directory.CreateDirectory(webresourcesFolder);
-
-                await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.WebResources.csproj", webresourcesCsproj, cancellationToken);
-                await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.package.json", Path.Combine(webresourcesFolder, "package.json"), cancellationToken);
-                await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.rollup.config.mjs", Path.Combine(webresourcesFolder, "rollup.config.mjs"), cancellationToken);
-                await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.tsconfig.json", Path.Combine(webresourcesFolder, "tsconfig.json"), cancellationToken);
-                await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.eslint.config.mjs", Path.Combine(webresourcesFolder, "eslint.config.mjs"), cancellationToken);
-                await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.README.md", Path.Combine(webresourcesFolder, "README.md"), cancellationToken);
-
-                Directory.CreateDirectory(Path.Combine(webresourcesFolder, "src", "modules"));
-                await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.src.example.ts", Path.Combine(webresourcesFolder, "src", "example.ts"), cancellationToken);
-                await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.src.example-js.js", Path.Combine(webresourcesFolder, "src", "example-js.js"), cancellationToken);
-                Directory.CreateDirectory(Path.Combine(webresourcesFolder, "public"));
-                Directory.CreateDirectory(Path.Combine(webresourcesFolder, "dist"));
+                await WriteWebResourcesTemplateAsync(webresourcesFolder, webresourcesCsprojName, cancellationToken);
 
                 console.Verbose($"Created {ConsolePath.FormatRelativePath(webresourcesFolder)}");
 
@@ -661,5 +649,43 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
 
         console.Ok("WebResources project ready");
         return webresourcesFolder;
+    }
+
+    /// <summary>
+    /// Writes the WebResources template files and folders into <paramref name="webresourcesFolder"/> —
+    /// no solution file, no <see cref="SolutionFileLayout"/>, no config read. This is the leaf both
+    /// <c>clone</c>/<c>init</c> (via <see cref="SetupWebResourcesProjectAsync"/>) and the standalone
+    /// <c>scaffold webresources</c> command reach, so the two paths can't drift into writing different
+    /// template sets (KTD1).
+    /// </summary>
+    /// <remarks>
+    /// The project file is written <b>last</b> — deliberately out of the template's natural top-to-bottom
+    /// order. <see cref="ResolveExistingWebResourcesFolder"/> treats <c>File.Exists(webresourcesCsproj)</c>
+    /// as this scaffold's "already there" marker (the skip <see cref="SetupWebResourcesProjectAsync"/>
+    /// checks before ever calling here), and there is no overwrite flag (R12). Written first, a scaffold
+    /// interrupted by a crash, Ctrl+C, or a full disk would leave that marker on disk with the rest of the
+    /// template missing — every later run would then see "already there" and refuse to finish it, with no
+    /// escape hatch. Written last, an interrupted run leaves no marker at all, so a retry starts clean and
+    /// finishes the job. Write order isn't part of the on-disk result once the call completes, so this
+    /// choice is invisible to any test that only checks the finished file set.
+    /// </remarks>
+    internal static async Task WriteWebResourcesTemplateAsync(string webresourcesFolder, string projectFileName, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(webresourcesFolder);
+
+        await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.package.json", Path.Combine(webresourcesFolder, "package.json"), cancellationToken);
+        await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.rollup.config.mjs", Path.Combine(webresourcesFolder, "rollup.config.mjs"), cancellationToken);
+        await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.tsconfig.json", Path.Combine(webresourcesFolder, "tsconfig.json"), cancellationToken);
+        await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.eslint.config.mjs", Path.Combine(webresourcesFolder, "eslint.config.mjs"), cancellationToken);
+        await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.README.md", Path.Combine(webresourcesFolder, "README.md"), cancellationToken);
+
+        Directory.CreateDirectory(Path.Combine(webresourcesFolder, "src", "modules"));
+        await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.src.example.ts", Path.Combine(webresourcesFolder, "src", "example.ts"), cancellationToken);
+        await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.src.example-js.js", Path.Combine(webresourcesFolder, "src", "example-js.js"), cancellationToken);
+        Directory.CreateDirectory(Path.Combine(webresourcesFolder, "public"));
+        Directory.CreateDirectory(Path.Combine(webresourcesFolder, "dist"));
+
+        // Written last -- see remarks above.
+        await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.WebResources.csproj", Path.Combine(webresourcesFolder, projectFileName), cancellationToken);
     }
 }
