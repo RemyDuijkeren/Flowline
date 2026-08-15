@@ -339,6 +339,52 @@ public class GitComponentProvenanceLookupTests : IDisposable
             "one file is still present under the folder, so the folder as a whole is not affirmatively removed");
     }
 
+    // ── the real chain: handler-declared identity -> locator -> lookup ──────
+
+    // Every other test here hands the lookup a location built by hand, and ComponentSourceLocatorTests
+    // checks the locator with no repository behind it — so nothing proved the paths the locator actually
+    // composes find anything in a real checkout. This is where the seam bites: a handler holds the
+    // entity's LOGICAL name (account) while pac wrote the folder schema-cased (Account), so a
+    // case-sensitive pathspec would report a genuine removal as never-in-source — the inverted-safety
+    // failure KD6 exists to prevent. Written with that mismatch deliberately in place.
+    [Fact]
+    public async Task ResolveAsync_HandlerDeclaredColumnIdentity_ResolvesThroughLocatorDespiteFolderCasing()
+    {
+        WriteFile("Entities/Account/Entity.xml", EntityXmlWithAttribute("new_discount"));
+        Commit("add column");
+        WriteFile("Entities/Account/Entity.xml", EntityXmlWithAttribute(null));
+        Commit("drop the discount column, finance owns it now");
+        var removal = CommitInfo(HeadSha());
+
+        // Exactly what EntityFamilyHandler declares: the entity's logical name, lower-cased.
+        var identity = LocalSourceIdentity.EntityAttribute("account", "new_discount");
+        var location = ComponentSourceLocator.Locate(identity);
+
+        location.Should().NotBeNull();
+        location!.RelativePath.Should().Be("Entities/account/Entity.xml", "the handler only has the logical name");
+
+        var result = await _lookup.ResolveAsync(_srcFolder, location, CancellationToken.None);
+
+        result.Verdict.Should().Be(ProvenanceVerdict.Declared);
+        result.Removal.Should().BeEquivalentTo(removal);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_HandlerDeclaredRoleIdentity_ResolvesThroughLocator()
+    {
+        WriteFile("Roles/Salesperson.xml", "<role/>");
+        Commit("add role");
+        var removal = CommitRemoval("Roles/Salesperson.xml", "retire the salesperson role");
+
+        var location = ComponentSourceLocator.Locate(LocalSourceIdentity.Role("Salesperson"));
+
+        location.Should().NotBeNull();
+        var result = await _lookup.ResolveAsync(_srcFolder, location!, CancellationToken.None);
+
+        result.Verdict.Should().Be(ProvenanceVerdict.Declared);
+        result.Removal.Should().BeEquivalentTo(removal);
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────
 
     static string EntityXmlWithAttribute(string? logicalName) => logicalName is null
