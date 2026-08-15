@@ -68,6 +68,9 @@ public sealed class WorkflowHandler(IAnsiConsole console) : IOrphanHandler
             }
 
             var displayName = name != null ? $"Workflow '{name}' ({id})" : $"Workflow {id}";
+            // Identity stays at None (default) — ComponentClassifier has no ScanWorkflow* local-source
+            // scanner to confirm Workflow's on-disk convention against, so a shape here would be a guess
+            // this handler can't back. Resolves to Undetermined (R8), which is honest.
             findings.Add(new HandlerFinding(
                 id,
                 WorkflowComponentType,

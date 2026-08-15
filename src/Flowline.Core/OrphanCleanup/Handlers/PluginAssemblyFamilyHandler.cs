@@ -172,6 +172,12 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         return findings;
     }
 
+    // Identity stays at HandlerFinding's None default throughout this handler (assembly/type/step/image
+    // findings here, the redirected pluginpackage finding above, and the CustomApi-cascade findings in
+    // ResolvePackageChildCleanupFindingsAsync below) — none of PluginAssembly/PluginType/Step/StepImage/
+    // PluginPackage has a ComponentClassifier scanner confirming its on-disk convention (Plugins/ is a
+    // compiled csproj, not scanned source), so a shape here would be a guess. Resolves to Undetermined
+    // (R8), which is honest.
     static HandlerFinding BuildFinding((Guid ObjectId, int ComponentType) candidate, Dictionary<Guid, string> names, OrphanPriority priority)
     {
         var detail = names.TryGetValue(candidate.ObjectId, out var name) ? name : null;

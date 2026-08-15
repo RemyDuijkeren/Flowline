@@ -40,6 +40,7 @@ public sealed class WebResourceHandler(IAnsiConsole console) : IOrphanHandler
                 if (name is null || !annotationRefs.Contains(name)) return false;
                 console.Skip($"'{name}' preserved — referenced in // flowline:depends annotation.");
                 return true;
-            });
+            },
+            identity: LocalSourceIdentity.WebResource);
     }
 }

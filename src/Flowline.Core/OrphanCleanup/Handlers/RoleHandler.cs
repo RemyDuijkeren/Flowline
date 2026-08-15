@@ -27,5 +27,6 @@ public sealed class RoleHandler(IAnsiConsole console) : IOrphanHandler
             idAttribute: "roleid",
             nameAttribute: "name",
             label: "Role",
-            action: OrphanAction.Manual);
+            action: OrphanAction.Manual,
+            identity: LocalSourceIdentity.Role);
 }

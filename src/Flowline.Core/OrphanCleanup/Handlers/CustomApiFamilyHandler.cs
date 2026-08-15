@@ -84,7 +84,13 @@ public sealed class CustomApiFamilyHandler(IAnsiConsole console) : IOrphanHandle
             .ToHashSet();
 
         var findings = new List<HandlerFinding>();
-        AddFindings(findings, caTask.Result.Names,    "customapi",                 "CustomApi",                 localNames.ApiUniqueNames,        ParentSequenceHint, componentTypeById);
+        // CustomApi itself is a schema-named folder (customapis/<uniquename>) — a shape this handler can
+        // declare directly. Its request-parameter/response-property children live one level deeper
+        // (customapis/<uniquename>/customapirequestparameters/<name>/, see
+        // ComponentClassifier.ScanCustomApiNames), but AddFindings never carries the parent uniquename
+        // alongside a child's own name, so a child here has nothing to build that nested path from —
+        // stays LocalSourceIdentity.None (R8) rather than guessing.
+        AddFindings(findings, caTask.Result.Names,    "customapi",                 "CustomApi",                 localNames.ApiUniqueNames,        ParentSequenceHint, componentTypeById, name => LocalSourceIdentity.SchemaNamedFolder("customapis", name));
         AddFindings(findings, paramTask.Result.Names, "customapirequestparameter", "CustomApiRequestParameter", localNames.RequestParameterNames, ChildSequenceHint,  componentTypeById);
         AddFindings(findings, propTask.Result.Names,  "customapiresponseproperty", "CustomApiResponseProperty", localNames.ResponsePropertyNames, ChildSequenceHint,  componentTypeById);
 
@@ -98,7 +104,8 @@ public sealed class CustomApiFamilyHandler(IAnsiConsole console) : IOrphanHandle
         string displayLabel,
         IReadOnlySet<string> localNames,
         int sequenceHint,
-        Dictionary<Guid, int> componentTypeById)
+        Dictionary<Guid, int> componentTypeById,
+        Func<string, LocalSourceIdentity>? identity = null)
     {
         foreach (var (id, name) in resolvedNames)
         {
@@ -116,7 +123,10 @@ public sealed class CustomApiFamilyHandler(IAnsiConsole console) : IOrphanHandle
                 Priority: OrphanPriority.Prio2,
                 SequenceHint: sequenceHint,
                 Timing: OrphanTiming.PreImportEligible,
-                EntityName: entityName));
+                EntityName: entityName)
+            {
+                Identity = identity != null ? identity(name) : LocalSourceIdentity.None,
+            });
         }
     }
 }

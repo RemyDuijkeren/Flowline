@@ -79,7 +79,10 @@ public sealed class EntityFamilyHandler(IAnsiConsole console) : IOrphanHandler
                 continue; // still declared in Entity.xml — false positive, not an orphan (still claimed above)
 
             var detail = $"{info.EntityLogicalName}.{info.AttributeLogicalName}";
-            findings.Add(EntityFinding(id, componentType, $"Attribute '{detail}' ({id})"));
+            findings.Add(EntityFinding(id, componentType, $"Attribute '{detail}' ({id})") with
+            {
+                Identity = LocalSourceIdentity.EntityAttribute(info.EntityLogicalName, info.AttributeLogicalName),
+            });
         }
 
         return new HandlerDetectionResult(findings, claimedIds);
@@ -87,6 +90,13 @@ public sealed class EntityFamilyHandler(IAnsiConsole console) : IOrphanHandler
 
     // Prio3 always — hygiene, human review before removal, not blocking. SequenceHint is 0: these are
     // always Manual, so the ordering hint has no operational effect for this handler's findings.
+    //
+    // Identity stays at HandlerFinding's None default here — this also covers Entity (componenttype 1)
+    // findings above, which never call the `with` override below. An entity's own Entity.xml removal
+    // could plausibly be a File shape, but LocalIdentityShape (U1, fixed) has no case for "own file" —
+    // SchemaNamedFolder is documented as bots/customapis only and maps to a Folder location, not the
+    // single Entity.xml file this would need. Reusing it would be a guess this handler can't back
+    // against a verified convention, so Entity findings stay Undetermined (R8) until U1 grows a case.
     static HandlerFinding EntityFinding(Guid id, int componentType, string displayName) =>
         new(id, componentType, displayName, OrphanAction.Manual, OrphanPriority.Prio3, SequenceHint: 0, OrphanTiming.PreImportEligible);
 

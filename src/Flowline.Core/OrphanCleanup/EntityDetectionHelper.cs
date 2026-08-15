@@ -22,7 +22,8 @@ public static class EntityDetectionHelper
         ColumnSet columnSet,
         IReadOnlySet<string> localKeys,
         string label,
-        Func<Entity, OrphanPriority> priority)
+        Func<Entity, OrphanPriority> priority,
+        Func<string, LocalSourceIdentity>? identity = null)
     {
         if (candidates.Count == 0) return new HandlerDetectionResult([], new HashSet<Guid>());
 
@@ -70,7 +71,10 @@ public static class EntityDetectionHelper
                 Priority: priority(row),
                 SequenceHint: 0,
                 Timing: OrphanTiming.PreImportEligible,
-                EntityName: entityLogicalName));
+                EntityName: entityLogicalName)
+            {
+                Identity = identity != null ? identity(key) : LocalSourceIdentity.None,
+            });
         }
 
         return new HandlerDetectionResult(findings, claimedIds);

@@ -32,6 +32,7 @@ public sealed class ConnectionReferenceHandler(IAnsiConsole console) : IOrphanHa
             label: "ConnectionReference",
             // Prio2 always — a live connection reference remains usable by anything still holding its
             // logical name.
-            priority: _ => OrphanPriority.Prio2);
+            priority: _ => OrphanPriority.Prio2,
+            identity: LocalSourceIdentity.ConnectionReference);
     }
 }

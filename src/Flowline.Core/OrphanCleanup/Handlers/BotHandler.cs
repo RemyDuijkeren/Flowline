@@ -34,6 +34,7 @@ public sealed class BotHandler(IAnsiConsole console) : IOrphanHandler
             label: "Bot",
             // Published/live (publishedon set) -> Prio2; never-published/draft (publishedon null) ->
             // Prio3.
-            priority: row => row.GetAttributeValue<DateTime?>("publishedon").HasValue ? OrphanPriority.Prio2 : OrphanPriority.Prio3);
+            priority: row => row.GetAttributeValue<DateTime?>("publishedon").HasValue ? OrphanPriority.Prio2 : OrphanPriority.Prio3,
+            identity: schemaName => LocalSourceIdentity.SchemaNamedFolder("bots", schemaName));
     }
 }

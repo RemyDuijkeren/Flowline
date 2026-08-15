@@ -29,6 +29,13 @@ public sealed record ComponentSourceLocation
     }
 
     public SourceLocationKind Kind { get; }
+
+    // Case is NOT authoritative. Several segments are composed from a live Dataverse name whose casing
+    // does not match what pac wrote to disk — an entity folder is schema-cased (Entities/Account) while
+    // the handler only has the logical name (account), which is why ComponentClassifier matches those
+    // folders with OrdinalIgnoreCase rather than composing a path at all. Git pathspecs are
+    // case-sensitive, so a consumer must match this path case-insensitively (`:(icase)`) or it will
+    // silently find nothing and report a real removal as never-in-source.
     public string RelativePath { get; }
 
     // Inline only: the literal source tokens whose deletion means this component's own declaration went

@@ -18,7 +18,8 @@ public static class NameLookupDetectionHelper
         string nameAttribute,
         string label,
         OrphanAction action,
-        Func<Guid, string?, bool>? isExempt = null)
+        Func<Guid, string?, bool>? isExempt = null,
+        Func<string, LocalSourceIdentity>? identity = null)
     {
         var typeCandidates = candidates.Where(c => c.ComponentType == componentType).ToList();
         if (typeCandidates.Count == 0) return new HandlerDetectionResult([], new HashSet<Guid>());
@@ -48,7 +49,12 @@ public static class NameLookupDetectionHelper
                 action,
                 OrphanPriority.Prio3,
                 SequenceHint: 0, // Only type in its family — no ordering to express
-                OrphanTiming.PreImportEligible));
+                OrphanTiming.PreImportEligible)
+            {
+                // No resolved name means no local-source identity to declare either — bare-id fallback
+                // stays at HandlerFinding's None default (R8).
+                Identity = hasName && identity != null ? identity(name!) : LocalSourceIdentity.None,
+            });
         }
 
         return new HandlerDetectionResult(findings, claimedIds);
