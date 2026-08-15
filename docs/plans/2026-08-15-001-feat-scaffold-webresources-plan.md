@@ -19,7 +19,7 @@ execution: code
 - **Execution profile:** Additive, with one behavior-preserving refactor of shared code (U1). `clone` and `init` must produce byte-identical scaffolds before and after — a change that alters either is out of contract, not a judgement call.
 - **Stop conditions:** Stop and surface rather than guess if satisfying project mode would require a Dataverse call, if U1 cannot preserve `clone` and `init` behavior, or if skipping the prerequisite probe (KTD2) turns out to break an assumption the base command relies on later.
 - **Tail ownership:** This plan ends at a merged change with README, wiki, and changelog updated (U6). It does not carry a release.
-- **Product Contract preservation:** changed — R14 added (`--dry-run`), because the repo's agent-CLI contract requires it on any command that writes; surfaced and confirmed in session. Dependencies/Assumptions corrected: the two modes share an extracted template-writing core rather than the existing scaffold method unchanged (KTD1). All other Product Contract content and every R/KD ID unchanged.
+- **Product Contract preservation:** changed — R14 added (`--dry-run`), because the repo's agent-CLI contract requires it on any command that writes; surfaced and confirmed in session. R7 and AE7 corrected: the finish message stays, but the claim that its push step runs for an unauthenticated user was false — `ProfileResolutionService.ResolveAsync` throws `NotAuthenticated` when no profile matches the URL. The blog-reader persona was dropped from the Problem Frame and F1 at the user's direction; the remaining audience is a user working outside project mode. Dependencies/Assumptions corrected: the two modes share an extracted template-writing core rather than the existing scaffold method unchanged (KTD1). Every R/KD ID is unchanged and no requirement was removed.
 - **Open blockers:** None.
 
 ---
@@ -34,7 +34,7 @@ A new top-level `scaffold` command (alias `new`) whose first part is `webresourc
 
 The WebResources project template is reachable today only as a side effect of `clone` or `init` — both of which connect to Dataverse, and both of which exist to bring a whole solution into a repo. Someone who wants the template itself has no command for it.
 
-Two audiences hit that wall. A reader following a blog post about how the WebResources project works needs to produce one to follow along, and has no reason to own a Dataverse solution yet. A user who works without project mode still wants the template's build setup, and today has to hand-copy files out of the Flowline repository.
+A user who works without project mode still wants the template's build setup, and today has to hand-copy files out of the Flowline repository.
 
 There is a second, narrower gap on the same surface. An existing Flowline repo with no WebResources project — a plugin-only repo, or one migrated from spkl or Daxif — can only acquire one by re-running `clone`, which requires authentication and a live environment to do work that is entirely local.
 
@@ -63,7 +63,7 @@ There is a second, narrower gap on the same surface. An existing Flowline repo w
 
 - R5. Outside a Flowline project, the command writes only the WebResources project folder: the project file, the build and lint configuration, the README, the example sources under `src/`, and empty `public/` and `dist/` folders.
 - R6. The project file standalone mode writes is named `WebResources.csproj`.
-- R7. Standalone mode's finish message names the commands that take the reader from the scaffolded folder to a pushed web resource, and the push step it names is valid for a reader who has not yet authenticated.
+- R7. Standalone mode's finish message names the commands that take the user from the scaffolded folder to a pushed web resource, including the authentication and the solution that the push step requires.
 
 **Project mode**
 
@@ -96,10 +96,10 @@ flowchart TB
 
 ### Key Flows
 
-- F1. Blog reader, empty folder
-  - **Trigger:** A reader with Flowline installed and no Dataverse solution runs the command in an empty directory.
+- F1. Standalone scaffold in an empty folder
+  - **Trigger:** A user runs the command in an empty directory, outside any Flowline project.
   - **Steps:** The command finds no project marker, announces standalone mode, writes the template folder, then names the build and push commands that follow.
-  - **Outcome:** A buildable web resource project the reader can push without ever creating a Flowline project.
+  - **Outcome:** A buildable web resource project that can be pushed without ever creating a Flowline project.
   - **Covered by:** R2, R3, R5, R6, R7
 
 - F2. Existing project missing the WebResources project
@@ -116,7 +116,7 @@ flowchart TB
 - AE4. **Covers R2.** Given no PAC authentication profile and no network, when the command runs in either mode, then it succeeds.
 - AE5. **Covers R4.** Given the part value `plugins`, when the command runs, then it fails as a validation error naming `webresources` as the accepted value.
 - AE6. **Covers R3.** Given a Flowline project, when the command runs from a subdirectory of that project, then it announces project mode rather than silently scaffolding a standalone folder there.
-- AE7. **Covers R7.** Given a reader with no PAC authentication profile, when standalone mode finishes, then following the printed steps in order reaches a pushed web resource with no step failing for a missing environment or missing authentication.
+- AE7. **Covers R7.** Given standalone mode completes a write, when the next-step block is printed, then it names the build step, the push step, and the authentication and solution the push step requires.
 - AE8. **Covers R10.** Given a folder holding a `.flowline` and no solution file, when the command runs, then it fails naming the missing solution file rather than scaffolding anything.
 - AE9. **Covers R11.** Given a folder holding a solution file and no `.flowline`, when the command runs, then it announces standalone mode and does not touch the solution file.
 - AE10. **Covers R14.** Given `--dry-run` in either mode, when the command runs, then it announces the resolved mode, reports what would be written, exits 0, and no file is created.
@@ -146,13 +146,12 @@ flowchart TB
 
 - OQ1. Whether the mode announcement is one line or is folded into the existing preflight output shape.
 - OQ2. Whether the alias `new` appears in help output alongside `scaffold` or only resolves silently.
-- OQ3. The wording R10 inherits. The existing missing-solution-file error names `clone` and the stand-alone push escape hatch, neither of which is the right advice when `scaffold` triggers it.
 
 ### Sources / Research
 
 - `src/Flowline/Services/ProjectScaffolder.cs` — `SetupWebResourcesProjectAsync` is the method U1 splits; it already skips when a project is registered, resolving either the solution-named file in the default folder or a moved one recorded in the solution file.
 - `src/Flowline/Utils/TemplateWriter.cs` — template writes truncate an existing target rather than skipping it. This is why R12 is a hard skip.
-- `src/Flowline/Commands/PushCommand.cs` — the standalone push mode R7 points at: a web resource folder plus the solution as a positional. The environment resolves from a flag or an existing auth profile, so the flag is not always required — but R7's printed step includes it, because the unauthenticated reader is the case it exists for.
+- `src/Flowline/Commands/PushCommand.cs` — the standalone push mode R7 points at: a web resource folder plus the solution as a positional. `ProfileResolutionService.ResolveAsync` throws `NotAuthenticated` when no PAC profile matches the target URL, regardless of `--dev`, so R7's printed steps name authentication and the solution as prerequisites rather than implying push runs without them.
 - `src/Flowline/Commands/FlowlineCommand.cs` — the project marker is `.flowline`, found by walking upward (the surprise KD6 exists to prevent). The default `CheckSetupAsync` requires a git repo, requires the PAC CLI, and calls NuGet — the three reasons KTD2 overrides it.
 - `src/Flowline/Commands/SlnAddCommand.cs` — the precedent for a command that only touches local files and overrides the prerequisite probe.
 - `src/Flowline.Core/Services/SolutionFileLayout.cs` — throws `NotFound` when the folder holds no solution file (inherited by R10), and exposes no accessor for the solution file's own path (added in U4).
@@ -172,7 +171,7 @@ flowchart TB
 ### Key Technical Decisions
 
 - KTD1. **Extract the template-writing core; project mode wraps it.** `SetupWebResourcesProjectAsync` requires a solution file path and a loaded `SolutionFileLayout`, neither of which exists standalone, so the two modes cannot both call it as it stands. Extract the part that writes template files and creates folders; project mode keeps the naming, skip-check, and `dotnet sln add` around it. Chosen over duplicating the template writes in the command, which would let the two copies drift. Governs R5, R8.
-- KTD2. **Override `CheckSetupAsync` to skip the prerequisite probe.** The default probe requires a git repository, requires the PAC CLI, and calls NuGet for the update notice. A blog reader's fresh folder is none of those, and the NuGet call alone contradicts R2. `SlnAddCommand` already sets this precedent for a command that only touches local files. Governs R2.
+- KTD2. **Override `CheckSetupAsync` to skip the prerequisite probe.** The default probe requires a git repository, requires the PAC CLI, and calls NuGet for the update notice. An empty folder is none of those, and the NuGet call alone contradicts R2. `SlnAddCommand` already sets this precedent for a command that only touches local files. Governs R2.
 - KTD3. **Add `--dry-run`.** (session-settled: user-approved — chosen over shipping without it: the repo's agent-CLI contract requires `--dry-run` on any command that writes, and an agent needs to tell "nothing to do" from "would have worked".) Governs R14.
 - KTD4. **Detection reads `.flowline` first, then the solution file.** `.flowline` is the project marker the base command already walks upward to find; the solution file is what registration targets. Both present means project mode, neither means standalone, and the asymmetric single-marker cases follow KD8. Governs R9, R10, R11.
 - KTD5. **An invalid part value throws `ValidationFailed`, not `NotFound`.** The value is malformed input rather than a missing resource, and the message lists the accepted values so an agent discovers the vocabulary from the error. Governs R4.
@@ -215,13 +214,16 @@ flowchart TB
   1. Split the body of `SetupWebResourcesProjectAsync` into an inner method that creates the folder, writes the eight template files (the six project/config files plus `src/example.ts` and `src/example-js.js`), and creates `src/modules`, `public/`, and `dist/`.
   2. Leave the outer method's contract untouched: same signature, same skip-check via the layout, same `dotnet sln add`, same return value.
   3. The inner method takes the target folder and the project file name; it reads no config and touches no solution file.
-- **Execution note:** Behavior-preserving. Land this unit with the existing clone/init scaffold tests green before writing any new command code — they are the characterization coverage for the refactor.
-- **Patterns to follow:** The existing `TemplateWriter.WriteAsync` calls move verbatim; do not change which logical resource names are written or the order they are written in.
+  4. Write the project file **last**, after every other template file and folder. It doubles as the presence marker `ResolveExistingWebResourcesFolder` checks, so writing it first would let an interrupted run report "already present" forever under R12's no-overwrite rule. Write order is not part of the on-disk result, so this does not affect the byte-identity requirement.
+- **Execution note:** Behavior-preserving on the resulting file set, not on write order. The existing clone/init tests do **not** exercise the template writes — they hand-write stub `.csproj` files and assert only solution-file registration — so this unit must add its own characterization coverage rather than rely on them.
+- **Patterns to follow:** The existing `TemplateWriter.WriteAsync` calls move verbatim; do not change which logical resource names are written or which target paths they land on. Order is the one thing this unit deliberately changes, per approach step 4.
 - **Test scenarios:**
   - The inner method, called with a folder and a project file name, produces the same file set the outer method produced before the split.
+  - Each written template file matches its embedded manifest resource byte for byte, so an encoding, line-ending, or truncation regression fails rather than passing silently.
+  - The project file does not exist on disk until every other template file has been written.
   - A clone into a temp folder still yields a WebResources project registered in the solution file.
   - The outer method still skips when a WebResources project is already registered.
-- **Verification:** `dotnet test tests/Flowline.Tests/Flowline.Tests.csproj -c Release` passes with no test changed except added assertions.
+- **Verification:** `dotnet test tests/Flowline.Tests/Flowline.Tests.csproj -c Release` passes, including the new byte-identity and write-order scenarios.
 
 ### U2. Scaffold command skeleton, part validation, and mode detection
 
@@ -261,12 +263,12 @@ flowchart TB
 - **Approach:**
   1. Call U1's extracted core with the working folder and `WebResources.csproj`.
   2. Skip and report when a WebResources project file is already there, per R12 — do not write over it.
-  3. Finish by naming the build step and the push step. The push step must carry an environment argument so it is runnable by a reader who has not authenticated (R7); the solution name is the push command's positional.
+  3. Finish by naming the build step and the push step, including the authentication and solution the push requires (R7). The solution name is the push command's positional.
 - **Patterns to follow:** `docs/tone-of-voice.md` for the message wording; `Console.Ok` / `Console.Skip` / `Console.Done` per the existing vocabulary.
 - **Test scenarios:**
   - Covers AE1. An empty temp folder gains `WebResources/WebResources.csproj` plus the template files, and gains no solution file and no `.flowline`.
   - Standalone output announces standalone mode before the first write.
-  - Covers AE7. The printed next-step block names a push invocation that includes an environment argument.
+  - Covers AE7. The printed next-step block names the build step, the push invocation, and the authentication and solution the push requires.
   - Covers AE3. A second run over an edited template folder reports already-present and leaves every file byte-identical.
 - **Verification:** In a scratch folder, `flowline scaffold webresources` then `dotnet build WebResources/` succeeds; `npm install && npm run build` inside `WebResources/` produces output in `dist/`.
 
@@ -283,8 +285,8 @@ flowchart TB
 - **Approach:**
   1. Add a public accessor on `SolutionFileLayout` returning the path of the solution file it read. The class already holds the folder and the file name privately; this exposes them rather than re-running the file search.
   2. Resolve the solution name from the loaded project config, then call the existing `SetupWebResourcesProjectAsync` with the layout and that path.
-  3. Let the layout's missing-solution-file failure propagate for R10 rather than catching and rewording it.
-- **Patterns to follow:** `CloneCommand` for how the layout and config are obtained in a command body.
+  3. Catch the layout's missing-solution-file failure in project mode and reword it for scaffold's context (R10). The inherited message names `clone` and the stand-alone push escape hatch, neither of which is the right next step here.
+- **Patterns to follow:** `DeployCommand` (around lines 100-113) for reading `Config!.Solution` and calling `SolutionFileLayout.LoadAsync` together in a command body. `CloneCommand` is not the precedent — it never loads a layout directly; `ProjectScaffolder` does that internally.
 - **Test scenarios:**
   - The new accessor returns the path of the solution file the layout read, for both `.sln` and `.slnx`.
   - Covers AE2. A project fixture with a configured solution and no WebResources project gains a solution-named project file and a solution-file entry.
@@ -325,7 +327,7 @@ flowchart TB
 - **Approach:**
   1. README command list gains `scaffold` with a one-line description.
   2. Wiki command reference gains the command, its alias, its positional, `--dry-run`, and both modes.
-  3. `WebResources-Project.md` gains the standalone path — scaffold, build, push — since that is the flow the blog post will follow.
+  3. `WebResources-Project.md` gains the standalone path — scaffold, build, push.
   4. Changelog entry under the unreleased heading.
 - **Execution note:** The wiki lives in a sibling checkout that may not exist on every machine. If `../Flowline.wiki/` is absent, report that rather than skipping silently or creating a replacement folder.
 - **Test scenarios:** Test expectation: none — documentation only.
@@ -341,7 +343,12 @@ flowchart TB
 | Build | `dotnet build Flowline.slnx -c Release` | all units |
 | Full suite | `dotnet test Flowline.slnx -c Release` | U1, U4 (cross-project) |
 | Targeted | `dotnet test tests/Flowline.Tests/Flowline.Tests.csproj -c Release --filter "ScaffoldCommandTests"` | U2, U3, U5 |
-| Refactor guard | `dotnet test tests/Flowline.Tests/Flowline.Tests.csproj -c Release --filter "CloneCommandTests\|InitCommandTests"` | U1 |
+
+The U1 refactor guard sits outside the table because its filter contains a pipe, which a table cell cannot carry unescaped and which must **not** be backslash-escaped — VSTest reads only a bare `|` as the OR operator, so an escaped filter matches nothing and the gate passes without running:
+
+```bash
+dotnet test tests/Flowline.Tests/Flowline.Tests.csproj -c Release --filter "CloneCommandTests|InitCommandTests"
+```
 
 User-facing output and exit codes must be checked from a **Release** build. A Debug build propagates exceptions instead of rendering the `Error: <message>` form, so correct error handling looks like a stack trace.
 
@@ -353,7 +360,7 @@ User-facing output and exit codes must be checked from a **Release** build. A De
 
 - Every unit's test scenarios exist as tests and pass.
 - `dotnet build Flowline.slnx -c Release` and `dotnet test Flowline.slnx -c Release` both pass.
-- `clone` and `init` produce the same scaffold they produced before U1 — verified by their existing tests, unmodified except for added assertions.
+- `clone` and `init` produce the same scaffold they produced before U1 — verified by U1's own byte-identity coverage, since the existing clone/init tests never exercise the template writes.
 - The command reaches every requirement with no Dataverse call, no authentication, and no network request.
 - New user-facing messages follow `docs/tone-of-voice.md`.
 - The command satisfies the agent-CLI checklist in `.claude/skills/cli-for-agents/SKILL.md`: description covering what + when + state change, at least one example, `[Description]` on the positional and on `--dry-run`, a specific `ExitCode` whose message carries the fix, and a second run that converges and reports the unchanged case.
@@ -363,9 +370,9 @@ User-facing output and exit codes must be checked from a **Release** build. A De
 
 | Unit | Done when |
 |---|---|
-| U1 | The extracted core is reachable without a solution file, and clone/init tests pass unmodified. |
+| U1 | The extracted core is reachable without a solution file, each template file matches its embedded resource byte for byte, the project file is written last, and clone/init tests still pass. |
 | U2 | `flowline scaffold --help` shows the command; an invalid part exits 15 naming `webresources`; every mode-resolution case has a test. |
-| U3 | An empty folder becomes a project that builds with `dotnet build`, and the printed next steps run for an unauthenticated reader. |
+| U3 | An empty folder becomes a project that builds with `dotnet build`, and the printed next steps name the build, push, authentication, and solution a user needs. |
 | U4 | A project fixture gains a solution-named, solution-registered WebResources project with no Dataverse call. |
 | U5 | `--dry-run` previews both modes, exits 0, and creates no file. |
 | U6 | README, wiki, and changelog name the command and match its actual help output. |
