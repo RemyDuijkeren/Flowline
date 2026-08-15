@@ -324,7 +324,7 @@ public class GitComponentProvenanceLookupTests : IDisposable
     }
 
     [Fact]
-    public async Task ResolveAsync_FolderPartiallyRemoved_ReturnsNeverInSource()
+    public async Task ResolveAsync_FolderPartiallyRemoved_ReturnsUndetermined()
     {
         WriteFile("Copilots/dh_OtherCopilot/copilot.xml", "<copilot/>");
         WriteFile("Copilots/dh_OtherCopilot/topic.xml", "<topic/>");
@@ -335,8 +335,22 @@ public class GitComponentProvenanceLookupTests : IDisposable
 
         var result = await _lookup.ResolveAsync(_srcFolder, ComponentSourceLocation.Folder("Copilots/dh_OtherCopilot"), CancellationToken.None);
 
-        result.Verdict.Should().Be(ProvenanceVerdict.NeverInSource,
-            "one file is still present under the folder, so the folder as a whole is not affirmatively removed");
+        // Part removed, part still here: neither an affirmative removal nor affirmative evidence the
+        // folder was never here. R8 sends that to Undetermined — reading it as NeverInSource would tell
+        // the operator a half-deleted component was never theirs.
+        result.Verdict.Should().Be(ProvenanceVerdict.Undetermined);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_FolderFullyPresent_ReturnsNeverInSource()
+    {
+        WriteFile("Copilots/dh_StillHere/copilot.xml", "<copilot/>");
+        WriteFile("Copilots/dh_StillHere/topic.xml", "<topic/>");
+        Commit("add copilot folder");
+
+        var result = await _lookup.ResolveAsync(_srcFolder, ComponentSourceLocation.Folder("Copilots/dh_StillHere"), CancellationToken.None);
+
+        result.Verdict.Should().Be(ProvenanceVerdict.NeverInSource);
     }
 
     // ── the real chain: handler-declared identity -> locator -> lookup ──────
@@ -383,6 +397,48 @@ public class GitComponentProvenanceLookupTests : IDisposable
 
         result.Verdict.Should().Be(ProvenanceVerdict.Declared);
         result.Removal.Should().BeEquivalentTo(removal);
+    }
+
+    // A security role's display name is free text, so it can contain git's pathspec wildcards. Without
+    // the `literal` magic word the pathspec globs onto sibling files, and one still-present accidental
+    // match is enough to flip a genuine removal to never-in-source — telling the operator a deliberate
+    // deletion was never theirs. Asserts the removal still resolves, and that the untouched sibling is
+    // not what decided it.
+    // Bracket rather than '*' or '?': those are illegal in a Windows filename, while '[' and ']' are
+    // legal there and are still a git pathspec character class — so this is the wildcard hazard in a form
+    // that can actually reach disk on the platform Flowline targets.
+    [Fact]
+    public async Task ResolveAsync_NameContainingPathspecWildcard_DoesNotGlobOntoSiblingFiles()
+    {
+        WriteFile("Roles/Support[1].xml", "<role/>");
+        WriteFile("Roles/Support1.xml", "<role/>");
+        Commit("add both roles");
+        var removal = CommitRemoval("Roles/Support[1].xml", "retire the bracket-named role");
+
+        var location = ComponentSourceLocator.Locate(LocalSourceIdentity.Role("Support[1]"));
+
+        var result = await _lookup.ResolveAsync(_srcFolder, location!, CancellationToken.None);
+
+        result.Verdict.Should().Be(ProvenanceVerdict.Declared);
+        result.Removal.Should().BeEquivalentTo(removal);
+    }
+
+    // The same glob hazard in the other direction: a still-present file whose name is a wildcard must not
+    // be answered from an unrelated sibling's removal.
+    [Fact]
+    public async Task ResolveAsync_WildcardNamedFileStillPresent_ReturnsNeverInSourceNotSiblingRemoval()
+    {
+        WriteFile("Roles/Support[1].xml", "<role/>");
+        WriteFile("Roles/Support1.xml", "<role/>");
+        Commit("add both roles");
+        CommitRemoval("Roles/Support1.xml", "retire the plain role");
+
+        var location = ComponentSourceLocator.Locate(LocalSourceIdentity.Role("Support[1]"));
+
+        var result = await _lookup.ResolveAsync(_srcFolder, location!, CancellationToken.None);
+
+        result.Verdict.Should().Be(ProvenanceVerdict.NeverInSource);
+        result.Removal.Should().BeNull();
     }
 
     // ── helpers ───────────────────────────────────────────────────────────

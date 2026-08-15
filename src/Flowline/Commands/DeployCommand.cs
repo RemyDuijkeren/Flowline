@@ -939,10 +939,18 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         Task<CliWrap.Buffered.BufferedCommandResult> Run(CliWrap.Command cmd) =>
             (capture?.Apply(cmd, suppressErrors: true) ?? cmd).ExecuteBufferedAsync(ct);
 
+        // Bounded: Solution.xml is touched on every version bump, so a long-lived project has hundreds of
+        // these commits and each one below costs its own `git show`. Searching for a version that was never
+        // built here — the case this probe exists to answer "no" for — would otherwise walk the entire
+        // history. The cap only ever downgrades an answer to "not found", which the caller already renders
+        // as the artifact-could-not-be-placed warning, so a truncated search is reported honestly rather
+        // than as a match.
+        const int maxRevisionsProbed = 200;
+
         var logResult = await Run(
             Cli.Wrap("git")
                 .WithWorkingDirectory(rootFolder)
-                .WithArguments(args => args.Add("log").Add("--format=%H").Add("--").Add(gitPath))
+                .WithArguments(args => args.Add("log").Add("--format=%H").Add($"--max-count={maxRevisionsProbed}").Add("--").Add(gitPath))
                 .WithValidation(CommandResultValidation.None));
         if (logResult.ExitCode != 0) return false;
 

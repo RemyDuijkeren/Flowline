@@ -105,12 +105,22 @@ public sealed class GitComponentProvenanceLookup : IComponentProvenanceLookup
             foreach (var (status, path) in commit.Files)
                 latestStatusByPath.TryAdd(path, status);
 
-        // Complete AD history with nothing left at status D anywhere is affirmative evidence either way
-        // it happens: never touched at all, or touched and still present — R8 treats both as NeverInSource.
-        if (latestStatusByPath.Count == 0 || latestStatusByPath.Values.Any(s => s != 'D'))
+        // Never touched at all, or touched and every path still present: both are affirmative evidence
+        // nothing was removed, so both read NeverInSource per R8.
+        if (latestStatusByPath.Count == 0 || latestStatusByPath.Values.All(s => s != 'D'))
             return ComponentProvenance.NeverInSource;
 
-        return ComponentProvenance.Declared(commits[0].Commit);
+        // Every path under the pathspec ended at D — the file, or the whole folder, is affirmatively gone.
+        if (latestStatusByPath.Values.All(s => s == 'D'))
+            return ComponentProvenance.Declared(commits[0].Commit);
+
+        // Only reachable for a Folder: some files under it were removed and others still remain. That is
+        // neither an affirmative removal nor affirmative evidence it was never here, and R8 sends an
+        // incomplete answer to Undetermined rather than letting it read as NeverInSource. Unreachable
+        // today — ComponentClassifier.ScanShapeFolder suppresses a folder that still has any subfolder
+        // before an orphan entry is ever built — but that precondition is owned by another file, so this
+        // does not depend on it holding.
+        return ComponentProvenance.Undetermined;
     }
 
     // -S is a pickaxe search on occurrence count, not a definitive add/delete log the way --diff-filter
@@ -157,7 +167,12 @@ public sealed class GitComponentProvenanceLookup : IComponentProvenanceLookup
             : ComponentProvenance.Undetermined;
     }
 
-    static string Pathspec(string rebasedPath) => $":(icase){rebasedPath}";
+    // icase because the composed path carries a live Dataverse name whose casing need not match what pac
+    // wrote to disk. literal because it carries the name's *characters* too: a security role's display
+    // name is free text, so a role called "Support*" would otherwise glob onto every sibling role file —
+    // and one accidental still-present match is enough to turn a genuine removal into never-in-source,
+    // the exact inversion this feature exists to prevent. The two magic words combine.
+    static string Pathspec(string rebasedPath) => $":(icase,literal){rebasedPath}";
 
     static string[] SplitLines(string output) =>
         output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
