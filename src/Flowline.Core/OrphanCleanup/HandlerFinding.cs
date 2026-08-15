@@ -21,4 +21,11 @@ public sealed record HandlerFinding(
 
     // Non-null only for entity-detected findings (CustomApi family, Bot, ConnectionReference), same as
     // OrphanEntry.EntityName today.
-    string? EntityName = null);
+    string? EntityName = null)
+{
+    // R12/KTD4: where this component's identity lives in local source, declared by the handler that
+    // matched it rather than re-derived downstream from its component type. Left at None by a handler
+    // with no mapping, which resolves to Undetermined (R8). Init property so existing positional call
+    // sites keep compiling.
+    public LocalSourceIdentity Identity { get; init; } = LocalSourceIdentity.None;
+}

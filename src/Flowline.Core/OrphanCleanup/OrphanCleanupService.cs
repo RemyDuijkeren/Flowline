@@ -36,7 +36,20 @@ public sealed record OrphanEntry(
     // against the action the orchestrator already decided (delete vs remove-from-solution). Null means
     // either "not a WebResource entry" (never checked) or "checked, lookup faulted" (unchecked) — the
     // report distinguishes the two via ComponentType, same as WebResourceDependencyResult upstream.
-    IReadOnlyList<WebResourceDependent>? Dependents = null);
+    IReadOnlyList<WebResourceDependent>? Dependents = null)
+{
+    // R12/KTD4: carried through from the handler that matched this orphan — it already knows what it
+    // matched, which is the only positive answer available for types whose component-type code is
+    // environment-assigned. Init properties rather than positional parameters so no existing call site
+    // has to change, and so Provenance can default to a value a positional default can't express.
+    public LocalSourceIdentity Identity { get; init; } = LocalSourceIdentity.None;
+
+    // R1/KTD3: every entry carries exactly one verdict, and it starts Undetermined. An entry that never
+    // reaches a lookup — no lookup registered, lookup faulted, compare path that skipped resolution —
+    // therefore reads Undetermined and can never read as NeverInSource. This default is what "no code
+    // path can leave one unset" rests on.
+    public ComponentProvenance Provenance { get; init; } = ComponentProvenance.Undetermined;
+}
 
 // Skipped distinguishes "ran and found nothing" (false) from "an empty-input guard short-circuited
 // before comparing" (true) — a read-only caller like DriftCommand must not conflate the two.
@@ -404,7 +417,12 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
 
                 var dependents = f.ComponentType == WebResourceComponentType ? webResourceDependentsById.GetValueOrDefault(f.ObjectId) : null;
 
-                return new OrphanEntry(f.ObjectId, f.ComponentType, f.DisplayName, action, f.EntityName, f.Priority, f.SequenceHint, f.Timing, reportOnly, dependents);
+                return new OrphanEntry(f.ObjectId, f.ComponentType, f.DisplayName, action, f.EntityName, f.Priority, f.SequenceHint, f.Timing, reportOnly, dependents)
+                {
+                    // R12: the handler's declared shape rides through unchanged — the orchestrator never
+                    // re-derives it, and never substitutes one when the handler declared none.
+                    Identity = f.Identity,
+                };
             })
             .ToList();
     }
