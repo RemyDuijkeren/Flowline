@@ -2065,4 +2065,177 @@ public class OrphanCleanupServiceTests : IDisposable
             Directory.Delete(dataverseSolutionFolder, true);
         }
     }
+
+    // -- U4: provenance verdict resolution on the compare path --
+
+    // Configurable-status, configurable-identity handler for provenance tests — the fakes above default
+    // to LocalSourceIdentity.None (R12/KTD4's "no mapping" case), which ComponentSourceLocator.Locate
+    // turns into "nothing to resolve" and never exercises a lookup at all.
+    sealed class FakeIdentityHandler(int componentType, string displayName, string entityName, LocalSourceIdentity identity, HandlerStatus status = HandlerStatus.Auto) : IOrphanHandler
+    {
+        public HandlerStatus Status => status;
+
+        public Task<HandlerDetectionResult> DetectAsync(
+            DetectionContext context,
+            IReadOnlyList<(Guid ObjectId, int ComponentType)> candidates,
+            CancellationToken ct)
+        {
+            var claimed = candidates.Where(c => c.ComponentType == componentType).ToList();
+            var findings = claimed
+                .Select(c => new HandlerFinding(c.ObjectId, c.ComponentType, displayName, OrphanAction.Delete, OrphanPriority.Prio3, SequenceHint: 0, OrphanTiming.PreImportEligible, EntityName: entityName) { Identity = identity })
+                .ToList();
+            return Task.FromResult(new HandlerDetectionResult(findings, claimed.Select(c => c.ObjectId).ToHashSet()));
+        }
+    }
+
+    // Test-only IComponentProvenanceLookup: resolve/fault behavior is configurable per test, and every
+    // location it was asked about is recorded so a test can assert scoping ("this entry only, not others").
+    sealed class FakeProvenanceLookup(Func<ComponentSourceLocation, ComponentProvenance>? resolve = null, Exception? fault = null) : IComponentProvenanceLookup
+    {
+        public List<ComponentSourceLocation> Calls { get; } = [];
+
+        public Task<ComponentProvenance> ResolveAsync(string? checkoutSolutionSrcRoot, ComponentSourceLocation location, CancellationToken ct)
+        {
+            Calls.Add(location);
+            if (fault != null) throw fault;
+            return Task.FromResult(resolve?.Invoke(location) ?? ComponentProvenance.Undetermined);
+        }
+    }
+
+    [Fact]
+    public async Task CompareAsync_EveryEntryCarriesAVerdict_IncludingReportOnlyEntries()
+    {
+        var orphanId = Guid.NewGuid();
+        var declared = ComponentProvenance.Declared("abc123", "Author", DateTimeOffset.UtcNow, "remove role");
+        var service = new OrphanCleanupService(_console,
+            [new FakeIdentityHandler(20, "Role 'thing'", "role", LocalSourceIdentity.Role("thing"), HandlerStatus.Report)],
+            new FakeProvenanceLookup(_ => declared));
+        SetupSolutionComponents("MySolution", (orphanId, 20));
+
+        var result = await service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        var entry = Assert.Single(result.Entries);
+        Assert.True(entry.ReportOnly, "Report handler findings are report-only");
+        Assert.Equal(ProvenanceVerdict.Declared, entry.Provenance.Verdict);
+    }
+
+    [Fact]
+    public async Task CompareAsync_LookupReturnsDeclared_SurfacesOnlyOnTheMatchingEntry()
+    {
+        var resolvableId = Guid.NewGuid();
+        var unresolvableId = Guid.NewGuid();
+        var declared = ComponentProvenance.Declared("abc123", "Author", DateTimeOffset.UtcNow, "remove role");
+        var lookup = new FakeProvenanceLookup(_ => declared);
+        var service = new OrphanCleanupService(_console,
+            [
+                new FakeIdentityHandler(20, "Role 'thing'", "role", LocalSourceIdentity.Role("thing")),
+                new FakeAutoHandler(9999, "Widget 'thing'", "widgettable"), // Identity defaults to None — unresolvable
+            ],
+            lookup);
+        SetupSolutionComponents("MySolution", (resolvableId, 20), (unresolvableId, 9999));
+
+        var result = await service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Equal(2, result.Entries.Count);
+        var resolvable = result.Entries.Single(e => e.ObjectId == resolvableId);
+        var unresolvable = result.Entries.Single(e => e.ObjectId == unresolvableId);
+        Assert.Equal(ProvenanceVerdict.Declared, resolvable.Provenance.Verdict);
+        Assert.Equal(ProvenanceVerdict.Undetermined, unresolvable.Provenance.Verdict);
+        Assert.Single(lookup.Calls); // only the resolvable entry ever reached the lookup
+    }
+
+    [Fact]
+    public async Task CompareAsync_NoLookupRegistered_EveryEntryReadsUndeterminedAndCompareSucceeds()
+    {
+        var orphanId = Guid.NewGuid();
+        var service = new OrphanCleanupService(_console,
+            [new FakeIdentityHandler(20, "Role 'thing'", "role", LocalSourceIdentity.Role("thing"))]);
+        SetupSolutionComponents("MySolution", (orphanId, 20));
+
+        var result = await service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        var entry = Assert.Single(result.Entries);
+        Assert.Equal(ProvenanceVerdict.Undetermined, entry.Provenance.Verdict);
+        Assert.False(result.Skipped);
+    }
+
+    [Fact]
+    public async Task CompareAsync_LookupThrows_EntryReadsUndeterminedAndCompareDoesNotFail()
+    {
+        var orphanId = Guid.NewGuid();
+        var service = new OrphanCleanupService(_console,
+            [new FakeIdentityHandler(20, "Role 'thing'", "role", LocalSourceIdentity.Role("thing"))],
+            new FakeProvenanceLookup(fault: new InvalidOperationException("boom")));
+        SetupSolutionComponents("MySolution", (orphanId, 20));
+
+        var result = await service.CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        var entry = Assert.Single(result.Entries);
+        Assert.Equal(ProvenanceVerdict.Undetermined, entry.Provenance.Verdict);
+    }
+
+    // R9: a real before/after comparison over the same entry set — no field but Provenance may differ
+    // between a compare run with a lookup wired and one without.
+    [Fact]
+    public async Task CompareAsync_R9_ActionAndReportOnlyUnaffectedByProvenanceResolution()
+    {
+        var deleteId = Guid.NewGuid();
+        var reportOnlyId = Guid.NewGuid();
+        var declared = ComponentProvenance.Declared("abc123", "Author", DateTimeOffset.UtcNow, "remove");
+
+        OrphanCleanupService BuildService(IComponentProvenanceLookup? lookup) => new(_console,
+            [
+                new FakeIdentityHandler(20, "Role 'a'", "role", LocalSourceIdentity.Role("a"), HandlerStatus.Auto),
+                new FakeIdentityHandler(21, "Role 'b'", "role", LocalSourceIdentity.Role("b"), HandlerStatus.Report),
+            ],
+            lookup);
+
+        SetupSolutionComponents("MySolution", (deleteId, 20), (reportOnlyId, 21));
+
+        var withoutLookup = await BuildService(null).CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+        var withLookup = await BuildService(new FakeProvenanceLookup(_ => declared)).CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Equal(withoutLookup.Entries.Count, withLookup.Entries.Count);
+        foreach (var before in withoutLookup.Entries)
+        {
+            var after = withLookup.Entries.Single(e => e.ObjectId == before.ObjectId);
+            Assert.Equal(before.Action, after.Action);
+            Assert.Equal(before.ReportOnly, after.ReportOnly);
+            Assert.Equal(before.Priority, after.Priority);
+            Assert.Equal(before.SequenceHint, after.SequenceHint);
+            Assert.Equal(before.Timing, after.Timing);
+        }
+
+        // Sanity: the lookup actually changed something, else this test wouldn't be exercising R9 at all.
+        Assert.Contains(withLookup.Entries, e => e.Provenance.Verdict == ProvenanceVerdict.Declared);
+        Assert.DoesNotContain(withoutLookup.Entries, e => e.Provenance.Verdict == ProvenanceVerdict.Declared);
+    }
+
+    // R10: drift's exit code selection mirrors DriftCommand.SelectExitCode exactly (Flowline.Commands
+    // isn't referenceable from Flowline.Core.Tests) — it must read identically before and after verdict
+    // resolution for the same entry set.
+    static int SelectExitCodeLikeDrift(CompareResult result) => result switch
+    {
+        { Skipped: true }    => (int)ExitCode.Inconclusive,
+        { Entries.Count: 0 } => (int)ExitCode.Success,
+        _                    => (int)ExitCode.ValidationFailed
+    };
+
+    [Fact]
+    public async Task CompareAsync_R10_DriftExitCodeUnaffectedByProvenanceResolution()
+    {
+        var orphanId = Guid.NewGuid();
+        var declared = ComponentProvenance.Declared("abc123", "Author", DateTimeOffset.UtcNow, "remove");
+
+        OrphanCleanupService BuildService(IComponentProvenanceLookup? lookup) => new(_console,
+            [new FakeIdentityHandler(20, "Role 'a'", "role", LocalSourceIdentity.Role("a"))],
+            lookup);
+
+        SetupSolutionComponents("MySolution", (orphanId, 20));
+
+        var withoutLookup = await BuildService(null).CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+        var withLookup = await BuildService(new FakeProvenanceLookup(_ => declared)).CompareAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
+
+        Assert.Equal(SelectExitCodeLikeDrift(withoutLookup), SelectExitCodeLikeDrift(withLookup));
+    }
 }

@@ -55,7 +55,9 @@ public sealed record OrphanEntry(
 // before comparing" (true) — a read-only caller like DriftCommand must not conflate the two.
 public sealed record CompareResult(IReadOnlyList<OrphanEntry> Entries, bool Skipped = false);
 
-public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandler> handlers) : IPostDeployService
+// KTD1: lookup is optional — an absent registration must never stop the engine from running without a
+// repository (e.g. a solution folder with no git checkout). Every entry then simply stays Undetermined.
+public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandler> handlers, IComponentProvenanceLookup? lookup = null) : IPostDeployService
 {
     // Explicit, centrally-declared cross-family order, independent of Program.cs's DI-registration order
     // — adding a handler means appending it here.
@@ -150,18 +152,24 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
             // Managed + already installed is exactly DeployCommand's --stage-and-upgrade condition, and a
             // Dataverse Upgrade removes every component the new version drops — so nothing in this report
             // is the operator's job on that path.
-            context.Solution.IncludeManaged && context.Solution.ExistsInTarget);
+            context.Solution.IncludeManaged && context.Solution.ExistsInTarget,
+            context.CheckoutSolutionSrcRoot);
 
     // Convenience overload for read-only callers with no context of their own (e.g. DriftCommand) —
-    // takes dataverseSolutionFolder (parent of src) and always runs RunMode.NoDelete.
+    // takes dataverseSolutionFolder (parent of src) and always runs RunMode.NoDelete. drift compares
+    // straight against the checkout, so its own src root doubles as the checkout root the provenance
+    // lookup needs (KTD2) — no separate temp extraction exists on this path.
     public Task<CompareResult> CompareAsync(
         string dataverseSolutionFolder,
         IOrganizationServiceAsync2 service,
         string solutionName,
         string environmentUrl,
         CancellationToken ct,
-        string? noDeleteHint = null) =>
-        CompareAsync(Path.Combine(dataverseSolutionFolder, "src"), service, solutionName, environmentUrl, RunMode.NoDelete, ct, noDeleteHint);
+        string? noDeleteHint = null)
+    {
+        var srcRoot = Path.Combine(dataverseSolutionFolder, "src");
+        return CompareAsync(srcRoot, service, solutionName, environmentUrl, RunMode.NoDelete, ct, noDeleteHint, checkoutSolutionSrcRoot: srcRoot);
+    }
 
     // Comparison-only half of the pre-import step: parses committed source, resolves sNewIds
     // (schemaName/entity/OptionSet special-casing), dispatches candidates to the handler set, and prints
@@ -187,7 +195,12 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         // Reframes the report for a managed upgrade import, where Dataverse — not Flowline, not the
         // operator — removes everything the new version drops. Defaults false so every other caller
         // (DriftCommand, unmanaged deploys) keeps the action-oriented wording.
-        bool managedUpgrade = false)
+        bool managedUpgrade = false,
+        // KTD2: the checkout's own solution source root, distinct from dataverseSolutionSrcRoot on the
+        // deploy packed/cached route (a temp extraction with no git history). Null means no checkout
+        // mapping is available (e.g. deploy's --path route) — every entry's verdict then reads
+        // Undetermined rather than guessing a path.
+        string? checkoutSolutionSrcRoot = null)
     {
         var (sNew, entityLogicalNames, namedComponents) = ComponentClassifier.ParseLocalSource(dataverseSolutionSrcRoot);
 
@@ -284,9 +297,48 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
 
         if (earlyResult != null) return earlyResult;
 
-        PrintReport(entries, mode, solutionName, environmentUrl, noDeleteHint, managedUpgrade);
+        // U4/R1/R5/R6: attaches a verdict to every entry, after classification and before the report, so
+        // drift and deploy inherit it from this one path — same shape as the R9/R10 entries they'd get
+        // without a lookup, just with Provenance filled in.
+        var resolvedEntries = await ResolveProvenanceAsync(entries, checkoutSolutionSrcRoot, ct).ConfigureAwait(false);
 
-        return new CompareResult(entries);
+        PrintReport(resolvedEntries, mode, solutionName, environmentUrl, noDeleteHint, managedUpgrade);
+
+        return new CompareResult(resolvedEntries);
+    }
+
+    // KD6/R8/R9: purely additive over the already-classified entries — never touches Action, ReportOnly,
+    // Priority, SequenceHint or Timing, only Provenance. No registered lookup, no locatable identity, or a
+    // lookup that throws all leave an entry at its Undetermined default rather than failing the compare —
+    // same broad-catch precedent as GetWebResourceDependentsAsync below.
+    async Task<List<OrphanEntry>> ResolveProvenanceAsync(IReadOnlyList<OrphanEntry> entries, string? checkoutSolutionSrcRoot, CancellationToken ct)
+    {
+        if (lookup is null) return entries.ToList();
+
+        var resolved = new List<OrphanEntry>(entries.Count);
+        foreach (var entry in entries)
+        {
+            var location = ComponentSourceLocator.Locate(entry.Identity);
+            if (location is null)
+            {
+                resolved.Add(entry);
+                continue;
+            }
+
+            ComponentProvenance provenance;
+            try
+            {
+                provenance = await lookup.ResolveAsync(checkoutSolutionSrcRoot, location, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                provenance = ComponentProvenance.Undetermined;
+            }
+
+            resolved.Add(entry with { Provenance = provenance });
+        }
+
+        return resolved;
     }
 
     // Dispatches to each handler once, in FamilyOrder, against candidates still unclaimed by an earlier

@@ -12,11 +12,6 @@ public sealed class GitComponentProvenanceLookup : IComponentProvenanceLookup
 {
     readonly string _projectRoot;
 
-    // Relative to projectRoot, e.g. "Solution/src". Null means the caller could not place the
-    // checkout's solution source folder (e.g. a deploy from a stand-alone artifact) — per KTD2, every
-    // lookup then returns Undetermined rather than guessing a path that may not exist in this repo.
-    readonly string? _solutionSourceRelativePath;
-
     // KTD6: cached only within this instance's run, never across runs — a fresh lookup instance is
     // expected per command invocation. Probing once avoids repeating rev-parse/config calls per orphan.
     bool? _usable;
@@ -26,17 +21,15 @@ public sealed class GitComponentProvenanceLookup : IComponentProvenanceLookup
     // production, always the real git binary.
     internal Action<IReadOnlyList<string>>? OnGitInvocation { get; set; }
 
-    public GitComponentProvenanceLookup(string projectRoot, string? solutionSourceRelativePath)
+    public GitComponentProvenanceLookup(string projectRoot)
     {
         _projectRoot = projectRoot;
-        _solutionSourceRelativePath = solutionSourceRelativePath;
     }
 
-    public async Task<ComponentProvenance> ResolveAsync(ComponentSourceLocation location, CancellationToken ct)
+    public async Task<ComponentProvenance> ResolveAsync(string? checkoutSolutionSrcRoot, ComponentSourceLocation location, CancellationToken ct)
     {
-        if (_solutionSourceRelativePath is null) return ComponentProvenance.Undetermined;
-
-        var rebasedPath = $"{_solutionSourceRelativePath.TrimEnd('/')}/{location.RelativePath}";
+        var rebasedPath = RebaseOntoProjectRoot(checkoutSolutionSrcRoot, location.RelativePath);
+        if (rebasedPath is null) return ComponentProvenance.Undetermined;
 
         try
         {
@@ -51,6 +44,24 @@ public sealed class GitComponentProvenanceLookup : IComponentProvenanceLookup
         }
         catch (OperationCanceledException) { throw; }
         catch { return ComponentProvenance.Undetermined; }
+    }
+
+    // KTD2: rebases location.RelativePath (checkout-relative to checkoutSolutionSrcRoot) onto _projectRoot,
+    // since every git command below runs with _projectRoot as its working directory. Null (no checkout
+    // mapping, e.g. a stand-alone deploy artifact) or a rebased path that escapes _projectRoot (different
+    // checkout, unrelated temp directory) both mean "can't answer" — R8/the plan require this to read
+    // Undetermined, never NeverInSource, so neither case may reach a git command at all.
+    string? RebaseOntoProjectRoot(string? checkoutSolutionSrcRoot, string locationRelativePath)
+    {
+        if (string.IsNullOrWhiteSpace(checkoutSolutionSrcRoot)) return null;
+
+        var absolute = Path.GetFullPath(Path.Combine(checkoutSolutionSrcRoot, locationRelativePath));
+        var relativeToProjectRoot = Path.GetRelativePath(_projectRoot, absolute);
+
+        if (relativeToProjectRoot.StartsWith("..") || Path.IsPathRooted(relativeToProjectRoot))
+            return null;
+
+        return relativeToProjectRoot.Replace('\\', '/');
     }
 
     // Shallow or partial history would otherwise fetch every historical version of a shared file on

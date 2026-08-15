@@ -29,7 +29,13 @@ public sealed record PostDeployContext(
     string DataverseSolutionSrcRoot,
     // `--force delete-orphans` consent — lets Guarded handlers delete on this deploy. Defaults false so
     // Guarded stays report-only unless the user explicitly opted in. Ignored in report-only run modes.
-    bool DeleteOrphansConsent = false);
+    bool DeleteOrphansConsent = false,
+    // KTD2: the checkout's own solution source folder (Solution/src, or wherever the solution file
+    // resolves it) — distinct from DataverseSolutionSrcRoot, which on the packed/cached deploy route is a
+    // temp extraction with no git history. Null on the --path route, where DeployCommand has no checkout
+    // folder to offer (a solution file isn't required there); the provenance lookup then reads every
+    // entry as Undetermined rather than guessing a path.
+    string? CheckoutSolutionSrcRoot = null);
 
 public interface IPostDeployService
 {

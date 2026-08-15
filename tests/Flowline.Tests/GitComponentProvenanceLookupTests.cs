@@ -22,7 +22,7 @@ public class GitComponentProvenanceLookupTests : IDisposable
         RunGit(_root, "add", ".gitkeep");
         RunGit(_root, "commit", "-m", "init");
 
-        _lookup = new GitComponentProvenanceLookup(_root, "Solution/src");
+        _lookup = new GitComponentProvenanceLookup(_root);
     }
 
     public void Dispose()
@@ -42,7 +42,7 @@ public class GitComponentProvenanceLookupTests : IDisposable
         Commit("add role");
         var removal = CommitRemoval("Roles/MyRole.xml", "remove role");
 
-        var result = await _lookup.ResolveAsync(ComponentSourceLocation.File("Roles/MyRole.xml"), CancellationToken.None);
+        var result = await _lookup.ResolveAsync(_srcFolder, ComponentSourceLocation.File("Roles/MyRole.xml"), CancellationToken.None);
 
         result.Verdict.Should().Be(ProvenanceVerdict.Declared);
         result.Removal.Should().BeEquivalentTo(removal);
@@ -56,7 +56,7 @@ public class GitComponentProvenanceLookupTests : IDisposable
         WriteFile("Roles/StillHere.xml", "<role/>");
         Commit("add role");
 
-        var result = await _lookup.ResolveAsync(ComponentSourceLocation.File("Roles/StillHere.xml"), CancellationToken.None);
+        var result = await _lookup.ResolveAsync(_srcFolder, ComponentSourceLocation.File("Roles/StillHere.xml"), CancellationToken.None);
 
         result.Verdict.Should().Be(ProvenanceVerdict.NeverInSource);
         result.Removal.Should().BeNull();
@@ -67,23 +67,46 @@ public class GitComponentProvenanceLookupTests : IDisposable
     [Fact]
     public async Task ResolveAsync_FileNeverExisted_ReturnsNeverInSource()
     {
-        var result = await _lookup.ResolveAsync(ComponentSourceLocation.File("Roles/NeverExisted.xml"), CancellationToken.None);
+        var result = await _lookup.ResolveAsync(_srcFolder, ComponentSourceLocation.File("Roles/NeverExisted.xml"), CancellationToken.None);
 
         result.Verdict.Should().Be(ProvenanceVerdict.NeverInSource);
     }
 
-    // ── 4: unrebasable path (locator mapped incorrectly) ────────────────────
+    // ── 4: unrebasable path (no checkout mapping supplied) ───────────────────
 
     [Fact]
-    public async Task ResolveAsync_UnknownSolutionSourceRoot_ReturnsUndeterminedWithoutTouchingGit()
+    public async Task ResolveAsync_UnknownCheckoutSolutionSrcRoot_ReturnsUndeterminedWithoutTouchingGit()
     {
         var invocations = new List<IReadOnlyList<string>>();
-        var lookup = new GitComponentProvenanceLookup(_root, null) { OnGitInvocation = invocations.Add };
+        var lookup = new GitComponentProvenanceLookup(_root) { OnGitInvocation = invocations.Add };
 
-        var result = await lookup.ResolveAsync(ComponentSourceLocation.File("Roles/Whatever.xml"), CancellationToken.None);
+        var result = await lookup.ResolveAsync(null, ComponentSourceLocation.File("Roles/Whatever.xml"), CancellationToken.None);
 
         result.Verdict.Should().Be(ProvenanceVerdict.Undetermined);
         invocations.Should().BeEmpty("an unrebasable path must short-circuit before any git command runs");
+    }
+
+    // ── 4b: unrebasable path (checkout root sits outside the project root entirely) ──
+
+    [Fact]
+    public async Task ResolveAsync_CheckoutSolutionSrcRootOutsideProjectRoot_ReturnsUndeterminedWithoutTouchingGit()
+    {
+        var unrelatedDir = Path.Combine(Path.GetTempPath(), "flowline-provenance-tests-unrelated", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(unrelatedDir);
+        try
+        {
+            var invocations = new List<IReadOnlyList<string>>();
+            var lookup = new GitComponentProvenanceLookup(_root) { OnGitInvocation = invocations.Add };
+
+            var result = await lookup.ResolveAsync(unrelatedDir, ComponentSourceLocation.File("Roles/Whatever.xml"), CancellationToken.None);
+
+            result.Verdict.Should().Be(ProvenanceVerdict.Undetermined);
+            invocations.Should().BeEmpty("a checkout root outside the project root must never rebase into a git command");
+        }
+        finally
+        {
+            Directory.Delete(unrelatedDir, true);
+        }
     }
 
     // ── 5: identifier removed from its own declaration ──────────────────────
@@ -99,7 +122,7 @@ public class GitComponentProvenanceLookupTests : IDisposable
         var removal = CommitInfo(removalSha);
 
         var location = ComponentSourceLocation.Inline("Entities/Account/Entity.xml", "<LogicalName>dh_custom</LogicalName>");
-        var result = await _lookup.ResolveAsync(location, CancellationToken.None);
+        var result = await _lookup.ResolveAsync(_srcFolder, location, CancellationToken.None);
 
         result.Verdict.Should().Be(ProvenanceVerdict.Declared);
         result.Removal!.Sha.Should().Be(removalSha);
@@ -125,7 +148,7 @@ public class GitComponentProvenanceLookupTests : IDisposable
         Commit("remove form reference");
 
         var location = ComponentSourceLocation.Inline("Entities/Account/Entity.xml", "<LogicalName>dh_custom</LogicalName>");
-        var result = await _lookup.ResolveAsync(location, CancellationToken.None);
+        var result = await _lookup.ResolveAsync(_srcFolder, location, CancellationToken.None);
 
         result.Verdict.Should().Be(ProvenanceVerdict.Undetermined,
             "the pathspec is scoped to Entity.xml, so the sibling form file's removal must never surface as this component's removal");
@@ -140,7 +163,7 @@ public class GitComponentProvenanceLookupTests : IDisposable
         Commit("add attribute, never removed");
 
         var location = ComponentSourceLocation.Inline("Entities/Account/Entity.xml", "<LogicalName>dh_onlyadded</LogicalName>");
-        var result = await _lookup.ResolveAsync(location, CancellationToken.None);
+        var result = await _lookup.ResolveAsync(_srcFolder, location, CancellationToken.None);
 
         result.Verdict.Should().Be(ProvenanceVerdict.Undetermined);
     }
@@ -160,7 +183,7 @@ public class GitComponentProvenanceLookupTests : IDisposable
         Commit("remove attribute (2nd time)");
 
         var location = ComponentSourceLocation.Inline("Entities/Account/Entity.xml", "<LogicalName>dh_flappy</LogicalName>");
-        var result = await _lookup.ResolveAsync(location, CancellationToken.None);
+        var result = await _lookup.ResolveAsync(_srcFolder, location, CancellationToken.None);
 
         result.Verdict.Should().Be(ProvenanceVerdict.Undetermined);
     }
@@ -172,9 +195,9 @@ public class GitComponentProvenanceLookupTests : IDisposable
     {
         var checkoutDir = BuildShallowCheckout();
         var invocations = new List<IReadOnlyList<string>>();
-        var lookup = new GitComponentProvenanceLookup(checkoutDir, "src") { OnGitInvocation = invocations.Add };
+        var lookup = new GitComponentProvenanceLookup(checkoutDir) { OnGitInvocation = invocations.Add };
 
-        var result = await lookup.ResolveAsync(ComponentSourceLocation.File("a.txt"), CancellationToken.None);
+        var result = await lookup.ResolveAsync(Path.Combine(checkoutDir, "src"), ComponentSourceLocation.File("a.txt"), CancellationToken.None);
 
         result.Verdict.Should().Be(ProvenanceVerdict.Undetermined);
         invocations.Should().NotContain(args => args.Count > 0 && args[0] == "log",
@@ -188,9 +211,9 @@ public class GitComponentProvenanceLookupTests : IDisposable
     {
         var checkoutDir = BuildPartialCloneCheckout();
         var invocations = new List<IReadOnlyList<string>>();
-        var lookup = new GitComponentProvenanceLookup(checkoutDir, "src") { OnGitInvocation = invocations.Add };
+        var lookup = new GitComponentProvenanceLookup(checkoutDir) { OnGitInvocation = invocations.Add };
 
-        var result = await lookup.ResolveAsync(ComponentSourceLocation.File("a.txt"), CancellationToken.None);
+        var result = await lookup.ResolveAsync(Path.Combine(checkoutDir, "src"), ComponentSourceLocation.File("a.txt"), CancellationToken.None);
 
         result.Verdict.Should().Be(ProvenanceVerdict.Undetermined);
         invocations.Should().NotContain(args => args.Count > 0 && args[0] == "log",
@@ -203,12 +226,12 @@ public class GitComponentProvenanceLookupTests : IDisposable
     public async Task ResolveAsync_DeployShapedLookupWithUnknownCheckoutMapping_NeverReturnsNeverInSource()
     {
         // On deploy, CompareAsync's own source root is a temp extraction the lookup never sees — only
-        // the rebased-from-checkout root matters (KTD2). When that mapping is unavailable, a path that
-        // would otherwise have resolved cleanly (nothing ever existed at this path either way) must
-        // still read Undetermined rather than the affirmative NeverInSource a resolvable path would get.
-        var lookup = new GitComponentProvenanceLookup(_root, null);
+        // the checkoutSolutionSrcRoot passed per call matters (KTD2). When that mapping is unavailable, a
+        // path that would otherwise have resolved cleanly (nothing ever existed at this path either way)
+        // must still read Undetermined rather than the affirmative NeverInSource a resolvable path would get.
+        var lookup = new GitComponentProvenanceLookup(_root);
 
-        var result = await lookup.ResolveAsync(ComponentSourceLocation.File("Roles/NeverExisted.xml"), CancellationToken.None);
+        var result = await lookup.ResolveAsync(null, ComponentSourceLocation.File("Roles/NeverExisted.xml"), CancellationToken.None);
 
         result.Verdict.Should().Be(ProvenanceVerdict.Undetermined);
         result.Verdict.Should().NotBe(ProvenanceVerdict.NeverInSource);
@@ -226,12 +249,13 @@ public class GitComponentProvenanceLookupTests : IDisposable
         Directory.CreateDirectory(notARepo);
         try
         {
-            var lookup = new GitComponentProvenanceLookup(notARepo, "src");
+            var lookup = new GitComponentProvenanceLookup(notARepo);
+            var checkoutSrc = Path.Combine(notARepo, "src");
 
-            Func<Task> act = () => lookup.ResolveAsync(ComponentSourceLocation.File("a.txt"), CancellationToken.None);
+            Func<Task> act = () => lookup.ResolveAsync(checkoutSrc, ComponentSourceLocation.File("a.txt"), CancellationToken.None);
 
             await act.Should().NotThrowAsync();
-            var result = await lookup.ResolveAsync(ComponentSourceLocation.File("a.txt"), CancellationToken.None);
+            var result = await lookup.ResolveAsync(checkoutSrc, ComponentSourceLocation.File("a.txt"), CancellationToken.None);
             result.Verdict.Should().Be(ProvenanceVerdict.Undetermined);
         }
         finally
@@ -249,11 +273,11 @@ public class GitComponentProvenanceLookupTests : IDisposable
         Commit("add role");
 
         var invocations = new List<IReadOnlyList<string>>();
-        var lookup = new GitComponentProvenanceLookup(_root, "Solution/src") { OnGitInvocation = invocations.Add };
+        var lookup = new GitComponentProvenanceLookup(_root) { OnGitInvocation = invocations.Add };
         var location = ComponentSourceLocation.File("Roles/StillHere.xml");
 
-        await lookup.ResolveAsync(location, CancellationToken.None);
-        await lookup.ResolveAsync(location, CancellationToken.None);
+        await lookup.ResolveAsync(_srcFolder, location, CancellationToken.None);
+        await lookup.ResolveAsync(_srcFolder, location, CancellationToken.None);
 
         invocations.Count(args => args.Count > 0 && args[0] == "log").Should().Be(2,
             "the verdict is never cached (KTD6) — each resolve asks git fresh");
@@ -271,7 +295,7 @@ public class GitComponentProvenanceLookupTests : IDisposable
         var removal = CommitRemoval("Entities/Account/Entity.xml", "remove entity file");
 
         var location = ComponentSourceLocation.File("entities/account/entity.xml");
-        var result = await _lookup.ResolveAsync(location, CancellationToken.None);
+        var result = await _lookup.ResolveAsync(_srcFolder, location, CancellationToken.None);
 
         result.Verdict.Should().Be(ProvenanceVerdict.Declared);
         result.Removal!.Sha.Should().Be(removal.Sha);
@@ -293,7 +317,7 @@ public class GitComponentProvenanceLookupTests : IDisposable
         Commit("remove topic.xml — folder now empty");
         var lastRemovalSha = HeadSha();
 
-        var result = await _lookup.ResolveAsync(ComponentSourceLocation.Folder("Copilots/dh_MyCopilot"), CancellationToken.None);
+        var result = await _lookup.ResolveAsync(_srcFolder, ComponentSourceLocation.Folder("Copilots/dh_MyCopilot"), CancellationToken.None);
 
         result.Verdict.Should().Be(ProvenanceVerdict.Declared);
         result.Removal!.Sha.Should().Be(lastRemovalSha);
@@ -309,7 +333,7 @@ public class GitComponentProvenanceLookupTests : IDisposable
         File.Delete(Path.Combine(_srcFolder, "Copilots", "dh_OtherCopilot", "topic.xml"));
         Commit("remove only topic.xml — copilot.xml still present");
 
-        var result = await _lookup.ResolveAsync(ComponentSourceLocation.Folder("Copilots/dh_OtherCopilot"), CancellationToken.None);
+        var result = await _lookup.ResolveAsync(_srcFolder, ComponentSourceLocation.Folder("Copilots/dh_OtherCopilot"), CancellationToken.None);
 
         result.Verdict.Should().Be(ProvenanceVerdict.NeverInSource,
             "one file is still present under the folder, so the folder as a whole is not affirmatively removed");

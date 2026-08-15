@@ -9,8 +9,13 @@ namespace Flowline.Core.OrphanCleanup;
 // verdict.
 public interface IComponentProvenanceLookup
 {
+    // KTD2: checkoutSolutionSrcRoot is the checkout's own solution source folder, supplied per call —
+    // on deploy the compare's own source root is a temp extraction with no history at all, so the caller
+    // tells the lookup where the equivalent folder lives in the checkout instead. Null (no mapping
+    // available, e.g. a stand-alone artifact) is a valid input, not an error.
+    //
     // Never throws for a lookup that cannot answer: an implementation that fails, cannot run, or finds
     // no affirmative evidence returns ComponentProvenance.Undetermined (R8). Callers still guard, since
     // a faulting lookup must not fail the compare.
-    Task<ComponentProvenance> ResolveAsync(ComponentSourceLocation location, CancellationToken ct);
+    Task<ComponentProvenance> ResolveAsync(string? checkoutSolutionSrcRoot, ComponentSourceLocation location, CancellationToken ct);
 }

@@ -279,6 +279,15 @@ namespace Flowline
             services.AddSingleton<IPostDeployService, SolutionCheckService>();
             services.AddSingleton<IPostDeployService, BackupService>();
             OrphanHandlerRegistration.RegisterOrphanHandlers(services);
+            // U4/KTD1: factory, not a constant instance — resolved at container-build time, ahead of
+            // RootFolder being set on any command instance, so it walks the CWD itself (same lookup
+            // FlowlineCommand<TSettings>.ExecuteAsync does for RootFolder) rather than reading a value
+            // that doesn't exist yet. No project root found (e.g. a bare CWD) still registers a lookup —
+            // anchored there — rather than leaving orphan cleanup unable to run without a repository.
+            services.AddSingleton<IComponentProvenanceLookup>(_ =>
+                new GitComponentProvenanceLookup(
+                    FlowlineCommand<DriftCommand.Settings>.FindProjectRoot(Directory.GetCurrentDirectory())
+                        ?? Directory.GetCurrentDirectory()));
             services.AddSingleton<OrphanCleanupService>();
             services.AddSingleton<IPostDeployService>(sp => sp.GetRequiredService<OrphanCleanupService>());
         }

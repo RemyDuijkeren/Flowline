@@ -263,7 +263,12 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             await PacUtils.UnpackSolutionAsync(packagePath, tmpUnpackDir, sln.IncludeManaged, _capture, cancellationToken);
 
             var solutionInfo = new DeploySolutionInfo(sln.UniqueName, targetEnv.EnvironmentUrl!, sln.IncludeManaged, existingSolutionInTarget);
-            var postDeployContext = new PostDeployContext(service, solutionInfo, runMode, packagePath, tmpUnpackDir, settings.HasForce("delete-orphans"));
+            // KTD2: the checkout's own src/ — distinct from tmpUnpackDir above (the actually-imported
+            // content, whether freshly packed, cache-reused, or --path). Null on the --path route, which
+            // leaves dataverseSolutionFolder unresolved (no solution file needed there) — the provenance
+            // lookup then reads every entry as Undetermined rather than guessing a path.
+            var checkoutSolutionSrcRoot = dataverseSolutionFolder != null ? Path.Combine(dataverseSolutionFolder, "src") : null;
+            var postDeployContext = new PostDeployContext(service, solutionInfo, runMode, packagePath, tmpUnpackDir, settings.HasForce("delete-orphans"), checkoutSolutionSrcRoot);
 
             var activeServices = ResolveActiveServices(postDeployServices, settings);
 

@@ -149,4 +149,21 @@ public class DeployCommandPostDeployTests
         settings.SkipSolutionCheck.Should().BeFalse();
         settings.NoBackup.Should().BeFalse();
     }
+
+    // U4/anti-inert gate: resolving through the REAL registration (not a hand-mirrored list) must supply
+    // a git-backed lookup. An unwired adapter (missing registration, or a stub left in place of the real
+    // factory) would otherwise silently degrade every orphan-cleanup run to Undetermined verdicts —
+    // this test fails loudly instead.
+    [Fact]
+    public void RegisterPostDeployServices_ResolvesGitBackedProvenanceLookup()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IAnsiConsole>());
+        services.AddSingleton<SubprocessCapture>();
+        PostDeployServiceRegistration.RegisterPostDeployServices(services);
+
+        var lookup = services.BuildServiceProvider().GetRequiredService<IComponentProvenanceLookup>();
+
+        lookup.Should().BeOfType<GitComponentProvenanceLookup>();
+    }
 }
