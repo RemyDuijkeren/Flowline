@@ -37,6 +37,16 @@ public sealed class SolutionFileLayout
     readonly Lazy<IReadOnlyList<PluginProjectCandidate>> _pluginProjects;
     readonly Lazy<string?> _webResourcesProjectPath;
 
+    /// <summary>Absolute path to the solution file this layout was read from.</summary>
+    /// <remarks>
+    /// Composed from what <see cref="LoadAsync"/> already resolved rather than re-running
+    /// <see cref="MsBuildSolutionReader.FindSolutionFile"/>, which would be a second disk walk that could
+    /// disagree with the file whose projects this instance is actually reporting. Exposed for callers that
+    /// need to hand the path to something else — writing a new project entry, for instance — without
+    /// searching for it again.
+    /// </remarks>
+    public string SolutionFilePath => Path.Combine(_slnFolder, _solutionFileName);
+
     /// <summary>Absolute path to the <c>.cdsproj</c> the solution file records. Resolved on first access (R7).</summary>
     public string DataverseSolutionProjectPath => _dataverseSolutionProjectPath.Value;
 

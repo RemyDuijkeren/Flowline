@@ -25,7 +25,7 @@ namespace Flowline.Commands;
 /// solution and registers it in the solution file. The two never mix: there is no path that turns a
 /// standalone folder into a project, because <c>clone</c> and <c>init</c> own that.
 /// </remarks>
-public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient)
+public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, ProjectScaffolder projectScaffolder, NuGetVersionClient nuGetVersionClient)
     : FlowlineCommand<ScaffoldCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
 {
     public sealed class Settings : FlowlineSettings
@@ -91,9 +91,41 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
         var target = ResolveTarget(Directory.GetCurrentDirectory());
         AnnounceMode(target);
 
-        if (target.Mode == ScaffoldMode.Standalone)
-            return await ScaffoldStandaloneAsync(target.Folder, cancellationToken);
+        return target.Mode == ScaffoldMode.Standalone
+            ? await ScaffoldStandaloneAsync(target.Folder, cancellationToken)
+            : await ScaffoldIntoProjectAsync(target.Folder, cancellationToken);
+    }
 
+    /// <summary>Writes the template under the solution's name and registers it in the solution file.</summary>
+    /// <remarks>
+    /// Hands the work to <see cref="ProjectScaffolder.SetupWebResourcesProjectAsync"/> — the same call
+    /// <c>clone</c> and <c>init</c> make — so a project scaffolded here is indistinguishable from one they
+    /// produced. The registration check runs here rather than being left to that method so the command can
+    /// tell an already-there run from a fresh one and close with the right line: a finish line after a skip
+    /// would claim work that did not happen.
+    /// </remarks>
+    async Task<int> ScaffoldIntoProjectAsync(string projectRoot, CancellationToken cancellationToken)
+    {
+        var solutionName = Config?.Solution?.UniqueName;
+        if (string.IsNullOrWhiteSpace(solutionName))
+            throw new FlowlineException(ExitCode.ConfigInvalid,
+                $"{ProjectConfig.s_configFileName} is here but names no solution, and the project is named after it. Run 'flowline clone' to finish setting this project up.");
+
+        var layout = await SolutionFileLayout.LoadAsync(projectRoot, cancellationToken);
+        var projectFileName = ProjectScaffolder.WebResourcesProjectFileName(solutionName);
+        var webresourcesFolder = Path.Combine(projectRoot, WebResourcesFolderName);
+
+        if (ProjectScaffolder.WebResourcesProjectAlreadyRegistered(Path.Combine(webresourcesFolder, projectFileName), layout))
+        {
+            Console.Skip("WebResources project already there — skipping");
+            return (int)ExitCode.Success;
+        }
+
+        EnsureNoTemplateCollision(webresourcesFolder, projectFileName);
+
+        await projectScaffolder.SetupWebResourcesProjectAsync(projectRoot, layout.SolutionFilePath, solutionName, layout, cancellationToken);
+
+        Console.Done("Scaffolded! Build it, then 'flowline push' it to Dataverse.");
         return (int)ExitCode.Success;
     }
 

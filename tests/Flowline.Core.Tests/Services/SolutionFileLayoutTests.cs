@@ -171,4 +171,31 @@ public class SolutionFileLayoutTests : IDisposable
         layout.DataverseSolutionFolder.Should().Be(Path.Combine(_root, "src", "Package"));
         Directory.Exists(Path.Combine(_root, "Solution")).Should().BeFalse();
     }
+
+    // ── SolutionFilePath names the file the layout actually read ────────────
+
+    [Fact]
+    public async Task SolutionFilePath_NamesTheSolutionFileTheLayoutRead()
+    {
+        WriteProject(Path.Combine("Solution", "Contoso.cdsproj"), CdsprojXml);
+        await WriteSlnxAsync(@"Solution\Contoso.cdsproj");
+
+        var layout = await SolutionFileLayout.LoadAsync(_root);
+
+        layout.SolutionFilePath.Should().Be(Path.Combine(_root, "Test.slnx"));
+        File.Exists(layout.SolutionFilePath).Should().BeTrue();
+    }
+
+    /// <summary>A repo that kept its <c>.sln</c> resolves to that file, not a hypothetical <c>.slnx</c>.</summary>
+    [Fact]
+    public async Task SolutionFilePath_WithASlnRatherThanSlnx_NamesTheSln()
+    {
+        WriteProject(Path.Combine("Solution", "Contoso.cdsproj"), CdsprojXml);
+        var writer = new MsBuildSolutionWriter();
+        await writer.AddProjectAsync(Path.Combine(_root, "Legacy.sln"), @"Solution\Contoso.cdsproj");
+
+        var layout = await SolutionFileLayout.LoadAsync(_root);
+
+        layout.SolutionFilePath.Should().Be(Path.Combine(_root, "Legacy.sln"));
+    }
 }

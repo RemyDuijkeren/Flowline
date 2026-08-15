@@ -38,7 +38,8 @@ public class ScaffoldCommandTests
         var capture = new SubprocessCapture(console);
 
         var command = new ScaffoldCommand(console, runtimeOptions, profileResolutionService,
-            NullLoggerFactory.Instance, capture, new NuGetVersionClient(new HttpClient()));
+            NullLoggerFactory.Instance, capture, new ProjectScaffolder(console, capture),
+            new NuGetVersionClient(new HttpClient()));
 
         return (command, console);
     }
