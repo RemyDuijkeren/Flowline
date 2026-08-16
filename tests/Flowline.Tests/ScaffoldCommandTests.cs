@@ -218,8 +218,28 @@ public class ScaffoldCommandTests
             var act = () => ScaffoldCommand.EnsureNoTemplateCollision(webResources, "WebResources.csproj");
 
             act.Should().Throw<FlowlineException>()
-               .Where(e => e.ExitCode == ExitCode.ConfigInvalid)
+               .Where(e => e.ExitCode == ExitCode.WriteTargetOccupied)
                .And.Message.Should().Contain("package.json");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    /// <summary>The refusal names the interrupted-scaffold recovery, because the guard is what makes a
+    /// partially written folder unresumable and there is no flag to overrule it.</summary>
+    [Fact]
+    public void EnsureNoTemplateCollision_Refusal_NamesTheInterruptedScaffoldRecovery()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var webResources = Path.Combine(root, "WebResources");
+            Directory.CreateDirectory(webResources);
+            File.WriteAllText(Path.Combine(webResources, "package.json"), "{}");
+
+            var act = () => ScaffoldCommand.EnsureNoTemplateCollision(webResources, "WebResources.csproj");
+
+            act.Should().Throw<FlowlineException>()
+               .And.Message.Should().Contain("delete WebResources");
         }
         finally { Directory.Delete(root, recursive: true); }
     }
@@ -245,6 +265,112 @@ public class ScaffoldCommandTests
             File.ReadAllBytes(stray).Should().Equal(before);
             File.Exists(Path.Combine(webResources, "WebResources.csproj")).Should().BeFalse();
             File.Exists(Path.Combine(webResources, "tsconfig.json")).Should().BeFalse();
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    const string CdsprojXml = """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>""";
+    const string WebResourcesXml = """<Project Sdk="Microsoft.Build.NoTargets/3.7.134"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>""";
+
+    /// <summary>Writes a project fixture: a .cdsproj plus a solution file that references it.</summary>
+    static async Task<string> CreateProjectFixtureAsync(string root, params (string RelativePath, string Xml)[] extraProjects)
+    {
+        var cdsproj = Path.Combine("Solution", "Contoso.cdsproj");
+        Directory.CreateDirectory(Path.Combine(root, "Solution"));
+        File.WriteAllText(Path.Combine(root, cdsproj), CdsprojXml);
+
+        var writer = new MsBuildSolutionWriter();
+        var slnPath = Path.Combine(root, "Contoso.slnx");
+        await writer.AddProjectAsync(slnPath, cdsproj);
+
+        foreach (var (relativePath, xml) in extraProjects)
+        {
+            var full = Path.Combine(root, relativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+            File.WriteAllText(full, xml);
+            await writer.AddProjectAsync(slnPath, relativePath);
+        }
+
+        return slnPath;
+    }
+
+    /// <summary>Covers AE2. Project mode names the project after the configured solution and registers it,
+    /// with no Dataverse call anywhere in the path.</summary>
+    [Fact]
+    public async Task ScaffoldIntoProject_NamesTheProjectAfterTheSolutionAndRegistersIt()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var slnPath = await CreateProjectFixtureAsync(root);
+            var (command, _) = MakeCommand();
+
+            var exitCode = await command.ScaffoldIntoProjectAsync(root, "Contoso", CancellationToken.None);
+
+            exitCode.Should().Be((int)ExitCode.Success);
+            File.Exists(Path.Combine(root, "WebResources", "Contoso.WebResources.csproj")).Should().BeTrue();
+            File.ReadAllText(slnPath).Should().Contain("Contoso.WebResources.csproj");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    /// <summary>A second project-mode run reports already-there and does not register a duplicate entry.</summary>
+    [Fact]
+    public async Task ScaffoldIntoProject_RunAgain_SkipsWithoutDuplicatingTheSolutionEntry()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var slnPath = await CreateProjectFixtureAsync(root);
+            var (command, console) = MakeCommand();
+            await command.ScaffoldIntoProjectAsync(root, "Contoso", CancellationToken.None);
+
+            var exitCode = await command.ScaffoldIntoProjectAsync(root, "Contoso", CancellationToken.None);
+
+            exitCode.Should().Be((int)ExitCode.Success);
+            console.Output.Should().Contain("already there");
+            var entries = File.ReadAllText(slnPath).Split("Contoso.WebResources.csproj").Length - 1;
+            entries.Should().Be(1);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    /// <summary>A WebResources project the solution file records somewhere other than the default folder is
+    /// still detected, so no second copy is scaffolded beside it.</summary>
+    [Fact]
+    public async Task ScaffoldIntoProject_WithAMovedWebResourcesProject_DoesNotScaffoldADuplicate()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            await CreateProjectFixtureAsync(root,
+                (Path.Combine("src", "Web", "Contoso.WebResources.csproj"), WebResourcesXml));
+            var (command, console) = MakeCommand();
+
+            var exitCode = await command.ScaffoldIntoProjectAsync(root, "Contoso", CancellationToken.None);
+
+            exitCode.Should().Be((int)ExitCode.Success);
+            console.Output.Should().Contain("already there");
+            Directory.Exists(Path.Combine(root, "WebResources")).Should().BeFalse();
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    /// <summary>The project file is named after the solution, so a project with no configured solution name
+    /// fails naming the repair rather than writing a generically-named project into it.</summary>
+    [Fact]
+    public async Task ScaffoldIntoProject_WithNoConfiguredSolutionName_Fails()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            await CreateProjectFixtureAsync(root);
+            var (command, _) = MakeCommand();
+
+            var act = async () => await command.ScaffoldIntoProjectAsync(root, null, CancellationToken.None);
+
+            (await act.Should().ThrowAsync<FlowlineException>())
+                .Where(e => e.ExitCode == ExitCode.ConfigInvalid);
         }
         finally { Directory.Delete(root, recursive: true); }
     }

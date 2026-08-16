@@ -62,8 +62,12 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
     /// Generic, because standalone has no solution to name it after. Project mode uses
     /// <see cref="ProjectScaffolder.WebResourcesProjectFileName"/> instead — that name is what reaches
     /// Dataverse, and only a project has one.
+    ///
+    /// Aliases the scaffolder's own constant rather than repeating the literal: that resolver has to
+    /// recognise this exact name to stop <c>clone</c>/<c>init</c> overwriting a stand-alone folder, so two
+    /// copies drifting apart would silently reopen that hole.
     /// </remarks>
-    internal const string StandaloneProjectFileName = "WebResources.csproj";
+    internal const string StandaloneProjectFileName = ProjectScaffolder.StandaloneWebResourcesProjectFileName;
 
     /// <summary>Where the WebResources project lives relative to the scaffold target.</summary>
     internal const string WebResourcesFolderName = "WebResources";
@@ -93,7 +97,7 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
 
         return target.Mode == ScaffoldMode.Standalone
             ? await ScaffoldStandaloneAsync(target.Folder, cancellationToken)
-            : await ScaffoldIntoProjectAsync(target.Folder, cancellationToken);
+            : await ScaffoldIntoProjectAsync(target.Folder, Config?.Solution?.UniqueName, cancellationToken);
     }
 
     /// <summary>Writes the template under the solution's name and registers it in the solution file.</summary>
@@ -103,10 +107,13 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
     /// produced. The registration check runs here rather than being left to that method so the command can
     /// tell an already-there run from a fresh one and close with the right line: a finish line after a skip
     /// would claim work that did not happen.
+    ///
+    /// Takes <paramref name="solutionName"/> rather than reading <c>Config</c>, and is <c>internal</c>, so the
+    /// whole project-mode path is exercisable against a temp fixture without running the base command
+    /// pipeline — the same reason <see cref="ScaffoldStandaloneAsync"/> takes its folder.
     /// </remarks>
-    async Task<int> ScaffoldIntoProjectAsync(string projectRoot, CancellationToken cancellationToken)
+    internal async Task<int> ScaffoldIntoProjectAsync(string projectRoot, string? solutionName, CancellationToken cancellationToken)
     {
-        var solutionName = Config?.Solution?.UniqueName;
         if (string.IsNullOrWhiteSpace(solutionName))
             throw new FlowlineException(ExitCode.ConfigInvalid,
                 $"{ProjectConfig.s_configFileName} is here but names no solution, and the project is named after it. Run 'flowline clone' to finish setting this project up.");
@@ -117,7 +124,11 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
 
         if (ProjectScaffolder.WebResourcesProjectAlreadyRegistered(Path.Combine(webresourcesFolder, projectFileName), layout))
         {
-            Console.Skip("WebResources project already there — skipping");
+            if (ProjectScaffolder.IsStandaloneScaffold(webresourcesFolder, solutionName))
+                Console.Warning(ProjectScaffolder.DescribeStandaloneScaffold(solutionName));
+            else
+                Console.Skip("WebResources project already there — skipping");
+
             return (int)ExitCode.Success;
         }
 
@@ -174,8 +185,9 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
 
         if (collision is null) return;
 
-        throw new FlowlineException(ExitCode.ConfigInvalid,
-            $"{Path.Combine(WebResourcesFolderName, collision)} is already here and scaffold won't write over it — move it aside, or scaffold somewhere else.");
+        throw new FlowlineException(ExitCode.WriteTargetOccupied,
+            $"{Path.Combine(WebResourcesFolderName, collision)} is already here and scaffold won't write over it. " +
+            $"If an earlier scaffold was interrupted, delete {WebResourcesFolderName} and run this again — otherwise move the file aside, or scaffold somewhere else.");
     }
 
     /// <summary>Names the commands that carry a standalone scaffold through to a pushed web resource.</summary>

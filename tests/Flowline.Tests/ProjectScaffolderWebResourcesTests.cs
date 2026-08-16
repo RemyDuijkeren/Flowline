@@ -68,6 +68,43 @@ public class ProjectScaffolderWebResourcesTests
         return slnFilePath;
     }
 
+    /// <summary>
+    /// A folder produced by a stand-alone <c>flowline scaffold webresources</c> holds the generic
+    /// <c>WebResources.csproj</c>, not a solution-named one. A resolver that matched only the solution-named
+    /// file reported "no project here", and <c>clone</c>/<c>init</c> then rewrote all eight templates through
+    /// <see cref="TemplateWriter"/> — which truncates — destroying the user's edits. This pins the fix.
+    /// </summary>
+    [Fact]
+    public async Task SetupWebResourcesProjectAsync_OverAStandaloneScaffold_LeavesItAndItsEditsAlone()
+    {
+        const string solutionName = "CrO7982";
+        var root = CreateTempRoot();
+        try
+        {
+            var slnFilePath = await CreateEmptySolutionFileAsync(root, solutionName);
+            var layout = await SolutionFileLayout.LoadAsync(root);
+
+            // What a stand-alone scaffold leaves behind, with one file the user then edited.
+            var webresourcesFolder = Path.Combine(root, "WebResources");
+            Directory.CreateDirectory(webresourcesFolder);
+            File.WriteAllText(Path.Combine(webresourcesFolder, ProjectScaffolder.StandaloneWebResourcesProjectFileName), "<Project />");
+            var edited = Path.Combine(webresourcesFolder, "package.json");
+            File.WriteAllText(edited, "{ \"name\": \"my-edits\" }");
+            var before = File.ReadAllBytes(edited);
+
+            var console = new TestConsole();
+            var scaffolder = new ProjectScaffolder(console, new SubprocessCapture(console));
+
+            await scaffolder.SetupWebResourcesProjectAsync(root, slnFilePath, solutionName, layout, CancellationToken.None);
+
+            File.ReadAllBytes(edited).Should().Equal(before, "clone/init must not rewrite a stand-alone scaffold's files");
+            File.Exists(Path.Combine(webresourcesFolder, ProjectScaffolder.WebResourcesProjectFileName(solutionName)))
+                .Should().BeFalse("no second, solution-named project should be written beside it");
+            console.Output.Should().Contain("stand-alone scaffold", "the run must say why it left the folder alone");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     // ── Step 1 — characterization: byte-identity, exercised through the real (unmodified) method ──
 
     [Fact]

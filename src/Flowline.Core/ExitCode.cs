@@ -53,6 +53,9 @@ public enum ExitCode
     /// <summary>Check could not run to completion — an empty-input guard skipped the comparison (e.g. no local or no live components). Not a pass/fail signal; investigate the printed reason before trusting the result.</summary>
     Inconclusive = 19,
 
+    /// <summary>A file already occupies a path the command would write to, and the command will not overwrite it. Distinct from <see cref="ConfigInvalid"/>: nothing is missing or malformed — something valid is in the way. Move or remove the file named in the error output, or run the command somewhere else.</summary>
+    WriteTargetOccupied = 20,
+
     /// <summary>Operation cancelled by user (Ctrl+C / SIGINT). Follows de facto convention 128+2=130.</summary>
     Cancelled = 130,
 }

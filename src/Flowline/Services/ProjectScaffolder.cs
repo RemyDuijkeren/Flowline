@@ -237,6 +237,7 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
             | 15 | Validation failed | Check error output for drift, an invalid --force value, or missing dependencies |
             | 16 | Timeout | PAC CLI 60-min limit hit — retry or check environment health |
             | 17 | Force required | Add the --force <specifier> the message names |
+            | 20 | Write target occupied | A file is in the way — move it aside, or run the command elsewhere |
             | 130 | Cancelled | Ctrl+C pressed |
 
             ## Environments
@@ -605,8 +606,37 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
     /// <c>SeedWebResourceDistFromSrc</c> pollute a stray <c>WebResources/public</c> folder for a project
     /// that had moved elsewhere.
     /// </remarks>
+    /// <summary>The project file name <c>scaffold</c> writes when there is no solution to name it after.</summary>
+    /// <remarks>
+    /// Declared here rather than on the command because <see cref="ResolveExistingWebResourcesFolder"/> has to
+    /// recognise it. A folder produced by a stand-alone scaffold holds this generic name, so a resolver that
+    /// only matched the solution-named file would report "no project here" and let <c>clone</c>/<c>init</c>
+    /// rewrite all eight templates through <see cref="TemplateWriter"/> — which truncates — destroying whatever
+    /// the user had edited in them.
+    /// </remarks>
+    internal const string StandaloneWebResourcesProjectFileName = "WebResources.csproj";
+
+    /// <summary>Whether <paramref name="webresourcesFolder"/> holds a stand-alone scaffold rather than this
+    /// solution's own WebResources project.</summary>
+    internal static bool IsStandaloneScaffold(string webresourcesFolder, string solutionName) =>
+        !File.Exists(Path.Combine(webresourcesFolder, WebResourcesProjectFileName(solutionName)))
+        && File.Exists(Path.Combine(webresourcesFolder, StandaloneWebResourcesProjectFileName));
+
+    /// <summary>What to say when a stand-alone scaffold is found where this solution's project would go.</summary>
+    /// <remarks>
+    /// Shared so the two callers that can meet this folder — <c>clone</c>/<c>init</c> through
+    /// <see cref="SetupWebResourcesProjectAsync"/>, and <c>scaffold</c>'s own project mode — tell the same
+    /// story. A dim "already there" skip would read as handled; this names what is actually there, why it was
+    /// left alone, and what makes it a real project.
+    /// </remarks>
+    internal static string DescribeStandaloneScaffold(string solutionName) =>
+        $"{StandaloneWebResourcesProjectFileName} is here from a stand-alone scaffold — leaving it and any edits alone. " +
+        $"It isn't named after {solutionName} and isn't in the solution file: rename it to " +
+        $"{WebResourcesProjectFileName(solutionName)} and run 'dotnet sln add' to wire it up.";
+
     internal static string? ResolveExistingWebResourcesFolder(string webresourcesFolder, string webresourcesCsproj, SolutionFileLayout layout) =>
         File.Exists(webresourcesCsproj) ? webresourcesFolder
+        : File.Exists(Path.Combine(webresourcesFolder, StandaloneWebResourcesProjectFileName)) ? webresourcesFolder
         : layout.WebResourcesProjectPath is { } path ? Path.GetDirectoryName(path)
         : null;
 
@@ -624,7 +654,14 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
         var webresourcesCsproj = Path.Combine(webresourcesFolder, webresourcesCsprojName);
         if (ResolveExistingWebResourcesFolder(webresourcesFolder, webresourcesCsproj, layout) is { } existingFolder)
         {
-            console.Skip("WebResources project already there — skipping");
+            // A stand-alone scaffold names its project file generically, so it is "already there" for the
+            // purpose of not overwriting it — but it is not the project this solution would have produced,
+            // and nothing has registered it. Saying so beats a dim skip line that reads as "handled".
+            if (IsStandaloneScaffold(webresourcesFolder, solutionName))
+                console.Warning(DescribeStandaloneScaffold(solutionName));
+            else
+                console.Skip("WebResources project already there — skipping");
+
             return existingFolder;
         }
 
@@ -665,9 +702,16 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
     /// checks before ever calling here), and there is no overwrite flag (R12). Written first, a scaffold
     /// interrupted by a crash, Ctrl+C, or a full disk would leave that marker on disk with the rest of the
     /// template missing — every later run would then see "already there" and refuse to finish it, with no
-    /// escape hatch. Written last, an interrupted run leaves no marker at all, so a retry starts clean and
-    /// finishes the job. Write order isn't part of the on-disk result once the call completes, so this
-    /// choice is invisible to any test that only checks the finished file set.
+    /// escape hatch. Written last, an interrupted run leaves no marker at all, so <c>clone</c> and <c>init</c>
+    /// start clean and finish the job on the next run.
+    ///
+    /// <c>scaffold</c> does not recover the same way, and this remark used to claim it did. That command
+    /// checks every template path before writing and refuses a folder that already holds one, so its own
+    /// interrupted run is recovered by deleting the folder — not by re-running. The write order still matters
+    /// there for the same reason: without it the leftover marker would make the folder look finished.
+    ///
+    /// Write order isn't part of the on-disk result once the call completes, so this choice is invisible to
+    /// any test that only checks the finished file set.
     /// </remarks>
     internal static async Task WriteWebResourcesTemplateAsync(string webresourcesFolder, string projectFileName, CancellationToken cancellationToken)
     {
