@@ -665,27 +665,52 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
             return existingFolder;
         }
 
+        await ScaffoldWebResourcesProjectAsync(webresourcesFolder, webresourcesCsprojName, slnFilePath, cancellationToken);
+        return webresourcesFolder;
+    }
+
+    /// <summary>Writes the WebResources template and registers it in <paramref name="slnFilePath"/>, if there is one.</summary>
+    /// <remarks>
+    /// The leaf both <c>clone</c>/<c>init</c> (through <see cref="SetupWebResourcesProjectAsync"/>) and the
+    /// <c>scaffold webresources</c> command reach, so a project scaffolded by either is indistinguishable.
+    /// Neither the folder nor the project file name is derived here: <c>scaffold</c> can be pointed at
+    /// another folder and given another name, and <c>clone</c> cannot, so the naming rule stays with the
+    /// caller that has one.
+    ///
+    /// <paramref name="slnFilePath"/> is nullable because a folder with no solution file is a legitimate
+    /// scaffold target — there is simply nothing to register into. Named explicitly rather than left to the
+    /// working directory: <c>dotnet sln</c> picks the folder's one solution file, and a root can hold a
+    /// <c>.sln</c> and a <c>.slnx</c> side by side, where that guess fails outright.
+    /// </remarks>
+    internal async Task ScaffoldWebResourcesProjectAsync(string webresourcesFolder, string projectFileName, string? slnFilePath, CancellationToken cancellationToken)
+    {
+        // Read off the target folder rather than hardcoded: clone/init always scaffold "WebResources", but
+        // 'scaffold --name Scripts' does not, and "WebResources project ready" above a Scripts.csproj is a
+        // line the user has to reconcile.
+        var label = Path.GetFileName(webresourcesFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+
         await console.Status().FlowlineSpinner().StartAsync(
-            "Setting up WebResources project...", async ctx =>
+            $"Setting up {label} project...", async ctx =>
             {
-                await WriteWebResourcesTemplateAsync(webresourcesFolder, webresourcesCsprojName, cancellationToken);
+                await WriteWebResourcesTemplateAsync(webresourcesFolder, projectFileName, cancellationToken);
 
                 console.Verbose($"Created {ConsolePath.FormatRelativePath(webresourcesFolder)}");
+
+                if (slnFilePath is null) return;
 
                 await Cli.Wrap("dotnet")
                          .WithArguments(args => args
                                                 .Add("sln")
                                                 .Add(slnFilePath)
                                                 .Add("add")
-                                                .Add(webresourcesCsproj))
+                                                .Add(Path.Combine(webresourcesFolder, projectFileName)))
                          .WithCapture(capture)
                          .ExecuteAsync(cancellationToken);
 
-                console.Verbose($"Added {Path.GetFileName(webresourcesCsproj)} to solution");
+                console.Verbose($"Added {projectFileName} to solution");
             });
 
-        console.Ok("WebResources project ready");
-        return webresourcesFolder;
+        console.Ok($"{label} project ready");
     }
 
     /// <summary>

@@ -198,17 +198,23 @@ public sealed class SlnAddCommandTests : IDisposable
             .Which.Message.Should().Contain(_root).And.Contain("dotnet new sln");
     }
 
-    // ── Not walking up to a parent solution file ──────────────────────────────
+    // ── Walking up, and the boundary that makes it safe ───────────────────────
     //
-    // dotnet sln add only ever looks in the exact folder it's told to — never above it. Flowline used to
-    // walk up looking for the nearest .sln/.slnx, which meant running the command from an arbitrary
-    // subfolder (e.g. one outside any Flowline project) could silently find and rewrite an unrelated
-    // solution file sitting in a parent directory. Matching dotnet's behavior removes that hazard.
+    // This command once walked up freely, which meant running it from an arbitrary subfolder outside any
+    // project could silently rewrite an unrelated solution file in a parent directory. The fix at the time
+    // was to look only in the exact folder — which removed the hazard and, with it, the command's own
+    // documented case: run it from inside Solution/ with the solution file at the repo root and it failed
+    // NotFound, even though ToSolutionRelativePath exists precisely to handle that layout.
+    //
+    // The walk is back, but bounded: it stops at the nearest .flowline or .git, and never climbs past one.
+    // With no marker anywhere there is nothing to bound it, so no walk happens at all — which is what keeps
+    // the original hazard closed. The two tests below hold that line; the two after them cover the case the
+    // exact-folder rule broke.
 
     [Fact]
-    public async Task AddAsync_NoSolutionFileInTheExactFolder_ThrowsNotFoundEvenWhenOneExistsAbove()
+    public async Task AddAsync_WithNoProjectRootMarker_ThrowsNotFoundEvenWhenASolutionFileExistsAbove()
     {
-        // A solution file one level up must not be found — only the exact folder counts.
+        // No .flowline and no .git anywhere, so there is nothing to bound a walk and none is attempted.
         WriteExistingSln();
         var subfolder = Path.Combine(_root, "Solution");
 
@@ -219,7 +225,7 @@ public sealed class SlnAddCommandTests : IDisposable
     }
 
     [Fact]
-    public async Task AddAsync_NoSolutionFileInTheExactFolder_DoesNotTouchAnySolutionFileAbove()
+    public async Task AddAsync_WithNoProjectRootMarker_DoesNotTouchAnySolutionFileAbove()
     {
         WriteExistingSln();
         var subfolder = Path.Combine(_root, "Solution");
@@ -229,7 +235,51 @@ public sealed class SlnAddCommandTests : IDisposable
         await act.Should().ThrowAsync<FlowlineException>();
 
         (await File.ReadAllTextAsync(Path.Combine(_root, "MySolution.sln"))).Should().Be(before,
-            "a solution file outside the exact folder must never be modified");
+            "an unbounded walk is what the boundary rule exists to prevent");
+    }
+
+    /// <summary>The case the exact-folder rule broke: `flowline sln add X.cdsproj` from inside `Solution/`,
+    /// with the solution file at the repo root. It is the layout ToSolutionRelativePath documents.</summary>
+    [Theory]
+    [InlineData(".git")]
+    [InlineData(".flowline")]
+    public async Task AddAsync_FromASubfolderOfAProject_FindsTheSolutionFileAtTheRoot(string marker)
+    {
+        WriteExistingSln();
+        WriteProjectRootMarker(_root, marker);
+        var subfolder = Path.Combine(_root, "Solution");
+
+        var result = await SlnAddCommand.AddAsync(_reader, _writer, _cdsproj, subfolder);
+
+        result.Outcome.Should().Be(SlnAddCommand.Outcome.Added);
+        Path.GetFileName(result.SolutionFilePath).Should().Be("MySolution.sln");
+        // The entry has to be relative to the solution file, not to where the user was standing.
+        (await File.ReadAllTextAsync(result.SolutionFilePath)).Should().Contain("Solution");
+    }
+
+    /// <summary>The boundary is inclusive and final: a solution file above the project root is different
+    /// work, and is never reached.</summary>
+    [Fact]
+    public async Task AddAsync_WithASolutionFileAboveTheProjectRoot_DoesNotReachIt()
+    {
+        WriteExistingSln();
+        var repo = Path.Combine(_root, "repo");
+        Directory.CreateDirectory(Path.Combine(repo, ".git"));
+        var subfolder = Path.Combine(repo, "Solution");
+        Directory.CreateDirectory(subfolder);
+
+        var act = () => SlnAddCommand.AddAsync(_reader, _writer, _cdsproj, subfolder);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Which.ExitCode.Should().Be(ExitCode.NotFound);
+    }
+
+    static void WriteProjectRootMarker(string folder, string marker)
+    {
+        if (marker == ".git")
+            Directory.CreateDirectory(Path.Combine(folder, ".git"));
+        else
+            File.WriteAllText(Path.Combine(folder, marker), "{}");
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Services;
@@ -106,7 +107,7 @@ public class SlnAddCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
     /// re-implementation of the same composition, which is exactly where a wiring bug would hide.
     /// </remarks>
     /// <exception cref="FlowlineException">
-    /// <see cref="ExitCode.NotFound"/> when no solution file exists in <paramref name="startFolder"/>.
+    /// <see cref="ExitCode.NotFound"/> when no solution file exists at or above <paramref name="startFolder"/>.
     /// </exception>
     internal static async Task<AddResult> AddAsync(
         MsBuildSolutionReader reader,
@@ -115,9 +116,13 @@ public class SlnAddCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
         string startFolder,
         CancellationToken cancellationToken = default)
     {
-        var solutionFilePath = reader.FindSolutionFile(startFolder)
+        // Searching only startFolder made this command's own documented case unreachable: run it from
+        // inside Solution/ — which ToSolutionRelativePath below exists to handle — and the solution file at
+        // the repo root was never seen, so it failed NotFound. Shares the bounded walk with 'scaffold' so
+        // both commands answer "where is my solution file" the same way.
+        var solutionFilePath = reader.FindSolutionFileUpward(startFolder, ProjectConfig.s_configFileName)
             ?? throw new FlowlineException(ExitCode.NotFound,
-                $"No .sln or .slnx in '{startFolder}'. 'sln add' adds to a solution file, it doesn't make one — run 'dotnet new sln' first.");
+                $"No .sln or .slnx in '{startFolder}' or above it, up to the project root. 'sln add' adds to a solution file, it doesn't make one — run 'dotnet new sln' first.");
 
         var solutionFolder = Path.GetDirectoryName(solutionFilePath)!;
         var entryPath = ToSolutionRelativePath(projectFullPath, solutionFolder);

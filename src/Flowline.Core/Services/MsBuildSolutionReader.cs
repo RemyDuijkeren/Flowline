@@ -52,6 +52,64 @@ public class MsBuildSolutionReader
                .ToList();
     }
 
+    /// <summary>
+    /// The nearest solution file at or above <paramref name="startFolder"/>, searching no further than the
+    /// project root — or <c>null</c> when there is none to find.
+    /// </summary>
+    /// <param name="startFolder">Where the search begins, and the first folder examined.</param>
+    /// <param name="projectMarkerFileName">
+    /// The file that marks a project root, passed in rather than named here because it lives in the CLI
+    /// project (<c>.flowline</c>) and this assembly cannot see it. A second copy of that literal is exactly
+    /// the kind that drifts.
+    /// </param>
+    /// <remarks>
+    /// Commands run from wherever the user is standing, so looking only in the current folder finds nothing
+    /// the moment they are inside <c>Plugins/</c> — and the solution file is what every project lookup goes
+    /// through. Hence the walk.
+    ///
+    /// <b>Bounded, and by two markers rather than one.</b> <paramref name="projectMarkerFileName"/> is what
+    /// makes a folder a Flowline project; <c>.git</c> is the repo the user is working in. Either ends the
+    /// search, and that folder is itself examined, because a solution file above the repo root belongs to
+    /// different work.
+    ///
+    /// <b>Neither marker anywhere means no walk at all.</b> Stand-alone use has no repo and no config, so
+    /// there is nothing to bound the search — and an unbounded one would climb to the drive root and hand
+    /// back whatever unrelated solution file it met first. That case gets the start folder alone.
+    /// </remarks>
+    public string? FindSolutionFileUpward(string startFolder, string projectMarkerFileName)
+    {
+        if (FindProjectRootMarker(startFolder, projectMarkerFileName) is not { } boundary)
+            return FindSolutionFile(startFolder);
+
+        for (var dir = startFolder; dir is not null; dir = Directory.GetParent(dir)?.FullName)
+        {
+            if (FindSolutionFile(dir) is { } solutionFilePath)
+                return solutionFilePath;
+
+            if (PathEquals(dir, boundary)) break;
+        }
+
+        return null;
+    }
+
+    /// <summary>The nearest folder at or above <paramref name="startFolder"/> that marks a project root.</summary>
+    /// <remarks>
+    /// <c>.git</c> is checked as a file as well as a folder: a linked worktree or a submodule carries a
+    /// <c>.git</c> <em>file</em> pointing at the real directory, and working from a worktree is normal.
+    /// </remarks>
+    static string? FindProjectRootMarker(string startFolder, string projectMarkerFileName)
+    {
+        for (var dir = startFolder; dir is not null; dir = Directory.GetParent(dir)?.FullName)
+        {
+            if (File.Exists(Path.Combine(dir, projectMarkerFileName))) return dir;
+
+            var git = Path.Combine(dir, ".git");
+            if (Directory.Exists(git) || File.Exists(git)) return dir;
+        }
+
+        return null;
+    }
+
     /// <summary>True when <paramref name="folder"/> holds more than one solution file.</summary>
     /// <remarks>
     /// Not an error: <see cref="FindSolutionFile"/> picks one deterministically. Commands surface it so the

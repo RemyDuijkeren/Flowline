@@ -223,9 +223,10 @@ app.Configure(config =>
     // scaffold = write a project template locally; the only command here that never reaches Dataverse
     config.AddCommand<ScaffoldCommand>("scaffold")
           .WithAlias("new")
-          .WithDescription("Write a project template into this folder. Needs no Dataverse connection, no authentication, and no network. Outside a Flowline project it writes the template alone under a generic project name; inside one it names the project after the configured solution and registers it in the solution file. Skips and changes nothing when the project is already there. Alias: new")
+          .WithDescription("Write a project template into this folder. Needs no Dataverse connection, no authentication, and no network. Writes the project where you are standing, and looks for a solution file here and upward as far as the repo root: found, the project is named after it and added to it; not found, the template lands alone and the run says so. Skips and changes nothing when the project is already there. Alias: new")
           .WithExample("scaffold", "webresources")
-          .WithExample("new", "webresources");
+          .WithExample("new", "webresources")
+          .WithExample("scaffold", "webresources", "--output", "./ContosoSales", "--name", "Scripts");
 
     // A branch rather than a flat 'sln-add' because 'flowline sln add' reads as a one-word substitution for the 'dotnet sln add'.
     config.AddBranch("sln", sln =>
