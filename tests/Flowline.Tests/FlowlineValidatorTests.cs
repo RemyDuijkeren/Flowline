@@ -32,7 +32,7 @@ public class FlowlineValidatorTests
         PacProfile? capturedProfile = null;
         var probes = new ValidationProbes
         {
-            GetEnvironmentByProfileAsync = (p, url, _, _) =>
+            GetEnvironmentByProfileAsync = (p, url, _) =>
             {
                 capturedProfile = p;
                 return Task.FromResult<EnvironmentInfo?>(new EnvironmentInfo { EnvironmentUrl = url, Type = "Sandbox" });
@@ -54,8 +54,8 @@ public class FlowlineValidatorTests
         var profiledCalls = 0;
         var probes = new ValidationProbes
         {
-            GetEnvironmentAsync = (url, _, _) => { unprofiledCalls++; return Task.FromResult<EnvironmentInfo?>(new EnvironmentInfo { EnvironmentUrl = url, Type = "Sandbox" }); },
-            GetEnvironmentByProfileAsync = (_, url, _, _) => { profiledCalls++; return Task.FromResult<EnvironmentInfo?>(new EnvironmentInfo { EnvironmentUrl = url, Type = "Sandbox" }); }
+            GetEnvironmentAsync = (url, _) => { unprofiledCalls++; return Task.FromResult<EnvironmentInfo?>(new EnvironmentInfo { EnvironmentUrl = url, Type = "Sandbox" }); },
+            GetEnvironmentByProfileAsync = (_, url, _) => { profiledCalls++; return Task.FromResult<EnvironmentInfo?>(new EnvironmentInfo { EnvironmentUrl = url, Type = "Sandbox" }); }
         };
         var validator = MakeValidator(out _, probes);
 
@@ -75,7 +75,7 @@ public class FlowlineValidatorTests
         PacProfile? capturedProfile = null;
         var probes = new ValidationProbes
         {
-            GetEnvironmentByProfileAsync = (p, url, _, _) =>
+            GetEnvironmentByProfileAsync = (p, url, _) =>
             {
                 capturedProfile = p;
                 return Task.FromResult<EnvironmentInfo?>(new EnvironmentInfo { EnvironmentUrl = url, Type = "Sandbox" });
@@ -105,8 +105,8 @@ public class FlowlineValidatorTests
         var unprofiledCalls = 0;
         var probes = new ValidationProbes
         {
-            GetEnvironmentAsync = (url, _, _) => { unprofiledCalls++; return Task.FromResult<EnvironmentInfo?>(new EnvironmentInfo { EnvironmentUrl = url, Type = "Production" }); },
-            GetEnvironmentByProfileAsync = (_, url, _, _) => { profiledCalls++; return Task.FromResult<EnvironmentInfo?>(new EnvironmentInfo { EnvironmentUrl = url, Type = "Production" }); }
+            GetEnvironmentAsync = (url, _) => { unprofiledCalls++; return Task.FromResult<EnvironmentInfo?>(new EnvironmentInfo { EnvironmentUrl = url, Type = "Production" }); },
+            GetEnvironmentByProfileAsync = (_, url, _) => { profiledCalls++; return Task.FromResult<EnvironmentInfo?>(new EnvironmentInfo { EnvironmentUrl = url, Type = "Production" }); }
         };
         var validator = MakeValidator(out _, probes);
 

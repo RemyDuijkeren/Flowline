@@ -62,7 +62,6 @@ public class WebResourceHandlerTests : IDisposable
         dataverseSolutionSrcRoot ?? _dataverseSolutionSrcRoot,
         _serviceMock,
         "MySolution",
-        "https://example.crm.dynamics.com",
         RunMode.Normal,
         []);
 

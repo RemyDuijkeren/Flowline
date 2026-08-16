@@ -114,7 +114,7 @@ public class ValidationCacheTests : IDisposable
         var solutionCalls = 0;
         var validator = CreateValidator(new ValidationProbes
         {
-            GetEnvironmentAsync = (_, _, _) =>
+            GetEnvironmentAsync = (_, _) =>
             {
                 envCalls++;
                 return Task.FromResult<EnvironmentInfo?>(new EnvironmentInfo
@@ -124,7 +124,7 @@ public class ValidationCacheTests : IDisposable
                     Type = "Sandbox"
                 });
             },
-            GetSolutionsAsync = (_, _, _) =>
+            GetSolutionsAsync = (_, _) =>
             {
                 solutionCalls++;
                 return Task.FromResult(new List<SolutionInfo>
@@ -149,7 +149,7 @@ public class ValidationCacheTests : IDisposable
         var solutionCalls = 0;
         var validator = CreateValidator(new ValidationProbes
         {
-            GetSolutionsAsync = (_, _, _) =>
+            GetSolutionsAsync = (_, _) =>
             {
                 solutionCalls++;
                 return Task.FromResult(new List<SolutionInfo>

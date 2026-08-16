@@ -216,12 +216,12 @@ public class PluginService(IAnsiConsole console)
         // Phase 4: Execute the deletes first — must precede assembly update and upserts
         if (runMode == RunMode.NoDelete || plan.TotalDeletes == 0)
         {
-            await _executor.ExecuteDeletesAsync(service, plan, solutionName, runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
+            await _executor.ExecuteDeletesAsync(service, plan, runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
         }
         else
         {
             await RunWithProgressAsync("Deleting stale plugin components", plan.TotalDeletes,
-                task => _executor.ExecuteDeletesAsync(service, plan, solutionName, false, cancellationToken, task)).ConfigureAwait(false);
+                task => _executor.ExecuteDeletesAsync(service, plan, false, cancellationToken, task)).ConfigureAwait(false);
         }
         if (plan.TotalDeletes > 0) console.Ok($"{plan.TotalDeletes} stale component(s) deleted");
 
@@ -493,7 +493,7 @@ public class PluginService(IAnsiConsole console)
         foreach (var (_, plan) in prePlans)
         {
             if (plan.PluginTypes.Deletes.Count == 0) continue; // no class was removed for this assembly
-            await _executor.ExecuteDeletesAsync(service, plan.NonPluginTypeDeletes(), solutionName, runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
+            await _executor.ExecuteDeletesAsync(service, plan.NonPluginTypeDeletes(), runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
         }
 
         // Same rule, for an assembly the .nupkg no longer carries at all. Only the blocking children go —
@@ -563,7 +563,7 @@ public class PluginService(IAnsiConsole console)
 
             var plan = _planner.Plan(snapshot, metadata, assemblyEntity, solutionName, postKnownPluginTypeIds, forceDeleteOrphans);
             if (plan.PluginTypes.Deletes.Count == 0)
-                await _executor.ExecuteDeletesAsync(service, plan.NonPluginTypeDeletes(), solutionName, runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
+                await _executor.ExecuteDeletesAsync(service, plan.NonPluginTypeDeletes(), runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
             await _executor.ExecuteUpsertsAsync(service, plan, solutionName, cancellationToken).ConfigureAwait(false);
             await _executor.ExecuteAddToSolutionAsync(service, plan, cancellationToken).ConfigureAwait(false);
         }
@@ -621,7 +621,7 @@ public class PluginService(IAnsiConsole console)
 
         foreach (var (_, plan) in plans)
         {
-            await _executor.ExecuteDeletesAsync(service, plan, solutionName, runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
+            await _executor.ExecuteDeletesAsync(service, plan, runMode == RunMode.NoDelete, cancellationToken).ConfigureAwait(false);
             await _executor.ExecuteUpsertsAsync(service, plan, solutionName, cancellationToken).ConfigureAwait(false);
             await _executor.ExecuteAddToSolutionAsync(service, plan, cancellationToken).ConfigureAwait(false);
         }

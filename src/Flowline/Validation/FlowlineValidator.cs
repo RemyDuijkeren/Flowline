@@ -90,7 +90,7 @@ public sealed class FlowlineValidator
         FlowlineSettings settings,
         CancellationToken cancellationToken) =>
         GetEnvironmentInfoCoreAsync(environmentUrl, settings, cancellationToken,
-            () => _probes.GetEnvironmentAsync(environmentUrl, settings.Verbose, cancellationToken));
+            () => _probes.GetEnvironmentAsync(environmentUrl, cancellationToken));
 
     // Profile-scoped overload — used wherever a PAC auth profile has already been resolved for the target
     // URL (R1/R4). Shares the same cache dictionary/TTL as the unprofiled overload above (KTD6):
@@ -101,7 +101,7 @@ public sealed class FlowlineValidator
         FlowlineSettings settings,
         CancellationToken cancellationToken) =>
         GetEnvironmentInfoCoreAsync(environmentUrl, settings, cancellationToken,
-            () => _probes.GetEnvironmentByProfileAsync(profile, environmentUrl, settings.Verbose, cancellationToken));
+            () => _probes.GetEnvironmentByProfileAsync(profile, environmentUrl, cancellationToken));
 
     async Task<EnvironmentInfo?> GetEnvironmentInfoCoreAsync(
         string environmentUrl,
@@ -151,13 +151,13 @@ public sealed class FlowlineValidator
             return cached.Value;
         }
 
-        var solutions = await _probes.GetSolutionsAsync(environmentUrl, settings.Verbose, cancellationToken);
+        var solutions = await _probes.GetSolutionsAsync(environmentUrl, cancellationToken);
         var solution = solutions.FirstOrDefault(s => s.SolutionUniqueName?.Equals(solutionName, StringComparison.OrdinalIgnoreCase) == true);
         if (solution != null)
         {
             if (solution.PublisherUniqueName != null)
                 solution.PublisherPrefix = await _probes.GetPublisherCustomizationPrefixAsync(
-                    environmentUrl, solution.PublisherUniqueName, settings.Verbose, cancellationToken);
+                    environmentUrl, solution.PublisherUniqueName, cancellationToken);
 
             cache = _store.Load();
             cache.Solutions[key] = NewEntry(solution);

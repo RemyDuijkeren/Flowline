@@ -2,8 +2,6 @@ using System.Xml.Linq;
 
 namespace Flowline.Core.OrphanCleanup;
 
-public enum ComponentAction { AutoDelete, Manual }
-
 /// <summary>
 /// S_new candidates parsed from a solution's unpacked source. <see cref="EntityLogicalNames"/> holds
 /// entity roots that Solution.xml records by schemaName instead of id. <see cref="NamedComponents"/> holds
@@ -32,18 +30,10 @@ public sealed record CustomApiNames(
 
 public static class ComponentClassifier
 {
-    // solutioncomponent.componenttype values for AUTO-delete candidates.
-    // Low-numbered types (<100) are stable platform constants — same across all Dataverse orgs.
-    // Confirmed via PicklistAttributeMetadata on automatevalue-dev (2026-06-24); one org is sufficient.
-    // CustomApi family (10034/10036/10037) are environment-specific — they vary per org and
-    // must be detected via entity-side queries (customapi/customapirequestparameter/
-    // customapiresponseproperty), not by componenttype. See OrphanCleanupService.
-    private const int PluginAssembly                = 91;
-    private const int PluginType                    = 90;
-    private const int SdkMessageProcessingStep      = 92;
-    private const int SdkMessageProcessingStepImage = 93;
-    private const int WebResource                   = 61;
-    private const int Workflow                      = 29;
+    // solutioncomponent.componenttype for plugin assemblies. Low-numbered types (<100) are stable
+    // platform constants — same across all Dataverse orgs. Confirmed via PicklistAttributeMetadata on
+    // automatevalue-dev (2026-06-24); one org is sufficient.
+    private const int PluginAssembly = 91;
 
     // Entity RootComponents in Solution.xml are keyed by schemaName, not id (portable across
     // environments) — ParseSolutionXmlComponents surfaces these separately for live resolution.
@@ -57,19 +47,6 @@ public static class ComponentClassifier
     // Microsoft system components (out-of-box views, forms, etc.) use this fixed GUID prefix across
     // every Dataverse org. They can surface as solutioncomponent rows but are never user-deletable.
     private const string SystemComponentIdPrefix = "00000000-0000-0000-00aa-";
-
-    static readonly HashSet<int> AutoTypes =
-    [
-        PluginAssembly,
-        PluginType,
-        SdkMessageProcessingStep,
-        SdkMessageProcessingStepImage,
-        WebResource,
-        Workflow,
-    ];
-
-    public static ComponentAction Classify(int componentType) =>
-        AutoTypes.Contains(componentType) ? ComponentAction.AutoDelete : ComponentAction.Manual;
 
     public static bool IsWellKnownSystemComponent(Guid objectId) =>
         objectId.ToString().StartsWith(SystemComponentIdPrefix, StringComparison.OrdinalIgnoreCase);

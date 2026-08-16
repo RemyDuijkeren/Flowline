@@ -291,7 +291,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
 
                 ctx.Phase($"Checking {orphans.Count} orphan candidate{(orphans.Count == 1 ? "" : "s")}...");
 
-                var detectionContext = new DetectionContext(dataverseSolutionSrcRoot, service, solutionName, environmentUrl, mode, entityLogicalNames, deleteOrphansConsent);
+                var detectionContext = new DetectionContext(dataverseSolutionSrcRoot, service, solutionName, mode, entityLogicalNames, deleteOrphansConsent);
                 entries = await DispatchToHandlersAsync(detectionContext, namedComponents, orphans, ct).ConfigureAwait(false);
             }).ConfigureAwait(false);
 

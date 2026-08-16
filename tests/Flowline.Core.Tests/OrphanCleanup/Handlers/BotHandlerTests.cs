@@ -40,7 +40,7 @@ public class BotHandlerTests : IDisposable
     }
 
     DetectionContext Ctx(RunMode mode = RunMode.Normal) =>
-        new(_dataverseSolutionSrcRoot, _serviceMock, "MySolution", "https://example.crm.dynamics.com", mode, []);
+        new(_dataverseSolutionSrcRoot, _serviceMock, "MySolution", mode, []);
 
     void SetupBotRow(Guid id, string? schemaName, DateTime? publishedOn)
     {

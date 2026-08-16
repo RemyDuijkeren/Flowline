@@ -29,7 +29,6 @@ public class EntityFamilyHandlerTests
         DataverseSolutionSrcRoot: dataverseSolutionSrcRoot,
         Service: _serviceMock,
         SolutionName: "TestSolution",
-        EnvironmentUrl: "https://example.crm.dynamics.com",
         Mode: RunMode.Normal,
         EntityLogicalNames: entityLogicalNames ?? []);
 

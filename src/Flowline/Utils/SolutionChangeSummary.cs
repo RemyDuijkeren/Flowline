@@ -16,7 +16,7 @@ public class SolutionChangeSummary
     public record SubChange(string Description, ChangeStatus Status);
     public record ChangeItem(string ComponentName, IReadOnlyList<string> FilePaths, ChangeStatus Status = ChangeStatus.Modified, IReadOnlyList<SubChange>? SubChanges = null);
 
-    internal static int SubChangeDisplayThreshold = 5;
+    internal const int SubChangeDisplayThreshold = 5;
     public record ChangeGroup(string Label, IReadOnlyList<ChangeItem> Items, bool IsEntity = false);
 
     internal enum XmlRead { None, FormTitle, ViewTitle, DashboardName, StepName, WorkflowName }
@@ -386,21 +386,9 @@ public class SolutionChangeSummary
         {
             var label = $"{StatusIcon(item.Status)} {Markup.Escape(item.ComponentName)}";
 
-            if (SubChangeDisplayThreshold == 0 && item.SubChanges is { Count: > 0 })
-            {
-                var added    = item.SubChanges.Count(s => s.Status == ChangeStatus.Added);
-                var removed  = item.SubChanges.Count(s => s.Status == ChangeStatus.Deleted);
-                var modified = item.SubChanges.Count(s => s.Status == ChangeStatus.Modified);
-                var parts    = new List<string>();
-                if (added   > 0) parts.Add($"{added} added");
-                if (removed > 0) parts.Add($"{removed} removed");
-                if (modified > 0) parts.Add($"{modified} modified");
-                label += $" ({string.Join(", ", parts)})";
-            }
-
             var itemNode = groupNode.AddNode(label);
 
-            if (SubChangeDisplayThreshold > 0 && item.SubChanges is { Count: > 0 })
+            if (item.SubChanges is { Count: > 0 })
             {
                 var shown = item.SubChanges.Take(SubChangeDisplayThreshold).ToList();
                 foreach (var sub in shown)

@@ -33,48 +33,6 @@ public class ComponentClassifierTests : IDisposable
             </ImportExportXml>
             """);
 
-    // ── Classify — AUTO types ────────────────────────────────────────────────
-
-    [Theory]
-    [InlineData(91, ComponentAction.AutoDelete)]  // PluginAssembly (confirmed)
-    [InlineData(90, ComponentAction.AutoDelete)]  // PluginType (TODO: verify)
-    [InlineData(92, ComponentAction.AutoDelete)]  // SdkMessageProcessingStep (confirmed)
-    [InlineData(93, ComponentAction.AutoDelete)]  // SdkMessageProcessingStepImage (TODO: verify)
-    [InlineData(61, ComponentAction.AutoDelete)]  // WebResource (confirmed)
-    [InlineData(29, ComponentAction.AutoDelete)]  // Workflow (TODO: verify)
-    public void Classify_ReturnsAutoDelete_ForAutoComponentTypes(int componentType, ComponentAction expected)
-    {
-        ComponentClassifier.Classify(componentType).Should().Be(expected);
-    }
-
-    // ── Classify — MANUAL types ──────────────────────────────────────────────
-
-    [Theory]
-    [InlineData(1)]     // Entity/Table
-    [InlineData(2)]     // Attribute/Column
-    [InlineData(3)]     // Relationship
-    [InlineData(24)]    // Form
-    [InlineData(26)]    // View
-    [InlineData(20)]    // Role
-    [InlineData(10034)] // CustomApi — env-specific, detected via entity query not componenttype
-    [InlineData(999)]   // Unknown
-    public void Classify_ReturnsManual_ForManualAndUnknownTypes(int componentType)
-    {
-        ComponentClassifier.Classify(componentType).Should().Be(ComponentAction.Manual);
-    }
-
-    [Fact]
-    public void Classify_ReturnsManual_ForZero()
-    {
-        ComponentClassifier.Classify(0).Should().Be(ComponentAction.Manual);
-    }
-
-    [Fact]
-    public void Classify_ReturnsManual_ForNegativeType()
-    {
-        ComponentClassifier.Classify(-1).Should().Be(ComponentAction.Manual);
-    }
-
     // ── ParseSolutionXmlComponents — happy paths ─────────────────────────────
 
     [Fact]

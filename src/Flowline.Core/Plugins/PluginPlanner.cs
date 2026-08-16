@@ -171,8 +171,8 @@ public class PluginPlanner(IAnsiConsole console)
         {
             var apiName = ourApiNoLongerInSource.GetAttributeValue<string>("uniquename") ?? ourApiNoLongerInSource.Id.ToString();
             var del    = new DeleteAction(apiName, "customapi", ourApiNoLongerInSource.Id);
-            var pParam = PlanRequestParameters(snapshot, snapshot.PublisherPrefix, ourApiNoLongerInSource.Id, apiName, [], solutionName);
-            var pProp  = PlanResponseProperties(snapshot, snapshot.PublisherPrefix, ourApiNoLongerInSource.Id, apiName, [], solutionName);
+            var pParam = PlanRequestParameters(snapshot, ourApiNoLongerInSource.Id, [], solutionName);
+            var pProp  = PlanResponseProperties(snapshot, ourApiNoLongerInSource.Id, [], solutionName);
             plan.CustomApis.Deletes.Add(del);
             plan.RequestParams.Add(pParam);
             plan.ResponseProps.Add(pProp);
@@ -579,7 +579,6 @@ public class PluginPlanner(IAnsiConsole console)
         ActionPlan propPlan = new();
         List<CustomApiGroup> groups = new();
 
-        var prefix = snapshot.PublisherPrefix;
         var dvApis = snapshot.CustomApis
             .Where(e => e.GetAttributeValue<EntityReference>("plugintypeid")?.Id == typeEntity.Id)
             .ToDictionary(e => e.GetAttributeValue<string>("uniquename"), e => e)
@@ -593,8 +592,8 @@ public class PluginPlanner(IAnsiConsole console)
             {
                 var newApi = NewCustomApiEntity(fullApiName, asmApi, typeEntity);
                 var upsert = new UpsertAction(asmApi.BaseName, newApi, IsCreate: true, SolutionName: solutionName);
-                var pParam = PlanRequestParameters(snapshot, prefix, newApi.Id, asmApi.BaseName, asmApi.RequestParameters, solutionName);
-                var pProp  = PlanResponseProperties(snapshot, prefix, newApi.Id, asmApi.BaseName, asmApi.ResponseProperties, solutionName);
+                var pParam = PlanRequestParameters(snapshot, newApi.Id, asmApi.RequestParameters, solutionName);
+                var pProp  = PlanResponseProperties(snapshot, newApi.Id, asmApi.ResponseProperties, solutionName);
                 apiPlan.Upserts.Add(upsert);
                 paramPlan.Add(pParam);
                 propPlan.Add(pProp);
@@ -614,12 +613,12 @@ public class PluginPlanner(IAnsiConsole console)
                 console.Warning($"Custom API '{fullApiName}' has immutable field changes — deleting and recreating.");
 
                 var del = new DeleteAction(asmApi.BaseName, "customapi", dvApi.Id);
-                var pParamDel = PlanRequestParameters(snapshot, prefix, dvApi.Id, fullApiName, [], solutionName);
-                var pPropDel  = PlanResponseProperties(snapshot, prefix, dvApi.Id, fullApiName, [], solutionName);
+                var pParamDel = PlanRequestParameters(snapshot, dvApi.Id, [], solutionName);
+                var pPropDel  = PlanResponseProperties(snapshot, dvApi.Id, [], solutionName);
                 var newApi = NewCustomApiEntity(fullApiName, asmApi, typeEntity);
                 var upsert = new UpsertAction(asmApi.BaseName, newApi, IsCreate: true, SolutionName: solutionName);
-                var pParamNew = PlanRequestParameters(snapshot, prefix, newApi.Id, fullApiName, asmApi.RequestParameters, solutionName);
-                var pPropNew  = PlanResponseProperties(snapshot, prefix, newApi.Id, fullApiName, asmApi.ResponseProperties, solutionName);
+                var pParamNew = PlanRequestParameters(snapshot, newApi.Id, asmApi.RequestParameters, solutionName);
+                var pPropNew  = PlanResponseProperties(snapshot, newApi.Id, asmApi.ResponseProperties, solutionName);
                 apiPlan.Deletes.Add(del);
                 apiPlan.Upserts.Add(upsert);
                 paramPlan.Add(pParamDel); paramPlan.Add(pParamNew);
@@ -637,8 +636,8 @@ public class PluginPlanner(IAnsiConsole console)
                     snapshot.ComponentTypeById[dvApi.Id]));
             }
 
-            var pParam2 = PlanRequestParameters(snapshot, prefix, dvApi.Id, fullApiName, asmApi.RequestParameters, solutionName);
-            var pProp2  = PlanResponseProperties(snapshot, prefix, dvApi.Id, fullApiName, asmApi.ResponseProperties, solutionName);
+            var pParam2 = PlanRequestParameters(snapshot, dvApi.Id, asmApi.RequestParameters, solutionName);
+            var pProp2  = PlanResponseProperties(snapshot, dvApi.Id, asmApi.ResponseProperties, solutionName);
             paramPlan.Add(pParam2);
             propPlan.Add(pProp2);
 
@@ -678,8 +677,8 @@ public class PluginPlanner(IAnsiConsole console)
         foreach (var obsoleteApi in dvApis.Where(a => asmCustomApis.All(c => resolvedCustomApiNames[c.PluginTypeFullName] != a.Key)))
         {
             var del    = new DeleteAction(obsoleteApi.Key, "customapi", obsoleteApi.Value.Id);
-            var pParam = PlanRequestParameters(snapshot, prefix, obsoleteApi.Value.Id, obsoleteApi.Key, [], solutionName);
-            var pProp  = PlanResponseProperties(snapshot, prefix, obsoleteApi.Value.Id, obsoleteApi.Key, [], solutionName);
+            var pParam = PlanRequestParameters(snapshot, obsoleteApi.Value.Id, [], solutionName);
+            var pProp  = PlanResponseProperties(snapshot, obsoleteApi.Value.Id, [], solutionName);
             apiPlan.Deletes.Add(del);
             paramPlan.Add(pParam);
             propPlan.Add(pProp);
@@ -691,7 +690,7 @@ public class PluginPlanner(IAnsiConsole console)
     }
 
     ActionPlan PlanRequestParameters(
-        RegistrationSnapshot snapshot, string prefix, Guid customApiId, string customApiName,
+        RegistrationSnapshot snapshot, Guid customApiId,
         List<RequestParameterMetadata> asmRequestParams, string solutionName) =>
         PlanCustomApiChildComponents(
             snapshot, snapshot.RequestParams, customApiId, "customapirequestparameter",
@@ -709,7 +708,7 @@ public class PluginPlanner(IAnsiConsole console)
             extraImmutableChanged: (p, dvParam) => dvParam.GetAttributeValue<bool>("isoptional") != p.IsOptional);
 
     ActionPlan PlanResponseProperties(
-        RegistrationSnapshot snapshot, string prefix, Guid customApiId, string customApiName,
+        RegistrationSnapshot snapshot, Guid customApiId,
         List<ResponsePropertyMetadata> asmResponseProps, string solutionName) =>
         PlanCustomApiChildComponents(
             snapshot, snapshot.ResponseProps, customApiId, "customapiresponseproperty",

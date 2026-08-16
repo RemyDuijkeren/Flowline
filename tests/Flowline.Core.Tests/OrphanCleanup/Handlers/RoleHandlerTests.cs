@@ -40,7 +40,6 @@ public class RoleHandlerTests
         DataverseSolutionSrcRoot: "irrelevant",
         Service: _serviceMock,
         SolutionName: "MySolution",
-        EnvironmentUrl: "https://example.crm.dynamics.com",
         Mode: RunMode.Normal,
         EntityLogicalNames: []);
 

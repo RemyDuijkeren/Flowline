@@ -40,7 +40,7 @@ public class CustomApiFamilyHandlerTests : IDisposable
     }
 
     DetectionContext Ctx(RunMode mode = RunMode.Normal) =>
-        new(_dataverseSolutionSrcRoot, _serviceMock, "MySolution", "https://example.crm.dynamics.com", mode, []);
+        new(_dataverseSolutionSrcRoot, _serviceMock, "MySolution", mode, []);
 
     void SetupTableNames(string entityLogicalName, params (Guid Id, string Name)[] rows)
     {

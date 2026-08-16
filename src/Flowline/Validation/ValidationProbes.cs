@@ -27,19 +27,19 @@ public sealed class ValidationProbes
     public Func<string, bool, CancellationToken, Task> CheckGitRepoAsync { get; init; } =
         (rootFolder, verbose, ct) => GitUtils.AssertGitRepoAsync(rootFolder, s_defaultCapture, verbose, ct);
 
-    public Func<string, bool, CancellationToken, Task<EnvironmentInfo?>> GetEnvironmentAsync { get; init; } =
-        (url, _, ct) => PacUtils.GetEnvironmentInfoByUrlAsync(url, s_defaultCapture, ct);
+    public Func<string, CancellationToken, Task<EnvironmentInfo?>> GetEnvironmentAsync { get; init; } =
+        (url, ct) => PacUtils.GetEnvironmentInfoByUrlAsync(url, s_defaultCapture, ct);
 
     // Profile-scoped, pac.exe-free environment lookup via a direct BAP admin API token read — used
     // wherever a PAC auth profile has already been resolved for the target URL. GetEnvironmentAsync above
     // stays pac.exe-backed for ProvisionCommand's target-environment-creation checks (KTD7), which
     // check a URL that intentionally has no matching local PAC auth profile yet.
-    public Func<PacProfile, string, bool, CancellationToken, Task<EnvironmentInfo?>> GetEnvironmentByProfileAsync { get; init; } =
-        (profile, url, _, ct) => s_defaultDataverseConnector.GetEnvironmentInfoAsync(profile, url, ct);
+    public Func<PacProfile, string, CancellationToken, Task<EnvironmentInfo?>> GetEnvironmentByProfileAsync { get; init; } =
+        (profile, url, ct) => s_defaultDataverseConnector.GetEnvironmentInfoAsync(profile, url, ct);
 
-    public Func<string, bool, CancellationToken, Task<List<SolutionInfo>>> GetSolutionsAsync { get; init; } =
-        (url, _, ct) => PacUtils.GetSolutionsAsync(url, s_defaultCapture, ct);
+    public Func<string, CancellationToken, Task<List<SolutionInfo>>> GetSolutionsAsync { get; init; } =
+        (url, ct) => PacUtils.GetSolutionsAsync(url, s_defaultCapture, ct);
 
-    public Func<string, string, bool, CancellationToken, Task<string?>> GetPublisherCustomizationPrefixAsync { get; init; } =
-        (url, name, _, ct) => PacUtils.GetPublisherCustomizationPrefixAsync(url, name, s_defaultCapture, ct);
+    public Func<string, string, CancellationToken, Task<string?>> GetPublisherCustomizationPrefixAsync { get; init; } =
+        (url, name, ct) => PacUtils.GetPublisherCustomizationPrefixAsync(url, name, s_defaultCapture, ct);
 }

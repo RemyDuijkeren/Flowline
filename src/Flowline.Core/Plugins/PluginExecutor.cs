@@ -11,8 +11,8 @@ public class PluginExecutor(IAnsiConsole console)
 {
 
     public Task ExecuteDeletesAsync(
-        IOrganizationServiceAsync2 service, RegistrationPlan plan, string solutionName, bool save, CancellationToken cancellationToken, ProgressTask? progressTask = null) =>
-        RunDeletesAsync(service, plan, solutionName, save, cancellationToken, progressTask);
+        IOrganizationServiceAsync2 service, RegistrationPlan plan, bool save, CancellationToken cancellationToken, ProgressTask? progressTask = null) =>
+        RunDeletesAsync(service, plan, save, cancellationToken, progressTask);
 
     public Task ExecuteUpsertsAsync(
         IOrganizationServiceAsync2 service, RegistrationPlan plan, string solutionName, CancellationToken cancellationToken, ProgressTask? progressTask = null) =>
@@ -23,7 +23,7 @@ public class PluginExecutor(IAnsiConsole console)
         RunAddSolutionComponentsAsync(service, plan, cancellationToken, progressTask);
 
     async Task RunDeletesAsync(
-        IOrganizationServiceAsync2 service, RegistrationPlan plan, string solutionName, bool save, CancellationToken cancellationToken, ProgressTask? progressTask)
+        IOrganizationServiceAsync2 service, RegistrationPlan plan, bool save, CancellationToken cancellationToken, ProgressTask? progressTask)
     {
         if (save)
         {

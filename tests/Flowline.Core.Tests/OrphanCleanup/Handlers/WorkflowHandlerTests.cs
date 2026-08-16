@@ -33,7 +33,6 @@ public class WorkflowHandlerTests
         DataverseSolutionSrcRoot: "irrelevant",
         Service: _serviceMock,
         SolutionName: "TestSolution",
-        EnvironmentUrl: "https://example.crm.dynamics.com",
         Mode: mode,
         EntityLogicalNames: []);
 

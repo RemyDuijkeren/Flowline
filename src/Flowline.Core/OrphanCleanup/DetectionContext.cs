@@ -13,7 +13,6 @@ public sealed record DetectionContext(
     string DataverseSolutionSrcRoot,
     IOrganizationServiceAsync2 Service,
     string SolutionName,
-    string EnvironmentUrl,
     RunMode Mode,
     IReadOnlyList<string> EntityLogicalNames,
     // Explicit `--force delete-orphans` consent. Promotes Guarded handlers from report-only to
