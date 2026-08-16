@@ -212,11 +212,6 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
             return result;
         }, [], console, msg => $"pluginassembly packageid lookup failed ({msg}) — degrading to un-redirected assembly-delete finding this run.");
 
-    // Dataverse's practical ConditionOperator.In ceiling — same limit EntityNameLookup.cs centralizes.
-    // QueryChildIdsAsync enforces it directly (rather than delegating to EntityNameLookup) since it needs
-    // ColumnSet(false) id-only queries, which EntityNameLookup doesn't support.
-    const int ConditionOperatorInLimit = 2000;
-
     // Pulls any CustomApi (and its RequestParameter/ResponseProperty children) bound to a redirected
     // assembly's plugin types into this family's own findings, ordered ahead of the package-delete slot
     // instead of leaving them to CustomApiFamilyHandler's later-executing pass. See
@@ -293,8 +288,9 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
 
             return DataverseFaultTolerance.TryQueryAsync(async () =>
             {
-                if (parentIds.Count > ConditionOperatorInLimit)
-                    throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {parentIds.Count} IDs (max {ConditionOperatorInLimit}). Package has too many {entityLogicalName} candidates for cleanup this run.");
+                // Enforced here rather than by delegating the whole query to EntityNameLookup: this needs a
+                // ColumnSet(false) id-only query, which EntityNameLookup doesn't support.
+                EntityNameLookup.EnsureInLimit(parentIds.Count, "IDs", $"Package has too many {entityLogicalName} candidates for cleanup this run.");
 
                 var query = new QueryExpression(entityLogicalName)
                 {

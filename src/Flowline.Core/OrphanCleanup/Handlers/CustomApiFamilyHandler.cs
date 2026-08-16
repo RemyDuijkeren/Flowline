@@ -41,27 +41,12 @@ public sealed class CustomApiFamilyHandler(IAnsiConsole console) : IOrphanHandle
         // RowIds carries every id found, independent of the name filter below — a null/empty name is
         // still evidence this candidate belongs to this table, so ClaimedIds includes it even though
         // Names does not.
+        // Each call stays inside its own TryQueryAsync so the 2000-id guard EntityNameLookup enforces
+        // degrades per-table (warn + skip) rather than throwing uncaught for all three at once.
         Task<(Dictionary<Guid, string> Names, HashSet<Guid> RowIds)> ResolveNamesAsync(string entityLogicalName, string idAttribute) =>
-            DataverseFaultTolerance.TryQueryAsync(async () =>
-            {
-                // The 2000-id guard runs inside each table's own query so an oversized batch degrades
-                // per-table (warn + skip) rather than throwing uncaught for all three at once.
-                if (idList.Count > 2000)
-                    throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {idList.Count} IDs (max 2000). Solution has too many orphan candidates for CustomApi-family detection.");
-
-                var idArray = idList.Select(id => (object)id).ToArray();
-                var query = new QueryExpression(entityLogicalName)
-                {
-                    ColumnSet = new ColumnSet("name"),
-                    Criteria  = { Conditions = { new ConditionExpression(idAttribute, ConditionOperator.In, idArray) } }
-                };
-                var entities = await context.Service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
-                var names = entities
-                    .Where(e => !string.IsNullOrEmpty(e.GetAttributeValue<string>("name")))
-                    .ToDictionary(e => e.Id, e => e.GetAttributeValue<string>("name")!);
-                var rowIds = entities.Select(e => e.Id).ToHashSet();
-                return (names, rowIds);
-            }, ([], []), console, msg => $"CustomApi-family orphan detection failed for '{entityLogicalName}' ({msg}) — its candidates are skipped this run.");
+            DataverseFaultTolerance.TryQueryAsync(
+                () => EntityNameLookup.GetEntityNamesAndRowIdsAsync(context.Service, entityLogicalName, idAttribute, "name", idList, ct),
+                ([], []), console, msg => $"CustomApi-family orphan detection failed for '{entityLogicalName}' ({msg}) — its candidates are skipped this run.");
 
         var caTask    = ResolveNamesAsync("customapi",                 "customapiid");
         var paramTask = ResolveNamesAsync("customapirequestparameter", "customapirequestparameterid");
@@ -72,9 +57,7 @@ public sealed class CustomApiFamilyHandler(IAnsiConsole console) : IOrphanHandle
         // CustomApi (same uniquename, new customapiid) must not be reported.
         var localNames = ComponentClassifier.ScanCustomApiNames(context.DataverseSolutionSrcRoot);
 
-        var componentTypeById = new Dictionary<Guid, int>();
-        foreach (var candidate in candidates)
-            componentTypeById[candidate.ObjectId] = candidate.ComponentType;
+        var componentTypeById = candidates.ToDictionary(c => c.ObjectId, c => c.ComponentType);
 
         // A candidate is claimed once its table lookup found a matching row, even if AddFindings then
         // suppresses it. Union across all three tables since a candidate id only ever appears in one.

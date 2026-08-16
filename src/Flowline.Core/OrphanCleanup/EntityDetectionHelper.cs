@@ -33,8 +33,7 @@ public static class EntityDetectionHelper
         {
             // The 2000-id guard runs inside this query so an oversized batch degrades the same way any
             // other query fault does (warn + skip), rather than throwing uncaught.
-            if (idList.Count > 2000)
-                throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {idList.Count} IDs (max 2000). Solution has too many orphan candidates for {label} detection.");
+            EntityNameLookup.EnsureInLimit(idList.Count, "IDs", $"Solution has too many orphan candidates for {label} detection.");
 
             var idArray = idList.Select(id => (object)id).ToArray();
             var query = new QueryExpression(entityLogicalName)
@@ -49,9 +48,7 @@ public static class EntityDetectionHelper
         // regardless of key or local-declaration status.
         var claimedIds = rows.Select(r => r.Id).ToHashSet();
 
-        var componentTypeById = new Dictionary<Guid, int>();
-        foreach (var candidate in candidates)
-            componentTypeById[candidate.ObjectId] = candidate.ComponentType;
+        var componentTypeById = candidates.ToDictionary(c => c.ObjectId, c => c.ComponentType);
 
         var findings = new List<HandlerFinding>();
         foreach (var row in rows)

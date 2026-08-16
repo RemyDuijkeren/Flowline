@@ -644,8 +644,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
 
             var names = group.Select(c => (object)c.SchemaName).Distinct().ToArray();
             if (names.Length == 0) continue;
-            if (names.Length > 2000)
-                throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {names.Length} names (max 2000). Solution has too many {lookup.EntityLogicalName} schemaName roots for live resolution.");
+            EntityNameLookup.EnsureInLimit(names.Length, "names", $"Solution has too many {lookup.EntityLogicalName} schemaName roots for live resolution.");
 
             var query = new QueryExpression(lookup.EntityLogicalName)
             {
@@ -812,8 +811,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         var ids = objectIds.Distinct().Where(id => id != Guid.Empty).ToList();
         if (ids.Count == 0)
             return [];
-        if (ids.Count > 2000)
-            throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {ids.Count} IDs (max 2000). Solution has too many orphan components for cross-solution membership check.");
+        EntityNameLookup.EnsureInLimit(ids.Count, "IDs", "Solution has too many orphan components for cross-solution membership check.");
 
         var query = new QueryExpression("solutioncomponent")
         {
@@ -854,8 +852,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         IReadOnlyList<Guid> objectIds,
         CancellationToken ct)
     {
-        if (objectIds.Count > 2000)
-            throw new InvalidOperationException($"ConditionOperator.In limit exceeded: {objectIds.Count} IDs (max 2000). Solution has too many deferred orphan components.");
+        EntityNameLookup.EnsureInLimit(objectIds.Count, "IDs", "Solution has too many deferred orphan components.");
 
         var query = new QueryExpression("solutioncomponent")
         {
