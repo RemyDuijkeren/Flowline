@@ -685,7 +685,7 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
     internal async Task ScaffoldWebResourcesProjectAsync(string webresourcesFolder, string projectFileName, string? slnFilePath, CancellationToken cancellationToken)
     {
         // Read off the target folder rather than hardcoded: clone/init always scaffold "WebResources", but
-        // 'scaffold --name Scripts' does not, and "WebResources project ready" above a Scripts.csproj is a
+        // 'scaffold --name Scripts' does not, and "WebResources project created" above a Scripts.csproj is a
         // line the user has to reconcile.
         var label = Path.GetFileName(webresourcesFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 
@@ -710,7 +710,7 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
                 console.Verbose($"Added {projectFileName} to solution");
             });
 
-        console.Ok($"{label} project ready");
+        console.Ok($"{label} project created");
     }
 
     /// <summary>

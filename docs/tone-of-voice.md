@@ -160,7 +160,7 @@ Solution: CrO7982 (managed: false)
 Solution already cloned — skipping           [dim]
 Solution file already there — skipping       [dim]
 Plugins project ready                     [green]
-WebResources project ready                   [green]
+WebResources project created                 [green]
 Mapping file written                         [green]
 Build done                                   [green]
 

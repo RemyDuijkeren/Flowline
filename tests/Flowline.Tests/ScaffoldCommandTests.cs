@@ -348,7 +348,7 @@ public class ScaffoldCommandTests
     /// <summary>Covers AE25. A project outside the solution file is invisible to every later command, so the run says so
     /// without needing --verbose.</summary>
     [Fact]
-    public async Task Scaffold_WithNoSolutionFile_WarnsThatNothingWasAddedToASolutionFile()
+    public async Task Scaffold_WithNoSolutionFile_SkipsAddingToASolutionFile()
     {
         var root = CreateTempRoot();
         try
@@ -357,10 +357,7 @@ public class ScaffoldCommandTests
 
             await command.ScaffoldWebResourcesAsync(Target(root), name: null, CancellationToken.None);
 
-            console.Output.Should().Contain("nothing to add the project to");
-            console.Output.Should().Contain("dotnet sln add");
-            // Without this the warning ("push won't find it") contradicts the finish line ("use push").
-            console.Output.Should().Contain("push --webresources");
+            console.Output.Should().Contain("No solution file found to add project to");
         }
         finally { Directory.Delete(root, recursive: true); }
     }
@@ -399,9 +396,9 @@ public class ScaffoldCommandTests
             File.Exists(Path.Combine(root, "Scripts", "Scripts.csproj")).Should().BeTrue();
             File.Exists(Path.Combine(root, "Scripts", "package.json")).Should().BeTrue();
             Directory.Exists(Path.Combine(root, "WebResources")).Should().BeFalse();
-            // "WebResources project ready" above a Scripts.csproj is a line the user has to reconcile.
-            console.Output.Should().Contain("Scripts project ready");
-            console.Output.Should().NotContain("WebResources project ready");
+            // "WebResources project created" above a Scripts.csproj is a line the user has to reconcile.
+            console.Output.Should().Contain("Scripts project created");
+            console.Output.Should().NotContain("WebResources project created");
         }
         finally { Directory.Delete(root, recursive: true); }
     }

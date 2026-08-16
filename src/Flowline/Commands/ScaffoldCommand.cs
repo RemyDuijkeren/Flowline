@@ -41,7 +41,7 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
         [Description("Scaffold into this folder instead of the current one — the solution file is looked up there too. Created when missing.")]
         public string? Output { get; set; }
 
-        [CommandOption("-n|--name <NAME>")]
+        [CommandOption("--name <NAME>")]
         [Description("Name the project folder and its .csproj (default: 'WebResources', with the project file named after the solution file when there is one)")]
         public string? Name { get; set; }
     }
@@ -135,11 +135,9 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
             return;
         }
 
-        // Names the stand-alone escape hatch as well as the fix. Without it the warning ("push won't find
-        // it") and the finish line ("use push") read as contradicting each other, when in fact push has a
-        // --webresources form that needs no solution file at all.
-        Console.Warning("No .sln or .slnx found, so there's nothing to add the project to and 'push' won't find it on its own. " +
-                        "Create one with 'dotnet new sln' and 'dotnet sln add', or push the built folder with 'push --webresources'.");
+        // A skip, not a warning: nothing went wrong, one optional step had no target. Kept short on purpose
+        // — 'push --webresources' pushes the built folder without a solution file, so this is not a dead end.
+        Console.Skip("No solution file found to add project to — skipped");
     }
 
     /// <summary>Reports an existing WebResources project and leaves it alone.</summary>
