@@ -95,13 +95,45 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     internal static readonly string[] ValidSpecifiers = ["drift", "first-import", "delete-orphans", "all"];
     protected override string[] ValidForceSpecifiers => ValidSpecifiers;
 
+    // U3: `--path` set and no `.flowline` found walking up from cwd. Settings-aware (KTD1, see base
+    // class) since standalone is gated on a flag, not a fixed command-wide property. Split into a pure
+    // helper (ResolveStandalone) taking startDir explicitly, since this runs during ExecuteAsync's
+    // project-root resolution (FlowlineCommand.cs) — before RootFolder itself is assigned — so it can't
+    // read RootFolder the way GenerateCommand's own standalone predicate does.
+    protected override bool IsStandalone(Settings settings) => ResolveStandalone(settings.Path, Directory.GetCurrentDirectory());
+
+    internal static bool ResolveStandalone(string? path, string startDir) =>
+        !string.IsNullOrWhiteSpace(path) && FindProjectRoot(startDir) is null;
+
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        var targetUrl = ResolveTargetUrl(settings);
-        var sln = Config!.Solution
-            ?? throw new FlowlineException(ExitCode.ConfigInvalid, "No solution configured — run 'clone' first.");
-        var slnFolder = RootFolder;
         var usingExplicitArtifact = !string.IsNullOrWhiteSpace(settings.Path);
+        var standalone = IsStandalone(settings);
+        var targetUrl = ResolveTargetUrl(settings, standalone);
+
+        // U3/KTD2: standalone only, and hoisted this high only because standalone builds its
+        // ProjectSolution from this manifest instead of Config, and `sln` is consumed below (target
+        // validation, artifact path) before the `usingExplicitArtifact` branch that used to own this read.
+        // Deliberately NOT hoisted for --path inside a project (R2: that route must behave exactly as it
+        // does today). Hoisting it there too would move a corrupt-zip failure ahead of ValidateTargetAsync,
+        // so the `Target: <env>` line and its round-trip would stop happening first — a visible reordering
+        // of project-mode output, which the Goal Capsule puts out of scope. That route keeps reading the
+        // manifest at its original point below; each route still parses the zip exactly once.
+        var artifactManifest = standalone
+            ? ReadArtifactSolutionManifest(settings.Path!)
+            : ((string Version, bool Managed, string? UniqueName)?)null;
+
+        var sln = standalone
+            ? ResolveStandaloneSolution(settings.Path!, artifactManifest!.Value)
+            : Config!.Solution ?? throw new FlowlineException(ExitCode.ConfigInvalid, "No solution configured — run 'clone' first.");
+
+        // R14: standalone only — a CI job in a scratch folder has no other way to tell which mode it
+        // got or where identity came from. Project mode says nothing new here: identity has always come
+        // from config, and the Goal Capsule scopes this plan out of changing project-mode output.
+        if (standalone)
+            Console.Info(BuildStandaloneIdentityNote(Path.GetFileName(settings.Path!)));
+
+        var slnFolder = RootFolder;
 
         // --path supplies a prebuilt artifact packed elsewhere, so nothing on that route reads the Dataverse
         // solution folder — not the git-clean scope, the DTAP gate's local version, the drift check, or the pack.
@@ -136,8 +168,16 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         if (usingExplicitArtifact)
         {
-            var (artifactVersion, artifactManaged, _) = ReadArtifactSolutionManifest(settings.Path!);
-            ValidateArtifactManagedFlag(artifactManaged, sln.IncludeManaged);
+            // Standalone already read this above (it needed the unique name to build `sln` at all);
+            // --path inside a project reads it here, exactly where it always did. Either way the zip is
+            // parsed once per run, so one deploy can never act on two answers.
+            var (artifactVersion, artifactManaged, _) = artifactManifest ?? ReadArtifactSolutionManifest(settings.Path!);
+            // KTD2/KTD3: standalone's sln.IncludeManaged is itself derived from this same artifact
+            // manifest above (ResolveStandaloneSolution) — comparing it back here would always pass, so
+            // skip it there. Project mode's --path still compares against a genuinely independent source
+            // (config), so the check stays live for that route.
+            if (!standalone)
+                ValidateArtifactManagedFlag(artifactManaged, sln.IncludeManaged);
             gateVersion = artifactVersion;
         }
         else
@@ -330,9 +370,13 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         }
     }
 
-    private string ResolveTargetUrl(Settings settings) => ResolveTargetUrl(settings.Target, Config!);
+    private string ResolveTargetUrl(Settings settings, bool standalone) => ResolveTargetUrl(settings.Target, Config!, standalone);
 
-    internal static string ResolveTargetUrl(string target, ProjectConfig config)
+    // R15: `standalone` only reshapes the "can't resolve" message below — a role keyword resolves the
+    // same way either way, since Config is `new ProjectConfig()` (all URLs empty) in standalone, so
+    // every role keyword falls through to that throw there. Default false keeps every existing
+    // project-mode call site (and test) unchanged.
+    internal static string ResolveTargetUrl(string target, ProjectConfig config, bool standalone = false)
     {
         var url = target.ToLowerInvariant() switch
         {
@@ -345,7 +389,9 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         if (string.IsNullOrWhiteSpace(url))
             throw new FlowlineException(ExitCode.ConfigInvalid,
-                $"Can't resolve '{target}' — provide an explicit URL or check your .flowline config.");
+                standalone
+                    ? $"Can't resolve '{target}' — no config here to check (standalone mode). Pass an explicit URL instead."
+                    : $"Can't resolve '{target}' — provide an explicit URL or check your .flowline config.");
 
         // Anything that isn't prod/uat/test/dev falls through as a literal URL above — reject garbage here
         // rather than letting it reach MSAL as a token scope, which fails with an opaque AADSTS error.
@@ -671,6 +717,20 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             $"Artifact is {(artifactManaged ? "managed" : "unmanaged")} but the solution is configured as " +
             $"{(solutionIncludeManaged ? "managed" : "unmanaged")} — pass a matching artifact or update the solution's managed setting.");
     }
+
+    // R5/R9/KTD2: standalone's only identity source — Config isn't available (it's a bare `new
+    // ProjectConfig()`, see FlowlineCommand.cs), so unique name and managed both come from the artifact
+    // manifest that was already read above. Pure so it's unit-testable without a live PAC CLI or
+    // Dataverse connection, matching this file's established decision-method style.
+    internal static ProjectSolution ResolveStandaloneSolution(string artifactPath, (string Version, bool Managed, string? UniqueName) manifest) =>
+        manifest.UniqueName is { } uniqueName
+            ? new ProjectSolution { UniqueName = uniqueName, IncludeManaged = manifest.Managed }
+            : throw new FlowlineException(ExitCode.ValidationFailed,
+                $"'{artifactPath}' has no <UniqueName> in its solution manifest — can't identify what to deploy in standalone mode.");
+
+    // R14: standalone-only — see the call site's comment for why project mode stays silent here.
+    internal static string BuildStandaloneIdentityNote(string artifactFileName) =>
+        $"Standalone — no project here, identity from '{artifactFileName}'.";
 
     private async Task<string> PackSolutionAsync(ProjectSolution sln, string dataverseSolutionFolder, string packagePath, Settings settings, CancellationToken ct)
     {
