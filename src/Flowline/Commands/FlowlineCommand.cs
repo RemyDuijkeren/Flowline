@@ -40,6 +40,13 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     protected virtual bool ShowWelcome => true;
     protected virtual bool RequiresProject => true;
 
+    // Lets a command run against a folder with no .flowline project — settings-aware (unlike
+    // RequiresProject) because standalone mode is usually gated on a flag such as --path, not a fixed
+    // command-wide property. Branched on inside this base pipeline (project-root resolution and
+    // CheckSetupAsync below) rather than by overriding ExecuteAsync wholesale, so ValidateForce,
+    // InvocationLogger.Log, the activity span, and the welcome screen stay shared between modes.
+    protected virtual bool IsStandalone(TSettings settings) => false;
+
     protected void InitializeRuntimeOptions(TSettings settings)
     {
         RuntimeOptions.IsVerbose = settings.Verbose;
@@ -74,7 +81,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         InitializeRuntimeOptions(settings);
 
         RootFolder = FindProjectRoot(Directory.GetCurrentDirectory())
-            ?? (RequiresProject
+            ?? (RequiresProject && !IsStandalone(settings)
                 ? throw new FlowlineException(ExitCode.ConfigInvalid, "No Flowline project found — run 'flowline clone' to set up a project.")
                 : Directory.GetCurrentDirectory());
 
@@ -106,6 +113,24 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
 
     protected virtual async Task CheckSetupAsync(TSettings settings, CancellationToken cancellationToken)
     {
+        if (IsStandalone(settings))
+        {
+            // Pac-only — no git/dotnet probes, no clean-state check (R3). Same shape as PushCommand's
+            // and GenerateCommand's standalone setup. Returns before RuntimeOptions.ToolVersions is
+            // assigned below, so standalone runs never populate it (matches PushCommand: InvocationLogger
+            // returns at its null guard, so standalone emits no invocation log or activity tags).
+            string? standaloneNewerVersion = null;
+            await Console.Status().FlowlineSpinner().StartAsync("Checking your setup...", async ctx =>
+            {
+                await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
+                standaloneNewerVersion = await UpdateNoticeChecker.CheckAsync(Console, FlowlineValidator.Default, nuGetVersionClient, settings.NoCache, cancellationToken);
+            });
+
+            Console.Ok("All good, let's go!");
+            UpdateNoticeChecker.PrintNotice(Console, standaloneNewerVersion);
+            return;
+        }
+
         ToolCheckResult? dotnet = null, pac = null, git = null;
         string? gitBranch = null;
         string? newerVersion = null;
