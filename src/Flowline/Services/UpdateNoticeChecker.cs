@@ -58,6 +58,6 @@ internal static class UpdateNoticeChecker
     {
         if (newerVersion == null) return;
 
-        console.Info($"Flowline {Markup.Escape(newerVersion)} is out — you're on {FlowlineVersion.Display}. Update: dotnet tool update -g Flowline");
+        console.Warning($"Flowline {Markup.Escape(newerVersion)} is out — you're on {FlowlineVersion.Display}. Update: dotnet tool update -g Flowline");
     }
 }

@@ -108,18 +108,17 @@ public class UpdateNoticeTests
     }
 
     [Fact]
-    public void PrintNotice_NewerVersionAvailable_UsesInfoNotWarningOrError()
+    public void PrintNotice_NewerVersionAvailable_UsesWarningNotError()
     {
         var console = MakeConsole(interactive: true);
         var (newerVersion, _) = NewerVersionScenario();
 
         UpdateNoticeChecker.PrintNotice(console, newerVersion);
 
-        // '!' is the warning glyph and '✗' the error glyph (docs/tone-of-voice.md) — this is
-        // information, not a degraded run, so neither may appear. Assert the Info glyph positively too,
-        // or the test still passes if PrintNotice switches to Ok() or a bare WriteLine.
-        console.Output.Should().Contain(FlowlineTheme.InfoPrefix);
-        console.Output.Should().NotContain("!");
+        // '✗' is the error glyph (docs/tone-of-voice.md) — running a stale version is worth a warning,
+        // not a failure. Assert the Warning glyph positively too, or the test still passes if
+        // PrintNotice switches to Ok() or a bare WriteLine.
+        console.Output.Should().Contain(FlowlineTheme.WarningPrefix);
         console.Output.Should().NotContain("✗");
     }
 

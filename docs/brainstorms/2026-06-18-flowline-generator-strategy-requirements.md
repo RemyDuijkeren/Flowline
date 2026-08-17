@@ -131,26 +131,53 @@ no `[MaxLength]` or `[DebuggerDisplay]` attributes.
 
 **Why Flowline dismisses it:**
 
-1. **Compatibility bug with dotnet-tool PAC.** Flowline installs PAC as a dotnet tool (not MSI).
-   EBG V2 injects a `pac modelbuilder` extension (`DLaB.ModelBuilderExtensions`) that targets
-   .NET Framework 4.8. When PAC runs as a .NET 8 dotnet tool, this extension fails to load:
-   `Could not load provider of type 'DLaB.ModelBuilderExtensions'`. This is a known open issue
-   ([#535](https://github.com/daryllabar/DLaB.Xrm.XrmToolBoxTools/issues/535)) with no fix as
-   of this writing. Flowline users would hit this immediately.
+1. ~~**Compatibility bug with dotnet-tool PAC.**~~ **RESOLVED 2026-08-16.** The original objection:
+   EBG V2 injects a `pac modelbuilder` extension (`DLaB.ModelBuilderExtensions`) targeting .NET
+   Framework 4.8, which fails to load when PAC runs as a .NET 8 dotnet tool
+   ([#535](https://github.com/daryllabar/DLaB.Xrm.XrmToolBoxTools/issues/535), now closed). That
+   applies only to the *PAC CLI route*, where EBG writes `builderSettings.json`, runs
+   `pac modelbuilder build --settingsTemplateFile`, and needs `DLaB.ModelBuilderExtensions.dll`
+   plus `DLaB.Dictionary.txt` hand-copied into PAC's install directory so ModelBuilder's provider
+   loader resolves DLaB's `ICodeWriterFilterService` / `ICustomizeCodeDomService` by type name.
+   EBG's other route bypasses PAC entirely: it calls `ProcessModelInvoker` from
+   `Microsoft.PowerPlatform.Dataverse.ModelBuilderLib` in-process with an `IOrganizationService`.
+   That route has no PAC dependency and no DLL copying.
 
-2. **Casing only — not typed enums.** The output is still PAC underneath. EBG V2 solves one of
-   the three reasons to prefer xrmcontext; the xrmcontext rewrite solves all of them.
+2. **Casing only — not typed enums.** *(Still stands.)* The output is still PAC underneath. EBG V2
+   solves one of the three reasons to prefer xrmcontext; the xrmcontext rewrite solves all of them.
 
-3. **50+ configuration options.** EBG V1 was criticised for config clutter; EBG V2 is more
-   complex, not less. Flowline's value is opinionated defaults — wrapping EBG V2 would mean
+3. **50+ configuration options.** *(Still stands.)* EBG V1 was criticised for config clutter; EBG V2
+   is more complex, not less. Flowline's value is opinionated defaults — wrapping EBG V2 would mean
    either exposing that complexity or hiding it with arbitrary choices.
 
-4. **Not a dotnet tool.** EBG V2 is a library (`DLaB.Xrm.EarlyBoundGeneratorV2.Api`) requiring
-   programmatic invocation or a wrapper — more integration surface than a clean dotnet tool CLI.
+4. ~~**Not a dotnet tool.**~~ **RESOLVED 2026-08-16.**
+   [`DLaB.Xrm.EarlyBoundGeneratorV2.Api` 2.2026.7.28](https://www.nuget.org/packages/DLaB.Xrm.EarlyBoundGeneratorV2.Api)
+   (published 30 July 2026) ships a **net10.0** TFM alongside net48, described as "Without
+   XrmToolBox Dependencies". Verified against the NuGet registration API. Flowline targets net10.0,
+   so a plain `PackageReference` is viable. Its only dependency, `ModelBuilderLib` 2.0.16, pulls
+   `System.CodeDom`, `System.Configuration.ConfigurationManager`, `System.Text.Json` and
+   `System.Xml.XmlDocument`, and does not reference `Microsoft.PowerPlatform.Dataverse.Client`, so
+   Flowline's pinned 1.2.26 is unaffected.
 
-**Conclusion:** EBG V2 is the right tool for developers who want better casing and are already
-using the XrmToolBox GUI. It is not the right dependency for Flowline. The xrmcontext rewrite
-is a strictly better alternative with a cleaner integration path.
+5. **Would be Flowline's first in-process generator.** *(New, 2026-08-16, and now the strongest
+   objection.)* `pac`, `xrmcontext`, and `xrmcontext3` all shell out; `IGenerator` is a
+   run-a-process-and-collect-files abstraction. Referencing the EBG Api pulls ModelBuilderLib into
+   Flowline's own tool package and trades process isolation for assembly-load failure modes. That is
+   a first-of-kind architectural change, not one more row in the generator table.
+
+**Not verified:** whether the net10.0 Api entry point applies DLaB's casing and filtering purely
+in-proc with no file-copy step. The EBG wiki does not document how the customizations are injected,
+and #535's failure was in that same provider-resolution path.
+
+**Conclusion (unchanged):** EBG V2 is the right tool for developers who want better casing and are
+already using the XrmToolBox GUI. It is not the right dependency for Flowline. The xrmcontext
+rewrite is a strictly better alternative with a cleaner integration path. The verdict no longer
+rests on blockers 1 and 4; it rests on EBG delivering a strict subset of what `xrmcontext` already
+ships, for a first in-process dependency.
+
+**Revisit trigger:** `XrmContext` v4 is beta, ~5.6K downloads, single small vendor. EBG rests on a
+Microsoft-maintained core with far wider adoption. If v4 has not reached stable by Flowline v1.0, or
+the project goes quiet, reopen this: EBG-in-process becomes the sensible hedge.
 
 ---
 
@@ -167,7 +194,9 @@ is a strictly better alternative with a cleaner integration path.
 - TypeScript type generation — no concrete requirements yet; door is open architecturally
 
 **Off the table**
-- EBG V2 — compatibility bug with dotnet-tool PAC, casing-only improvement, complex config
+- EBG V2 — casing-only improvement, complex config, and would be Flowline's first in-process
+  generator. (The dotnet-tool PAC compatibility objection is resolved as of 2026-08-16; see
+  [EBG V2 Analysis](#ebg-v2-analysis) for the revisit trigger.)
 - Flowline-native generator — xrmcontext rewrite covers the full surface
 
 ---
@@ -190,8 +219,14 @@ is a strictly better alternative with a cleaner integration path.
   xrmcontext: PascalCase, typed enums, `ServiceContext`, `[MaxLength]`, `[DebuggerDisplay]`
 - NuGet: `XrmContext` v4.0.0-beta.25 (March 2026, 5.6K downloads); `Delegate.XrmContext` v3.0.1
   (September 2022, 486K downloads)
-- EBG V2 compatibility bug: github.com/daryllabar/DLaB.Xrm.XrmToolBoxTools/issues/535
-- EBG V2 output: casing only; still calls `pac modelbuilder build` under the hood
+- EBG V2 compatibility bug: github.com/daryllabar/DLaB.Xrm.XrmToolBoxTools/issues/535 (closed)
+- EBG V2 output: casing only; PAC-style underneath
+- EBG V2 invocation modes (2026-08-16): wiki page
+  `EBG ‐ Version 2.2023.4.3 Upgrade To PAC ModelBuilder` documents both the in-process
+  `ProcessModelInvoker` route and the PAC CLI route with hand-deployed extension DLLs
+- NuGet registration API (2026-08-16): `DLaB.Xrm.EarlyBoundGeneratorV2.Api` 2.2026.7.28 targets
+  net10.0 + net48; `Microsoft.PowerPlatform.Dataverse.ModelBuilderLib` 2.0.16 targets net6.0 + net48
+  with no Dataverse.Client dependency
 - Community direction: consolidating on PAC as foundation; EBG V2 as quality layer in GUI
   workflows; xrmcontext rewrite has no community awareness yet
 - Related docs: `docs/brainstorms/2026-06-17-generate-xrmcontext-support-requirements.md`,

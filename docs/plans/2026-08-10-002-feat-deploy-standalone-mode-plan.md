@@ -17,6 +17,7 @@ execution: code
 - Product authority: this plan owns standalone behavior for `deploy` and `drift`. It does not change project-mode behavior for either command, does not change `push` or `generate`, and does not change what `--path` does inside a project.
 - Stop conditions: stop and ask if implementation shows that a check currently believed project-free actually reads project or git state, or if the base-command branch cannot be added without changing project-mode ordering.
 - Open blockers: none.
+- Re-verified against the codebase on 2026-08-17. All three structural bets (KTD1, KTD4, KTD5) still hold. KTD3 was narrowed, U1/U3/U4 gained steps the intervening provenance, update-notice, and managed-unpack work made necessary, and every line reference below was refreshed.
 - Product Contract preservation: changed. R1 replaced (trigger is `--path` plus no project, not a new `--solutionFile` flag), R2 and AE3 deleted (the mutual-exclusion guard contradicts shipped behavior), R9 reframed (managed-ness derives from the artifact; `deploy` has no `--managed` flag). R6 deferred. R3-R5, R7, R8, R10 preserved. Rationale in Superseded Product Decisions below.
 
 ---
@@ -29,7 +30,7 @@ Give `deploy` and `drift` a standalone mode that activates when `--path <zip>` i
 
 ### Problem Frame
 
-`deploy --path <zip>` exists and is the documented way to promote one built artifact across DTAP stages, including from a separate CI job. Commit `6a32d25` already removed the solution-file requirement from that route for exactly this reason. But the command still refuses to start without a `.flowline` config (`src/Flowline/Commands/FlowlineCommand.cs:76-79`) and still requires a git repository (`src/Flowline/Commands/FlowlineCommand.cs:114`). A deploy job that downloaded an artifact into a scratch directory has neither. The wiki already publishes a cross-job pattern (`flowline deploy uat --path artifacts/ContosoSales_unmanaged.zip`) that only works if that job also happens to be a full project checkout.
+`deploy --path <zip>` exists and is the documented way to promote one built artifact across DTAP stages, including from a separate CI job. Commit `6a32d25` already removed the solution-file requirement from that route for exactly this reason. But the command still refuses to start without a `.flowline` config (`src/Flowline/Commands/FlowlineCommand.cs:76-79`), still requires a git repository (`src/Flowline/Commands/FlowlineCommand.cs:115`), and still demands a configured solution (`src/Flowline/Commands/DeployCommand.cs:101`). A deploy job that downloaded an artifact into a scratch directory has neither. The wiki already publishes a cross-job pattern (`flowline deploy uat --path artifacts/ContosoSales_unmanaged.zip`) that only works if that job also happens to be a full project checkout.
 
 `drift` has the same shape and the same gap: its comparison engine reads an unpacked solution tree, and an unpacked zip is that tree, but the command can only reach it through a project checkout.
 
@@ -147,10 +148,13 @@ The origin document predates `deploy --path`, so three of its requirements descr
 ### Key Technical Decisions
 
 - KTD1. **Branch inside the base pipeline, not around it.** Add `protected virtual bool IsStandalone(TSettings settings) => false;` to `FlowlineCommand` and branch on it at project-root resolution and inside `CheckSetupAsync`. `deploy` and `drift` override the predicate only. This is chosen over copying `PushCommand`'s wholesale `ExecuteAsync` override, which skips `ValidateForce`, `InvocationLogger.Log`, the activity span, and the welcome screen — losses that matter for `deploy`, whose `--force` vocabulary gates real hazards. Satisfies R11. Two call sites in this plan is what justifies the seam; a single one would not have.
+  - The adjacent seam this is *not*: `protected virtual bool RequiresProject => true` already exists (`src/Flowline/Commands/FlowlineCommand.cs:41`) and already governs the project-root throw at `:76-79`. It is parameterless, so it cannot see `--path`, which is exactly why the new predicate takes `TSettings`. Do not add a second overlapping property: the standalone predicate is the settings-aware generalization, and the project-root branch should consult `IsStandalone(settings) || !RequiresProject` rather than growing a third condition.
 - KTD2. **Identity comes from the artifact manifest, and only the artifact manifest.** Widen `ParseSolutionManifest` to return the unique name alongside version and managed flag, then build a `ProjectSolution` from it in standalone. `ProjectSolution` carries four fields and `DeployCommand` reads only `UniqueName` and `IncludeManaged`, so a synthesized instance is complete for every downstream read. Governs R5, R9.
-- KTD3. **A missing unique name is fatal, matching the version contract.** `ParseSolutionManifest` already throws `ValidationFailed` when `Version` is absent. Apply the same treatment to `UniqueName` rather than falling back to a filename, which would name Dataverse components after whatever the artifact file happened to be called. Governs R7.
-- KTD4. **Standalone drift reuses the primitives `CompareAsync` overload.** `OrphanCleanupService.CompareAsync(dataverseSolutionSrcRoot, ...)` (`src/Flowline.Core/OrphanCleanup/OrphanCleanupService.cs:191`) is the shared engine both existing entry points already delegate to, and `pac solution unpack --folder <dir>` writes the `src`-shaped tree directly into that folder. Standalone drift passes the temp unpack directory where project mode passes `Solution/src`. No new comparison logic. Governs R12.
-- KTD5. **Do not touch the packed-route reads.** Every project- or git-dependent read in `DeployCommand` already sits inside the `usingExplicitArtifact` false branch — the artifact cache, `hasTestOrUat`, the commit SHA, packing, `SolutionFileLayout`. The standalone work adds no new guards there. Verified at `src/Flowline/Commands/DeployCommand.cs:108-124, 142-151, 218-247`.
+- KTD3. **A missing unique name is fatal in standalone only, not in the shared parser.** The original form of this decision (throw from `ParseSolutionManifest` itself, mirroring its `Version` guard) leaks into project mode: that parser is shared by `ReadLocalSolutionVersion` (the packed deploy route, and `src/Flowline/Commands/StatusCommand.cs:238`) and by `SolutionVersionExistsInHistoryAsync` (`src/Flowline/Commands/DeployCommand.cs:970`), which walks historical `Solution.xml` revisions and would silently start skipping any revision predating a `UniqueName` element. Both outcomes contradict this plan's own "does not change project-mode behavior" boundary. So: `ParseSolutionManifest` returns `UniqueName` as nullable and never throws for it; the standalone identity path throws `ValidationFailed` naming the zip and the missing element when it reads null. A filename fallback stays rejected for the original reason, that it would name Dataverse components after whatever the artifact file happened to be called. Governs R7.
+- KTD4. **Standalone drift reuses the primitives `CompareAsync` overload.** `OrphanCleanupService.CompareAsync(dataverseSolutionSrcRoot, ...)` (`src/Flowline.Core/OrphanCleanup/OrphanCleanupService.cs:186`) is the shared engine both existing entry points already delegate to, and `pac solution unpack --folder <dir>` writes the `src`-shaped tree directly into that folder. Standalone drift passes the temp unpack directory where project mode passes `Solution/src`. No new comparison logic. Governs R12.
+  - Why the primitives overload specifically, and not drift's own convenience overload: that one hardcodes `checkoutSolutionSrcRoot: srcRoot` (`OrphanCleanupService.cs:171`), correct only because project-mode drift compares straight against the checkout. Standalone has no checkout, so the primitives call must pass `checkoutSolutionSrcRoot: null` explicitly. Null is the documented "no checkout mapping available" value and makes every verdict read `Undetermined`; passing the temp unpack directory instead would have the provenance lookup interrogate a directory with no git history. The parameter postdates the original plan (added by the orphan-provenance work) and is why the convenience overload is now the wrong entry point rather than merely the less direct one.
+- KTD5. **Do not touch the packed-route reads.** Every project- or git-dependent read in `DeployCommand` already sits inside the `usingExplicitArtifact` false branch — the artifact cache, `hasTestOrUat`, the commit SHA, packing, `SolutionFileLayout`. The standalone work adds no new guards there. Verified at `src/Flowline/Commands/DeployCommand.cs:112-125, 143-152, 218-248`.
+  - Re-verified after the provenance work landed. `ValidateLocalStateAsync` runs on the shared path but early-returns on `--path` (`DeployCommand.cs:488`). `PrintProvenanceTrustNoteAsync` (`:880-905`) also runs on the shared path and *is* git-touching, but only inside a `try` guarded by `SolutionFileLayout.LoadAsync`: with no solution file it throws, the catch fires, and the standalone note prints before any git command runs. Standalone therefore already gets correct output from it with no code change, and `PathStandaloneProvenanceNote` (`:924`) is already the right wording for R14's identity-source line. Do not add a `usingExplicitArtifact` guard around it.
 
 ### High-Level Technical Design
 
@@ -179,12 +183,13 @@ The identity source is the only thing that differs by the time the command body 
 
 ### Research That Shaped This Plan
 
-- `ResolveDtapGate` returns `Skip` when every config URL is empty (`src/Flowline/Commands/DeployCommand.cs:732-747`), so R4 needs no code.
-- `ResolveTargetUrl` already falls through to a literal URL and validates its scheme (`src/Flowline/Commands/DeployCommand.cs:323-346`). Only its error wording assumes a project.
-- Post-deploy services run against an unpack of the imported zip, never local source (`src/Flowline/Commands/DeployCommand.cs:257-266`), so R8 needs no code.
+- `ResolveDtapGate` returns `Skip` when every config URL is empty (`src/Flowline/Commands/DeployCommand.cs:744-759`), so R4 needs no code.
+- `ResolveTargetUrl` already falls through to a literal URL and validates its scheme (`src/Flowline/Commands/DeployCommand.cs:335-358`). Only its error wording assumes a project.
+- Post-deploy services run against an unpack of the imported zip, never local source (`src/Flowline/Commands/DeployCommand.cs:258-272`), so R8 needs no code. None of the three (`BackupService`, `SolutionCheckService`, `MissingComponentCheckService`) reads `RootFolder` or `ProjectConfig` at all.
 - `MissingComponentReport.GetReportPath` and `SolutionCheckService` write beside the artifact and already resolve a relative `--path` (`src/Flowline.Core/Deploy/MissingComponentReport.cs:9-16`).
-- `InvocationLogger.Log` returns early when tool versions are unset (`src/Flowline/Commands/InvocationLogger.cs:16-17`), so a pac-only setup path does not break it.
+- `InvocationLogger.Log` returns early when tool versions are unset (`src/Flowline/Commands/InvocationLogger.cs:16-17`), so a pac-only setup path does not break it. It also means invocation telemetry is *absent* in standalone unless the standalone setup populates `RuntimeOptions.ToolVersions` — see U2 and the Definition of Done.
 - `FindProjectRoot` walks up without bound (`src/Flowline/Commands/FlowlineCommand.cs:59-69`). A `.flowline` in a distant parent silently selects project mode, which is why R14 exists.
+- The orphan-provenance lookup is already standalone-safe at both ends: DI registers `GitComponentProvenanceLookup` anchored at the CWD when no project root is found (`src/Flowline/Program.cs:290-298`), and `RebaseOntoProjectRoot` returns `Undetermined` without touching git whenever `checkoutSolutionSrcRoot` is null (`src/Flowline/Services/GitComponentProvenanceLookup.cs:54-56`). Standalone needs no code here, only the explicit null in KTD4.
 
 ---
 
@@ -203,18 +208,21 @@ The identity source is the only thing that differs by the time the command body 
 - `tests/Flowline.Tests/DeployCommandSolutionManifestTests.cs`
 
 **Approach:**
-1. Widen `ParseSolutionManifest` to return the unique name with version and managed flag.
-2. Throw `ValidationFailed` naming the missing element when the unique name is absent or blank, mirroring the existing version check.
-3. Update the one destructuring call site on the `--path` route; `ReadLocalSolutionVersion` reads the tuple by name and needs no change.
+1. Widen `ParseSolutionManifest` to return the unique name with version and managed flag, as `string? UniqueName` (KTD3: the shared parser never throws for it, because project-mode callers go through it too).
+2. Widen `ReadArtifactSolutionManifest`'s return the same way; it just forwards the parser's tuple.
+3. Update **both** destructuring call sites, not one. `DeployCommand.cs:139` on the `--path` route, and `DeployCommand.cs:970` inside `SolutionVersionExistsInHistoryAsync` (`var (revisionVersion, _) = ...`), which the orphan-provenance work added after this plan was written. `ReadLocalSolutionVersion:810` reads the tuple by name and needs no change.
+4. The blank-or-missing throw lives at the standalone identity call site in U3, not here.
 
-**Patterns to follow:** the existing version guard in `ParseSolutionManifest`, and its comment convention explaining why a field throws rather than defaults.
+**Patterns to follow:** the existing version guard in `ParseSolutionManifest`, and its comment convention explaining why a field throws rather than defaults. The `Managed` element's own "default rather than throw" comment is the closer precedent for the nullable return.
 
 **Test scenarios:**
 - A manifest with unique name, version, and managed flag returns all three.
-- A manifest with no `UniqueName` element throws `ValidationFailed` naming the element.
-- A manifest with an empty `UniqueName` throws the same error, not an empty-string identity.
+- A manifest with no `UniqueName` element returns null for it and still returns version and managed flag, with no throw (the project-mode contract KTD3 protects).
+- A manifest with an empty `UniqueName` returns null too, never an empty-string identity that could reach Dataverse.
 - A zip built through the existing `TempArtifactZip` helper round-trips the unique name out of `ReadArtifactSolutionManifest`.
 - The existing version-missing and managed-flag cases still behave as before.
+
+**Execution note:** the `SolutionXml(version, managed)` fixture helper in `DeployCommandSolutionManifestTests` writes no `UniqueName`, and every existing case in that file uses it. Add an optional `uniqueName` parameter rather than editing each case, so the pre-existing assertions keep testing what they tested.
 
 **Verification:** the manifest test file passes, including its pre-existing cases.
 
@@ -233,9 +241,11 @@ The identity source is the only thing that differs by the time the command body 
 - `tests/Flowline.Tests/FlowlineCommandStandaloneTests.cs` (new)
 
 **Approach:**
-1. Add a virtual standalone predicate defaulting to false.
+1. Add a virtual standalone predicate defaulting to false, taking `TSettings` (KTD1 explains why the existing parameterless `RequiresProject` cannot serve).
 2. When it returns true, resolve the root to the working directory instead of throwing on a missing project, and run a `pac`-only setup instead of the git, git-repo, dotnet, and pac sequence.
 3. Leave `ValidateForce`, `InvocationLogger.Log`, the activity span, and the welcome-screen decision on the shared path so both modes get them.
+4. Decide what happens to invocation telemetry in standalone, and make the Definition of Done match. Left alone, the `pac`-only path never sets `RuntimeOptions.ToolVersions`, so `InvocationLogger.Log` returns at its null guard (`InvocationLogger.cs:16-17`) and standalone emits no invocation log or activity tags at all. Populating it is not free either: `FlowlineToolVersions` (`src/Flowline.Core/FlowlineRuntimeOptions.cs:3-10`) declares `DotNetVersion` and `GitVersion` as non-nullable `string`, and `InvocationLogger` reads both unconditionally (`:40`, `:51`, `:54`), so standalone would have to pass a sentinel for two tools it deliberately did not check. Pick one and say so: sentinel values (`"n/a"`), a nullable widening of those two properties, or narrowing the Definition of Done to drop the invocation-logging claim for standalone. Default recommendation is the sentinel, since it keeps the record's contract and the DoD both intact. Either way this is the one place standalone diverges from `PushCommand`'s precedent, which sets nothing.
+5. Decide the update notice deliberately. `CheckSetupAsync` now also runs `UpdateNoticeChecker.CheckAsync`/`PrintNotice` (`FlowlineCommand.cs:120,133`), added after this plan was written. Standalone is CI-shaped, so the default is to keep it out of the `pac`-only path; whichever way it goes, state it rather than letting the branch decide by omission.
 
 **Execution note:** the risk here is reordering project mode by accident. Prove project-mode ordering is unchanged before adding either override in U3 or U4.
 
@@ -244,6 +254,7 @@ The identity source is the only thing that differs by the time the command body 
 - A command whose predicate is true and has no project resolves the root to the working directory and does not throw.
 - A standalone run still rejects an invalid `--force` value with the command's own specifier list.
 - A standalone run's setup does not require a git repository.
+- Whichever telemetry option step 4 picks is asserted: either a standalone run leaves `RuntimeOptions.ToolVersions` non-null so `InvocationLogger.Log` gets past its guard, or the Definition of Done no longer claims invocation logging for standalone.
 - Project mode's setup still checks git, git repo, dotnet, and pac, in that order.
 
 **Verification:** the new test file passes and no existing command test changes behavior.
@@ -265,10 +276,15 @@ The identity source is the only thing that differs by the time the command body 
 
 **Approach:**
 1. Override the standalone predicate: `--path` set and no project root found.
-2. In standalone, build the solution identity from the artifact manifest instead of reading it from config.
+2. In standalone, build the solution identity from the artifact manifest instead of reading it from config. Throw `ValidationFailed` naming the zip and the missing element when the manifest's unique name is null (KTD3 puts the throw here, not in the shared parser).
 3. Print one line naming the resolved mode and the identity source.
 4. Reword the target-resolution failure so a role keyword with no resolvable config points at the missing URL, not at a `.flowline` that does not exist.
 5. Leave every packed-route read where it is; add no new guards there.
+
+**Execution note (ordering):** this is not a one-expression swap. `sln` is consumed at `DeployCommand.cs:127` (`ValidateTargetAsync`) and `:131` (`ResolveArtifactZipPath`), but the artifact manifest is read at `:139`. Standalone has to read the manifest and build `ProjectSolution` **above** the `Config!.Solution ?? throw` at `:101`, which restructures the method opening rather than replacing one line. Two consequences to handle explicitly rather than discover:
+
+- The `:137-142` `usingExplicitArtifact` block then has its manifest already in hand; `gateVersion` should come from the hoisted read, not a second `ReadArtifactSolutionManifest` call, so one deploy never parses the zip twice and acts on two answers (the same rule `layout` already follows on the packed route).
+- `ValidateArtifactManagedFlag` (`:140`) becomes tautological in standalone: it would compare the artifact's managed flag against an `IncludeManaged` derived from that same flag. Skip it in standalone rather than leaving a check that can never fail; keep it unchanged for `--path` inside a project, where it still compares against config.
 
 **Patterns to follow:** the existing standalone predicates in `PushCommand` and `GenerateCommand` for naming and placement, and this file's convention of extracting pure decision helpers so they unit-test without a live connection.
 
@@ -300,16 +316,19 @@ The identity source is the only thing that differs by the time the command body 
 
 **Approach:**
 1. Add a `--path <zip>` option and the same standalone predicate as deploy.
-2. In standalone, take the solution name from the artifact manifest and skip solution-file layout resolution entirely.
-3. Unpack the zip into a temp directory, pass that directory to the primitives comparison overload with the read-only run mode, and delete the directory in a `finally` so a failure still cleans up.
-4. Keep the existing exit-code mapping — no drift, drift found, and inconclusive keep their current meanings.
+2. In standalone, take the solution name **and the managed flag** from the artifact manifest, and skip solution-file layout resolution entirely. Project-mode drift keeps resolving both through `GetAndCheckSolutionAsync`.
+3. Unpack the zip into a temp directory, passing the manifest's managed flag as `PacUtils.UnpackSolutionAsync`'s `includeManaged` argument. Commit `710c132` ("unpack managed zips with a matching package type") exists because a mismatched package type unpacks wrong, so this argument cannot be hardcoded to `false`. Deploy already does exactly this at `DeployCommand.cs:264`.
+4. Pass that directory to the primitives comparison overload with the read-only run mode and `checkoutSolutionSrcRoot: null` (KTD4), and delete the directory in a `finally` so a failure still cleans up. Do not route through drift's own convenience overload: it composes `<folder>/src` and pins `checkoutSolutionSrcRoot` to that same path, both wrong for a temp unpack.
+5. Keep the existing exit-code mapping — no drift, drift found, and inconclusive keep their current meanings.
 
-**Patterns to follow:** deploy's temp-unpack block, including its swallow-on-cleanup-failure comment, and drift's existing suppression of the deploy-specific `--no-delete` hint.
+**Patterns to follow:** deploy's temp-unpack block (`DeployCommand.cs:261-264` and the `finally` at `:317-330`), including its swallow-on-cleanup-failure comment, and drift's existing suppression of the deploy-specific `--no-delete` hint.
 
 **Test scenarios:**
 - `--path` with no project resolves standalone; `--path` inside a project keeps today's behavior; no `--path` is unchanged.
 - Standalone drift takes the solution name from the manifest, not from any folder name.
+- A managed artifact is unpacked with the managed package type, an unmanaged one with the unmanaged type.
 - The comparison runs in read-only mode: nothing is deleted even when findings are actionable.
+- Standalone entries carry an `Undetermined` provenance verdict rather than a verdict derived from an unrelated checkout.
 - Exit codes still distinguish no drift, drift found, and inconclusive.
 - The temp directory is removed after a successful run and after a failing one.
 - A role keyword in standalone produces the reworded error.
@@ -360,8 +379,8 @@ The manual check must run against a Release build. A Debug build propagates exce
 
 - Standalone `deploy` and `drift` run from a folder with no `.flowline` and no git repository.
 - `--path` inside a project behaves exactly as it did before, on both commands.
-- Solution identity in standalone comes from the artifact manifest; a manifest with no unique name fails before any Dataverse call.
-- `--force` validation, invocation logging, and the activity span are present in standalone.
+- Solution identity in standalone comes from the artifact manifest; a manifest with no unique name fails before any Dataverse call, and the shared manifest parser's project-mode callers are unaffected by that failure mode.
+- `--force` validation, invocation logging, and the activity span are present in standalone. Invocation logging counts as present only if `RuntimeOptions.ToolVersions` is populated in the standalone setup (U2 step 4); otherwise `InvocationLogger.Log` returns at its null guard and this line is not met.
 - Orphan cleanup behavior in standalone deploy matches project mode.
 - Standalone drift leaves no temp directory behind, on success or failure.
 - Changed behavior has focused test coverage; the full suite passes.
@@ -382,10 +401,11 @@ The manual check must run against a Release build. A Debug build propagates exce
 ## Sources
 
 - Origin requirements: `docs/brainstorms/2026-06-27-deploy-standalone-requirements.md`
-- `--path` route and its deliberate skips: `src/Flowline/Commands/DeployCommand.cs:103-124`, commit `6a32d25`
-- Base pipeline gates: `src/Flowline/Commands/FlowlineCommand.cs:71-131`
+- `--path` route and its deliberate skips: `src/Flowline/Commands/DeployCommand.cs:104-125`, commit `6a32d25`
+- Base pipeline gates: `src/Flowline/Commands/FlowlineCommand.cs:71-134`
 - Existing standalone precedents and what they skip: `src/Flowline/Commands/PushCommand.cs:76-100`, `src/Flowline/Commands/GenerateCommand.cs:63-93`
-- Shared comparison engine and its two entry points: `src/Flowline.Core/OrphanCleanup/OrphanCleanupService.cs:165-191`
+- Shared comparison engine and its three entry points: `src/Flowline.Core/OrphanCleanup/OrphanCleanupService.cs:150-203`
+- Managed-aware unpack, and why the flag cannot be hardcoded: commit `710c132`
 - What the pre-import drift check actually compares: `src/Flowline/Utils/PluginWebResourceDriftChecker.cs:16-48`
 - CI artifact publishing decision this plan leaves alone: `docs/plans/2026-07-13-003-feat-deploy-ci-artifact-publish-plan.md`
 - Zip fixture helper for tests: `tests/Flowline.Tests/DeployCommandSolutionManifestTests.cs`
