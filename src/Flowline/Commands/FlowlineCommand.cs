@@ -111,6 +111,22 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
 
     protected abstract Task<int> ExecuteFlowlineAsync(CommandContext context, TSettings settings, CancellationToken cancellationToken);
 
+    // Records what a standalone setup actually probed, so InvocationLogger clears its null guard and a
+    // standalone run stays visible in the log and activity tags. Dotnet, git, and branch stay null:
+    // standalone never checks them, and null says "not checked" honestly — a placeholder would read as a
+    // real version downstream and couldn't be told apart from one. Shared by this class's own standalone
+    // branch and by push/generate, which reach standalone through their own ExecuteAsync overrides;
+    // one definition so the three cannot report different shapes for the same mode.
+    protected void ApplyStandaloneToolVersions(ToolCheckResult pac) =>
+        RuntimeOptions.ToolVersions = new FlowlineToolVersions(
+            FlowlineVersion: Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version ?? "0.0.0",
+            DotNetVersion: null,
+            PacVersion: pac.Version,
+            PacInstallType: pac.InstallType,
+            GitVersion: null,
+            GitBranch: null
+        );
+
     protected virtual async Task CheckSetupAsync(TSettings settings, CancellationToken cancellationToken)
     {
         if (IsStandalone(settings))
@@ -125,19 +141,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
                 standaloneNewerVersion = await UpdateNoticeChecker.CheckAsync(Console, FlowlineValidator.Default, nuGetVersionClient, settings.NoCache, cancellationToken);
             });
 
-            // Populated from what standalone actually probed, so InvocationLogger clears its null guard
-            // and a standalone run still emits invocation logging and activity tags. Dotnet, git, and
-            // branch stay null: standalone never checks them, and null records that honestly rather than
-            // inventing a value. A run with no telemetry at all would make CI deploys — the case this
-            // mode exists for — the least observable ones.
-            RuntimeOptions.ToolVersions = new FlowlineToolVersions(
-                FlowlineVersion: Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version ?? "0.0.0",
-                DotNetVersion: null,
-                PacVersion: standalonePac!.Version,
-                PacInstallType: standalonePac.InstallType,
-                GitVersion: null,
-                GitBranch: null
-            );
+            ApplyStandaloneToolVersions(standalonePac!);
 
             Console.Ok("All good, let's go!");
             UpdateNoticeChecker.PrintNotice(Console, standaloneNewerVersion);

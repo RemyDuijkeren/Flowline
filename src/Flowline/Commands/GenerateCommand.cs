@@ -71,8 +71,16 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         if (!IsStandaloneMode())
             return await base.ExecuteAsync(context, settings, cancellationToken);
 
+        RuntimeOptions.CommandName = context.Name;
         InitializeRuntimeOptions(settings);
+
+        // Standalone bypasses the base pipeline, which is where invocation telemetry normally happens —
+        // so it emits none unless it is wired up here. Setup runs first because InvocationLogger reads
+        // the tool versions that check records.
+        using var activity = FlowlineActivitySource.Source.StartActivity(context.Name);
         await CheckSetupAsync(settings, cancellationToken);
+        InvocationLogger.Log(Logger, RuntimeOptions, Config, RootFolder, activity);
+
         return await ExecuteFlowlineAsync(context, settings, cancellationToken);
     }
 
@@ -84,11 +92,13 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             return;
         }
 
+        ToolCheckResult? pac = null;
         await Console.Status().FlowlineSpinner().StartAsync("Checking your setup...", async _ =>
         {
-            await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
+            pac = await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
         });
 
+        ApplyStandaloneToolVersions(pac!);
         Console.Ok("All good, let's go!");
     }
 

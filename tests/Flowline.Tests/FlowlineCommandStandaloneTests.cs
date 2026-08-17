@@ -3,6 +3,7 @@ using Flowline.Core;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Services;
+using Flowline.Validation;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -62,6 +63,10 @@ public class FlowlineCommandStandaloneTests
         // Standalone populates this from the one tool it probes (pac), so InvocationLogger clears its
         // null guard and a standalone run is still observable in telemetry.
         public FlowlineToolVersions? ToolVersionsValue => RuntimeOptions.ToolVersions;
+
+        // Exposes the shared helper push/generate also call, so its shape is asserted directly rather
+        // than only through a CheckSetupAsync run that needs pac on the box.
+        public void RunApplyStandaloneToolVersions(ToolCheckResult pac) => ApplyStandaloneToolVersions(pac);
     }
 
     static TestCommand MakeCommand()
@@ -176,6 +181,29 @@ public class FlowlineCommandStandaloneTests
         command.ToolVersionsValue.Should().NotBeNull();
         command.ToolVersionsValue!.PacVersion.Should().NotBeNullOrWhiteSpace();
         command.ToolVersionsValue.FlowlineVersion.Should().NotBeNullOrWhiteSpace();
+        command.ToolVersionsValue.DotNetVersion.Should().BeNull();
+        command.ToolVersionsValue.GitVersion.Should().BeNull();
+        command.ToolVersionsValue.GitBranch.Should().BeNull();
+    }
+
+    // ── Telemetry: standalone reports what it probed, and nothing it didn't ─────────────────────
+
+    [Fact]
+    public void ApplyStandaloneToolVersions_RecordsPacAndFlowline_AndLeavesUncheckedToolsNull()
+    {
+        var command = MakeCommand();
+
+        command.RunApplyStandaloneToolVersions(new ToolCheckResult { Version = "1.2.3", InstallType = "Dotnet Tool (.NET)" });
+
+        // Non-null is the whole point: InvocationLogger returns at its null guard otherwise, and a
+        // standalone run would emit no invocation log or activity tags at all.
+        command.ToolVersionsValue.Should().NotBeNull();
+        command.ToolVersionsValue!.PacVersion.Should().Be("1.2.3");
+        command.ToolVersionsValue.PacInstallType.Should().Be("Dotnet Tool (.NET)");
+        command.ToolVersionsValue.FlowlineVersion.Should().NotBeNullOrWhiteSpace();
+
+        // Standalone probes neither, so these must read "not checked" rather than carrying a
+        // placeholder that downstream consumers would mistake for a real version.
         command.ToolVersionsValue.DotNetVersion.Should().BeNull();
         command.ToolVersionsValue.GitVersion.Should().BeNull();
         command.ToolVersionsValue.GitBranch.Should().BeNull();
