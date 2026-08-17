@@ -59,8 +59,8 @@ public class FlowlineCommandStandaloneTests
 
         public string ResolvedRootFolder => RootFolder;
 
-        // Decision (a): standalone must never populate this — it's what InvocationLogger's null guard
-        // (and the absence of invocation logging/activity tags) depends on.
+        // Standalone populates this from the one tool it probes (pac), so InvocationLogger clears its
+        // null guard and a standalone run is still observable in telemetry.
         public FlowlineToolVersions? ToolVersionsValue => RuntimeOptions.ToolVersions;
     }
 
@@ -167,10 +167,18 @@ public class FlowlineCommandStandaloneTests
         catch (FlowlineException ex)
         {
             ex.Message.Should().NotBe("No Git repo found. Run 'git init' or 'git clone' first.");
+            return; // No pac on this runner — the git-repo assertion above is all this case can prove.
         }
 
-        // Decision (a): standalone returns before RuntimeOptions.ToolVersions is ever assigned.
-        command.ToolVersionsValue.Should().BeNull();
+        // Telemetry: standalone fills ToolVersions from the one tool it probes, so InvocationLogger
+        // clears its null guard. Dotnet and git stay null because standalone never checks them —
+        // "not checked", not a placeholder that would read as a real version downstream.
+        command.ToolVersionsValue.Should().NotBeNull();
+        command.ToolVersionsValue!.PacVersion.Should().NotBeNullOrWhiteSpace();
+        command.ToolVersionsValue.FlowlineVersion.Should().NotBeNullOrWhiteSpace();
+        command.ToolVersionsValue.DotNetVersion.Should().BeNull();
+        command.ToolVersionsValue.GitVersion.Should().BeNull();
+        command.ToolVersionsValue.GitBranch.Should().BeNull();
     }
 
     // ── Regression guard: project-mode setup ordering is unchanged ──────────────────────────────

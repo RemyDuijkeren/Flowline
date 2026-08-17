@@ -116,15 +116,28 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         if (IsStandalone(settings))
         {
             // Pac-only — no git/dotnet probes, no clean-state check (R3). Same shape as PushCommand's
-            // and GenerateCommand's standalone setup. Returns before RuntimeOptions.ToolVersions is
-            // assigned below, so standalone runs never populate it (matches PushCommand: InvocationLogger
-            // returns at its null guard, so standalone emits no invocation log or activity tags).
+            // and GenerateCommand's standalone setup.
+            ToolCheckResult? standalonePac = null;
             string? standaloneNewerVersion = null;
             await Console.Status().FlowlineSpinner().StartAsync("Checking your setup...", async ctx =>
             {
-                await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
+                standalonePac = await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
                 standaloneNewerVersion = await UpdateNoticeChecker.CheckAsync(Console, FlowlineValidator.Default, nuGetVersionClient, settings.NoCache, cancellationToken);
             });
+
+            // Populated from what standalone actually probed, so InvocationLogger clears its null guard
+            // and a standalone run still emits invocation logging and activity tags. Dotnet, git, and
+            // branch stay null: standalone never checks them, and null records that honestly rather than
+            // inventing a value. A run with no telemetry at all would make CI deploys — the case this
+            // mode exists for — the least observable ones.
+            RuntimeOptions.ToolVersions = new FlowlineToolVersions(
+                FlowlineVersion: Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version ?? "0.0.0",
+                DotNetVersion: null,
+                PacVersion: standalonePac!.Version,
+                PacInstallType: standalonePac.InstallType,
+                GitVersion: null,
+                GitBranch: null
+            );
 
             Console.Ok("All good, let's go!");
             UpdateNoticeChecker.PrintNotice(Console, standaloneNewerVersion);
