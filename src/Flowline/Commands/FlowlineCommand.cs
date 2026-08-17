@@ -63,13 +63,31 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     protected void ValidateForce(CommandContext context, TSettings settings) =>
         FlowlineSettings.ValidateForce(settings.Force, ValidForceSpecifiers, context.Name);
 
+    // The nearest enclosing Flowline project, or null when there is none. A .flowline governs its whole
+    // subtree, so a command run from any folder beneath one is in that project — the nearest wins, which
+    // is what makes several projects in one repository work.
+    //
+    // The repository is the ceiling. A .flowline above it belongs to a different checkout, or is an
+    // accident (one sitting in C:\Code would otherwise capture every repo beneath it), and a Flowline
+    // project isn't valid outside a repository anyway. Checked after the config file, so a project at the
+    // repository root — the ordinary layout — still resolves.
+    //
+    // When there's no repository above at all, the walk stays unbounded and can still return a .flowline.
+    // That is deliberate: the setup check then reports the missing repository, which is the accurate
+    // problem, rather than this returning null and the caller claiming no project exists.
     internal static string? FindProjectRoot(string startDir)
     {
+        // Null when startDir isn't in a repository, which leaves the boundary test below unmatchable and
+        // the walk unbounded — the fallback described above, with no separate code path.
+        var repoRoot = GitUtils.FindRepositoryRoot(startDir);
+
         var dir = startDir;
         while (dir != null)
         {
             if (File.Exists(Path.Combine(dir, ProjectConfig.s_configFileName)))
                 return dir;
+            if (string.Equals(dir, repoRoot, StringComparison.OrdinalIgnoreCase))
+                return null;
             dir = Directory.GetParent(dir)?.FullName;
         }
         return null;
@@ -80,18 +98,14 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         RuntimeOptions.CommandName = context.Name;
         InitializeRuntimeOptions(settings);
 
-        // Standalone is asked first, ahead of the walk-up: a standalone run's root is the folder the user
-        // is standing in, and letting FindProjectRoot win would silently retarget it at an unrelated
-        // ancestor project. That matters beyond tidiness — push's "--pluginFile can't be used inside a
-        // project" guard reads RootFolder, so the retarget would turn a standalone push from any
-        // subfolder of any project into a hard failure. Commands whose standalone rule already requires
-        // the absence of a project (deploy, drift) are unaffected either way.
-        RootFolder = IsStandalone(settings)
-            ? Directory.GetCurrentDirectory()
-            : FindProjectRoot(Directory.GetCurrentDirectory())
-                ?? (RequiresProject
-                    ? throw new FlowlineException(ExitCode.ConfigInvalid, "No Flowline project found — run 'flowline clone' to set up a project.")
-                    : Directory.GetCurrentDirectory());
+        // The project wins when there is one, standalone only fills the gap when there isn't. A .flowline
+        // governs its whole subtree (see FindProjectRoot), so a command run anywhere beneath one belongs
+        // to that project — which is what lets push's "--pluginFile can't be used inside a project" guard
+        // catch a standalone push from a subfolder rather than only from the project root itself.
+        RootFolder = FindProjectRoot(Directory.GetCurrentDirectory())
+            ?? (RequiresProject && !IsStandalone(settings)
+                ? throw new FlowlineException(ExitCode.ConfigInvalid, "No Flowline project found — run 'flowline clone' to set up a project.")
+                : Directory.GetCurrentDirectory());
 
         var argsOnly = RuntimeOptions.ArgsRedacted is { } r && r.StartsWith(context.Name)
             ? r[context.Name.Length..].TrimStart()

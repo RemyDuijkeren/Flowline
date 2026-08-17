@@ -214,9 +214,28 @@ public static class GitUtils
         return string.IsNullOrWhiteSpace(sha) ? null : sha;
     }
 
+    // The repository root at or above startDir, or null when startDir isn't inside one. Walks up, because
+    // a Flowline project doesn't have to sit at the repository root — a repo can hold several, each in its
+    // own folder — and every one of them is still legitimately "in a Git repo".
+    //
+    // Both shapes of .git count: a directory in an ordinary clone, and a FILE in a worktree or submodule,
+    // where it holds a gitdir: pointer instead. Checking only for a directory rejects both of those.
+    internal static string? FindRepositoryRoot(string startDir)
+    {
+        var dir = startDir;
+        while (dir != null)
+        {
+            var gitPath = Path.Combine(dir, ".git");
+            if (Directory.Exists(gitPath) || File.Exists(gitPath))
+                return dir;
+            dir = Directory.GetParent(dir)?.FullName;
+        }
+        return null;
+    }
+
     public static async Task AssertGitRepoAsync(string rootFolder, SubprocessCapture capture, bool verbose = true, CancellationToken cancellationToken = default)
     {
-        if (!Directory.Exists(Path.Combine(rootFolder, ".git")))
+        if (FindRepositoryRoot(rootFolder) is null)
             throw new FlowlineException(ExitCode.ConfigInvalid, "No Git repo found. Run 'git init' or 'git clone' first.");
 
         AnsiConsole.Console.Info("You're in a Git repo");
