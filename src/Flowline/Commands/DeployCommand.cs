@@ -136,7 +136,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         if (usingExplicitArtifact)
         {
-            var (artifactVersion, artifactManaged) = ReadArtifactSolutionManifest(settings.Path!);
+            var (artifactVersion, artifactManaged, _) = ReadArtifactSolutionManifest(settings.Path!);
             ValidateArtifactManagedFlag(artifactManaged, sln.IncludeManaged);
             gateVersion = artifactVersion;
         }
@@ -810,7 +810,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         return ParseSolutionManifest(doc).Version;
     }
 
-    internal static (string Version, bool Managed) ParseSolutionManifest(XDocument doc)
+    internal static (string Version, bool Managed, string? UniqueName) ParseSolutionManifest(XDocument doc)
     {
         var manifest = doc.Root?.Element("SolutionManifest");
         var version = manifest?.Element("Version")?.Value;
@@ -822,10 +822,16 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         // false rather than throw, since only Version has an established "must be present" contract today.
         var managed = manifest?.Element("Managed")?.Value == "1";
 
-        return (version, managed);
+        // Unlike Version, a missing/blank UniqueName is legal here: this parser is shared with project-mode
+        // callers (ReadLocalSolutionVersion, the history walk), where old revisions can predate the element.
+        // Standalone mode — the only place a missing unique name is fatal — owns that check at its call site.
+        var uniqueName = manifest?.Element("UniqueName")?.Value;
+        uniqueName = string.IsNullOrWhiteSpace(uniqueName) ? null : uniqueName;
+
+        return (version, managed, uniqueName);
     }
 
-    internal static (string Version, bool Managed) ReadArtifactSolutionManifest(string zipPath)
+    internal static (string Version, bool Managed, string? UniqueName) ReadArtifactSolutionManifest(string zipPath)
     {
         if (!File.Exists(zipPath))
             throw new FlowlineException(ExitCode.NotFound, $"Artifact not found at '{zipPath}'.");
@@ -967,7 +973,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             try
             {
                 var doc = XmlHelpers.Parse(showResult.StandardOutput);
-                var (revisionVersion, _) = ParseSolutionManifest(doc);
+                var (revisionVersion, _, _) = ParseSolutionManifest(doc);
                 if (revisionVersion == version) return true;
             }
             catch (FlowlineException) { /* revision predates a Version element, or is malformed — keep looking */ }

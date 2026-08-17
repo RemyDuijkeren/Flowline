@@ -48,6 +48,45 @@ public class DeployCommandSolutionManifestTests
             .Which.ExitCode.Should().Be(ExitCode.ValidationFailed);
     }
 
+    [Fact]
+    public void ParseSolutionManifest_ReturnsUniqueName_WhenPresent()
+    {
+        var doc = SolutionXml(version: "1.0.0.1", managed: "0", uniqueName: "contoso_solution");
+
+        var result = DeployCommand.ParseSolutionManifest(doc);
+
+        result.UniqueName.Should().Be("contoso_solution");
+    }
+
+    // KTD3: a missing UniqueName is project-mode-legal (ParseSolutionManifest is shared with
+    // ReadLocalSolutionVersion and the history walk) — this must never throw here. The fatal check
+    // for standalone mode belongs at a later call site, not in the shared parser.
+    [Fact]
+    public void ParseSolutionManifest_ReturnsNullUniqueName_WhenElementMissing_AndDoesNotThrow()
+    {
+        var doc = SolutionXml(version: "1.0.0.1", managed: "0");
+
+        Func<(string Version, bool Managed, string? UniqueName)> act = () => DeployCommand.ParseSolutionManifest(doc);
+
+        act.Should().NotThrow();
+        var result = act();
+        result.UniqueName.Should().BeNull();
+        result.Version.Should().Be("1.0.0.1");
+        result.Managed.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ParseSolutionManifest_ReturnsNullUniqueName_WhenElementIsBlank(string blankValue)
+    {
+        var doc = SolutionXml(version: "1.0.0.1", managed: "0", uniqueName: blankValue);
+
+        var result = DeployCommand.ParseSolutionManifest(doc);
+
+        result.UniqueName.Should().BeNull();
+    }
+
     // ── ReadLocalSolutionVersion ────────────────────────────────────────────────
 
     [Fact]
@@ -201,7 +240,17 @@ public class DeployCommandSolutionManifestTests
         result.Version.Should().Be("9.9.9.9");
     }
 
-    static void WriteManifest(ZipArchive zip, string entryName, string version, string managed)
+    [Fact]
+    public void ReadArtifactSolutionManifest_ReturnsUniqueName_WhenPresent()
+    {
+        using var tmp = new TempArtifactZip(zip => WriteManifest(zip, "solution.xml", "3.1.4.1", managed: "0", uniqueName: "contoso_solution"));
+
+        var result = DeployCommand.ReadArtifactSolutionManifest(tmp.ZipPath);
+
+        result.UniqueName.Should().Be("contoso_solution");
+    }
+
+    static void WriteManifest(ZipArchive zip, string entryName, string version, string managed, string? uniqueName = null)
     {
         var entry = zip.CreateEntry(entryName);
         using var writer = new StreamWriter(entry.Open());
@@ -211,18 +260,20 @@ public class DeployCommandSolutionManifestTests
               <SolutionManifest>
                 <Version>{version}</Version>
                 <Managed>{managed}</Managed>
+                {(uniqueName != null ? $"<UniqueName>{uniqueName}</UniqueName>" : "")}
               </SolutionManifest>
             </ImportExportXml>
             """);
     }
 
-    private static XDocument SolutionXml(string version, string managed) =>
+    private static XDocument SolutionXml(string version, string managed, string? uniqueName = null) =>
         XDocument.Parse($"""
             <?xml version="1.0" encoding="utf-8"?>
             <ImportExportXml>
               <SolutionManifest>
                 <Version>{version}</Version>
                 <Managed>{managed}</Managed>
+                {(uniqueName != null ? $"<UniqueName>{uniqueName}</UniqueName>" : "")}
               </SolutionManifest>
             </ImportExportXml>
             """);
