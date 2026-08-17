@@ -8,6 +8,7 @@ using Flowline.Core.FormEvents;
 using Flowline.Core.Plugins;
 using Flowline.Core.WebResources;
 using Flowline.Diagnostics;
+using Flowline.Infrastructure;
 using Flowline.Services;
 using Spectre.Console;
 using Microsoft.Extensions.Logging;
@@ -81,12 +82,21 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         RuntimeOptions.CommandName = context.Name;
         InitializeRuntimeOptions(settings);
 
-        // Standalone bypasses the base pipeline (see the class comment), which is where invocation
-        // telemetry normally happens — so it emits none unless it is wired up here. Setup runs first
-        // because InvocationLogger reads the tool versions that check records.
+        // Standalone bypasses the base pipeline (see the class comment), so everything that pipeline
+        // normally provides has to be restated here. Order mirrors it: welcome, setup, invocation
+        // record, force validation. Setup runs before the record because InvocationLogger reads the
+        // tool versions that check produces.
         using var activity = FlowlineActivitySource.Source.StartActivity(context.Name);
+        if (ShowWelcome && Console.Profile.Capabilities.Interactive && FlowlineValidator.Default.ShouldShowWelcomeScreen(settings.NoCache))
+            Console.WriteWelcomeScreen();
+
         await CheckSetupAsync(settings, cancellationToken).ConfigureAwait(false);
         InvocationLogger.Log(Logger, RuntimeOptions, Config, RootFolder, activity);
+
+        // Standalone accepted any --force value silently before this. push's specifiers gate real
+        // hazards (delete-orphans, recreate-assembly, delete-form-handlers), so a typo'd one quietly
+        // doing nothing is the worse failure — a run that looks forced and isn't.
+        ValidateForce(context, settings);
 
         return await ExecuteFlowlineAsync(context, settings, cancellationToken).ConfigureAwait(false);
     }

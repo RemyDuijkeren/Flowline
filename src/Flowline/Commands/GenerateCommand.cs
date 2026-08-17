@@ -7,6 +7,7 @@ using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Generators;
+using Flowline.Infrastructure;
 using Flowline.Services;
 using Flowline.Utils;
 using Flowline.Validation;
@@ -74,12 +75,19 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         RuntimeOptions.CommandName = context.Name;
         InitializeRuntimeOptions(settings);
 
-        // Standalone bypasses the base pipeline, which is where invocation telemetry normally happens —
-        // so it emits none unless it is wired up here. Setup runs first because InvocationLogger reads
-        // the tool versions that check records.
+        // Standalone bypasses the base pipeline, so everything that pipeline normally provides has to be
+        // restated here. Order mirrors it: welcome, setup, invocation record, force validation. Setup
+        // runs before the record because InvocationLogger reads the tool versions that check produces.
         using var activity = FlowlineActivitySource.Source.StartActivity(context.Name);
+        if (ShowWelcome && Console.Profile.Capabilities.Interactive && FlowlineValidator.Default.ShouldShowWelcomeScreen(settings.NoCache))
+            Console.WriteWelcomeScreen();
+
         await CheckSetupAsync(settings, cancellationToken);
         InvocationLogger.Log(Logger, RuntimeOptions, Config, RootFolder, activity);
+
+        // Standalone accepted any --force value silently before this; now it is held to the same
+        // specifier list project mode uses.
+        ValidateForce(context, settings);
 
         return await ExecuteFlowlineAsync(context, settings, cancellationToken);
     }
