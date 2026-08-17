@@ -74,50 +74,11 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         public bool DryRun { get; set; } = false;
     }
 
-    protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
-    {
-        if (!IsStandaloneMode(settings))
-            return await base.ExecuteAsync(context, settings, cancellationToken).ConfigureAwait(false);
-
-        RuntimeOptions.CommandName = context.Name;
-        InitializeRuntimeOptions(settings);
-
-        // Standalone bypasses the base pipeline (see the class comment), so everything that pipeline
-        // normally provides has to be restated here. Order mirrors it: welcome, setup, invocation
-        // record, force validation. Setup runs before the record because InvocationLogger reads the
-        // tool versions that check produces.
-        using var activity = FlowlineActivitySource.Source.StartActivity(context.Name);
-        if (ShowWelcome && Console.Profile.Capabilities.Interactive && FlowlineValidator.Default.ShouldShowWelcomeScreen(settings.NoCache))
-            Console.WriteWelcomeScreen();
-
-        await CheckSetupAsync(settings, cancellationToken).ConfigureAwait(false);
-        InvocationLogger.Log(Logger, RuntimeOptions, Config, RootFolder, activity);
-
-        // Standalone accepted any --force value silently before this. push's specifiers gate real
-        // hazards (delete-orphans, recreate-assembly, delete-form-handlers), so a typo'd one quietly
-        // doing nothing is the worse failure — a run that looks forced and isn't.
-        ValidateForce(context, settings);
-
-        return await ExecuteFlowlineAsync(context, settings, cancellationToken).ConfigureAwait(false);
-    }
-
-    protected override async Task CheckSetupAsync(Settings settings, CancellationToken cancellationToken)
-    {
-        if (!IsStandaloneMode(settings))
-        {
-            await base.CheckSetupAsync(settings, cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        ToolCheckResult? pac = null;
-        await Console.Status().FlowlineSpinner().StartAsync("Checking your setup...", async ctx =>
-        {
-            pac = await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
-        });
-
-        ApplyStandaloneToolVersions(pac!);
-        Console.Ok("All good, let's go!");
-    }
+    // Standalone runs through the base pipeline like every other mode, rather than around it: the base
+    // class owns root resolution, the pac-only setup, the welcome screen, invocation logging, the
+    // activity span, and --force validation. Push used to override ExecuteAsync wholesale and lost all
+    // six, which is why they had to be restated here one at a time.
+    protected override bool IsStandalone(Settings settings) => IsStandaloneMode(settings);
 
     internal static readonly string[] ValidSpecifiers =
         ["delete-orphans", "recreate-assembly", "delete-form-handlers", "config", "all"];

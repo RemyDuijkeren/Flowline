@@ -69,46 +69,19 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         if (settings.ClientId != null && settings.ClientSecret == null)
             throw new FlowlineException(ExitCode.ValidationFailed, "--client-id requires --client-secret");
 
-        if (!IsStandaloneMode())
-            return await base.ExecuteAsync(context, settings, cancellationToken);
-
-        RuntimeOptions.CommandName = context.Name;
-        InitializeRuntimeOptions(settings);
-
-        // Standalone bypasses the base pipeline, so everything that pipeline normally provides has to be
-        // restated here. Order mirrors it: welcome, setup, invocation record, force validation. Setup
-        // runs before the record because InvocationLogger reads the tool versions that check produces.
-        using var activity = FlowlineActivitySource.Source.StartActivity(context.Name);
-        if (ShowWelcome && Console.Profile.Capabilities.Interactive && FlowlineValidator.Default.ShouldShowWelcomeScreen(settings.NoCache))
-            Console.WriteWelcomeScreen();
-
-        await CheckSetupAsync(settings, cancellationToken);
-        InvocationLogger.Log(Logger, RuntimeOptions, Config, RootFolder, activity);
-
-        // Standalone accepted any --force value silently before this; now it is held to the same
-        // specifier list project mode uses.
-        ValidateForce(context, settings);
-
-        return await ExecuteFlowlineAsync(context, settings, cancellationToken);
+        // Both modes go through the base pipeline from here — this override exists only for the two
+        // argument checks above, which have to run before anything else.
+        return await base.ExecuteAsync(context, settings, cancellationToken);
     }
 
-    protected override async Task CheckSetupAsync(Settings settings, CancellationToken cancellationToken)
-    {
-        if (!IsStandaloneMode())
-        {
-            await base.CheckSetupAsync(settings, cancellationToken);
-            return;
-        }
-
-        ToolCheckResult? pac = null;
-        await Console.Status().FlowlineSpinner().StartAsync("Checking your setup...", async _ =>
-        {
-            pac = await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
-        });
-
-        ApplyStandaloneToolVersions(pac!);
-        Console.Ok("All good, let's go!");
-    }
+    // Standalone runs through the base pipeline like every other mode, rather than around it: the base
+    // class owns root resolution, the pac-only setup, the welcome screen, invocation logging, the
+    // activity span, and --force validation.
+    //
+    // Reads RootFolder, which is why the base asks this before its own walk-up: at that point RootFolder
+    // is still the working directory, so this keeps its original "is there a .flowline right here"
+    // meaning rather than widening to "is there one in any ancestor".
+    protected override bool IsStandalone(Settings settings) => IsStandaloneMode();
 
     protected override string[] ValidForceSpecifiers => FlowlineSettings.ConfigOnlyValidSpecifiers;
 

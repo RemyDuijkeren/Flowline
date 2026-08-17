@@ -80,10 +80,18 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         RuntimeOptions.CommandName = context.Name;
         InitializeRuntimeOptions(settings);
 
-        RootFolder = FindProjectRoot(Directory.GetCurrentDirectory())
-            ?? (RequiresProject && !IsStandalone(settings)
-                ? throw new FlowlineException(ExitCode.ConfigInvalid, "No Flowline project found — run 'flowline clone' to set up a project.")
-                : Directory.GetCurrentDirectory());
+        // Standalone is asked first, ahead of the walk-up: a standalone run's root is the folder the user
+        // is standing in, and letting FindProjectRoot win would silently retarget it at an unrelated
+        // ancestor project. That matters beyond tidiness — push's "--pluginFile can't be used inside a
+        // project" guard reads RootFolder, so the retarget would turn a standalone push from any
+        // subfolder of any project into a hard failure. Commands whose standalone rule already requires
+        // the absence of a project (deploy, drift) are unaffected either way.
+        RootFolder = IsStandalone(settings)
+            ? Directory.GetCurrentDirectory()
+            : FindProjectRoot(Directory.GetCurrentDirectory())
+                ?? (RequiresProject
+                    ? throw new FlowlineException(ExitCode.ConfigInvalid, "No Flowline project found — run 'flowline clone' to set up a project.")
+                    : Directory.GetCurrentDirectory());
 
         var argsOnly = RuntimeOptions.ArgsRedacted is { } r && r.StartsWith(context.Name)
             ? r[context.Name.Length..].TrimStart()
