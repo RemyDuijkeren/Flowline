@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Models;
@@ -21,14 +22,79 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
         [CommandArgument(0, "<target>")]
         [Description("Target environment: prod, uat, test, dev, or a URL")]
         public string Target { get; set; } = null!;
+
+        [CommandOption("--path <zip>")]
+        [Description("Compare this pre-built solution zip against the target instead of your local checkout")]
+        public string? Path { get; set; }
     }
 
     protected override string[] ValidForceSpecifiers => FlowlineSettings.ConfigOnlyValidSpecifiers;
 
+    // U4/KTD4: same standalone rule as deploy — reused directly rather than reimplemented, so the two
+    // commands' "am I standalone" definitions can never drift apart.
+    protected override bool IsStandalone(Settings settings) => DeployCommand.ResolveStandalone(settings.Path, Directory.GetCurrentDirectory());
+
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
+        var standalone = IsStandalone(settings);
+
+        // R15: a role keyword resolves through Config in project mode, but standalone's Config is a bare
+        // `new ProjectConfig()` (see FlowlineCommand.cs) — every role would fall through to a
+        // config-shaped "URL is required" message pointing at a .flowline that was never expected to
+        // exist here. Caught before ResolveEnvironmentAsync reaches that route.
+        //
+        // Checked before the manifest read below so an unresolvable target is diagnosed ahead of the
+        // artifact, matching deploy — it resolves its target at the top of ExecuteFlowlineAsync, so
+        // `deploy uat --path bad.zip` reports the target. Reading the zip first would have drift report
+        // the artifact for that same invocation, and one command's diagnosis shouldn't depend on which
+        // of the two you reached for.
+        if (standalone && TryResolveRole(settings.Target) is not null)
+            throw new FlowlineException(ExitCode.ConfigInvalid, BuildStandaloneRoleError(settings.Target));
+
+        // R5/R7: standalone's only identity source is the artifact manifest — read (and validated) before
+        // any network call, so a corrupt/missing zip fails fast rather than after a round trip to the
+        // target. Project mode keeps resolving identity through GetAndCheckSolutionAsync below (unchanged).
+        ProjectSolution? standaloneSln = null;
+        if (standalone)
+        {
+            var artifactManifest = DeployCommand.ReadArtifactSolutionManifest(settings.Path!);
+            standaloneSln = DeployCommand.ResolveStandaloneSolution(settings.Path!, artifactManifest);
+
+            // R14: standalone only — project mode says nothing new here (Goal Capsule scopes this plan
+            // out of changing project-mode output), same as U3's deploy note.
+            Console.Info(DeployCommand.BuildStandaloneIdentityNote(Path.GetFileName(settings.Path!)));
+        }
+
         var (env, profile) = await ResolveEnvironmentAsync(settings.Target, settings, cancellationToken);
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, env.EnvironmentUrl!, cancellationToken, profile);
+
+        if (standalone)
+        {
+            // Mirrors push/generate's own standalone solution check (FlowlineCommand.cs) — confirms the
+            // artifact's solution actually exists in the target before spending time unpacking it.
+            await GetAndCheckStandaloneSolutionAsync(standaloneSln!.UniqueName, env.EnvironmentUrl!, settings, cancellationToken);
+
+            var tmpUnpackDir = Directory.CreateTempSubdirectory("flowline-drift-").FullName;
+            return await RunInTempDirAsync(tmpUnpackDir, async () =>
+            {
+                // R9: the artifact's own managed flag drives the unpack's package type — a mismatch
+                // unpacks wrong (commit 710c132). Mirrors DeployCommand.cs's temp-unpack call.
+                await PacUtils.UnpackSolutionAsync(settings.Path!, tmpUnpackDir, standaloneSln.IncludeManaged, _capture, cancellationToken);
+
+                // R12/KTD4: primitives overload, read-only mode, checkoutSolutionSrcRoot: null — a temp
+                // unpack has no git history behind it, so every entry's provenance verdict stays
+                // Undetermined rather than being resolved against an unrelated checkout. Do NOT route
+                // through the convenience overload above: it composes `<folder>/src` and pins
+                // checkoutSolutionSrcRoot to that same path, both wrong for a temp unpack (which IS the
+                // src root, not its parent).
+                var standaloneResult = await orphanCleanupService.CompareAsync(
+                    tmpUnpackDir, service, standaloneSln.UniqueName, env.EnvironmentUrl!, RunMode.NoDelete, cancellationToken,
+                    noDeleteHint: null, checkoutSolutionSrcRoot: null);
+
+                return SelectExitCode(standaloneResult);
+            }, Logger);
+        }
+
         // bypassCache: true — drift is a health-check signal with no downstream step (unlike deploy's
         // import, or sync's export) to catch a stale "solution still exists" cache entry. Without this,
         // a solution deleted or renamed in the target could read as "no drift" for up to the solution
@@ -48,6 +114,36 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
         var result = await orphanCleanupService.CompareAsync(dataverseSolutionFolder, service, projectSln.UniqueName, env.EnvironmentUrl!, cancellationToken, noDeleteHint: null);
 
         return SelectExitCode(result);
+    }
+
+    // R15: pure so the wording is unit-testable without a live PAC CLI or Dataverse connection, mirroring
+    // DeployCommand.ResolveTargetUrl's own standalone branch. Assumes the caller already confirmed
+    // `target` resolves to a role (TryResolveRole is not null) — this only builds the message.
+    internal static string BuildStandaloneRoleError(string target) =>
+        $"Can't resolve '{target}' — no config here to check (standalone mode). Pass the environment URL instead.";
+
+    // R13: extracted from the standalone branch above purely so the cleanup guarantee (temp dir removed
+    // on success AND on failure) is testable without a live PAC CLI or Dataverse connection. Same
+    // swallow-on-cleanup-failure shape as DeployCommand's own temp-unpack `finally` block — a locked/
+    // in-use temp file must never mask whatever exception was already propagating from `action`.
+    internal static async Task<int> RunInTempDirAsync(string tmpDir, Func<Task<int>> action, ILogger logger)
+    {
+        try
+        {
+            return await action();
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(tmpDir))
+                    Directory.Delete(tmpDir, recursive: true);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to clean up temp unpack directory {TmpUnpackDir}", tmpDir);
+            }
+        }
     }
 
     // <target> accepts a role keyword or a raw URL, mirroring DeployCommand's target-argument shape —

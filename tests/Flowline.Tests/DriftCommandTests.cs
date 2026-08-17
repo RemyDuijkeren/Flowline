@@ -1,8 +1,10 @@
 using FluentAssertions;
 using Flowline.Commands;
+using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Services;
 using Flowline.Core.OrphanCleanup;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Flowline.Tests;
 
@@ -84,5 +86,100 @@ public class DriftCommandTests
         var act = () => FlowlineSettings.ValidateForce(settings.Force, FlowlineSettings.ConfigOnlyValidSpecifiers, "drift");
 
         act.Should().NotThrow();
+    }
+
+    // ── U4: standalone predicate — DriftCommand.IsStandalone (protected override) delegates verbatim to
+    // this same helper (KTD4: no second copy of "am I standalone" for deploy and drift to drift apart on).
+    // ResolveStandaloneSolution/BuildStandaloneIdentityNote's own correctness is covered by
+    // DeployCommandStandaloneTests — these three prove the specific rule DriftCommand's override applies. ────
+
+    [Fact]
+    public void ResolveStandalone_PathSetAndNoProject_ReturnsTrue_ForDriftToo()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(dir);
+
+        try
+        {
+            DeployCommand.ResolveStandalone("artifact.zip", dir).Should().BeTrue();
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ResolveStandalone_PathSetButProjectFound_ReturnsFalse_ForDriftToo()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, ProjectConfig.s_configFileName), "{}");
+
+        try
+        {
+            DeployCommand.ResolveStandalone("artifact.zip", dir).Should().BeFalse();
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ResolveStandalone_NoPath_ReturnsFalse_ForDriftToo()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(dir);
+
+        try
+        {
+            DeployCommand.ResolveStandalone(null, dir).Should().BeFalse();
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // ── R15: role keyword in standalone — reworded, no ".flowline" mention ───────────────────────────
+
+    [Theory]
+    [InlineData("prod")]
+    [InlineData("uat")]
+    [InlineData("test")]
+    [InlineData("dev")]
+    public void BuildStandaloneRoleError_NamesTargetAndOmitsFlowlineConfig(string target)
+    {
+        var message = DriftCommand.BuildStandaloneRoleError(target);
+
+        message.Should().Contain(target);
+        message.Should().NotContain(".flowline");
+    }
+
+    // ── R13: temp unpack dir is removed after the run, success or failure ────────────────────────────
+
+    [Fact]
+    public async Task RunInTempDirAsync_ActionSucceeds_RemovesTempDirAndReturnsResult()
+    {
+        var dir = Directory.CreateTempSubdirectory("flowline-drift-test-").FullName;
+        File.WriteAllText(Path.Combine(dir, "marker.txt"), "x");
+
+        var result = await DriftCommand.RunInTempDirAsync(dir, () => Task.FromResult(42), NullLogger.Instance);
+
+        result.Should().Be(42);
+        Directory.Exists(dir).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RunInTempDirAsync_ActionThrows_StillRemovesTempDirAndRethrows()
+    {
+        var dir = Directory.CreateTempSubdirectory("flowline-drift-test-").FullName;
+        Func<Task<int>> failingAction = () => throw new InvalidOperationException("boom");
+
+        var act = async () => await DriftCommand.RunInTempDirAsync(dir, failingAction, NullLogger.Instance);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        Directory.Exists(dir).Should().BeFalse();
     }
 }
