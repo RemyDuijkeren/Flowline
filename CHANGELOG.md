@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`deploy` and `drift` run against a pre-built zip with no project**: `flowline deploy <url> --path <zip>` and `flowline drift <url> --path <zip>` now work from a folder holding nothing but the artifact, with no `.flowline` and no Git repo. A CI job that only downloaded an artifact can deploy or inspect it. Standalone activates when `--path` is set and no project is found; inside a project, `--path` behaves exactly as before. The solution's unique name and managed flag come from `solution.xml` inside the zip, and a zip whose manifest carries no unique name fails before any Dataverse call. Setup checks `pac` only, skipping the Git, Git repo and .NET probes, and the DTAP gate does not run. Orphan cleanup behaves exactly as it does in project mode, including which findings delete and which stay report-only.
+
+- **`drift --path <zip>`**: compares a pre-built solution zip against a target instead of your checkout, read-only. The zip is unpacked with its own managed flag, and the temporary folder is removed on success and on failure alike. Orphan verdicts read as unresolved, since a downloaded artifact has no history to resolve them against.
+
+- **Standalone runs now report themselves in the log**: `deploy`, `drift`, `push` and `generate` record the invocation and open an activity span in standalone, as they already did in project mode. `push` and `generate` previously recorded nothing at all there. The .NET and Git versions read as "not checked" rather than carrying a placeholder, because standalone probes neither.
+
+### Changed
+
+- **`--force` is validated in standalone `push` and `generate`** (breaking): an unrecognised specifier now stops the run and lists the valid ones, where it used to be accepted and silently ignored. `push`'s specifiers gate real hazards, so a typo that quietly did nothing was the worse outcome. Correctly spelled values are unaffected.
+
+- **A `.flowline` now governs its whole subtree** (breaking): `push --pluginFile`/`--webresources` is refused from any folder beneath a Flowline project, not only from the project root. The rule always read "cannot be used inside a Flowline project folder", but the check only ever looked at one folder, so moving down a level slipped past it. Standalone push elsewhere in the same repository still works.
+
+- **Project resolution stops at the repository root**: a `.flowline` above your checkout no longer captures it, so one sitting in a parent directory cannot quietly put every repository beneath it into project mode.
+
+- **Standalone `push` and `generate` run through the same pipeline as every other mode**, which is what gives them the invocation record, `--force` validation and the welcome screen above. They previously bypassed it wholesale.
+
+### Fixed
+
+- **Flowline recognises a Git repo it is working inside**: the check looked for `.git` as a folder in the project folder alone, so it failed in a linked worktree or submodule, where `.git` is a file, and for a project in a subfolder of its repository. That second case broke every project-mode command for repositories holding more than one Flowline project.
+
 ## [0.17.0] - 2026-08-16
 
 ### Added
