@@ -294,7 +294,7 @@ namespace Flowline
             // anchored there — rather than leaving orphan cleanup unable to run without a repository.
             services.AddSingleton<IComponentProvenanceLookup>(_ =>
                 new GitComponentProvenanceLookup(
-                    FlowlineCommand<DriftCommand.Settings>.FindProjectRoot(Directory.GetCurrentDirectory())
+                    FlowlineCommand<DriftCommand.Settings>.FindFlowlineProjectRoot(Directory.GetCurrentDirectory())
                         ?? Directory.GetCurrentDirectory()));
             services.AddSingleton<OrphanCleanupService>();
             services.AddSingleton<IPostDeployService>(sp => sp.GetRequiredService<OrphanCleanupService>());

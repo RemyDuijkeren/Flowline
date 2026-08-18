@@ -108,7 +108,7 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
         }
 
         // Show the current configuration
-        var rootFolder = FlowlineCommand<Settings>.FindProjectRoot(Directory.GetCurrentDirectory()) ?? Directory.GetCurrentDirectory();
+        var rootFolder = FlowlineCommand<Settings>.FindFlowlineProjectRoot(Directory.GetCurrentDirectory()) ?? Directory.GetCurrentDirectory();
         var config = ProjectConfig.Load(rootFolder);
         Console.MarkupLine("\n[bold]Configuration[/]");
 

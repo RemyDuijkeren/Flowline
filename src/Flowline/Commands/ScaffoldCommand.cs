@@ -60,7 +60,7 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
     /// <summary>The folder the project lands in when <c>--name</c> does not name another.</summary>
     internal const string WebResourcesFolderName = "WebResources";
 
-    protected override bool RequiresProject => false;
+    protected override bool RequiresFlowlineProject => false;
 
     // The scaffold target is not necessarily a Flowline project, so a welcome banner would introduce a tool
     // the user may be meeting for the first time by way of a folder it has not written yet.

@@ -38,11 +38,11 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     protected string RootFolder { get; private set; } = Directory.GetCurrentDirectory();
     protected ProjectConfig? Config { get; private set; }
     protected virtual bool ShowWelcome => true;
-    protected virtual bool RequiresProject => true;
+    protected virtual bool RequiresFlowlineProject => true;
 
     // Lets a command run against a folder with no .flowline project — settings-aware (unlike
-    // RequiresProject) because standalone mode is usually gated on a flag such as --path, not a fixed
-    // command-wide property. Branched on inside this base pipeline (project-root resolution and
+    // RequiresFlowlineProject) because standalone mode is usually gated on a flag such as --path, not
+    // a fixed command-wide property. Branched on inside this base pipeline (project-root resolution and
     // CheckSetupAsync below) rather than by overriding ExecuteAsync wholesale, so ValidateForce,
     // InvocationLogger.Log, the activity span, and the welcome screen stay shared between modes.
     protected virtual bool IsStandalone(TSettings settings) => false;
@@ -75,7 +75,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     // When there's no repository above at all, the walk stays unbounded and can still return a .flowline.
     // That is deliberate: the setup check then reports the missing repository, which is the accurate
     // problem, rather than this returning null and the caller claiming no project exists.
-    internal static string? FindProjectRoot(string startDir)
+    internal static string? FindFlowlineProjectRoot(string startDir)
     {
         // Null when startDir isn't in a repository, which leaves the boundary test below unmatchable and
         // the walk unbounded — the fallback described above, with no separate code path.
@@ -99,11 +99,12 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         InitializeRuntimeOptions(settings);
 
         // The project wins when there is one, standalone only fills the gap when there isn't. A .flowline
-        // governs its whole subtree (see FindProjectRoot), so a command run anywhere beneath one belongs
-        // to that project — which is what lets push's "--pluginFile can't be used inside a project" guard
-        // catch a standalone push from a subfolder rather than only from the project root itself.
-        RootFolder = FindProjectRoot(Directory.GetCurrentDirectory())
-            ?? (RequiresProject && !IsStandalone(settings)
+        // governs its whole subtree (see FindFlowlineProjectRoot), so a command run anywhere beneath
+        // one belongs to that project — which is what lets push's "--pluginFile can't be used inside a
+        // project" guard catch a standalone push from a subfolder rather than only from the project
+        // root itself.
+        RootFolder = FindFlowlineProjectRoot(Directory.GetCurrentDirectory())
+            ?? (RequiresFlowlineProject && !IsStandalone(settings)
                 ? throw new FlowlineException(ExitCode.ConfigInvalid, "No Flowline project found — run 'flowline clone' to set up a project.")
                 : Directory.GetCurrentDirectory());
 

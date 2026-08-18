@@ -37,18 +37,18 @@ public class ProjectRootResolutionTests : IDisposable
     // ── The subtree rule ────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void FindProjectRoot_FromASubfolderOfAProject_ResolvesTheProject()
+    public void FindFlowlineProjectRoot_FromASubfolderOfAProject_ResolvesTheProject()
     {
         var repo = Dir("repo");
         GitRepo(repo);
         Flowline(repo);
         var deep = Dir("repo", "src", "nested");
 
-        FlowlineCommand<FlowlineSettings>.FindProjectRoot(deep).Should().Be(repo);
+        FlowlineCommand<FlowlineSettings>.FindFlowlineProjectRoot(deep).Should().Be(repo);
     }
 
     [Fact]
-    public void FindProjectRoot_WithSeveralProjectsInOneRepo_ResolvesTheNearest()
+    public void FindFlowlineProjectRoot_WithSeveralProjectsInOneRepo_ResolvesTheNearest()
     {
         var repo = Dir("repo");
         GitRepo(repo);
@@ -57,24 +57,24 @@ public class ProjectRootResolutionTests : IDisposable
         Flowline(repo);
         var inFoo = Dir("repo", "solutions", "Foo", "Plugins");
 
-        FlowlineCommand<FlowlineSettings>.FindProjectRoot(inFoo).Should().Be(foo);
+        FlowlineCommand<FlowlineSettings>.FindFlowlineProjectRoot(inFoo).Should().Be(foo);
     }
 
     // ── The repository ceiling ──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void FindProjectRoot_StopsAtTheRepositoryRoot_IgnoringAFlowlineAboveIt()
+    public void FindFlowlineProjectRoot_StopsAtTheRepositoryRoot_IgnoringAFlowlineAboveIt()
     {
         Flowline(Dir());           // a stray .flowline above the checkout, e.g. one sitting in C:\Code
         var repo = Dir("repo");
         GitRepo(repo);
         var inside = Dir("repo", "src");
 
-        FlowlineCommand<FlowlineSettings>.FindProjectRoot(inside).Should().BeNull();
+        FlowlineCommand<FlowlineSettings>.FindFlowlineProjectRoot(inside).Should().BeNull();
     }
 
     [Fact]
-    public void FindProjectRoot_ChecksTheRepositoryRootItself_BeforeStopping()
+    public void FindFlowlineProjectRoot_ChecksTheRepositoryRootItself_BeforeStopping()
     {
         // The ordinary layout: the project sits exactly at the repository root, so the boundary must be
         // applied after the config check, not before it.
@@ -82,28 +82,28 @@ public class ProjectRootResolutionTests : IDisposable
         GitRepo(repo);
         Flowline(repo);
 
-        FlowlineCommand<FlowlineSettings>.FindProjectRoot(Dir("repo", "src")).Should().Be(repo);
+        FlowlineCommand<FlowlineSettings>.FindFlowlineProjectRoot(Dir("repo", "src")).Should().Be(repo);
     }
 
     [Fact]
-    public void FindProjectRoot_TreatsAWorktreeDotGitFileAsTheRepositoryRoot()
+    public void FindFlowlineProjectRoot_TreatsAWorktreeDotGitFileAsTheRepositoryRoot()
     {
         Flowline(Dir());
         var wt = Dir("wt");
         GitWorktree(wt);
 
-        FlowlineCommand<FlowlineSettings>.FindProjectRoot(Dir("wt", "src")).Should().BeNull();
+        FlowlineCommand<FlowlineSettings>.FindFlowlineProjectRoot(Dir("wt", "src")).Should().BeNull();
     }
 
     [Fact]
-    public void FindProjectRoot_WithNoRepositoryAnywhere_KeepsWalking()
+    public void FindFlowlineProjectRoot_WithNoRepositoryAnywhere_KeepsWalking()
     {
         // Deliberate: the setup check then reports the missing repository, which is the accurate problem.
         // Returning null here would have the caller claim no project exists while a .flowline sits there.
         var project = Dir("project");
         Flowline(project);
 
-        FlowlineCommand<FlowlineSettings>.FindProjectRoot(Dir("project", "src")).Should().Be(project);
+        FlowlineCommand<FlowlineSettings>.FindFlowlineProjectRoot(Dir("project", "src")).Should().Be(project);
     }
 
     // ── Repository detection ────────────────────────────────────────────────────────────────────

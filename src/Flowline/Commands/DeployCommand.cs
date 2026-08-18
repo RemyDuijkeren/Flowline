@@ -103,7 +103,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     protected override bool IsStandalone(Settings settings) => ResolveStandalone(settings.Path, Directory.GetCurrentDirectory());
 
     internal static bool ResolveStandalone(string? path, string startDir) =>
-        !string.IsNullOrWhiteSpace(path) && FindProjectRoot(startDir) is null;
+        !string.IsNullOrWhiteSpace(path) && FindFlowlineProjectRoot(startDir) is null;
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {

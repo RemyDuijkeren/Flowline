@@ -312,12 +312,12 @@ public sealed class SlnAddCommandTests : IDisposable
     }
 
     [Fact]
-    public void RequiresProject_IsFalse_SoTheCommandRunsOutsideAFlowlineProject()
+    public void RequiresFlowlineProject_IsFalse_SoTheCommandRunsOutsideAFlowlineProject()
     {
         // Guards the two overrides that make standalone operation possible. Both are cheap to lose in a
         // refactor and neither failure shows up until someone runs the command in a bare repo.
         var command = typeof(SlnAddCommand);
-        var requiresProject = command.GetProperty("RequiresProject",
+        var requiresProject = command.GetProperty("RequiresFlowlineProject",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
         requiresProject!.DeclaringType.Should().Be(command);
 

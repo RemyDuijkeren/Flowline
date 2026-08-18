@@ -33,7 +33,7 @@ public class FlowlineCommandStandaloneTests
         : FlowlineCommand<FlowlineSettings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
     {
         public bool Standalone { get; set; }
-        public bool RequiresProjectValue { get; set; } = true;
+        public bool RequiresFlowlineProjectValue { get; set; } = true;
         public string[] ForceSpecifiers { get; set; } = [];
 
         // Isolates RootFolder resolution (and force validation) from the real git/dotnet/pac probes —
@@ -42,7 +42,7 @@ public class FlowlineCommandStandaloneTests
         public bool SkipSetup { get; set; }
 
         protected override bool IsStandalone(FlowlineSettings settings) => Standalone;
-        protected override bool RequiresProject => RequiresProjectValue;
+        protected override bool RequiresFlowlineProject => RequiresFlowlineProjectValue;
         protected override string[] ValidForceSpecifiers => ForceSpecifiers;
 
         protected override Task CheckSetupAsync(FlowlineSettings settings, CancellationToken cancellationToken) =>
@@ -82,7 +82,7 @@ public class FlowlineCommandStandaloneTests
     static CommandContext MakeContext(string name = "test-command") =>
         new(Array.Empty<string>(), new NoRemainingArguments(), name, null);
 
-    // ── R3 / KTD1: RootFolder resolution consults IsStandalone OR !RequiresProject ──────────────
+    // ── R3 / KTD1: RootFolder resolution consults IsStandalone OR !RequiresFlowlineProject ──────────────
 
     [Fact]
     public async Task ExecuteAsync_PredicateFalseAndNoProject_ThrowsConfigInvalidWithExistingMessage()
@@ -114,12 +114,12 @@ public class FlowlineCommandStandaloneTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_RequiresProjectFalseAndPredicateFalse_StillResolvesToWorkingDirectory()
+    public async Task ExecuteAsync_RequiresFlowlineProjectFalseAndPredicateFalse_StillResolvesToWorkingDirectory()
     {
         // Regression guard for CloneCommand/InitCommand/SlnAddCommand/ScaffoldCommand: none of them set
-        // the new standalone predicate — they rely solely on the pre-existing RequiresProject => false.
+        // the new standalone predicate — they rely solely on the pre-existing RequiresFlowlineProject => false.
         var command = MakeCommand();
-        command.RequiresProjectValue = false;
+        command.RequiresFlowlineProjectValue = false;
         command.SkipSetup = true;
         var settings = new FlowlineSettings();
 

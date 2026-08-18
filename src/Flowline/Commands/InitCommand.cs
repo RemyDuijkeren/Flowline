@@ -17,7 +17,7 @@ namespace Flowline.Commands;
 
 // The greenfield create command (KD1): validate names, connect, resolve/create the publisher,
 // SDK-create the empty unmanaged solution, scaffold it exactly like a clone, then write the DEV role
-// only once everything succeeded (R10/R16). RequiresProject=false: like clone, init is how a Flowline
+// only once everything succeeded (R10/R16). RequiresFlowlineProject=false: like clone, init is how a Flowline
 // project comes to exist, so there is no project yet to require.
 public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService,
     ILoggerFactory loggerFactory, SubprocessCapture capture, CreateEnvironmentResolver createEnvironmentResolver,
@@ -55,7 +55,7 @@ public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         public string? PublisherName { get; set; }
     }
 
-    protected override bool RequiresProject => false;
+    protected override bool RequiresFlowlineProject => false;
     protected override string[] ValidForceSpecifiers => FlowlineSettings.ConfigOnlyValidSpecifiers;
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)

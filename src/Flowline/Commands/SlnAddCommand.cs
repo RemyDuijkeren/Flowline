@@ -44,7 +44,7 @@ public class SlnAddCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeO
         AlreadyPresent
     }
 
-    protected override bool RequiresProject => false;
+    protected override bool RequiresFlowlineProject => false;
 
     // A leftover .sln next to a .slnx is what `dotnet sln migrate` leaves behind, and the welcome
     // screen would push the one line that tells the user to delete it further from the work it

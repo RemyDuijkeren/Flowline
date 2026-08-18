@@ -49,7 +49,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         public FlagValue<bool> IncludeManaged { get; set; } = null!;
     }
 
-    protected override bool RequiresProject => false;
+    protected override bool RequiresFlowlineProject => false;
     protected override string[] ValidForceSpecifiers => FlowlineSettings.ConfigOnlyValidSpecifiers;
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)

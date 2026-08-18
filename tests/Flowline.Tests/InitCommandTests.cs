@@ -23,11 +23,11 @@ public class InitCommandTests
     // ── Standalone/greenfield wiring (mirrors SlnAddCommandTests' pattern for the same overrides) ──
 
     [Fact]
-    public void RequiresProject_IsFalse_SoTheCommandRunsBeforeAProjectExists()
+    public void RequiresFlowlineProject_IsFalse_SoTheCommandRunsBeforeAProjectExists()
     {
         // init is how a Flowline project comes to exist (like clone) — losing this override would make
         // a fresh `flowline init` fail with "No Flowline project found" before it ever ran.
-        var requiresProject = typeof(InitCommand).GetProperty("RequiresProject",
+        var requiresProject = typeof(InitCommand).GetProperty("RequiresFlowlineProject",
             BindingFlags.Instance | BindingFlags.NonPublic);
 
         requiresProject!.DeclaringType.Should().Be(typeof(InitCommand));

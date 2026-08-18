@@ -56,36 +56,36 @@ public class FlowlineCommandTests
     }
 
     [Fact]
-    public void FindProjectRoot_WhenConfigInStartDir_ReturnsStartDir()
+    public void FindFlowlineProjectRoot_WhenConfigInStartDir_ReturnsStartDir()
     {
         var root = Directory.CreateTempSubdirectory().FullName;
         File.WriteAllText(Path.Combine(root, ".flowline"), "{}");
 
-        var result = FlowlineCommand<FlowlineSettings>.FindProjectRoot(root);
+        var result = FlowlineCommand<FlowlineSettings>.FindFlowlineProjectRoot(root);
 
         result.Should().Be(root);
         Directory.Delete(root, recursive: true);
     }
 
     [Fact]
-    public void FindProjectRoot_WhenConfigInParentDir_ReturnsParent()
+    public void FindFlowlineProjectRoot_WhenConfigInParentDir_ReturnsParent()
     {
         var root = Directory.CreateTempSubdirectory().FullName;
         File.WriteAllText(Path.Combine(root, ".flowline"), "{}");
         var sub = Directory.CreateDirectory(Path.Combine(root, "deep", "nested")).FullName;
 
-        var result = FlowlineCommand<FlowlineSettings>.FindProjectRoot(sub);
+        var result = FlowlineCommand<FlowlineSettings>.FindFlowlineProjectRoot(sub);
 
         result.Should().Be(root);
         Directory.Delete(root, recursive: true);
     }
 
     [Fact]
-    public void FindProjectRoot_WhenNoConfigAnywhere_ReturnsNull()
+    public void FindFlowlineProjectRoot_WhenNoConfigAnywhere_ReturnsNull()
     {
         var isolated = Directory.CreateTempSubdirectory().FullName;
 
-        var result = FlowlineCommand<FlowlineSettings>.FindProjectRoot(isolated);
+        var result = FlowlineCommand<FlowlineSettings>.FindFlowlineProjectRoot(isolated);
 
         result.Should().BeNull();
         Directory.Delete(isolated, recursive: true);
