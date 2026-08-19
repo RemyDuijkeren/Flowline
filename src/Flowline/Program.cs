@@ -190,10 +190,11 @@ app.Configure(config =>
 
     // Deploy (pack and import solution into environment)
     config.AddCommand<DeployCommand>("deploy")
-          .WithDescription("Pack solution from repo and import into target environment (test, uat, prod, or URL). Requires clean git working directory.")
+          .WithDescription("Pack solution from repo and import into target environment (test, uat, prod, or URL). Packing from source requires a clean git working directory; deploying a pre-built zip with --path from a folder with no project does not.")
           .WithExample("deploy", "prod")
           .WithExample("deploy", "https://contoso-test.crm4.dynamics.com/")
-          .WithExample("deploy", "test", "--path", "artifacts/ContosoCustomizations_1_2_0_0.zip");
+          .WithExample("deploy", "test", "--path", "artifacts/ContosoCustomizations_1_2_0_0.zip")
+          .WithExample("deploy", "https://contoso-uat.crm4.dynamics.com/", "--path", "ContosoCustomizations_1_2_0_0.zip");
 
     // copy/provision = Copy Source environment to destination environment
     config.AddCommand<ProvisionCommand>("provision")
@@ -218,7 +219,8 @@ app.Configure(config =>
           .WithDescription("Compare committed source against a live environment (dev, test, uat, prod, or a URL) and report components present there but not declared in source. Read-only — never deletes or modifies anything. Run against prod/test for drift detection, or dev before sync/deploy as a preview.")
           .WithExample("drift", "prod")
           .WithExample("drift", "test")
-          .WithExample("drift", "https://contoso-test.crm4.dynamics.com/");
+          .WithExample("drift", "https://contoso-test.crm4.dynamics.com/")
+          .WithExample("drift", "https://contoso-test.crm4.dynamics.com/", "--path", "ContosoCustomizations_1_2_0_0.zip");
 
     // scaffold = write a project template locally; the only command here that never reaches Dataverse
     config.AddCommand<ScaffoldCommand>("scaffold")

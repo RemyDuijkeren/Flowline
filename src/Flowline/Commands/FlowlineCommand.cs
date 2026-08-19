@@ -40,6 +40,17 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     protected virtual bool ShowWelcome => true;
     protected virtual bool RequiresFlowlineProject => true;
 
+    // Overridable so a test can supply a FlowlineValidator built with stubbed ValidationProbes, which is
+    // the seam that class already exposes through its public constructor. Without this, setup tests can
+    // only assert what the machine they run on happens to have installed — and a runner without pac
+    // turns them into assertions about nothing.
+    protected virtual FlowlineValidator Validator => FlowlineValidator.Default;
+
+    // One definition for both ToolVersions construction sites (project setup and standalone setup), which
+    // otherwise carried the same expression forty lines apart.
+    static string ThisFlowlineVersion =>
+        Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version ?? "0.0.0";
+
     // Lets a command run against a folder with no .flowline project — settings-aware (unlike
     // RequiresFlowlineProject) because standalone mode is usually gated on a flag such as --path, not
     // a fixed command-wide property. Branched on inside this base pipeline (project-root resolution and
@@ -115,7 +126,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         using var activity = FlowlineActivitySource.Source.StartActivity(context.Name);
         Logger.LogInformation("Command: {Command} {Args}", context.Name, argsOnly);
 
-        if (ShowWelcome && Console.Profile.Capabilities.Interactive && FlowlineValidator.Default.ShouldShowWelcomeScreen(settings.NoCache))
+        if (ShowWelcome && Console.Profile.Capabilities.Interactive && Validator.ShouldShowWelcomeScreen(settings.NoCache))
             Console.WriteWelcomeScreen();
 
         await CheckSetupAsync(settings, cancellationToken);
@@ -124,6 +135,13 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         Config = ProjectConfig.Load(RootFolder) ?? new ProjectConfig();
 
         InvocationLogger.Log(Logger, RuntimeOptions, Config, RootFolder, activity);
+
+        // Recorded positively rather than inferred. Activity.SetTag drops a key whose value is null, so
+        // a standalone span is otherwise identifiable only by which tool tags are *missing* — which reads
+        // the same as a span that never set them.
+        var mode = IsStandalone(settings) ? "standalone" : "project";
+        activity?.SetTag("flowline.mode", mode);
+        Logger.LogInformation("Invocation: mode={Mode} root={ProjectRoot}", mode, RootFolder);
 
         ValidateForce(context, settings);
 
@@ -142,7 +160,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     // one definition so the three cannot report different shapes for the same mode.
     protected void ApplyStandaloneToolVersions(ToolCheckResult pac) =>
         RuntimeOptions.ToolVersions = new FlowlineToolVersions(
-            FlowlineVersion: Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version ?? "0.0.0",
+            FlowlineVersion: ThisFlowlineVersion,
             DotNetVersion: null,
             PacVersion: pac.Version,
             PacInstallType: pac.InstallType,
@@ -160,8 +178,8 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
             string? standaloneNewerVersion = null;
             await Console.Status().FlowlineSpinner().StartAsync("Checking your setup...", async ctx =>
             {
-                standalonePac = await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
-                standaloneNewerVersion = await UpdateNoticeChecker.CheckAsync(Console, FlowlineValidator.Default, nuGetVersionClient, settings.NoCache, cancellationToken);
+                standalonePac = await Validator.EnsurePacCliAsync(settings, cancellationToken);
+                standaloneNewerVersion = await UpdateNoticeChecker.CheckAsync(Console, Validator, nuGetVersionClient, settings.NoCache, cancellationToken);
             });
 
             ApplyStandaloneToolVersions(standalonePac!);
@@ -176,17 +194,17 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         string? newerVersion = null;
         await Console.Status().FlowlineSpinner().StartAsync("Checking your setup...", async ctx =>
         {
-            git = await FlowlineValidator.Default.EnsureGitAsync(settings, cancellationToken);
-            await FlowlineValidator.Default.EnsureGitRepoAsync(RootFolder, settings, cancellationToken);
+            git = await Validator.EnsureGitAsync(settings, cancellationToken);
+            await Validator.EnsureGitRepoAsync(RootFolder, settings, cancellationToken);
             // Fetched fresh (not cached) — branch changes too frequently for 7-day TTL
             gitBranch = await GitUtils.GetCurrentBranchAsync(_capture, cancellationToken);
-            dotnet = await FlowlineValidator.Default.EnsureDotNetAsync(settings, cancellationToken);
-            pac = await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
-            newerVersion = await UpdateNoticeChecker.CheckAsync(Console, FlowlineValidator.Default, nuGetVersionClient, settings.NoCache, cancellationToken);
+            dotnet = await Validator.EnsureDotNetAsync(settings, cancellationToken);
+            pac = await Validator.EnsurePacCliAsync(settings, cancellationToken);
+            newerVersion = await UpdateNoticeChecker.CheckAsync(Console, Validator, nuGetVersionClient, settings.NoCache, cancellationToken);
         });
 
         RuntimeOptions.ToolVersions = new FlowlineToolVersions(
-            FlowlineVersion: Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version ?? "0.0.0",
+            FlowlineVersion: ThisFlowlineVersion,
             DotNetVersion: dotnet!.Version,
             PacVersion: pac!.Version,
             PacInstallType: pac.InstallType,
@@ -241,7 +259,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         var profile = resolvedProfile ?? await ProfileResolutionService.ResolveAsync(url, cancellationToken);
         EnvironmentInfo? env = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking {label.ToLower()} [bold]{url}[/]...",
-            ctx => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(url, profile, settings, cancellationToken));
+            ctx => Validator.GetEnvironmentInfoByUrlAsync(url, profile, settings, cancellationToken));
 
         if (env == null)
             throw new FlowlineException(ExitCode.ConnectionFailed, $"{label} environment not found — check the URL or your PAC login.");
@@ -286,7 +304,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
 
         SolutionInfo? remoteSln = await Console.Status().FlowlineSpinner().StartAsync(
             $"Looking up solution [bold]{projectSln.UniqueName}[/]...",
-            ctx => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, projectSln.UniqueName, includeManaged ?? false, settings, cancellationToken, bypassCache));
+            ctx => Validator.GetSolutionInfoAsync(environmentUrl, projectSln.UniqueName, includeManaged ?? false, settings, cancellationToken, bypassCache));
         if (remoteSln == null)
             throw new FlowlineException(ExitCode.NotFound, $"Solution '{projectSln.UniqueName}' not found in that environment.");
 
@@ -304,7 +322,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         var profile = resolvedProfile ?? await ProfileResolutionService.ResolveAsync(environmentUrl, cancellationToken);
         EnvironmentInfo? env = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking dev [bold]{environmentUrl}[/]...",
-            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(environmentUrl, profile, settings, cancellationToken));
+            _ => Validator.GetEnvironmentInfoByUrlAsync(environmentUrl, profile, settings, cancellationToken));
 
         if (env == null)
             throw new FlowlineException(ExitCode.ConnectionFailed, "Dev environment not found — check the URL or your PAC login.");
@@ -315,12 +333,15 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         return (env, profile);
     }
 
+    // bypassCache defaults false because push and generate have downstream work that would surface a
+    // stale "solution still exists" answer. drift has none — it is a health-check signal whose whole
+    // output is that answer — so it opts in, matching what its project-mode path already does.
     protected async Task<SolutionInfo> GetAndCheckStandaloneSolutionAsync(
-        string solutionName, string environmentUrl, TSettings settings, CancellationToken cancellationToken)
+        string solutionName, string environmentUrl, TSettings settings, CancellationToken cancellationToken, bool bypassCache = false)
     {
         SolutionInfo? remoteSln = await Console.Status().FlowlineSpinner().StartAsync(
             $"Looking up [bold]{solutionName}[/]...",
-            _ => FlowlineValidator.Default.GetSolutionInfoAsync(environmentUrl, solutionName, includeManaged: false, settings, cancellationToken));
+            _ => Validator.GetSolutionInfoAsync(environmentUrl, solutionName, includeManaged: false, settings, cancellationToken, bypassCache));
         if (remoteSln == null)
             throw new FlowlineException(ExitCode.NotFound, $"Solution '{solutionName}' not found in that environment.");
 

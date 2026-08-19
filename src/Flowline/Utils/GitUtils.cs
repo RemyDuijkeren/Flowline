@@ -236,7 +236,12 @@ public static class GitUtils
     public static async Task AssertGitRepoAsync(string rootFolder, SubprocessCapture capture, bool verbose = true, CancellationToken cancellationToken = default)
     {
         if (FindRepositoryRoot(rootFolder) is null)
-            throw new FlowlineException(ExitCode.ConfigInvalid, "No Git repo found. Run 'git init' or 'git clone' first.");
+            // Names the project so the demand for a repository is self-explaining. Reaching here means a
+            // .flowline was found at rootFolder (or above it) and selected project mode, which can be a
+            // surprise when the caller expected standalone from a bare artifact folder — a Flowline
+            // project is not valid outside a repository, so this is the accurate failure either way.
+            throw new FlowlineException(ExitCode.ConfigInvalid,
+                $"No Git repo found for the Flowline project at '{rootFolder}'. Run 'git init' or 'git clone' first, or run from outside that project to work standalone.");
 
         AnsiConsole.Console.Info("You're in a Git repo");
 

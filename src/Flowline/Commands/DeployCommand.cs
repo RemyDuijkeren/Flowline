@@ -171,7 +171,8 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             // Standalone already read this above (it needed the unique name to build `sln` at all);
             // --path inside a project reads it here, exactly where it always did. Either way the zip is
             // parsed once per run, so one deploy can never act on two answers.
-            var (artifactVersion, artifactManaged, _) = artifactManifest ?? ReadArtifactSolutionManifest(settings.Path!);
+            var (artifactVersion, artifactManaged, artifactUniqueName) = artifactManifest ?? ReadArtifactSolutionManifest(settings.Path!);
+            ValidateArtifactSolutionName(artifactUniqueName, sln.UniqueName, settings.Path!, standalone);
             // KTD2/KTD3: standalone's sln.IncludeManaged is itself derived from this same artifact
             // manifest above (ResolveStandaloneSolution) — comparing it back here would always pass, so
             // skip it there. Project mode's --path still compares against a genuinely independent source
@@ -459,7 +460,15 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
                 "Dev is a development environment — use 'sync' to push changes there, not 'deploy'.");
 
         if (dtapDecision.Outcome != DtapGateOutcome.Check)
+        {
+            // Say so when there was no topology to check against at all. The gate resolving to Skip is
+            // ordinary for a target outside the configured tiers, but a standalone run skips it for a
+            // different reason — there is no config — and a promotion gate that silently does nothing is
+            // exactly the shape an operator should be able to see in a CI log.
+            if (!HasAnyEnvironmentUrl(Config!))
+                Console.Skip("Skipping DTAP gate — no environment config here to order promotions by.");
             return;
+        }
 
         if (settings.SkipDtapCheck)
         {
@@ -718,6 +727,20 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             $"{(solutionIncludeManaged ? "managed" : "unmanaged")} — pass a matching artifact or update the solution's managed setting.");
     }
 
+    // Catches the wrong zip before it is imported. Orphan cleanup compares the target against the
+    // configured solution's source, so importing an artifact that carries a different solution deletes
+    // components under a name the operator never named. Skipped in standalone, where `configured` was
+    // itself derived from this same manifest and the comparison could only ever pass. A manifest with no
+    // unique name at all is left to the version/identity checks that already own that case.
+    internal static void ValidateArtifactSolutionName(string? artifactUniqueName, string configuredUniqueName, string artifactPath, bool standalone)
+    {
+        if (standalone || artifactUniqueName is null) return;
+        if (string.Equals(artifactUniqueName, configuredUniqueName, StringComparison.OrdinalIgnoreCase)) return;
+
+        throw new FlowlineException(ExitCode.ValidationFailed,
+            $"'{artifactPath}' holds solution '{artifactUniqueName}', but this project is configured for '{configuredUniqueName}' — deploy the matching artifact, or run from the other project.");
+    }
+
     // R5/R9/KTD2: standalone's only identity source — Config isn't available (it's a bare `new
     // ProjectConfig()`, see FlowlineCommand.cs), so unique name and managed both come from the artifact
     // manifest that was already read above. Pure so it's unit-testable without a live PAC CLI or
@@ -800,6 +823,12 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
     internal enum DtapGateOutcome { DevBlock, Skip, Check }
     internal sealed record DtapGateDecision(DtapGateOutcome Outcome, string? PredecessorUrl = null, string? PredecessorLabel = null);
+
+    // "No topology configured at all", which is a different thing from "this target isn't one of the
+    // configured tiers". Both resolve the gate to Skip; only the first is worth announcing.
+    internal static bool HasAnyEnvironmentUrl(ProjectConfig config) =>
+        !string.IsNullOrEmpty(config.ProdUrl) || !string.IsNullOrEmpty(config.UatUrl) ||
+        !string.IsNullOrEmpty(config.TestUrl) || !string.IsNullOrEmpty(config.DevUrl);
 
     internal static DtapGateDecision ResolveDtapGate(ProjectConfig config, string targetUrl)
     {
@@ -1026,7 +1055,12 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             var showResult = await Run(
                 Cli.Wrap("git")
                     .WithWorkingDirectory(rootFolder)
-                    .WithArguments(args => args.Add("show").Add($"{sha}:{gitPath}"))
+                    // `./` matters: in the <rev>:<path> form git resolves a bare path from the repository
+                    // root, but a `./`-prefixed one from the working directory. Without it this probe
+                    // exits 128 on every commit for a project in a repository subfolder — silently
+                    // reporting "not in this checkout's history" for an artifact that is. The `git log`
+                    // above needs no prefix: pathspecs are already working-directory-relative.
+                    .WithArguments(args => args.Add("show").Add($"{sha}:./{gitPath}"))
                     .WithValidation(CommandResultValidation.None));
             if (showResult.ExitCode != 0) continue;
 

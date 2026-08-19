@@ -171,7 +171,7 @@ public class FlowlineCommandStandaloneTests
         }
         catch (FlowlineException ex)
         {
-            ex.Message.Should().NotBe("No Git repo found. Run 'git init' or 'git clone' first.");
+            ex.Message.Should().NotStartWith("No Git repo found");
             return; // No pac on this runner — the git-repo assertion above is all this case can prove.
         }
 

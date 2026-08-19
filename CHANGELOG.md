@@ -21,7 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A `.flowline` now governs its whole subtree** (breaking): `push --pluginFile`/`--webresources` is refused from any folder beneath a Flowline project, not only from the project root. The rule always read "cannot be used inside a Flowline project folder", but the check only ever looked at one folder, so moving down a level slipped past it. Standalone push elsewhere in the same repository still works.
 
-- **Project resolution stops at the repository root**: a `.flowline` above your checkout no longer captures it, so one sitting in a parent directory cannot quietly put every repository beneath it into project mode.
+- **`generate` run from a subfolder of a project now runs in project mode** (breaking): it previously looked for `.flowline` in the current folder only, so a subfolder run went standalone. It now belongs to the enclosing project, the same subtree rule `push` follows, which means it resolves the configured solution and DEV URL, can fail on those, and can save resolved settings back to `.flowline`.
+
+- **Project resolution stops at the repository root**: a `.flowline` above your checkout no longer captures it, so one sitting in a parent directory cannot quietly put every repository beneath it into project mode. A `.flowline` with no Git repository above it is not a valid project: the run fails naming that project rather than proceeding.
 
 - **Standalone `push` and `generate` run through the same pipeline as every other mode**, which is what gives them the invocation record, `--force` validation and the welcome screen above. They previously bypassed it wholesale.
 

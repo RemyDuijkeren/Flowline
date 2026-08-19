@@ -38,6 +38,13 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
     {
         var standalone = IsStandalone(settings);
 
+        // The artifact route keys off the flag itself, not the mode — `--path` names the thing to compare,
+        // and that is true inside a project as much as outside one. Gating it on `standalone` (as this
+        // first shipped) made `drift <target> --path <zip>` inside a project silently compare the checkout
+        // instead, reporting confident orphan results about an input the caller never named. Deploy has
+        // always keyed its own artifact route this way (`usingExplicitArtifact`); drift was the outlier.
+        var usingArtifact = !string.IsNullOrWhiteSpace(settings.Path);
+
         // R15: a role keyword resolves through Config in project mode, but standalone's Config is a bare
         // `new ProjectConfig()` (see FlowlineCommand.cs) — every role would fall through to a
         // config-shaped "URL is required" message pointing at a .flowline that was never expected to
@@ -51,35 +58,42 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
         if (standalone && TryResolveRole(settings.Target) is not null)
             throw new FlowlineException(ExitCode.ConfigInvalid, BuildStandaloneRoleError(settings.Target));
 
-        // R5/R7: standalone's only identity source is the artifact manifest — read (and validated) before
-        // any network call, so a corrupt/missing zip fails fast rather than after a round trip to the
-        // target. Project mode keeps resolving identity through GetAndCheckSolutionAsync below (unchanged).
-        ProjectSolution? standaloneSln = null;
-        if (standalone)
+        // R5/R7: when an artifact is named, it is the only identity source — read (and validated) before
+        // any network call, so a corrupt or missing zip fails fast rather than after a round trip to the
+        // target. Without `--path`, identity still comes from GetAndCheckSolutionAsync below (unchanged).
+        ProjectSolution? artifactSln = null;
+        if (usingArtifact)
         {
             var artifactManifest = DeployCommand.ReadArtifactSolutionManifest(settings.Path!);
-            standaloneSln = DeployCommand.ResolveStandaloneSolution(settings.Path!, artifactManifest);
+            artifactSln = DeployCommand.ResolveStandaloneSolution(settings.Path!, artifactManifest);
 
-            // R14: standalone only — project mode says nothing new here (Goal Capsule scopes this plan
-            // out of changing project-mode output), same as U3's deploy note.
-            Console.Info(DeployCommand.BuildStandaloneIdentityNote(Path.GetFileName(settings.Path!)));
+            // R14: standalone only — inside a project the mode is not news, and the Goal Capsule scopes
+            // this work out of changing project-mode output. Same rule as U3's deploy note.
+            if (standalone)
+                Console.Info(DeployCommand.BuildStandaloneIdentityNote(Path.GetFileName(settings.Path!)));
         }
 
         var (env, profile) = await ResolveEnvironmentAsync(settings.Target, settings, cancellationToken);
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, env.EnvironmentUrl!, cancellationToken, profile);
 
-        if (standalone)
+        if (usingArtifact)
         {
             // Mirrors push/generate's own standalone solution check (FlowlineCommand.cs) — confirms the
             // artifact's solution actually exists in the target before spending time unpacking it.
-            await GetAndCheckStandaloneSolutionAsync(standaloneSln!.UniqueName, env.EnvironmentUrl!, settings, cancellationToken);
+            //
+            // bypassCache: true for the same reason the project-mode call below passes it — drift is a
+            // health-check signal with no downstream step to catch a stale "solution still exists" entry,
+            // so a solution deleted or renamed in the target would otherwise read as "no drift" for the
+            // cache's TTL. push and generate keep the cached read: they have downstream work that would
+            // surface a stale answer.
+            await GetAndCheckStandaloneSolutionAsync(artifactSln!.UniqueName, env.EnvironmentUrl!, settings, cancellationToken, bypassCache: true);
 
             var tmpUnpackDir = Directory.CreateTempSubdirectory("flowline-drift-").FullName;
             return await RunInTempDirAsync(tmpUnpackDir, async () =>
             {
                 // R9: the artifact's own managed flag drives the unpack's package type — a mismatch
                 // unpacks wrong (commit 710c132). Mirrors DeployCommand.cs's temp-unpack call.
-                await PacUtils.UnpackSolutionAsync(settings.Path!, tmpUnpackDir, standaloneSln.IncludeManaged, _capture, cancellationToken);
+                await PacUtils.UnpackSolutionAsync(settings.Path!, tmpUnpackDir, artifactSln.IncludeManaged, _capture, cancellationToken);
 
                 // R12/KTD4: primitives overload, read-only mode, checkoutSolutionSrcRoot: null — a temp
                 // unpack has no git history behind it, so every entry's provenance verdict stays
@@ -87,11 +101,11 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
                 // through the convenience overload above: it composes `<folder>/src` and pins
                 // checkoutSolutionSrcRoot to that same path, both wrong for a temp unpack (which IS the
                 // src root, not its parent).
-                var standaloneResult = await orphanCleanupService.CompareAsync(
-                    tmpUnpackDir, service, standaloneSln.UniqueName, env.EnvironmentUrl!, RunMode.NoDelete, cancellationToken,
+                var artifactResult = await orphanCleanupService.CompareAsync(
+                    tmpUnpackDir, service, artifactSln.UniqueName, env.EnvironmentUrl!, RunMode.NoDelete, cancellationToken,
                     noDeleteHint: null, checkoutSolutionSrcRoot: null);
 
-                return SelectExitCode(standaloneResult);
+                return SelectExitCode(artifactResult);
             }, Logger);
         }
 
