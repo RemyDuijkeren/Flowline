@@ -51,7 +51,13 @@ public enum ExitCode
     /// <summary>Destructive or overwriting operation requires --force in non-interactive mode.</summary>
     ForceRequired = 17,
 
-    /// <summary>Deploy completed but orphan cleanup failed for some components. Check output for items to remove manually via maker portal.</summary>
+    /// <summary>
+    /// Deploy completed but the target is incomplete. Two sources, each naming its own fix in the output:
+    /// orphan cleanup failed for some components (remove them manually via maker portal), or a plug-in
+    /// package holds an assembly with no registration in the target (create the pluginassembly record
+    /// under that package with sandbox isolation, then deploy again so the content write populates its
+    /// plugin types). The second repeats on every later deploy until that record exists.
+    /// </summary>
     PartialSuccess = 18,
 
     /// <summary>Check could not run to completion — an empty-input guard skipped the comparison (e.g. no local or no live components). Not a pass/fail signal; investigate the printed reason before trusting the result.</summary>

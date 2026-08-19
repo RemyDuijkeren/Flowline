@@ -341,14 +341,18 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             Logger.LogInformation("Importing to: {TargetUrl}", targetUrl);
             await ImportSolutionAsync(packagePath, targetEnv, sln.UniqueName, useStageAndUpgrade, publishChanges, cancellationToken);
 
-            var cleanupFailures = 0;
+            var postImportFindings = 0;
             foreach (var postDeployService in activeServices)
-                cleanupFailures += await postDeployService.RunPostImportAsync(postDeployContext, cancellationToken);
-            Logger.LogInformation("Post-deploy cleanup: {Failures} failures", cleanupFailures);
+                postImportFindings += await postDeployService.RunPostImportAsync(postDeployContext, cancellationToken);
+            Logger.LogInformation("Post-deploy findings: {Findings}", postImportFindings);
 
-            if (ShouldReportPartialSuccess(cleanupFailures))
+            // KTD5: source-neutral. More than one post-import service can now report, so this line sums
+            // them and names no cause — each service already printed its own findings and its own fix
+            // above (orphan cleanup its maker-portal action, the package assembly check its remedy).
+            // Claiming every finding is an orphan was true while orphan cleanup was the only reporter.
+            if (ShouldReportPartialSuccess(postImportFindings))
             {
-                Console.Warning($"{cleanupFailures} orphan {(cleanupFailures == 1 ? "component" : "components")} couldn't be cleaned up — see above, remove manually via maker portal.");
+                Console.Warning($"Deploy finished with {postImportFindings} post-import {(postImportFindings == 1 ? "finding" : "findings")} — see above.");
                 return (int)ExitCode.PartialSuccess;
             }
 

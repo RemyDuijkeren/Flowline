@@ -302,6 +302,11 @@ namespace Flowline
                         ?? Directory.GetCurrentDirectory()));
             services.AddSingleton<OrphanCleanupService>();
             services.AddSingleton<IPostDeployService>(sp => sp.GetRequiredService<OrphanCleanupService>());
+            // KTD3: last, so it observes the state the deploy actually leaves behind — orphan cleanup
+            // above can delete a pluginassembly or redirect to a pluginpackage delete, and a verdict
+            // read before that would describe a target that no longer exists. Has no skip flag (R8),
+            // so ResolveActiveServices never filters it out.
+            services.AddSingleton<IPostDeployService, PluginPackageAssemblyCheckService>();
         }
     }
 }
