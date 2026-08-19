@@ -75,7 +75,7 @@ public class PluginAssemblyReader(IAnsiConsole console)
                 // tempDir's entry (GroupBy preserves Concat's order, so a name collision resolves to what
                 // the package itself actually carries).
                 var resolver = new PathAssemblyResolver(
-                    BuildResolverPaths(dllPath).Concat(siblingDlls)
+                    BuildResolverPaths(dllPath, includeHostFallback: true).Concat(siblingDlls)
                         .GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
                         .Select(g => g.First()));
                 using var mlc = new MetadataLoadContext(resolver);
@@ -214,7 +214,13 @@ public class PluginAssemblyReader(IAnsiConsole console)
     // internal, not private: PluginProjectResolver's discovery probe loads candidate build output with
     // the same MetadataLoadContext idiom and must resolve references the same way. One resolver-path
     // builder, two callers — reimplementing it there would drift.
-    internal static List<string> BuildResolverPaths(string dllPath)
+    // includeHostFallback is opt-in and only AnalyzePackage sets it. PluginProjectResolver and the
+    // classic Analyze path deliberately let an unresolvable Microsoft.Xrm.Sdk stay unresolvable: there,
+    // reflection reporting "no plugin types" for a project that has them is a guess, and acting on it
+    // deletes the live assembly, its steps and its Custom APIs, so the resolver errors instead
+    // (PluginProjectResolverTests.ResolvePluginAssembly_WithNoAssemblyItCanLoad_...). Handing those
+    // callers a host copy of the SDK would silently disarm that guard.
+    internal static List<string> BuildResolverPaths(string dllPath, bool includeHostFallback = false)
     {
         var runtimeDir = RuntimeEnvironment.GetRuntimeDirectory();
         var paths = new List<string>(Directory.GetFiles(runtimeDir, "*.dll"));
@@ -269,18 +275,21 @@ public class PluginAssemblyReader(IAnsiConsole console)
             }
         }
 
-        // Last resort: the assemblies Flowline itself runs on. Every widening above assumes the .dll or
-        // .nupkg sits in build output with its copy-local dependencies nearby. A package reached through
-        // a solution unpack has none — `pac solution unpack` writes it to
+        // Last resort, package path only: the assemblies Flowline itself runs on. Every widening above
+        // assumes the .nupkg sits in build output with its copy-local dependencies nearby. A package
+        // reached through a solution unpack has none — `pac solution unpack` writes it to
         // pluginpackages/<uniquename>/package/<name>.nupkg alone — so Microsoft.Xrm.Sdk is unresolvable
         // and IsDerivedFrom's GetInterfaces() walk throws FileNotFoundException instead of answering
         // whether the type implements IPlugin. Flowline references the SDK itself, so its own directory
         // always carries a usable copy. Only filenames nothing above already supplied are added, so a
         // real copy-local sibling still wins and no duplicate simple name reaches MetadataLoadContext.
-        var seenFileNames = paths.Select(Path.GetFileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        paths.AddRange(
-            Directory.EnumerateFiles(AppContext.BaseDirectory, "*.dll", SearchOption.TopDirectoryOnly)
-                .Where(p => seenFileNames.Add(Path.GetFileName(p))));
+        if (includeHostFallback)
+        {
+            var seenFileNames = paths.Select(Path.GetFileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            paths.AddRange(
+                Directory.EnumerateFiles(AppContext.BaseDirectory, "*.dll", SearchOption.TopDirectoryOnly)
+                    .Where(p => seenFileNames.Add(Path.GetFileName(p))));
+        }
 
         paths.Add(dllPath);
         return paths;
