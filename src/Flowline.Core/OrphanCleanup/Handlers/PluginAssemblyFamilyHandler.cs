@@ -2,6 +2,7 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using Flowline.Core.Models;
+using Flowline.Core.Plugins;
 using Flowline.Core.Services;
 using Spectre.Console;
 
@@ -78,11 +79,33 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
             ? await ResolvePackageIdsAsync(context.Service, assemblyIds, console, ct).ConfigureAwait(false)
             : new Dictionary<Guid, EntityReference>();
 
+        // R11/R12/KTD7: package content, not the manifest, decides orphan candidacy for a package-owned
+        // assembly. ComponentClassifier's manifest-based portable-name match (the fix for cross-
+        // environment id drift) still reads "absent from Solution.xml" as "removed on purpose" — true for
+        // a classic assembly, false for one a package still carries but the source environment never
+        // registered (the exact bug this plan exists to detect). Reusing the packageid resolution above,
+        // check each package-owned candidate's live name against its package's locally reflected content
+        // instead: present in both, it's not an orphan at all, regardless of the manifest.
+        var excludedAssemblyIds = await ResolvePackageContentExclusionsAsync(context, packageIds, names, console, ct).ConfigureAwait(false);
+
+        // Excluded candidates are dropped before any finding is built below — not reported, not deleted,
+        // not redirected — but stay in claimedIds above (recognized-but-clean), so
+        // DispatchToHandlersAsync's unclaimed-candidate fallback never re-flags what this handler already
+        // fully evaluated. A package the imported solution no longer carries at all yields no exclusions
+        // (ResolvePackageContentExclusionsAsync finds no reflected content for it), so redirectAssemblyIds
+        // below stays exactly packageIds.Keys and the existing package-delete path runs unchanged (R12).
+        var claimedForFindings = excludedAssemblyIds.Count == 0
+            ? claimed
+            : claimed.Where(c => !excludedAssemblyIds.Contains(c.ObjectId)).ToList();
+        var redirectAssemblyIds = excludedAssemblyIds.Count == 0
+            ? packageIds.Keys.ToList()
+            : packageIds.Keys.Where(id => !excludedAssemblyIds.Contains(id)).ToList();
+
         // Only candidates already in this run's batch are touched — a CustomApi/param/prop this query
         // finds that ISN'T already an orphan candidate is still validly declared locally.
         var localCustomApiNames = ComponentClassifier.ScanCustomApiNames(context.DataverseSolutionSrcRoot);
-        var (childCleanupFindings, childCleanupDegraded) = packageIds.Count > 0
-            ? await ResolvePackageChildCleanupFindingsAsync(context.Service, packageIds.Keys, candidates, claimedIds, localCustomApiNames, console, ct).ConfigureAwait(false)
+        var (childCleanupFindings, childCleanupDegraded) = redirectAssemblyIds.Count > 0
+            ? await ResolvePackageChildCleanupFindingsAsync(context.Service, redirectAssemblyIds, candidates, claimedIds, localCustomApiNames, console, ct).ConfigureAwait(false)
             : ([], false);
 
         // A transient fault partway through ResolvePackageChildCleanupFindingsAsync must not leave the
@@ -95,7 +118,7 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         // reactively-deferred/still-blocking-at-post-import case is not implemented by this handler.
         if (context.Mode.IsReportOnly())
             return new HandlerDetectionResult(
-                BuildAllFindings(claimed, names, packageIds, _ => OrphanPriority.Prio1, skipRedirectedFindingsThisRun)
+                BuildAllFindings(claimedForFindings, names, packageIds, _ => OrphanPriority.Prio1, skipRedirectedFindingsThisRun)
                     .Concat(childCleanupFindings.Select(f => f with { Priority = OrphanPriority.Prio1 }))
                     .ToList(),
                 claimedIds);
@@ -118,7 +141,7 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
             _ => OrphanPriority.Prio3,
         };
 
-        var findings = BuildAllFindings(claimed, names, packageIds, PriorityFor, skipRedirectedFindingsThisRun)
+        var findings = BuildAllFindings(claimedForFindings, names, packageIds, PriorityFor, skipRedirectedFindingsThisRun)
             .Concat(childCleanupFindings)
             .ToList();
 
@@ -211,6 +234,68 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
             }
             return result;
         }, [], console, msg => $"pluginassembly packageid lookup failed ({msg}) — degrading to un-redirected assembly-delete finding this run.");
+
+    // R11/R12/KTD7: which of this batch's package-owned candidates a still-carried package's content
+    // actually accounts for. Reflects each locally-present package's .nupkg exactly once for the whole
+    // batch (PluginPackageContentReader.ScanReflectedAssemblyNamesByPackage), not once per candidate, then
+    // matches each candidate's live name against its own package's set. An unresolved live name or an
+    // unresolved package uniquename can't be safely matched against local content — leaving that
+    // candidate un-excluded is the narrower, safer default (never silently widen the exclusion).
+    static async Task<HashSet<Guid>> ResolvePackageContentExclusionsAsync(
+        DetectionContext context,
+        Dictionary<Guid, EntityReference> packageIds,
+        Dictionary<Guid, string> names,
+        IAnsiConsole console,
+        CancellationToken ct)
+    {
+        var excluded = new HashSet<Guid>();
+        if (packageIds.Count == 0) return excluded;
+
+        var packageUniqueNames = await ResolvePackageUniqueNamesAsync(
+            context.Service, packageIds.Values.Select(p => p.Id).Distinct().ToList(), console, ct).ConfigureAwait(false);
+        if (packageUniqueNames.Count == 0) return excluded;
+
+        var reflectedByPackage = PluginPackageContentReader.ScanReflectedAssemblyNamesByPackage(context.DataverseSolutionSrcRoot);
+        if (reflectedByPackage.Count == 0) return excluded;
+
+        foreach (var (assemblyId, packageRef) in packageIds)
+        {
+            if (!names.TryGetValue(assemblyId, out var assemblyName)) continue;
+            if (!packageUniqueNames.TryGetValue(packageRef.Id, out var uniqueName)) continue;
+            if (reflectedByPackage.TryGetValue(uniqueName, out var reflectedNames) && reflectedNames.Contains(assemblyName))
+                excluded.Add(assemblyId);
+        }
+
+        return excluded;
+    }
+
+    // Batched live lookup of packageid -> uniquename, the local identity ScanReflectedAssemblyNamesByPackage
+    // keys its per-package sets by. Mirrors ResolvePackageIdsAsync's degrade shape: a transient failure
+    // leaves every package-owned candidate un-excluded this run (the narrower, safer direction) rather
+    // than aborting detection for the whole family.
+    static Task<Dictionary<Guid, string>> ResolvePackageUniqueNamesAsync(
+        IOrganizationServiceAsync2 service,
+        IReadOnlyList<Guid> packageIds,
+        IAnsiConsole console,
+        CancellationToken ct) =>
+        DataverseFaultTolerance.TryQueryAsync(async () =>
+        {
+            var query = new QueryExpression("pluginpackage")
+            {
+                ColumnSet = new ColumnSet("uniquename"),
+                Criteria = { Conditions = { new ConditionExpression("pluginpackageid", ConditionOperator.In, packageIds.Select(id => (object)id).ToArray()) } }
+            };
+            var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
+
+            var result = new Dictionary<Guid, string>();
+            foreach (var entity in entities)
+            {
+                var uniqueName = entity.GetAttributeValue<string>("uniquename");
+                if (uniqueName != null)
+                    result[entity.Id] = uniqueName;
+            }
+            return result;
+        }, [], console, msg => $"pluginpackage uniquename lookup failed ({msg}) — package-content orphan exclusion skipped this run.");
 
     // Pulls any CustomApi (and its RequestParameter/ResponseProperty children) bound to a redirected
     // assembly's plugin types into this family's own findings, ordered ahead of the package-delete slot

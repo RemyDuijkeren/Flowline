@@ -1,3 +1,6 @@
+using System.IO.Compression;
+using System.Reflection;
+using System.Reflection.Emit;
 using System.Text.RegularExpressions;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
@@ -375,6 +378,125 @@ public class OrphanCleanupServiceTests : IDisposable
                 Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginassembly" && q.Criteria.Conditions.Any(c => c.AttributeName == "name"))),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(entities)));
+    }
+
+    // Distinct from SetupPluginAssemblyNames above: that one mocks the manifest-side by-name query
+    // (WHERE name IN (...), portable-name resolution — ResolveNamedComponentIdsAsync). This mocks
+    // PluginAssemblyFamilyHandler.ResolveNamesAsync's live display-name lookup (WHERE id IN (...) SELECT
+    // name via EntityNameLookup), which is what U5's content-exclusion check also reads from.
+    void SetupLivePluginAssemblyName(Guid id, string name)
+    {
+        var entity = new Entity("pluginassembly", id) { ["name"] = name };
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginassembly" && q.ColumnSet.Columns.Contains("name"))),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([entity])));
+    }
+
+    void SetupPluginAssemblyPackageId(Guid assemblyId, Guid packageId)
+    {
+        var entity = new Entity("pluginassembly", assemblyId) { ["packageid"] = new EntityReference("pluginpackage", packageId) };
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginassembly" && q.ColumnSet.Columns.Contains("packageid"))),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([entity])));
+    }
+
+    void SetupPluginPackageUniqueName(Guid packageId, string uniqueName)
+    {
+        var entity = new Entity("pluginpackage", packageId) { ["uniquename"] = uniqueName };
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginpackage" && q.ColumnSet.Columns.Contains("uniquename"))),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([entity])));
+    }
+
+    // ---- U5/KTD7: real-DLL package-content fixture (PluginPackageContentReader.ScanReflectedAssemblyNamesByPackage
+    // reflects genuine DLLs on disk via MetadataLoadContext, so an in-memory mock type won't do; mirrors
+    // PluginPackageAssemblyCheckServiceTests / PluginAssemblyFamilyHandlerTests) ----
+
+    static string BuildPluginDll(string dir, string assemblyName, string pluginTypeName)
+    {
+        var ab = new PersistedAssemblyBuilder(new AssemblyName(assemblyName), typeof(object).Assembly);
+        var mb = ab.DefineDynamicModule("MainModule");
+
+        var pluginTb = mb.DefineType(pluginTypeName, TypeAttributes.Public | TypeAttributes.Class, typeof(object), [typeof(IPlugin)]);
+        var executeMethod = typeof(IPlugin).GetMethod(nameof(IPlugin.Execute))!;
+        var methodBuilder = pluginTb.DefineMethod(nameof(IPlugin.Execute),
+            MethodAttributes.Public | MethodAttributes.Virtual, typeof(void), [typeof(IServiceProvider)]);
+        methodBuilder.GetILGenerator().Emit(OpCodes.Ret);
+        pluginTb.DefineMethodOverride(methodBuilder, executeMethod);
+        pluginTb.CreateType();
+
+        var path = Path.Combine(dir, $"{assemblyName}.dll");
+        ab.Save(path);
+        return path;
+    }
+
+    static string BuildNupkg(string dir, params string[] dllPaths)
+    {
+        var nupkgPath = Path.Combine(dir, $"{Guid.NewGuid():N}.nupkg");
+        using var archive = ZipFile.Open(nupkgPath, ZipArchiveMode.Create);
+        foreach (var dllPath in dllPaths)
+            archive.CreateEntryFromFile(dllPath, $"lib/net10.0/{Path.GetFileName(dllPath)}");
+        return nupkgPath;
+    }
+
+    // Lays out <dataverseSolutionSrcRoot>/pluginpackages/<uniqueName>/pluginpackage.xml + package/<nupkg>,
+    // mirroring the pac solution unpack shape PluginPackageContentReader reads.
+    static void WritePackageSrcTree(string dataverseSolutionSrcRoot, string uniqueName, string nupkgPath)
+    {
+        var packageDir = Directory.CreateDirectory(Path.Combine(dataverseSolutionSrcRoot, "pluginpackages", uniqueName)).FullName;
+        File.WriteAllText(Path.Combine(packageDir, "pluginpackage.xml"),
+            $"""<pluginpackage uniquename="{uniqueName}"><name>{uniqueName}</name></pluginpackage>""");
+        var packageContentDir = Directory.CreateDirectory(Path.Combine(packageDir, "package")).FullName;
+        File.Copy(nupkgPath, Path.Combine(packageContentDir, Path.GetFileName(nupkgPath)));
+    }
+
+    // -- U5/R11/R12/KTD7 end-to-end: a package-owned assembly hand-registered in the target — present
+    // live, present in the imported package's content, absent from Solution.xml's manifest because the
+    // source environment never registered it (KTD7's exact bug) — survives a deploy's orphan cleanup
+    // instead of taking its whole pluginpackage down with it. --
+
+    [Fact]
+    public async Task RunPreImportAsync_HandRegisteredPackageOwnedAssembly_PackageSurvivesAndReportsClean()
+    {
+        const string uniqueName = "abc_TestPackage";
+        const string assemblyName = "Cr07982.Backend";
+        var liveAssemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+
+        var buildDir = Directory.CreateTempSubdirectory("flowline-e2e-pkgcontent-build-").FullName;
+        var dataverseSolutionFolder = Path.Combine(Path.GetTempPath(), $"flowline-test-{Guid.NewGuid():N}");
+        _autoCreatedDataverseSolutionFolders.Add(dataverseSolutionFolder);
+        var srcRoot = Path.Combine(dataverseSolutionFolder, "src");
+        Directory.CreateDirectory(srcRoot);
+
+        try
+        {
+            var dll = BuildPluginDll(buildDir, assemblyName, "Cr07982.Backend.MyPlugin");
+            var nupkg = BuildNupkg(buildDir, dll);
+            WritePackageSrcTree(srcRoot, uniqueName, nupkg);
+
+            SetupSolutionComponents("MySolution", (liveAssemblyId, 91));
+            SetupLivePluginAssemblyName(liveAssemblyId, assemblyName);
+            SetupPluginAssemblyPackageId(liveAssemblyId, packageId);
+            SetupPluginPackageUniqueName(packageId, uniqueName);
+
+            // Solution.xml declares nothing about this assembly at all (KTD7's bug: the source
+            // environment never registered it) — only an unrelated placeholder so the manifest isn't
+            // empty (which would skip the whole orphan check).
+            await _service.RunPreImportAsync(
+                Ctx("MySolution", [(Guid.NewGuid(), 0)], dataverseSolutionSrcRoot: srcRoot), default);
+
+            await _serviceMock.DidNotReceive().DeleteAsync("pluginpackage", packageId, Arg.Any<CancellationToken>());
+            await _serviceMock.DidNotReceive().DeleteAsync("pluginassembly", liveAssemblyId, Arg.Any<CancellationToken>());
+            Assert.Contains("Orphan components (0)", _console.Output);
+        }
+        finally
+        {
+            Directory.Delete(buildDir, recursive: true);
+        }
     }
 
     [Fact]

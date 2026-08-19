@@ -1,3 +1,6 @@
+using System.IO.Compression;
+using System.Reflection;
+using System.Reflection.Emit;
 using System.ServiceModel;
 using Flowline.Core.Services;
 using Flowline.Core.OrphanCleanup;
@@ -95,6 +98,59 @@ public class PluginAssemblyFamilyHandlerTests
                     && q.Criteria.Conditions.Any(c => c.AttributeName == filterAttribute))),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection(entities)));
+    }
+
+    void SetupPackageUniqueName(Guid packageId, string uniqueName)
+    {
+        var entity = new Entity("pluginpackage", packageId) { ["uniquename"] = uniqueName };
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginpackage" && q.ColumnSet.Columns.Contains("uniquename"))),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection([entity])));
+    }
+
+    // ---- U5/KTD7: real-DLL package-content fixtures (mirrors PluginPackageAssemblyCheckServiceTests —
+    // PluginPackageContentReader.ScanReflectedAssemblyNamesByPackage reflects genuine DLLs on disk via
+    // MetadataLoadContext, so an in-memory mock type won't do) ----
+
+    static string BuildPluginDll(string dir, string assemblyName, string pluginTypeName)
+    {
+        var ab = new PersistedAssemblyBuilder(new AssemblyName(assemblyName), typeof(object).Assembly);
+        var mb = ab.DefineDynamicModule("MainModule");
+
+        var pluginTb = mb.DefineType(pluginTypeName, TypeAttributes.Public | TypeAttributes.Class, typeof(object), [typeof(IPlugin)]);
+        var executeMethod = typeof(IPlugin).GetMethod(nameof(IPlugin.Execute))!;
+        var methodBuilder = pluginTb.DefineMethod(nameof(IPlugin.Execute),
+            MethodAttributes.Public | MethodAttributes.Virtual, typeof(void), [typeof(IServiceProvider)]);
+        methodBuilder.GetILGenerator().Emit(OpCodes.Ret);
+        pluginTb.DefineMethodOverride(methodBuilder, executeMethod);
+        pluginTb.CreateType();
+
+        var path = Path.Combine(dir, $"{assemblyName}.dll");
+        ab.Save(path);
+        return path;
+    }
+
+    static string BuildNupkg(string dir, params string[] dllPaths)
+    {
+        var nupkgPath = Path.Combine(dir, $"{Guid.NewGuid():N}.nupkg");
+        using var archive = ZipFile.Open(nupkgPath, ZipArchiveMode.Create);
+        foreach (var dllPath in dllPaths)
+            archive.CreateEntryFromFile(dllPath, $"lib/net10.0/{Path.GetFileName(dllPath)}");
+        return nupkgPath;
+    }
+
+    // Lays out pluginpackages/<uniqueName>/pluginpackage.xml + package/<nupkg>.nupkg, mirroring the pac
+    // solution unpack shape both PluginPackageAssemblyCheckService and PluginPackageContentReader read.
+    static string BuildPackageSrcTree(string uniqueName, string nupkgPath)
+    {
+        var root = Directory.CreateTempSubdirectory("flowline-pkgcontent-src-").FullName;
+        var packageDir = Directory.CreateDirectory(Path.Combine(root, "pluginpackages", uniqueName)).FullName;
+        File.WriteAllText(Path.Combine(packageDir, "pluginpackage.xml"),
+            $"""<pluginpackage uniquename="{uniqueName}"><name>{uniqueName}</name></pluginpackage>""");
+        var packageContentDir = Directory.CreateDirectory(Path.Combine(packageDir, "package")).FullName;
+        File.Copy(nupkgPath, Path.Combine(packageContentDir, Path.GetFileName(nupkgPath)));
+        return root;
     }
 
     [Fact]
@@ -706,5 +762,121 @@ public class PluginAssemblyFamilyHandlerTests
         // Degrades the same way any other plugintype-lookup fault does — no unhandled exception, and no
         // redirected package-delete finding built on unconfirmed cleanup.
         Assert.DoesNotContain(result.Findings, f => f.EntityName == "pluginpackage");
+    }
+
+    // -- U5/R11/R12/KTD7: package content, not the manifest, decides orphan candidacy for a package-owned
+    // assembly. A live pluginassembly whose packageid resolves to a package the imported solution still
+    // carries, and whose name is among that package's reflected content, is excluded before any finding
+    // is built — see PluginAssemblyFamilyHandler.ResolvePackageContentExclusionsAsync. --
+
+    [Fact]
+    public async Task DetectAsync_PackageOwnedAssemblyContentPresentButManifestSilent_NotOrphanNoFinding()
+    {
+        var assemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        const string uniqueName = "abc_TestPackage";
+        const string assemblyName = "Cr07982.Backend";
+
+        var buildDir = Directory.CreateTempSubdirectory("flowline-pkgcontent-build-").FullName;
+        var dll = BuildPluginDll(buildDir, assemblyName, "Cr07982.Backend.MyPlugin");
+        var nupkg = BuildNupkg(buildDir, dll);
+        var srcRoot = BuildPackageSrcTree(uniqueName, nupkg);
+
+        try
+        {
+            SetupPackageIds((assemblyId, packageId));
+            SetupName("pluginassembly", "name", assemblyId, assemblyName);
+            SetupPackageUniqueName(packageId, uniqueName);
+
+            var result = await _handler.DetectAsync(Ctx(srcRoot), [(assemblyId, 91)], default);
+
+            Assert.Empty(result.Findings);
+            // Recognized-but-clean, not unclaimed — DispatchToHandlersAsync must not route this to the
+            // generic-fallback preview as if no handler had evaluated it.
+            Assert.Contains(assemblyId, result.ClaimedIds);
+        }
+        finally
+        {
+            Directory.Delete(buildDir, recursive: true);
+            Directory.Delete(srcRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DetectAsync_PackageOwnedAssemblyNotInPackageContent_StillOrphanRedirectIntact()
+    {
+        var assemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        const string uniqueName = "abc_TestPackage";
+
+        var buildDir = Directory.CreateTempSubdirectory("flowline-pkgcontent-build-").FullName;
+        // Package content reflects a different assembly than the live candidate — content doesn't carry
+        // the candidate's name, so the exclusion must not apply.
+        var dll = BuildPluginDll(buildDir, "SomeOtherAssembly", "SomeOtherAssembly.MyPlugin");
+        var nupkg = BuildNupkg(buildDir, dll);
+        var srcRoot = BuildPackageSrcTree(uniqueName, nupkg);
+
+        try
+        {
+            SetupPackageIds((assemblyId, packageId));
+            SetupName("pluginassembly", "name", assemblyId, "Cr07982.Backend");
+            SetupPackageUniqueName(packageId, uniqueName);
+
+            var findings = (await _handler.DetectAsync(Ctx(srcRoot), [(assemblyId, 91)], default)).Findings;
+
+            var finding = Assert.Single(findings);
+            Assert.Equal(packageId, finding.ObjectId);
+            Assert.Equal("pluginpackage", finding.EntityName);
+        }
+        finally
+        {
+            Directory.Delete(buildDir, recursive: true);
+            Directory.Delete(srcRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DetectAsync_ImportedSolutionCarriesNoPackageDirectoryAtAll_PackageDeleteStillFiresUnchanged()
+    {
+        // R12: the imported solution no longer carries this package's directory at all (Ctx()'s
+        // "unused-package-src-root" has no pluginpackages/ tree) — no reflected content exists for it, so
+        // the content-based exclusion never applies and the existing redirect-to-package-delete path runs
+        // exactly as it did before this fix.
+        var assemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+
+        SetupPackageIds((assemblyId, packageId));
+        SetupName("pluginassembly", "name", assemblyId, "Cr07982.Backend");
+        SetupPackageUniqueName(packageId, "abc_TestPackage");
+
+        var findings = (await _handler.DetectAsync(Ctx(), [(assemblyId, 91)], default)).Findings;
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(packageId, finding.ObjectId);
+        Assert.Equal("pluginpackage", finding.EntityName);
+    }
+
+    [Fact]
+    public async Task DetectAsync_PackageUniqueNameLookupFails_ExclusionSkippedRedirectStillFires()
+    {
+        // A transient fault resolving packageid -> uniquename must fall the narrower, safer way: the
+        // content-based exclusion never applies, and today's redirect-to-package-delete finding still
+        // fires — never widen the exclusion on a failure it can't verify.
+        var assemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        SetupPackageIds((assemblyId, packageId));
+        SetupName("pluginassembly", "name", assemblyId, "Cr07982.Backend");
+
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginpackage" && q.ColumnSet.Columns.Contains("uniquename"))),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("network timeout")));
+
+        var findings = (await _handler.DetectAsync(Ctx(), [(assemblyId, 91)], default)).Findings;
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(packageId, finding.ObjectId);
+        Assert.Equal("pluginpackage", finding.EntityName);
+        Assert.Contains("network timeout", _console.Output);
     }
 }

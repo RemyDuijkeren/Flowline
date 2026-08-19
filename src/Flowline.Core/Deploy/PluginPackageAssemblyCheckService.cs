@@ -1,4 +1,3 @@
-using System.Xml.Linq;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk.Query;
 using Flowline.Core.Console;
@@ -77,22 +76,18 @@ public class PluginPackageAssemblyCheckService(IAnsiConsole console) : IPostDepl
         var packageLabel = Path.GetFileName(packageDir);
         try
         {
-            var uniqueName = ReadPackageUniqueName(packageDir);
+            var uniqueName = PluginPackageContentReader.ReadPackageUniqueName(packageDir);
             packageLabel = uniqueName;
 
-            var nupkgDir = Path.Combine(packageDir, "package");
-            var nupkgPath = Directory.Exists(nupkgDir)
-                ? Directory.EnumerateFiles(nupkgDir, "*.nupkg").FirstOrDefault()
-                : null;
-            if (nupkgPath == null)
+            // U5/KTD7: shared walk with the orphan classifier's package-content exclusion check — see
+            // PluginPackageContentReader. KTD4: the reader's discarding console keeps its push-time
+            // "analyzed" lines and the scanner's own warnings out of deploy output.
+            var reflected = PluginPackageContentReader.ReflectPackageContent(packageDir, _assemblyReader);
+            if (reflected == null)
             {
                 console.Warning($"Package '{Markup.Escape(packageLabel)}' has no .nupkg under its unpacked package folder. Its assembly registrations couldn't be checked.");
                 return (0, false);
             }
-
-            // KTD4: the reader's discarding console keeps its push-time "analyzed" lines and the
-            // scanner's own warnings out of deploy output.
-            var reflected = _assemblyReader.AnalyzePackage(nupkgPath);
             if (reflected.Count == 0)
                 return (0, false); // nothing plugin-bearing reflected — can't claim a clean result for it.
 
@@ -114,19 +109,6 @@ public class PluginPackageAssemblyCheckService(IAnsiConsole console) : IPostDepl
             console.Warning($"Plugin package assembly check couldn't finish for '{Markup.Escape(packageLabel)}': {Markup.Escape(ex.Message)}. Verify its registrations manually.");
             return (0, false);
         }
-    }
-
-    // Verified 2026-08-19 against a real export: the unique name lives on the root element as a
-    // uniquename attribute (and again as a <name> child) — read the XML rather than trusting the
-    // containing directory's own name.
-    static string ReadPackageUniqueName(string packageDir)
-    {
-        var xmlPath = Path.Combine(packageDir, "pluginpackage.xml");
-        var doc = XDocument.Load(xmlPath);
-        var uniqueName = doc.Root?.Attribute("uniquename")?.Value;
-        if (string.IsNullOrWhiteSpace(uniqueName))
-            throw new InvalidOperationException($"pluginpackage.xml has no uniquename attribute ({xmlPath}).");
-        return uniqueName;
     }
 
     // Mirrors PluginService.cs's inline pluginpackage-by-uniquename query — the only such query today,
