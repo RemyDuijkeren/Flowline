@@ -269,6 +269,19 @@ public class PluginAssemblyReader(IAnsiConsole console)
             }
         }
 
+        // Last resort: the assemblies Flowline itself runs on. Every widening above assumes the .dll or
+        // .nupkg sits in build output with its copy-local dependencies nearby. A package reached through
+        // a solution unpack has none — `pac solution unpack` writes it to
+        // pluginpackages/<uniquename>/package/<name>.nupkg alone — so Microsoft.Xrm.Sdk is unresolvable
+        // and IsDerivedFrom's GetInterfaces() walk throws FileNotFoundException instead of answering
+        // whether the type implements IPlugin. Flowline references the SDK itself, so its own directory
+        // always carries a usable copy. Only filenames nothing above already supplied are added, so a
+        // real copy-local sibling still wins and no duplicate simple name reaches MetadataLoadContext.
+        var seenFileNames = paths.Select(Path.GetFileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        paths.AddRange(
+            Directory.EnumerateFiles(AppContext.BaseDirectory, "*.dll", SearchOption.TopDirectoryOnly)
+                .Where(p => seenFileNames.Add(Path.GetFileName(p))));
+
         paths.Add(dllPath);
         return paths;
     }

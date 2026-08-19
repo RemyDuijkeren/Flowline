@@ -1155,6 +1155,38 @@ public class PluginAssemblyReaderTests
         }
     }
 
+    // U1 step 0 (2026-08-19 plan, KTD4): the deploy-unpack condition. `pac solution unpack` writes the
+    // package to pluginpackages/<uniquename>/package/<name>.nupkg with nothing beside it — no copy-local
+    // build output, so the sibling-widening the tests above rely on has nothing to find. The dangerous
+    // outcome here is not a throw: it is an empty list, which reads as "this package carries no
+    // plugin-bearing assemblies" and would let the deploy check print a clean verdict over a package it
+    // never actually inspected.
+    [Fact]
+    public void AnalyzePackage_NupkgAloneWithNoSiblingBuildOutput_StillReflectsPluginBearingAssemblies()
+    {
+        var buildDir = Directory.CreateTempSubdirectory("flowline-reader-build-").FullName;
+        var unpackDir = Directory.CreateTempSubdirectory("flowline-reader-unpack-").FullName;
+        try
+        {
+            var pluginDll = BuildPluginDll(buildDir, "BareUnpackPlugin", "BareUnpackPackagePlugin");
+            var builtNupkg = BuildNupkg(buildDir, pluginDll);
+
+            // Only the .nupkg travels — this is what the deploy temp unpack actually holds.
+            var isolatedNupkg = Path.Combine(unpackDir, Path.GetFileName(builtNupkg));
+            File.Copy(builtNupkg, isolatedNupkg);
+
+            var result = AnalyzePackage(isolatedNupkg);
+
+            var meta = Assert.Single(result);
+            Assert.Contains(meta.Plugins, p => p.Name == "BareUnpackPackagePlugin");
+        }
+        finally
+        {
+            Directory.Delete(buildDir, recursive: true);
+            Directory.Delete(unpackDir, recursive: true);
+        }
+    }
+
     [Fact]
     public void AnalyzePackage_SameNamedSiblingDllsWithDifferentContent_ThrowsInvalidOperationException()
     {
