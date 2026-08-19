@@ -742,6 +742,14 @@ public class PluginService(IAnsiConsole console)
         }
 
         console.Ok($"Assembly [bold]{Safe(metadata.Name)}[/] registered directly under package [bold]{Safe(packageUniqueName)}[/] — Dataverse didn't auto-register it.");
+
+        // R9: this is the moment the fact is learned, so it is the moment worth spending. The record
+        // just created is local to this environment: solution import doesn't register an added package
+        // assembly either (measured 2026-08-17), and the PluginAssembly root component the export
+        // carries for it is inert on a target that has no matching record. Deploy's post-import check
+        // names the same remedy when it finds one missing. Fires only when the fallback fired, so it
+        // stays silent whenever Dataverse registered the assembly itself.
+        console.Warning("This registration is local to this environment. Deploy won't carry it — each target needs the same record created before the assembly runs there.");
     }
 
     // Extracted from the create/update branches so the U6 orchestrator can call it at the specific

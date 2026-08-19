@@ -1885,6 +1885,63 @@ public class PluginServiceTests
         )), Arg.Any<CancellationToken>());
     }
 
+    // R9: the promotion note. Self-registration repairs THIS environment only — solution import doesn't
+    // register an added package assembly either (measured 2026-08-17), so every deploy target needs the
+    // same record. The moment the fallback fires is the moment that fact is learnable, so the note is
+    // bound to it rather than printed on every package push.
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_SelfRegistersAssembly_WarnsTheRegistrationIsEnvironmentLocal()
+    {
+        _service.PackageAssemblyCheckMaxAttempts = 1;
+        _service.PackageAssemblyCheckDelay = TimeSpan.Zero;
+
+        SetupAssembly();
+        SetupPluginPackage(ExistingPluginPackage(Guid.NewGuid()));
+
+        // The assembly exists only once Flowline creates it — keyed off the actual create rather than a
+        // fixed call sequence, because the pre-write assembly-set diff queries this same shape before the
+        // confirm does and would otherwise consume the "absent" answer meant for the confirm.
+        var registered = new Entity("pluginassembly", Guid.NewGuid()) { ["name"] = "MyPlugin", ["version"] = "1.0.0.0" };
+        var assemblyCreated = false;
+        _serviceMock.ExecuteAsync(
+                Arg.Is(Matching<CreateRequest>(r => r.Target.LogicalName == "pluginassembly")),
+                Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                assemblyCreated = true;
+                return Task.FromResult<OrganizationResponse>(
+                    new CreateResponse { Results = new ParameterCollection { { "id", registered.Id } } });
+            });
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginassembly"
+                    && q.Criteria.Conditions.Any(c => c.AttributeName == "packageid")
+                    && HasCondition(q, "name", "MyPlugin"))),
+                Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult(assemblyCreated
+                ? new EntityCollection(new List<Entity> { registered })
+                : new EntityCollection()));
+
+        var result = await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, PackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
+
+        Assert.True(result);
+        Assert.Contains("registered directly under package", _console.Output);
+        Assert.Contains("local to this environment", _console.Output);
+    }
+
+    [Fact]
+    public async Task SyncSolutionFromPackageAsync_DataverseRegistersAssemblyItself_DoesNotWarnAboutPromotion()
+    {
+        SetupAssembly();
+        SetupPackageAssemblyFoundAfterCreate("MyPlugin"); // present on the first confirm — no fallback
+        SetupPluginPackage(ExistingPluginPackage(Guid.NewGuid()));
+
+        await _service.SyncSolutionFromPackageAsync(
+            _serviceMock, PackageAssemblies(), NupkgBytes, "pkg.nupkg", "MyPlugin", "MySolution");
+
+        Assert.DoesNotContain("local to this environment", _console.Output);
+    }
+
     [Fact]
     public async Task SyncSolutionFromPackageAsync_DryRun_NewPackage_DoesNotCreate()
     {
