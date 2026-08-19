@@ -8,6 +8,15 @@
         "resolved": "3.10.4",
         "contentHash": "Vv0HjTkbCOsicbY4uX978MJOoWabFV/GE0zS2ww2mKNLcqLVPY8xaFRIRWa8dRhjkAYhe9h9uhRnw5FCT8Qa4A=="
       },
+      "DLaB.Xrm.EarlyBoundGeneratorV2.Api": {
+        "type": "Direct",
+        "requested": "[2.2026.7.28, )",
+        "resolved": "2.2026.7.28",
+        "contentHash": "4+gpoh5ClVAno4InOlbzLLUi+Y4zNHjuyvD9oy0/JF5nr+w6TUMz/QGmZ0TZ1DD054nRkjaG6h6Y9nb1XvnSbA==",
+        "dependencies": {
+          "Microsoft.PowerPlatform.Dataverse.ModelBuilderLib": "2.0.16"
+        }
+      },
       "Microsoft.SourceLink.GitHub": {
         "type": "Direct",
         "requested": "[10.0.301, )",
@@ -148,6 +157,15 @@
         "resolved": "8.14.0",
         "contentHash": "iwbCpSjD3ehfTwBhtSNEtKPK0ICun6ov7Ibx6ISNA9bfwIyzI2Siwyi9eJFCJBwxowK9xcA1mj+jBWiigeqgcQ=="
       },
+      "Microsoft.PowerPlatform.Dataverse.ModelBuilderLib": {
+        "type": "Transitive",
+        "resolved": "2.0.16",
+        "contentHash": "mnXgzz9VTl+hvggXnLlO8eCKwuRePCzk06Q4KoG13PoHJAVn+nFDE4AxaLRlbHbkX6Y3RLbZEZmz+vvE0g+PCg==",
+        "dependencies": {
+          "System.CodeDom": "6.0.0",
+          "System.Configuration.ConfigurationManager": "6.0.0"
+        }
+      },
       "Microsoft.SourceLink.Common": {
         "type": "Transitive",
         "resolved": "10.0.301",
@@ -167,6 +185,11 @@
         "type": "Transitive",
         "resolved": "0.57.2",
         "contentHash": "Y1+u73shwP+JYHmrkdN6bSt2kaGBEAafhi2nrecczbXdFRey+k7J/WF9YPfcB0rqivv2S8fmif6FSBq9m/AFvw=="
+      },
+      "System.CodeDom": {
+        "type": "Transitive",
+        "resolved": "6.0.0",
+        "contentHash": "CPc6tWO1LAer3IzfZufDBRL+UZQcj5uS207NHALQzP84Vp/z6wF0Aa0YZImOQY8iStY0A2zI/e3ihKNPfUm8XA=="
       },
       "System.Configuration.ConfigurationManager": {
         "type": "Transitive",

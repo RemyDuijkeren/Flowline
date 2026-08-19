@@ -8,4 +8,5 @@ public enum GeneratorType
     Pac,
     XrmContext3,
     XrmContext,
+    Ebg,
 }

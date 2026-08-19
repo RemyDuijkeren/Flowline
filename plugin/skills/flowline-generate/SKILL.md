@@ -1,6 +1,6 @@
 ---
 name: flowline-generate
-description: Early-bound Dataverse types via `flowline generate` — when they are needed at all, where the generated models land, which settings persist to `.flowline`, and the three generators (pac, xrmcontext, xrmcontext3). Use when a plugin references a table or column that does not compile, when `Models/` is missing or stale after a schema change, when choosing between late-bound and early-bound, or when `generate` output lands in an unexpected folder or namespace.
+description: Early-bound Dataverse types via `flowline generate` — when they are needed at all, where the generated models land, which settings persist to `.flowline`, and the four generators (pac, xrmcontext, xrmcontext3, ebg). Use when a plugin references a table or column that does not compile, when `Models/` is missing or stale after a schema change, when choosing between late-bound and early-bound, or when `generate` output lands in an unexpected folder or namespace.
 ---
 
 # Flowline — early-bound types
@@ -61,6 +61,7 @@ nothing.
 | `pac` *(default)* | `pac modelbuilder build` | Microsoft-style — lowercase filenames, `OptionSetValue` | Cross-platform |
 | `xrmcontext` | XrmContext v4 dotnet tool | Typed enums, `ServiceContext`, PascalCase | Cross-platform |
 | `xrmcontext3` | Delegate.XrmContext v3 F# exe | Same output as `xrmcontext` | Windows only, legacy |
+| `ebg` | Early Bound Generator V2, in-process | PascalCase, typed enums, `ServiceContext` | Cross-platform |
 
 **Do not switch a project's generator on your own initiative.** Switching rewrites every file in
 `Models/` and changes the shape the plugin code compiles against — a compile-breaking change
@@ -72,6 +73,12 @@ needs the `System.ComponentModel.Annotations` package or it will not compile.
 
 Both XrmContext generators pick up the PAC auth profile automatically. A service principal profile
 needs `--client-secret`, and `--client-id` overrides the application id from the profile.
+
+`ebg` is the only generator that does not shell out. It runs Early Bound Generator V2 inside
+Flowline against Microsoft's `ModelBuilderLib`, reusing the Dataverse connection already open, so
+`--client-id` and `--client-secret` do not apply to it and PAC CLI is never called for generation.
+A `builderSettings.json` at the project root is merged under Flowline's derived settings, which is
+the only way to reach EBG's remaining options.
 
 ## Verifying
 

@@ -19,5 +19,6 @@ public record GenerationContext(
     string OutputLabel,
     string? ServiceContextName = null,
     PacProfile? ResolvedProfile = null,
-    string? ResolvedSecret = null
+    string? ResolvedSecret = null,
+    string? BuilderSettingsPath = null
 );

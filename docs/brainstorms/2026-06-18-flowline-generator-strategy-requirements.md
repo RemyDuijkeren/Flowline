@@ -12,7 +12,8 @@ Dataverse metadata belongs under this command. Three generators ship: `pac` (def
 `xrmcontext3` (legacy F# bridge, already coded), and `xrmcontext` (rewrite, implement now
 against beta). Supporting multiple generators is worth the effort — specifically for the
 xrmcontext rewrite, whose integration cost is low and whose output quality gap over PAC is
-real and daily. EBG V2 is dismissed. LCG-UDG is a valid future generator for late-binding
+real and daily. EBG V2 was dismissed here and that decision was reversed on 2026-08-19; see
+[EBG V2 Analysis](#ebg-v2-analysis). LCG-UDG is a valid future generator for late-binding
 projects, not yet prioritized.
 
 ---
@@ -143,12 +144,18 @@ no `[MaxLength]` or `[DebuggerDisplay]` attributes.
    `Microsoft.PowerPlatform.Dataverse.ModelBuilderLib` in-process with an `IOrganizationService`.
    That route has no PAC dependency and no DLL copying.
 
-2. **Casing only — not typed enums.** *(Still stands.)* The output is still PAC underneath. EBG V2
-   solves one of the three reasons to prefer xrmcontext; the xrmcontext rewrite solves all of them.
+2. ~~**Casing only — not typed enums.**~~ **WRONG, corrected 2026-08-19.** Verified against real
+   output from `flowline generate --generator ebg` against AutomateValue Dev: EBG emits typed enums
+   (`public enum Account_AccountCategoryCode`) and a `XrmContext : OrganizationServiceContext`,
+   alongside PascalCase filenames and one file per entity. The original claim that it was
+   casing-only was not checked against generated code, and it was the main quality argument for
+   preferring xrmcontext.
 
-3. **50+ configuration options.** *(Still stands.)* EBG V1 was criticised for config clutter; EBG V2
-   is more complex, not less. Flowline's value is opinionated defaults — wrapping EBG V2 would mean
-   either exposing that complexity or hiding it with arbitrary choices.
+3. **50+ configuration options.** *(Still true, and resolved by design.)* Flowline sets only what it
+   derives — namespace, output folder, service context name, entity filter, message filter — and
+   leaves every other EBG option at `EarlyBoundGeneratorConfig.GetDefault()`. None are exposed as
+   flags. A `builderSettings.json` at the project root is seeded underneath Flowline's values, so
+   the remaining options are reachable without Flowline documenting any of them.
 
 4. ~~**Not a dotnet tool.**~~ **RESOLVED 2026-08-16.**
    [`DLaB.Xrm.EarlyBoundGeneratorV2.Api` 2.2026.7.28](https://www.nuget.org/packages/DLaB.Xrm.EarlyBoundGeneratorV2.Api)
@@ -159,25 +166,29 @@ no `[MaxLength]` or `[DebuggerDisplay]` attributes.
    `System.Xml.XmlDocument`, and does not reference `Microsoft.PowerPlatform.Dataverse.Client`, so
    Flowline's pinned 1.2.26 is unaffected.
 
-5. **Would be Flowline's first in-process generator.** *(New, 2026-08-16, and now the strongest
-   objection.)* `pac`, `xrmcontext`, and `xrmcontext3` all shell out; `IGenerator` is a
-   run-a-process-and-collect-files abstraction. Referencing the EBG Api pulls ModelBuilderLib into
-   Flowline's own tool package and trades process isolation for assembly-load failure modes. That is
-   a first-of-kind architectural change, not one more row in the generator table.
+5. **Flowline's first in-process generator.** *(Raised 2026-08-16 as the strongest objection,
+   accepted as a cost on 2026-08-19.)* `pac`, `xrmcontext`, and `xrmcontext3` all shell out;
+   `IGenerator` was a run-a-process-and-collect-files abstraction. `ebg` breaks that shape: it pulls
+   ModelBuilderLib into Flowline's own tool package and trades process isolation for assembly-load
+   failure modes. What it buys is the removal of every reason route 1 was rejected — no DLLs copied
+   into the PAC installation, no coupling to PAC's version-stamped install path, no second sign-in.
+   Measured cost: +0.7 MB on a 27.0 MB package (+2.6%), and two runtime data files that must be
+   copied out of the package explicitly because NuGet ships only assemblies from `lib/`.
 
-**Not verified:** whether the net10.0 Api entry point applies DLaB's casing and filtering purely
-in-proc with no file-copy step. The EBG wiki does not document how the customizations are injected,
-and #535's failure was in that same provider-resolution path.
+**Verified 2026-08-19.** `ModelBuilderLib`'s `ServiceFactory` resolves providers with
+`Type.GetType(configuredTypeName, false)`, and EBG's defaults are assembly-qualified, so a
+PackageReference in Flowline's own app base resolves all six providers with `xrmToolBoxPluginPath`
+unset. No file-copy step, and #535's failure mode does not reach the in-process route.
 
-**Conclusion (unchanged):** EBG V2 is the right tool for developers who want better casing and are
-already using the XrmToolBox GUI. It is not the right dependency for Flowline. The xrmcontext
-rewrite is a strictly better alternative with a cleaner integration path. The verdict no longer
-rests on blockers 1 and 4; it rests on EBG delivering a strict subset of what `xrmcontext` already
-ships, for a first in-process dependency.
+**Conclusion (reversed 2026-08-19):** EBG V2 ships as `--generator ebg`, a fourth generator, with
+`pac` still the default. Every blocker in this section either turned out to be wrong (2), was fixed
+upstream (1, 4), or was resolved by design (3). What is left is blocker 5, an accepted architectural
+cost rather than an objection.
 
-**Revisit trigger:** `XrmContext` v4 is beta, ~5.6K downloads, single small vendor. EBG rests on a
-Microsoft-maintained core with far wider adoption. If v4 has not reached stable by Flowline v1.0, or
-the project goes quiet, reopen this: EBG-in-process becomes the sensible hedge.
+The remaining case for keeping `xrmcontext` alongside it is diversification, not output quality:
+`XrmContext` v4 is beta with roughly 5.6K downloads from a single small vendor, while EBG rests on a
+Microsoft-maintained core with far wider adoption. Neither is now the obvious loser, so both stay
+and the user chooses.
 
 ---
 
@@ -193,10 +204,11 @@ the project goes quiet, reopen this: EBG-in-process becomes the sensible hedge.
   `docs/brainstorms/2026-06-17-generate-lcg-udg-support-requirements.md`
 - TypeScript type generation — no concrete requirements yet; door is open architecturally
 
+**Shipped after this brainstorm**
+- EBG V2 — added 2026-08-19 as `--generator ebg`, running in-process. This brainstorm's dismissal
+  was reversed; see [EBG V2 Analysis](#ebg-v2-analysis) for which blockers fell and why.
+
 **Off the table**
-- EBG V2 — casing-only improvement, complex config, and would be Flowline's first in-process
-  generator. (The dotnet-tool PAC compatibility objection is resolved as of 2026-08-16; see
-  [EBG V2 Analysis](#ebg-v2-analysis) for the revisit trigger.)
 - Flowline-native generator — xrmcontext rewrite covers the full surface
 
 ---

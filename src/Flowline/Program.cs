@@ -1,4 +1,4 @@
-using Flowline;
+﻿using Flowline;
 using Flowline.Commands;
 using Flowline.Core;
 using Flowline.Core.Console;
@@ -67,6 +67,7 @@ services.AddSingleton<SecretResolver>();
 services.AddSingleton<IGenerator, PacGenerator>();
 services.AddSingleton<IGenerator, XrmContext3Generator>();
 services.AddSingleton<IGenerator, XrmContextGenerator>();
+services.AddSingleton<IGenerator, EbgGenerator>();
 services.AddSingleton<PluginService>();
 services.AddSingleton<WebResourceService>();
 services.AddSingleton<FormEventService>();

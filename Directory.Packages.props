@@ -5,6 +5,7 @@
   <ItemGroup Label="Production">
     <PackageVersion Include="Acornima" Version="1.6.2" />
     <PackageVersion Include="CliWrap" Version="3.10.4" />
+    <PackageVersion Include="DLaB.Xrm.EarlyBoundGeneratorV2.Api" Version="2.2026.7.28" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
     <PackageVersion Include="NuGet.Versioning" Version="7.9.0" />
     <PackageVersion Include="Serilog" Version="4.4.0" />
