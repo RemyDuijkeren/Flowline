@@ -74,7 +74,9 @@ public class PluginReader
         return (metadata, assembly, snapshot);
     }
 
-    async Task<Entity?> FindPackageAssemblyAsync(
+    // Public: U1's post-deploy check queries a single package assembly directly, without pulling in
+    // LoadPackageSnapshotsAsync's steps/images/SDK-message-id fan-out that it has no use for.
+    public async Task<Entity?> FindPackageAssemblyAsync(
         IOrganizationServiceAsync2 service, Guid packageId, string assemblyName, CancellationToken cancellationToken)
     {
         var query = new QueryExpression("pluginassembly")
