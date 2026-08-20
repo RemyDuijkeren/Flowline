@@ -1,4 +1,3 @@
-using System.IO.Compression;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.InteropServices;
@@ -8,6 +7,7 @@ using Flowline.Core.Services;
 using Flowline.Core.Plugins;
 using Microsoft.Xrm.Sdk;
 using Spectre.Console.Testing;
+using static Flowline.Core.Tests.PluginDllFixtures;
 
 namespace Flowline.Core.Tests;
 
@@ -35,50 +35,9 @@ public class PluginAssemblyReaderTests
     private static List<PluginAssemblyMetadata> AnalyzePackage(string nupkgPath) =>
         new PluginAssemblyReader(new TestConsole()).AnalyzePackage(nupkgPath);
 
-    // Builds a minimal real assembly on disk with one public class implementing IPlugin, and optionally
-    // a second class deriving from a fake System.Activities.CodeActivity (workflowTypeName) — used to
-    // test AnalyzePackage's CodeActivity rejection. IsDerivedFrom matches by FullName string, so a
-    // same-named local type (defined in the same dynamic module) is sufficient without a real
-    // System.Activities package reference.
-    private static string BuildPluginDll(string dir, string assemblyName, string pluginTypeName, string? workflowTypeName = null)
-    {
-        var ab = new PersistedAssemblyBuilder(new AssemblyName(assemblyName), typeof(object).Assembly);
-        var mb = ab.DefineDynamicModule("MainModule");
-
-        var pluginTb = mb.DefineType(pluginTypeName, TypeAttributes.Public | TypeAttributes.Class, typeof(object), [typeof(IPlugin)]);
-        var executeMethod = typeof(IPlugin).GetMethod(nameof(IPlugin.Execute))!;
-        var methodBuilder = pluginTb.DefineMethod(nameof(IPlugin.Execute),
-            MethodAttributes.Public | MethodAttributes.Virtual, typeof(void), [typeof(IServiceProvider)]);
-        methodBuilder.GetILGenerator().Emit(OpCodes.Ret);
-        pluginTb.DefineMethodOverride(methodBuilder, executeMethod);
-        pluginTb.CreateType();
-
-        if (workflowTypeName != null)
-        {
-            var codeActivityType = mb.DefineType("System.Activities.CodeActivity", TypeAttributes.Public | TypeAttributes.Class, typeof(object)).CreateType();
-            mb.DefineType(workflowTypeName, TypeAttributes.Public | TypeAttributes.Class, codeActivityType).CreateType();
-        }
-
-        var path = Path.Combine(dir, $"{assemblyName}.dll");
-        ab.Save(path);
-        return path;
-    }
-
-    // Builds a minimal real assembly on disk with one public class that does NOT implement IPlugin —
-    // a stand-in for a pure-dependency DLL (e.g. Newtonsoft.Json) that AnalyzePackage must skip. When
-    // referencedFrom is given, that assembly's type becomes the base type of typeName, exercising
-    // cross-DLL type resolution (KD5's integration scenario) — since both live in the same nupkg lib/
-    // folder once extracted, BuildResolverPaths' same-directory scan resolves the reference.
-    private static string BuildDependencyDll(string dir, string assemblyName, string typeName)
-    {
-        var ab = new PersistedAssemblyBuilder(new AssemblyName(assemblyName), typeof(object).Assembly);
-        var mb = ab.DefineDynamicModule("MainModule");
-        mb.DefineType(typeName, TypeAttributes.Public | TypeAttributes.Class, typeof(object)).CreateType();
-
-        var path = Path.Combine(dir, $"{assemblyName}.dll");
-        ab.Save(path);
-        return path;
-    }
+    // BuildPluginDll, BuildDependencyDll and BuildNupkg live in PluginDllFixtures.cs (shared with
+    // PluginPackageAssemblyCheckServiceTests, PluginAssemblyFamilyHandlerTests and OrphanCleanupServiceTests),
+    // brought in via the `using static` above.
 
     // Builds a plugin DLL whose IPlugin-implementing type derives from a class defined in a SEPARATE,
     // already-built dependency DLL — a genuine cross-assembly reference, not a same-module one. Loads
@@ -126,16 +85,6 @@ public class PluginAssemblyReaderTests
         return new WeakReference(loadContext);
     }
 
-    // Zips the given DLLs into a .nupkg under lib/<tfm>/, mirroring the real OPC package layout.
-    private static string BuildNupkg(string dir, params string[] dllPaths)
-    {
-        var nupkgPath = Path.Combine(dir, $"{Guid.NewGuid():N}.nupkg");
-        using var archive = ZipFile.Open(nupkgPath, ZipArchiveMode.Create);
-        foreach (var dllPath in dllPaths)
-            archive.CreateEntryFromFile(dllPath, $"lib/net10.0/{Path.GetFileName(dllPath)}");
-        return nupkgPath;
-    }
-
     // Copies Microsoft.Xrm.Sdk.dll next to the .nupkg (NOT inside its lib/ folder) — mirroring a real
     // pac-plugin-init package, where the SDK assembly is copy-local to the build output but excluded
     // from the packed nupkg content (PrivateAssets="All"). AnalyzePackage's resolver widening to the
@@ -165,6 +114,14 @@ public class PluginAssemblyReaderTests
             Path.Combine(publishDir, "Microsoft.Xrm.Sdk.dll"),
             overwrite: true);
     }
+
+    // Writes a deliberately invalid "Microsoft.Xrm.Sdk.dll" next to the .nupkg — same sibling-directory
+    // position CopyXrmSdkDllNextTo uses for a real copy-local SDK. Not a valid PE, so MetadataLoadContext
+    // throws if it is ever actually opened. Used by the precedence test below: since both a real host
+    // copy (Flowline's own bin dir) and this broken sibling copy carry the same filename, only one wins,
+    // and which one wins is otherwise unobservable — a garbage sibling makes it observable via throw/no-throw.
+    private static void WriteBrokenXrmSdkDllNextTo(string dir) =>
+        File.WriteAllBytes(Path.Combine(dir, "Microsoft.Xrm.Sdk.dll"), [0x00, 0x01, 0x02, 0x03]);
 
     [Fact]
     public void Analyze_ReturnsAssemblyMetadata()
@@ -1148,6 +1105,36 @@ public class PluginAssemblyReaderTests
 
             var meta = Assert.Single(result);
             Assert.Contains(meta.Plugins, p => p.Name == "NestedSdkPackagePlugin");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // Fix 1 (2026-08-20 review pass): precedence between a project's real copy-local Microsoft.Xrm.Sdk.dll
+    // and Flowline's own bundled copy. Both are valid, so success/failure alone can't tell which one
+    // resolved a call — the sibling copy is deliberately broken (WriteBrokenXrmSdkDllNextTo) so that
+    // "the sibling wins" is observable as a throw, and "the host fallback wins" is observable as success.
+    // AnalyzePackage must throw here: the sibling copy-local build output must win over Flowline's own
+    // directory, exactly as BuildResolverPaths' comment already claims.
+    [Fact]
+    public void AnalyzePackage_BrokenSiblingXrmSdkCopy_WinsOverHostFallback_AndFailsToResolve()
+    {
+        var dir = Directory.CreateTempSubdirectory("flowline-reader-test-").FullName;
+        try
+        {
+            var pluginDll = BuildPluginDll(dir, "SiblingWinsPlugin", "SiblingWinsPackagePlugin");
+            var nupkg = BuildNupkg(dir, pluginDll);
+            WriteBrokenXrmSdkDllNextTo(dir);
+
+            // BadImageFormatException, not a looser Assert.ThrowsAny<Exception> — that would also pass on
+            // an unrelated failure elsewhere in AnalyzePackage (extraction, dedup, the CodeActivity guard)
+            // and stop discriminating the two precedence outcomes this test exists to tell apart. The
+            // 4-byte garbage file is too small for MetadataLoadContext to even read a PE header from
+            // ("Image is too small"), which is exactly what confirms THIS file — not the valid host
+            // copy — is the one that got opened.
+            Assert.Throws<BadImageFormatException>(() => AnalyzePackage(nupkg));
         }
         finally
         {

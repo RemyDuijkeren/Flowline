@@ -1,6 +1,3 @@
-using System.IO.Compression;
-using System.Reflection;
-using System.Reflection.Emit;
 using Flowline.Core;
 using Flowline.Core.Deploy;
 using Flowline.Core.Models;
@@ -11,6 +8,7 @@ using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using NSubstitute;
 using Spectre.Console.Testing;
+using static Flowline.Core.Tests.PluginDllFixtures;
 
 namespace Flowline.Core.Tests.Deploy;
 
@@ -88,50 +86,8 @@ public class PluginPackageAssemblyCheckServiceTests : IDisposable
 
     // ---- real-assembly fixtures (mirrors PluginAssemblyReaderTests — AnalyzePackage reflects genuine
     // DLLs on disk, so an in-memory mock type won't do) ----
-
-    static string BuildPluginDll(string dir, string assemblyName, string pluginTypeName, string? workflowTypeName = null)
-    {
-        var ab = new PersistedAssemblyBuilder(new AssemblyName(assemblyName), typeof(object).Assembly);
-        var mb = ab.DefineDynamicModule("MainModule");
-
-        var pluginTb = mb.DefineType(pluginTypeName, TypeAttributes.Public | TypeAttributes.Class, typeof(object), [typeof(IPlugin)]);
-        var executeMethod = typeof(IPlugin).GetMethod(nameof(IPlugin.Execute))!;
-        var methodBuilder = pluginTb.DefineMethod(nameof(IPlugin.Execute),
-            MethodAttributes.Public | MethodAttributes.Virtual, typeof(void), [typeof(IServiceProvider)]);
-        methodBuilder.GetILGenerator().Emit(OpCodes.Ret);
-        pluginTb.DefineMethodOverride(methodBuilder, executeMethod);
-        pluginTb.CreateType();
-
-        if (workflowTypeName != null)
-        {
-            var codeActivityType = mb.DefineType("System.Activities.CodeActivity", TypeAttributes.Public | TypeAttributes.Class, typeof(object)).CreateType();
-            mb.DefineType(workflowTypeName, TypeAttributes.Public | TypeAttributes.Class, codeActivityType).CreateType();
-        }
-
-        var path = Path.Combine(dir, $"{assemblyName}.dll");
-        ab.Save(path);
-        return path;
-    }
-
-    static string BuildDependencyDll(string dir, string assemblyName, string typeName)
-    {
-        var ab = new PersistedAssemblyBuilder(new AssemblyName(assemblyName), typeof(object).Assembly);
-        var mb = ab.DefineDynamicModule("MainModule");
-        mb.DefineType(typeName, TypeAttributes.Public | TypeAttributes.Class, typeof(object)).CreateType();
-
-        var path = Path.Combine(dir, $"{assemblyName}.dll");
-        ab.Save(path);
-        return path;
-    }
-
-    static string BuildNupkg(string dir, params string[] dllPaths)
-    {
-        var nupkgPath = Path.Combine(dir, $"{Guid.NewGuid():N}.nupkg");
-        using var archive = ZipFile.Open(nupkgPath, ZipArchiveMode.Create);
-        foreach (var dllPath in dllPaths)
-            archive.CreateEntryFromFile(dllPath, $"lib/net10.0/{Path.GetFileName(dllPath)}");
-        return nupkgPath;
-    }
+    // BuildPluginDll, BuildDependencyDll and BuildNupkg live in PluginDllFixtures.cs (shared across the
+    // plugin-package test suites).
 
     // ---- Dataverse query stubs ----
 
@@ -294,7 +250,10 @@ public class PluginPackageAssemblyCheckServiceTests : IDisposable
 
         result.Findings.Should().Be(0);
         result.Inconclusive.Should().BeFalse();
-        _console.Output.Should().NotContain("!"); // no warning glyph
+        // Phrase common to both BuildFindingMessage and BuildNoPluginTypesMessage — same literal text
+        // the "MissingAssembly" test above asserts IS present (line 205); its absence here is what
+        // proves no finding fired, rather than a glyph that could vanish for unrelated reasons.
+        _console.Output.Should().NotContain("repeat on every later deploy");
     }
 
     [Fact]

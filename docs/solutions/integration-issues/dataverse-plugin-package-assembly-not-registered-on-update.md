@@ -76,9 +76,10 @@ Instead, `deploy` **observes** after every import:
   version, package — with the remedy below and a note that the finding repeats every later deploy
   until it's applied. Registered in `Program.cs` last, after orphan cleanup, so it evaluates the state
   a deploy actually leaves behind.
-- It never writes to the target (`ExitCode.PartialSuccess`, 18, instead of a repair). A day where
-  Dataverse registers the assembly on its own, the same code path reports nothing and exits 0 — no
-  Flowline change required.
+- It never writes to the target (`ExitCode.AssemblyNotRegistered`, 21, instead of a repair). A check
+  that couldn't inspect a package exits `ExitCode.Inconclusive` (19) instead of a false clean pass. A
+  day where Dataverse registers the assembly on its own, the same code path reports nothing and
+  exits 0 — no Flowline change required.
 - `push` prints one warning the moment its own self-registration fallback fires, saying the record is
   local to that environment and that every deploy target needs the same fix
   (`src/Flowline.Core/Plugins/PluginService.cs:752`).

@@ -60,14 +60,18 @@ public enum ExitCode
     ValidationFailed = 15,
     Timeout = 16,
     ForceRequired = 17,
-    PartialSuccess = 18,    // deploy succeeded; orphan cleanup partially failed — manual action needed
-    Cancelled = 130,        // de facto convention: 128 + SIGINT(2)
+    PartialSuccess = 18,        // deploy succeeded; orphan cleanup partially failed — manual action needed
+    Inconclusive = 19,          // a check couldn't run to completion — not a pass/fail signal
+    WriteTargetOccupied = 20,   // a write target is already occupied by something valid
+    AssemblyNotRegistered = 21, // deploy succeeded; a plug-in package assembly has no registration
+    Cancelled = 130,            // de facto convention: 128 + SIGINT(2)
 }
 ```
 
 Conventional slots (3, 4, 130) follow curl/git/rsync to avoid collisions. Flowline-specific codes
-use the 10–17 range. Codes 2 and 5 are intentionally unused — document that fact with comments so
-future maintainers don't fill them with wrong semantics.
+use the 10–21 range (added to as new failure classes earned their own number — see `ExitCode.cs`
+for the current, authoritative list). Codes 2 and 5 are intentionally unused — document that fact
+with comments so future maintainers don't fill them with wrong semantics.
 
 **Renumbering is a breaking change.** Treat the enum as a public API surface.
 

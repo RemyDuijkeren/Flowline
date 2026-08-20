@@ -1,6 +1,3 @@
-using System.IO.Compression;
-using System.Reflection;
-using System.Reflection.Emit;
 using System.ServiceModel;
 using Flowline.Core.Services;
 using Flowline.Core.OrphanCleanup;
@@ -11,6 +8,7 @@ using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using NSubstitute;
 using Spectre.Console.Testing;
+using static Flowline.Core.Tests.PluginDllFixtures;
 
 namespace Flowline.Core.Tests.OrphanCleanup.Handlers;
 
@@ -156,33 +154,8 @@ public class PluginAssemblyFamilyHandlerTests
     // ---- U5/KTD7: real-DLL package-content fixtures (mirrors PluginPackageAssemblyCheckServiceTests —
     // PluginPackageContentReader.ScanReflectedAssemblyNamesByPackage reflects genuine DLLs on disk via
     // MetadataLoadContext, so an in-memory mock type won't do) ----
-
-    static string BuildPluginDll(string dir, string assemblyName, string pluginTypeName)
-    {
-        var ab = new PersistedAssemblyBuilder(new AssemblyName(assemblyName), typeof(object).Assembly);
-        var mb = ab.DefineDynamicModule("MainModule");
-
-        var pluginTb = mb.DefineType(pluginTypeName, TypeAttributes.Public | TypeAttributes.Class, typeof(object), [typeof(IPlugin)]);
-        var executeMethod = typeof(IPlugin).GetMethod(nameof(IPlugin.Execute))!;
-        var methodBuilder = pluginTb.DefineMethod(nameof(IPlugin.Execute),
-            MethodAttributes.Public | MethodAttributes.Virtual, typeof(void), [typeof(IServiceProvider)]);
-        methodBuilder.GetILGenerator().Emit(OpCodes.Ret);
-        pluginTb.DefineMethodOverride(methodBuilder, executeMethod);
-        pluginTb.CreateType();
-
-        var path = Path.Combine(dir, $"{assemblyName}.dll");
-        ab.Save(path);
-        return path;
-    }
-
-    static string BuildNupkg(string dir, params string[] dllPaths)
-    {
-        var nupkgPath = Path.Combine(dir, $"{Guid.NewGuid():N}.nupkg");
-        using var archive = ZipFile.Open(nupkgPath, ZipArchiveMode.Create);
-        foreach (var dllPath in dllPaths)
-            archive.CreateEntryFromFile(dllPath, $"lib/net10.0/{Path.GetFileName(dllPath)}");
-        return nupkgPath;
-    }
+    // BuildPluginDll and BuildNupkg live in PluginDllFixtures.cs (shared across the plugin-package test
+    // suites).
 
     // Lays out pluginpackages/<uniqueName>/pluginpackage.xml + package/<nupkg>.nupkg, mirroring the pac
     // solution unpack shape both PluginPackageAssemblyCheckService and PluginPackageContentReader read.

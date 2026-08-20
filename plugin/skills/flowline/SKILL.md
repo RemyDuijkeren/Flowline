@@ -192,8 +192,9 @@ Exit codes are a stable public API — they don't change meaning across Flowline
 | 16 | Timeout | PAC CLI 60-minute limit exceeded | Retry; check environment health |
 | 17 | ForceRequired | Destructive operation needs explicit confirmation | Add the `--force <specifier>` the message names |
 | 18 | PartialSuccess | Deploy imported, but some orphan cleanup failed | Check output for components to remove manually |
-| 19 | Inconclusive | A check couldn't run to completion (empty-input guard skipped the comparison) | Not a pass/fail signal — read the printed reason before trusting the result |
+| 19 | Inconclusive | A check couldn't run to completion — `drift`'s empty-input guard skipped the comparison, or a deploy verification step couldn't finish (e.g. a locked directory or a Dataverse query fault) | Not a pass/fail signal — read the printed reason before trusting the result |
 | 20 | WriteTargetOccupied | A file already occupies a path the command would write to (e.g. `scaffold` meeting an existing template file) | Nothing is broken — something valid is in the way. Move the named file aside, or run the command somewhere else |
+| 21 | AssemblyNotRegistered | Deploy imported, but a plug-in package holds an assembly with no registration in the target, or one registered with no plugin types | Create the `pluginassembly` record under that package (sandbox isolation, matching version/culture/public key token), then deploy again so the content write populates its plugin types — repeats every deploy until that record exists |
 | 130 | Cancelled | Ctrl+C / SIGINT, or `deploy`'s first-import confirmation declined | For the confirmation case: re-run with `--force first-import` |
 
 Codes 2 and 5 are intentionally unused.
