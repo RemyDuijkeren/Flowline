@@ -1,4 +1,106 @@
-# Live test — changes since 0.16.0
+# Live test log
+
+Manual end-to-end exercises against a real Dataverse environment, rather than only through the unit
+suite. Newest round first.
+
+---
+
+## Round 2026-08-20 — deploy package assembly check
+
+Branch `feat/deploy-package-assembly-check`. Exercises the post-import check that verifies plug-in
+package assemblies registered in the target, and the orphan-cleanup fix that stops a whole package
+being deleted over one of them.
+
+- **Date:** 2026-08-20
+- **Build:** `src/Flowline/Flowline.csproj`, **Release**, at `553c592`
+- **Target:** TEST only. DEV and PROD were never written to in this round.
+- **Writes:** three real solution imports into TEST, all through standalone `deploy --path` from a
+  bare temp folder, so no project or repository was involved.
+- **Fixtures:** exports taken from DEV during the 2026-08-17 measurement, with `solution.xml` edited
+  to produce the manifest shapes under test. Package content was never altered.
+
+### Results
+
+| # | Case | Expected | Observed | Exit |
+|---|---|---|---|---|
+| A | Target's package content carries an assembly the target has no record for | Names it, non-zero exit | `FlowlineDeployTest.Probe` (1.0.0.0) named in `av_FlowlineDeployTest.Plugins`, with the remedy line and the recurrence line | **21** |
+| B | Re-run A unchanged | The finding and its exit repeat | Identical finding | **21** |
+| C | Manifest names **no** plugin assemblies while content still carries both | A registered assembly whose DLL is in the content is not an orphan; package survives | 3 orphan candidates checked, **0 orphans**, package, assembly and both plugin types intact afterwards | **21** |
+
+### Case C is the one worth trusting
+
+C is the destructive path. TEST holds `FlowlineDeployTest.Plugins` as a registered package assembly.
+Stripping both `type="91"` root components from the manifest makes that assembly absent from the
+solution while its DLL is still inside the imported `.nupkg` — exactly the state that used to
+classify it as an orphan and redirect to deleting the entire `pluginpackage`, taking every assembly,
+plugin type and step registration with it, automatically and with no `--force`.
+
+**The orphan candidate count moved from 2 to 3.** That is the load-bearing observation: the case
+genuinely arose and reached the handler rather than never being detected. The handler then excluded
+it and reported zero orphans. Queried afterwards, the package, its assembly and both plugin types
+(`KeepMeApi`, `AccountPostCreatePlugin`) were all still present.
+
+The negative direction — a package genuinely dropped from source still deleting — was **not**
+exercised live. It is covered in the unit suite by revert-and-confirm, including an over-broad probe
+that fails 12 tests when the protection is widened to every package. Proving it live means actually
+destroying the package in TEST, and the recovery costs more than the evidence is worth.
+
+### Case A is the headline, and the message shape held
+
+```
+! 'FlowlineDeployTest.Probe' (1.0.0.0) in package 'av_FlowlineDeployTest.Plugins'
+  has no registration in the target — it will not run.
+Fix it: create the pluginassembly record under that package with isolationmode sandbox
+  and the assembly's own version, culture and public key token, then deploy again so the
+  content write populates its plugin types.
+This finding and its non-zero exit repeat on every later deploy until that record exists.
+! Deploy finished with 1 post-import finding — see above.
+```
+
+Before this branch, that same deploy printed nothing about the assembly and exited 0. The closing
+line names no cause, because more than one post-import service can report now.
+
+Case B exists because the message makes a claim — that the finding repeats until the record is
+created — and a claim in user-facing output is worth checking rather than asserting.
+
+### What these runs confirmed
+
+- The check runs post-import, reports, and never writes to the target (A, B, C).
+- `ExitCode.AssemblyNotRegistered` (21) reaches the process exit code from a real deploy (A, B, C).
+- The finding message renders in the house warning / `Fix it:` / recurrence shape (A).
+- The finding and its exit code recur unchanged until the record exists (B).
+- An assembly the imported package content still carries is not treated as an orphan, and the
+  package survives a deploy that would previously have deleted it (C).
+- Standalone `deploy --path` reaches all of this with no project and no Git repository.
+
+### Not covered
+
+Everything here rests on unmanaged imports into one Sandbox environment in one tenant.
+
+- **`ExitCode.Inconclusive` (19)** — the "could not verify" path. Unit tests only; no live case was
+  built, because making a package uninspectable without also making the import fail needs a fixture
+  this round did not construct.
+- **The plugin-types finding** — a `pluginassembly` row that exists with zero plugin types. Unit
+  tests only.
+- **R12 live** — a package genuinely removed from source still deleting. Unit tests only, for the
+  reason under case C.
+- **A mixed package** — one content-carried assembly plus one genuinely orphaned sibling, where the
+  sibling's steps and Custom APIs are cleared while the package survives. Unit tests only.
+- **Direct deletion of a package-owned plugin type** — now load-bearing on the mixed-package path,
+  and still unverified against a live environment.
+- **The `push` promotion note** — not re-exercised here. It was observed firing during the
+  2026-08-17 measurement, before the message was reshaped.
+- **Managed import**, and importing into an environment that has never held the package.
+
+### State left behind
+
+TEST's `FlowlineDeployTest` solution was imported three times at 1.0.4.0 and its plug-in package
+content rewritten each time. `FlowlineDeployTest.Probe` remains unregistered there, which is the
+finding rather than a fault. No records were created or deleted. DEV and PROD were not contacted.
+
+---
+
+## Round 2026-08-15 — changes since 0.16.0
 
 Manual end-to-end exercise of the work released after tag `0.16.0`, run against a real Dataverse
 environment and real folders rather than only through the unit suite.
