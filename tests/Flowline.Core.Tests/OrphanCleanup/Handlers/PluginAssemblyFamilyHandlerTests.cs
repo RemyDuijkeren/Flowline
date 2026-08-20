@@ -28,6 +28,10 @@ public class PluginAssemblyFamilyHandlerTests
 
     public PluginAssemblyFamilyHandlerTests()
     {
+        // Fix 5: PluginPackageContentReader memoizes reflection per package directory for the whole
+        // process — see PluginPackageAssemblyCheckServiceTests' constructor for why this is cleared.
+        Flowline.Core.Plugins.PluginPackageContentReader.ClearCache();
+
         _console.Profile.Width = 400; // avoid word-wrap splitting longer assertion substrings across lines
         _handler = new PluginAssemblyFamilyHandler(_console);
         // Default: any unconfigured RetrieveMultipleAsync returns empty rather than NSubstitute's null
@@ -109,6 +113,46 @@ public class PluginAssemblyFamilyHandlerTests
             .Returns(Task.FromResult(new EntityCollection([entity])));
     }
 
+    void SetupPackageUniqueNames(params (Guid PackageId, string UniqueName)[] packages)
+    {
+        var entities = packages.Select(p => new Entity("pluginpackage", p.PackageId) { ["uniquename"] = p.UniqueName }).ToList();
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginpackage" && q.ColumnSet.Columns.Contains("uniquename"))),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(entities)));
+    }
+
+    void SetupNames(string entityLogicalName, string nameAttribute, params (Guid Id, string Name)[] rows)
+    {
+        var entities = rows.Select(r => new Entity(entityLogicalName, r.Id) { [nameAttribute] = r.Name }).ToList();
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == entityLogicalName && q.ColumnSet.Columns.Contains(nameAttribute))),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(entities)));
+    }
+
+    // Fix 3: matches only the id-only plugintype query filtered by THIS assembly, so a test can give a
+    // content-carried assembly its own plugin types without also handing them to a redirected sibling's
+    // cascade lookup (both queries hit plugintype/pluginassemblyid).
+    void SetupPluginTypesForAssembly(Guid assemblyId, params Guid[] typeIds)
+    {
+        var entities = typeIds.Select(id => new Entity("plugintype", id)).ToList();
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "plugintype"
+                    && q.Criteria.Conditions.Any(c => c.AttributeName == "pluginassemblyid" && c.Values.Contains((object)assemblyId)))),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(entities)));
+    }
+
+    void FailPluginTypesForAssembly(Guid assemblyId)
+    {
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "plugintype"
+                    && q.Criteria.Conditions.Any(c => c.AttributeName == "pluginassemblyid" && c.Values.Contains((object)assemblyId)))),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("plugintype lookup timeout")));
+    }
+
     // ---- U5/KTD7: real-DLL package-content fixtures (mirrors PluginPackageAssemblyCheckServiceTests —
     // PluginPackageContentReader.ScanReflectedAssemblyNamesByPackage reflects genuine DLLs on disk via
     // MetadataLoadContext, so an in-memory mock type won't do) ----
@@ -145,11 +189,25 @@ public class PluginAssemblyFamilyHandlerTests
     static string BuildPackageSrcTree(string uniqueName, string nupkgPath)
     {
         var root = Directory.CreateTempSubdirectory("flowline-pkgcontent-src-").FullName;
+        AddPackageToSrcTree(root, uniqueName, nupkgPath);
+        return root;
+    }
+
+    static void AddPackageToSrcTree(string root, string uniqueName, string nupkgPath)
+    {
         var packageDir = Directory.CreateDirectory(Path.Combine(root, "pluginpackages", uniqueName)).FullName;
         File.WriteAllText(Path.Combine(packageDir, "pluginpackage.xml"),
             $"""<pluginpackage uniquename="{uniqueName}"><name>{uniqueName}</name></pluginpackage>""");
         var packageContentDir = Directory.CreateDirectory(Path.Combine(packageDir, "package")).FullName;
         File.Copy(nupkgPath, Path.Combine(packageContentDir, Path.GetFileName(nupkgPath)));
+    }
+
+    // A package directory the imported solution carries that this can't read at all — no
+    // pluginpackage.xml, so ReadPackageUniqueName throws where the old bare catch swallowed it.
+    static string BuildUnreadablePackageSrcTree(string dirName)
+    {
+        var root = Directory.CreateTempSubdirectory("flowline-pkgcontent-src-").FullName;
+        Directory.CreateDirectory(Path.Combine(root, "pluginpackages", dirName));
         return root;
     }
 
@@ -856,27 +914,258 @@ public class PluginAssemblyFamilyHandlerTests
         Assert.Equal("pluginpackage", finding.EntityName);
     }
 
+    // -- Fix 1: the exclusion guard must fail CLOSED. An empty exclusion set reads identically to
+    // "nothing to exclude", and un-excluded means the package-scope delete proceeds — on state this
+    // handler never verified. Each of the three inputs that can silently empty the set gets its own
+    // case below. --
+
     [Fact]
-    public async Task DetectAsync_PackageUniqueNameLookupFails_ExclusionSkippedRedirectStillFires()
+    public async Task DetectAsync_PackageUniqueNameLookupFails_PackageDeleteSkippedThisRun()
     {
-        // A transient fault resolving packageid -> uniquename must fall the narrower, safer way: the
-        // content-based exclusion never applies, and today's redirect-to-package-delete finding still
-        // fires — never widen the exclusion on a failure it can't verify.
+        // A transient fault resolving packageid -> uniquename leaves the candidate unmatchable against
+        // the content this package still carries. Emitting the package delete anyway would destroy a
+        // package whose content was never checked, so the whole redirect is deferred to a later run.
         var assemblyId = Guid.NewGuid();
         var packageId = Guid.NewGuid();
-        SetupPackageIds((assemblyId, packageId));
-        SetupName("pluginassembly", "name", assemblyId, "Cr07982.Backend");
+        const string uniqueName = "abc_TestPackage";
 
-        _serviceMock.RetrieveMultipleAsync(
-                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginpackage" && q.ColumnSet.Columns.Contains("uniquename"))),
-                Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("network timeout")));
+        var buildDir = Directory.CreateTempSubdirectory("flowline-pkgcontent-build-").FullName;
+        var dll = BuildPluginDll(buildDir, "Cr07982.Backend", "Cr07982.Backend.MyPlugin");
+        var srcRoot = BuildPackageSrcTree(uniqueName, BuildNupkg(buildDir, dll));
 
-        var findings = (await _handler.DetectAsync(Ctx(), [(assemblyId, 91)], default)).Findings;
+        try
+        {
+            SetupPackageIds((assemblyId, packageId));
+            SetupName("pluginassembly", "name", assemblyId, "Cr07982.Backend");
 
-        var finding = Assert.Single(findings);
-        Assert.Equal(packageId, finding.ObjectId);
-        Assert.Equal("pluginpackage", finding.EntityName);
-        Assert.Contains("network timeout", _console.Output);
+            _serviceMock.RetrieveMultipleAsync(
+                    Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginpackage" && q.ColumnSet.Columns.Contains("uniquename"))),
+                    Arg.Any<CancellationToken>())
+                .Returns(Task.FromException<EntityCollection>(new InvalidOperationException("network timeout")));
+
+            var findings = (await _handler.DetectAsync(Ctx(srcRoot), [(assemblyId, 91)], default)).Findings;
+
+            Assert.DoesNotContain(findings, f => f.EntityName == "pluginpackage");
+            Assert.Contains("network timeout", _console.Output);
+        }
+        finally
+        {
+            Directory.Delete(buildDir, recursive: true);
+            Directory.Delete(srcRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DetectAsync_PackageDirectoryUnreadable_PackageDeleteSkippedThisRunAndWarns()
+    {
+        // The bare catch this replaces made "couldn't reflect this package" indistinguishable from
+        // "this package carries nothing" — and the second one deletes.
+        var assemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        const string uniqueName = "abc_TestPackage";
+
+        var srcRoot = BuildUnreadablePackageSrcTree(uniqueName);
+        try
+        {
+            SetupPackageIds((assemblyId, packageId));
+            SetupName("pluginassembly", "name", assemblyId, "Cr07982.Backend");
+            SetupPackageUniqueName(packageId, uniqueName);
+
+            var findings = (await _handler.DetectAsync(Ctx(srcRoot), [(assemblyId, 91)], default)).Findings;
+
+            Assert.DoesNotContain(findings, f => f.EntityName == "pluginpackage");
+            Assert.Contains(uniqueName, _console.Output);
+            Assert.Contains("couldn't be read", _console.Output);
+        }
+        finally
+        {
+            Directory.Delete(srcRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DetectAsync_AssemblyNameUnresolved_PackageDeleteSkippedThisRun()
+    {
+        // No live name means no key to test against the package's reflected content. Dropping the
+        // candidate silently used to leave the package delete standing on an unchecked assembly.
+        var assemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        const string uniqueName = "abc_TestPackage";
+
+        var buildDir = Directory.CreateTempSubdirectory("flowline-pkgcontent-build-").FullName;
+        var dll = BuildPluginDll(buildDir, "Cr07982.Backend", "Cr07982.Backend.MyPlugin");
+        var srcRoot = BuildPackageSrcTree(uniqueName, BuildNupkg(buildDir, dll));
+
+        try
+        {
+            SetupPackageIds((assemblyId, packageId));
+            SetupPackageUniqueName(packageId, uniqueName);
+            // Deliberately no SetupName — the pluginassembly name query returns empty.
+
+            var findings = (await _handler.DetectAsync(Ctx(srcRoot), [(assemblyId, 91)], default)).Findings;
+
+            Assert.DoesNotContain(findings, f => f.EntityName == "pluginpackage");
+        }
+        finally
+        {
+            Directory.Delete(buildDir, recursive: true);
+            Directory.Delete(srcRoot, recursive: true);
+        }
+    }
+
+    // -- Fix 2: one package-scope delete per parent package means multiple orphaned assemblies collapse
+    // into it, so a package holding one content-carried assembly and one genuinely orphaned sibling used
+    // to be deleted whole. An orphaned assembly is harmless if nothing calls it — steps and Custom APIs
+    // are the execution surface, so the sibling's surface is cleared and the package survives. --
+
+    [Fact]
+    public async Task DetectAsync_MixedPackage_PackageSurvivesWhileOrphanedSiblingSurfaceIsCleared()
+    {
+        var carriedAssemblyId = Guid.NewGuid();   // A — package content still carries its DLL
+        var orphanedAssemblyId = Guid.NewGuid();  // B — content doesn't carry it
+        var packageId = Guid.NewGuid();
+        var orphanedTypeId = Guid.NewGuid();
+        var orphanedStepId = Guid.NewGuid();
+        const string uniqueName = "abc_TestPackage";
+
+        var buildDir = Directory.CreateTempSubdirectory("flowline-pkgcontent-build-").FullName;
+        var dll = BuildPluginDll(buildDir, "Alpha", "Alpha.MyPlugin");
+        var srcRoot = BuildPackageSrcTree(uniqueName, BuildNupkg(buildDir, dll));
+
+        try
+        {
+            SetupPackageIds((carriedAssemblyId, packageId), (orphanedAssemblyId, packageId));
+            SetupNames("pluginassembly", "name", (carriedAssemblyId, "Alpha"), (orphanedAssemblyId, "Beta"));
+            SetupPackageUniqueName(packageId, uniqueName);
+
+            var findings = (await _handler.DetectAsync(Ctx(srcRoot),
+                [(carriedAssemblyId, 91), (orphanedAssemblyId, 91), (orphanedTypeId, 90), (orphanedStepId, 92)],
+                default)).Findings;
+
+            // The package, and with it A, survives.
+            Assert.DoesNotContain(findings, f => f.EntityName == "pluginpackage");
+            Assert.DoesNotContain(findings, f => f.ObjectId == carriedAssemblyId);
+            // B keeps no delete of its own either — a package-owned pluginassembly can't be deleted
+            // directly, which is what the redirect existed for. It stays as inert storage.
+            Assert.DoesNotContain(findings, f => f.ObjectId == orphanedAssemblyId);
+            // ...but nothing in it runs any more: its execution surface is still deleted.
+            Assert.Contains(findings, f => f.ObjectId == orphanedTypeId);
+            Assert.Contains(findings, f => f.ObjectId == orphanedStepId);
+        }
+        finally
+        {
+            Directory.Delete(buildDir, recursive: true);
+            Directory.Delete(srcRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DetectAsync_ProtectedPackageAlongsideFullyGonePackage_OnlyTheGoneOneIsDeleted()
+    {
+        // R12 regression guard against an over-broad Fix 2: suppression is per package, so a package the
+        // imported solution no longer carries at all is still deleted in the same run. This run must not
+        // degrade — a degraded run suppresses both, and would pass for the wrong reason.
+        var carriedAssemblyId = Guid.NewGuid();
+        var goneAssemblyId = Guid.NewGuid();
+        var carriedPackageId = Guid.NewGuid();
+        var gonePackageId = Guid.NewGuid();
+
+        var buildDir = Directory.CreateTempSubdirectory("flowline-pkgcontent-build-").FullName;
+        var dll = BuildPluginDll(buildDir, "Alpha", "Alpha.MyPlugin");
+        var srcRoot = BuildPackageSrcTree("abc_CarriedPackage", BuildNupkg(buildDir, dll));
+
+        try
+        {
+            SetupPackageIds((carriedAssemblyId, carriedPackageId), (goneAssemblyId, gonePackageId));
+            SetupNames("pluginassembly", "name", (carriedAssemblyId, "Alpha"), (goneAssemblyId, "Gamma"));
+            SetupPackageUniqueNames((carriedPackageId, "abc_CarriedPackage"), (gonePackageId, "abc_GonePackage"));
+
+            var findings = (await _handler.DetectAsync(Ctx(srcRoot),
+                [(carriedAssemblyId, 91), (goneAssemblyId, 91)], default)).Findings;
+
+            var packageFinding = Assert.Single(findings, f => f.EntityName == "pluginpackage");
+            Assert.Equal(gonePackageId, packageFinding.ObjectId);
+        }
+        finally
+        {
+            Directory.Delete(buildDir, recursive: true);
+            Directory.Delete(srcRoot, recursive: true);
+        }
+    }
+
+    // -- Fix 3: the exclusion has to cover the excluded assembly's plugin types, or the delete strips the
+    // only thing that makes the assembly run. Steps stay deletable by explicit decision: a step absent
+    // from source was removed on purpose, and registered-but-inert is the intended end state. --
+
+    [Fact]
+    public async Task DetectAsync_ContentCarriedAssembly_PluginTypesProtectedButStepsStillDeleted()
+    {
+        var assemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        var typeId = Guid.NewGuid();
+        var stepId = Guid.NewGuid();
+        const string uniqueName = "abc_TestPackage";
+
+        var buildDir = Directory.CreateTempSubdirectory("flowline-pkgcontent-build-").FullName;
+        var dll = BuildPluginDll(buildDir, "Alpha", "Alpha.MyPlugin");
+        var srcRoot = BuildPackageSrcTree(uniqueName, BuildNupkg(buildDir, dll));
+
+        try
+        {
+            SetupPackageIds((assemblyId, packageId));
+            SetupName("pluginassembly", "name", assemblyId, "Alpha");
+            SetupPackageUniqueName(packageId, uniqueName);
+            SetupPluginTypesForAssembly(assemblyId, typeId);
+
+            var result = await _handler.DetectAsync(Ctx(srcRoot),
+                [(assemblyId, 91), (typeId, 90), (stepId, 92)], default);
+
+            Assert.DoesNotContain(result.Findings, f => f.ObjectId == typeId);
+            Assert.Contains(result.Findings, f => f.ObjectId == stepId);
+            Assert.DoesNotContain(result.Findings, f => f.EntityName == "pluginpackage");
+            // Recognized-but-clean, so DispatchToHandlersAsync's fallback doesn't re-flag the type.
+            Assert.Contains(typeId, result.ClaimedIds);
+        }
+        finally
+        {
+            Directory.Delete(buildDir, recursive: true);
+            Directory.Delete(srcRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DetectAsync_ProtectedPluginTypeLookupFails_NoPluginTypeIsDeletedThisRun()
+    {
+        // Without the type list there's no way to tell a protected assembly's types from any other
+        // candidate's, so the batch's plugin type deletes wait for a run that can.
+        var assemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        var typeId = Guid.NewGuid();
+        var stepId = Guid.NewGuid();
+        const string uniqueName = "abc_TestPackage";
+
+        var buildDir = Directory.CreateTempSubdirectory("flowline-pkgcontent-build-").FullName;
+        var dll = BuildPluginDll(buildDir, "Alpha", "Alpha.MyPlugin");
+        var srcRoot = BuildPackageSrcTree(uniqueName, BuildNupkg(buildDir, dll));
+
+        try
+        {
+            SetupPackageIds((assemblyId, packageId));
+            SetupName("pluginassembly", "name", assemblyId, "Alpha");
+            SetupPackageUniqueName(packageId, uniqueName);
+            FailPluginTypesForAssembly(assemblyId);
+
+            var findings = (await _handler.DetectAsync(Ctx(srcRoot),
+                [(assemblyId, 91), (typeId, 90), (stepId, 92)], default)).Findings;
+
+            Assert.DoesNotContain(findings, f => f.ObjectId == typeId);
+            Assert.Contains(findings, f => f.ObjectId == stepId);
+            Assert.Contains("plugintype lookup timeout", _console.Output);
+        }
+        finally
+        {
+            Directory.Delete(buildDir, recursive: true);
+            Directory.Delete(srcRoot, recursive: true);
+        }
     }
 }

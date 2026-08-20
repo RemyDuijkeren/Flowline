@@ -23,6 +23,11 @@ public class PluginPackageAssemblyCheckServiceTests : IDisposable
 
     public PluginPackageAssemblyCheckServiceTests()
     {
+        // Fix 5: PluginPackageContentReader memoizes reflection per package directory for the whole
+        // process — each case builds its own temp tree, but xUnit parallelizes classes and this keeps a
+        // rebuilt fixture from reading a previous case's result.
+        Flowline.Core.Plugins.PluginPackageContentReader.ClearCache();
+
         _serviceMock = Substitute.For<IOrganizationServiceAsync2>();
         _console = new TestConsole();
         _console.Profile.Width = 400; // avoid word-wrap splitting assertion substrings across lines

@@ -1,6 +1,7 @@
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
+using Flowline.Core.Console;
 using Flowline.Core.Models;
 using Flowline.Core.Plugins;
 using Flowline.Core.Services;
@@ -86,20 +87,35 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         // registered (the exact bug this plan exists to detect). Reusing the packageid resolution above,
         // check each package-owned candidate's live name against its package's locally reflected content
         // instead: present in both, it's not an orphan at all, regardless of the manifest.
-        var excludedAssemblyIds = await ResolvePackageContentExclusionsAsync(context, packageIds, names, console, ct).ConfigureAwait(false);
+        var (excludedAssemblyIds, protectedObjectIds, exclusionDegraded) =
+            await ResolvePackageContentExclusionsAsync(context, packageIds, names, claimed, console, ct).ConfigureAwait(false);
 
-        // Excluded candidates are dropped before any finding is built below — not reported, not deleted,
+        // Fix 2: BuildAllFindings collapses every orphaned assembly under one package into a single
+        // package-scope delete, so a package holding an excluded assembly A and a genuinely orphaned
+        // sibling B would still be deleted whole — destroying A. A package with any excluded assembly is
+        // therefore never deleted. B's own execution surface still gets its ordinary orphan findings, so
+        // the deleted logic stops running while the assembly stays as inert storage: its steps and
+        // plugin types are ordinary candidates in this batch, and its Custom APIs fall to
+        // CustomApiFamilyHandler's own Auto pass, since dropping B from redirectAssemblyIds also drops
+        // the reordering cascade that only existed to beat the package delete.
+        var protectedPackageIds = packageIds
+            .Where(kv => excludedAssemblyIds.Contains(kv.Key))
+            .Select(kv => kv.Value.Id)
+            .ToHashSet();
+
+        // Protected candidates are dropped before any finding is built below — not reported, not deleted,
         // not redirected — but stay in claimedIds above (recognized-but-clean), so
         // DispatchToHandlersAsync's unclaimed-candidate fallback never re-flags what this handler already
         // fully evaluated. A package the imported solution no longer carries at all yields no exclusions
         // (ResolvePackageContentExclusionsAsync finds no reflected content for it), so redirectAssemblyIds
         // below stays exactly packageIds.Keys and the existing package-delete path runs unchanged (R12).
-        var claimedForFindings = excludedAssemblyIds.Count == 0
+        var claimedForFindings = protectedObjectIds.Count == 0
             ? claimed
-            : claimed.Where(c => !excludedAssemblyIds.Contains(c.ObjectId)).ToList();
-        var redirectAssemblyIds = excludedAssemblyIds.Count == 0
-            ? packageIds.Keys.ToList()
-            : packageIds.Keys.Where(id => !excludedAssemblyIds.Contains(id)).ToList();
+            : claimed.Where(c => !protectedObjectIds.Contains(c.ObjectId)).ToList();
+        var redirectAssemblyIds = packageIds
+            .Where(kv => !excludedAssemblyIds.Contains(kv.Key) && !protectedPackageIds.Contains(kv.Value.Id))
+            .Select(kv => kv.Key)
+            .ToList();
 
         // Only candidates already in this run's batch are touched — a CustomApi/param/prop this query
         // finds that ISN'T already an orphan candidate is still validly declared locally.
@@ -112,13 +128,17 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         // package-delete finding as if cleanup were confirmed complete — when degraded, every
         // currently-redirected package is skipped entirely this run and picked up again once the lookup
         // succeeds.
-        var skipRedirectedFindingsThisRun = childCleanupDegraded;
+        //
+        // Fix 1: an exclusion resolution that couldn't verify what a still-carried package contains fails
+        // the same way. The exclusion set going empty on a fault reads identically to "nothing to
+        // exclude", which would let a package-scope delete proceed on state this handler never checked.
+        var skipRedirectedFindingsThisRun = childCleanupDegraded || exclusionDegraded;
 
         // RunMode.NoDelete/DryRun is the only signal knowable at classify time — the
         // reactively-deferred/still-blocking-at-post-import case is not implemented by this handler.
         if (context.Mode.IsReportOnly())
             return new HandlerDetectionResult(
-                BuildAllFindings(claimedForFindings, names, packageIds, _ => OrphanPriority.Prio1, skipRedirectedFindingsThisRun)
+                BuildAllFindings(claimedForFindings, names, packageIds, _ => OrphanPriority.Prio1, skipRedirectedFindingsThisRun, protectedPackageIds)
                     .Concat(childCleanupFindings.Select(f => f with { Priority = OrphanPriority.Prio1 }))
                     .ToList(),
                 claimedIds);
@@ -141,7 +161,7 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
             _ => OrphanPriority.Prio3,
         };
 
-        var findings = BuildAllFindings(claimedForFindings, names, packageIds, PriorityFor, skipRedirectedFindingsThisRun)
+        var findings = BuildAllFindings(claimedForFindings, names, packageIds, PriorityFor, skipRedirectedFindingsThisRun, protectedPackageIds)
             .Concat(childCleanupFindings)
             .ToList();
 
@@ -156,7 +176,8 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         Dictionary<Guid, string> names,
         Dictionary<Guid, EntityReference> packageIds,
         Func<(Guid ObjectId, int ComponentType), OrphanPriority> priorityFor,
-        bool skipRedirectedFindings = false)
+        bool skipRedirectedFindings = false,
+        HashSet<Guid>? protectedPackageIds = null)
     {
         var findings = new List<HandlerFinding>(claimed.Count);
         var emittedPackageIds = new HashSet<Guid>();
@@ -171,6 +192,13 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
                 // scheduled for deletion first — skip entirely rather than risk a delete that fails or
                 // leaves referencing children uncleaned.
                 if (skipRedirectedFindings) continue;
+
+                // Fix 2: the package still carries at least one of its assemblies' DLLs, so deleting it
+                // would destroy live content. This assembly gets no finding of its own either — a
+                // package-owned pluginassembly can't be deleted directly, which is why the redirect
+                // exists. Its plugin types and steps stay ordinary candidates and are deleted on their
+                // own, leaving the assembly registered but inert.
+                if (protectedPackageIds?.Contains(packageRef.Id) == true) continue;
 
                 // Multiple orphaned assemblies sharing the same parent package collapse to one
                 // package-delete finding, not one per assembly.
@@ -238,46 +266,117 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
     // R11/R12/KTD7: which of this batch's package-owned candidates a still-carried package's content
     // actually accounts for. Reflects each locally-present package's .nupkg exactly once for the whole
     // batch (PluginPackageContentReader.ScanReflectedAssemblyNamesByPackage), not once per candidate, then
-    // matches each candidate's live name against its own package's set. An unresolved live name or an
-    // unresolved package uniquename can't be safely matched against local content — leaving that
-    // candidate un-excluded is the narrower, safer default (never silently widen the exclusion).
-    static async Task<HashSet<Guid>> ResolvePackageContentExclusionsAsync(
-        DetectionContext context,
-        Dictionary<Guid, EntityReference> packageIds,
-        Dictionary<Guid, string> names,
-        IAnsiConsole console,
-        CancellationToken ct)
+    // matches each candidate's live name against its own package's set.
+    //
+    // Fix 1: every input that can go unverified reports Degraded, and the caller then skips the
+    // package-scope delete for the run. Leaving a candidate merely un-excluded is NOT the safe direction
+    // here: an un-excluded package-owned assembly redirects to deleting its whole pluginpackage, so a
+    // silent empty exclusion set is a delete performed on state this never checked. Three inputs can do
+    // that — the uniquename lookup faulting, a package directory that can't be read or reflected, and a
+    // per-candidate name/uniquename miss.
+    //
+    // Fix 3: an excluded assembly's live plugin types are protected alongside it — the assembly is meant
+    // to stay as inert registered storage, and deleting the types would strip the only thing that makes
+    // it runnable. Steps are deliberately NOT protected: a step absent from source was removed on
+    // purpose, and inert-but-registered is the intended end state.
+    static async Task<(HashSet<Guid> ExcludedAssemblyIds, HashSet<Guid> ProtectedObjectIds, bool Degraded)>
+        ResolvePackageContentExclusionsAsync(
+            DetectionContext context,
+            Dictionary<Guid, EntityReference> packageIds,
+            Dictionary<Guid, string> names,
+            List<(Guid ObjectId, int ComponentType)> claimed,
+            IAnsiConsole console,
+            CancellationToken ct)
     {
         var excluded = new HashSet<Guid>();
-        if (packageIds.Count == 0) return excluded;
+        if (packageIds.Count == 0) return (excluded, excluded, false);
+
+        // Local scan first: it costs no round trip, and when the imported solution carries no package
+        // content at all nothing can be excluded whatever the live lookups say — so R12's package-gone
+        // path never degrades on an unrelated transient fault.
+        var (reflectedByPackage, scanFailures) =
+            PluginPackageContentReader.ScanReflectedAssemblyNamesByPackage(context.DataverseSolutionSrcRoot);
+
+        var degraded = scanFailures.Count > 0;
+        foreach (var (packageDir, error) in scanFailures)
+            console.Warning($"Package '{Markup.Escape(packageDir)}' in the imported solution couldn't be read ({Markup.Escape(error.Message)}) — its package-content orphan check is skipped this run.");
+
+        if (reflectedByPackage.Count == 0 && !degraded) return (excluded, excluded, false);
 
         var packageUniqueNames = await ResolvePackageUniqueNamesAsync(
-            context.Service, packageIds.Values.Select(p => p.Id).Distinct().ToList(), console, ct).ConfigureAwait(false);
-        if (packageUniqueNames.Count == 0) return excluded;
-
-        var reflectedByPackage = PluginPackageContentReader.ScanReflectedAssemblyNamesByPackage(context.DataverseSolutionSrcRoot);
-        if (reflectedByPackage.Count == 0) return excluded;
+            context.Service, packageIds.Values.Select(p => p.Id).Distinct().ToList(), console, ct,
+            onFault: () => degraded = true).ConfigureAwait(false);
 
         foreach (var (assemblyId, packageRef) in packageIds)
         {
-            if (!names.TryGetValue(assemblyId, out var assemblyName)) continue;
-            if (!packageUniqueNames.TryGetValue(packageRef.Id, out var uniqueName)) continue;
+            // Either miss leaves this candidate unmatchable against local content. Reporting it as
+            // degraded is what stops the package delete from running on an unverified assembly.
+            if (!names.TryGetValue(assemblyId, out var assemblyName) ||
+                !packageUniqueNames.TryGetValue(packageRef.Id, out var uniqueName))
+            {
+                degraded = true;
+                continue;
+            }
+
             if (reflectedByPackage.TryGetValue(uniqueName, out var reflectedNames) && reflectedNames.Contains(assemblyName))
                 excluded.Add(assemblyId);
         }
 
-        return excluded;
+        if (excluded.Count == 0) return (excluded, excluded, degraded);
+
+        var (protectedTypeIds, typeLookupDegraded) =
+            await ResolveProtectedPluginTypeIdsAsync(context.Service, excluded, console, ct).ConfigureAwait(false);
+
+        // Fix 3 fail-closed: without the type list we can't tell a protected assembly's types from any
+        // other candidate's, so no plugin type in this batch is deleted this run.
+        if (typeLookupDegraded)
+        {
+            degraded = true;
+            protectedTypeIds.UnionWith(claimed.Where(c => c.ComponentType == 90).Select(c => c.ObjectId));
+        }
+
+        var protectedObjectIds = new HashSet<Guid>(excluded);
+        protectedObjectIds.UnionWith(protectedTypeIds);
+        return (excluded, protectedObjectIds, degraded);
+    }
+
+    // Fix 3: the live plugin types belonging to assemblies the package content still accounts for.
+    // Mirrors ResolvePackageIdsAsync's degrade shape, but the caller treats a fault as fail-closed
+    // rather than fail-open — see ResolvePackageContentExclusionsAsync.
+    static async Task<(HashSet<Guid> TypeIds, bool Degraded)> ResolveProtectedPluginTypeIdsAsync(
+        IOrganizationServiceAsync2 service,
+        IReadOnlyCollection<Guid> excludedAssemblyIds,
+        IAnsiConsole console,
+        CancellationToken ct)
+    {
+        var degraded = false;
+        var typeIds = await DataverseFaultTolerance.TryQueryAsync(async () =>
+        {
+            EntityNameLookup.EnsureInLimit(excludedAssemblyIds.Count, "IDs", "Too many package-content assemblies to protect their plugin types this run.");
+
+            var query = new QueryExpression("plugintype")
+            {
+                ColumnSet = new ColumnSet(false),
+                Criteria = { Conditions = { new ConditionExpression("pluginassemblyid", ConditionOperator.In, excludedAssemblyIds.Select(id => (object)id).ToArray()) } }
+            };
+            var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
+            return entities.Select(e => e.Id).ToHashSet();
+        }, [], console, msg => $"plugintype lookup for package-content assemblies failed ({msg}) — plugin type deletes are skipped this run.",
+            onFault: () => degraded = true);
+
+        return (typeIds, degraded);
     }
 
     // Batched live lookup of packageid -> uniquename, the local identity ScanReflectedAssemblyNamesByPackage
-    // keys its per-package sets by. Mirrors ResolvePackageIdsAsync's degrade shape: a transient failure
-    // leaves every package-owned candidate un-excluded this run (the narrower, safer direction) rather
-    // than aborting detection for the whole family.
+    // keys its per-package sets by. Fix 1: reports the fault through onFault rather than degrading to an
+    // empty result, which the caller could not tell apart from "nothing to exclude" — see
+    // ResolvePackageContentExclusionsAsync. Detection for the rest of the family still continues.
     static Task<Dictionary<Guid, string>> ResolvePackageUniqueNamesAsync(
         IOrganizationServiceAsync2 service,
         IReadOnlyList<Guid> packageIds,
         IAnsiConsole console,
-        CancellationToken ct) =>
+        CancellationToken ct,
+        Action onFault) =>
         DataverseFaultTolerance.TryQueryAsync(async () =>
         {
             var query = new QueryExpression("pluginpackage")
@@ -295,7 +394,7 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
                     result[entity.Id] = uniqueName;
             }
             return result;
-        }, [], console, msg => $"pluginpackage uniquename lookup failed ({msg}) — package-content orphan exclusion skipped this run.");
+        }, [], console, msg => $"pluginpackage uniquename lookup failed ({msg}) — package deletes are skipped this run.", onFault);
 
     // Pulls any CustomApi (and its RequestParameter/ResponseProperty children) bound to a redirected
     // assembly's plugin types into this family's own findings, ordered ahead of the package-delete slot

@@ -90,6 +90,18 @@ Instead, `deploy` **observes** after every import:
   package. `PluginAssemblyFamilyHandler` now checks package content, not just the manifest, before
   treating a package-owned assembly as an orphan
   (`src/Flowline.Core/OrphanCleanup/Handlers/PluginAssemblyFamilyHandler.cs`).
+- The package-scope delete collapses every orphaned assembly under one package into a single finding,
+  so a package holding one carried assembly and one genuinely orphaned sibling would still have been
+  deleted whole. A package with any carried assembly is now never deleted. The orphaned sibling keeps
+  no delete of its own either, since a package-owned `pluginassembly` cannot be deleted directly, but
+  its plugin types and steps still go: an orphaned assembly is harmless once nothing calls it, and
+  steps and Custom APIs are the execution surface. A carried assembly's plugin types are protected
+  with it; its steps are not.
+- The exclusion fails closed. If the `pluginpackageid` to `uniquename` lookup faults, if a package
+  directory in the imported solution cannot be read or reflected, or if a candidate's live name cannot
+  be resolved, no plug-in package is deleted that run. An empty exclusion set reads identically to
+  "nothing to exclude", and un-excluded means the package delete proceeds on content that was never
+  checked.
 
 ## Remedy
 

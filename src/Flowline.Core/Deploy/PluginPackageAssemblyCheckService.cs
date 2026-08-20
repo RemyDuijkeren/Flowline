@@ -18,13 +18,11 @@ namespace Flowline.Core.Deploy;
 // never repair".
 public class PluginPackageAssemblyCheckService(IAnsiConsole console) : IPostDeployService
 {
-    // KTD4: no discard console exists in Flowline.Core today. PluginAssemblyReader.AnalyzePackage
-    // prints an "analyzed" line per plugin-bearing DLL, and the scanner it drives emits its own
-    // warnings — push-time output with no place in a deploy's post-import summary.
-    static readonly IAnsiConsole DiscardConsole =
-        AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(TextWriter.Null) });
-
-    readonly PluginAssemblyReader _assemblyReader = new(DiscardConsole);
+    // KTD4: PluginAssemblyReader.AnalyzePackage prints an "analyzed" line per plugin-bearing DLL, and
+    // the scanner it drives emits its own warnings — push-time output with no place in a deploy's
+    // post-import summary. Shared with PluginPackageContentReader, the other consumer of the same
+    // reflection walk, rather than declared once per consumer.
+    readonly PluginAssemblyReader _assemblyReader = new(PluginPackageContentReader.DiscardConsole);
     readonly PluginReader _reader = new();
 
     // Instance (not const) so tests can shrink the budget instead of paying ~4 real seconds per
