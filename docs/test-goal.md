@@ -116,7 +116,7 @@ The earlier round of this document covered one post-0.16.0 feature — the deplo
 gate — against TEST. Those results are kept below rather than discarded; the feature is in the same
 range and the runs still stand.
 
-## Results
+### Results
 
 | # | Case | Expected | Observed | Exit |
 |---|---|---|---|---|
@@ -131,7 +131,7 @@ range and the runs still stand.
 | I | `new webresources` (alias) | Identical to `scaffold` | Same output and same files | 0 |
 | J | `push --scope formevents` (removed) | Rejected, naming valid values | `Failed to convert 'formevents' to PushScope[]. Valid values are 'None', 'AssemblyOnly', 'Plugins', 'WebResources', 'All'` | 15 |
 
-## Case A is the one worth trusting
+### Case A is the one worth trusting
 
 The orphan provenance verdict is the largest thing in this range, and it is the hardest to fake.
 `FlowlineDeployTest` carries a commit that removed a Custom API from source specifically to leave a
@@ -154,7 +154,7 @@ that would be deleted.
 would be indistinguishable from one that echoes its input; reporting one means the comparison
 actually resolved against the environment and the checkout.
 
-## Case H is the one that justifies the mode announcement
+### Case H is the one that justifies the mode announcement
 
 `scaffold` finds a Flowline project by walking *upward*, which means a run from a subdirectory can
 land in project mode when the folder in front of you looks empty. Run from `src/deep/nested`, it
@@ -164,7 +164,7 @@ all in the nested folder.
 That behaviour is correct and would be surprising without the announcement — which is why the mode is
 stated before anything is written rather than inferred afterwards from where the files landed.
 
-## Case E — the collision guard
+### Case E — the collision guard
 
 The already-there check only sees the project file. A folder holding template-named files *without*
 one sails past it, and the template writer replaces files rather than merging them. Case E put a
@@ -179,7 +179,7 @@ Exit 11, the file byte-identical afterwards, and no other template file created 
 before the first write, so a refusal leaves nothing half-written. There is deliberately no `--force`
 to overrule it.
 
-## No-network claim, observed rather than asserted
+### No-network claim, observed rather than asserted
 
 `scaffold` claims it reaches nothing: no Dataverse, no authentication, no network, not even the
 update check. That is observable in the output rather than only in the code.
@@ -193,7 +193,7 @@ Case F is the sharper version: `scaffold plugins` returned exit 15 from a bare t
 was not a git repo and had no `.flowline` — the argument was rejected without any of those
 prerequisites being consulted.
 
-## What these runs confirmed
+### What these runs confirmed
 
 - Orphan provenance resolves against real git history and renders author, date, and subject (A).
 - The comparison filters rather than echoes — 2 candidates in, 1 orphan out (A).
@@ -206,7 +206,7 @@ prerequisites being consulted.
   project or Dataverse work (J).
 - Verbose mode carries tool versions after their check lines, per the verbose rules.
 
-## Not covered
+### Not covered
 
 Everything below needs a **write** to a live environment. This round deliberately made none, so these
 remain unexercised here.
@@ -230,7 +230,7 @@ newer than the running one.
 
 ---
 
-## Earlier round — deploy missing-component preflight gate
+### Earlier round — deploy missing-component preflight gate
 
 Retained from the 2026-08-09 run against TEST. Same release range; the results still stand.
 
@@ -252,7 +252,7 @@ Case D was not planned — it happened when the platform rejected a first, badly
 It is the more valuable accident: it exercised the "no verdict" path against a live service and
 confirmed it is reported and exit-coded separately from a real block.
 
-### The negative control
+#### The negative control
 
 Case B is the result worth trusting. Three fabricated dependencies were injected into the
 solution source; **two** were reported. The third, `msdyn_iotdevice`, was silently resolved because
@@ -262,7 +262,7 @@ That is the whole claim of the feature demonstrated in one run: the gate is filt
 solution's required-component list against the live target, not echoing the file back. A gate that
 reported all three would have been indistinguishable from one that reads the file and prints it.
 
-### Observed output (case B)
+#### Observed output (case B)
 
 ```
 Checking target for missing components...
@@ -277,7 +277,7 @@ Last resort: --skip-component-check deploys without this check.
 The filename carries the target, and the header names solution, target, and UTC time — both fixes
 for the review finding that one report was being shared across every promotion stage.
 
-### Payload size
+#### Payload size
 
 The open question was whether a large solution exceeds the inline message limit, forcing teams to
 disable the gate permanently. Measured against TEST by padding one real solution with an
@@ -312,7 +312,7 @@ Still untested at size: whether the check and `pac solution import` diverge some
 64.5 MB, and how the check behaves when dependency count and payload size are large independently —
 they were never varied separately above 0.5 MB.
 
-### Not covered by that round
+#### Not covered by that round
 
 - **False-positive rate.** Every component the gate reported was one that was genuinely absent. No
   case has been observed where it reports something the target actually has, and the gate blocks by
@@ -324,7 +324,7 @@ they were never varied separately above 0.5 MB.
 
 ---
 
-## Build configuration matters when testing the CLI
+### Build configuration matters when testing the CLI
 
 A `FlowlineException` from a pre-import gate first appeared as `Unhandled exception. …` with a full
 stack trace, which read like broken error handling. It was not. `Program.cs` calls
@@ -337,7 +337,7 @@ look broken. This is now recorded in `AGENTS.md` under Build and verification.
 
 Every exit code in both result tables above was read from a Release build for this reason.
 
-## Cleanup
+### Cleanup
 
 `FlowlineDeployTest` was left exactly as found: clean working tree, no commits, nothing written to
 any environment. Every folder used for the `scaffold` cases was a fresh temp directory.
