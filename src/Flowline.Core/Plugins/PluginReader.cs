@@ -291,7 +291,10 @@ public class PluginReader
         return results.OfType<Guid>().ToHashSet();
     }
 
-    async Task<IReadOnlyDictionary<string, Entity>> GetRegisteredPluginTypesAsync(
+    // FIX B: internal (not private) so PluginPackageAssemblyCheckService can reuse this query rather
+    // than writing a second one — the same plugintype-by-assembly lookup, just consumed for a
+    // registered-but-empty finding instead of a full RegistrationSnapshot.
+    internal async Task<IReadOnlyDictionary<string, Entity>> GetRegisteredPluginTypesAsync(
         IOrganizationServiceAsync2 service, Guid assemblyId, CancellationToken cancellationToken = default)
     {
         var query = new QueryExpression("plugintype")

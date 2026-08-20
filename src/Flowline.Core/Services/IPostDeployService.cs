@@ -37,8 +37,17 @@ public sealed record PostDeployContext(
     // entry as Undetermined rather than guessing a path.
     string? CheckoutSolutionSrcRoot = null);
 
+// FIX A: replaces the plain finding count so a service can also say "I couldn't verify" (Inconclusive)
+// without that being read as a clean pass, and so DeployCommand can resolve the right ExitCode without
+// sniffing which concrete service produced it (KTD5). PreferredExitCode is null for a clean outcome and
+// for the four services that only ever no-op post-import.
+public readonly record struct PostDeployOutcome(int Findings, bool Inconclusive, ExitCode? PreferredExitCode)
+{
+    public static PostDeployOutcome Clean { get; } = new(0, false, null);
+}
+
 public interface IPostDeployService
 {
     Task RunPreImportAsync(PostDeployContext context, CancellationToken ct);
-    Task<int> RunPostImportAsync(PostDeployContext context, CancellationToken ct);
+    Task<PostDeployOutcome> RunPostImportAsync(PostDeployContext context, CancellationToken ct);
 }

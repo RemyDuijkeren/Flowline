@@ -51,13 +51,7 @@ public enum ExitCode
     /// <summary>Destructive or overwriting operation requires --force in non-interactive mode.</summary>
     ForceRequired = 17,
 
-    /// <summary>
-    /// Deploy completed but the target is incomplete. Two sources, each naming its own fix in the output:
-    /// orphan cleanup failed for some components (remove them manually via maker portal), or a plug-in
-    /// package holds an assembly with no registration in the target (create the pluginassembly record
-    /// under that package with sandbox isolation, then deploy again so the content write populates its
-    /// plugin types). The second repeats on every later deploy until that record exists.
-    /// </summary>
+    /// <summary>Deploy completed but orphan cleanup failed for some components. Check output for items to remove manually via maker portal.</summary>
     PartialSuccess = 18,
 
     /// <summary>Check could not run to completion — an empty-input guard skipped the comparison (e.g. no local or no live components). Not a pass/fail signal; investigate the printed reason before trusting the result.</summary>
@@ -65,6 +59,14 @@ public enum ExitCode
 
     /// <summary>A file already occupies a path the command would write to, and the command will not overwrite it. Distinct from <see cref="ConfigInvalid"/>: nothing is missing or malformed — something valid is in the way. Move or remove the file named in the error output, or run the command somewhere else.</summary>
     WriteTargetOccupied = 20,
+
+    /// <summary>
+    /// Deploy completed but a plug-in package holds an assembly with no registration in the target, or one
+    /// registered with no plugin types. Create the pluginassembly record under that package with sandbox
+    /// isolation, then deploy again so the content write populates its plugin types. Repeats on every later
+    /// deploy until that record exists.
+    /// </summary>
+    AssemblyNotRegistered = 21,
 
     /// <summary>Operation cancelled by user (Ctrl+C / SIGINT). Follows de facto convention 128+2=130.</summary>
     Cancelled = 130,

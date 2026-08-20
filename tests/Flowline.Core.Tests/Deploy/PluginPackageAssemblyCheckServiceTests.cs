@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Reflection;
 using System.Reflection.Emit;
+using Flowline.Core;
 using Flowline.Core.Deploy;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
@@ -150,13 +151,33 @@ public class PluginPackageAssemblyCheckServiceTests : IDisposable
                 Arg.Any<CancellationToken>())
             .Returns<Task<EntityCollection>>(_ => throw new InvalidOperationException("connection reset"));
 
-    void SetUpAssemblyFound(Guid packageId, string assemblyName) =>
+    // Returns the assembly's id so callers can also stub its plugin-type query (SetUpPluginTypesFound) —
+    // Fix B's zero-plugin-types check runs for every assembly this makes findable, so a test that wants
+    // a fully clean result must stub both.
+    Guid SetUpAssemblyFound(Guid packageId, string assemblyName)
+    {
+        var assemblyId = Guid.NewGuid();
         _serviceMock.RetrieveMultipleAsync(
                 Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginassembly" &&
                     q.Criteria.Conditions.Any(c => c.AttributeName == "packageid" && (Guid)c.Values[0] == packageId) &&
                     q.Criteria.Conditions.Any(c => c.AttributeName == "name" && (string)c.Values[0] == assemblyName))),
                 Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new EntityCollection([new Entity("pluginassembly", Guid.NewGuid())])));
+            .Returns(Task.FromResult(new EntityCollection([new Entity("pluginassembly", assemblyId)])));
+        return assemblyId;
+    }
+
+    // Fix B: without this, the default empty-result stub answers the plugintype query too, and the
+    // assembly counts as a zero-plugin-types finding — tests that want a genuinely clean assembly need
+    // this stubbed alongside SetUpAssemblyFound.
+    void SetUpPluginTypesFound(Guid assemblyId, int count = 1) =>
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "plugintype" &&
+                    q.Criteria.Conditions.Any(c => c.AttributeName == "pluginassemblyid" && (Guid)c.Values[0] == assemblyId))),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(
+                Enumerable.Range(0, count)
+                    .Select(i => new Entity("plugintype", Guid.NewGuid()) { ["typename"] = $"Type{i}" })
+                    .ToList())));
 
     // Absent on every call — the default empty-result stub already covers this, kept explicit for
     // readability at call sites that rely on it.
@@ -168,7 +189,9 @@ public class PluginPackageAssemblyCheckServiceTests : IDisposable
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new EntityCollection()));
 
-    void SetUpAssemblyFoundOnSecondCall(Guid packageId, string assemblyName) =>
+    Guid SetUpAssemblyFoundOnSecondCall(Guid packageId, string assemblyName)
+    {
+        var assemblyId = Guid.NewGuid();
         _serviceMock.RetrieveMultipleAsync(
                 Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginassembly" &&
                     q.Criteria.Conditions.Any(c => c.AttributeName == "packageid" && (Guid)c.Values[0] == packageId) &&
@@ -176,7 +199,9 @@ public class PluginPackageAssemblyCheckServiceTests : IDisposable
                 Arg.Any<CancellationToken>())
             .Returns(
                 Task.FromResult(new EntityCollection()),
-                Task.FromResult(new EntityCollection([new Entity("pluginassembly", Guid.NewGuid())])));
+                Task.FromResult(new EntityCollection([new Entity("pluginassembly", assemblyId)])));
+        return assemblyId;
+    }
 
     void SetUpAssemblyLookupThrows(Guid packageId, string assemblyName) =>
         _serviceMock.RetrieveMultipleAsync(
@@ -199,12 +224,18 @@ public class PluginPackageAssemblyCheckServiceTests : IDisposable
 
         var packageId = Guid.NewGuid();
         SetUpPackageFound("abc_TestPackage", packageId);
-        SetUpAssemblyFound(packageId, "RegisteredAssembly");
+        var registeredId = SetUpAssemblyFound(packageId, "RegisteredAssembly");
+        SetUpPluginTypesFound(registeredId);
         SetUpAssemblyNeverFound(packageId, "MissingAssembly");
 
         var result = await _service.RunPostImportAsync(Ctx(unpackRoot), CancellationToken.None);
 
-        result.Should().Be(1);
+        result.Findings.Should().Be(1);
+        result.Inconclusive.Should().BeFalse();
+        // FIX A: this is the concrete value DeployCommand.ResolvePostImportExitCode keys off to prefer
+        // 21 over 18 — proving it here, not just in the resolver's own unit tests, catches the case
+        // where this service stops setting it.
+        result.PreferredExitCode.Should().Be(ExitCode.AssemblyNotRegistered);
         var output = _console.Output;
         output.Should().Contain("MissingAssembly");
         output.Should().Contain("abc_TestPackage");
@@ -225,12 +256,15 @@ public class PluginPackageAssemblyCheckServiceTests : IDisposable
 
         var packageId = Guid.NewGuid();
         SetUpPackageFound("abc_TestPackage", packageId);
-        SetUpAssemblyFound(packageId, "AssemblyOne");
-        SetUpAssemblyFound(packageId, "AssemblyTwo");
+        var oneId = SetUpAssemblyFound(packageId, "AssemblyOne");
+        SetUpPluginTypesFound(oneId);
+        var twoId = SetUpAssemblyFound(packageId, "AssemblyTwo");
+        SetUpPluginTypesFound(twoId);
 
         var result = await _service.RunPostImportAsync(Ctx(unpackRoot), CancellationToken.None);
 
-        result.Should().Be(0);
+        result.Findings.Should().Be(0);
+        result.Inconclusive.Should().BeFalse();
         // Proves the discarding console actually suppresses AnalyzePackage's own "analyzed" lines —
         // a plain "contains the verdict" assertion would pass even if that leaked.
         _console.Output.Should().NotContain("analyzed");
@@ -248,11 +282,13 @@ public class PluginPackageAssemblyCheckServiceTests : IDisposable
 
         var packageId = Guid.NewGuid();
         SetUpPackageFound("abc_TestPackage", packageId);
-        SetUpAssemblyFoundOnSecondCall(packageId, "SlowAssembly");
+        var slowId = SetUpAssemblyFoundOnSecondCall(packageId, "SlowAssembly");
+        SetUpPluginTypesFound(slowId);
 
         var result = await _service.RunPostImportAsync(Ctx(unpackRoot), CancellationToken.None);
 
-        result.Should().Be(0);
+        result.Findings.Should().Be(0);
+        result.Inconclusive.Should().BeFalse();
         _console.Output.Should().NotContain("!"); // no warning glyph
     }
 
@@ -270,7 +306,8 @@ public class PluginPackageAssemblyCheckServiceTests : IDisposable
 
         var result = await _service.RunPostImportAsync(Ctx(unpackRoot), CancellationToken.None);
 
-        result.Should().Be(1);
+        result.Findings.Should().Be(1);
+        result.Inconclusive.Should().BeFalse();
     }
 
     [Fact]
@@ -280,7 +317,9 @@ public class PluginPackageAssemblyCheckServiceTests : IDisposable
 
         var result = await _service.RunPostImportAsync(Ctx(unpackRoot), CancellationToken.None);
 
-        result.Should().Be(0);
+        // Fix C/D: the solution genuinely has no plug-in package — stays silent, not inconclusive.
+        result.Findings.Should().Be(0);
+        result.Inconclusive.Should().BeFalse();
         _console.Output.Should().BeEmpty();
         await _serviceMock.DidNotReceive().RetrieveMultipleAsync(Arg.Any<QueryExpression>(), Arg.Any<CancellationToken>());
     }
@@ -297,7 +336,9 @@ public class PluginPackageAssemblyCheckServiceTests : IDisposable
 
         var result = await _service.RunPostImportAsync(Ctx(unpackRoot), CancellationToken.None);
 
-        result.Should().Be(0);
+        // R6: target doesn't hold this package at all — no finding, and not inconclusive either.
+        result.Findings.Should().Be(0);
+        result.Inconclusive.Should().BeFalse();
         _console.Output.Should().BeEmpty();
     }
 
@@ -316,13 +357,15 @@ public class PluginPackageAssemblyCheckServiceTests : IDisposable
         var cleanPackageId = Guid.NewGuid();
         var brokenPackageId = Guid.NewGuid();
         SetUpPackageFound("abc_CleanPackage", cleanPackageId);
-        SetUpAssemblyFound(cleanPackageId, "CleanAssembly");
+        var cleanId = SetUpAssemblyFound(cleanPackageId, "CleanAssembly");
+        SetUpPluginTypesFound(cleanId);
         SetUpPackageFound("abc_BrokenPackage", brokenPackageId);
         SetUpAssemblyNeverFound(brokenPackageId, "BrokenAssembly");
 
         var result = await _service.RunPostImportAsync(Ctx(unpackRoot), CancellationToken.None);
 
-        result.Should().Be(1);
+        result.Findings.Should().Be(1);
+        result.Inconclusive.Should().BeFalse();
         _console.Output.Should().Contain("BrokenAssembly");
         _console.Output.Should().NotContain("CleanAssembly");
     }
@@ -339,11 +382,14 @@ public class PluginPackageAssemblyCheckServiceTests : IDisposable
 
         var cleanPackageId = Guid.NewGuid();
         SetUpPackageFound("abc_CleanPackage2", cleanPackageId);
-        SetUpAssemblyFound(cleanPackageId, "CleanAssembly2");
+        var cleanId = SetUpAssemblyFound(cleanPackageId, "CleanAssembly2");
+        SetUpPluginTypesFound(cleanId);
 
         var result = await _service.RunPostImportAsync(Ctx(unpackRoot), CancellationToken.None);
 
-        result.Should().Be(0);
+        // Fix C: the sibling package's missing .nupkg means this pass couldn't verify everything.
+        result.Findings.Should().Be(0);
+        result.Inconclusive.Should().BeTrue();
         _console.Output.Should().Contain("abc_NoNupkgPackage");
         _console.Output.Should().NotContain("registered.");
     }
@@ -358,12 +404,31 @@ public class PluginPackageAssemblyCheckServiceTests : IDisposable
 
         var result = await _service.RunPostImportAsync(Ctx(unpackRoot), CancellationToken.None);
 
-        result.Should().Be(0);
+        // Fix C: DLLs were present in the nupkg, just none plugin-bearing — a genuine dependency-only
+        // package. That's a normal, silent result, not "couldn't verify".
+        result.Findings.Should().Be(0);
+        result.Inconclusive.Should().BeFalse();
         _console.Output.Should().NotContain("registered.");
         // No package lookup either — nothing plugin-bearing was reflected to check against the target.
         await _serviceMock.DidNotReceive().RetrieveMultipleAsync(
             Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginpackage")),
             Arg.Any<CancellationToken>());
+    }
+
+    // Fix C: distinguishes this from the dependency-only case above — the nupkg itself has no DLLs at
+    // all, so nothing was readable, and that's inconclusive rather than a silent clean pass.
+    [Fact]
+    public async Task RunPostImportAsync_NupkgHasNoDllsAtAll_Inconclusive()
+    {
+        var buildDir = NewTempDir("flowline-pkgcheck-build-");
+        var nupkg = BuildNupkg(buildDir); // zero DLLs packed
+        var unpackRoot = BuildUnpackTree(("abc_EmptyNupkgPackage", nupkg));
+
+        var result = await _service.RunPostImportAsync(Ctx(unpackRoot), CancellationToken.None);
+
+        result.Findings.Should().Be(0);
+        result.Inconclusive.Should().BeTrue();
+        _console.Output.Should().NotContain("registered.");
     }
 
     [Fact]
@@ -374,7 +439,8 @@ public class PluginPackageAssemblyCheckServiceTests : IDisposable
         var act = async () => await _service.RunPostImportAsync(Ctx(unpackRoot), CancellationToken.None);
 
         var result = await act.Should().NotThrowAsync();
-        result.Which.Should().Be(0);
+        result.Which.Findings.Should().Be(0);
+        result.Which.Inconclusive.Should().BeTrue();
         _console.Output.Should().Contain("abc_NoNupkg");
     }
 
@@ -389,7 +455,8 @@ public class PluginPackageAssemblyCheckServiceTests : IDisposable
         var act = async () => await _service.RunPostImportAsync(Ctx(unpackRoot), CancellationToken.None);
 
         var result = await act.Should().NotThrowAsync();
-        result.Which.Should().Be(0);
+        result.Which.Findings.Should().Be(0);
+        result.Which.Inconclusive.Should().BeTrue();
         _console.Output.Should().Contain("abc_WorkflowPackage");
         _console.Output.Should().Contain("workflow activity");
     }
@@ -407,7 +474,8 @@ public class PluginPackageAssemblyCheckServiceTests : IDisposable
         var act = async () => await _service.RunPostImportAsync(Ctx(unpackRoot), CancellationToken.None);
 
         var result = await act.Should().NotThrowAsync();
-        result.Which.Should().Be(0);
+        result.Which.Findings.Should().Be(0);
+        result.Which.Inconclusive.Should().BeTrue();
         _console.Output.Should().Contain("abc_LookupThrowsPackage");
     }
 
@@ -426,7 +494,8 @@ public class PluginPackageAssemblyCheckServiceTests : IDisposable
         var act = async () => await _service.RunPostImportAsync(Ctx(unpackRoot), CancellationToken.None);
 
         var result = await act.Should().NotThrowAsync();
-        result.Which.Should().Be(0);
+        result.Which.Findings.Should().Be(0);
+        result.Which.Inconclusive.Should().BeTrue();
         _console.Output.Should().Contain("abc_AssemblyLookupThrowsPackage");
     }
 
@@ -441,12 +510,38 @@ public class PluginPackageAssemblyCheckServiceTests : IDisposable
 
         var packageId = Guid.NewGuid();
         SetUpPackageFound("abc_MixedPackage", packageId);
-        SetUpAssemblyFound(packageId, "RealPlugin");
+        var realId = SetUpAssemblyFound(packageId, "RealPlugin");
+        SetUpPluginTypesFound(realId);
 
         var result = await _service.RunPostImportAsync(Ctx(unpackRoot), CancellationToken.None);
 
-        result.Should().Be(0);
+        result.Findings.Should().Be(0);
+        result.Inconclusive.Should().BeFalse();
         _console.Output.Should().NotContain("Newtonsoft");
+    }
+
+    // Fix B: a pluginassembly row can exist under the package and still carry zero plugin types — the
+    // exact dead-end state the documented remedy passes through when the import writes no content.
+    [Fact]
+    public async Task RunPostImportAsync_AssemblyRegisteredWithZeroPluginTypes_ReturnsOneFindingWithDistinctWording()
+    {
+        var buildDir = NewTempDir("flowline-pkgcheck-build-");
+        var dll = BuildPluginDll(buildDir, "EmptyTypesAssembly", "EmptyTypesPlugin");
+        var nupkg = BuildNupkg(buildDir, dll);
+        var unpackRoot = BuildUnpackTree(("abc_EmptyTypesPackage", nupkg));
+
+        var packageId = Guid.NewGuid();
+        SetUpPackageFound("abc_EmptyTypesPackage", packageId);
+        SetUpAssemblyFound(packageId, "EmptyTypesAssembly"); // plugintype query left unstubbed — default empty
+
+        var result = await _service.RunPostImportAsync(Ctx(unpackRoot), CancellationToken.None);
+
+        result.Findings.Should().Be(1);
+        result.Inconclusive.Should().BeFalse();
+        result.PreferredExitCode.Should().Be(ExitCode.AssemblyNotRegistered);
+        _console.Output.Should().Contain("EmptyTypesAssembly");
+        _console.Output.Should().Contain("no plugin types");
+        _console.Output.Should().Contain("repeat on every later deploy");
     }
 
     [Fact]

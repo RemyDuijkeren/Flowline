@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Flowline.Commands;
+using Flowline.Core;
 using Flowline.Core.Deploy;
 using Flowline.Core.OrphanCleanup;
 using Flowline.Core.Services;
@@ -26,12 +27,47 @@ public class DeployCommandPostDeployTests
         return services.BuildServiceProvider().GetServices<IPostDeployService>().ToList();
     }
 
-    [Theory]
-    [InlineData(0, false)]     // no failures
-    [InlineData(1, true)]      // single service reports a failure
-    [InlineData(5, true)]      // multiple services' failures summed by the caller
-    public void ShouldReportPartialSuccess_ReturnsExpected(int cleanupFailures, bool expected) =>
-        DeployCommand.ShouldReportPartialSuccess(cleanupFailures).Should().Be(expected);
+    // FIX A: ResolvePostImportExitCode's precedence, most specific first — a package assembly finding
+    // (21) outranks a plain finding count (18), which outranks "couldn't verify" (19).
+    [Fact]
+    public void ResolvePostImportExitCode_NoFindingsNoneInconclusive_ReturnsSuccess() =>
+        DeployCommand.ResolvePostImportExitCode([PostDeployOutcome.Clean, PostDeployOutcome.Clean])
+            .Should().Be(ExitCode.Success);
+
+    [Fact]
+    public void ResolvePostImportExitCode_OnlyPlainFindings_ReturnsPartialSuccess() =>
+        DeployCommand.ResolvePostImportExitCode([
+                new PostDeployOutcome(2, false, ExitCode.PartialSuccess),
+                PostDeployOutcome.Clean
+            ])
+            .Should().Be(ExitCode.PartialSuccess);
+
+    // The new 21 outranks 18 even when both fire on the same deploy (orphan cleanup failed AND an
+    // assembly is unregistered) — the assembly problem has no other remedy path, so it wins.
+    [Fact]
+    public void ResolvePostImportExitCode_AssemblyFindingAlongsidePlainFindings_ReturnsAssemblyNotRegistered() =>
+        DeployCommand.ResolvePostImportExitCode([
+                new PostDeployOutcome(2, false, ExitCode.PartialSuccess),
+                new PostDeployOutcome(1, false, ExitCode.AssemblyNotRegistered)
+            ])
+            .Should().Be(ExitCode.AssemblyNotRegistered);
+
+    // A service that prefers AssemblyNotRegistered but reports zero findings must not force 21 on its
+    // own — the precedence check is gated on Findings > 0, not on which service ran.
+    [Fact]
+    public void ResolvePostImportExitCode_AssemblyPreferenceWithZeroFindings_FallsThroughToInconclusive() =>
+        DeployCommand.ResolvePostImportExitCode([
+                new PostDeployOutcome(0, true, ExitCode.AssemblyNotRegistered)
+            ])
+            .Should().Be(ExitCode.Inconclusive);
+
+    [Fact]
+    public void ResolvePostImportExitCode_NoFindingsButInconclusive_ReturnsInconclusive() =>
+        DeployCommand.ResolvePostImportExitCode([
+                PostDeployOutcome.Clean,
+                new PostDeployOutcome(0, true, null)
+            ])
+            .Should().Be(ExitCode.Inconclusive);
 
     [Theory]
     [InlineData(0, false)]     // no Critical findings — deploy proceeds

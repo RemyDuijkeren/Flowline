@@ -341,19 +341,25 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             Logger.LogInformation("Importing to: {TargetUrl}", targetUrl);
             await ImportSolutionAsync(packagePath, targetEnv, sln.UniqueName, useStageAndUpgrade, publishChanges, cancellationToken);
 
-            var postImportFindings = 0;
+            var postImportOutcomes = new List<PostDeployOutcome>();
             foreach (var postDeployService in activeServices)
-                postImportFindings += await postDeployService.RunPostImportAsync(postDeployContext, cancellationToken);
+                postImportOutcomes.Add(await postDeployService.RunPostImportAsync(postDeployContext, cancellationToken));
+            var postImportFindings = postImportOutcomes.Sum(o => o.Findings);
             Logger.LogInformation("Post-deploy findings: {Findings}", postImportFindings);
 
-            // KTD5: source-neutral. More than one post-import service can now report, so this line sums
-            // them and names no cause — each service already printed its own findings and its own fix
+            // KTD5: source-neutral. More than one post-import service can now report, so this sums every
+            // outcome and names no cause — each service already printed its own findings and its own fix
             // above (orphan cleanup its maker-portal action, the package assembly check its remedy).
             // Claiming every finding is an orphan was true while orphan cleanup was the only reporter.
-            if (ShouldReportPartialSuccess(postImportFindings))
+            var resolvedExitCode = ResolvePostImportExitCode(postImportOutcomes);
+            switch (resolvedExitCode)
             {
-                Console.Warning($"Deploy finished with {postImportFindings} post-import {(postImportFindings == 1 ? "finding" : "findings")} — see above.");
-                return (int)ExitCode.PartialSuccess;
+                case ExitCode.AssemblyNotRegistered or ExitCode.PartialSuccess:
+                    Console.Warning($"Deploy finished with {postImportFindings} post-import {(postImportFindings == 1 ? "finding" : "findings")} — see above.");
+                    return (int)resolvedExitCode;
+                case ExitCode.Inconclusive:
+                    Console.Warning("Deploy landed, but verification couldn't complete — see above.");
+                    return (int)ExitCode.Inconclusive;
             }
 
             Console.Done("Deployed! Your solution is live. (⌐■_■)");
@@ -810,7 +816,21 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             throw new FlowlineException(ExitCode.BuildFailed, "Deploy failed — check the environment and your PAC login.");
     }
 
-    internal static bool ShouldReportPartialSuccess(int cleanupFailures) => cleanupFailures > 0;
+    // FIX A: resolves the exit code from every post-import outcome without sniffing which concrete
+    // service produced which one (KTD5). Precedence, most specific first: a package assembly finding
+    // (21) outranks a plain finding count (18), which outranks "couldn't verify" (19) — a deploy that
+    // both failed to clean up orphans AND left an unregistered assembly reports the assembly problem,
+    // since that's the one with no other remedy path.
+    internal static ExitCode ResolvePostImportExitCode(IReadOnlyList<PostDeployOutcome> outcomes)
+    {
+        if (outcomes.Any(o => o.Findings > 0 && o.PreferredExitCode == ExitCode.AssemblyNotRegistered))
+            return ExitCode.AssemblyNotRegistered;
+        if (outcomes.Sum(o => o.Findings) > 0)
+            return ExitCode.PartialSuccess;
+        if (outcomes.Any(o => o.Inconclusive))
+            return ExitCode.Inconclusive;
+        return ExitCode.Success;
+    }
 
     // U1/KTD1: dryRun takes precedence over noDelete/includeManaged — a dry run is always the most
     // restrictive mode regardless of what those two would otherwise select. Pure so it's unit-testable

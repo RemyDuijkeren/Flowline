@@ -16,5 +16,5 @@ public class BackupService(IAnsiConsole console, SubprocessCapture capture) : IP
         console.Ok($"Environment backed up ({label}).");
     }
 
-    public Task<int> RunPostImportAsync(PostDeployContext context, CancellationToken ct) => Task.FromResult(0);
+    public Task<PostDeployOutcome> RunPostImportAsync(PostDeployContext context, CancellationToken ct) => Task.FromResult(PostDeployOutcome.Clean);
 }

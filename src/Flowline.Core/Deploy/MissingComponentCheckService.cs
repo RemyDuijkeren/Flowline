@@ -69,7 +69,7 @@ public class MissingComponentCheckService(IAnsiConsole console) : IPostDeploySer
         throw new FlowlineException(ExitCode.ValidationFailed, MissingComponentReport.RenderFailureMessage(results, reportPath));
     }
 
-    public Task<int> RunPostImportAsync(PostDeployContext context, CancellationToken ct) => Task.FromResult(0);
+    public Task<PostDeployOutcome> RunPostImportAsync(PostDeployContext context, CancellationToken ct) => Task.FromResult(PostDeployOutcome.Clean);
 
     // FIX B: names the payload size only once it's plausibly the cause — below the threshold, the
     // fault is far more likely a real connectivity/auth problem, and appending a size line there would

@@ -1540,7 +1540,7 @@ public class OrphanCleanupServiceTests : IDisposable
 
         var failures = await svc.RunPostImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
 
-        Assert.Equal(0, failures);
+        Assert.Equal(0, failures.Findings);
         await _serviceMock.Received(2).DeleteAsync("pluginassembly", orphanId, Arg.Any<CancellationToken>());
     }
 
@@ -1549,7 +1549,7 @@ public class OrphanCleanupServiceTests : IDisposable
     {
         var failures = await _service.RunPostImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
 
-        Assert.Equal(0, failures);
+        Assert.Equal(0, failures.Findings);
         await _serviceMock.DidNotReceiveWithAnyArgs().DeleteAsync(default!, default, default);
     }
 
@@ -1703,7 +1703,7 @@ public class OrphanCleanupServiceTests : IDisposable
 
         var failures = await postImportOnlyService.RunPostImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
 
-        Assert.Equal(0, failures);
+        Assert.Equal(0, failures.Findings);
         await _serviceMock.Received(1).DeleteAsync("widgettable", orphanId, Arg.Any<CancellationToken>());
     }
 
@@ -1736,7 +1736,7 @@ public class OrphanCleanupServiceTests : IDisposable
 
         var failures = await mixedService.RunPostImportAsync(Ctx("MySolution", [(Guid.NewGuid(), 0)]), default);
 
-        Assert.Equal(0, failures);
+        Assert.Equal(0, failures.Findings);
         await _serviceMock.Received(2).DeleteAsync("pluginassembly", deferredId, Arg.Any<CancellationToken>());
         await _serviceMock.Received(1).DeleteAsync("widgettable", postImportOnlyId, Arg.Any<CancellationToken>());
     }

@@ -23,7 +23,7 @@ public class SolutionCheckService(IAnsiConsole console, SubprocessCapture captur
         console.Ok($"Solution checker: {result.TotalCount} finding{Plural(result.TotalCount)}, 0 Critical.");
     }
 
-    public Task<int> RunPostImportAsync(PostDeployContext context, CancellationToken ct) => Task.FromResult(0);
+    public Task<PostDeployOutcome> RunPostImportAsync(PostDeployContext context, CancellationToken ct) => Task.FromResult(PostDeployOutcome.Clean);
 
     internal static bool ShouldAbort(int criticalCount) => criticalCount > 0;
 

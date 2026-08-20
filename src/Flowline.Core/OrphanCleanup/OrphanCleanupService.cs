@@ -511,7 +511,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         _                     => false,
     };
 
-    public async Task<int> RunPostImportAsync(PostDeployContext context, CancellationToken ct)
+    public async Task<PostDeployOutcome> RunPostImportAsync(PostDeployContext context, CancellationToken ct)
     {
         var service      = context.Service;
         var solutionName = context.Solution.Name;
@@ -529,7 +529,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         var (sNew, _, _) = ComponentClassifier.ParseLocalSource(context.DataverseSolutionSrcRoot);
 
         if (candidates.Count == 0 || mode.IsReportOnly())
-            return 0;
+            return PostDeployOutcome.Clean;
 
         var sNewIds      = sNew.Select(c => c.ObjectId).ToHashSet();
         var candidateIds = candidates.Select(e => e.ObjectId).ToList();
@@ -553,11 +553,11 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
         }
 
         if (reEntries.Count == 0)
-            return 0;
+            return PostDeployOutcome.Clean;
 
         console.Skip("Post-import: running orphan cleanup...");
         var failed = await ExecuteInOrderAsync(service, solutionName, reEntries, isPostImport: true, ct).ConfigureAwait(false);
-        return failed.Count;
+        return new PostDeployOutcome(failed.Count, false, failed.Count > 0 ? ExitCode.PartialSuccess : null);
     }
 
     const int MaxConcurrentMetadataRequests = 20;
