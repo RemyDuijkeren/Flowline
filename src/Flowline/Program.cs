@@ -187,7 +187,8 @@ app.Configure(config =>
           .WithDescription("Export solution from DEV, bump build version, and unpack to source-controlled XML. Run after testing changes in DEV. Requires no uncommitted changes in the unpacked solution source. Alias: pull")
           .WithAlias("pull")
           .WithExample("sync")
-          .WithExample("sync", "--managed", "--bump", "minor");
+          .WithExample("sync", "--managed", "--bump", "minor")
+          .WithExample("pull", "--dev", "https://contoso-dev.crm4.dynamics.com");
 
     // Deploy (pack and import solution into environment)
     config.AddCommand<DeployCommand>("deploy")
