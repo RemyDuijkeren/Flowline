@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
@@ -276,8 +277,8 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         // --- Shared tail (all generators) ---
         ReplaceModelsFolderWithGenerated(tempFolder, modelsFolder);
 
-        // Save to .flowline — project mode only, skipped when --output overrides the path
-        if (!standaloneMode && projectSln != null && string.IsNullOrWhiteSpace(settings.Output))
+        // Save to .flowline — project mode only
+        if (ShouldPersistSettings(standaloneMode, projectSln))
         {
             projectSln.Generate ??= new GenerateConfig();
             if (namespaceWasDerived)
@@ -293,6 +294,18 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
 
     private bool IsStandaloneMode() =>
         !File.Exists(Path.Combine(RootFolder, ProjectConfig.s_configFileName));
+
+    /// <summary>
+    /// Whether a completed run writes what it resolved back to <c>.flowline</c>: project mode with a
+    /// configured solution.
+    /// </summary>
+    /// <remarks>
+    /// <c>--output</c> deliberately doesn't gate this. It is one of the settings being saved, so skipping
+    /// the save when it was passed would discard the very path it names, and take that run's generator and
+    /// derived namespace down with it.
+    /// </remarks>
+    internal static bool ShouldPersistSettings(bool standaloneMode, [NotNullWhen(true)] ProjectSolution? projectSln) =>
+        !standaloneMode && projectSln != null;
 
     async Task<(XrmContextAuth? XrmContextAuth, string? ResolvedSecret)> ResolveXrmContextAuthAsync(
         GeneratorType generatorType, PacProfile effectiveProfile, Settings settings, CancellationToken cancellationToken)

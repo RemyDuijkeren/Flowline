@@ -123,6 +123,29 @@ public class GenerateCommandEarlyValidationTests
     }
 }
 
+public class GeneratePersistSettingsTests
+{
+    static readonly ProjectSolution s_solution = new() { UniqueName = "ContosoSales" };
+
+    [Fact]
+    public void ProjectMode_WithConfiguredSolution_Persists()
+    {
+        GenerateCommand.ShouldPersistSettings(standaloneMode: false, s_solution).Should().BeTrue();
+    }
+
+    [Fact]
+    public void StandaloneMode_DoesNotPersist()
+    {
+        GenerateCommand.ShouldPersistSettings(standaloneMode: true, s_solution).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ProjectMode_WithoutConfiguredSolution_DoesNotPersist()
+    {
+        GenerateCommand.ShouldPersistSettings(standaloneMode: false, projectSln: null).Should().BeFalse();
+    }
+}
+
 public class GenerateFileSafetyTests : IDisposable
 {
     private readonly string _tempDir;

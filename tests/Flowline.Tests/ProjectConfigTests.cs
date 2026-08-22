@@ -576,6 +576,33 @@ public class ProjectConfigTests : IDisposable
     }
 
     [Fact]
+    public void Save_GenerateOutputPath_SurvivesReload()
+    {
+        // generate --output is stored relative to the project root and reused by later bare runs,
+        // so it has to reach the file, not just the in-memory config.
+        var config = new ProjectConfig();
+        var sln = config.AddOrUpdateSolution("ContosoSales");
+        sln.Generate = new GenerateConfig { OutputPath = Path.Combine("src", "Models") };
+
+        config.Save(_tempDir);
+        var reloaded = ProjectConfig.Load(_tempDir);
+
+        reloaded!.Solution!.Generate!.OutputPath.Should().Be(Path.Combine("src", "Models"));
+    }
+
+    [Fact]
+    public void Save_NullGenerateOutputPath_OmittedFromFile()
+    {
+        var config = new ProjectConfig();
+        var sln = config.AddOrUpdateSolution("ContosoSales");
+        sln.Generate = new GenerateConfig { Namespace = "Contoso.Models" };
+
+        config.Save(_tempDir);
+
+        File.ReadAllText(Path.Combine(_tempDir, ".flowline")).Should().NotContain("OutputPath");
+    }
+
+    [Fact]
     public void Save_StampsSchemaVersion1_EvenWithNullSolution()
     {
         // provision saves .flowline with only URL fields, before any solution is cloned.

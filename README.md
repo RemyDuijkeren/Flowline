@@ -41,7 +41,7 @@ What sets Flowline apart:
   `// flowline:onload`, `// flowline:onsave`, or `// flowline:onchange` binds a function straight to a form's event, closing the last manual step in the JS dev loop; `// flowline:depends` links JS-to-JS and RESX dependencies the same way. Both are registered and kept in sync on every `push`. No Maker Portal visits, no manual Configure Event dialogs, or dependency trees.
 - **Orphan cleanup built in** — steps, step images, and web resources missing from source are deleted from Dataverse on every `push`. `deploy` cleans up removed solution components too. No stale registrations, no ghost records. Use `--no-delete` to opt out.
 - **Dry-run before you touch anything** — `--dry-run` shows exactly what would change before a single Dataverse record is touched. Run it as a CI safety gate or any time you want confidence. No other Dataverse ALM tool offers this.
-- **AI-native by design** — `sync` writes `DATAVERSE_CONTEXT.md` with your full schema (entities, attributes, option sets, forms, views, plugin steps); Copilot and Codex load it automatically via the also scaffolded `AGENTS.md`/`CLAUDE.md` file by Flowline. Install Flowline as a [Claude Code / Codex plugin](https://github.com/RemyDuijkeren/Flowline/wiki/10-AI-Agents) (`/plugin marketplace add RemyDuijkeren/Flowline`) and an agent knows the full `clone → push → sync → deploy` loop — and how to migrate off other tools, like spkl — before you've even cloned a project.
+- **AI-native by design** — `sync` writes `DATAVERSE_CONTEXT.md` with your full schema (entities, attributes, option sets, forms, views, plugin steps); Copilot and Codex load it automatically via the also scaffolded `AGENTS.md`/`CLAUDE.md` file by Flowline. Install Flowline as a [Claude Code / Codex plugin](https://github.com/RemyDuijkeren/Flowline/wiki/11-AI-Agents) (`/plugin marketplace add RemyDuijkeren/Flowline`) and an agent knows the full `clone → push → sync → deploy` loop — and how to migrate off other tools, like spkl — before you've even cloned a project.
 
 ---
 
@@ -79,7 +79,7 @@ flowline deploy test
 flowline deploy prod
 ```
 
-Starting from scratch instead? `flowline init <name>` creates the publisher and solution in Dataverse, then scaffolds the repo the same way — see [Command Reference](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#init).
+Starting from scratch instead? `flowline init <name>` creates the publisher and solution in Dataverse, then scaffolds the repo the same way — see [Command Reference](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#init).
 
 For full setup, auth, and project workflow: **[Getting Started](https://github.com/RemyDuijkeren/Flowline/wiki/01-Getting-Started)**
 
@@ -119,7 +119,7 @@ Already have a built assembly? Push it standalone, no cloned project needed:
 flowline push ContosoSales --pluginFile ./bin/Release/Plugins.dll --dev https://contoso-dev.crm4.dynamics.com
 ```
 
-**[Flowline.Attributes reference](src/Flowline.Attributes/README.md)** · **[Push Plugins and Custom APIs wiki](https://github.com/RemyDuijkeren/Flowline/wiki/04-Push-Plugins-and-Custom-APIs)**
+**[Flowline.Attributes reference](src/Flowline.Attributes/README.md)** · **[Push Plugins and Custom APIs wiki](https://github.com/RemyDuijkeren/Flowline/wiki/05-Push-Plugins-and-Custom-APIs)**
 
 ---
 
@@ -146,7 +146,7 @@ export function onLoad(executionContext) { ... }
 export function onChangeCreditlimit(executionContext) { ... }
 ```
 
-**[Push WebResources wiki](https://github.com/RemyDuijkeren/Flowline/wiki/05-Push-WebResources)**
+**[Push WebResources wiki](https://github.com/RemyDuijkeren/Flowline/wiki/06-Push-WebResources)**
 
 ---
 
@@ -154,22 +154,22 @@ export function onChangeCreditlimit(executionContext) { ... }
 
 | Command                                                                                                       | What it does                                                                                 |
 |---------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|
-| [`clone [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#clone)               | Bootstrap an existing solution from Dataverse into the repo; run with no solution to pick one interactively |
-| [`init [name]`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#init)                     | Create a new publisher + empty solution in Dataverse (greenfield), then scaffold the repo; run with no name to be prompted |
-| [`push [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#push)                 | Build and sync code assets to DEV; or push standalone with `--pluginFile` / `--webresources` |
-| [`sync [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#sync)                 | Pull the current solution state from DEV into source control                                 |
-| [`deploy <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#deploy)               | Pack from the repo and import into `test`, `uat`, `prod`, or a URL; or deploy a pre-built zip standalone with `--path`  |
-| [`provision [dev\|test\|uat]`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#provision) | Provision a DEV, TEST or UAT environment by copying from production                          |
-| [`generate [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/09-Generate-Early-Bound-Types)         | Generate early-bound C# types into `Plugins/Models/` (configurable with `--output`)          |
-| [`drift <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#drift)                 | Compare committed source, or a pre-built zip with `--path`, against a live environment; read-only  |
-| [`scaffold <part>`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#scaffold)             | Write a project template into this folder and add it to the nearest solution file. No Dataverse, no auth, no network. Alias: `new` |
-| [`status`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#status)                        | Show environment info, Flowline version, and PAC CLI status                                  |
-| [`sln add <path>`](https://github.com/RemyDuijkeren/Flowline/wiki/03-Command-Reference#sln-add)               | Add a `.cdsproj` to the solution file — `dotnet sln add` refuses those. Runs standalone      |
+| [`clone [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#clone)               | Bootstrap an existing solution from Dataverse into the repo; run with no solution to pick one interactively |
+| [`init [name]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#init)                     | Create a new publisher + empty solution in Dataverse (greenfield), then scaffold the repo; run with no name to be prompted |
+| [`push [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#push)                 | Build and sync code assets to DEV; or push standalone with `--pluginFile` / `--webresources` |
+| [`sync [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#sync)                 | Pull the current solution state from DEV into source control                                 |
+| [`deploy <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#deploy)               | Pack from the repo and import into `test`, `uat`, `prod`, or a URL; or deploy a pre-built zip standalone with `--path`  |
+| [`provision [dev\|test\|uat]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#provision) | Provision a DEV, TEST or UAT environment by copying from production                          |
+| [`generate [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/10-Generate-Early-Bound-Types)         | Generate early-bound C# types into `Plugins/Models/` (configurable with `--output`)          |
+| [`drift <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#drift)                 | Compare committed source, or a pre-built zip with `--path`, against a live environment; read-only  |
+| [`scaffold <part>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#scaffold)             | Write a project template into this folder and add it to the nearest solution file. No Dataverse, no auth, no network. Alias: `new` |
+| [`status`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#status)                        | Show environment info, Flowline version, and PAC CLI status                                  |
+| [`sln add <path>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#sln-add)               | Add a `.cdsproj` to the solution file — `dotnet sln add` refuses those. Runs standalone      |
 
 ---
 
 ## Documentation
 
-Full docs live on the **[Wiki](https://github.com/RemyDuijkeren/Flowline/wiki)**. Using an AI agent? See **[AI Agents](https://github.com/RemyDuijkeren/Flowline/wiki/10-AI-Agents)** for the exit-code contract and how to install Flowline as a Claude Code / Codex plugin.
+Full docs live on the **[Wiki](https://github.com/RemyDuijkeren/Flowline/wiki)**. Using an AI agent? See **[AI Agents](https://github.com/RemyDuijkeren/Flowline/wiki/11-AI-Agents)** for the exit-code contract and how to install Flowline as a Claude Code / Codex plugin.
 
-Coming from another tool? [Migration from spkl](https://github.com/RemyDuijkeren/Flowline/wiki/13-Migration-from-spkl) · [Migration from Daxif](https://github.com/RemyDuijkeren/Flowline/wiki/14-Migration-from-Daxif) · [Migration from ALM Accelerator](https://github.com/RemyDuijkeren/Flowline/wiki/15-Migration-from-ALM-Accelerator) · [Migration from PACX](https://github.com/RemyDuijkeren/Flowline/wiki/16-Migration-from-PACX)
+Coming from another tool? [Migration from spkl](https://github.com/RemyDuijkeren/Flowline/wiki/14-Migration-from-spkl) · [Migration from Daxif](https://github.com/RemyDuijkeren/Flowline/wiki/15-Migration-from-Daxif) · [Migration from ALM Accelerator](https://github.com/RemyDuijkeren/Flowline/wiki/16-Migration-from-ALM-Accelerator) · [Migration from PACX](https://github.com/RemyDuijkeren/Flowline/wiki/17-Migration-from-PACX)

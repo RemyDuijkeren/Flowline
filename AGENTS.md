@@ -194,6 +194,7 @@ resource handling, project structure — update the relevant wiki page(s) alongs
 
 Wiki pages and their scope:
 - `Getting-Started.md` — install, auth, project workflow
+- `Project-Configuration.md` — the `.flowline` file, the solution file as project layout, project vs standalone mode
 - `Command-Reference.md` — all commands and flags
 - `Push-Plugins-and-Custom-APIs.md` — `[Step]`, `[Filter]`, `[CustomApi]` attribute reference
 - `Push-WebResources.md` — form event auto-wiring, web resource dependencies, push/deploy mechanics

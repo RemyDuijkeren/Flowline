@@ -38,7 +38,7 @@ public enum ExitCode
     /// <summary>
     /// Version conflict with target environment. Add --force to overwrite.
     /// Reserved: no throw site yet, but published as part of the agent-facing exit-code contract
-    /// (wiki 10-AI-Agents, plugin/skills/flowline/SKILL.md), so the value stays allocated.
+    /// (wiki 11-AI-Agents, plugin/skills/flowline/SKILL.md), so the value stays allocated.
     /// </summary>
     VersionConflict = 14,
 

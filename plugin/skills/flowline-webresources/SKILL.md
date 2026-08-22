@@ -138,6 +138,6 @@ flag is rejected (exit 15) rather than guessed at — `cd` elsewhere or use proj
 ## Full reference
 
 Push mechanics, file-type detection for extensionless legacy files, and the full annotation
-reference: **[05 — Push WebResources](https://github.com/RemyDuijkeren/Flowline/wiki/05-Push-WebResources)**.
+reference: **[06 — Push WebResources](https://github.com/RemyDuijkeren/Flowline/wiki/06-Push-WebResources)**.
 Project scaffold, Rollup config, TypeScript and ESLint setup, namespace prefixes, and swapping the
-build tool: **[08 — WebResources Project](https://github.com/RemyDuijkeren/Flowline/wiki/08-WebResources-Project)**.
+build tool: **[09 — WebResources Project](https://github.com/RemyDuijkeren/Flowline/wiki/09-WebResources-Project)**.

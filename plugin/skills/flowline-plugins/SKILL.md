@@ -120,6 +120,6 @@ Renaming a class updates the same Dataverse step in place — identity is `(mess
 
 ## Full reference
 
-This skill covers what you need before writing the class. For Associate/Disassociate scoping, plugin and Custom API lifecycle, `CodeActivity` packaging, multiple plugin projects, and orphan-deletion rules, read the wiki page: **[04 — Push Plugins and Custom APIs](https://github.com/RemyDuijkeren/Flowline/wiki/04-Push-Plugins-and-Custom-APIs)**.
+This skill covers what you need before writing the class. For Associate/Disassociate scoping, plugin and Custom API lifecycle, `CodeActivity` packaging, multiple plugin projects, and orphan-deletion rules, read the wiki page: **[05 — Push Plugins and Custom APIs](https://github.com/RemyDuijkeren/Flowline/wiki/05-Push-Plugins-and-Custom-APIs)**.
 
 `Flowline.Attributes` is a source-only package: every attribute ships as C# with full XML documentation under `~/.nuget/packages/flowline.attributes/<version>/contentFiles/cs/any/Flowline/`. Read `StepAttribute.cs` there when a property's exact behaviour matters.
