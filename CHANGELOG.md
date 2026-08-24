@@ -7,37 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-08-24
+
 ### Added
 
-- **`deploy` checks that plug-in package assemblies actually registered**: after import, it reflects each plug-in package's `.nupkg` content and compares it against what Dataverse registered under that package in the target, naming any assembly with no `pluginassembly` record — or one registered but carrying no plugin types — and exiting `AssemblyNotRegistered` (21) instead of a clean 0. A check that couldn't inspect a package (a locked directory, a Dataverse query fault) exits `Inconclusive` (19) rather than reporting a false clean pass. It never writes to the target — the fix is a manually created record, named in the finding, and the same finding and exit code repeat on every later deploy until that record exists. No flag skips the check. `push` now also warns when it self-registers a missing package assembly, since that fix is local to the environment it wrote to and doesn't travel with the next promotion. Measured against three unmanaged imports into two Sandbox environments in one tenant on 2026-08-17 ([microsoft/powerplatform-build-tools#1465](https://github.com/microsoft/powerplatform-build-tools/issues/1465) is open); managed imports and a target that has never held the package are unmeasured.
+- **`deploy` verifies plug-in package assemblies actually registered**: after import it compares each package's `.nupkg` content against what Dataverse registered, names any assembly with no record or no plugin types, and exits `AssemblyNotRegistered` (21). A check it couldn't complete exits `Inconclusive` (19) instead of a false clean pass. Read-only: the fix is a manually created record. `push` now warns when it self-registers a missing package assembly, since that fix doesn't travel to the next target.
 
-- **`generate --generator ebg`**: Daryl LaBar's Early Bound Generator V2 as a fourth generator. It runs in-process, driving Microsoft's `ModelBuilderLib` (the engine behind `pac modelbuilder build`) with DLaB's naming and filtering providers, so `pac` is never invoked and nothing is copied into your PAC installation. Output is PascalCase with typed enums, a `ServiceContext` and one file per entity. Namespace, output folder, service context name and the entity and message filters come from your solution as with every other generator; EBG's remaining settings keep their defaults, and a `builderSettings.json` at the project root is merged underneath them for anyone who wants the rest. `pac` stays the default and no existing project changes behaviour.
+- **`generate --generator ebg`**: Daryl LaBar's Early Bound Generator V2 as a fourth generator, run in-process so `pac` is never invoked. Namespace, output folder, service context name and filters come from your solution as with the other generators; a `builderSettings.json` at the project root fills in the rest. `pac` stays the default.
 
-- **`deploy` and `drift` run against a pre-built zip with no project**: `flowline deploy <url> --path <zip>` and `flowline drift <url> --path <zip>` now work from a folder holding nothing but the artifact, with no `.flowline` and no Git repo. A CI job that only downloaded an artifact can deploy or inspect it. Standalone activates when `--path` is set and no project is found; inside a project, `--path` behaves exactly as before. The solution's unique name and managed flag come from `solution.xml` inside the zip, and a zip whose manifest carries no unique name fails before any Dataverse call. Setup checks `pac` only, skipping the Git, Git repo and .NET probes, and the DTAP gate does not run. Orphan cleanup behaves exactly as it does in project mode, including which findings delete and which stay report-only.
+- **`deploy` and `drift` run against a pre-built zip with no project**: `--path <zip>` now works in a folder holding nothing but the artifact, with no `.flowline` and no Git repo, so a CI job that only downloaded an artifact can deploy or inspect it. Solution name and managed flag come from the zip's manifest. Inside a project, `--path` behaves exactly as before.
 
-- **`drift --path <zip>`**: compares a pre-built solution zip against a target instead of your checkout, read-only. The zip is unpacked with its own managed flag, and the temporary folder is removed on success and on failure alike. Orphan verdicts read as unresolved, since a downloaded artifact has no history to resolve them against.
+- **`drift --path <zip>`**: compares a pre-built zip against a target instead of your checkout, read-only. Orphan verdicts read as unresolved, since an artifact has no history.
 
-- **Standalone runs now report themselves in the log**: `deploy`, `drift`, `push` and `generate` record the invocation and open an activity span in standalone, as they already did in project mode. `push` and `generate` previously recorded nothing at all there. The .NET and Git versions read as "not checked" rather than carrying a placeholder, because standalone probes neither.
+- **Standalone runs report themselves in the log**: `deploy`, `drift`, `push` and `generate` now record the invocation in standalone mode as they already did in project mode.
 
 ### Changed
 
-- **`--force` is validated in standalone `push` and `generate`** (breaking): an unrecognised specifier now stops the run and lists the valid ones, where it used to be accepted and silently ignored. `push`'s specifiers gate real hazards, so a typo that quietly did nothing was the worse outcome. Correctly spelled values are unaffected.
+- **`--force` is validated in standalone `push` and `generate`** (breaking): an unrecognised specifier now stops the run and lists the valid ones, instead of being silently ignored.
 
-- **A `.flowline` now governs its whole subtree** (breaking): `push --pluginFile`/`--webresources` is refused from any folder beneath a Flowline project, not only from the project root. The rule always read "cannot be used inside a Flowline project folder", but the check only ever looked at one folder, so moving down a level slipped past it. Standalone push elsewhere in the same repository still works.
+- **A `.flowline` governs its whole subtree** (breaking): `push --pluginFile`/`--webresources` is refused from any folder beneath a Flowline project, not only the project root.
 
-- **`generate` run from a subfolder of a project now runs in project mode** (breaking): it previously looked for `.flowline` in the current folder only, so a subfolder run went standalone. It now belongs to the enclosing project, the same subtree rule `push` follows, which means it resolves the configured solution and DEV URL, can fail on those, and can save resolved settings back to `.flowline`.
+- **`generate` from a subfolder runs in project mode** (breaking): it belongs to the enclosing project, so it resolves the configured solution and DEV URL, can fail on those, and can save settings back to `.flowline`.
 
-- **Project resolution stops at the repository root**: a `.flowline` above your checkout no longer captures it, so one sitting in a parent directory cannot quietly put every repository beneath it into project mode. A `.flowline` with no Git repository above it is not a valid project: the run fails naming that project rather than proceeding.
-
-- **Standalone `push` and `generate` run through the same pipeline as every other mode**, which is what gives them the invocation record, `--force` validation and the welcome screen above. They previously bypassed it wholesale.
+- **Project resolution stops at the repository root**: a `.flowline` in a parent directory can no longer put every repository beneath it into project mode.
 
 ### Fixed
 
-- **Orphan cleanup no longer deletes a plug-in package because one of its assemblies is missing from the manifest**: a package assembly Dataverse never registered on import (see above) read as removed from source, and the whole package — every other assembly, plugin type and step registration in it — got deleted automatically the next time that solution deployed, with no `--force`. Package content, not the manifest, now decides: an assembly whose DLL the imported package still carries is never treated as an orphan, regardless of what `Solution.xml` names. A package genuinely dropped from source is unaffected and still deletes. The same holds for a package holding one carried assembly and one genuinely orphaned sibling: the package survives, the orphaned assembly stays registered but inert, and its plugin types and steps are still deleted, so the removed logic stops running. A carried assembly's own plugin types are protected alongside it; its steps are not, since a step missing from source was removed on purpose. Whenever the check cannot verify a package's content, whether the target lookup faults or a package directory in the imported solution cannot be read, no plug-in package is deleted that run and the cleanup is retried on the next deploy.
+- **Orphan cleanup no longer deletes a plug-in package over an assembly missing from the manifest**: an assembly Dataverse never registered read as removed from source, and the whole package — every other assembly, plugin type and step — was deleted on the next deploy, with no `--force`. Package content now decides, not the manifest. A package genuinely dropped from source still deletes. When package content can't be verified, no package is deleted that run.
 
-- **`generate --output` is saved to `.flowline`**: the flag was documented as saved and its value was resolved from config on later runs, but passing it suppressed the config write entirely, so the path never reached the file. The same run discarded everything else it had resolved: the generator it used, any namespace derived that run, and a `--service-context-name` or `--extra-tables` passed alongside it. Every setting a completed project-mode run resolves is now written back, `--output` included. That makes the flag sticky, as the other generate flags already are: a one-off `flowline generate --output ./scratch` redirects every later bare `generate` until you pass `--output` again. Standalone still saves nothing.
+- **`generate --output` is saved to `.flowline`**: passing it used to suppress the config write entirely, discarding the generator, namespace and other resolved settings along with it. Note this makes the flag sticky: one `generate --output ./scratch` redirects every later bare `generate`.
 
-- **Flowline recognises a Git repo it is working inside**: the check looked for `.git` as a folder in the project folder alone, so it failed in a linked worktree or submodule, where `.git` is a file, and for a project in a subfolder of its repository. That second case broke every project-mode command for repositories holding more than one Flowline project.
+- **Flowline recognises a Git repo it is working inside**: the check only looked for `.git` as a folder in the project folder, so it failed in a linked worktree or submodule, and for a project in a subfolder of its repository.
 
 ## [0.17.0] - 2026-08-16
 
@@ -522,7 +522,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions CI and release workflows.
 
 
-[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.17.0...HEAD
+[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.18.0...HEAD
+[0.18.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.17.0...0.18.0
 [0.17.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.16.0...0.17.0
 [0.16.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.15.0...0.16.0
 [0.15.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.14.0...0.15.0
