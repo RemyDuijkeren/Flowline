@@ -6,9 +6,13 @@ namespace Flowline.Tests.Generators;
 public class EbgGeneratorTests
 {
     const string Namespace = "MySolution.Models";
-    const string TempOutputPath = @"C:\solutions\MySolution\Plugins\Models~";
-    const string SettingsPath = @"C:\temp\flowline-ebg-1\builderSettings.json";
-    const string WorkDir = @"C:\temp\flowline-ebg-1";
+
+    // EBG roots a non-rooted settings path against RootPath, and what counts as rooted differs per
+    // OS, so derive these from the running platform's root instead of a hard-coded drive letter.
+    static readonly string Root = Path.GetPathRoot(AppContext.BaseDirectory)!;
+    static readonly string TempOutputPath = Path.Combine(Root, "solutions", "MySolution", "Plugins", "Models~");
+    static readonly string WorkDir = Path.Combine(Root, "temp", "flowline-ebg-1");
+    static readonly string SettingsPath = Path.Combine(WorkDir, "builderSettings.json");
 
     static DLaB.EarlyBoundGeneratorV2.Settings.EarlyBoundGeneratorConfig Build(
         IReadOnlyList<string>? entities = null,
