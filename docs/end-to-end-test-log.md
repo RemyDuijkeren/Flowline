@@ -1,7 +1,8 @@
 # Live test log
 
 Manual end-to-end exercises against a real Dataverse environment, rather than only through the unit
-suite. Newest round first.
+suite. Newest round first. The matrix, fixtures and constraints these rounds run against live in
+[`docs/end-to-end-test-goal.md`](end-to-end-test-goal.md); results only ever land here.
 
 ---
 
