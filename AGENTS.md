@@ -56,10 +56,8 @@ actually required.
 
 ## Repository map
 
-- `Flowline.slnx` — main solution
-- `src/Flowline/` — CLI executable; command registration in `Program.cs`, command implementations in `Commands/`
-- `src/Flowline.Core/` — engine: Dataverse services, domain logic, console rendering primitives
-- `src/Flowline.Attributes/` — public plugin and Custom API attributes
+Three projects under `src/`, two test projects under `tests/`. What each is for, and the rule that
+decides where a new file goes, is below.
 
 ### Project boundary rule
 
@@ -157,21 +155,6 @@ changing user-facing output only when command is available.
 Always follow the Flowline folder structure when creating, referencing, or reasoning about
 solution files and paths. The full spec is at [`docs/folder-structure.md`](docs/folder-structure.md).
 
-```
-ProjectRoot/
-├── .flowline                         ← project config
-├── <SolutionName>.slnx               ← solution file (an existing .sln is reused, never converted)
-├── Solution/                         ← PAC-managed (do not edit manually)
-│   ├── <SolutionName>.cdsproj        ← solution package project
-│   └── src/                          ← unpacked solution XML (git-diffable)
-├── Plugins/                          ← <SolutionName>.Plugins.csproj (plugins, workflows, custom APIs)
-├── WebResources/                     ← <SolutionName>.WebResources.csproj + src/ + public/ + dist/
-├── artifacts/                        ← packed solution zips (gitignored)
-├── CHANGES.md
-├── docs/                             ← not scaffolded; created by clone/sync as needed (DATAVERSE_CONTEXT.md)
-└── tests/                            ← not scaffolded; recognized if present
-```
-
 Key rules:
 - Exactly one Dataverse solution lives directly at the project root — never under a `solutions/<Name>/` wrapper
 - This tree is what `clone` scaffolds, not what the commands require: every command after `clone` locates the three projects by reading the solution file, so any of them can be moved
@@ -192,15 +175,14 @@ silently skip required wiki updates or create a replacement folder.
 When changing code that affects user-facing behavior — commands, flags, plugin registration, web
 resource handling, project structure — update the relevant wiki page(s) alongside any README changes.
 
-Wiki pages and their scope:
-- `Getting-Started.md` — install, auth, project workflow
-- `Project-Configuration.md` — the `.flowline` file, the solution file as project layout, project vs standalone mode
-- `Command-Reference.md` — all commands and flags
-- `Push-Plugins-and-Custom-APIs.md` — `[Step]`, `[Filter]`, `[CustomApi]` attribute reference
-- `Push-WebResources.md` — form event auto-wiring, web resource dependencies, push/deploy mechanics
-- `WebResources-Project.md` — TypeScript setup, Rollup build, folder structure
-- `Migration-from-spkl.md`, `Migration-from-Daxif.md`, `Migration-from-PACX.md` — migration guides
-- `Known-Limitations.md` — unsupported features and planned work
+**Read `..\Flowline.wiki\AGENTS.md` before writing any wiki page.** It governs that repo: who the
+pages are written for, what belongs there and what stays in this repo, page naming and numbering,
+link anchors, and page shape. The wiki is user-facing documentation and its rules differ from the
+ones here.
+
+The page list lives in `Home.md` under `## Pages` — read it there rather than from a copy that
+drifts. Files are numbered (`04-Command-Reference.md`), and the number is part of the link and the
+published URL.
 
 ## Compound Engineering Workflow
 

@@ -62,9 +62,11 @@ public enum ExitCode
 
     /// <summary>
     /// Deploy completed but a plug-in package holds an assembly with no registration in the target, or one
-    /// registered with no plugin types. Create the pluginassembly record under that package with sandbox
-    /// isolation, then deploy again so the content write populates its plugin types. Repeats on every later
-    /// deploy until that record exists.
+    /// registered with no plugin types. On an unmanaged target deploy creates the missing record before the
+    /// import, so reaching this code means that repair was refused or failed: a managed target, where
+    /// Flowline never writes the record, or a create Dataverse rejected. Create the pluginassembly record
+    /// under that package with sandbox isolation and the assembly's own version, culture and public key
+    /// token, then deploy again. Repeats on every later deploy until that record exists.
     /// </summary>
     AssemblyNotRegistered = 21,
 

@@ -82,13 +82,53 @@ public class DeployCommandPostDeployTests
     {
         var active = DeployCommand.ResolveActiveServices(RegisteredServices(), new DeployCommand.Settings());
 
-        active.Should().HaveCount(5);
+        active.Should().HaveCount(6);
         active[0].Should().BeOfType<MissingComponentCheckService>();
         active[1].Should().BeOfType<SolutionCheckService>();
         active[2].Should().BeOfType<BackupService>();
         active[3].Should().BeOfType<OrphanCleanupService>();
+        // Pre-import repair: the first service that writes to the target, so it sits after the backup
+        // that gives it a restore point, and after orphan cleanup so cleanup classifies the target it
+        // has always seen rather than one holding a record created seconds earlier.
+        active[4].Should().BeOfType<PluginPackageAssemblyRepairService>();
         // KTD3: after orphan cleanup, so the verdict describes the state the deploy actually leaves.
-        active[4].Should().BeOfType<PluginPackageAssemblyCheckService>();
+        active[5].Should().BeOfType<PluginPackageAssemblyCheckService>();
+    }
+
+    // The repair writes, so ordering against the backup is load-bearing, not cosmetic: a failed create
+    // must be recoverable from the restore point the same deploy took.
+    [Fact]
+    public void ResolveActiveServices_Repair_RunsAfterTheBackupAndBeforeTheCheck()
+    {
+        var active = DeployCommand.ResolveActiveServices(RegisteredServices(), new DeployCommand.Settings());
+
+        var backup = active.FindIndex(s => s is BackupService);
+        var repair = active.FindIndex(s => s is PluginPackageAssemblyRepairService);
+        var check = active.FindIndex(s => s is PluginPackageAssemblyCheckService);
+
+        repair.Should().BeGreaterThan(backup);
+        repair.Should().BeLessThan(check);
+    }
+
+    // Like the check, the repair has no skip flag — no combination of the deploy skips removes it.
+    [Theory]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, true)]
+    [InlineData(true, true, true)]
+    public void ResolveActiveServices_AnySkipCombination_KeepsThePackageAssemblyRepair(
+        bool skipComponentCheck, bool skipSolutionCheck, bool noBackup)
+    {
+        var settings = new DeployCommand.Settings
+        {
+            SkipComponentCheck = skipComponentCheck,
+            SkipSolutionCheck = skipSolutionCheck,
+            NoBackup = noBackup
+        };
+
+        var active = DeployCommand.ResolveActiveServices(RegisteredServices(), settings);
+
+        active.Should().ContainSingle(s => s is PluginPackageAssemblyRepairService);
     }
 
     // R8: the package assembly check has no skip flag, so no combination of the deploy skips removes it.
@@ -135,7 +175,7 @@ public class DeployCommandPostDeployTests
         var active = DeployCommand.ResolveActiveServices(RegisteredServices(), settings);
 
         active[0].Should().BeOfType<MissingComponentCheckService>();
-        active.Should().HaveCount(4);
+        active.Should().HaveCount(5);
     }
 
     [Fact]
@@ -145,10 +185,11 @@ public class DeployCommandPostDeployTests
 
         var active = DeployCommand.ResolveActiveServices(RegisteredServices(), settings);
 
-        active.Should().HaveCount(3);
+        active.Should().HaveCount(4);
         active[0].Should().BeOfType<SolutionCheckService>();
         active[1].Should().BeOfType<OrphanCleanupService>();
-        active[2].Should().BeOfType<PluginPackageAssemblyCheckService>();
+        active[2].Should().BeOfType<PluginPackageAssemblyRepairService>();
+        active[3].Should().BeOfType<PluginPackageAssemblyCheckService>();
     }
 
     // FIX A: skipping the gate means "no current verdict" — a report an earlier blocked run left for

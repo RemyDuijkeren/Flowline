@@ -696,21 +696,9 @@ public class PluginService(IAnsiConsole console)
         throw new InvalidOperationException("Unreachable.");
     }
 
-    // KTD3/KTD4: smallest field set the create accepts, arrived at against a live environment by starting
-    // from the minimum and adding only what Dataverse rejected the create without. It uses the same direct
-    // request-plus-solution-name pattern GetOrRegisterAssemblyAsync already uses below — no wrapper helper
-    // exists in this file, and one call site doesn't justify inventing one.
-    //
-    // Two rejections shaped this set. Without isolationmode: "'<assembly>' is not allowed to be registered
-    // in full-trust mode, assembly must be registered in isolation." Then, with only name/package/isolation:
-    // "Unable to load plug-in assembly." A package-owned row carries no content of its own — the bytes live
-    // in the package — so Dataverse resolves which DLL the row refers to from the assembly's full identity.
-    // Name alone doesn't identify it; version, culture and public key token do. That is why this sets
-    // identity the classic path deliberately leaves unset: there, Dataverse reads identity out of the
-    // uploaded content field, and here there is no such field to read.
-    //
-    // R6: no --force specifier gates this — the push has no other way to succeed, and creating a record is
-    // additive.
+    // The create itself lives in PackageAssemblyRegistrar — deploy's pre-import repair needs the same
+    // field set, and it was measured against a live environment, so it has one home. What stays here is
+    // what push says about it, which is not what deploy says.
     async Task RegisterPackageAssemblyDirectlyAsync(
         IOrganizationServiceAsync2 service,
         Guid packageId,
@@ -719,27 +707,7 @@ public class PluginService(IAnsiConsole console)
         string solutionName,
         CancellationToken cancellationToken)
     {
-        var entity = new Entity("pluginassembly")
-        {
-            ["name"]           = metadata.Name,
-            ["packageid"]      = new EntityReference("pluginpackage", packageId),
-            ["isolationmode"]  = new OptionSetValue(2), // 2 = Sandbox (cloud only)
-            ["version"]        = metadata.Version,
-            ["culture"]        = metadata.Culture,
-            ["publickeytoken"] = metadata.PublicKeyToken
-        };
-
-        try
-        {
-            await service.ExecuteAsync(
-                new CreateRequest { Target = entity, ["SolutionUniqueName"] = solutionName }, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // Carries only why Dataverse refused. The caller aggregates every failed assembly into the
-            // single user-facing message (R8), so composing that wording here too would double it.
-            throw new FlowlineException(ExitCode.ValidationFailed, ex.Message, ex);
-        }
+        await PackageAssemblyRegistrar.CreateAsync(service, packageId, metadata, solutionName, cancellationToken).ConfigureAwait(false);
 
         console.Ok($"Assembly [bold]{Safe(metadata.Name)}[/] registered directly under package [bold]{Safe(packageUniqueName)}[/] — Dataverse didn't auto-register it.");
 

@@ -97,6 +97,24 @@ public class PluginReader
         return result.Entities.FirstOrDefault();
     }
 
+    // Sits beside FindPackageAssemblyAsync because every caller needs the package before it can ask
+    // about an assembly under it. Both deploy-side services want it — the pre-import repair to know
+    // where to hang a record, the post-import check to know where to look for one — so it lives here
+    // rather than being copied into each.
+    public async Task<Guid?> FindPackageIdAsync(
+        IOrganizationServiceAsync2 service, string uniqueName, CancellationToken cancellationToken)
+    {
+        var query = new QueryExpression("pluginpackage")
+        {
+            TopCount = 1,
+            ColumnSet = new ColumnSet("pluginpackageid"),
+            Criteria = { Conditions = { new ConditionExpression("uniquename", ConditionOperator.Equal, uniqueName) } }
+        };
+
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
+        return result.Entities.FirstOrDefault()?.Id;
+    }
+
     // Shared tail of LoadSnapshotAsync (round 2 + round 3) — extracted so the package path (U4) can
     // reuse a pre-resolved publisher prefix instead of re-querying it per assembly. Round 1's tasks are
     // passed in already-started so the classic single-assembly path's original concurrency (prefix

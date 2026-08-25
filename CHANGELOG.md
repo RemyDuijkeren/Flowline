@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`deploy` registers a plug-in package assembly the target is missing, before importing**: Dataverse doesn't create a `pluginassembly` record for an assembly added to a package the target already holds, and without that record the assembly never runs. Worse, if a step is bound to one of its plugin types the import itself **fails** and rolls back, and no re-run of the same source gets past it. `deploy` now creates the missing record before the import; the import's own content write then populates the assembly's plugin types and the step lands. One record is all it takes — Flowline never uploads package content to a target. Unmanaged targets only, on by default, no flag. On a managed target it names the assembly and the manual remedy but writes nothing, since an unmanaged record under managed components leaves a layer that outlives an uninstall. It never blocks: a repair that's refused or fails warns and lets the import run, so the day the platform registers these itself nothing here fires. Measured against a Sandbox target on 2026-08-24 — a step bound to an unregistered assembly failed the import at exit 13, and creating the record alone made the identical zip import clean.
+
 ## [0.18.0] - 2026-08-24
 
 ### Added

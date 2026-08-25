@@ -110,7 +110,7 @@ public class PluginPackageAssemblyCheckService(IAnsiConsole console) : IPostDepl
                 return PackageHasAnyDll(packageDir) ? (0, false, false) : (0, false, true);
             }
 
-            var packageId = await FindPackageIdAsync(context.Service, uniqueName, ct).ConfigureAwait(false);
+            var packageId = await _reader.FindPackageIdAsync(context.Service, uniqueName, ct).ConfigureAwait(false);
             if (packageId == null)
                 return (0, false, false); // R6: target doesn't hold this package at all — no finding, no output.
 
@@ -157,21 +157,6 @@ public class PluginPackageAssemblyCheckService(IAnsiConsole console) : IPostDepl
         return archive.Entries.Any(e =>
             e.FullName.StartsWith("lib/", StringComparison.OrdinalIgnoreCase) &&
             e.FullName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase));
-    }
-
-    // Mirrors PluginService.cs's inline pluginpackage-by-uniquename query — the only such query today,
-    // and one call site here doesn't justify extracting a shared helper (KTD4).
-    static async Task<Guid?> FindPackageIdAsync(
-        IOrganizationServiceAsync2 service, string uniqueName, CancellationToken ct)
-    {
-        var query = new QueryExpression("pluginpackage")
-        {
-            TopCount = 1,
-            ColumnSet = new ColumnSet("pluginpackageid"),
-            Criteria = { Conditions = { new ConditionExpression("uniquename", ConditionOperator.Equal, uniqueName) } }
-        };
-        var result = await service.RetrieveMultipleAsync(query, ct).ConfigureAwait(false);
-        return result.Entities.FirstOrDefault()?.Id;
     }
 
     // Step 5: the same bounded poll push's LoadPackageSnapshotsWithRetryAsync uses — five attempts,

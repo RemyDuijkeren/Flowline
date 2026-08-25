@@ -302,6 +302,11 @@ namespace Flowline
                         ?? Directory.GetCurrentDirectory()));
             services.AddSingleton<OrphanCleanupService>();
             services.AddSingleton<IPostDeployService>(sp => sp.GetRequiredService<OrphanCleanupService>());
+            // Pre-import only, and deliberately after the backup above: it is the first service that
+            // writes to the target, so a restore point exists before it does. After orphan cleanup too,
+            // so cleanup classifies the target it has always seen rather than one holding a record
+            // created seconds earlier. Has no skip flag, like the check below.
+            services.AddSingleton<IPostDeployService, PluginPackageAssemblyRepairService>();
             // KTD3: last, so it observes the state the deploy actually leaves behind — orphan cleanup
             // above can delete a pluginassembly or redirect to a pluginpackage delete, and a verdict
             // read before that would describe a target that no longer exists. Has no skip flag (R8),

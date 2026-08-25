@@ -67,8 +67,39 @@ trusting this document over the current platform behaviour.
 ## Response
 
 Flowline doesn't predict this gap before an import — a check that says "the platform will not
-register this" hardcodes today's bug and needs code removed by hand the day Microsoft fixes it.
-Instead, `deploy` **observes** after every import:
+register this" hardcodes today's bug and needs code removed by hand the day Microsoft fixes it. What
+it does instead is **observe**: before the import, whether the target is missing a record the package
+content needs, and after it, whether everything the import carried is registered.
+
+### Repair, before the import (2026-08-24)
+
+Two live rounds changed where this had to sit. If anything is bound to the missing assembly — a step
+on one of its plugin types — the import does not succeed silently. It **fails**, `SDK Message
+Processing Steps import: FAILURE: A record for PluginType with hash value <key> for
+PluginTypeExportKey is not found`, and rolls back. Every post-import service is skipped, so a repair
+placed after the import can never run on the case that needs it most.
+
+The same rounds measured what a repair has to do: **creating the `pluginassembly` record alone is
+enough.** With the record present and zero plugin types, the identical zip imported cleanly — the
+import's own content write created the plugin type and the step. Flowline never uploads package
+content to a target.
+
+`PluginPackageAssemblyRepairService` (`src/Flowline.Core/Deploy/PluginPackageAssemblyRepairService.cs`)
+runs pre-import, registered after the backup that gives it a restore point and after orphan cleanup:
+
+- Reflects each imported package's `.nupkg`, finds the package in the target, and creates a record for
+  any assembly the target has none for. `PackageAssemblyRegistrar` holds the field set, shared with
+  push rather than copied.
+- Unmanaged targets only. On a managed target it names the assembly and the remedy but writes nothing:
+  an unmanaged record under managed components leaves an unmanaged layer that outlives an uninstall,
+  and managed imports of a package in this state are unmeasured. It reports rather than staying silent
+  because a managed import fails on a bound step exactly as an unmanaged one does, and when it fails
+  nothing else in Flowline names the cause.
+- Never throws and never blocks. A repair that can't run warns and lets the import proceed — Flowline
+  doesn't refuse a deploy on a prediction that the platform will reject it, and the day the platform
+  registers these itself the service finds nothing to do.
+
+The post-import check below still runs, unchanged, as the verification half:
 
 - `PluginPackageAssemblyCheckService` (`src/Flowline.Core/Deploy/PluginPackageAssemblyCheckService.cs`)
   reflects each imported plug-in package's `.nupkg` content for plugin-bearing assemblies and polls
@@ -76,7 +107,8 @@ Instead, `deploy` **observes** after every import:
   version, package — with the remedy below and a note that the finding repeats every later deploy
   until it's applied. Registered in `Program.cs` last, after orphan cleanup, so it evaluates the state
   a deploy actually leaves behind.
-- It never writes to the target (`ExitCode.AssemblyNotRegistered`, 21, instead of a repair). A check
+- The check itself never writes to the target (`ExitCode.AssemblyNotRegistered`, 21, instead of a repair —
+  repairing is the pre-import service's job, above). A check
   that couldn't inspect a package exits `ExitCode.Inconclusive` (19) instead of a false clean pass. A
   day where Dataverse registers the assembly on its own, the same code path reports nothing and
   exits 0 — no Flowline change required.
@@ -106,8 +138,10 @@ Instead, `deploy` **observes** after every import:
 
 ## Remedy
 
-Until the platform issue is resolved, or Flowline gains a repair step of its own (tracked as a planned
-feature — see the wiki's Planned Features page), the fix is manual, one target at a time:
+**Unmanaged targets: none.** `deploy` creates the record itself before the import, and the same import
+then populates the assembly's plugin types. Nothing to do by hand.
+
+**Managed targets, and any target where the create failed**, one target at a time:
 
 > Create the `pluginassembly` record under that package in the target, with `isolationmode` sandbox
 > and the assembly's own version, culture and public key token, then deploy again so the content write
@@ -115,6 +149,10 @@ feature — see the wiki's Planned Features page), the fix is manual, one target
 
 Through the Plugin Registration Tool, the maker portal, or a Web API call. Do this per target — it
 does not travel with the next promotion.
+
+Note what this remedy does *not* survive on its own: if a step is bound to the assembly's plugin
+types, the import fails before it can create either, so the record has to exist first. That is why the
+repair runs pre-import rather than after it.
 
 ## Related
 
