@@ -21,9 +21,32 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
     /// <summary>Seam for testing — set to override DataverseConnector.GetPacProfiles.</summary>
     internal Func<IReadOnlyList<PacProfile>>? GetPacProfilesOverride { get; set; }
 
+    /// <summary>Seam for testing — set to override DataverseConnector.GetCurrentResourceSpecificPacProfile
+    /// (which reads authprofiles_v2.json off disk — present on a dev machine, absent on a CI runner).</summary>
+    internal Func<PacProfile?>? GetCurrentResourceSpecificProfileOverride { get; set; }
+
     /// <summary>Seam for testing — set to override PacUtils.SelectAuthProfileAsync (which shells out
     /// to a real pac.exe subprocess with no mocking seam of its own).</summary>
     internal Func<PacProfile, IReadOnlyList<PacProfile>, CancellationToken, Task>? SelectAuthProfileOverride { get; set; }
+
+    /// <summary>
+    /// Resolves the environment a standalone run targets: the explicit <c>--dev</c> URL when given,
+    /// otherwise the resource-specific PAC auth profile that is currently active. A universal profile
+    /// carries no environment URL, so it cannot stand in for one.
+    /// </summary>
+    public string ResolveStandaloneEnvironmentUrl(string? devUrl)
+    {
+        if (!string.IsNullOrWhiteSpace(devUrl))
+            return devUrl.Trim();
+
+        var profile = GetCurrentResourceSpecificProfileOverride != null
+            ? GetCurrentResourceSpecificProfileOverride()
+            : dataverseConnector.GetCurrentResourceSpecificPacProfile();
+        if (!string.IsNullOrWhiteSpace(profile?.Resource))
+            return profile.Resource.Trim();
+
+        throw new FlowlineException(ExitCode.ValidationFailed, "Dev URL is required in standalone mode — use --dev <URL> or select a resource-specific PAC auth profile.");
+    }
 
     public async Task<PacProfile> ResolveAsync(string environmentUrl, CancellationToken cancellationToken = default)
     {

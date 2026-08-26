@@ -101,7 +101,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
 
         var environmentUrl = "";
         if (standaloneMode)
-            environmentUrl = ResolveStandaloneEnvironmentUrl(settings, dataverseConnector);
+            environmentUrl = ProfileResolutionService.ResolveStandaloneEnvironmentUrl(settings.DevUrl);
 
         var (devEnv, solutionName, pluginPackageMode, resolvedProfile) = await ResolveEnvironmentAndSolutionAsync(settings, standaloneMode, environmentUrl, standaloneParams, cancellationToken);
 
@@ -607,18 +607,6 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             return settings.Solution.Trim();
 
         throw new FlowlineException(ExitCode.ValidationFailed, "Solution name is required in standalone mode — pass it as the first argument.");
-    }
-
-    internal static string ResolveStandaloneEnvironmentUrl(Settings settings, DataverseConnector dataverseConnector)
-    {
-        if (!string.IsNullOrWhiteSpace(settings.DevUrl))
-            return settings.DevUrl.Trim();
-
-        var profile = dataverseConnector.GetCurrentResourceSpecificPacProfile();
-        if (!string.IsNullOrWhiteSpace(profile?.Resource))
-            return profile.Resource.Trim();
-
-        throw new FlowlineException(ExitCode.ValidationFailed, "Dev URL is required in standalone mode — use --dev <URL> or select a resource-specific PAC auth profile.");
     }
 
     // R1/KD1: build output has a .dll for certain (regression-checked above). PluginPackageMode.Dll opts

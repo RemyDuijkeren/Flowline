@@ -5,6 +5,7 @@ date: 2026-07-17
 topic: standalone-active-profile-default
 artifact_contract: ce-unified-plan/v1
 artifact_readiness: requirements-only
+status: completed
 product_contract_source: ce-brainstorm
 execution: code
 ---
