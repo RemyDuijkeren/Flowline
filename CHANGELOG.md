@@ -7,13 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- **`deploy` registers a plug-in package assembly the target is missing, before importing**: Dataverse doesn't create a `pluginassembly` record for an assembly added to a package the target already holds, and without that record the assembly never runs. Worse, if a step is bound to one of its plugin types the import itself **fails** and rolls back, and no re-run of the same source gets past it. `deploy` now creates the missing record before the import; the import's own content write then populates the assembly's plugin types and the step lands. One record is all it takes — Flowline never uploads package content to a target. Unmanaged targets only, on by default, no flag. On a managed target it names the assembly and the manual remedy but writes nothing, since an unmanaged record under managed components leaves a layer that outlives an uninstall. It never blocks: a repair that's refused or fails warns and lets the import run, so the day the platform registers these itself nothing here fires. Measured against a Sandbox target on 2026-08-24 — a step bound to an unregistered assembly failed the import at exit 13, and creating the record alone made the identical zip import clean.
-
 ## [0.18.0] - 2026-08-24
 
 ### Added
+
+- **`deploy` registers a new plug-in assembly the target is missing**: when you add an assembly to a plug-in package that the target already has, `deploy` registers it before importing, so the assembly and any steps bound to it work on the first deploy. Runs automatically against unmanaged targets, no flag needed. On a managed target it names the assembly and the step to take instead.
 
 - **`deploy` verifies plug-in package assemblies actually registered**: after import it compares each package's `.nupkg` content against what Dataverse registered, names any assembly with no record or no plugin types, and exits `AssemblyNotRegistered` (21). A check it couldn't complete exits `Inconclusive` (19) instead of a false clean pass. Read-only: the fix is a manually created record. `push` now warns when it self-registers a missing package assembly, since that fix doesn't travel to the next target.
 
