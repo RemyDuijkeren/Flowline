@@ -3,7 +3,7 @@ title: "feat: Add unmanaged solution guard to ProvisionCommand"
 type: feat
 status: completed
 date: 2026-05-18
-origin: docs/brainstorms/provision-unmanaged-solution-guard-requirements.md
+origin: docs/brainstorms/archive/2026-05-18-provision-unmanaged-solution-guard-requirements.md
 ---
 
 # feat: Add unmanaged solution guard to ProvisionCommand
@@ -208,7 +208,7 @@ ExecuteFlowlineAsync (ProvisionCommand)
 
 ## Sources & References
 
-- **Origin document:** [docs/brainstorms/provision-unmanaged-solution-guard-requirements.md](docs/brainstorms/provision-unmanaged-solution-guard-requirements.md)
+- **Origin document:** [docs/brainstorms/archive/2026-05-18-provision-unmanaged-solution-guard-requirements.md](docs/brainstorms/archive/2026-05-18-provision-unmanaged-solution-guard-requirements.md)
 - `src/Flowline/Commands/ProvisionCommand.cs`
 - `src/Flowline/Utils/PacUtils.cs` (`GetSolutionsAsync`, `SolutionInfo`)
 - `src/Flowline/Commands/CloneCommand.cs` (`FindUnmanagedSourceAsync` — `IsManaged` filter pattern)

@@ -1,7 +1,7 @@
 ---
 title: "feat: Tee console output to ILogger via LoggingRenderHook"
 date: 2026-06-28
-origin: docs/brainstorms/2026-06-28-console-to-ilogger-tee-requirements.md
+origin: docs/brainstorms/archive/2026-06-28-console-to-ilogger-tee-requirements.md
 status: ready
 ---
 

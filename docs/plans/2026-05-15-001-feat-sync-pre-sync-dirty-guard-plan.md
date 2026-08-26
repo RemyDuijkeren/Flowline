@@ -3,7 +3,7 @@ title: "feat: Add pre-sync dirty-tree guard to SyncCommand"
 type: feat
 status: completed
 date: 2026-05-15
-origin: docs/brainstorms/2026-05-15-sync-pre-sync-guard-requirements.md
+origin: docs/brainstorms/archive/2026-05-15-sync-pre-sync-guard-requirements.md
 ---
 
 # feat: Add pre-sync dirty-tree guard to SyncCommand
@@ -196,7 +196,7 @@ Integration scenarios (manual verification — full `SyncCommand` execution requ
 
 ## Sources & References
 
-- **Origin document:** [docs/brainstorms/2026-05-15-sync-pre-sync-guard-requirements.md](docs/brainstorms/2026-05-15-sync-pre-sync-guard-requirements.md)
+- **Origin document:** [docs/brainstorms/archive/2026-05-15-sync-pre-sync-guard-requirements.md](docs/brainstorms/archive/2026-05-15-sync-pre-sync-guard-requirements.md)
 - `src/Flowline/Utils/GitUtils.cs` — `IsRepoCleanAsync` pattern
 - `src/Flowline/Commands/DeployCommand.cs` — `AssertRepoCleanAsync` hard-gate pattern
 - `src/Flowline/Commands/SyncCommand.cs` — insertion point context

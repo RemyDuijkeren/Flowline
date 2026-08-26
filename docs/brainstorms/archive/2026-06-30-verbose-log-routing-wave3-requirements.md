@@ -168,8 +168,8 @@ AE6. **Covers R3, R11 (F3).** Given a command throws with `!IsVerbose`. When the
 ## Sources / Research
 
 - `docs/ideation/2026-06-30-verbose-log-routing-ideation.html` — full ideation with all rejected alternatives, two-gap framing, coverage table
-- `docs/brainstorms/2026-06-28-console-to-ilogger-tee-requirements.md` — Wave 2 requirements; this doc reverses Wave 2's explicit non-goal on suppressed verbose
-- `docs/brainstorms/2026-06-25-cli-observability-wave1-requirements.md` — Wave 1 context (Serilog setup, `VerboseOutputBuffer` introduction)
+- `docs/brainstorms/archive/2026-06-28-console-to-ilogger-tee-requirements.md` — Wave 2 requirements; this doc reverses Wave 2's explicit non-goal on suppressed verbose
+- `docs/brainstorms/archive/2026-06-25-cli-observability-wave1-requirements.md` — Wave 1 context (Serilog setup, `VerboseOutputBuffer` introduction)
 - `src/Flowline.Core/LoggingRenderHook.cs` — hook registration point; `is Markup` check that catches `VerboseMarkup` by subtype
 - `src/Flowline.Core/FlowlineConsoleExtensions.cs` — both `Verbose()` overloads; `Skip()` showing the `[dim]` overlap requiring VerboseMarkup
 - `src/Flowline/Utils/CommandExtensions.cs` — both `WithToolExecutionLog` overloads; error detection logic that SubprocessCapture must preserve

@@ -218,7 +218,7 @@ Let `DriftChecker.CheckAsync` throw. Only catch exceptions when you have specifi
 ## Related
 
 - `docs/solutions/logic-errors/sync-overwrites-uncommitted-src-without-warning-2026-05-15.md` — pre-sync dirty-tree guard that prevents sync from silently overwriting `src/`; complements this pattern (guard first, then sync cleanly)
-- `docs/brainstorms/2026-05-16-build-validation-and-pac-warnings-requirements.md` — requirements source for this refactor (R1–R15, acceptance examples, scope)
+- `docs/brainstorms/archive/2026-05-16-build-validation-and-pac-warnings-requirements.md` — requirements source for this refactor (R1–R15, acceptance examples, scope)
 - `docs/plans/2026-05-17-001-refactor-remove-mapping-replace-dotnet-build-plan.md` — implementation plan covering U1–U6
 - `pac solution sync` CLI — `--map`, `--packagetype`, `--async` flags
 - `pac solution pack` CLI — `--folder`, `--zipFile`, `--packageType` flags

@@ -197,7 +197,7 @@ and the user chooses.
 **In scope**
 - `pac`, `xrmcontext3`, `xrmcontext` generators
 - `xrmcontext3` rename in code and config (from current `xrmcontext` value)
-- xrmcontext rewrite requirements doc: `docs/brainstorms/2026-06-18-generate-xrmcontext-rewrite-requirements.md`
+- xrmcontext rewrite requirements doc: `docs/brainstorms/archive/2026-06-18-generate-xrmcontext-rewrite-requirements.md`
 
 **Planned, not yet prioritized**
 - `lcg-udg` — late-binding C# constants; existing requirements doc at
@@ -220,7 +220,7 @@ and the user chooses.
 - `DefaultAzureCredential` in the xrmcontext rewrite handles most auth cases without `az login`.
   Service principal PAC profiles are handled by injecting env vars. User-profile behavior against
   real environments needs validation during implementation (see
-  `docs/brainstorms/2026-06-18-generate-xrmcontext-rewrite-requirements.md` open questions).
+  `docs/brainstorms/archive/2026-06-18-generate-xrmcontext-rewrite-requirements.md` open questions).
 
 ---
 
@@ -241,6 +241,6 @@ and the user chooses.
   with no Dataverse.Client dependency
 - Community direction: consolidating on PAC as foundation; EBG V2 as quality layer in GUI
   workflows; xrmcontext rewrite has no community awareness yet
-- Related docs: `docs/brainstorms/2026-06-17-generate-xrmcontext-support-requirements.md`,
-  `docs/brainstorms/2026-06-18-generate-xrmcontext-rewrite-requirements.md`,
+- Related docs: `docs/brainstorms/archive/2026-06-17-generate-xrmcontext-support-requirements.md`,
+  `docs/brainstorms/archive/2026-06-18-generate-xrmcontext-rewrite-requirements.md`,
   `docs/plans/2026-06-17-001-feat-generate-xrmcontext-generator-plan.md`

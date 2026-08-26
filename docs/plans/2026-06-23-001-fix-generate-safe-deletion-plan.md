@@ -2,7 +2,7 @@
 title: "fix: Scope generate deletion to owned files only"
 date: 2026-06-23
 type: fix
-origin: docs/brainstorms/2026-06-23-generate-safe-deletion-requirements.md
+origin: docs/brainstorms/archive/2026-06-23-generate-safe-deletion-requirements.md
 status: done
 ---
 
@@ -24,7 +24,7 @@ The natural first-run mistake is targeting the project root. When that happens t
 
 ## Requirements
 
-From origin (`docs/brainstorms/2026-06-23-generate-safe-deletion-requirements.md`):
+From origin (`docs/brainstorms/archive/2026-06-23-generate-safe-deletion-requirements.md`):
 
 1. Delete only files Flowline generated (carry the auto-generated marker).
 2. Stale generated files for removed entities are still deleted.
@@ -240,7 +240,7 @@ Inside the try block:
 
 ## Sources & Research
 
-- Origin: `docs/brainstorms/2026-06-23-generate-safe-deletion-requirements.md`
+- Origin: `docs/brainstorms/archive/2026-06-23-generate-safe-deletion-requirements.md`
 - Header format verified against: real PAC output at `solutions/Cr07982/Plugins/Models/`; real XrmContext3 output at `SpotlerAutomate.Dataverse/src/Entities/`
 - Existing swap logic: `src/Flowline/Commands/GenerateCommand.cs:219–297`
 - Existing tests: `tests/Flowline.Tests/GenerateCommandTests.cs` (11 tests; none cover file preservation)

@@ -2,7 +2,7 @@
 title: "feat: Verbose log routing Wave 3 — always-capture for verbose messages and subprocess stdout"
 type: feat
 date: 2026-06-30
-origin: docs/brainstorms/2026-06-30-verbose-log-routing-wave3-requirements.md
+origin: docs/brainstorms/archive/2026-06-30-verbose-log-routing-wave3-requirements.md
 ---
 
 # feat: Verbose log routing Wave 3 — always-capture for verbose messages and subprocess stdout
@@ -489,11 +489,11 @@ The `SyncCommand.GitCommitChanges` dead method (lines 197-228) is deleted — no
 
 ## Sources / Research
 
-- `docs/brainstorms/2026-06-30-verbose-log-routing-wave3-requirements.md` — origin requirements doc (reviewed via `ce-doc-review`; 8 findings applied)
+- `docs/brainstorms/archive/2026-06-30-verbose-log-routing-wave3-requirements.md` — origin requirements doc (reviewed via `ce-doc-review`; 8 findings applied)
 - `docs/solutions/architecture-patterns/spectre-console-ilogger-render-hook.md` — yield-before-try pattern, int.MaxValue extraction width rationale, ILoggerFactory-outside-DI constraint, TestConsole + CaptureLogger test pattern
 - `docs/solutions/architecture-patterns/activity-correlation-structured-logging.md` — hook + activity listener coexistence pattern in Program.cs
-- `docs/brainstorms/2026-06-28-console-to-ilogger-tee-requirements.md` — Wave 2 requirements; this plan reverses Wave 2's explicit non-goal on suppressed verbose
-- `docs/brainstorms/2026-06-25-cli-observability-wave1-requirements.md` — Wave 1 context (Serilog setup, VerboseOutputBuffer introduction)
+- `docs/brainstorms/archive/2026-06-28-console-to-ilogger-tee-requirements.md` — Wave 2 requirements; this plan reverses Wave 2's explicit non-goal on suppressed verbose
+- `docs/brainstorms/archive/2026-06-25-cli-observability-wave1-requirements.md` — Wave 1 context (Serilog setup, VerboseOutputBuffer introduction)
 - `src/Flowline.Core/LoggingRenderHook.cs` — hook process pattern, existing type check
 - `src/Flowline.Core/FlowlineConsoleExtensions.cs` — both Verbose overloads; Markup.Escape pattern for buffered output
 - `src/Flowline/Utils/CommandExtensions.cs` — both WithToolExecutionLog overloads, IsErrorLine/DisplayErrorMessage logic to port

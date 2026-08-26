@@ -2,7 +2,7 @@
 title: "feat: PAC-as-oracle auth contract and generate simplification"
 type: feat
 date: 2026-06-19
-origin: docs/brainstorms/2026-06-19-auth-strategy-requirements.md
+origin: docs/brainstorms/archive/2026-06-19-auth-strategy-requirements.md
 ---
 
 # feat: PAC-as-oracle auth contract and generate simplification
@@ -19,7 +19,7 @@ Flowline connects to Dataverse two ways: its own `ServiceClient` (sync, deploy, 
 
 ROPC (the OAuth flow behind `--username`/`--password`) fails on MFA-enabled tenants (`AADSTS50076`) and is actively discouraged by Microsoft. Profile resolution does not yet prefer the PAC-active profile when multiple candidates match, and has no ambiguity handling for the interactive case. PAC profile file reads are fast and correct but lack resilience error messages that help users self-serve.
 
-(see origin: `docs/brainstorms/2026-06-19-auth-strategy-requirements.md`)
+(see origin: `docs/brainstorms/archive/2026-06-19-auth-strategy-requirements.md`)
 
 ---
 
@@ -457,4 +457,4 @@ Error messages from U7 reference the wiki page URL (R23).
 - `src/Flowline/Utils/ConsoleHelper.cs` — `IsInteractive()` (L30–41)
 - `src/Flowline/Config/ProjectConfig.cs` — `GenerateConfig` model (current fields)
 - `docs/solutions/architecture-patterns/xrmcontext-v4-auth-integration.md` — XrmContext v4 auth pattern and env var injection approach
-- `docs/brainstorms/2026-06-19-auth-strategy-requirements.md` — origin: flows F1–F9, AEs AE1–AE12, key decisions
+- `docs/brainstorms/archive/2026-06-19-auth-strategy-requirements.md` — origin: flows F1–F9, AEs AE1–AE12, key decisions

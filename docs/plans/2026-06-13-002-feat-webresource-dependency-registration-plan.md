@@ -2,7 +2,7 @@
 title: "feat: Add web resource dependency registration"
 type: feat
 date: 2026-06-13
-origin: docs/brainstorms/2026-06-12-webresource-dependencies-requirements.md
+origin: docs/brainstorms/archive/2026-06-12-webresource-dependencies-requirements.md
 ---
 
 # feat: Add web resource dependency registration

@@ -3,7 +3,7 @@ title: "feat: DTAP gate in DeployCommand"
 type: feat
 status: completed
 date: 2026-06-07
-origin: docs/brainstorms/2026-06-07-dtap-gate-requirements.md
+origin: docs/brainstorms/archive/2026-06-07-dtap-gate-requirements.md
 ---
 
 # feat: DTAP gate in DeployCommand
@@ -35,7 +35,7 @@ Extends `DeployCommand.ExecuteFlowlineAsync` with a pre-pack DTAP gate: non-bypa
 - R11. `--skip-dtap-check` does not bypass R2 (Dev block) or R7 (version unreadable).
 - R12. Gate checks run after the managed/unmanaged type guard (already implemented), before the drift check and pack step.
 
-**Origin acceptance examples:** AE1–AE12 (see `docs/brainstorms/2026-06-07-dtap-gate-requirements.md`)
+**Origin acceptance examples:** AE1–AE12 (see `docs/brainstorms/archive/2026-06-07-dtap-gate-requirements.md`)
 
 ---
 
@@ -293,7 +293,7 @@ After the existing managed/unmanaged type guard block, before `var slnFolder = P
 
 ## Sources & References
 
-- **Origin document:** [docs/brainstorms/2026-06-07-dtap-gate-requirements.md](docs/brainstorms/2026-06-07-dtap-gate-requirements.md)
+- **Origin document:** [docs/brainstorms/archive/2026-06-07-dtap-gate-requirements.md](docs/brainstorms/archive/2026-06-07-dtap-gate-requirements.md)
 - [docs/ideation/2026-06-07-deploy-command-ideation.md](docs/ideation/2026-06-07-deploy-command-ideation.md) — idea #5
 - `src/Flowline/Commands/DeployCommand.cs` — insertion target
 - `src/Flowline/Commands/ProvisionCommand.cs:169` — `FindProblematicSolutions` pattern reference

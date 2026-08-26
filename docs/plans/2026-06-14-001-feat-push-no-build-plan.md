@@ -3,7 +3,7 @@ title: "feat: Add --no-build flag to push"
 type: feat
 date: 2026-06-14
 depth: Lightweight
-origin: docs/brainstorms/2026-06-14-push-no-build-requirements.md
+origin: docs/brainstorms/archive/2026-06-14-push-no-build-requirements.md
 ---
 
 # feat: Add `--no-build` flag to `push`
@@ -37,7 +37,7 @@ install + rollup for webresources).
   on-disk artifacts, touch nothing.
 - **R6** — Standalone mode (`--pluginFile`/`--webresources`) already skips build;
   `--no-build` is silently ignored there (no code — build branch is already
-  bypassed). (see origin: docs/brainstorms/2026-06-14-push-no-build-requirements.md)
+  bypassed). (see origin: docs/brainstorms/archive/2026-06-14-push-no-build-requirements.md)
 - **R7 (safety, unconditional)** — Before pushing web resources, guard against a
   missing or empty `dist/` **regardless of `--no-build`**. An empty local set in
   Normal mode makes push compute deletes for every remote web resource — a

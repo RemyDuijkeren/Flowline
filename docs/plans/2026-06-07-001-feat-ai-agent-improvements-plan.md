@@ -3,7 +3,7 @@ title: "feat: Flowline AI-agent improvements"
 type: feat
 status: completed
 date: 2026-06-07
-origin: docs/brainstorms/2026-06-07-ai-agent-improvements-requirements.md
+origin: docs/brainstorms/archive/2026-06-07-ai-agent-improvements-requirements.md
 ---
 
 # feat: Flowline AI-agent improvements
@@ -18,7 +18,7 @@ Three changes that make Flowline usable by AI agents without ambiguity: a typed 
 
 AI agents (Claude Code, GitHub Copilot) interacting with Flowline currently receive exit code `1` for every failure, making corrective action impossible without parsing free-form error output. No `AGENTS.md` contract exists in solution repos, leaving agents to infer the workflow and command sequencing. Command help text is terse and omits trigger and state-change context that agents rely on for command selection.
 
-(see origin: `docs/brainstorms/2026-06-07-ai-agent-improvements-requirements.md`)
+(see origin: `docs/brainstorms/archive/2026-06-07-ai-agent-improvements-requirements.md`)
 
 ---
 

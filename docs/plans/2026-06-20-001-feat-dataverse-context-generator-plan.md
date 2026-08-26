@@ -2,7 +2,7 @@
 title: "feat: Add DataverseContextGenerator for AI context"
 date: 2026-06-20
 type: feat
-origin: docs/brainstorms/2026-06-20-dataverse-ai-context-requirements.md
+origin: docs/brainstorms/archive/2026-06-20-dataverse-ai-context-requirements.md
 ---
 
 # feat: Add DataverseContextGenerator for AI context

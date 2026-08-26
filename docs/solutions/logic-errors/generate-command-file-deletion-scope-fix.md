@@ -120,6 +120,6 @@ Files where both signals are absent are user-owned and rescued into `Models~` be
 
 ## Related Issues
 
-- `docs/brainstorms/2026-06-23-generate-safe-deletion-requirements.md` — requirements doc for this fix
+- `docs/brainstorms/archive/2026-06-23-generate-safe-deletion-requirements.md` — requirements doc for this fix
 - `docs/plans/2026-06-23-001-fix-generate-safe-deletion-plan.md` — implementation plan
 - `docs/solutions/logic-errors/sync-overwrites-uncommitted-src-without-warning-2026-05-15.md` — analogous guard for `flowline sync` dirty-tree detection

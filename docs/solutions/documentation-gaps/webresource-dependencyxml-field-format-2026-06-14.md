@@ -70,7 +70,7 @@ Format confirmed via two sources: (1) PAC-unpacked `.data.xml` file (PAC reads `
 
 ## Key Deviations From Brainstorm Expected Format
 
-The brainstorm (`docs/brainstorms/2026-06-12-webresource-dependencies-requirements.md`) expected:
+The brainstorm (`docs/brainstorms/archive/2026-06-12-webresource-dependencies-requirements.md`) expected:
 
 ```xml
 <Dependencies>
@@ -144,6 +144,6 @@ The Planner (U4) resolves the full `DependencyLibrary` set before calling Serial
 
 ## Related
 
-- `docs/brainstorms/2026-06-12-webresource-dependencies-requirements.md` — original brainstorm (format assumption now corrected)
+- `docs/brainstorms/archive/2026-06-12-webresource-dependencies-requirements.md` — original brainstorm (format assumption now corrected)
 - `docs/plans/2026-06-13-002-feat-webresource-dependency-registration-plan.md` — implementation plan (U2 serializer design must be updated per above)
 - `docs/solutions/design-patterns/webresource-dependency-registration-patterns.md` — implementation patterns: GUID reuse, Name-only equality, RESX auto-matching, annotation deduplication

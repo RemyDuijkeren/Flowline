@@ -2,7 +2,7 @@
 title: "feat: Add XrmContext generator support to flowline generate"
 type: feat
 date: 2026-06-17
-origin: docs/brainstorms/2026-06-17-generate-xrmcontext-support-requirements.md
+origin: docs/brainstorms/archive/2026-06-17-generate-xrmcontext-support-requirements.md
 ---
 
 # feat: Add XrmContext generator support to flowline generate
@@ -11,7 +11,7 @@ origin: docs/brainstorms/2026-06-17-generate-xrmcontext-support-requirements.md
 
 Add `--generator {pac|xrmcontext3}` to `flowline generate`. PAC remains the default. When `xrmcontext3` is selected, Flowline auto-restores `Delegate.XrmContext` from NuGet, builds a connection string from the active PAC profile, and invokes XrmContext as an external process using the same temp-swap output pattern as the PAC path.
 
-**Note:** The flag value for this generator is `xrmcontext3` (F# exe bridge). The value `xrmcontext` is reserved for the DataverseProxyGenerator rewrite — see `docs/brainstorms/2026-06-18-generate-xrmcontext-rewrite-requirements.md`.
+**Note:** The flag value for this generator is `xrmcontext3` (F# exe bridge). The value `xrmcontext` is reserved for the DataverseProxyGenerator rewrite — see `docs/brainstorms/archive/2026-06-18-generate-xrmcontext-rewrite-requirements.md`.
 
 ---
 
@@ -19,7 +19,7 @@ Add `--generator {pac|xrmcontext3}` to `flowline generate`. PAC remains the defa
 
 `flowline generate` hardcodes `pac modelbuilder build`, which produces verbose early-bound C# that mirrors the Dataverse SDK type system (OptionSetValue wrappers, Money types, INotifyPropertyChanged boilerplate). XrmContext generates the same coverage with cleaner idioms — option sets become enums directly, Money becomes decimal, files are compact. For developers already invested in XrmContext's style, swapping to PAC-generated code is friction without benefit.
 
-*(see origin: `docs/brainstorms/2026-06-17-generate-xrmcontext-support-requirements.md`)*
+*(see origin: `docs/brainstorms/archive/2026-06-17-generate-xrmcontext-support-requirements.md`)*
 
 ---
 

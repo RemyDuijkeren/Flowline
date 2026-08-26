@@ -1,7 +1,7 @@
 ---
 title: "feat: Add sub-change detail to SolutionChangeSummary"
 date: 2026-06-16
-origin: docs/brainstorms/2026-06-16-entity-change-detail-requirements.md
+origin: docs/brainstorms/archive/2026-06-16-entity-change-detail-requirements.md
 ---
 
 # feat: Add sub-change detail to SolutionChangeSummary
@@ -20,7 +20,7 @@ After `flowline sync`, the change tree shows `~ entity metadata` or `~ My View N
 
 ## Requirements
 
-From `docs/brainstorms/2026-06-16-entity-change-detail-requirements.md`:
+From `docs/brainstorms/archive/2026-06-16-entity-change-detail-requirements.md`:
 
 - Sub-changes for Entity.xml (attributes: added with type, removed, modified by name), SavedQueries (grid columns ±, filter flag, sort flag), FormXml (fields ±, sections/tabs ±), and OptionSets (option labels ±)
 - New files: skip sub-detail; component-level icon is sufficient

@@ -130,5 +130,5 @@ Checklist:
 
 ## Related Issues
 
-- Requirements: `docs/brainstorms/2026-05-15-sync-pre-sync-guard-requirements.md`
+- Requirements: `docs/brainstorms/archive/2026-05-15-sync-pre-sync-guard-requirements.md`
 - Implementation plan: `docs/plans/2026-05-15-001-feat-sync-pre-sync-dirty-guard-plan.md`

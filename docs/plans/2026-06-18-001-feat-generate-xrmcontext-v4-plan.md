@@ -2,7 +2,7 @@
 title: "feat: Add --generator xrmcontext (XrmContext v4) via IGenerator abstraction"
 type: feat
 date: 2026-06-18
-origin: docs/brainstorms/2026-06-18-generate-xrmcontext-rewrite-requirements.md
+origin: docs/brainstorms/archive/2026-06-18-generate-xrmcontext-rewrite-requirements.md
 ---
 
 # feat: Add `--generator xrmcontext` (XrmContext v4) via `IGenerator` abstraction
@@ -11,7 +11,7 @@ origin: docs/brainstorms/2026-06-18-generate-xrmcontext-rewrite-requirements.md
 
 Add `--generator xrmcontext` to `flowline generate`, backed by the XrmContext v4 dotnet tool (NuGet: `XrmContext`, beta). Alongside the new generator, refactor `GenerateCommand` to replace the growing if-statement with an `IGenerator` abstraction — the third generator triggers the investment. PAC and xrmcontext3 are extracted into their own generator classes. The v4 generator resolves the best invocation command (dnx first, dotnet tool run second), writes a temp `appsettings.json` from `.flowline` config, injects auth env vars from the active PAC profile, and invokes the tool with its working directory set to the temp config folder.
 
-*(see origin: `docs/brainstorms/2026-06-18-generate-xrmcontext-rewrite-requirements.md`)*
+*(see origin: `docs/brainstorms/archive/2026-06-18-generate-xrmcontext-rewrite-requirements.md`)*
 
 ---
 

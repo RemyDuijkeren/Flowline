@@ -218,5 +218,5 @@ CI sets `AZURE_CLIENT_SECRET=<secret>` in the environment. `.flowline` config st
 
 - `src/Flowline/Generators/XrmContextGenerator.cs` — implementation
 - `src/Flowline/Generators/xrmcontext-v4-auth-flow.md` — sequence diagram + flowchart
-- `docs/brainstorm/2026-06-17-generate-xrmcontext-support-requirements.md` — v3 brainstorm (v4 supersedes)
+- `docs/brainstorms/archive/2026-06-17-generate-xrmcontext-support-requirements.md` — v3 brainstorm (v4 supersedes)
 - `project_xrmcontext_auth.md` (auto memory) — v3 ADAL auth decisions, partially stale with v4 in place

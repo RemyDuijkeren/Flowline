@@ -3,7 +3,7 @@ title: "feat: Pre-flight managed/unmanaged guard in DeployCommand"
 type: feat
 status: completed
 date: 2026-06-07
-origin: docs/brainstorms/2026-06-07-deploy-managed-unmanaged-guard-requirements.md
+origin: docs/brainstorms/archive/2026-06-07-deploy-managed-unmanaged-guard-requirements.md
 ---
 
 # feat: Pre-flight managed/unmanaged guard in DeployCommand
@@ -157,7 +157,7 @@ Run against a known target environment where the solution state is controlled. C
 
 ## Sources & References
 
-- **Origin document:** [docs/brainstorms/2026-06-07-deploy-managed-unmanaged-guard-requirements.md](docs/brainstorms/2026-06-07-deploy-managed-unmanaged-guard-requirements.md)
+- **Origin document:** [docs/brainstorms/archive/2026-06-07-deploy-managed-unmanaged-guard-requirements.md](docs/brainstorms/archive/2026-06-07-deploy-managed-unmanaged-guard-requirements.md)
 - [docs/ideation/2026-06-07-deploy-command-ideation.md](docs/ideation/2026-06-07-deploy-command-ideation.md) — idea #1
 - `src/Flowline/Commands/DeployCommand.cs`
 - `src/Flowline/Validation/FlowlineValidator.cs:107` (`GetSolutionInfoAsync`)

@@ -87,7 +87,7 @@ Two related but distinct ideas surfaced while researching a comparable tool (Dax
 
 ### Sources & Research
 
-- `docs/plans/2026-06-07-004-feat-deploy-orphan-cleanup-plan.md` and `docs/brainstorms/2026-06-07-deploy-orphan-cleanup-requirements.md` — original orphan-cleanup design; actors, flows, and acceptance examples from that plan (pre-import/post-import phases) still apply unchanged here.
+- `docs/plans/2026-06-07-004-feat-deploy-orphan-cleanup-plan.md` and `docs/brainstorms/archive/2026-06-07-deploy-orphan-cleanup-requirements.md` — original orphan-cleanup design; actors, flows, and acceptance examples from that plan (pre-import/post-import phases) still apply unchanged here.
 - `docs/solutions/architecture-patterns/orphan-cleanup-two-phase-deploy-pipeline.md` — running institutional-learnings log; parts 1–7 document each false-positive incident found and fixed this session, including the `SupportedManualTypes` opt-in bar this work extends.
 - `STRATEGY.md` — "Drift detection + component cleanup" track; the 2026-07-04 milestone "Orphan cleanup (AE1–AE8) real-org testing — open, unit tests only so far" is what this work directly advances.
 - Live verification (this session): `bot.schemaname` queried directly against the AutomateValue org returned `"msdyn_salesCopilot"`, matching `deploymentSettings.json`'s `CopilotAgents[].Name` and confirming it differs from `bot.name` (the display name).

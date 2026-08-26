@@ -2,7 +2,7 @@
 title: Deploy and Drift Standalone Mode - Plan
 type: feat
 date: 2026-08-10
-origin: docs/brainstorms/2026-06-27-deploy-standalone-requirements.md
+origin: docs/brainstorms/archive/2026-06-27-deploy-standalone-requirements.md
 artifact_contract: ce-unified-plan/v1
 artifact_readiness: implementation-ready
 product_contract_source: legacy-requirements
@@ -400,7 +400,7 @@ The manual check must run against a Release build. A Debug build propagates exce
 
 ## Sources
 
-- Origin requirements: `docs/brainstorms/2026-06-27-deploy-standalone-requirements.md`
+- Origin requirements: `docs/brainstorms/archive/2026-06-27-deploy-standalone-requirements.md`
 - `--path` route and its deliberate skips: `src/Flowline/Commands/DeployCommand.cs:104-125`, commit `6a32d25`
 - Base pipeline gates: `src/Flowline/Commands/FlowlineCommand.cs:71-134`
 - Existing standalone precedents and what they skip: `src/Flowline/Commands/PushCommand.cs:76-100`, `src/Flowline/Commands/GenerateCommand.cs:63-93`

@@ -3,7 +3,7 @@ title: "feat: flowline generate command"
 type: feat
 status: active
 date: 2026-05-29
-origin: docs/brainstorms/2026-05-28-generate-command-requirements.md
+origin: docs/brainstorms/archive/2026-05-28-generate-command-requirements.md
 ---
 
 # feat: flowline generate command
@@ -16,7 +16,7 @@ Adds `flowline generate` — a thin wrapper around `pac modelbuilder build` that
 
 ## Problem Frame
 
-Plugin developers need early-bound C# types from `pac modelbuilder build`, but the command requires a specific set of flags, an entity filter derived from the live solution, and a namespace matching the plugin project. Flowline already knows the solution, the DEV environment, and the Plugins project — making it the right place to automate this step. (see origin: `docs/brainstorms/2026-05-28-generate-command-requirements.md`)
+Plugin developers need early-bound C# types from `pac modelbuilder build`, but the command requires a specific set of flags, an entity filter derived from the live solution, and a namespace matching the plugin project. Flowline already knows the solution, the DEV environment, and the Plugins project — making it the right place to automate this step. (see origin: `docs/brainstorms/archive/2026-05-28-generate-command-requirements.md`)
 
 ---
 
@@ -346,7 +346,7 @@ flowline generate [solution] [--namespace ns] [--extra-tables t1,t2] [--dev url]
 
 ## Sources & References
 
-- **Origin document:** [docs/brainstorms/2026-05-28-generate-command-requirements.md](docs/brainstorms/2026-05-28-generate-command-requirements.md)
+- **Origin document:** [docs/brainstorms/archive/2026-05-28-generate-command-requirements.md](docs/brainstorms/archive/2026-05-28-generate-command-requirements.md)
 - **GitHub issue #2:** multi-project support (--project flag, post-v1)
 - `pac modelbuilder build` reference: https://learn.microsoft.com/en-us/power-platform/developer/cli/reference/modelbuilder
 - Dataverse `solutioncomponent` component type codes: https://learn.microsoft.com/en-us/power-apps/developer/data-platform/webapi/reference/solutioncomponent

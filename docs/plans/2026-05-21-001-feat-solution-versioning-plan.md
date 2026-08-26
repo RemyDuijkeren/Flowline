@@ -3,7 +3,7 @@ title: "feat: Solution versioning — auto patch bump and git tagging on sync"
 type: feat
 status: completed
 date: 2026-05-21
-origin: docs/brainstorms/solution-versioning-requirements.md
+origin: docs/brainstorms/archive/2026-05-21-solution-versioning-requirements.md
 ---
 
 # feat: Solution versioning — auto patch bump and git tagging on sync
@@ -91,7 +91,7 @@ After all existing sync steps succeed, `SyncCommand` reads the current Dataverse
 
 ### Resolved During Planning
 
-- **Tag at HEAD (pre-commit) acceptable?** Yes. `--no-tag` suppresses for runs where this is not wanted. (see origin: docs/brainstorms/solution-versioning-requirements.md)
+- **Tag at HEAD (pre-commit) acceptable?** Yes. `--no-tag` suppresses for runs where this is not wanted. (see origin: docs/brainstorms/archive/2026-05-21-solution-versioning-requirements.md)
 - **`pac solution online-version` for both read and write?** Yes — single command, both operations. (see origin)
 - **Tag prefix?** None. Bare version tags, one-solution-per-repo recommendation, shared namespace. (see origin)
 - **R6, R7, R8 need implementation?** No — MinVer already scaffolded, DeployCommand already unchanged.
@@ -269,7 +269,7 @@ After all existing sync steps succeed, `SyncCommand` reads the current Dataverse
 
 ## Sources & References
 
-- **Origin document:** [docs/brainstorms/solution-versioning-requirements.md](docs/brainstorms/solution-versioning-requirements.md)
+- **Origin document:** [docs/brainstorms/archive/2026-05-21-solution-versioning-requirements.md](docs/brainstorms/archive/2026-05-21-solution-versioning-requirements.md)
 - Related code: `src/Flowline/Commands/SyncCommand.cs`, `src/Flowline/Utils/PacUtils.cs`, `src/Flowline/Utils/GitUtils.cs`, `src/Flowline/Commands/CloneCommand.cs`
 - Related tests: `tests/Flowline.Tests/PacUtilsTests.cs`, `tests/Flowline.Tests/GitUtilsTests.cs`, `tests/Flowline.Tests/SyncCommandTests.cs`
 - MinVer tag prefix docs: https://github.com/adamralph/minver#can-i-prefix-my-tag-names

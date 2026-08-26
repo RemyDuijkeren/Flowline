@@ -2,7 +2,7 @@
 title: "feat: Add Wave 1 CLI observability (subprocess buffer, ILogger)"
 type: feat
 date: 2026-06-26
-origin: docs/brainstorms/2026-06-25-cli-observability-wave1-requirements.md
+origin: docs/brainstorms/archive/2026-06-25-cli-observability-wave1-requirements.md
 ---
 
 # feat: Add Wave 1 CLI observability (subprocess buffer, ILogger)
@@ -20,7 +20,7 @@ Adds two observability features that together ensure every failed Flowline invoc
 
 ## Problem Frame
 
-When a Flowline command fails on a CI server or a developer machine that wasn't running `--verbose`, there is currently no diagnostic path beyond re-running with `--verbose` and hoping the failure reproduces. The result is bug reports with no context. (see origin: docs/brainstorms/2026-06-25-cli-observability-wave1-requirements.md)
+When a Flowline command fails on a CI server or a developer machine that wasn't running `--verbose`, there is currently no diagnostic path beyond re-running with `--verbose` and hoping the failure reproduces. The result is bug reports with no context. (see origin: docs/brainstorms/archive/2026-06-25-cli-observability-wave1-requirements.md)
 
 ---
 

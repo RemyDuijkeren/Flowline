@@ -2,7 +2,7 @@
 title: "feat: Multi-[Handles] step registration"
 type: feat
 date: 2026-06-21
-origin: docs/brainstorms/2026-06-21-multi-handles-multi-step-requirements.md
+origin: docs/brainstorms/archive/2026-06-21-multi-handles-multi-step-requirements.md
 ---
 
 # feat: Multi-`[Handles]` step registration

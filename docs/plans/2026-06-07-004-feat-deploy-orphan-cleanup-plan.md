@@ -3,7 +3,7 @@ title: "feat: Deploy — Orphan Component Cleanup"
 type: feat
 status: completed
 date: 2026-06-07
-origin: docs/brainstorms/2026-06-07-deploy-orphan-cleanup-requirements.md
+origin: docs/brainstorms/archive/2026-06-07-deploy-orphan-cleanup-requirements.md
 ---
 
 # feat: Deploy — Orphan Component Cleanup
@@ -16,7 +16,7 @@ Extends `DeployCommand` with pre-import and post-import orphan cleanup backed by
 
 ## Problem Frame
 
-Unmanaged solution imports are additive — Dataverse never removes deleted components. The hard-failure case makes this more than hygiene: when a plugin class is removed from the DLL, the orphaned `plugintype` record blocks DLL upload until manually cleaned. This feature closes the gap with managed solution behavior for operational components and is core to Flowline's competitive positioning. See [origin](docs/brainstorms/2026-06-07-deploy-orphan-cleanup-requirements.md) for full problem narrative.
+Unmanaged solution imports are additive — Dataverse never removes deleted components. The hard-failure case makes this more than hygiene: when a plugin class is removed from the DLL, the orphaned `plugintype` record blocks DLL upload until manually cleaned. This feature closes the gap with managed solution behavior for operational components and is core to Flowline's competitive positioning. See [origin](docs/brainstorms/archive/2026-06-07-deploy-orphan-cleanup-requirements.md) for full problem narrative.
 
 ---
 
@@ -375,7 +375,7 @@ OrphanCleanupService:
 
 ## Sources & References
 
-- **Origin document:** [docs/brainstorms/2026-06-07-deploy-orphan-cleanup-requirements.md](docs/brainstorms/2026-06-07-deploy-orphan-cleanup-requirements.md)
+- **Origin document:** [docs/brainstorms/archive/2026-06-07-deploy-orphan-cleanup-requirements.md](docs/brainstorms/archive/2026-06-07-deploy-orphan-cleanup-requirements.md)
 - Feature doc: [docs/Features/FR-orphan-cleanup.md](docs/Features/FR-orphan-cleanup.md)
 - Managed/unmanaged type guard: [docs/solutions/architecture-patterns/managed-unmanaged-type-guard-in-deploy-command-2026-06-07.md](docs/solutions/architecture-patterns/managed-unmanaged-type-guard-in-deploy-command-2026-06-07.md)
 - DTAP gate: [docs/solutions/architecture-patterns/dtap-gate-enforcement-in-deploy-command-2026-06-07.md](docs/solutions/architecture-patterns/dtap-gate-enforcement-in-deploy-command-2026-06-07.md)

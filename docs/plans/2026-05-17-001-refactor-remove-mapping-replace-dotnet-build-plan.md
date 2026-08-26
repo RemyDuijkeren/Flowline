@@ -3,7 +3,7 @@ date: 2026-05-17
 title: "refactor: Remove mapping, replace dotnet build with pac solution pack"
 type: refactor
 status: active
-origin: docs/brainstorms/2026-05-16-build-validation-and-pac-warnings-requirements.md
+origin: docs/brainstorms/archive/2026-05-16-build-validation-and-pac-warnings-requirements.md
 ---
 
 # refactor: Remove mapping, replace dotnet build with pac solution pack
@@ -12,7 +12,7 @@ origin: docs/brainstorms/2026-05-16-build-validation-and-pac-warnings-requiremen
 
 Remove all mapping infrastructure from Flowline, replace `dotnet build` in clone and deploy with `pac solution pack --folder src/`, and add a non-blocking post-sync drift check comparing `src/` against local build artifacts.
 
-Correct ALM chain after this change: `source → push → Dataverse DEV → sync → src/ → pack → deploy`. `src/` is the record of what was confirmed in DEV; deploy packs that exactly. (see origin: `docs/brainstorms/2026-05-16-build-validation-and-pac-warnings-requirements.md`)
+Correct ALM chain after this change: `source → push → Dataverse DEV → sync → src/ → pack → deploy`. `src/` is the record of what was confirmed in DEV; deploy packs that exactly. (see origin: `docs/brainstorms/archive/2026-05-16-build-validation-and-pac-warnings-requirements.md`)
 
 ---
 
@@ -67,7 +67,7 @@ All requirements R1–R15 from the origin document.
 ### Deferred to Follow-Up Work
 - Strip existing `SolutionPackageMapFilePath` from users' already-cloned `.cdsproj` files (migration). For now, `EnsureMapFilePathAsync` being removed means it won't be added again; existing ones don't break anything (MSBuild looks for `MappingBuild.xml` which no longer exists and fails silently on dotnet build — but that's the developer's concern, not Flowline's).
 - Drift check threshold tuning after real DLL build comparison.
-- Pack-flow / ISV-style source-driven builds — explicitly out of scope. (see origin: `docs/brainstorms/2026-05-16-build-validation-and-pac-warnings-requirements.md`)
+- Pack-flow / ISV-style source-driven builds — explicitly out of scope. (see origin: `docs/brainstorms/archive/2026-05-16-build-validation-and-pac-warnings-requirements.md`)
 
 ### Non-Goals
 - `dotnet build` in any form — the developer's build pipeline, not Flowline's.

@@ -1,5 +1,5 @@
 ---
-origin: docs/brainstorms/2026-06-29-wave-2-invocation-context-requirements.md
+origin: docs/brainstorms/archive/2026-06-29-wave-2-invocation-context-requirements.md
 type: feat
 ---
 
@@ -20,7 +20,7 @@ Wave 1 ILogger call sites in `PluginService` and `WebResourceService` are audite
 
 ## Problem Frame
 
-When a Flowline command fails, the log file captures what happened but not the environment it happened in — no tool versions, no CI flag, no solution context. Reproducing the failure requires asking the user to re-run with `--verbose` and report their setup manually. (see origin: `docs/brainstorms/2026-06-29-wave-2-invocation-context-requirements.md`)
+When a Flowline command fails, the log file captures what happened but not the environment it happened in — no tool versions, no CI flag, no solution context. Reproducing the failure requires asking the user to re-run with `--verbose` and report their setup manually. (see origin: `docs/brainstorms/archive/2026-06-29-wave-2-invocation-context-requirements.md`)
 
 **Baseline gap found during planning:** `CheckSetupAsync` discards all `ToolCheckResult` return values. Tool versions are cached in `FlowlineValidator` but never surfaced beyond the setup check. `FlowlineRuntimeOptions` has no version properties. This plan addresses both the requirement and the gap.
 
