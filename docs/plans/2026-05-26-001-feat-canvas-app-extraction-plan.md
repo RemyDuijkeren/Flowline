@@ -4,6 +4,7 @@ type: feat
 status: active
 date: 2026-05-26
 origin: docs/brainstorms/2026-05-26-canvas-app-extraction-requirements.md
+issue: https://github.com/RemyDuijkeren/Flowline/issues/10
 ---
 
 # feat: Canvas app extraction after clone and sync

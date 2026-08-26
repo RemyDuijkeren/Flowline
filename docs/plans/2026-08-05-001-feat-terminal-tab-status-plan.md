@@ -7,6 +7,7 @@ artifact_contract: ce-unified-plan/v1
 artifact_readiness: requirements-only
 product_contract_source: ce-brainstorm
 execution: code
+issue: https://github.com/RemyDuijkeren/Flowline/issues/8
 ---
 
 # Terminal Tab Status Indicator - Plan
