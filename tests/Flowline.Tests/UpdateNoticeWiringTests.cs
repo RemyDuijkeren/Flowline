@@ -38,8 +38,11 @@ public class UpdateNoticeWiringTests
         SubprocessCapture capture, NuGetVersionClient nuGetVersionClient, FlowlineValidator validator)
         : FlowlineCommand<FlowlineSettings>(console, runtimeOptions, profileResolutionService, NullLoggerFactory.Instance, capture, nuGetVersionClient)
     {
-        // Stands in for ScaffoldCommand/SlnAddCommand, which override the setup check away entirely.
+        // Stands in for ScaffoldCommand/SlnAddCommand, which override the setup check away entirely and
+        // need no project on disk either.
         public bool SkipSetup { get; set; }
+
+        protected override bool RequiresFlowlineProject => !SkipSetup;
 
         protected override FlowlineValidator Validator => validator;
         protected override bool ShowWelcome => false;
@@ -94,20 +97,9 @@ public class UpdateNoticeWiringTests
     {
         var (command, console, newerVersion) = MakeCommand();
         command.SkipSetup = true;
-        var root = Directory.CreateTempSubdirectory().FullName;
-        await File.WriteAllTextAsync(Path.Combine(root, ".flowline"), """{"SchemaVersion":1}""");
-        var previous = Directory.GetCurrentDirectory();
-        Directory.SetCurrentDirectory(root);
 
-        try
-        {
-            (await command.RunAsync(new FlowlineSettings())).Should().Be(0);
-            console.Output.Should().Contain(newerVersion);
-        }
-        finally
-        {
-            Directory.SetCurrentDirectory(previous);
-            Directory.Delete(root, recursive: true);
-        }
+        (await command.RunAsync(new FlowlineSettings())).Should().Be(0);
+
+        console.Output.Should().Contain(newerVersion);
     }
 }
