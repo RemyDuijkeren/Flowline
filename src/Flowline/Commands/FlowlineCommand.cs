@@ -109,6 +109,13 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         RuntimeOptions.CommandName = context.Name;
         InitializeRuntimeOptions(settings);
 
+        // Ahead of everything that can throw or be overridden away. Hung off the setup check before, which
+        // meant a command that skips it (scaffold, sln add), or one that dies on a missing project or a
+        // failing git/pac probe, never checked and never cached — leaving the notice unreachable in exactly
+        // the folders a new user starts in.
+        UpdateNoticeChecker.PrintNotice(Console,
+            await UpdateNoticeChecker.CheckAsync(Console, Validator, nuGetVersionClient, settings.NoCache, cancellationToken));
+
         // The project wins when there is one, standalone only fills the gap when there isn't. A .flowline
         // governs its whole subtree (see FindFlowlineProjectRoot), so a command run anywhere beneath
         // one belongs to that project — which is what lets push's "--pluginFile can't be used inside a
@@ -175,23 +182,19 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
             // Pac-only — no git/dotnet probes, no clean-state check (R3). Same shape as PushCommand's
             // and GenerateCommand's standalone setup.
             ToolCheckResult? standalonePac = null;
-            string? standaloneNewerVersion = null;
             await Console.Status().FlowlineSpinner().StartAsync("Checking your setup...", async ctx =>
             {
                 standalonePac = await Validator.EnsurePacCliAsync(settings, cancellationToken);
-                standaloneNewerVersion = await UpdateNoticeChecker.CheckAsync(Console, Validator, nuGetVersionClient, settings.NoCache, cancellationToken);
             });
 
             ApplyStandaloneToolVersions(standalonePac!);
 
             Console.Ok("All good, let's go!");
-            UpdateNoticeChecker.PrintNotice(Console, standaloneNewerVersion);
             return;
         }
 
         ToolCheckResult? dotnet = null, pac = null, git = null;
         string? gitBranch = null;
-        string? newerVersion = null;
         await Console.Status().FlowlineSpinner().StartAsync("Checking your setup...", async ctx =>
         {
             git = await Validator.EnsureGitAsync(settings, cancellationToken);
@@ -200,7 +203,6 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
             gitBranch = await GitUtils.GetCurrentBranchAsync(_capture, cancellationToken);
             dotnet = await Validator.EnsureDotNetAsync(settings, cancellationToken);
             pac = await Validator.EnsurePacCliAsync(settings, cancellationToken);
-            newerVersion = await UpdateNoticeChecker.CheckAsync(Console, Validator, nuGetVersionClient, settings.NoCache, cancellationToken);
         });
 
         RuntimeOptions.ToolVersions = new FlowlineToolVersions(
@@ -213,7 +215,6 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         );
 
         Console.Ok("Prerequisites all good, let's go!");
-        UpdateNoticeChecker.PrintNotice(Console, newerVersion);
     }
 
     // Single source of truth for choosing between the four ProjectConfig.GetOrUpdate*Url wrappers —

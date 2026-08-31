@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The "a newer Flowline is out" notice now reaches every command**: it used to run at the tail of the setup check, so it never appeared for `scaffold` or `sln add` (which skip that check), never for a command that stopped on a missing project or a failing git/pac probe, and never for `status`. It now runs first, before anything that can skip or stop, and `status` prints it too.
+
 ### Changed
 
 - **`--dev` is optional in standalone `generate`**: with no URL passed, `generate` targets the environment of the currently active resource-specific PAC auth profile, matching what standalone `push` already did. A universal profile carries no environment URL, so it still can't stand in for one, and an explicit `--dev` always wins.

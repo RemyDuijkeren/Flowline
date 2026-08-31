@@ -6,6 +6,7 @@ using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Infrastructure;
+using Flowline.Services;
 using Flowline.Utils;
 using Flowline.Validation;
 using Microsoft.Extensions.Logging;
@@ -14,7 +15,7 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, DataverseConnector dataverseConnector, ILoggerFactory loggerFactory) : AsyncCommand<StatusCommand.Settings>
+public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, DataverseConnector dataverseConnector, ILoggerFactory loggerFactory, NuGetVersionClient nuGetVersionClient) : AsyncCommand<StatusCommand.Settings>
 {
     private readonly IAnsiConsole Console = console;
     private readonly SubprocessCapture _capture = capture;
@@ -90,6 +91,11 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
 
         if (Console.Profile.Capabilities.Interactive)
             Console.WriteWelcomeScreen();
+
+        // Before the try and the early returns below: "am I on the latest?" is the question status exists
+        // to answer, so the notice must not depend on a config being found or the tool probes succeeding.
+        UpdateNoticeChecker.PrintNotice(Console, await UpdateNoticeChecker.CheckAsync(
+            Console, FlowlineValidator.Default, nuGetVersionClient, settings.NoCache, cancellationToken));
 
         try
         {

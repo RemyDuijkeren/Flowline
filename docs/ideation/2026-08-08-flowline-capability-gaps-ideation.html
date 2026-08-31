@@ -244,7 +244,7 @@ footer.composition-signal{margin-top:60px;padding-top:20px;border-top:1px solid 
       <li><a href="#idea-1">Preflight the import against the target's own metadata</a> <span class="chip chip-done">IMPLEMENTED</span></li>
       <li><a href="#idea-2">One per-target state manifest</a></li>
       <li><a href="#idea-3">Disposable DEV: import to create, tear down when done</a></li>
-      <li><a href="#idea-4">Let git carry deletions — give every orphan its provenance</a> <span class="chip chip-planned">PLANNED</span></li>
+      <li><a href="#idea-4">Let git carry deletions — give every orphan its provenance</a> <span class="chip chip-done">IMPLEMENTED</span></li>
       <li><a href="#idea-5"><code>push --watch</code> for the inner loop</a> <span class="chip chip-planned">PLANNED</span></li>
       <li><a href="#idea-6">Act on declared deletions with a dependency-ordered deleter</a></li>
       <li><a href="#idea-7">Resolve auth before any Dataverse write</a></li>
@@ -404,21 +404,22 @@ footer.composition-signal{margin-top:60px;padding-top:20px;border-top:1px solid 
     </div>
   </article>
 
-  <article class="idea-card" id="idea-4">
+  <article class="idea-card done" id="idea-4">
     <div class="idea-header">
       <div class="idea-rank">4</div>
       <div class="idea-title">Let git carry deletions — give every orphan its provenance</div>
       <div class="idea-chips">
-        <span class="chip chip-planned">PLANNED</span>
+        <span class="chip chip-done">IMPLEMENTED</span>
         <span class="axis-badge ax5">Axis 5 · Team, CI &amp; comprehension</span>
         <span class="chip chip-med">Confidence 75%</span>
         <span class="chip chip-cx-med">Complexity Medium</span>
       </div>
     </div>
     <div class="idea-body">
-      <div class="impl-note planned">
-        <div class="impl-label">Planned — 2026-08-14</div>
-        <p>Plan written, not yet implemented: <code>docs/plans/2026-08-14-001-feat-orphan-provenance-plan.md</code>.</p>
+      <div class="impl-note">
+        <div class="impl-label">Implemented — 2026-08-15</div>
+        <p>Shipped in 0.17.0 as the provenance verdict on every orphan <code>drift</code> and <code>deploy</code> report, resolved from the checkout&#39;s git history. Verdict type and lookup abstraction at <code>8bd3d75</code>, the git-backed lookup at <code>54cff18</code>, literal-pathspec fix at <code>d868faf</code>. Plan: <code>docs/plans/2026-08-14-001-feat-orphan-provenance-plan.md</code>.</p>
+        <p><strong>Scope held.</strong> The three verdicts landed as planned — removed from source (naming commit, author, date and subject), never in source, or unresolved — and nothing became newly deletable. <code>drift --path &lt;zip&gt;</code>, added after, reads every verdict as unresolved, since a prebuilt artifact carries no history; <code>deploy</code> prints the same caveat when it runs off an explicit artifact.</p>
         <p><strong>The tombstone artifact is gone, and so is the pointer that replaced it.</strong> Tombstones exist in Cassandra, Dynamo and CRDTs because those are additive stores <em>with no history</em> — absence is the only signal, so deletion has to be written as a positive record. Git is not that store: a file that existed at one commit and is gone at another is already a positive, authored, timestamped, reviewed deletion record. That part of the card holds.</p>
         <p><strong>Two things below did not survive scoping.</strong> First, the per-target pointer. This card argued Flowline lacks "where each target sits in that history" — it does not. <code>OrphanCleanupService.CompareAsync</code> builds one side from a live query of the target's own solution components and the other from the current unpacked source, so the orphan list already <em>is</em> the per-environment unapplied set, recomputed on every run. A stamped commit, a moving git ref, and the installed-version-to-tag join were all staler proxies for a query that already happens. Second, the two-tier framing: with no pointer, there is no report tier and no authorization tier — there is one question, asked per orphan.</p>
         <p><strong>What the plan builds instead.</strong> Every orphan already on the compare list gets a provenance verdict — removed from source (with the commit, author, date and subject), never in the repository, or undeterminable. Nothing becomes newly deletable. The driver came out of scoping and is not what this card assumed: the operator already removes orphans by hand, and what gates them is certainty about intent, not effort. That splits by component type — a workflow or connection reference is reversible from source, a column is not, so the column case needs the <em>reason</em> for the deletion rather than permission to act on it.</p>
@@ -524,8 +525,8 @@ footer.composition-signal{margin-top:60px;padding-top:20px;border-top:1px solid 
     </div>
     <div class="idea-body">
       <div class="impl-note planned">
-        <div class="impl-label">Input planned — 2026-08-14</div>
-        <p>This idea is not itself planned. Its input is: <code>docs/plans/2026-08-14-001-feat-orphan-provenance-plan.md</code> writes the per-orphan provenance verdict this idea consumes, and explicitly stops short of acting on it. The boundary between the two is the confidence grade — that plan defers it, and it belongs here.</p>
+        <div class="impl-label">Input shipped — 2026-08-15 · this idea not implemented</div>
+        <p>This idea is not itself planned or built. Its input <em>is</em> — idea 4 shipped in 0.17.0, so the per-orphan provenance verdict this idea consumes now exists, and stops short of acting on it. The acting half is still open: ordering remains hand-derived across <code>FamilyOrder</code>, <code>SequenceHint</code> and the deferral loop, and no dependency graph is queried for deletion order. The boundary between the two is the confidence grade — that plan defers it, and it belongs here.</p>
         <p><strong>Complexity re-scored High → Medium, and the scope re-stated to match.</strong> The card contradicted itself: its Rationale scopes the work as replacing a hand-maintained <em>ordering</em>, while its Description claimed to replace "the per-family handler zoo." The second is wrong — handlers own matching, live querying and priority classification, and a dependency graph supplies none of that. Ordering is what is hand-derived, and it lives in three places (<code>FamilyOrder</code>, <code>SequenceHint</code>, and the dependency-error deferral loop). Consolidating those against the platform's own answer is bounded work, and the query it needs is now a shipped pattern to extend rather than a capability to introduce. The risk that kept this ranked below the record feeding it is unchanged: it still edits a live deletion path.</p>
         <p><strong>The intent half also arrives differently</strong> — as a verdict attached to each orphan, not as a bounded range of commits. Whatever replaces the ordering has to carry that verdict through rather than re-derive it.</p>
       </div>

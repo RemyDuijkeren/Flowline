@@ -23,6 +23,20 @@ internal static class UpdateNoticeChecker
     {
         if (!console.Profile.Capabilities.Interactive) return null;
 
+        // Own spinner rather than borrowing the setup check's: this now runs ahead of that check, and
+        // for a command that has no setup check at all it is the only thing on screen during the wait.
+        // The cached path returns before the spinner can draw a frame, so a normal run shows nothing.
+        return await console.Status().FlowlineSpinner().StartAsync("Checking for updates...", async _ =>
+            await FetchAsync(console, validator, nuGetVersionClient, noCache, cancellationToken));
+    }
+
+    static async Task<string?> FetchAsync(
+        IAnsiConsole console,
+        FlowlineValidator validator,
+        NuGetVersionClient nuGetVersionClient,
+        bool noCache,
+        CancellationToken cancellationToken)
+    {
         try
         {
             // Re-check the cached verdict against the running version instead of trusting it: once the
