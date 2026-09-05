@@ -249,15 +249,33 @@ AnsiConsole.Console.Pipeline.Attach(new LoggingRenderHook(
     hookLoggerFactory.CreateLogger<LoggingRenderHook>()
 ));
 
-var exitCode = await app.RunAsync(args, cancellationTokenSource.Token);
+// Tab-level state for a long run: the terminal's own progress indicator while the command works, and
+// an outcome marker in the title once it stops. Wrapping RunAsync is the only point that sees every
+// path that unwinds — SetExceptionHandler runs *inside* CommandApp, so a handled FlowlineException is
+// already an exit code by the time it gets here, and a Spectre interceptor would never observe it.
+// Ctrl+C needs nothing extra: the token cancels, RunAsync returns ExitCode.Cancelled, and the wrapper
+// reports it after the CancelKeyPress handler above has had its say.
+var tabStatus = TerminalTabStatus.Start(AnsiConsole.Console, TerminalTabStatus.LabelFor(args));
 
-// Commands that return a non-zero exit code directly (e.g. build/pack failures) instead of throwing
-// a FlowlineException skip SetExceptionHandler entirely, so its "Log: ..." pointer never printed.
-if (exitCode != 0 && !logLinkShown)
+// Environment.Exit (five call sites in GitUtils/PacUtils/DotNetUtils) terminates without unwinding, so
+// the wrapper's finally never runs and the indicator would be left spinning for the rest of the
+// session. Finish is idempotent, so this is a no-op after a normal exit.
+AppDomain.CurrentDomain.ProcessExit += (_, _) => tabStatus.Finish((int)ExitCode.GeneralError);
+
+var exitCode = await tabStatus.RunAsync(async () =>
 {
-    var logFilePath = FlowlineStoragePaths.GetLogsPath(runTime, args.FirstOrDefault());
-    AnsiConsole.MarkupLine($"[dim][link={new Uri(logFilePath).AbsoluteUri}]Log: {Markup.Escape(logFilePath)}[/][/]");
-}
+    var code = await app.RunAsync(args, cancellationTokenSource.Token);
+
+    // Commands that return a non-zero exit code directly (e.g. build/pack failures) instead of throwing
+    // a FlowlineException skip SetExceptionHandler entirely, so its "Log: ..." pointer never printed.
+    if (code != 0 && !logLinkShown)
+    {
+        var logFilePath = FlowlineStoragePaths.GetLogsPath(runTime, args.FirstOrDefault());
+        AnsiConsole.MarkupLine($"[dim][link={new Uri(logFilePath).AbsoluteUri}]Log: {Markup.Escape(logFilePath)}[/][/]");
+    }
+
+    return code;
+});
 
 Log.CloseAndFlush();
 hookLoggerFactory.Dispose();

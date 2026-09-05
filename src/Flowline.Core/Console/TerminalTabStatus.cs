@@ -47,6 +47,30 @@ public sealed class TerminalTabStatus
 
     internal static TerminalTabStatus ForTest(TerminalSignals signals, string label) => new(signals, label);
 
+    /// <summary>Names the tab after the command and target the user typed: <c>flowline deploy prod</c>.
+    /// Options are skipped, so <c>--version</c> alone leaves just the application name.</summary>
+    public static string LabelFor(IReadOnlyList<string> args)
+    {
+        var words = args.Where(a => !a.StartsWith('-')).Take(2);
+        return string.Join(' ', ["flowline", .. words]);
+    }
+
+    /// <summary>Runs the command and reports its outcome on every path that unwinds — a returned exit
+    /// code, and an exception a Debug build propagates instead of handling. The exit code defaults to a
+    /// failure so a propagated exception is never reported as success.</summary>
+    public async Task<int> RunAsync(Func<Task<int>> run)
+    {
+        var exitCode = (int)ExitCode.GeneralError;
+        try
+        {
+            return exitCode = await run();
+        }
+        finally
+        {
+            Finish(exitCode);
+        }
+    }
+
     /// <summary>Shows the indicator, unless the run already finished.</summary>
     internal void Reveal()
     {
