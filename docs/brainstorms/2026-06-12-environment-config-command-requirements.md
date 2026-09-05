@@ -10,7 +10,9 @@ origin: docs/Features/FR-environment-config.md
 
 > **Planned.** The command design in this document is superseded by
 > [`docs/plans/2026-09-05-1332-feat-environment-configure-command-plan.md`](../plans/2026-09-05-1332-feat-environment-configure-command-plan.md),
-> which settles the surface as a single `flowline configure` command. The SDK notes below remain accurate.
+> which settles the surface as a single `flowline configure` command. Its secure-config proposal is
+> carried by [`docs/plans/2026-09-05-1406-feat-configure-secret-resolution-plan.md`](../plans/2026-09-05-1406-feat-configure-secret-resolution-plan.md).
+> The SDK notes below remain accurate.
 
 ## Problem
 

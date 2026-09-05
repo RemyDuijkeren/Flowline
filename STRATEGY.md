@@ -1,6 +1,6 @@
 ---
 name: Flowline
-last_updated: 2026-07-04
+last_updated: 2026-09-05
 ---
 
 # Flowline Strategy
@@ -87,6 +87,23 @@ _Why it serves the approach:_ Auto-delete is the primary argument for managed
 solutions; closing this gap removes the last credible reason to choose managed
 over unmanaged.
 
+### Environment configuration
+
+Capture an environment's per-environment state (environment variable values,
+connection references, flow and workflow activation, plugin step enablement) into
+a git-tracked file, apply that file to any environment, and change one component
+without the maker portal.
+
+_Why it serves the approach:_ A solution import carries structure, not state, so
+the gap it leaves is filled by hand on every environment. Closing it removes
+another reason to reach for managed-solution tooling, and makes a provisioned DEV
+or a fresh TEST usable without reconstructing configuration from memory.
+
+**Post-v1.** Plan:
+`docs/plans/2026-09-05-1332-feat-environment-configure-command-plan.md`. It ships
+on its own, ahead of secret resolution, so settings files hold literal values and
+are as sensitive as the environment they came from until that work lands.
+
 ## Milestones
 
 - **2026-06-04** — Package/ subfolder refactor: PAC-managed files in `Package/Package.cdsproj` ✓
@@ -113,6 +130,8 @@ over unmanaged.
 - `flowline init` for greenfield projects (create publisher + solution in DEV, scaffold local structure) — post-v1
 - Restore state of workflows on deploy (`--no-restore` flag; requirements: `docs/brainstorms/2026-06-12-deploy-state-restoration-requirements.md`) — post-v1
 - CLI observability Wave 4 (opt-in telemetry) — should-have, separate product decision
+- Secret resolution for `configure` settings files: reference indirection, a resolution chain, and plugin secure configuration (plan: `docs/plans/2026-09-05-1406-feat-configure-secret-resolution-plan.md`) — after `configure` ships
+- `deploy --settings-file`, and export flags on `clone` and `sync` — after `configure` ships
 
 ## Marketing
 

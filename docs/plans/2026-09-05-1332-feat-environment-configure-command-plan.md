@@ -13,8 +13,8 @@ execution: code
 
 ## Goal Capsule
 
-- **Objective:** A team can reproduce an environment's per-environment configuration — environment variable values, connection references, flow and workflow activation, plugin step enablement — from a git-tracked file, unattended, without opening the maker portal.
-- **Product authority:** This document. It supersedes the command-design section of [`docs/brainstorms/2026-06-12-environment-config-command-requirements.md`](../brainstorms/2026-06-12-environment-config-command-requirements.md) and ideas 7-8 of [`docs/ideation/2026-07-01-post-deploy-environment-config-ideation.html`](../ideation/2026-07-01-post-deploy-environment-config-ideation.html).
+- **Objective:** A team can capture an environment's per-environment configuration into a git-tracked file, apply that file to an environment unattended, and change one component without opening the maker portal.
+- **Product authority:** This document. It supersedes the command-design section of [`docs/brainstorms/2026-06-12-environment-config-command-requirements.md`](../brainstorms/2026-06-12-environment-config-command-requirements.md) and ideas 7-8 of [`docs/ideation/2026-07-01-post-deploy-environment-config-ideation.html`](../ideation/2026-07-01-post-deploy-environment-config-ideation.html). Secret handling is outside this plan's authority — see [`2026-09-05-1406-feat-configure-secret-resolution-plan.md`](2026-09-05-1406-feat-configure-secret-resolution-plan.md).
 - **Open blockers:** None.
 
 ---
@@ -23,7 +23,7 @@ execution: code
 
 ### Summary
 
-Add `flowline configure <env>`: a single verb-first command that applies a per-environment settings file to a Dataverse environment, captures one from a live environment with `--export`, and changes one component inline without a file. `deploy --settings-file <path>` applies the same file as part of a deploy.
+Add `flowline configure <env>`: a verb-first command that applies a per-environment settings file to a Dataverse environment, captures one from a live environment with `--export`, and changes one component inline without a file.
 
 ### Problem Frame
 
@@ -31,132 +31,127 @@ A solution import carries structure, not per-environment state. Environment vari
 
 The gap is felt three ways. In CI, nothing guarantees that TEST and PROD land with the same configuration, because configuration is applied by hand. When an environment is cloned or a DEV is re-provisioned, its configuration is reconstructed from memory. After go-live, turning a flow on or off means the maker portal, and that change exists nowhere in source control.
 
-`IPostDeployService` already exists as the deploy extension point with six implementers (`src/Flowline/Program.cs:290-314`), so the deploy-side hook this needs is present. Nothing writes per-environment state through it.
-
 <!-- ce-section: work-relationships -->
 ### How This Work Fits Together
 
 This plan owns **declared configuration**: a file that states what an environment's configuration should be, and a command that makes it so. The breakdown below is the current understanding, not a committed roadmap.
 
-- **Restore-on-deploy state snapshotting** ([`docs/brainstorms/2026-06-12-deploy-state-restoration-requirements.md`](../brainstorms/2026-06-12-deploy-state-restoration-requirements.md), listed under Deferred in [`STRATEGY.md`](../../STRATEGY.md)) — *Can proceed independently of* this plan. It preserves whatever state the target already had across an import; this plan declares state from a file. The two answer different questions and a team may want either, both, or neither.
-- **Export on `clone` and `sync`** — *Depends on* this plan. Both are flags that call the capture capability R9 defines. Deferred to v2.
-- **Auto-apply after deploy with preflight validation** — *Depends on* this plan. Deferred to v2; see R16 for the v1 stance.
+- **Secret resolution for the settings file** ([`2026-09-05-1406-feat-configure-secret-resolution-plan.md`](2026-09-05-1406-feat-configure-secret-resolution-plan.md)) — *Depends on* this plan. This plan's file holds literal values only (R4). That plan adds indirection so a value can reference a secret the file does not contain, and adds plugin secure configuration. It is the mitigation for the exposure R4 names, so shipping this plan to users before it means teams carry that exposure.
+- **Deploy integration (`deploy --settings-file`)** — *Depends on* this plan. Cut from v1: without pre-import validation it produces the same result as running `deploy` then `configure` as two steps, while adding a flag, a settings type, a post-deploy service and a new exit path to `deploy`'s published contract. It earns its cost only in the validated form, which also needs the secret plan's resolution pass.
+- **Export on `clone` and `sync`** — *Depends on* this plan. Both are flags that call the capture capability R13 defines. Clone is the stronger of the two, since it targets PROD at the moment the repo is created.
+- **Restore-on-deploy state snapshotting** ([`docs/brainstorms/2026-06-12-deploy-state-restoration-requirements.md`](../brainstorms/2026-06-12-deploy-state-restoration-requirements.md), listed under Deferred in [`STRATEGY.md`](../../STRATEGY.md)) — *Can proceed independently of* this plan. It preserves whatever state the target already had across an import; this plan declares state from a file.
 - **A read primitive for CI gates** ("is this flow on in PROD, exit 0 or 1") — *Shares* this plan's component-addressing grammar. *Still to decide* whether it belongs here, on `status`, or on its own command.
 
 ### Key Decisions
 
 - **This work declares configuration; it does not snapshot and restore it.** (session-settled: user-directed — chosen over restore-on-deploy and over a combined command: the two solve different problems and restore-on-deploy is already deferred in STRATEGY.md.) Governs R1, R3.
-- **One leaf command with modes selected by flag, not a verb branch.** Verb-first naming matches every other Flowline command; the cost is hand-validated mode combinations. (session-settled: user-directed — chosen over a `configure apply|export|set` branch and over a `config` noun branch: consistency with `clone`/`push`/`sync`/`deploy` outweighs per-leaf help and validation.) Governs R4, R6, R9.
-- **Inline single-component change stays inside `configure`.** It is the same reconcile with a smaller input, not a separate capability. (session-settled: user-directed — chosen over top-level `set`/`get` and over `override`: `set` collides with `.flowline` project config semantics, and every alternative name covers on/off but breaks on setting a value.) Governs R6.
-- **Secret indirection is a property of the value, not of the section.** Any value anywhere in the file may be `${VAR}`. A plain-string environment variable can carry a secret and a Secret-type one carries only a Key Vault reference, so sorting by component type would be wrong in both directions. Governs R11.
-- **`dotnet user-secrets` is a resolution rung, bought for ergonomics rather than security.** It is unencrypted plaintext in the user profile; what it adds over an environment variable is persistence across shells and per-solution scoping. (session-settled: user-directed — chosen over environment variables alone and over native Key Vault resolution: the small-team case needs persistence without Key Vault setup.) Governs R12.
-- **Applying is explicit in v1.** Deploy never applies a settings file unless given one. (session-settled: user-directed — chosen over auto-apply-with-opt-out and over opt-in-per-repo: keeps deploy's current success criteria intact while the file format settles.) Governs R15, R16.
-- **v1 covers only component classes that round-trip through export.** Plugin secure configuration is deferred so that everything `--export` writes can be applied back unchanged. (session-settled: user-directed — chosen over shipping it apply-only in v1: keeps v1's story symmetric.) Governs R2, R10.
-- **Small teams may put secrets in plain-string environment variables.** Accepted risk: readable by any sufficiently privileged user, mitigated by admin-only environment access. (session-settled: user-directed — chosen over requiring Secret-type variables: Key Vault setup is disproportionate for a small team.) Governs R2, R11.
+- **One leaf command with modes selected by flag, not a verb branch.** Verb-first naming matches every other Flowline command; the cost is hand-validated mode combinations. (session-settled: user-directed — chosen over a `configure apply|export|set` branch and over a `config` noun branch: consistency with `clone`/`push`/`sync`/`deploy` outweighs per-leaf help and validation.) Governs R5, R10, R13.
+- **Inline single-component change stays inside `configure`.** It is the same reconcile with a smaller input, not a separate capability. (session-settled: user-directed — chosen over top-level `set`/`get` and over `override`: `set` collides with `.flowline` project config semantics, and every alternative name covers on/off but breaks on setting a value.) Governs R10.
+- **Secret handling is a separate plan.** This plan's file holds literal values, so v1 ships with no indirection, no resolution chain, and no plugin secure configuration. (session-settled: user-directed — chosen over carrying secrets in this plan: the combined scope was too large, and capture, apply and set are useful without them.) Governs R4.
+- **Applying is explicit; no command applies a settings file on your behalf.** (session-settled: user-directed — chosen over auto-apply-with-opt-out and over shipping `deploy --settings-file` in v1: an unvalidated deploy hook produces the same outcome as running two commands.) Governs R5.
+- **A component missing from the target is a reported skip, not a failure.** Keeps `configure` safe to run before the solution has ever been imported. (session-settled: user-directed — chosen over failing `NotFound` on an absent solution and over counting each miss toward partial success.) Governs R8.
+- **This plan ships to users on its own, ahead of secret resolution.** Standalone it fully delivers post-deploy fixup and operational toggling; CI reproducibility is usable where no declared value is sensitive, and environment cloning stays manual until export flags land on `clone`. The accepted cost is R4's exposure for the whole window: export writes literal values, v1 adds no warning or permission control at export time, and a value committed before secret resolution exists cannot be un-committed — remediation is rotation, not a file edit. (session-settled: user-directed — chosen over gating release on the secret-resolution plan and over adding a v1 export warning: secrets are deliberately a later concern.) Governs R4, R13, R14.
+- **Environment variable and connection reference values apply through the SDK rather than by delegating to `pac solution import --settings-file`.** PAC's settings file is consumed only during an import, so delegating would make those two classes unreachable without one — forfeiting apply-without-import, per-component dry-run, and per-component failure reporting, which are the point of the command.
 
 ### Requirements
 
 **The settings file**
 
 - R1. One settings file per environment, authored and git-tracked by the team, declaring that environment's configuration.
-- R2. The file covers environment variable values, connection references, flow and classic workflow active state, and plugin step enabled state. Plugin secure configuration is out of scope for v1.
+- R2. The file covers environment variable values, connection references, flow and classic workflow active state, and plugin step enabled state.
 - R3. The file is a partial declaration, not a full desired state: `configure` reconciles only the components the file names and leaves every other component untouched.
+- R4. Values are written and read literally. A settings file is as sensitive as the environment it was captured from, and a value that happens to hold a secret is committed like any other. The mitigation is the secret-resolution plan, not this one.
 
 **Applying**
 
-- R4. `flowline configure <env>` applies the settings file for that environment.
-- R5. Applying is idempotent and re-runnable at any time, including with no prior deploy.
-- R6. `flowline configure <env>` accepts a single component inline instead of a file, changing that component's state or value without one.
-- R7. `--dry-run` reports every change that would be made and writes nothing, following the existing `--dry-run` convention on `deploy` and `push`.
-- R8. When some components apply and others fail, the command reports each failure and exits `PartialSuccess` (18), matching how orphan cleanup already reports post-import failures (`src/Flowline.Core/ExitCode.cs:55`).
+- R5. `flowline configure <env>` applies the settings file for that environment. `--settings-file <path>` overrides discovery; convention-based discovery applies only when the target is a role name, since `<env>` also accepts a URL.
+- R6. Applying is idempotent and re-runnable at any time, including before the solution has ever been imported.
+- R7. Components apply in dependency order — environment variable values and connection references, then flow and workflow state, then plugin step state — regardless of their order in the file. Dataverse saves connection reference updates asynchronously, so that tier completes only once each binding is confirmed readable; flow state is not attempted before then.
+- R7a. A component is skipped when a component it actually depends on failed or was itself skipped — not when any earlier tier had a failure. A skip propagated this way is an R8 skip and does not affect the exit code. Where the dependency between two declared components cannot be determined, the later component is attempted rather than skipped.
+- R8. A component the file names that does not exist in the target is reported and skipped. It is not a failure and does not affect the exit code. When every component the file names is skipped, the run exits `Inconclusive` (19) rather than Success — nothing was compared, so it is not a pass signal (`src/Flowline.Core/ExitCode.cs:63`).
+- R9. On apply, `configure` names the solution-scoped components in the covered classes that the file does not declare. This is a warning; the file stays a partial declaration and the exit code is unaffected.
+- R10. `flowline configure <env>` accepts a single component inline instead of a file, changing that component's state or value without one. When the environment's settings file also names that component, the command warns that the next full apply will override the change.
+- R11. `--dry-run` reports every change that would be made and writes nothing, following the existing `--dry-run` convention on `deploy` and `push`.
+- R11a. Component values are opaque on every output surface. Dry-run, change summaries and failure messages report a value as changed, unchanged or set, never its content — for values read from the file and for one supplied inline. The secret-resolution plan extends this to resolved references rather than introducing it.
+- R12. When some components apply and others fail, the command reports each failure and exits `PartialSuccess` (18), matching how orphan cleanup already reports post-import failures (`src/Flowline.Core/ExitCode.cs:55`). That code's published wording is deploy-and-orphan-cleanup specific, so its doc comment, the wiki exit-code page, and the `flowline` skill text broaden with this change.
 
 **Capturing**
 
-- R9. `flowline configure <env> --export` writes a settings file from the live environment, scoped to the components belonging to the solution rather than everything in the environment.
-- R10. Export never writes a secret value into the file. Every component class in scope for v1 round-trips: what export writes can be applied unchanged, apart from values the author chooses to replace with `${VAR}` references.
-
-**Secret resolution**
-
-- R11. Any value in the file may be written as `${VAR}` and is resolved when the file is applied.
-- R12. Resolution order is: command-line flag, then process environment variable, then `dotnet user-secrets`, then a masked interactive prompt, then failure. This extends the chain `SecretResolver` already implements for the client secret (`src/Flowline/Services/SecretResolver.cs:20-39`) by one rung.
-- R13. An unresolvable reference fails the command with a typed exit code and writes nothing for that value. Flowline never writes an empty value in place of a missing secret.
-- R14. Resolved secret values are never logged and never written back to the settings file.
-
-**Deploy integration**
-
-- R15. `flowline deploy <env> --settings-file <path>` applies the named settings file as part of the deploy.
-- R16. Deploy does not validate the settings file before importing. A configuration failure surfaces after the import has landed and reports partial success per R8.
+- R13. `flowline configure <env> --export` writes a settings file from the live environment, scoped to the components belonging to the solution rather than everything in the environment.
+- R14. Export writes component values verbatim, including the Key Vault reference fields of a Secret-type environment variable, whose value Dataverse does not expose. This verbatim default is provisional: the secret-resolution plan's open export question may replace it with reference placeholders, which would change export's output for the same environment.
 
 ### Key Flows
 
 **F1 — Bootstrap an environment's configuration**
 
 1. Operator runs `flowline configure prod --export`.
-2. Flowline reads the solution's components from PROD and writes the settings file (R9).
-3. Operator replaces sensitive values with `${VAR}` references and commits the file.
+2. Flowline reads the solution's components from PROD and writes the settings file (R13).
+3. Operator reviews and commits the file, treating it as sensitive per R4.
 
 **F2 — Reproduce configuration in CI**
 
 1. Pipeline runs `flowline deploy test`, which imports the solution.
-2. Pipeline runs `flowline configure test`, or passes `--settings-file` to the deploy (R15).
-3. Flowline resolves each `${VAR}` from the pipeline's environment (R12) and applies every declared component.
-4. Any component that fails is reported and the run exits `PartialSuccess` (R8).
+2. Pipeline runs `flowline configure test` as a second step.
+3. Flowline applies declared components in dependency order (R7), naming any it skipped (R8) and any the file does not declare (R9).
+4. Any component that fails is reported and the run exits `PartialSuccess` (R12).
 
 **F3 — Turn a feature on after go-live**
 
 1. Operator runs `flowline configure prod flow "Order Processing" --on`.
-2. Flowline activates that one flow and touches nothing else (R3, R6).
+2. Flowline activates that one flow and touches nothing else (R3, R10).
+3. If the PROD settings file also names that flow, the command warns that the next full apply will override the change (R10).
 
 ```mermaid
 flowchart LR
   ENV[Live environment] -->|configure --export| FILE[Settings file in git]
   FILE -->|configure ENV| A[Target environment]
-  FILE -->|deploy --settings-file| A
   INLINE[Inline single component] --> A
-  SEC[Flag / env var / user-secrets / prompt] -.->|resolves $VAR| FILE
+  A -.->|warns when the file names it| INLINE
 ```
 
 ### Acceptance Examples
 
-- AE1. A settings file references `${API_KEY}`, the variable is not set anywhere in the chain, and the run is non-interactive. The command fails with a typed exit code, names the unresolved variable, and applies no value for it. Covers R13.
-- AE2. A file is exported from an environment, committed unchanged, and applied back to that same environment. Nothing changes and the command reports no differences. Covers R5, R9, R10.
-- AE3. An environment has a flow that the settings file does not name, and the flow is Active. After `configure` runs, the flow is still Active. Covers R3.
-- AE4. A deploy is run with `--settings-file`, the import succeeds, and one connection reference in the file points at a connection that does not exist in the target. The solution stays imported, the failure is reported, and the run exits `PartialSuccess`. Covers R8, R16.
-- AE5. `configure prod --dry-run` is run against a file declaring five components, three of which already match. The output names the two that would change and nothing is written. Covers R7.
+- AE1. A file is exported from an environment, committed unchanged, and applied back to that same environment. Nothing changes and the command reports no differences. Covers R6, R13, R14.
+- AE2. An environment has an Active flow the settings file does not name. After `configure` runs, the flow is still Active and the command names it as undeclared. Covers R3, R9.
+- AE3. `configure test` runs against an environment where the solution has never been imported. Every declared component is reported as skipped, nothing is applied, and the command exits `Inconclusive`. Covers R6, R8.
+- AE4. A file declares a connection reference and a flow that depends on it, listed flow-first. The connection reference is applied first. When it fails, the flow is reported as skipped rather than attempted, and is left inactive. Covers R7, R7a.
+- AE5. `configure prod flow "Order Processing" --on` runs while the PROD settings file declares that flow inactive. The flow is activated and the command warns that the next full apply will deactivate it again. Covers R10.
+- AE6. `configure prod --dry-run` runs over a file declaring five components, three of which already match. The output names the two that would change and nothing is written. Covers R11.
 
 ### Scope Boundaries
 
 Deferred for later:
 
-- Plugin secure configuration. Ranked last of the four component classes, and the only one that cannot round-trip through export, since secure configuration is never returned on read (`CONCEPTS.md:86`). Deferring it keeps v1 symmetric: everything export writes can be applied back.
-- Export flags on `clone` and `sync`. Clone is the stronger of the two, because it targets PROD at the moment the repo is created; sync can only ever capture DEV, since it resolves `EnvironmentRole.Dev` (`src/Flowline/Commands/SyncCommand.cs:48`).
-- Auto-applying the settings file after deploy, with the file and its `${VAR}` references validated before packing.
-- Native Azure Key Vault resolution (`kv://` references) inside Flowline.
+- Secret indirection, a resolution chain, and plugin secure configuration — the whole of [`2026-09-05-1406-feat-configure-secret-resolution-plan.md`](2026-09-05-1406-feat-configure-secret-resolution-plan.md).
+- `deploy --settings-file`. See How This Work Fits Together for why it is not worth its cost unvalidated.
+- Export flags on `clone` and `sync`. Sync can only ever capture DEV, since it resolves `EnvironmentRole.Dev` (`src/Flowline/Commands/SyncCommand.cs:48`).
 - An interactive component picker for users who do not know a component's name.
-- A separate read command for CI gates.
+- A read command for CI gates.
 
 Outside this work:
 
 - Snapshotting and restoring state across an import. See How This Work Fits Together.
-- `.env` file support. Azure's own guidance is not to store secrets in one, and it places a live secret inside the working tree.
 - Managed-solution scenarios. Flowline's model is unmanaged (`AGENTS.md`).
 
 ### Dependencies / Assumptions
 
-- A Dataverse environment variable of type Secret stores a reference to an Azure Key Vault secret — subscription, resource group, vault name, secret name — not the secret itself, and Key Vault is the only supported secret store ([Microsoft Learn](https://learn.microsoft.com/power-apps/maker/data-platform/environmentvariables-azure-key-vault-secrets)). Those reference fields are not sensitive and belong in the committed file.
-- Plugin secure configuration is never returned on read and is excluded from solution export (`CONCEPTS.md:86`). This is why it is deferred rather than included: it is the one class export could not produce.
-- `IPostDeployService` is the deploy hook this needs and already exists (`src/Flowline/Program.cs:290-314`).
+- Assumed: the identity running `configure` can bind the connections the settings file names — it either owns them or they are shared with it. Flowline never creates connections. In a fresh TEST or a re-provisioned DEV this is a manual prerequisite, not an edge case.
 - Assumed: the file is named and located by convention per environment, so `configure <env>` finds it without being told. The convention itself is a planning decision.
+- Classic workflows reset to Draft on every import, so R6's idempotency holds between imports rather than across one.
+- A Dataverse environment variable of type Secret stores a reference to an Azure Key Vault secret — subscription, resource group, vault name, secret name — not the secret itself ([Microsoft Learn](https://learn.microsoft.com/power-apps/maker/data-platform/environmentvariables-azure-key-vault-secrets)). Those reference fields are not sensitive, which is why R14 can export them.
+- `IPostDeployService` exists (`src/Flowline/Program.cs:315-339`) but this plan registers nothing on it, since no command applies a settings file on your behalf.
 
 ### Outstanding Questions
 
 **Deferred to Planning**
 
-- Whether the file extends the PAC solution settings file shape (`pac solution create-settings` generates `EnvironmentVariables` and `ConnectionReferences`) with Flowline sections added, or uses a Flowline-native format.
-- Whether `deploy --settings-file` hands the PAC-native sections to `pac solution import --settings-file` at import time and applies the Flowline sections afterwards, or applies everything through the SDK after import.
-- The inline argument grammar for R6 — how a component type, name, and target state are expressed on the command line.
-- File naming and discovery convention.
+- Whether the file extends the PAC solution settings file shape (`pac solution create-settings` generates `EnvironmentVariables` and `ConnectionReferences`) with Flowline sections added, or uses a Flowline-native format. The apply mechanism is settled; this is the file shape only. Whichever shape is chosen must reserve the syntax the secret-resolution plan will use for references, define how a literal matching it is escaped, and leave room for a fifth component class — otherwise a file written under v1 changes meaning when that plan lands, and every adopter re-edits committed files.
+- Whether exported component identifiers are environment-local GUIDs or name-based. A file exported from PROD and applied to TEST needs the latter.
+- The inline argument grammar for R10 — how a component type, name, and target state are expressed on the command line.
+- File naming and discovery convention, and what happens when discovery finds nothing or is ambiguous.
 - Whether `--export` over an existing file is force-gated, per the `--force` specifier pattern (`src/Flowline/Commands/SyncCommand.cs:41`).
+- Which exit code a fully blocked apply returns. The secret-resolution plan needs one for "a reference cannot be resolved, nothing applied", and assigns exit codes to this plan, which currently defines only Success, `Inconclusive` and `PartialSuccess`. Neither `ConfigInvalid` (11) nor `ValidationFailed` (15) is a clean fit, and the enum is a published contract agents pattern-match on.
+- Whether `push` ever writes plugin step `statecode`. If it does, a configure-declared step state would be undone by the next push and the two need a stated precedence.
 
 ### Sources / Research
 
@@ -164,7 +159,5 @@ Outside this work:
 - [`docs/ideation/2026-07-01-post-deploy-environment-config-ideation.html`](../ideation/2026-07-01-post-deploy-environment-config-ideation.html) — ideas 7 and 8 (`flowline configure`, inline and interactive modes) are the direct ancestor of this plan.
 - [`docs/ideation/2026-07-02-alm-accelerator-migration-targeting-ideation.html`](../ideation/2026-07-02-alm-accelerator-migration-targeting-ideation.html) — the per-environment deployment settings file idea.
 - [`docs/brainstorms/2026-06-12-deploy-state-restoration-requirements.md`](../brainstorms/2026-06-12-deploy-state-restoration-requirements.md) — the adjacent work this plan deliberately excludes.
-- `src/Flowline/Services/SecretResolver.cs:20-39` — the existing secret resolution chain R12 extends.
 - `src/Flowline.Core/ExitCode.cs:55` — `PartialSuccess` as a stable public contract.
 - `src/Flowline/Commands/SyncCommand.cs:48` — sync's DEV role lock, the reason export is not hosted there.
-- [Use environment variables for Azure Key Vault secrets](https://learn.microsoft.com/power-apps/maker/data-platform/environmentvariables-azure-key-vault-secrets) — Secret-type variables store references, not values.
