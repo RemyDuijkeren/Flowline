@@ -128,10 +128,10 @@ are as sensitive as the environment they came from until that work lands.
 ## Deferred
 
 - `flowline init` for greenfield projects (create publisher + solution in DEV, scaffold local structure) — post-v1
-- Restore state of workflows on deploy (`--no-restore` flag; requirements: `docs/brainstorms/2026-06-12-deploy-state-restoration-requirements.md`) — post-v1
+- Restore state of workflows on deploy (`--no-restore` flag; requirements: `docs/brainstorms/2026-06-12-deploy-state-restoration-requirements.md`) — post-v1, and now contradicts `configure`, which treats the settings file as the truth and defaults every state component to on. Its counter-argument is that it needs no settings file at all. Decide whether it survives before building it.
 - CLI observability Wave 4 (opt-in telemetry) — should-have, separate product decision
 - Secret resolution for `configure` settings files: reference indirection, a resolution chain, and plugin secure configuration (plan: `docs/plans/2026-09-05-1406-feat-configure-secret-resolution-plan.md`) — after `configure` ships
-- `deploy --settings-file`, and export flags on `clone` and `sync` — after `configure` ships
+- Export flags on `clone` and `sync`, and auto-applying configuration after a deploy — after `configure` ships
 
 ## Marketing
 

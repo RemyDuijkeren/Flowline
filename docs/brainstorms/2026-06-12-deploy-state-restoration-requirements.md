@@ -22,6 +22,22 @@ warning, no error. Teams only notice when a business process fails.
 Modern Power Automate cloud flows (2024+) are mostly fine — update imports preserve state, first-time
 imports attempt restoration. Classic workflows and BPFs are not covered.
 
+## Why this and not `configure`
+
+**It needs no configuration file.** That is this feature's strongest argument and the one thing
+`configure` cannot match. Restoration works on any repo, on the first deploy, with nothing authored
+and nothing maintained: no settings file, no naming or discovery convention, no file to keep in step
+with the solution as components are added and removed. The safety net is on by default rather than
+opted into.
+
+It is also closer to how the platform already behaves. Microsoft preserves a cloud flow's target
+state across an update import for the same reason: absent a declaration, the state the environment is
+already in is the best available answer.
+
+The cost is that the target, not Git, is the source of truth. See the contradiction recorded in
+[`docs/plans/2026-09-05-1332-feat-environment-configure-command-plan.md`](../plans/2026-09-05-1332-feat-environment-configure-command-plan.md)
+before building this alongside `configure`.
+
 ---
 
 ## How It Works
