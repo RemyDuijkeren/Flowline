@@ -126,6 +126,93 @@ public class TerminalTabStatusTests
         }
     }
 
+    // Records what the reveal timer was armed with instead of waiting on real time. The production
+    // path (Start -> CreateTimer) is otherwise never exercised, so a swapped due time and period, or
+    // an inverted enabled guard, would ship with the suite green.
+    sealed class RecordingTimeProvider : TimeProvider
+    {
+        public bool Created { get; private set; }
+        public TimeSpan DueTime { get; private set; }
+        public TimeSpan Period { get; private set; }
+        TimerCallback? _callback;
+        object? _state;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            Created = true;
+            DueTime = dueTime;
+            Period = period;
+            _callback = callback;
+            _state = state;
+            return new InertTimer();
+        }
+
+        public void FireDueTime() => _callback!(_state);
+
+        sealed class InertTimer : ITimer
+        {
+            public bool Change(TimeSpan dueTime, TimeSpan period) => true;
+            public void Dispose() { }
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+    }
+
+    static (TerminalTabStatus Status, RecordingTimeProvider Time, StringWriter Escapes, List<string> Titles) MakeTimed(bool enabled = true)
+    {
+        var console = new TestConsole();
+        console.Profile.Capabilities.Interactive = enabled;
+        console.Profile.Capabilities.Ansi = enabled;
+        var escapes = new StringWriter();
+        var titles = new List<string>();
+        var signals = new TerminalSignals(console, errorRedirected: false, escapes, titles.Add);
+        var time = new RecordingTimeProvider();
+        return (TerminalTabStatus.ForTest(signals, Label, time), time, escapes, titles);
+    }
+
+    [Fact]
+    public void Start_ArmsAOneShotTimerAtTheRevealThreshold()
+    {
+        var (_, time, _, _) = MakeTimed();
+
+        time.Created.Should().BeTrue();
+        time.DueTime.Should().Be(TerminalTabStatus.RevealThreshold);
+        time.Period.Should().Be(Timeout.InfiniteTimeSpan, "the terminal animates its own indicator, so there is nothing to tick");
+    }
+
+    [Fact]
+    public void Start_SuppressedConsole_NeverArmsATimer()
+    {
+        var (_, time, _, _) = MakeTimed(enabled: false);
+
+        time.Created.Should().BeFalse();
+    }
+
+    [Fact]
+    public void TimerCallback_ProducesTheSameWritesAsAManualReveal()
+    {
+        var (_, time, escapes, titles) = MakeTimed();
+
+        time.FireDueTime();
+
+        escapes.ToString().Should().Be(Indeterminate);
+        titles.Should().ContainSingle().Which.Should().Be(Label);
+    }
+
+    [Theory]
+    [InlineData((int)ExitCode.PartialSuccess)]
+    [InlineData((int)ExitCode.Inconclusive)]
+    public void RevealedThenNonBinaryOutcome_DoesNotReportOutrightFailure(int exitCode)
+    {
+        var h = new Harness();
+
+        h.Status.Reveal();
+        h.Status.Finish(exitCode);
+
+        // A deploy that landed but left orphans, or a check that could not finish, is not a failure.
+        h.Titles.Last().Should().StartWith(FlowlineTheme.WarningPrefix);
+        h.Titles.Last().Should().NotStartWith(FlowlineTheme.ErrorPrefix);
+    }
+
     [Fact]
     public void FinishCalledTwice_WritesOnlyOnce()
     {

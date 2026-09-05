@@ -47,13 +47,25 @@ public sealed class TerminalTabStatus
 
     internal static TerminalTabStatus ForTest(TerminalSignals signals, string label) => new(signals, label);
 
+    internal static TerminalTabStatus ForTest(TerminalSignals signals, string label, TimeProvider time)
+        => new(signals, label, time);
+
+    /// <summary>Longest label written to the title. The platform title API rejects very long strings,
+    /// and the label is built from raw command-line words, so it is bounded before it is written.</summary>
+    const int MaxLabelLength = 200;
+
     /// <summary>Names the tab after the command and target the user typed: <c>flowline deploy prod</c>.
-    /// Options are skipped, so <c>--version</c> alone leaves just the application name. The caller
-    /// passes that name so it stays the one Spectre was configured with.</summary>
+    /// The caller passes the application name so it stays the one Spectre was configured with.</summary>
+    /// <remarks>
+    /// Stops at the first option rather than filtering options out. Filtering would drop the flag but
+    /// keep the value behind it, so <c>generate --client-secret s3cr3t</c> would put the secret in the
+    /// terminal title — a value this repo already treats as sensitive and redacts from its logs.
+    /// </remarks>
     public static string LabelFor(IReadOnlyList<string> args, string applicationName)
     {
-        var words = args.Where(a => !a.StartsWith('-')).Take(2);
-        return string.Join(' ', [applicationName, .. words]);
+        var words = args.TakeWhile(a => !a.StartsWith('-')).Take(2);
+        var label = string.Join(' ', [applicationName, .. words]);
+        return label.Length <= MaxLabelLength ? label : label[..MaxLabelLength];
     }
 
     /// <summary>Runs the command and reports its outcome on every path that unwinds — a returned exit
@@ -101,10 +113,14 @@ public sealed class TerminalTabStatus
         }
     }
 
+    // PartialSuccess and Inconclusive are deliberately not pass/fail: a deploy that landed but left
+    // orphans behind, or a check that could not finish, is not the same as a deploy that failed. They
+    // share the cancelled marker rather than reporting a run that worked as an outright failure.
     static string Marker(int exitCode) => exitCode switch
     {
         0 => FlowlineTheme.OkPrefix,
-        (int)ExitCode.Cancelled => FlowlineTheme.WarningPrefix,
+        (int)ExitCode.Cancelled or (int)ExitCode.PartialSuccess or (int)ExitCode.Inconclusive
+            => FlowlineTheme.WarningPrefix,
         _ => FlowlineTheme.ErrorPrefix,
     };
 }

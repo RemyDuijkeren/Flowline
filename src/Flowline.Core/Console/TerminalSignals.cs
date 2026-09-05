@@ -19,7 +19,7 @@ namespace Flowline.Core.Console;
 /// and enables, and it always runs before the first write.
 /// </para>
 /// </remarks>
-public sealed class TerminalSignals
+internal sealed class TerminalSignals
 {
     // OSC 9;4;<state>;<progress> BEL. State 3 is indeterminate, state 0 removes the indicator.
     // https://learn.microsoft.com/en-us/windows/terminal/tutorials/progress-bar-sequences
@@ -31,7 +31,7 @@ public sealed class TerminalSignals
     readonly Action<string> _setTitle;
 
     /// <summary>Production wiring: gate on the real console, write to real standard error.</summary>
-    public TerminalSignals(IAnsiConsole console)
+    internal TerminalSignals(IAnsiConsole console)
         : this(console, System.Console.IsErrorRedirected, System.Console.Error, SetConsoleTitle) { }
 
     internal TerminalSignals(IAnsiConsole console, bool errorRedirected, TextWriter escapes, Action<string> setTitle)
@@ -71,10 +71,13 @@ public sealed class TerminalSignals
     {
         // The title is best-effort (R4). There is no portable getter — it throws on Unix — so the
         // previous title can't be restored either; the outcome marker is left standing on purpose.
+        // ArgumentOutOfRangeException is in the list because the setter rejects a very long title on
+        // Windows, and this runs on the reveal timer's pool thread where an escape would kill the
+        // process rather than reach the command's exception handler.
         try
         {
             System.Console.Title = title;
         }
-        catch (Exception ex) when (ex is IOException or PlatformNotSupportedException) { }
+        catch (Exception ex) when (ex is IOException or PlatformNotSupportedException or ArgumentOutOfRangeException) { }
     }
 }

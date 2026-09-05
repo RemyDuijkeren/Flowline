@@ -21,6 +21,7 @@ using Spectre.Console;
 using Spectre.Console.Cli;
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using Flowline.Diagnostics;
 using ILogger = Serilog.ILogger;
@@ -262,6 +263,11 @@ var tabStatus = TerminalTabStatus.Start(AnsiConsole.Console, TerminalTabStatus.L
 // the wrapper's finally never runs and the indicator would be left spinning for the rest of the
 // session. Finish is idempotent, so this is a no-op after a normal exit.
 AppDomain.CurrentDomain.ProcessExit += (_, _) => tabStatus.Finish((int)ExitCode.GeneralError);
+
+// ProcessExit does not fire for a bare console app on SIGTERM — a timeout wrapper or a job
+// cancellation would otherwise leave the indicator running. Ctrl+C is not handled here; it already
+// unwinds through CancelKeyPress and the wrapper below.
+using var sigTerm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, _ => tabStatus.Finish((int)ExitCode.Cancelled));
 
 var exitCode = await tabStatus.RunAsync(async () =>
 {

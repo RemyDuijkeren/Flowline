@@ -31,8 +31,31 @@ public class TerminalTabStatusWiringTests
     [InlineData(new[] { "--version" }, "flowline")]
     [InlineData(new[] { "deploy", "prod", "--force" }, "flowline deploy prod")]
     [InlineData(new[] { "sln", "add", "Solution/My.cdsproj" }, "flowline sln add")]
+    // An option's value must never reach the title — it stops at the first option, it does not skip it.
+    [InlineData(new[] { "sync", "--dev", "https://contoso-dev.crm4.dynamics.com" }, "flowline sync")]
+    [InlineData(new[] { "generate", "--client-secret", "s3cr3t" }, "flowline generate")]
     public void LabelFor_NamesTheCommandAndItsTarget(string[] args, string expected)
         => TerminalTabStatus.LabelFor(args, "flowline").Should().Be(expected);
+
+    [Fact]
+    public void LabelFor_NeverLeaksAnOptionValueIntoTheTitle()
+    {
+        const string secret = "super-secret-value";
+
+        var label = TerminalTabStatus.LabelFor(["generate", "--client-secret", secret], "flowline");
+
+        label.Should().NotContain(secret);
+    }
+
+    [Fact]
+    public void LabelFor_BoundsAnAbsurdlyLongArgument()
+    {
+        var label = TerminalTabStatus.LabelFor(["deploy", new string('x', 40_000)], "flowline");
+
+        // The platform title setter rejects a very long title, and it is set from a timer callback
+        // where the throw would take the process down.
+        label.Length.Should().BeLessThanOrEqualTo(200);
+    }
 
     [Fact]
     public async Task RunAsync_ReturnsTheWrappedExitCode()

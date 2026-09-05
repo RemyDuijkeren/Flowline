@@ -170,7 +170,7 @@ The two arrows out of `Idle` are the race KTD5 exists for. Exactly one can be ta
 ### Assumptions
 
 - The three commands that motivate this (`deploy`, `provision`, `sync`) reliably exceed two seconds, and the fast commands (`--help`, `scaffold`, `sln add`) reliably do not. Not measured; the threshold is a single constant that is cheap to change if either proves wrong.
-- Writing the progress sequence while a Spectre `Status` live region is active does not corrupt that region, because the sequence moves no cursor and the write bypasses Spectre's render pipeline entirely. U1 verifies this rather than assuming it.
+- Writing the progress sequence while a Spectre `Status` live region is active does not corrupt that region, because the sequence moves no cursor and the write bypasses Spectre's render pipeline entirely. Accepted on that reasoning and on manual observation only: the console test double does not reproduce Spectre's live-display state, so no automated test can hold this claim.
 
 ### Sequencing
 
