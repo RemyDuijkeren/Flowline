@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Long-running commands report their state in the terminal tab**: past two seconds, a command sets the terminal's own progress indicator and names itself in the tab title, then clears the indicator and marks the title with the outcome — success, failure, or cancelled — when it stops. Anything that finishes before two seconds leaves the tab untouched, and so does a run whose output is piped or that detects CI. No flag, no `.flowline` key, no environment variable.
+
 ### Fixed
 
 - **The "a newer Flowline is out" notice now reaches every command**: it used to run at the tail of the setup check, so it never appeared for `scaffold` or `sln add` (which skip that check), never for a command that stopped on a missing project or a failing git/pac probe, and never for `status`. It now runs first, before anything that can skip or stop, and `status` prints it too.
