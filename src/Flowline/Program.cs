@@ -102,12 +102,13 @@ services.AddLogging(b => b.ClearProviders().AddSerilog(serilogLogger));
 runtimeOptions.ArgsRedacted = SubprocessCapture.RedactSensitiveArgs(string.Join(" ", args));
 
 // Configure and run the app
+const string applicationName = "flowline";
 var app = new CommandApp(new TypeRegistrar(services));
 var logLinkShown = false;
 
 app.Configure(config =>
 {
-    config.SetApplicationName("flowline");
+    config.SetApplicationName(applicationName);
     config.SetApplicationVersion(FlowlineVersion.Display);
     // Must come after the name/version calls — HelpProvider snapshots settings in its constructor.
     FlowlineHelpProvider.UseFlowlineHeaderColor(config.Settings.HelpProviderStyles!);
@@ -255,7 +256,7 @@ AnsiConsole.Console.Pipeline.Attach(new LoggingRenderHook(
 // already an exit code by the time it gets here, and a Spectre interceptor would never observe it.
 // Ctrl+C needs nothing extra: the token cancels, RunAsync returns ExitCode.Cancelled, and the wrapper
 // reports it after the CancelKeyPress handler above has had its say.
-var tabStatus = TerminalTabStatus.Start(AnsiConsole.Console, TerminalTabStatus.LabelFor(args));
+var tabStatus = TerminalTabStatus.Start(AnsiConsole.Console, TerminalTabStatus.LabelFor(args, applicationName));
 
 // Environment.Exit (five call sites in GitUtils/PacUtils/DotNetUtils) terminates without unwinding, so
 // the wrapper's finally never runs and the indicator would be left spinning for the rest of the

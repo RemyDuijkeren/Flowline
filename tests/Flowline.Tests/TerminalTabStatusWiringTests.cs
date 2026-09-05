@@ -32,7 +32,7 @@ public class TerminalTabStatusWiringTests
     [InlineData(new[] { "deploy", "prod", "--force" }, "flowline deploy prod")]
     [InlineData(new[] { "sln", "add", "Solution/My.cdsproj" }, "flowline sln add")]
     public void LabelFor_NamesTheCommandAndItsTarget(string[] args, string expected)
-        => TerminalTabStatus.LabelFor(args).Should().Be(expected);
+        => TerminalTabStatus.LabelFor(args, "flowline").Should().Be(expected);
 
     [Fact]
     public async Task RunAsync_ReturnsTheWrappedExitCode()

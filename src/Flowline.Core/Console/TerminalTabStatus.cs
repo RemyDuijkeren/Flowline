@@ -48,11 +48,12 @@ public sealed class TerminalTabStatus
     internal static TerminalTabStatus ForTest(TerminalSignals signals, string label) => new(signals, label);
 
     /// <summary>Names the tab after the command and target the user typed: <c>flowline deploy prod</c>.
-    /// Options are skipped, so <c>--version</c> alone leaves just the application name.</summary>
-    public static string LabelFor(IReadOnlyList<string> args)
+    /// Options are skipped, so <c>--version</c> alone leaves just the application name. The caller
+    /// passes that name so it stays the one Spectre was configured with.</summary>
+    public static string LabelFor(IReadOnlyList<string> args, string applicationName)
     {
         var words = args.Where(a => !a.StartsWith('-')).Take(2);
-        return string.Join(' ', ["flowline", .. words]);
+        return string.Join(' ', [applicationName, .. words]);
     }
 
     /// <summary>Runs the command and reports its outcome on every path that unwinds — a returned exit
