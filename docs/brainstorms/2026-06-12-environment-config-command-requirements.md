@@ -1,11 +1,16 @@
 ---
 title: Environment Config Command (`flowline config` / `flowline set`)
 date: 2026-06-12
-status: idea
+status: planned
+planned_in: docs/plans/2026-09-05-1332-feat-environment-configure-command-plan.md
 origin: docs/Features/FR-environment-config.md
 ---
 
 # Environment Config Command
+
+> **Planned.** The command design in this document is superseded by
+> [`docs/plans/2026-09-05-1332-feat-environment-configure-command-plan.md`](../plans/2026-09-05-1332-feat-environment-configure-command-plan.md),
+> which settles the surface as a single `flowline configure` command. The SDK notes below remain accurate.
 
 ## Problem
 

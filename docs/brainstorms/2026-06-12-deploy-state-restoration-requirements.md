@@ -8,6 +8,11 @@ idea-source: docs/ideation/2026-06-07-deploy-command-ideation.md (idea #8)
 
 # Deploy — Workflow & View State Restoration
 
+> **Not planned.** Deliberately excluded from
+> [`docs/plans/2026-09-05-1332-feat-environment-configure-command-plan.md`](../plans/2026-09-05-1332-feat-environment-configure-command-plan.md)
+> — that plan declares configuration from a file; this one restores whatever state the target already had.
+> Still listed under Deferred in [`STRATEGY.md`](../../STRATEGY.md).
+
 ## Summary
 
 Every solution import resets **classic workflows** and Business Process Flows to `statecode=Draft`.

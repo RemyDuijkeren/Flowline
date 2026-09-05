@@ -110,6 +110,11 @@ The `.cdsproj` project and, under `src/`, the packed and committed mirror of a s
 
 The name is a role, not a path. `clone` scaffolds it as `Solution/` (it used to be `Package/`), but no command after `clone` composes that name: resolved via [[SolutionFileLayout]], the folder is *wherever the solution file's `.cdsproj` entry points* (`DataverseSolutionProjectResolver`, `src/Flowline.Core/Services/DataverseSolutionProjectResolver.cs:25-51`), so a project that moves it keeps working. Renamed from the legacy "Package folder" vocabulary to Microsoft's own term for the `.cdsproj` project ("Dataverse solution project" — the `pac solution` reference), because the old name collided with a genuinely different thing: a Dataverse **plugin package** (the `pluginpackage` NuGet shape, `IsPackagePush`/`SyncSolutionFromPackageAsync` in `src/Flowline/Commands/PushCommand.cs`), which shares the word and nothing else.
 
+## Environment Configuration
+
+### Declared configuration
+The per-environment state a solution import cannot carry — environment variable values, connection references, flow and classic workflow activation, plugin step enablement — stated in a git-tracked file per environment and reconciled into the environment by `flowline configure`. It is a *partial* declaration: only the components the file names are touched, and anything absent is left alone rather than reset to a default. Distinct from state restoration, which preserves whatever the target already had across an import instead of declaring what it should be; the two can coexist and neither implies the other. A value anywhere in the file may be written `${VAR}` and resolved at apply time, because sensitivity is a property of the value and not of the component type — a plain-string environment variable can carry a secret, while a Secret-type one carries only an Azure Key Vault reference. [[Secure Configuration]] is the one class that cannot round-trip: it is never returned on read, so it can be applied but never captured.
+
 ## Web Resources
 
 ### Logical name
