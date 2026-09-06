@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Core;
 
@@ -56,6 +56,52 @@ public class SyncCommandTests
     public void Settings_Bump_ShouldDefaultToPatch()
     {
         new SyncCommand.Settings().Bump.Should().Be(BumpComponent.Patch);
+    }
+}
+
+/// <summary>
+/// U4 moved the provenance line, the no-changes line and the file location out of the writer and onto the
+/// caller, so `diff` could supply its own. These lock sync's half of that: the observable output has to be
+/// what it was before the writer was generalized.
+/// </summary>
+public class SyncCommandOutputShapeTests
+{
+    [Fact]
+    public void ChangesFilePath_IsChangesMdAtTheGivenRoot()
+    {
+        SyncCommand.ChangesFilePath(Path.Combine("C:", "repo"))
+            .Should().Be(Path.Combine("C:", "repo", "CHANGES.md"));
+    }
+
+    [Fact]
+    public void ProvenanceLine_NamesTheEnvironment()
+    {
+        SyncCommand.ProvenanceLine("Contoso Dev").Should().Be("Synced from: Contoso Dev");
+    }
+
+    [Fact]
+    public void ProvenanceLine_WithoutEnvironment_IsOmittedEntirely()
+    {
+        SyncCommand.ProvenanceLine(null).Should().BeNull();
+    }
+
+    [Fact]
+    public void NoChangesLine_NamesTheEnvironment()
+    {
+        SyncCommand.NoChangesLine("Contoso Dev").Should().Be("No changes pulled from Contoso Dev.");
+    }
+
+    [Fact]
+    public void NoChangesLine_WithoutEnvironment_FallsBackToDev()
+    {
+        SyncCommand.NoChangesLine(null).Should().Be("No changes pulled from DEV.");
+    }
+
+    [Fact]
+    public void NoChangesLine_EscapesMarkupInTheEnvironmentName()
+    {
+        // An environment display name is user data reaching a Spectre markup renderer.
+        SyncCommand.NoChangesLine("Contoso [Dev]").Should().Be("No changes pulled from Contoso [[Dev]].");
     }
 }
 

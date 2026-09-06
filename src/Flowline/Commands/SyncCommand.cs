@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
@@ -158,9 +158,9 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         // Summary of changes
         var summary = await SolutionChangeSummary.ComputeAsync(srcPath, RootFolder, _capture, cancellationToken);
         Logger.LogInformation("Diff: {TotalFiles} files changed", summary.TotalFiles);
-        summary.WriteTree(Console, $"No changes pulled from {Markup.Escape(devEnv.DisplayName ?? "DEV")}.", settings.Verbose);
-        await summary.WriteChangesFileAsync(Path.Combine(slnFolder, "CHANGES.md"), projectSln.UniqueName,
-            devEnv.DisplayName is null ? null : $"Synced from: {devEnv.DisplayName}", writeWhenEmpty: false, cancellationToken);
+        summary.WriteTree(Console, NoChangesLine(devEnv.DisplayName), settings.Verbose);
+        await summary.WriteChangesFileAsync(ChangesFilePath(slnFolder), projectSln.UniqueName,
+            ProvenanceLine(devEnv.DisplayName), writeWhenEmpty: false, cancellationToken);
         await new DataverseContextGenerator(Console).GenerateAsync(
             srcPath, projectSln.UniqueName, RootFolder, cancellationToken);
 
@@ -200,4 +200,19 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     internal static string ToTagVersion(string version) =>
         string.Join(".", version.Split('.').Take(3));
 
+    // The writer takes these three from its caller, so sync is the only thing holding its own output shape
+    // in place. They live here as named seams rather than inline at the call site because that call needs a
+    // live environment to reach: without them, nothing test-visible would catch the wording, the fallback,
+    // or the file location drifting.
+
+    /// <summary>Where sync writes its change summary: the project root, not the solution source folder.</summary>
+    internal static string ChangesFilePath(string slnFolder) => Path.Combine(slnFolder, "CHANGES.md");
+
+    /// <summary>The written file's provenance line. No environment name means no line at all.</summary>
+    internal static string? ProvenanceLine(string? envDisplayName) =>
+        envDisplayName is null ? null : $"Synced from: {envDisplayName}";
+
+    /// <summary>The terminal line for a sync that pulled nothing. Escaped: an environment name is user data.</summary>
+    internal static string NoChangesLine(string? envDisplayName) =>
+        $"No changes pulled from {Markup.Escape(envDisplayName ?? "DEV")}.";
 }
