@@ -237,7 +237,11 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
             | 15 | Validation failed | Check error output for drift, an invalid --force value, or missing dependencies |
             | 16 | Timeout | PAC CLI 60-min limit hit — retry or check environment health |
             | 17 | Force required | Add the --force <specifier> the message names |
+            | 18 | Partial success | Deploy landed but orphan cleanup failed — remove the named items via maker portal |
+            | 19 | Inconclusive | A check could not run to completion — investigate the printed reason before trusting the result |
             | 20 | Write target occupied | A file is in the way — move it aside, or run the command elsewhere |
+            | 21 | Assembly not registered | Create the `pluginassembly` record the error names, then deploy again |
+            | 22 | Changes found | Not a failure — `diff --exit-code` found changes. Only returned when `--exit-code` is passed |
             | 130 | Cancelled | Ctrl+C pressed |
 
             ## Environments

@@ -113,14 +113,15 @@ public sealed class TerminalTabStatus
         }
     }
 
-    // PartialSuccess and Inconclusive are deliberately not pass/fail: a deploy that landed but left
-    // orphans behind, or a check that could not finish, is not the same as a deploy that failed. They
-    // share the cancelled marker rather than reporting a run that worked as an outright failure.
+    // PartialSuccess, Inconclusive and ChangesFound are deliberately not pass/fail: a deploy that
+    // landed but left orphans behind, a check that could not finish, or a comparison that succeeded
+    // and found something, is not the same as a deploy that failed. They share the cancelled marker
+    // rather than reporting a run that worked as an outright failure.
     static string Marker(int exitCode) => exitCode switch
     {
         0 => FlowlineTheme.OkPrefix,
         (int)ExitCode.Cancelled or (int)ExitCode.PartialSuccess or (int)ExitCode.Inconclusive
-            => FlowlineTheme.WarningPrefix,
+            or (int)ExitCode.ChangesFound => FlowlineTheme.WarningPrefix,
         _ => FlowlineTheme.ErrorPrefix,
     };
 }

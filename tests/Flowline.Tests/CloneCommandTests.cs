@@ -803,6 +803,17 @@ public class CloneCommandTests
     }
 
     [Fact]
+    public void BuildAgentsFileContent_DocumentsChangesFoundAsANonFailure()
+    {
+        // An agent reads this table as the exit-code contract. With 22 absent, a successful
+        // `flowline diff --exit-code` run that found changes reads as an unknown failure.
+        var content = ProjectScaffolder.BuildAgentsFileContent("CrO7982", "CrO7982.slnx", "Solution");
+
+        content.Should().Contain("| 22 | Changes found |")
+               .And.Contain("Not a failure");
+    }
+
+    [Fact]
     public void BuildAgentsFileContent_NeverMentionsTheOldDataverseSolutionFolder()
     {
         var content = ProjectScaffolder.BuildAgentsFileContent("CrO7982", "CrO7982.slnx", "Solution");

@@ -201,6 +201,7 @@ public class TerminalTabStatusTests
     [Theory]
     [InlineData((int)ExitCode.PartialSuccess)]
     [InlineData((int)ExitCode.Inconclusive)]
+    [InlineData((int)ExitCode.ChangesFound)]
     public void RevealedThenNonBinaryOutcome_DoesNotReportOutrightFailure(int exitCode)
     {
         var h = new Harness();
@@ -208,7 +209,8 @@ public class TerminalTabStatusTests
         h.Status.Reveal();
         h.Status.Finish(exitCode);
 
-        // A deploy that landed but left orphans, or a check that could not finish, is not a failure.
+        // A deploy that landed but left orphans, a check that could not finish, or a comparison that
+        // succeeded and found changes, is not a failure.
         h.Titles.Last().Should().StartWith(FlowlineTheme.WarningPrefix);
         h.Titles.Last().Should().NotStartWith(FlowlineTheme.ErrorPrefix);
     }
