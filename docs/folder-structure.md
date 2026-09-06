@@ -12,9 +12,10 @@ ProjectRoot/
 ├── .gitignore
 ├── AGENTS.md / CLAUDE.md              <-- agent instructions (scaffolded by clone)
 ├── <SolutionName>.slnx                <-- Root solution file (an existing .sln is kept as-is)
-├── Solution/                          <-- PAC-managed — do not edit manually
-│   ├── <SolutionName>.cdsproj         <-- Dataverse solution project
-│   └── src/                           <-- Unpacked solution XML (pac clone / sync)
+├── Solution/                          <-- The Dataverse solution and what belongs with it
+│   ├── <SolutionName>.cdsproj         <-- Dataverse solution project — PAC-managed, do not edit manually
+│   ├── src/                           <-- Unpacked solution XML (pac clone / sync) — PAC-managed
+│   └── deploymentSettings.<env>.json  <-- Per-environment settings (planned; see note below)
 ├── Plugins/                           <-- .csproj (Plugins, Workflows, Custom APIs)
 │   ├── <SolutionName>.Plugins.csproj
 │   └── Models/                        <-- Early-bound C# types (from flowline generate)
@@ -35,6 +36,7 @@ Other Flowline commands don't require this exact layout — they find each proje
 #### 2. Component Breakdown
 
 - **Root solution file (`<SolutionName>.slnx` or `.sln`)**: Registers the `.cdsproj`, the plugins project, and the WebResources project, so they can all be opened together in Rider or Visual Studio (VS Code can't load a `.cdsproj`). `clone` writes a `.slnx` for new projects; an existing `.sln` is left as-is.
+- **`Solution/`**: Holds the Dataverse solution project and the files that belong with that solution. The `.cdsproj` and `src/` are PAC-managed and must not be hand-edited; other solution-scoped files may sit beside them.
 - **`Solution/<SolutionName>.cdsproj`**: PAC-managed — do not edit manually. Holds the unpacked solution XML in `Solution/src/` (from `pac solution clone`). Packages the solution `.zip` from this project's metadata plus the Plugins and WebResources build output.
 - **`Plugins/<SolutionName>.Plugins.csproj`**: Server-side logic — Plugins, Workflow Activities, Custom APIs. The project file is named after the solution because that name becomes the assembly name Dataverse shows in its plugin list, trace logs, and stack traces.
     - **`Models/`**: Early-bound C# types from `flowline generate`. Regenerated (and cleaned up) on every run — commit it so teammates don't need to run `generate` themselves.
@@ -42,6 +44,7 @@ Other Flowline commands don't require this exact layout — they find each proje
     - **`src/`**: Source files (TypeScript, SCSS, etc.).
     - **`public/`**: Static assets that don't need processing.
     - **`dist/`**: Build output, synced to Dataverse. Gitignored — regenerated on every build.
+- **`Solution/deploymentSettings.<env>.json`** *(planned, not yet scaffolded)*: Per-environment settings — environment variable values, connection references, and the flow, workflow and plugin step state that must be off. One file per environment role, falling back to `deploymentSettings.json` when no role-specific file exists. Committed to source control; the scaffolded `.gitignore` does not exclude it. Keeps PAC's filename stem so a copied file is still recognisable as a deployment settings file. Introduced by the planned `configure` command — see [`plans/2026-09-05-1332-feat-environment-configure-command-plan.md`](plans/2026-09-05-1332-feat-environment-configure-command-plan.md). No Microsoft convention exists for this location in a `.cdsproj` repo; this is Flowline's.
 - **`artifacts/`**: Packed solution `.zip` files from `clone`, `sync`, and `deploy`. Gitignored — fully reproducible from `Solution/src/`.
 - **`CHANGES.md`**: Version history at the project root.
 - **`docs/`**: Not scaffolded with placeholder content — `clone`/`sync` create it only to write `DATAVERSE_CONTEXT.md` (domain/schema reference notes).

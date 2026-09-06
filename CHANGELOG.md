@@ -1,4 +1,4 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to this project will be documented in this file.
 
@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Connection reference changes now show up in `sync` output and `CHANGES.md`**: connection references live inside `Other/Customizations.xml` rather than in their own files, and that file was skipped by the change summary, so adding, editing, or removing one produced no visible entry. They now appear under a "Connection References" group with add / change / delete status.
 - **The "a newer Flowline is out" notice now reaches every command**: it used to run at the tail of the setup check, so it never appeared for `scaffold` or `sln add` (which skip that check), never for a command that stopped on a missing project or a failing git/pac probe, and never for `status`. It now runs first, before anything that can skip or stop, and `status` prints it too.
 
 ### Changed

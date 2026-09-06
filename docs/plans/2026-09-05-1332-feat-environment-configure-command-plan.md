@@ -13,7 +13,7 @@ execution: code
 
 ## Goal Capsule
 
-- **Objective:** A team can capture an environment's per-environment configuration into a git-tracked file, apply that file to an environment unattended, and change one component without opening the maker portal.
+- **Objective:** A team can capture an environment's per-environment configuration into a git-tracked file, apply that file to an environment unattended, and change one component without opening the maker portal — from a Flowline project or from a folder that has none.
 - **Product authority:** This document. It supersedes the command-design section of [`docs/brainstorms/2026-06-12-environment-config-command-requirements.md`](../brainstorms/2026-06-12-environment-config-command-requirements.md) and ideas 7-8 of [`docs/ideation/2026-07-01-post-deploy-environment-config-ideation.html`](../ideation/2026-07-01-post-deploy-environment-config-ideation.html). Secret handling is outside this plan's authority — see [`2026-09-05-1406-feat-configure-secret-resolution-plan.md`](2026-09-05-1406-feat-configure-secret-resolution-plan.md).
 - **Open blockers:** None.
 
@@ -23,7 +23,7 @@ execution: code
 
 ### Summary
 
-Add `flowline configure <env>`: a verb-first command that applies a per-environment settings file to a Dataverse environment, captures one from a live environment with `--export`, and changes one component inline without a file.
+Add `flowline configure <env>`: a verb-first command that applies a per-environment settings file to a Dataverse environment, captures one from a live environment with `--pull`, and changes one component inline without a file.
 
 ### Problem Frame
 
@@ -53,6 +53,10 @@ This plan owns **declared configuration**: a file that states what an environmen
 - **Applying is explicit; nothing applies a settings file unless asked.** `configure` is run deliberately, and `deploy` touches configuration only when given `--settings-file`. (session-settled: user-directed — chosen over auto-applying whenever a file exists for the target environment.) Governs R5, R15.
 - **A component missing from the target is a reported skip, not a failure.** Keeps `configure` safe to run before the solution has ever been imported. (session-settled: user-directed — chosen over failing `NotFound` on an absent solution and over counting each miss toward partial success.) Governs R8.
 - **This plan ships to users on its own, ahead of secret resolution.** Standalone it fully delivers post-deploy fixup and operational toggling; CI reproducibility is usable where no declared value is sensitive, and environment cloning stays manual until export flags land on `clone`. The accepted cost is R4's exposure for the whole window: export writes literal values, v1 adds no warning or permission control at export time, and a value committed before secret resolution exists cannot be un-committed — remediation is rotation, not a file edit. (session-settled: user-directed — chosen over gating release on the secret-resolution plan and over adding a v1 export warning: secrets are deliberately a later concern.) Governs R4, R13, R14.
+- **Settings files live beside the `.cdsproj`, one per environment role.** Solution-scoped data belongs with the solution, it keeps working for nested multi-solution repos, and it keeps the project root clear. (session-settled: user-directed — chosen over the project root and over a `config/` folder.) Governs R4a.
+- **The environment-to-file direction is `--pull`, not `--export`.** Git's `pull` already means fetch-and-merge, which is exactly R13b's semantics, and `sync` is already aliased `pull` for the same direction. `--export` implies a fresh dump and collides with solution export. (session-settled: user-directed — chosen over `--export`, `--capture` and `--create-settings`.) Governs R13, R13b.
+- **PAC generates the settings file's PAC-native sections; Flowline never composes them.** Using PAC wherever it already does the job is how Flowline inherits Microsoft's changes for free — `CopilotAgents` appeared in that file without being in the published parameter docs, and a hand-rolled generator would have missed it. (session-settled: user-directed — chosen over Flowline composing the sections itself.) Governs R13a.
+- **The Flowline-owned sections extend PAC's file rather than living in a sibling.** One file per environment, revisited only if a real import proves `pac` rejects unknown keys. (session-settled: user-directed — chosen over a separate Flowline file and over generating a PAC subset at deploy time.) Governs R15.
 - **Everything in the solution is expected to be on; the file records the exceptions.** Being more opinionated than the platform is the point: Microsoft preserves a cloud flow's target state because it has no declaration to consult, and this command has one. The accepted costs are that `configure` enumerates the solution's state components on every apply, and that a component someone switched off without declaring it gets switched back on. (session-settled: user-directed — chosen over absence-meaning-untouched and over following the platform's per-class split.) Governs R3, R9, R13.
 - **Environment variables and connection references are applied by PAC at import time, and by Flowline through the SDK at every other time.** `deploy --settings-file` hands them to `pac solution import --settings-file`, so the initial landing uses Microsoft's own mechanism and inherits its connection-owner validation for almost no code. `configure` also writes those two classes through the SDK, because PAC's file is consumed only during an import and a wrong value should be fixable without re-importing the solution. (session-settled: user-directed — chosen over PAC-only, which makes a one-value fix a full re-import, and over SDK-only, which forfeits Microsoft's import-time semantics and validation.) Governs R15, R16. The accepted cost is two mechanisms writing the same two component classes; R16 states which is authoritative and Flowline owns environment variable value-record and connection binding semantics on the SDK side.
 
@@ -65,10 +69,13 @@ This plan owns **declared configuration**: a file that states what an environmen
 - R3. For the state classes (flows, classic workflows, plugin steps) the file is a complete declaration by encoding: every such component in the solution is expected to be on, and the file lists the exceptions that must be off. A component the file does not name is turned on, not left alone. This is deliberately more opinionated than the platform, which preserves a cloud flow's target state on update imports.
 - R3a. For the value classes (environment variables, connection references) absence means untouched, because those components have no default-on state to assert.
 - R4. Values are written and read literally. A settings file is as sensitive as the environment it was captured from, and a value that happens to hold a secret is committed like any other. The mitigation is the secret-resolution plan, not this one.
+- R4a. Settings files live beside the `.cdsproj` as `Solution/deploymentSettings.<env>.json`, named for the environment role. When no per-environment file exists, `Solution/deploymentSettings.json` is used, so one file can serve every environment. PAC's filename stem is kept so a copied file is still recognisable as a deployment settings file. No Microsoft convention exists for this in a `.cdsproj` repo; this is Flowline's.
 
 **Applying**
 
 - R5. `flowline configure <env>` applies the settings file for that environment. `--settings-file <path>` overrides discovery; convention-based discovery applies only when the target is a role name, since `<env>` also accepts a URL.
+- R5a. `configure` runs in project mode or stand-alone. Stand-alone applies when the command is given what it needs explicitly and no Flowline project root is found, matching how `deploy` resolves the same distinction from `--path` (`src/Flowline/Commands/DeployCommand.cs:105`). Stand-alone requires the target as a URL, since role names resolve from `.flowline`.
+- R5b. Applying and inline changes need the solution's unique name, which project mode takes from the project and stand-alone takes from `--solution-name`. Neither needs a local artifact: components are enumerated from the target by name, the way orphan cleanup already does (`src/Flowline.Core/OrphanCleanup/OrphanCleanupService.cs:220`).
 - R6. Applying is idempotent and re-runnable at any time, including before the solution has ever been imported.
 - R7. Components apply in dependency order — environment variable values and connection references, then flow and workflow state, then plugin step state — regardless of their order in the file. Dataverse saves connection reference updates asynchronously, so that tier completes only once each binding is confirmed readable; flow state is not attempted before then.
 - R7a. A component is skipped when a component it actually depends on failed or was itself skipped — not when any earlier tier had a failure. A skip propagated this way is an R8 skip and does not affect the exit code. Where the dependency between two declared components cannot be determined, the later component is attempted rather than skipped.
@@ -81,8 +88,10 @@ This plan owns **declared configuration**: a file that states what an environmen
 
 **Capturing**
 
-- R13. `flowline configure <env> --export` writes a settings file from the live environment, scoped to the components belonging to the solution rather than everything in the environment. For the state classes it writes only the components that are off, matching R3's encoding; for the value classes it writes every declared value.
-- R14. Export writes component values verbatim, including the Key Vault reference fields of a Secret-type environment variable, whose value Dataverse does not expose. This verbatim default is provisional: the secret-resolution plan's open export question may replace it with reference placeholders, which would change export's output for the same environment.
+- R13. `flowline configure <env> --pull [<zip|folder>]` writes a settings file from the live environment, scoped to the solution's components rather than everything in the environment. The value is omitted in project mode, where the project's solution folder is used, and supplied stand-alone, where it also yields the solution's unique name from its manifest. For the state classes it writes only the components that are off, matching R3's encoding; for the value classes it writes every declared value.
+- R13a. The file's PAC-native sections are generated by `pac solution create-settings` rather than composed by Flowline, so a section Microsoft adds later appears without a Flowline change. Flowline fills in the live values and appends its own sections.
+- R13b. Pulling merges into an existing file: components that have appeared are added, values already in the file are preserved, and an entry whose component no longer exists in the solution is reported rather than dropped. Merging matters for the value classes, where absence means untouched and an unmerged file would leave a new variable configured nowhere; the state classes need nothing, since a new component is absent and absence already means on.
+- R14. Pulling writes component values verbatim, including the Key Vault reference fields of a Secret-type environment variable, whose value Dataverse does not expose. This verbatim default is provisional: the secret-resolution plan's open question about pulled values may replace it with reference placeholders, which would change what a pull writes for the same environment.
 
 **Deploy integration**
 
@@ -93,7 +102,7 @@ This plan owns **declared configuration**: a file that states what an environmen
 
 **F1 — Bootstrap an environment's configuration**
 
-1. Operator runs `flowline configure prod --export`.
+1. Operator runs `flowline configure prod --pull`.
 2. Flowline reads the solution's components from PROD and writes the settings file (R13).
 3. Operator reviews and commits the file, treating it as sensitive per R4.
 
@@ -112,7 +121,7 @@ This plan owns **declared configuration**: a file that states what an environmen
 
 ```mermaid
 flowchart LR
-  ENV[Live environment] -->|configure --export| FILE[Settings file in git]
+  ENV[Live environment] -->|configure --pull| FILE[Settings file in git]
   FILE -->|configure ENV| A[Target environment]
   INLINE[Inline single component] --> A
   A -.->|warns when the file names it| INLINE
@@ -126,6 +135,8 @@ flowchart LR
 - AE3. `configure test` runs against an environment where the solution has never been imported. Every declared component is reported as skipped, nothing is applied, and the command exits `Inconclusive`. Covers R6, R8.
 - AE4. A file declares a connection reference and a flow that depends on it, listed flow-first. The connection reference is applied first. When it fails, the flow is reported as skipped rather than attempted, and is left inactive. Covers R7, R7a.
 - AE5. `configure prod flow "Order Processing" --on` runs while the PROD settings file declares that flow inactive. The flow is activated and the command warns that the next full apply will deactivate it again. Covers R10.
+- AE5a. A solution gains a new environment variable. Re-running `configure prod --pull` adds an entry for it, leaves every value already in the file untouched, and reports a connection reference entry whose component was removed from the solution. Covers R13b.
+- AE5b. `configure https://contoso-test.crm4.dynamics.com --settings-file prod.json --solution-name Contoso` runs in a folder with no Flowline project. It applies the file without a project, and the same command with a role name instead of a URL fails. Covers R5a, R5b.
 - AE6. `deploy test --settings-file <path>` imports a solution whose file declares two environment variable values and one connection reference. The import applies all three. Running `configure test` immediately afterwards reports no change for them and applies only the flow and step state. Covers R15, R16.
 - AE7. `configure prod --dry-run` runs over a file declaring five components, three of which already match. The output names the two that would change and nothing is written. Covers R11.
 
@@ -156,14 +167,13 @@ Outside this work:
 **Deferred to Planning**
 
 - Whether the file extends the PAC solution settings file shape (`pac solution create-settings` generates `EnvironmentVariables` and `ConnectionReferences`) with Flowline sections added, or uses a Flowline-native format. The apply mechanism is settled; this is the file shape only. Whichever shape is chosen must reserve the syntax the secret-resolution plan will use for references, define how a literal matching it is escaped, and leave room for a fifth component class — otherwise a file written under v1 changes meaning when that plan lands, and every adopter re-edits committed files.
-- Whether `pac solution import --settings-file` tolerates the Flowline-owned sections in the same file, or whether `deploy` must project a PAC-only subset before passing it. This gates R15 and constrains the file-shape decision above.
+- Whether `pac solution import --settings-file` tolerates the Flowline-owned sections in the same file. Verify with a real `pac` run early: the decision is to extend PAC's file, and to fall back to a separate Flowline file only if that is proven to break an import. This gates R15.
 - Whether exported component identifiers are environment-local GUIDs or name-based. A file exported from PROD and applied to TEST needs the latter.
 - The inline argument grammar for R10 — how a component type, name, and target state are expressed on the command line.
-- File naming and discovery convention, and what happens when discovery finds nothing or is ambiguous.
-- Whether `--export` over an existing file is force-gated, per the `--force` specifier pattern (`src/Flowline/Commands/SyncCommand.cs:41`).
 - Which exit code a fully blocked apply returns. The secret-resolution plan needs one for "a reference cannot be resolved, nothing applied", and assigns exit codes to this plan, which currently defines only Success, `Inconclusive` and `PartialSuccess`. Neither `ConfigInvalid` (11) nor `ValidationFailed` (15) is a clean fit, and the enum is a published contract agents pattern-match on.
 - What R3 means for a `Suspended` flow. `workflow.statecode` has three values — Draft, Activated, Suspended — and "absence means on" does not say whether a suspended flow is activated or left alone.
 - What the enumeration in R9 costs on a large solution, and whether it needs bounding.
+- Whether `pac solution clone` or `sync` ever cleans `Solution/` rather than only writing into it. R4a puts a hand-authored file there, and a clean would destroy it on every sync. Verify with a real run before relying on the location.
 - Whether `push` ever writes plugin step `statecode`. If it does, a configure-declared step state would be undone by the next push and the two need a stated precedence.
 
 ### Sources / Research
@@ -173,4 +183,4 @@ Outside this work:
 - [`docs/ideation/2026-07-02-alm-accelerator-migration-targeting-ideation.html`](../ideation/2026-07-02-alm-accelerator-migration-targeting-ideation.html) — the per-environment deployment settings file idea.
 - [`docs/brainstorms/2026-06-12-deploy-state-restoration-requirements.md`](../brainstorms/2026-06-12-deploy-state-restoration-requirements.md) — the adjacent work this plan deliberately excludes.
 - `src/Flowline.Core/ExitCode.cs:55` — `PartialSuccess` as a stable public contract.
-- `src/Flowline/Commands/SyncCommand.cs:48` — sync's DEV role lock, the reason export is not hosted there.
+- `src/Flowline/Commands/SyncCommand.cs:48` — sync's DEV role lock, the reason pulling is not hosted there.
