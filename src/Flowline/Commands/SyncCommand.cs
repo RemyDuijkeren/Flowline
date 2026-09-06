@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
