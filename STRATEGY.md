@@ -81,11 +81,14 @@ ILMerge/ILRepack step for plugins with external NuGet dependencies. See
 ### Drift detection + component cleanup
 
 Surface drift between environments, detect deleted components, and eventually
-auto-delete on deploy.
+auto-delete on deploy. `flowline diff` covers the other comparison axis: what
+changed between two points in git history, with no environment involved.
 
 _Why it serves the approach:_ Auto-delete is the primary argument for managed
 solutions; closing this gap removes the last credible reason to choose managed
-over unmanaged.
+over unmanaged. `diff` makes the unmanaged, Git-tracked source readable as
+components rather than XML, so a review or a release note doesn't need a live
+environment to answer what changed.
 
 ### Environment configuration
 
@@ -132,6 +135,11 @@ are as sensitive as the environment they came from until that work lands.
 - CLI observability Wave 4 (opt-in telemetry) — should-have, separate product decision
 - Secret resolution for `configure` settings files: reference indirection, a resolution chain, and plugin secure configuration (plan: `docs/plans/2026-09-05-1406-feat-configure-secret-resolution-plan.md`) — after `configure` ships
 - Export flags on `clone` and `sync`, and auto-applying configuration after a deploy — after `configure` ships
+- `flowline diff` extensions (plan: `docs/plans/2026-09-06-1229-feat-diff-command-plan.md`, "Future Extensions") — speculative, captured while the design was fresh rather than driven by a need that was hit. All stay inside `diff`'s git-only boundary; whether `diff` later becomes the container for every comparison Flowline makes is held open. Ranked:
+  - **Depth, agreed to do first.** Sub-change detail for the component types that render as a bare status line today — security roles (privileges), cloud flows and workflows, plugin steps, app modules and sitemap, environment variables. Roles are the sharpest gap: security-relevant and invisible. Improves what exists rather than adding surface, and lands in `sync`, `diff`, and `CHANGES.md` at once.
+  - **Reach.** Branch merge conflicts reported in Dataverse terms against a merge base; per-component commit history; rendering `configure` settings-file changes once that ships.
+  - **Distribution.** A deploy preview from the last deployed tag; a CI job posting the component summary on a solution pull request.
+  - Cut: release-notes-shaped output distinct from the change tree.
 
 ## Marketing
 

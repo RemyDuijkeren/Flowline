@@ -72,7 +72,9 @@ routine post-deploy step.
    labeled backup, then stops before importing; it ends with `Dry run complete`.
 
 `flowline drift <env>` is the read-only preview of what a deploy would flag — safe against prod at any
-time. `flowline status` reports environments, auth and git state without touching anything.
+time. `flowline diff` is the same question on the git axis: which components changed between two points
+in history, with no connection, no auth and no network. `flowline status` reports environments, auth and
+git state without touching anything.
 
 If the solution's schema changed *and* the plugin code uses early-bound types, run `flowline generate`
 before building — see the `flowline-generate` skill. Late-bound plugins never need it.
@@ -153,6 +155,9 @@ some cleanup failed.
   `--skip-solution-check`.
 - `sync`: `--bump patch|minor|major|none`, `--managed [false]`, `--no-build`, `--dev <url>`.
 - `init`: `--dev <url>`, `--publisher-prefix <prefix>`, `--publisher-name`, `--display-name`.
+- `diff`: `--from <ref>`, `--to <ref>` (needs `--from`; without it the right side is the working tree,
+  so uncommitted and untracked files count), `--write [FILE]` (default `CHANGES.md` at the repo root),
+  `--exit-code`. Writes nothing unless `--write` is passed.
 - Global: `--verbose` (`-v`), `--force <specifier>` (`-f`), `--no-cache`,
   `--auto-select-auth-profile` (`-a`).
 - `flowline sln add <path.cdsproj>` wires a `.cdsproj` into the solution file — `dotnet sln add`
@@ -195,6 +200,7 @@ Exit codes are a stable public API — they don't change meaning across Flowline
 | 19 | Inconclusive | A check couldn't run to completion — `drift`'s empty-input guard skipped the comparison, or a deploy verification step couldn't finish (e.g. a locked directory or a Dataverse query fault) | Not a pass/fail signal — read the printed reason before trusting the result |
 | 20 | WriteTargetOccupied | A file already occupies a path the command would write to (e.g. `scaffold` meeting an existing template file) | Nothing is broken — something valid is in the way. Move the named file aside, or run the command somewhere else |
 | 21 | AssemblyNotRegistered | Deploy imported, but a plug-in package holds an assembly with no registration in the target, or one registered with no plugin types | Create the `pluginassembly` record under that package (sandbox isolation, matching version/culture/public key token), then deploy again so the content write populates its plugin types — repeats every deploy until that record exists |
+| 22 | ChangesFound | `diff --exit-code` found changes | **Not a failure**: the comparison ran and something differs. Only returned when `--exit-code` is passed; without it a run with changes still exits 0. Branch on it instead of parsing output |
 | 130 | Cancelled | Ctrl+C / SIGINT, or `deploy`'s first-import confirmation declined | For the confirmation case: re-run with `--force first-import` |
 
 Codes 2 and 5 are intentionally unused.

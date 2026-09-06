@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`flowline diff` reports what changed between two points in git history**: it names the solution components behind a diff instead of the XML files, using the same change tree `sync` prints. With no options it compares `HEAD` against the working tree, counting untracked files as additions; `--from <ref>` moves the left side, and `--from <ref> --to <ref>` compares two refs without consulting the working tree. It contacts no environment: no connection, no authentication, no network. `--write` opts into a `CHANGES.md` at the repo root, or at a path you name, and `--exit-code` returns the new `ChangesFound` (22) when there was anything to report, so a CI job can branch on "is there anything to sync or deploy" without parsing output. 22 is not a failure. `diff` is the git-history counterpart to `drift`, which compares committed source against a live environment.
+
 - **Long-running commands report their state in the terminal tab**: past two seconds, a command sets the terminal's own progress indicator and names itself in the tab title, then clears the indicator and marks the title with the outcome — success, failure, or cancelled — when it stops. Anything that finishes before two seconds leaves the tab untouched, and so does a run whose output is piped or that detects CI. No flag, no `.flowline` key, no environment variable.
 
 ### Fixed

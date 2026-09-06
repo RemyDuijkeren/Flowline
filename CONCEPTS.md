@@ -52,10 +52,10 @@ Where a reported [[Orphan component]] came from, derived per run from the reposi
 ### Orphan priority
 A per-instance risk classification for an [[Orphan component]], independent of the existing Auto/Manual axis. **Prio1** blocks deployment outright (e.g. a plugin assembly update failing because orphaned plugin types still reference it). **Prio2** doesn't block anything but keeps silently executing logic source no longer has (e.g. an Activated workflow or Enabled plugin step still triggering on deleted business logic). **Prio3** is harmless but should eventually be cleaned up. Unlike Auto/Manual (a static property of the component type), priority is decided per instance inside the [[Orphan handler]] that owns the type — a type is only ever capable of a given priority, not fixed to it.
 
-## Sync
+## Change reporting
 
-### Sync change summary
-The structured record of all Dataverse solution component changes detected between the working tree and the last git commit after a `flowline sync`. Surfaced in the terminal as a labelled tree and written in full to `CHANGES.md` in the solution folder. Groups components by type (Entities, OptionSets, etc.) and annotates each with an added/removed/modified status.
+### Change summary
+The structured record of all Dataverse solution component changes between two comparison points in the [[Unpacked solution source]]. Each point is a git ref or the working tree. `flowline sync` produces one for the working tree against the last commit, as a side effect of the export it just ran; `flowline diff` produces one for any two points, at any time and without contacting Dataverse. Surfaced in the terminal as a labelled tree, and written in full to `CHANGES.md` at the project root (`sync` writes it when there are changes, `diff` writes it when you pass `--write`). Groups components by type (Entities, OptionSets, etc.) and annotates each with an added/removed/modified status. When the solution version differs between the two points, the summary states that transition above the groups.
 
 ### Sub-change
 A change *within* a component — for example, an attribute added to an entity, a column removed from a view, or an option label changed on an option set. Sub-changes are the child entries under their parent component in both the terminal tree and `CHANGES.md`. The terminal caps the number of named sub-changes shown per component; `CHANGES.md` always contains the full list.
