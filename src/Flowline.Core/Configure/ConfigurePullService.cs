@@ -1,0 +1,280 @@
+using System.Text.Json.Nodes;
+using Microsoft.PowerPlatform.Dataverse.Client;
+
+namespace Flowline.Core.Configure;
+
+/// <summary>What a pull produced, and what the run should say about it.</summary>
+/// <param name="Document">The merged document, ready to write.</param>
+/// <param name="Added">Components that appeared since the existing file was written (R12b).</param>
+/// <param name="Vanished">
+/// Entries the existing file declares whose component the solution no longer holds. Reported, never dropped
+/// (R12b) — a name that disappeared from one environment may still matter in another, and silently deleting
+/// a line someone wrote is worse than carrying one that no longer resolves.
+/// </param>
+/// <param name="Placeholders">
+/// Secret-type variables whose value was deliberately not read (R13), each named so the run can say which
+/// ones still need filling in by hand.
+/// </param>
+public sealed record PullResult(
+    SettingsDocument Document,
+    IReadOnlyList<string> Added,
+    IReadOnlyList<string> Vanished,
+    IReadOnlyList<string> Placeholders);
+
+/// <summary>Builds a settings file from a live environment (R12, R12a, R12b, R12c, R13).</summary>
+/// <remarks>
+/// <b>Three inputs, each with one job.</b> The <i>skeleton</i> is what `pac solution create-settings` wrote:
+/// it owns the shape of the PAC-native sections, including fields Flowline does not model such as
+/// <c>ConnectorId</c>, and it is why a section Microsoft adds later appears without a Flowline change (R12a).
+/// The <i>existing</i> file, when there is one, owns every value a human already put there. The <i>inventory</i>
+/// owns what the environment actually holds right now.
+///
+/// <b>An existing value wins over the live one.</b> R12 asks a pull to write live values and R12b asks it to
+/// preserve what the file already has; the two only conflict for an entry that has both, and the file wins.
+/// A pull fills in blanks rather than overwriting decisions — someone who pinned a value in the file meant it,
+/// and the alternative silently reverts it on the next pull. It also makes a second pull byte-identical to the
+/// first (R12c) and keeps AE1 honest.
+///
+/// <b>No `pac` here.</b> This runs on the SDK and two parsed documents, so the whole merge is testable without
+/// a `pac` on the path or a live environment. The command invokes `pac`, hands the result over, and writes what
+/// comes back.
+/// </remarks>
+public sealed class ConfigurePullService
+{
+    const string EnvironmentVariablesSection = "EnvironmentVariables";
+    const string ConnectionReferencesSection = "ConnectionReferences";
+
+    /// <summary><c>environmentvariabledefinition.type</c> for a Secret.</summary>
+    public const int SecretType = 100000005;
+
+    /// <summary><c>environmentvariabledefinition.secretstore</c> for Azure Key Vault.</summary>
+    public const int KeyVaultSecretStore = 0;
+
+    /// <summary>Written in place of a secret this command refuses to read.</summary>
+    /// <remarks>
+    /// Deliberately not a plausible value: it has to fail loudly if it ever reaches an environment, rather
+    /// than binding something to an empty string that looks configured.
+    /// </remarks>
+    public const string SecretPlaceholder = "<set-this-secret>";
+
+    /// <summary>Merges the PAC skeleton, the existing file, and the live environment into one document.</summary>
+    public async Task<PullResult> BuildAsync(
+        IOrganizationServiceAsync2 service,
+        SettingsDocument skeleton,
+        SettingsDocument? existing,
+        SolutionInventory inventory,
+        CancellationToken ct)
+    {
+        var added = new List<string>();
+        var vanished = new List<string>();
+        var placeholders = new List<string>();
+
+        var document = new SettingsDocument
+        {
+            // The existing file's line endings survive a pull, so re-pulling a committed file does not
+            // rewrite every line of it (R12c).
+            NewLine = existing?.NewLine ?? skeleton.NewLine,
+        };
+
+        foreach (var section in skeleton.PassThrough)
+        {
+            document.PassThrough[section.Key] = section.Value?.DeepClone();
+        }
+
+        await FillEnvironmentVariablesAsync(service, document, existing, inventory, added, placeholders, ct)
+            .ConfigureAwait(false);
+
+        FillConnectionReferences(document, existing, inventory, added);
+
+        CarryVanishedEntries(document, existing, EnvironmentVariablesSection, "SchemaName", vanished);
+        CarryVanishedEntries(document, existing, ConnectionReferencesSection, "LogicalName", vanished);
+
+        WriteStateSections(document, existing, inventory, added);
+
+        return new PullResult(document, added, vanished, placeholders);
+    }
+
+    async Task FillEnvironmentVariablesAsync(
+        IOrganizationServiceAsync2 service,
+        SettingsDocument document,
+        SettingsDocument? existing,
+        SolutionInventory inventory,
+        List<string> added,
+        List<string> placeholders,
+        CancellationToken ct)
+    {
+        foreach (var entry in EntriesIn(document, EnvironmentVariablesSection))
+        {
+            var name = entry["SchemaName"]?.GetValue<string>();
+            if (string.IsNullOrWhiteSpace(name)) continue;
+
+            var declared = ExistingValue(existing, EnvironmentVariablesSection, "SchemaName", name, "Value");
+            if (!string.IsNullOrWhiteSpace(declared))
+            {
+                entry["Value"] = declared;
+                continue;
+            }
+
+            if (!Declares(existing, EnvironmentVariablesSection, "SchemaName", name))
+                added.Add($"EnvironmentVariable: {name}");
+
+            var match = inventory.Match(ConfigurableComponentKind.EnvironmentVariable, name);
+            if (match.Component is null)
+            {
+                entry["Value"] = string.Empty;
+                continue;
+            }
+
+            if (IsUnreadableSecret(match.Component))
+            {
+                // R13 fails closed: only a Key Vault-backed Secret stores a reference rather than the secret
+                // itself, so every other store — Microsoft Dataverse, and anything Microsoft adds later —
+                // is refused rather than read. The value row is never queried, so there is no window where
+                // the secret is in memory at all.
+                entry["Value"] = SecretPlaceholder;
+                placeholders.Add(name);
+                continue;
+            }
+
+            var live = await ComponentValueWriter.FindValueRowAsync(service, match.Component.Id, ct).ConfigureAwait(false);
+            entry["Value"] = live?.GetAttributeValue<string>("value") ?? string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// True for a Secret whose store is anything but Key Vault, including a store this build does not know.
+    /// </summary>
+    /// <remarks>
+    /// The unknown case is the reason this reads as an allow-list rather than a deny-list: a store Microsoft
+    /// adds after this ships must be refused by default, not read because it failed to match "Dataverse".
+    /// </remarks>
+    internal static bool IsUnreadableSecret(InventoryComponent component) =>
+        component.Type == SecretType && component.SecretStore != KeyVaultSecretStore;
+
+    void FillConnectionReferences(
+        SettingsDocument document,
+        SettingsDocument? existing,
+        SolutionInventory inventory,
+        List<string> added)
+    {
+        foreach (var entry in EntriesIn(document, ConnectionReferencesSection))
+        {
+            var name = entry["LogicalName"]?.GetValue<string>();
+            if (string.IsNullOrWhiteSpace(name)) continue;
+
+            var declared = ExistingValue(existing, ConnectionReferencesSection, "LogicalName", name, "ConnectionId");
+            if (!string.IsNullOrWhiteSpace(declared))
+            {
+                entry["ConnectionId"] = declared;
+                continue;
+            }
+
+            if (!Declares(existing, ConnectionReferencesSection, "LogicalName", name))
+                added.Add($"ConnectionReference: {name}");
+
+            var match = inventory.Match(ConfigurableComponentKind.ConnectionReference, name);
+            entry["ConnectionId"] = match.Component?.CurrentValue ?? string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Appends entries the existing file declares that the regenerated skeleton no longer has (R12b).
+    /// </summary>
+    /// <remarks>
+    /// Appended rather than merged in place, so the skeleton's own order — which is what a diff against the
+    /// previous pull compares to — is untouched.
+    /// </remarks>
+    static void CarryVanishedEntries(
+        SettingsDocument document,
+        SettingsDocument? existing,
+        string section,
+        string nameProperty,
+        List<string> vanished)
+    {
+        if (existing is null) return;
+
+        var present = EntriesIn(document, section)
+            .Select(e => e[nameProperty]?.GetValue<string>())
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (!document.PassThrough.TryGetValue(section, out var node) || node is not JsonArray target) return;
+
+        foreach (var entry in EntriesIn(existing, section))
+        {
+            var name = entry[nameProperty]?.GetValue<string>();
+            if (string.IsNullOrWhiteSpace(name) || present.Contains(name)) continue;
+
+            target.Add(entry.DeepClone());
+            vanished.Add($"{section}: {name}");
+        }
+    }
+
+    /// <summary>
+    /// Writes the state classes, listing only the components that are currently off (R12).
+    /// </summary>
+    /// <remarks>
+    /// Absence means untouched, and a deploy already activates what it imports (`--activate-plugins`), so an
+    /// entry saying a component is on describes what would have happened anyway. Listing the whole inventory
+    /// would bury the handful of deliberate exceptions — which is the only thing this section is for — in a
+    /// list that grows with the solution.
+    ///
+    /// A component the existing file already declares keeps its declared value even when it is currently on:
+    /// someone wrote that line on purpose, and a pull that deleted every `"Enabled": true` would erase the
+    /// record of a deliberate re-enable.
+    /// </remarks>
+    static void WriteStateSections(
+        SettingsDocument document,
+        SettingsDocument? existing,
+        SolutionInventory inventory,
+        List<string> added)
+    {
+        AppendState(document.Flows, existing?.Flows, inventory, ConfigurableComponentKind.Flow, added);
+        AppendState(document.PluginSteps, existing?.PluginSteps, inventory, ConfigurableComponentKind.PluginStep, added);
+    }
+
+    static void AppendState(
+        IList<ComponentStateEntry> into,
+        IList<ComponentStateEntry>? existing,
+        SolutionInventory inventory,
+        ConfigurableComponentKind kind,
+        List<string> added)
+    {
+        var declared = existing ?? [];
+
+        // Declared entries first, in the order the file had them, so a pull does not reshuffle a section
+        // someone reads in a diff (R12c).
+        foreach (var entry in declared)
+            into.Add(entry);
+
+        var declaredNames = declared.Select(e => e.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var component in inventory.OfKind(kind))
+        {
+            if (component.Enabled != false || declaredNames.Contains(component.Name)) continue;
+
+            into.Add(new ComponentStateEntry(component.Name, false));
+            added.Add($"{kind}: {component.Name}");
+        }
+    }
+
+    static IEnumerable<JsonObject> EntriesIn(SettingsDocument document, string section) =>
+        document.PassThrough.TryGetValue(section, out var node) && node is JsonArray array
+            ? array.OfType<JsonObject>()
+            : [];
+
+    static bool Declares(SettingsDocument? existing, string section, string nameProperty, string name) =>
+        existing is not null && EntriesIn(existing, section)
+            .Any(e => string.Equals(e[nameProperty]?.GetValue<string>(), name, StringComparison.OrdinalIgnoreCase));
+
+    static string? ExistingValue(
+        SettingsDocument? existing, string section, string nameProperty, string name, string valueProperty)
+    {
+        if (existing is null) return null;
+
+        return EntriesIn(existing, section)
+            .Where(e => string.Equals(e[nameProperty]?.GetValue<string>(), name, StringComparison.OrdinalIgnoreCase))
+            .Select(e => e[valueProperty]?.GetValue<string>())
+            .FirstOrDefault();
+    }
+}

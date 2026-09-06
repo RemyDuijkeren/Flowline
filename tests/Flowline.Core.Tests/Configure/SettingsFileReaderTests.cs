@@ -61,6 +61,30 @@ public class SettingsFileReaderTests
         SettingsFileReader.Write(SettingsFileReader.Parse(json)).Should().Be(json);
     }
 
+    // System.Text.Json defaults to HTML-safe escaping. A URL with a query string is an ordinary environment
+    // variable value, and writing it back as an escape sequence both mangles a hand-edited file and differs
+    // from the bytes PAC produced for the same value.
+    [Fact]
+    public void ReadThenWrite_ValueWithHtmlSignificantCharacters_IsNotEscaped()
+    {
+        var json = """
+            {
+              "EnvironmentVariables": [
+                {
+                  "SchemaName": "cr123_Url",
+                  "Value": "https://x.invalid/?a=1&b=2"
+                }
+              ]
+            }
+            """.ReplaceLineEndings("\n");
+
+        var written = SettingsFileReader.Write(SettingsFileReader.Parse(json));
+
+        written.Should().Contain("?a=1&b=2");
+        written.Should().NotContain("u0026", "HTML-safe escaping would mangle a hand-edited value");
+        written.Should().Be(json);
+    }
+
     // A document Flowline builds rather than reads gets LF, so a settings file born on a Windows machine
     // and one born in Linux CI are byte-identical.
     [Fact]

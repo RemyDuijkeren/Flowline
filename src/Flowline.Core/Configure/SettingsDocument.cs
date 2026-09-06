@@ -66,5 +66,10 @@ public sealed class SettingsDocument
     {
         WriteIndented = true,
         NewLine = newLine,
+        // System.Text.Json defaults to HTML-safe escaping, which turns `<` into `<` and `&` into
+        // `&`. This file is committed and hand-edited, never injected into a page: an environment
+        // variable holding a URL with a query string would arrive as an unreadable escape sequence, and
+        // differ from the bytes PAC and every human writer produce for the same value.
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 }

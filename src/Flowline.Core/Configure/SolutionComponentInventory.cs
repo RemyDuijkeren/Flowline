@@ -27,11 +27,28 @@ public enum ConfigurableComponentKind
 /// <param name="Name">The addressing key for its class (KTD9) — never an environment-local id.</param>
 /// <param name="Id">The record id, used only within this run.</param>
 /// <param name="Enabled">Current state, or <c>null</c> for a class that carries a value rather than a state.</param>
+/// <param name="CurrentValue">
+/// The live value for a class that carries one, read only when a pull needs it. A connection reference
+/// carries its bound connection id straight from the inventory read; an environment variable's value lives
+/// in a separate row and is filled in later, so it is <c>null</c> here.
+/// </param>
+/// <param name="Type">
+/// <c>environmentvariabledefinition.type</c>, carried so a pull can tell a Secret-type variable from an
+/// ordinary one. <c>null</c> for every other class.
+/// </param>
+/// <param name="SecretStore">
+/// <c>environmentvariabledefinition.secretstore</c>: 0 Azure Key Vault, 1 Microsoft Dataverse. Only a Key
+/// Vault-backed Secret stores a reference rather than the secret itself, which is the whole reason R13 can
+/// pull one verbatim and must not pull any other.
+/// </param>
 public sealed record InventoryComponent(
     ConfigurableComponentKind Kind,
     string Name,
     Guid Id,
-    bool? Enabled);
+    bool? Enabled,
+    string? CurrentValue = null,
+    int? Type = null,
+    int? SecretStore = null);
 
 /// <summary>Everything the target holds for one solution, in the classes a settings file can declare.</summary>
 public sealed record SolutionInventory(IReadOnlyList<InventoryComponent> Components)
@@ -243,7 +260,13 @@ public static class SolutionComponentInventory
                 e.GetAttributeValue<string>("schemaname") ?? string.Empty,
                 e.Id,
                 // A value, not a state — nothing to switch on or off.
-                null))
+                Enabled: null,
+                // The value itself lives in environmentvariablevalue, one row per definition, and is read
+                // only when a pull asks for it. Reading every value here would spend a query per definition
+                // on every apply, which needs none of them.
+                CurrentValue: null,
+                Type: e.GetAttributeValue<OptionSetValue>("type")?.Value,
+                SecretStore: e.GetAttributeValue<OptionSetValue>("secretstore")?.Value))
             .Where(c => c.Name.Length > 0)
             .ToList();
     }
@@ -271,7 +294,8 @@ public static class SolutionComponentInventory
                 ConfigurableComponentKind.ConnectionReference,
                 e.GetAttributeValue<string>("connectionreferencelogicalname") ?? string.Empty,
                 e.Id,
-                null))
+                Enabled: null,
+                CurrentValue: e.GetAttributeValue<string>("connectionid")))
             .Where(c => c.Name.Length > 0)
             .ToList();
     }

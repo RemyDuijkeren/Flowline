@@ -24,7 +24,7 @@ public class ConfigureCommandTests : IDisposable
     [Fact]
     public void ResolveStandalone_SolutionNameAndNoProject_IsStandalone()
     {
-        ConfigureCommand.ResolveStandalone("ContosoCustomizations", _dir).Should().BeTrue();
+        ConfigureCommand.ResolveStandalone("ContosoCustomizations", null, _dir).Should().BeTrue();
     }
 
     [Fact]
@@ -34,16 +34,40 @@ public class ConfigureCommandTests : IDisposable
         // disagreed with it would apply a settings file against a solution the checkout does not describe.
         WithProject();
 
-        ConfigureCommand.ResolveStandalone("ContosoCustomizations", _dir).Should().BeFalse();
+        ConfigureCommand.ResolveStandalone("ContosoCustomizations", null, _dir).Should().BeFalse();
     }
 
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void ResolveStandalone_NoSolutionName_IsNotStandalone(string? solutionName)
+    public void ResolveStandalone_NeitherFlag_IsNotStandalone(string? solutionName)
     {
-        ConfigureCommand.ResolveStandalone(solutionName, _dir).Should().BeFalse();
+        ConfigureCommand.ResolveStandalone(solutionName, null, _dir).Should().BeFalse();
+    }
+
+    // A stand-alone pull names the solution through the artifact rather than through --solution-name. Judged
+    // project mode, it would stop at "No Flowline project found" with the artifact it was handed ignored.
+    [Fact]
+    public void ResolveStandalone_PullArtifactAndNoProject_IsStandalone()
+    {
+        ConfigureCommand.ResolveStandalone(null, "ContosoCustomizations.zip", _dir).Should().BeTrue();
+    }
+
+    [Fact]
+    public void ResolveStandalone_PullArtifactButProjectFound_IsNotStandalone()
+    {
+        WithProject();
+
+        ConfigureCommand.ResolveStandalone(null, "ContosoCustomizations.zip", _dir).Should().BeFalse();
+    }
+
+    // A bare --pull inside no project still is not stand-alone: the flag carries no value, so nothing names
+    // the solution.
+    [Fact]
+    public void ResolveStandalone_BarePullWithNoValue_IsNotStandalone()
+    {
+        ConfigureCommand.ResolveStandalone(null, null, _dir).Should().BeFalse();
     }
 
     // ── Flag validation ──────────────────────────────────────────────────────

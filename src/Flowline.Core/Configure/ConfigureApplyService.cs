@@ -37,6 +37,14 @@ public sealed class ConfigureApplyService
         // Tier 1 — values and connection references.
         foreach (var declared in ReadValues(document, EnvironmentVariablesSection, "SchemaName", "Value"))
         {
+            // Same rule as the connection references below, for the same reason: `pac solution
+            // create-settings` writes an empty Value for a variable nobody has filled in, and a pull writes
+            // one for a variable with no live value row. Creating an empty value row from that would be a
+            // write on a component the file is really saying nothing about, and it would break AE1 — a file
+            // pulled and applied straight back is supposed to change nothing.
+            if (string.IsNullOrWhiteSpace(declared.Value))
+                continue;
+
             declaredNames.Add((ConfigurableComponentKind.EnvironmentVariable, declared.Name));
             outcomes.Add(await ApplyOneAsync(service, inventory, ConfigurableComponentKind.EnvironmentVariable,
                 declared.Name, mode,

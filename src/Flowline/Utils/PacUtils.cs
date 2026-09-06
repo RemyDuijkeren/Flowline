@@ -234,6 +234,43 @@ public static class PacUtils
         AnsiConsole.Console.Ok($"Solution synced from Dataverse in {duration}");
     }
 
+    /// <summary>
+    /// Generates a settings file's PAC-native sections from an unpacked solution folder or a solution zip.
+    /// </summary>
+    /// <remarks>
+    /// <b>Never point this at the real settings file.</b> Verified against pac 2.11.2: it overwrites the
+    /// target wholesale — a re-run destroyed both a filled-in ConnectionId and an entire Flowline-owned
+    /// section. Callers write to a temp path and merge (R12a, R12b).
+    ///
+    /// It reads the artifact, not an environment, so every value comes out empty; filling them in is the
+    /// pull service's job. The sections it emits are its own: a real run produced CopilotAgents alongside
+    /// the two the published parameter docs list, which is exactly why Flowline carries them through as a
+    /// pass-through bag rather than a typed model.
+    /// </remarks>
+    public static async Task CreateSettingsAsync(
+        string solutionPath, bool isZip, string settingsFilePath,
+        SubprocessCapture capture, CancellationToken cancellationToken)
+    {
+        var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
+        CommandResult result = await AnsiConsole.Status().FlowlineSpinner().StartAsync(
+            "Reading the solution's configurable components...",
+            ctx => Cli.Wrap(cmdName)
+                      .WithArguments(args =>
+                          args.AddIfNotNull(prefixArgs)
+                              .Add("solution")
+                              .Add("create-settings")
+                              .Add(isZip ? "--solution-zip" : "--solution-folder").Add(solutionPath)
+                              .Add("--settings-file").Add(settingsFilePath))
+                      .WithValidation(CommandResultValidation.None)
+                      .WithCapture(capture, ctx)
+                      .ExecuteAsync(cancellationToken)
+                      .Task);
+
+        if (!result.IsSuccess)
+            throw new FlowlineException(ExitCode.GeneralError,
+                $"Couldn't read the solution's configurable components from '{solutionPath}'. Use --verbose for more details.");
+    }
+
     // `pac solution unpack` defaults --packagetype to Unmanaged and fails outright ("Solution package type
     // did not match requested type") on a managed zip, so the caller's managed flag has to be passed through.
     public static async Task UnpackSolutionAsync(string zipPath, string destinationFolder, bool managed, SubprocessCapture capture, CancellationToken cancellationToken)

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Xml.Linq;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Configure;
@@ -11,6 +12,7 @@ using Flowline.Services;
 using Flowline.Utils;
 using Flowline.Validation;
 using Microsoft.Extensions.Logging;
+using Microsoft.PowerPlatform.Dataverse.Client;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -61,18 +63,23 @@ public class ConfigureCommand(
     protected override string[] ValidForceSpecifiers => FlowlineSettings.ConfigOnlyValidSpecifiers;
 
     protected override bool IsStandalone(Settings settings) =>
-        ResolveStandalone(settings.SolutionName, Directory.GetCurrentDirectory());
+        ResolveStandalone(settings.SolutionName, settings.Pull.Value, Directory.GetCurrentDirectory());
 
     /// <summary>
-    /// Stand-alone is an explicit solution name plus no project to read one from (KTD3).
+    /// Stand-alone is a flag naming the solution plus no project to read one from (KTD3).
     /// </summary>
     /// <remarks>
     /// Same shape as <see cref="DeployCommand.ResolveStandalone"/> — a flag plus the absence of a project —
     /// rather than push's flag-only-then-throw form, so the two precedents do not diverge further. Pure so
     /// the rule is testable without a checkout.
+    ///
+    /// Either flag qualifies: <c>--solution-name</c> states the name outright, and <c>--pull &lt;zip|folder&gt;</c>
+    /// names an artifact that carries it. Without this, a stand-alone pull with only the artifact would be
+    /// judged project mode and stop at "No Flowline project found" — the artifact it was handed ignored.
     /// </remarks>
-    internal static bool ResolveStandalone(string? solutionName, string startDir) =>
-        !string.IsNullOrWhiteSpace(solutionName) && FindFlowlineProjectRoot(startDir) is null;
+    internal static bool ResolveStandalone(string? solutionName, string? pullPath, string startDir) =>
+        (!string.IsNullOrWhiteSpace(solutionName) || !string.IsNullOrWhiteSpace(pullPath))
+        && FindFlowlineProjectRoot(startDir) is null;
 
     /// <summary>Rejects flag combinations that cannot mean anything, each naming its own flags.</summary>
     /// <remarks>
@@ -125,10 +132,6 @@ public class ConfigureCommand(
         if (flagError is not null)
             throw new FlowlineException(ExitCode.ValidationFailed, flagError);
 
-        if (pullRequested)
-            throw new FlowlineException(ExitCode.ValidationFailed,
-                "--pull isn't implemented yet. Apply an existing settings file, or create one with pac solution create-settings.");
-
         // A role keyword has nothing to resolve against outside a project: Config is a bare ProjectConfig
         // there, so every role would fall through to a config-shaped "URL is required" pointing at a
         // .flowline that was never expected to exist.
@@ -136,35 +139,159 @@ public class ConfigureCommand(
         if (standalone && role is not null)
             throw new FlowlineException(ExitCode.ConfigInvalid, BuildStandaloneRoleError(settings.Target));
 
+        // The artifact route keys off the flag's own value, not the mode — drift shipped the opposite and
+        // silently compared the checkout when `--path` was passed inside a project (DriftCommand.cs:41-46).
+        // A named solution wins wherever it is named.
+        var artifactPath = settings.Pull.Value;
+        var (solutionPath, solutionIsZip) = artifactPath is not null
+            ? ResolveSolutionInput(artifactPath)
+            : (await SolutionFileLayout.LoadAsync(RootFolder, cancellationToken)).DataverseSolutionFolder is var folder
+                ? (Path.Combine(folder, "src"), false)
+                : default;
+
         var (env, profile) = await ResolveEnvironmentAsync(settings.Target, role, settings, cancellationToken);
 
-        var solutionName = standalone
-            ? settings.SolutionName!
-            : (await GetAndCheckSolutionAsync(null, env.EnvironmentUrl!, includeManaged: null, settings, cancellationToken)).projectSolution.UniqueName;
+        var solutionName = await ResolveSolutionNameAsync(settings, standalone, artifactPath, env, cancellationToken);
 
-        var location = await ResolveSettingsFileAsync(settings, role, standalone, cancellationToken);
-        if (!location.Exists)
+        var location = await ResolveSettingsFileAsync(settings, role, standalone, artifactPath, cancellationToken);
+        if (!pullRequested && !location.Exists)
             throw new FlowlineException(ExitCode.NotFound,
                 $"No settings file at '{ConsolePath.FormatRelativePath(location.Path, RootFolder)}'. " +
-                "Create one with pac solution create-settings, or pass --settings-file.");
+                $"Run 'flowline configure {settings.Target} --pull' to create one.");
 
-        Console.Info(BuildResolutionNote(env.DisplayName ?? settings.Target, location));
-
-        var document = SettingsFileReader.Read(location.Path);
         var mode = settings.DryRun ? RunMode.DryRun : RunMode.Normal;
-
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, env.EnvironmentUrl!, cancellationToken, profile);
 
         var inventory = await Console.Status().FlowlineSpinner().StartAsync(
             $"Reading [bold]{Markup.Escape(solutionName)}[/] components...",
             _ => SolutionComponentInventory.ReadAsync(service, solutionName, cancellationToken));
 
+        if (pullRequested)
+            return await PullAsync(service, solutionPath, solutionIsZip, location, inventory, mode, env, cancellationToken);
+
+        Console.Info(BuildResolutionNote(env.DisplayName ?? settings.Target, location));
+
         var outcome = await new ConfigureApplyService()
-            .ApplyAsync(service, document, inventory, mode, cancellationToken);
+            .ApplyAsync(service, SettingsFileReader.Read(location.Path), inventory, mode, cancellationToken);
 
         Report(outcome, mode, env.DisplayName ?? settings.Target);
 
         return (int)outcome.ExitCode;
+    }
+
+    /// <summary>
+    /// Captures the environment's configuration into the settings file (R12).
+    /// </summary>
+    /// <remarks>
+    /// PAC writes the skeleton to a temp file, never the real one: verified against pac 2.11.2, a
+    /// <c>create-settings</c> run overwrites its target wholesale, destroying both filled-in values and
+    /// every Flowline-owned section. The merge happens here and only the merged document is saved.
+    /// </remarks>
+    async Task<int> PullAsync(
+        IOrganizationServiceAsync2 service,
+        string solutionPath,
+        bool solutionIsZip,
+        SettingsFileLocation location,
+        SolutionInventory inventory,
+        RunMode mode,
+        EnvironmentInfo env,
+        CancellationToken ct)
+    {
+        var skeletonPath = Path.Combine(Directory.CreateTempSubdirectory("flowline-pull-").FullName, "settings.json");
+
+        return await DriftCommand.RunInTempDirAsync(Path.GetDirectoryName(skeletonPath)!, async () =>
+        {
+            await PacUtils.CreateSettingsAsync(solutionPath, solutionIsZip, skeletonPath, _capture, ct);
+
+            var skeleton = SettingsFileReader.Read(skeletonPath);
+            var existing = location.Exists ? SettingsFileReader.Read(location.Path) : null;
+
+            var result = await new ConfigurePullService().BuildAsync(service, skeleton, existing, inventory, ct);
+
+            var display = ConsolePath.FormatRelativePath(location.Path, RootFolder);
+
+            foreach (var added in result.Added)
+                Console.Info($"New: {Markup.Escape(added)}");
+
+            foreach (var vanished in result.Vanished)
+                Console.Warning($"{Markup.Escape(vanished)} is no longer in the solution — kept in the file, not applied.");
+
+            foreach (var placeholder in result.Placeholders)
+                Console.Warning($"{Markup.Escape(placeholder)} is a secret Flowline won't read — " +
+                                $"'{ConfigurePullService.SecretPlaceholder}' was written, fill it in by hand.");
+
+            if (mode.IsReportOnly())
+            {
+                Console.Done(BuildDryRunCompleteMessage(env.DisplayName ?? location.Path));
+                return (int)ExitCode.Success;
+            }
+
+            SettingsFileReader.Save(result.Document, location.Path);
+            Console.Done($"Wrote {display}");
+
+            return (int)ExitCode.Success;
+        }, Logger);
+    }
+
+    /// <summary>Decides whether a pull's argument names a packed zip or an unpacked folder.</summary>
+    internal static (string Path, bool IsZip) ResolveSolutionInput(string path)
+    {
+        var full = Path.GetFullPath(path);
+
+        if (Directory.Exists(full)) return (full, false);
+        if (File.Exists(full)) return (full, true);
+
+        throw new FlowlineException(ExitCode.NotFound,
+            $"No solution zip or folder at '{path}'.");
+    }
+
+    /// <summary>
+    /// Names the solution: from the artifact when one is given, from the project otherwise.
+    /// </summary>
+    /// <remarks>
+    /// A stand-alone pull reads the unique name out of the artifact's own manifest rather than asking for it
+    /// (R12) — the artifact already carries it, and a <c>--solution-name</c> that disagreed would read one
+    /// solution's components and write them into another's settings file.
+    /// </remarks>
+    async Task<string> ResolveSolutionNameAsync(
+        Settings settings, bool standalone, string? artifactPath, EnvironmentInfo env, CancellationToken ct)
+    {
+        if (!standalone)
+            return (await GetAndCheckSolutionAsync(null, env.EnvironmentUrl!, includeManaged: null, settings, ct))
+                .projectSolution.UniqueName;
+
+        if (artifactPath is not null)
+        {
+            var (path, isZip) = ResolveSolutionInput(artifactPath);
+            var uniqueName = isZip
+                ? DeployCommand.ReadArtifactSolutionManifest(path).UniqueName
+                : ReadFolderSolutionUniqueName(path);
+
+            if (!string.IsNullOrWhiteSpace(uniqueName))
+            {
+                Console.Info(DeployCommand.BuildStandaloneIdentityNote(Path.GetFileName(path)));
+                return uniqueName;
+            }
+        }
+
+        return settings.SolutionName
+            ?? throw new FlowlineException(ExitCode.ConfigInvalid,
+                "Couldn't tell which solution this is. Pass --solution-name.");
+    }
+
+    /// <summary>Reads a solution's unique name from an unpacked folder's manifest.</summary>
+    /// <remarks>
+    /// <see cref="DeployCommand.ReadArtifactSolutionManifest"/> is zip-only and throws on a directory, so an
+    /// unpacked folder reads <c>Other/Solution.xml</c> and hands it to the same parser that helper uses.
+    /// </remarks>
+    internal static string? ReadFolderSolutionUniqueName(string folder)
+    {
+        var manifest = Path.Combine(folder, "Other", "Solution.xml");
+        if (!File.Exists(manifest))
+            throw new FlowlineException(ExitCode.NotFound,
+                $"No solution manifest at '{manifest}' — is '{folder}' an unpacked solution folder?");
+
+        return DeployCommand.ParseSolutionManifest(XDocument.Load(manifest)).UniqueName;
     }
 
     /// <summary>
@@ -207,8 +334,17 @@ public class ConfigureCommand(
     /// working directory instead.
     /// </remarks>
     async Task<SettingsFileLocation> ResolveSettingsFileAsync(
-        Settings settings, EnvironmentRole? role, bool standalone, CancellationToken ct)
+        Settings settings, EnvironmentRole? role, bool standalone, string? artifactPath, CancellationToken ct)
     {
+        // A stand-alone pull writes beside the artifact it was given (R12), not beside the working
+        // directory — the artifact is the only thing about that run with a location of its own.
+        if (standalone && artifactPath is not null)
+        {
+            var (path, isZip) = ResolveSolutionInput(artifactPath);
+            var anchor = isZip ? Path.GetDirectoryName(path)! : path;
+            return SettingsFileLocator.Locate(anchor, role?.ToString(), settings.SettingsFile);
+        }
+
         if (!string.IsNullOrWhiteSpace(settings.SettingsFile) || standalone)
             return SettingsFileLocator.Locate(Directory.GetCurrentDirectory(), role?.ToString(), settings.SettingsFile);
 
