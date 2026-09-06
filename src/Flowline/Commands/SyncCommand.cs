@@ -158,11 +158,8 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         // Summary of changes
         var summary = await SolutionChangeSummary.ComputeAsync(srcPath, RootFolder, _capture, cancellationToken);
         Logger.LogInformation("Diff: {TotalFiles} files changed", summary.TotalFiles);
-        summary.WriteTree(Console, NoChangesLine(devEnv.DisplayName), settings.Verbose);
-        await summary.WriteChangesFileAsync(ChangesFilePath(slnFolder), projectSln.UniqueName,
-            ProvenanceLine(devEnv.DisplayName), writeWhenEmpty: false, cancellationToken);
-        await new DataverseContextGenerator(Console).GenerateAsync(
-            srcPath, projectSln.UniqueName, RootFolder, cancellationToken);
+        await WriteSyncReportAsync(summary, Console, slnFolder, srcPath, projectSln.UniqueName,
+            devEnv.DisplayName, settings.Verbose, cancellationToken);
 
         Console.Done(summary.TotalFiles == 0
             ? $"Synced {tagVersion} — no component changes, nothing to deploy."
@@ -200,10 +197,24 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     internal static string ToTagVersion(string version) =>
         string.Join(".", version.Split('.').Take(3));
 
+    /// <summary>Everything sync reports once the summary exists: the terminal tree, CHANGES.md, and the
+    /// regenerated schema context. Extracted whole so it can be tested against a temp folder — reaching it
+    /// through <c>ExecuteFlowlineAsync</c> would need a live Dataverse environment. The context generator
+    /// belongs here rather than at the call site: it needs no environment either, and keeping it in makes
+    /// this the one place that decides what a sync leaves behind on disk.</summary>
+    internal static async Task WriteSyncReportAsync(SolutionChangeSummary summary, IAnsiConsole console,
+        string slnFolder, string srcPath, string solutionUniqueName, string? envDisplayName, bool verbose,
+        CancellationToken ct = default)
+    {
+        summary.WriteTree(console, NoChangesLine(envDisplayName), verbose, "see CHANGES.md");
+        await summary.WriteChangesFileAsync(ChangesFilePath(slnFolder), solutionUniqueName,
+            ProvenanceLine(envDisplayName), writeWhenEmpty: false, ct);
+        await new DataverseContextGenerator(console).GenerateAsync(srcPath, solutionUniqueName, slnFolder, ct);
+    }
+
     // The writer takes these three from its caller, so sync is the only thing holding its own output shape
-    // in place. They live here as named seams rather than inline at the call site because that call needs a
-    // live environment to reach: without them, nothing test-visible would catch the wording, the fallback,
-    // or the file location drifting.
+    // in place. They live here as named seams rather than inline in the report method above, so a test can
+    // catch the wording, the fallback, or the file location drifting on its own.
 
     /// <summary>Where sync writes its change summary: the project root, not the solution source folder.</summary>
     internal static string ChangesFilePath(string slnFolder) => Path.Combine(slnFolder, "CHANGES.md");

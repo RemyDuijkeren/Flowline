@@ -65,6 +65,9 @@ public class SolutionChangeSummary
         // Running from the root also neutralizes a user's diff.relative=true, which would otherwise
         // reintroduce the prefix mismatch this replaced.
         var repoRoot = GitUtils.FindRepositoryRoot(workingDirectory) ?? workingDirectory;
+        // srcRelPath is handed to git as a pathspec, and '[', ']' and '*' are pathspec magic while being legal
+        // in a Windows path. Every git call below that takes it passes --literal-pathspecs so a solution folder
+        // containing one is matched by name instead of silently matching nothing and reporting "no changes".
         var srcRelPath = Path.GetRelativePath(repoRoot, srcFolder).Replace('\\', '/');
 
         // Closes over the four values every fetch needs, so a call site states only which side and
@@ -80,6 +83,7 @@ public class SolutionChangeSummary
             .WithArguments(args => args
                 .Add("-c").Add("core.quotepath=false")
                 .Add("-c").Add("core.safecrlf=false")
+                .Add("--literal-pathspecs")
                 .Add("status").Add("--porcelain").Add("--no-renames").Add("-uall")
                 .Add("--").Add(srcRelPath))
             .WithValidation(CommandResultValidation.None);
@@ -95,8 +99,11 @@ public class SolutionChangeSummary
                 + $"Run 'git status' in {repoRoot} to repair the repository, then try again.");
         }
 
-        // HEAD-vs-working-tree keeps the porcelain listing it always used; any other pair of sides is
-        // listed by git diff, which is the only listing that means anything between two refs.
+        // Do not fold this branch into the git diff path below: the diff path resolves both refs, and in a
+        // repository with no commits there is no HEAD to resolve, so `git diff --name-status HEAD` fails and
+        // the first sync in a fresh repo reports nothing. git status --porcelain needs no commit, so
+        // HEAD-vs-working-tree stays on it. Every other pair of sides is between two refs, where only a diff
+        // means anything.
         var defaultMode = to.IsWorkingTree && from.GitRef == "HEAD";
         List<ChangedFile> changedFiles;
 
@@ -119,6 +126,7 @@ public class SolutionChangeSummary
                 {
                     args.Add("-c").Add("core.quotepath=false")
                         .Add("-c").Add("core.safecrlf=false")
+                        .Add("--literal-pathspecs")
                         .Add("diff").Add("--name-status").Add("--no-renames")
                         .Add(from.GitRef!);
                     if (!to.IsWorkingTree) args.Add(to.GitRef!);
@@ -152,6 +160,7 @@ public class SolutionChangeSummary
             {
                 args.Add("-c").Add("core.quotepath=false")
                     .Add("-c").Add("core.safecrlf=false")
+                    .Add("--literal-pathspecs")
                     .Add("diff").Add("--numstat").Add("--no-renames")
                     .Add(from.GitRef!);
                 if (!to.IsWorkingTree) args.Add(to.GitRef!);
@@ -450,8 +459,12 @@ public class SolutionChangeSummary
     }
 
     /// <summary>Renders the report. <paramref name="noChangesMessage"/> is the complete, already-escaped line
-    /// shown when nothing changed — the caller owns it, because only the caller knows what was compared.</summary>
-    public void WriteTree(IAnsiConsole console, string noChangesMessage, bool verbose)
+    /// shown when nothing changed — the caller owns it, because only the caller knows what was compared.
+    /// <paramref name="overflowHint"/> is the already-escaped parenthetical appended to a truncated sub-change
+    /// list, naming where the rest can be read. Only the caller knows whether such a place exists — the report
+    /// file is written on request, not on every run — so a null hint truncates without offering a route.
+    /// <c>--verbose</c> does not lift the cap, so the hint is the only route the user is offered.</summary>
+    public void WriteTree(IAnsiConsole console, string noChangesMessage, bool verbose, string? overflowHint = null)
     {
         if (TotalFiles == 0)
         {
@@ -471,11 +484,11 @@ public class SolutionChangeSummary
         {
             var entitiesNode = tree.AddNode("Entities");
             foreach (var group in entityGroups)
-                AddGroupItems(entitiesNode.AddNode(Markup.Escape(group.Label)), group, verbose);
+                AddGroupItems(entitiesNode.AddNode(Markup.Escape(group.Label)), group, verbose, overflowHint);
         }
 
         foreach (var group in otherGroups)
-            AddGroupItems(tree.AddNode(Markup.Escape(group.Label)), group, verbose);
+            AddGroupItems(tree.AddNode(Markup.Escape(group.Label)), group, verbose, overflowHint);
 
         console.Write(tree);
     }
@@ -590,7 +603,7 @@ public class SolutionChangeSummary
         return null;
     }
 
-    static void AddGroupItems(TreeNode groupNode, ChangeGroup group, bool verbose)
+    static void AddGroupItems(TreeNode groupNode, ChangeGroup group, bool verbose, string? overflowHint)
     {
         if (group.Label == "Web Resources")
         {
@@ -610,7 +623,7 @@ public class SolutionChangeSummary
                     itemNode.AddNode($"{StatusIcon(sub.Status)} {Markup.Escape(sub.Description)}");
                 var overflow = item.SubChanges.Count - shown.Count;
                 if (overflow > 0)
-                    itemNode.AddNode($"[dim]...and {overflow} more (see CHANGES.md)[/]");
+                    itemNode.AddNode($"[dim]...and {overflow} more{(overflowHint is null ? "" : $" ({overflowHint})")}[/]");
             }
 
             if (verbose)

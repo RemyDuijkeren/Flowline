@@ -455,6 +455,18 @@ public class SolutionChangeSummaryComputeTests : IDisposable
     }
 
     [Fact]
+    public async Task ComputeAsync_MalformedSolutionXml_ReportsNoVersionTransition()
+    {
+        CommitFile("Other/Solution.xml", SolutionXml("1.12.38"));
+        WriteFile("Other/Solution.xml", "<ImportExportXml><SolutionManifest><Version>1.12.39");
+
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root);
+
+        result.TotalFiles.Should().Be(1);
+        result.Version.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ComputeAsync_WhenGitListingFails_ThrowsInconclusive()
     {
         WriteFile("Entities/Account/Entity.xml", "<entity/>");
@@ -1203,6 +1215,36 @@ public class SolutionChangeSummaryWriteTests
         output.Should().Contain("Workflows");
     }
 
+    static SolutionChangeSummary BuildWithOverflowingSubChanges()
+    {
+        var subs = Enumerable.Range(1, SolutionChangeSummary.SubChangeDisplayThreshold + 1)
+            .Select(i => new SolutionChangeSummary.SubChange($"field{i}", SolutionChangeSummary.ChangeStatus.Added))
+            .ToList();
+        return Build(1, 6, 0, new SolutionChangeSummary.ChangeGroup("Account",
+            [new SolutionChangeSummary.ChangeItem("entity metadata", [], SolutionChangeSummary.ChangeStatus.Modified, subs)]));
+    }
+
+    [Fact]
+    public void Write_SubChangeOverflow_WithHint_NamesTheHint()
+    {
+        var console = new TestConsole();
+
+        BuildWithOverflowingSubChanges().WriteTree(console, "No changes.", verbose: false, overflowHint: "see CHANGES.md");
+
+        console.Output.Should().Contain("...and 1 more (see CHANGES.md)");
+    }
+
+    [Fact]
+    public void Write_SubChangeOverflow_WithoutHint_OffersNoRoute()
+    {
+        var console = new TestConsole();
+
+        BuildWithOverflowingSubChanges().WriteTree(console, "No changes.", verbose: false);
+
+        console.Output.Should().Contain("...and 1 more");
+        console.Output.Should().NotContain("CHANGES.md");
+    }
+
     const string ConnRefsBefore = """
         <ImportExportXml>
           <connectionreferences>
@@ -1407,6 +1449,20 @@ public class SolutionChangeSummaryRefModeTests : IDisposable
             .Which.Message.Should().Contain("no-such-ref");
     }
 
+    [Fact]
+    public async Task ComputeAsync_RefToRef_VersionBumped_ReportsVersionTransition()
+    {
+        CommitFile("Other/Solution.xml", SolutionXml("1.12.38"), "v1");
+        CommitFile("Other/Solution.xml", SolutionXml("1.12.39"), "v2");
+
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, Ref("v1"), Ref("v2"));
+
+        result.Version.Should().Be(new SolutionChangeSummary.VersionTransition("1.12.38", "1.12.39"));
+    }
+
+    static string SolutionXml(string version) =>
+        $"<ImportExportXml><SolutionManifest><UniqueName>TestSln</UniqueName><Version>{version}</Version></SolutionManifest></ImportExportXml>";
+
     static string FormXml(string title) =>
         "<forms><systemform><LocalizedNames>"
         + $"<LocalizedName languagecode=\"1033\" description=\"{title}\" />"
@@ -1461,6 +1517,42 @@ public class SolutionChangeSummaryRefModeTests : IDisposable
             psi.ArgumentList.Add(arg);
         using var p = System.Diagnostics.Process.Start(psi)!;
         p.WaitForExit();
+    }
+
+    /// <summary>Guards the HEAD-vs-working-tree branch in ComputeAsync. A repository with no commits has no
+    /// HEAD to resolve, so routing this case through the git diff path — which resolves both refs — breaks the
+    /// first sync in a fresh repo. Delete that branch as "redundant" and this test fails.</summary>
+    [Fact]
+    public async Task ComputeAsync_RepositoryWithNoCommits_ReportsUncommittedFiles()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "flowline-nocommit-tests", Guid.NewGuid().ToString("N"));
+        var srcFolder = Path.Combine(root, "solutions", "TestSln", "src", "Entities", "Account");
+        Directory.CreateDirectory(srcFolder);
+        File.WriteAllText(Path.Combine(srcFolder, "Entity.xml"), "<entity/>");
+
+        var psi = new System.Diagnostics.ProcessStartInfo("git")
+        {
+            WorkingDirectory = root, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false
+        };
+        psi.ArgumentList.Add("init");
+        using (var p = System.Diagnostics.Process.Start(psi)!) p.WaitForExit();
+
+        try
+        {
+            var result = await SolutionChangeSummary.ComputeAsync(
+                Path.Combine(root, "solutions", "TestSln", "src"), root);
+
+            result.TotalFiles.Should().Be(1);
+            result.Groups.Should().ContainSingle(g => g.Label == "Account");
+        }
+        finally
+        {
+            foreach (var f in Directory.GetFiles(root, "*", SearchOption.AllDirectories))
+            {
+                try { File.SetAttributes(f, FileAttributes.Normal); } catch { }
+            }
+            Directory.Delete(root, true);
+        }
     }
 
     [Fact]

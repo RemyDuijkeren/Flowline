@@ -1,6 +1,8 @@
 using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Core;
+using Flowline.Utils;
+using Spectre.Console.Testing;
 
 namespace Flowline.Tests;
 
@@ -133,5 +135,95 @@ public class BumpVersionTests
     public void ToTagVersion_ShouldReturnThreePart(string version, string expected)
     {
         SyncCommand.ToTagVersion(version).Should().Be(expected);
+    }
+}
+
+/// <summary>
+/// The reporting tail sync runs once the summary exists: the terminal tree, CHANGES.md, and the
+/// regenerated schema context. Extracted from the command so it can run against a temp folder — the
+/// call site itself needs a live Dataverse environment to reach.
+/// </summary>
+public class SyncReportTests : IDisposable
+{
+
+    /// <summary>
+    /// The overflow hint is caller-supplied so `diff` can stop naming a file it never wrote. Sync always
+    /// writes CHANGES.md, so it must keep passing that route: dropping the argument is a silent text
+    /// regression no other test would catch.
+    /// </summary>
+    [Fact]
+    public async Task WriteSyncReportAsync_WithMoreSubChangesThanTheCap_StillPointsAtChangesMd()
+    {
+        var console = new TestConsole();
+        var subs = Enumerable.Range(1, SolutionChangeSummary.SubChangeDisplayThreshold + 1)
+            .Select(i => new SolutionChangeSummary.SubChange($"field{i}", SolutionChangeSummary.ChangeStatus.Added))
+            .ToList();
+        var summary = new SolutionChangeSummary(1, 6, 0, [
+            new SolutionChangeSummary.ChangeGroup("Account", [
+                new SolutionChangeSummary.ChangeItem("entity metadata", [], SolutionChangeSummary.ChangeStatus.Modified, subs)
+            ])
+        ]);
+
+        await SyncCommand.WriteSyncReportAsync(summary, console, _root, Path.Combine(_root, "src"),
+            "ContosoSolution", "Contoso Dev", verbose: false, CancellationToken.None);
+
+        console.Output.Should().Contain("see CHANGES.md");
+    }
+
+    readonly string _root = Path.Combine(Path.GetTempPath(), "flowline-syncreport-" + Guid.NewGuid().ToString("N"));
+
+    public SyncReportTests() => Directory.CreateDirectory(_root);
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+    }
+
+    static SolutionChangeSummary WithChanges() =>
+        new(1, 2, 0, [new SolutionChangeSummary.ChangeGroup("Entities", [
+            new SolutionChangeSummary.ChangeItem("Account", ["src/Entities/Account/Entity.xml"])])]);
+
+    static SolutionChangeSummary NoChanges() => new(0, 0, 0, []);
+
+    Task Report(SolutionChangeSummary summary, TestConsole console, string? envDisplayName) =>
+        SyncCommand.WriteSyncReportAsync(summary, console, _root, Path.Combine(_root, "Solution", "src"),
+            "ContosoCustomizations", envDisplayName, verbose: false);
+
+    [Fact]
+    public async Task ChangesFile_LandsAtTheRoot_AndNamesTheEnvironment()
+    {
+        await Report(WithChanges(), new TestConsole(), "Contoso Dev");
+
+        var changesFile = Path.Combine(_root, "CHANGES.md");
+        File.Exists(changesFile).Should().BeTrue();
+        (await File.ReadAllTextAsync(changesFile)).Should().Contain("Synced from: Contoso Dev");
+    }
+
+    [Fact]
+    public async Task NoChanges_WritesNoChangesFileAtAll()
+    {
+        await Report(NoChanges(), new TestConsole(), "Contoso Dev");
+
+        File.Exists(Path.Combine(_root, "CHANGES.md")).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("Contoso Dev", "No changes pulled from Contoso Dev.")]
+    [InlineData(null, "No changes pulled from DEV.")]
+    public async Task NoChanges_TerminalLineNamesTheEnvironment(string? envDisplayName, string expected)
+    {
+        var console = new TestConsole();
+
+        await Report(NoChanges(), console, envDisplayName);
+
+        console.Output.Should().Contain(expected);
+    }
+
+    [Fact]
+    public async Task SchemaContextDocument_IsRegenerated()
+    {
+        await Report(WithChanges(), new TestConsole(), "Contoso Dev");
+
+        File.Exists(Path.Combine(_root, "docs", "DATAVERSE_CONTEXT.md")).Should().BeTrue();
     }
 }
