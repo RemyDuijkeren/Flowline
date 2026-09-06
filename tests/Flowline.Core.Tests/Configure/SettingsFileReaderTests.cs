@@ -30,12 +30,15 @@ public class SettingsFileReaderTests
                 }
               ]
             }
-            """;
+            """.ReplaceLineEndings("\n");
 
         var document = SettingsFileReader.Parse(json);
         var written = SettingsFileReader.Write(document);
 
-        written.Should().Be(json.ReplaceLineEndings("\n"));
+        // Normalised going in, not just coming out. The writer inherits the source document's endings, so
+        // comparing against a normalised expectation made this test depend on how git checked out its own
+        // source file: LF as authored, CRLF on a Windows clone.
+        written.Should().Be(json);
     }
 
     // R12c, verified against a real `pac solution create-settings` run: PAC writes CRLF and no trailing
