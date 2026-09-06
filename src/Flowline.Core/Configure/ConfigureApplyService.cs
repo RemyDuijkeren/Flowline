@@ -46,9 +46,9 @@ public sealed class ConfigureApplyService
                 continue;
 
             declaredNames.Add((ConfigurableComponentKind.EnvironmentVariable, declared.Name));
-            outcomes.Add(await ApplyOneAsync(service, inventory, ConfigurableComponentKind.EnvironmentVariable,
-                declared.Name, mode,
-                component => ComponentValueWriter.ApplyEnvironmentVariableAsync(service, component, declared.Value, ct))
+            outcomes.Add(await ApplyOneAsync(inventory, ConfigurableComponentKind.EnvironmentVariable,
+                declared.Name,
+                component => ComponentValueWriter.ApplyEnvironmentVariableAsync(service, component, declared.Value, mode, ct))
                 .ConfigureAwait(false));
         }
 
@@ -60,10 +60,10 @@ public sealed class ConfigureApplyService
                 continue;
 
             declaredNames.Add((ConfigurableComponentKind.ConnectionReference, declared.Name));
-            outcomes.Add(await ApplyOneAsync(service, inventory, ConfigurableComponentKind.ConnectionReference,
-                declared.Name, mode,
+            outcomes.Add(await ApplyOneAsync(inventory, ConfigurableComponentKind.ConnectionReference,
+                declared.Name,
                 component => ComponentValueWriter.ApplyConnectionReferenceAsync(
-                    service, component, declared.Value, currentConnectionId: null, ct))
+                    service, component, declared.Value, mode, ct))
                 .ConfigureAwait(false));
         }
 
@@ -71,8 +71,8 @@ public sealed class ConfigureApplyService
         foreach (var entry in document.Flows)
         {
             declaredNames.Add((ConfigurableComponentKind.Flow, entry.Name));
-            outcomes.Add(await ApplyOneAsync(service, inventory, ConfigurableComponentKind.Flow, entry.Name, mode,
-                component => ComponentStateWriter.ApplyAsync(service, component, entry.Enabled, ct))
+            outcomes.Add(await ApplyOneAsync(inventory, ConfigurableComponentKind.Flow, entry.Name,
+                component => ComponentStateWriter.ApplyAsync(service, component, entry.Enabled, mode, ct))
                 .ConfigureAwait(false));
         }
 
@@ -80,8 +80,8 @@ public sealed class ConfigureApplyService
         foreach (var entry in document.PluginSteps)
         {
             declaredNames.Add((ConfigurableComponentKind.PluginStep, entry.Name));
-            outcomes.Add(await ApplyOneAsync(service, inventory, ConfigurableComponentKind.PluginStep, entry.Name, mode,
-                component => ComponentStateWriter.ApplyAsync(service, component, entry.Enabled, ct))
+            outcomes.Add(await ApplyOneAsync(inventory, ConfigurableComponentKind.PluginStep, entry.Name,
+                component => ComponentStateWriter.ApplyAsync(service, component, entry.Enabled, mode, ct))
                 .ConfigureAwait(false));
         }
 
@@ -92,11 +92,9 @@ public sealed class ConfigureApplyService
     /// Resolves one declared name against the inventory, then applies it — or reports why it could not be.
     /// </summary>
     static async Task<ComponentOutcome> ApplyOneAsync(
-        IOrganizationServiceAsync2 service,
         SolutionInventory inventory,
         ConfigurableComponentKind kind,
         string name,
-        RunMode mode,
         Func<InventoryComponent, Task<ComponentOutcome>> apply)
     {
         var match = inventory.Match(kind, name);
@@ -109,26 +107,9 @@ public sealed class ConfigureApplyService
             return new ComponentOutcome(kind, name, ComponentOutcomeKind.Skipped,
                 $"'{name}' isn't in this environment's copy of the solution.");
 
-        if (mode.IsReportOnly())
-            return await PreviewAsync(match.Component!, apply).ConfigureAwait(false);
-
+        // No separate preview branch: every writer takes the mode and stops after its own comparison, so
+        // a dry run reports the same verdicts a real run produces instead of a second, weaker guess at them.
         return await apply(match.Component!).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Reports what a real run would do without writing.
-    /// </summary>
-    /// <remarks>
-    /// Dry-run is decided here rather than inside each writer so there is one place a write can leak from,
-    /// and so the reported change set is derived from the same resolution a real run uses.
-    /// </remarks>
-    static Task<ComponentOutcome> PreviewAsync(
-        InventoryComponent component,
-        Func<InventoryComponent, Task<ComponentOutcome>> apply)
-    {
-        _ = apply;
-        return Task.FromResult(new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Applied,
-            "would change"));
     }
 
     /// <summary>Solution components in the covered classes the file does not name (R9).</summary>

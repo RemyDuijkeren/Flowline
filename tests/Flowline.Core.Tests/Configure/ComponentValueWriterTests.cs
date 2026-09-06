@@ -1,3 +1,4 @@
+using Flowline.Core.Models;
 using System.ServiceModel;
 using FluentAssertions;
 using Flowline.Core.Configure;
@@ -14,8 +15,9 @@ public class ComponentValueWriterTests
     static InventoryComponent Variable(Guid? id = null) =>
         new(ConfigurableComponentKind.EnvironmentVariable, "cr123_ApiUrl", id ?? Guid.NewGuid(), null);
 
-    static InventoryComponent Reference() =>
-        new(ConfigurableComponentKind.ConnectionReference, "cr123_shared_dataverse", Guid.NewGuid(), null);
+    static InventoryComponent Reference(string? currentConnectionId = null) =>
+        new(ConfigurableComponentKind.ConnectionReference, "cr123_shared_dataverse", Guid.NewGuid(), null,
+            CurrentValue: currentConnectionId);
 
     static IOrganizationServiceAsync2 ServiceReturning(params Entity[] valueRows)
     {
@@ -41,7 +43,7 @@ public class ComponentValueWriterTests
         var component = Variable();
 
         var outcome = await ComponentValueWriter.ApplyEnvironmentVariableAsync(
-            service, component, "https://example.invalid", CancellationToken.None);
+            service, component, "https://example.invalid", RunMode.Normal, CancellationToken.None);
 
         outcome.Outcome.Should().Be(ComponentOutcomeKind.Applied);
         await service.Received(1).CreateAsync(
@@ -56,7 +58,7 @@ public class ComponentValueWriterTests
         var component = Variable();
         var service = ServiceReturning();
 
-        await ComponentValueWriter.ApplyEnvironmentVariableAsync(service, component, "v", CancellationToken.None);
+        await ComponentValueWriter.ApplyEnvironmentVariableAsync(service, component, "v", RunMode.Normal, CancellationToken.None);
 
         await service.Received(1).CreateAsync(
             Arg.Is<Entity>(e =>
@@ -70,7 +72,7 @@ public class ComponentValueWriterTests
         var service = ServiceReturning(ValueRow("old"));
 
         var outcome = await ComponentValueWriter.ApplyEnvironmentVariableAsync(
-            service, Variable(), "new", CancellationToken.None);
+            service, Variable(), "new", RunMode.Normal, CancellationToken.None);
 
         outcome.Outcome.Should().Be(ComponentOutcomeKind.Applied);
         await service.Received(1).UpdateAsync(
@@ -84,7 +86,7 @@ public class ComponentValueWriterTests
         var service = ServiceReturning(ValueRow("same"));
 
         var outcome = await ComponentValueWriter.ApplyEnvironmentVariableAsync(
-            service, Variable(), "same", CancellationToken.None);
+            service, Variable(), "same", RunMode.Normal, CancellationToken.None);
 
         outcome.Outcome.Should().Be(ComponentOutcomeKind.Unchanged);
         await service.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
@@ -100,7 +102,7 @@ public class ComponentValueWriterTests
         var component = Variable();
         var service = ServiceReturning(ValueRow("x"));
 
-        await ComponentValueWriter.ApplyEnvironmentVariableAsync(service, component, "y", CancellationToken.None);
+        await ComponentValueWriter.ApplyEnvironmentVariableAsync(service, component, "y", RunMode.Normal, CancellationToken.None);
 
         await service.Received().RetrieveMultipleAsync(
             Arg.Is<QueryExpression>(q =>
@@ -120,7 +122,7 @@ public class ComponentValueWriterTests
                 new OrganizationServiceFault { ErrorCode = 1 }, "value 'hunter2' rejected"));
 
         var outcome = await ComponentValueWriter.ApplyEnvironmentVariableAsync(
-            service, Variable(), "hunter2", CancellationToken.None);
+            service, Variable(), "hunter2", RunMode.Normal, CancellationToken.None);
 
         outcome.Outcome.Should().Be(ComponentOutcomeKind.Failed);
         outcome.Detail.Should().NotContain("hunter2");
@@ -134,7 +136,7 @@ public class ComponentValueWriterTests
         var id = Guid.NewGuid().ToString();
 
         var outcome = await ComponentValueWriter.ApplyConnectionReferenceAsync(
-            service, Reference(), id, id, CancellationToken.None);
+            service, Reference(currentConnectionId: id), id, RunMode.Normal, CancellationToken.None);
 
         outcome.Outcome.Should().Be(ComponentOutcomeKind.Unchanged);
         await service.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
@@ -146,7 +148,7 @@ public class ComponentValueWriterTests
         var service = Substitute.For<IOrganizationServiceAsync2>();
 
         var outcome = await ComponentValueWriter.ApplyConnectionReferenceAsync(
-            service, Reference(), "new-connection", "old-connection", CancellationToken.None);
+            service, Reference(currentConnectionId: "old-connection"), "new-connection", RunMode.Normal, CancellationToken.None);
 
         outcome.Outcome.Should().Be(ComponentOutcomeKind.Applied);
         await service.Received(1).UpdateAsync(

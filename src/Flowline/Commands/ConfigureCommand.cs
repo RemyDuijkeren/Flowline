@@ -143,11 +143,6 @@ public class ConfigureCommand(
         // silently compared the checkout when `--path` was passed inside a project (DriftCommand.cs:41-46).
         // A named solution wins wherever it is named.
         var artifactPath = settings.Pull.Value;
-        var (solutionPath, solutionIsZip) = artifactPath is not null
-            ? ResolveSolutionInput(artifactPath)
-            : (await SolutionFileLayout.LoadAsync(RootFolder, cancellationToken)).DataverseSolutionFolder is var folder
-                ? (Path.Combine(folder, "src"), false)
-                : default;
 
         var (env, profile) = await ResolveEnvironmentAsync(settings.Target, role, settings, cancellationToken);
 
@@ -167,7 +162,16 @@ public class ConfigureCommand(
             _ => SolutionComponentInventory.ReadAsync(service, solutionName, cancellationToken));
 
         if (pullRequested)
+        {
+            // Resolved here, not up front: only a pull needs a solution on disk to generate the skeleton
+            // from. Reading the project layout unconditionally made a stand-alone apply — which needs no
+            // checkout at all — fail with "No solution file in ./".
+            var (solutionPath, solutionIsZip) = artifactPath is not null
+                ? ResolveSolutionInput(artifactPath)
+                : (Path.Combine((await SolutionFileLayout.LoadAsync(RootFolder, cancellationToken)).DataverseSolutionFolder, "src"), false);
+
             return await PullAsync(service, solutionPath, solutionIsZip, location, inventory, mode, env, cancellationToken);
+        }
 
         Console.Info(BuildResolutionNote(env.DisplayName ?? settings.Target, location));
 

@@ -1,4 +1,5 @@
 using System.ServiceModel;
+using Flowline.Core.Models;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 
@@ -70,6 +71,7 @@ public static class ComponentStateWriter
         IOrganizationServiceAsync2 service,
         InventoryComponent component,
         bool desiredEnabled,
+        RunMode mode,
         CancellationToken ct,
         bool currentlySuspended = false)
     {
@@ -80,6 +82,13 @@ public static class ComponentStateWriter
         if (update is null)
             return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Skipped,
                 $"{component.Kind} carries a value rather than an on/off state.");
+
+        // Report-only stops here rather than before the comparison above, so a dry run reports exactly the
+        // components a real run would change. Deciding it earlier reported every declared component as a
+        // change, which made the preview useless for the one thing it is for.
+        if (mode.IsReportOnly())
+            return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Applied,
+                "would change", WasSuspended: currentlySuspended);
 
         try
         {

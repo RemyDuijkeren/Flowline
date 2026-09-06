@@ -1,4 +1,5 @@
 using System.ServiceModel;
+using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
@@ -30,6 +31,7 @@ public static class ComponentValueWriter
         IOrganizationServiceAsync2 service,
         InventoryComponent component,
         string declaredValue,
+        RunMode mode,
         CancellationToken ct)
     {
         try
@@ -40,6 +42,9 @@ public static class ComponentValueWriter
             {
                 if (string.Equals(existing.GetAttributeValue<string>("value"), declaredValue, StringComparison.Ordinal))
                     return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Unchanged);
+
+                if (mode.IsReportOnly())
+                    return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Applied, "would change");
 
                 await service.UpdateAsync(new Entity("environmentvariablevalue", existing.Id)
                 {
@@ -52,6 +57,9 @@ public static class ComponentValueWriter
             // No value row yet, so the definition's default is what is currently in effect. A declared value
             // equal to that default still needs a row: the default belongs to the solution and would move
             // with the next import, while the override is this environment's own statement.
+            if (mode.IsReportOnly())
+                return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Applied, "would change");
+
             await service.CreateAsync(new Entity("environmentvariablevalue")
             {
                 ["environmentvariabledefinitionid"] = new EntityReference("environmentvariabledefinition", component.Id),
@@ -68,15 +76,24 @@ public static class ComponentValueWriter
     }
 
     /// <summary>Binds a connection reference to a connection.</summary>
+    /// <remarks>
+    /// The current binding comes off the component rather than a parameter: the inventory read already has
+    /// it, and a caller with nothing to pass silently turned every apply into a write — which is what shipped
+    /// first, and what made a file applied straight back to the environment it came from report Applied
+    /// instead of Unchanged (AE1).
+    /// </remarks>
     public static async Task<ComponentOutcome> ApplyConnectionReferenceAsync(
         IOrganizationServiceAsync2 service,
         InventoryComponent component,
         string connectionId,
-        string? currentConnectionId,
+        RunMode mode,
         CancellationToken ct)
     {
-        if (string.Equals(currentConnectionId, connectionId, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(component.CurrentValue, connectionId, StringComparison.OrdinalIgnoreCase))
             return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Unchanged);
+
+        if (mode.IsReportOnly())
+            return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Applied, "would change");
 
         try
         {

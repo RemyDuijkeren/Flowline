@@ -107,6 +107,57 @@ public class ConfigureApplyServiceTests
         outcome.ExitCode.Should().Be(ExitCode.Inconclusive);
     }
 
+    // AE7, the half that shipped wrong first: dry-run reported every declared component as a change, because
+    // it short-circuited ahead of the comparison instead of running it. Caught against a real environment,
+    // where a file pulled seconds earlier previewed as six changes. A preview that cannot tell a change from
+    // a no-op is worse than none — it is the thing an operator reads before touching production.
+    [Fact]
+    public async Task Apply_DryRun_ComponentsAlreadyInTheirDeclaredState_AreUnchangedNotChanges()
+    {
+        var service = Service();
+        var document = DocumentWith("""
+            {
+              "Flows": [ { "Name": "order_processing", "Enabled": true } ],
+              "ConnectionReferences": [ { "LogicalName": "cr_dataverse", "ConnectionId": "abc123" } ]
+            }
+            """);
+
+        var inventory = new SolutionInventory(
+        [
+            Flow("order_processing", true),
+            new InventoryComponent(ConfigurableComponentKind.ConnectionReference, "cr_dataverse", Guid.NewGuid(), null,
+                CurrentValue: "abc123"),
+        ]);
+
+        var outcome = await new ConfigureApplyService()
+            .ApplyAsync(service, document, inventory, RunMode.DryRun, CancellationToken.None);
+
+        outcome.Unchanged.Should().Be(2);
+        outcome.Applied.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Apply_DryRun_ReportsOnlyTheComponentsThatWouldActuallyChange()
+    {
+        var document = DocumentWith("""
+            {
+              "Flows": [
+                { "Name": "already_on", "Enabled": true },
+                { "Name": "currently_off", "Enabled": true }
+              ]
+            }
+            """);
+
+        var inventory = new SolutionInventory([Flow("already_on", true), Flow("currently_off", false)]);
+
+        var outcome = await new ConfigureApplyService()
+            .ApplyAsync(Service(), document, inventory, RunMode.DryRun, CancellationToken.None);
+
+        outcome.Applied.Should().Be(1);
+        outcome.Unchanged.Should().Be(1);
+        outcome.Components.Single(c => c.Outcome == ComponentOutcomeKind.Applied).Name.Should().Be("currently_off");
+    }
+
     // AE7: dry-run reports the change set a real run would apply and writes nothing.
     [Fact]
     public async Task Apply_DryRun_ReportsChangesAndIssuesNoWrite()

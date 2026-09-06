@@ -307,6 +307,28 @@ public class ConfigurePullServiceTests
 
         outcome.Failed.Should().Be(0);
         outcome.Skipped.Should().Be(0);
+        outcome.Applied.Should().Be(0, "a file applied to the environment it came from changes nothing");
         await applyService.DidNotReceive().CreateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        await applyService.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
+    // The specific way AE1 failed first: the apply path had no way to see a connection reference's current
+    // binding, so it rewrote every one of them on every run — a write against a live environment for a file
+    // that declared exactly what was already there.
+    [Fact]
+    public async Task Build_ThenApply_ConnectionReferenceAlreadyBound_IsUnchanged()
+    {
+        var inventory = new SolutionInventory([Reference("cr123_dataverse", "conn-guid")]);
+
+        var pulled = await new ConfigurePullService()
+            .BuildAsync(Service(), Doc(PacSkeleton), null, inventory, CancellationToken.None);
+
+        var applyService = Service();
+        var outcome = await new ConfigureApplyService().ApplyAsync(
+            applyService, pulled.Document, inventory, RunMode.Normal, CancellationToken.None);
+
+        outcome.Unchanged.Should().Be(1);
+        outcome.Applied.Should().Be(0);
+        await applyService.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
     }
 }

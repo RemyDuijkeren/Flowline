@@ -1,3 +1,4 @@
+using Flowline.Core.Models;
 using System.ServiceModel;
 using FluentAssertions;
 using Flowline.Core.Configure;
@@ -81,7 +82,7 @@ public class ComponentStateWriterTests
     {
         var service = Substitute.For<IOrganizationServiceAsync2>();
 
-        var outcome = await ComponentStateWriter.ApplyAsync(service, Flow(true), desiredEnabled: true, CancellationToken.None);
+        var outcome = await ComponentStateWriter.ApplyAsync(service, Flow(true), desiredEnabled: true, RunMode.Normal, CancellationToken.None);
 
         outcome.Outcome.Should().Be(ComponentOutcomeKind.Unchanged);
         await service.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
@@ -92,7 +93,7 @@ public class ComponentStateWriterTests
     {
         var service = Substitute.For<IOrganizationServiceAsync2>();
 
-        var outcome = await ComponentStateWriter.ApplyAsync(service, Flow(false), desiredEnabled: true, CancellationToken.None);
+        var outcome = await ComponentStateWriter.ApplyAsync(service, Flow(false), desiredEnabled: true, RunMode.Normal, CancellationToken.None);
 
         outcome.Outcome.Should().Be(ComponentOutcomeKind.Applied);
         await service.Received(1).UpdateAsync(Arg.Is<Entity>(e => State(e) == 1), Arg.Any<CancellationToken>());
@@ -106,7 +107,7 @@ public class ComponentStateWriterTests
         var service = Substitute.For<IOrganizationServiceAsync2>();
 
         var outcome = await ComponentStateWriter.ApplyAsync(
-            service, Flow(false), desiredEnabled: true, CancellationToken.None, currentlySuspended: true);
+            service, Flow(false), desiredEnabled: true, RunMode.Normal, CancellationToken.None, currentlySuspended: true);
 
         outcome.Outcome.Should().Be(ComponentOutcomeKind.Applied);
         outcome.WasSuspended.Should().BeTrue();
@@ -120,7 +121,7 @@ public class ComponentStateWriterTests
         var service = Substitute.For<IOrganizationServiceAsync2>();
 
         var outcome = await ComponentStateWriter.ApplyAsync(
-            service, Flow(false), desiredEnabled: false, CancellationToken.None, currentlySuspended: true);
+            service, Flow(false), desiredEnabled: false, RunMode.Normal, CancellationToken.None, currentlySuspended: true);
 
         outcome.Outcome.Should().Be(ComponentOutcomeKind.Applied);
     }
@@ -133,7 +134,7 @@ public class ComponentStateWriterTests
             .Returns<Task>(_ => throw new FaultException<OrganizationServiceFault>(
                 new OrganizationServiceFault { ErrorCode = unchecked((int)0x80040265) }, "boom"));
 
-        var outcome = await ComponentStateWriter.ApplyAsync(service, Flow(false), true, CancellationToken.None);
+        var outcome = await ComponentStateWriter.ApplyAsync(service, Flow(false), true, RunMode.Normal, CancellationToken.None);
 
         outcome.Outcome.Should().Be(ComponentOutcomeKind.Failed);
         outcome.Detail.Should().Contain("order_processing");
