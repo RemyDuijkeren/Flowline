@@ -37,6 +37,10 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         [Description("Git ref to compare to (default: the working tree, so uncommitted and untracked files count). Needs --from")]
         public string? To { get; set; }
 
+        [CommandOption("--exit-code")]
+        [Description("Exit 22 when changes were found, 0 when there were none (like 'git diff --exit-code'). Failures keep their own code")]
+        public bool ExitCodeOnChanges { get; set; }
+
         [CommandOption("--write [FILE]")]
         [Description("Write the report to a file (default: CHANGES.md in the repo root)")]
         public FlagValue<string> Write { get; set; } = null!;
@@ -66,14 +70,14 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     protected override Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken) =>
         DiffAsync(RootFolder, settings.From, settings.To,
             settings.Write.IsSet ? Path.GetFullPath(settings.Write.Value ?? ChangesFileName, RootFolder) : null,
-            settings.Verbose, cancellationToken);
+            settings.Verbose, settings.ExitCodeOnChanges, cancellationToken);
 
     /// <summary>Runs the comparison against <paramref name="rootFolder"/> and renders it.</summary>
     /// <remarks>
     /// Takes the root and the two refs rather than reading <c>Settings</c>, and is <c>internal</c>, so every
     /// path is exercisable against a temp repository without running the base command pipeline.
     /// </remarks>
-    internal async Task<int> DiffAsync(string rootFolder, string? from, string? to, string? writeTo, bool verbose, CancellationToken cancellationToken)
+    internal async Task<int> DiffAsync(string rootFolder, string? from, string? to, string? writeTo, bool verbose, bool exitCodeOnChanges, CancellationToken cancellationToken)
     {
         var (fromSide, toSide) = ResolveSides(from, to);
         EnsureGitRepository(rootFolder);
@@ -91,7 +95,9 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             await summary.WriteChangesFileAsync(writeTo, solutionName, $"Compared: {fromName} -> {toName}",
                 writeWhenEmpty: true, cancellationToken);
 
-        return (int)ExitCode.Success;
+        // Any changed file counts, including one the parser can't name as a component (Other/Solution.xml),
+        // so a version-only bump is a change. Same number the tree and the written report are built from.
+        return (int)(exitCodeOnChanges && summary.TotalFiles > 0 ? ExitCode.ChangesFound : ExitCode.Success);
     }
 
     /// <summary>How a side reads in a message — the ref itself, or the files on disk.</summary>

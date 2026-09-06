@@ -70,6 +70,14 @@ public enum ExitCode
     /// </summary>
     AssemblyNotRegistered = 21,
 
+    /// <summary>
+    /// Changes were found. <b>Not a failure</b> — the command ran to completion and the comparison
+    /// succeeded. Only returned when the caller opts in with <c>--exit-code</c>, so a run without that
+    /// option reports changes and still exits <see cref="Success"/>. Gate on this to branch on "is there
+    /// anything to sync/deploy" without parsing output.
+    /// </summary>
+    ChangesFound = 22,
+
     /// <summary>Operation cancelled by user (Ctrl+C / SIGINT). Follows de facto convention 128+2=130.</summary>
     Cancelled = 130,
 }

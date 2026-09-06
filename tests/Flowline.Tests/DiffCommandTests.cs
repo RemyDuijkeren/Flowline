@@ -196,7 +196,7 @@ public class DiffCommandTests : IDisposable
         await WriteComponentAsync(srcFolder, "Entities/Account/Entity.xml", "<entity/>");
         var (command, console) = MakeCommand();
 
-        var exitCode = await command.DiffAsync(_root, from: null, to: null, writeTo: null, verbose: false, CancellationToken.None);
+        var exitCode = await command.DiffAsync(_root, from: null, to: null, writeTo: null, verbose: false, exitCodeOnChanges: false, CancellationToken.None);
 
         exitCode.Should().Be((int)ExitCode.Success);
         console.Output.Should().Contain("Account").And.Contain("entity metadata");
@@ -209,7 +209,7 @@ public class DiffCommandTests : IDisposable
         await CreateSolutionRepoAsync();
         var (command, console) = MakeCommand();
 
-        var exitCode = await command.DiffAsync(_root, from: "HEAD", to: "HEAD", writeTo: null, verbose: false, CancellationToken.None);
+        var exitCode = await command.DiffAsync(_root, from: "HEAD", to: "HEAD", writeTo: null, verbose: false, exitCodeOnChanges: false, CancellationToken.None);
 
         exitCode.Should().Be((int)ExitCode.Success);
         console.Output.Should().Contain("No changes");
@@ -223,7 +223,7 @@ public class DiffCommandTests : IDisposable
         await WriteComponentAsync(srcFolder, "Entities/Account/Entity.xml", "<entity/>");
         var (command, console) = MakeCommand();
 
-        var exitCode = await command.DiffAsync(_root, from: "HEAD", to: "HEAD", writeTo: null, verbose: false, CancellationToken.None);
+        var exitCode = await command.DiffAsync(_root, from: "HEAD", to: "HEAD", writeTo: null, verbose: false, exitCodeOnChanges: false, CancellationToken.None);
 
         exitCode.Should().Be((int)ExitCode.Success);
         console.Output.Should().NotContain("entity metadata");
@@ -236,7 +236,7 @@ public class DiffCommandTests : IDisposable
         await CreateSolutionRepoAsync();
         var (command, _) = MakeCommand();
 
-        var act = () => command.DiffAsync(_root, from: "no-such-ref", to: null, writeTo: null, verbose: false, CancellationToken.None);
+        var act = () => command.DiffAsync(_root, from: "no-such-ref", to: null, writeTo: null, verbose: false, exitCodeOnChanges: false, CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>())
             .Where(e => e.ExitCode == ExitCode.NotFound)
@@ -251,7 +251,7 @@ public class DiffCommandTests : IDisposable
         await CreateSolutionRepoAsync();
         var (command, console) = MakeCommand();
 
-        await command.DiffAsync(_root, from: "HEAD", to: null, writeTo: null, verbose: false, CancellationToken.None);
+        await command.DiffAsync(_root, from: "HEAD", to: null, writeTo: null, verbose: false, exitCodeOnChanges: false, CancellationToken.None);
 
         console.Output.Should().Contain("HEAD").And.Contain("working tree");
         console.Output.Should().NotContain("DEV");
@@ -270,7 +270,7 @@ public class DiffCommandTests : IDisposable
         var before = Directory.GetFiles(_root, "*", SearchOption.AllDirectories).Length;
         var (command, _) = MakeCommand();
 
-        await command.DiffAsync(_root, from: null, to: null, writeTo: null, verbose: false, CancellationToken.None);
+        await command.DiffAsync(_root, from: null, to: null, writeTo: null, verbose: false, exitCodeOnChanges: false, CancellationToken.None);
 
         (await File.ReadAllTextAsync(existing)).Should().Be("untouched");
         Directory.GetFiles(_root, "*", SearchOption.AllDirectories).Length.Should().Be(before);
@@ -285,7 +285,7 @@ public class DiffCommandTests : IDisposable
         var (command, _) = MakeCommand();
 
         await command.DiffAsync(_root, from: null, to: null, writeTo: Path.Combine(_root, "CHANGES.md"),
-            verbose: false, CancellationToken.None);
+            verbose: false, exitCodeOnChanges: false, CancellationToken.None);
 
         var content = await File.ReadAllTextAsync(Path.Combine(_root, "CHANGES.md"));
         content.Should().Contain("entity metadata");
@@ -301,7 +301,7 @@ public class DiffCommandTests : IDisposable
         var (command, _) = MakeCommand();
 
         await command.DiffAsync(_root, from: null, to: null, writeTo: Path.Combine(_root, "report.md"),
-            verbose: false, CancellationToken.None);
+            verbose: false, exitCodeOnChanges: false, CancellationToken.None);
 
         File.Exists(Path.Combine(_root, "report.md")).Should().BeTrue();
         File.Exists(Path.Combine(_root, "CHANGES.md")).Should().BeFalse();
@@ -316,10 +316,10 @@ public class DiffCommandTests : IDisposable
         await WriteComponentAsync(srcFolder, "Entities/Account/Entity.xml", "<entity/>");
         var target = Path.Combine(_root, "CHANGES.md");
         var (first, _) = MakeCommand();
-        await first.DiffAsync(_root, from: null, to: null, writeTo: target, verbose: false, CancellationToken.None);
+        await first.DiffAsync(_root, from: null, to: null, writeTo: target, verbose: false, exitCodeOnChanges: false, CancellationToken.None);
 
         var (second, console) = MakeCommand();
-        await second.DiffAsync(_root, from: null, to: null, writeTo: target, verbose: false, CancellationToken.None);
+        await second.DiffAsync(_root, from: null, to: null, writeTo: target, verbose: false, exitCodeOnChanges: false, CancellationToken.None);
 
         console.Output.Should().NotContain("CHANGES");
     }
@@ -333,7 +333,7 @@ public class DiffCommandTests : IDisposable
         var target = Path.Combine(_root, "reports", "diff.md");
         var (command, _) = MakeCommand();
 
-        await command.DiffAsync(_root, from: null, to: null, writeTo: target, verbose: false, CancellationToken.None);
+        await command.DiffAsync(_root, from: null, to: null, writeTo: target, verbose: false, exitCodeOnChanges: false, CancellationToken.None);
 
         File.Exists(target).Should().BeTrue();
     }
@@ -346,7 +346,7 @@ public class DiffCommandTests : IDisposable
         var target = Path.Combine(_root, "CHANGES.md");
         var (command, _) = MakeCommand();
 
-        await command.DiffAsync(_root, from: "HEAD", to: "HEAD", writeTo: target, verbose: false, CancellationToken.None);
+        await command.DiffAsync(_root, from: "HEAD", to: "HEAD", writeTo: target, verbose: false, exitCodeOnChanges: false, CancellationToken.None);
 
         var content = await File.ReadAllTextAsync(target);
         content.Should().Contain("Compared: HEAD -> HEAD");
@@ -361,11 +361,11 @@ public class DiffCommandTests : IDisposable
         var target = Path.Combine(_root, "CHANGES.md");
         await WriteComponentAsync(srcFolder, "Entities/Account/Entity.xml", "<entity/>");
         var (first, _) = MakeCommand();
-        await first.DiffAsync(_root, from: null, to: null, writeTo: target, verbose: false, CancellationToken.None);
+        await first.DiffAsync(_root, from: null, to: null, writeTo: target, verbose: false, exitCodeOnChanges: false, CancellationToken.None);
         File.Delete(Path.Combine(srcFolder, "Entities", "Account", "Entity.xml"));
 
         var (second, _) = MakeCommand();
-        await second.DiffAsync(_root, from: "HEAD", to: "HEAD", writeTo: target, verbose: false, CancellationToken.None);
+        await second.DiffAsync(_root, from: "HEAD", to: "HEAD", writeTo: target, verbose: false, exitCodeOnChanges: false, CancellationToken.None);
 
         (await File.ReadAllTextAsync(target)).Should().NotContain("entity metadata");
     }
@@ -379,7 +379,7 @@ public class DiffCommandTests : IDisposable
         var target = Path.Combine(_root, "CHANGES.md");
         var (command, _) = MakeCommand();
 
-        await command.DiffAsync(_root, from: null, to: null, writeTo: target, verbose: false, CancellationToken.None);
+        await command.DiffAsync(_root, from: null, to: null, writeTo: target, verbose: false, exitCodeOnChanges: false, CancellationToken.None);
 
         var content = await File.ReadAllTextAsync(target);
         content.Should().Contain("Compared: HEAD -> working tree");
@@ -397,10 +397,67 @@ public class DiffCommandTests : IDisposable
         var target = Path.Combine(_root, "CHANGES.md");
         var (command, _) = MakeCommand();
 
-        await command.DiffAsync(_root, from: "HEAD~1", to: "HEAD", writeTo: target, verbose: false, CancellationToken.None);
+        await command.DiffAsync(_root, from: "HEAD~1", to: "HEAD", writeTo: target, verbose: false, exitCodeOnChanges: false, CancellationToken.None);
 
         var content = await File.ReadAllTextAsync(target);
         content.Should().Contain("Compared: HEAD~1 -> HEAD");
         content.Should().Contain("entity metadata");
+    }
+
+    // ---- --exit-code --------------------------------------------------------------------------
+
+    /// <summary>R11. Without --exit-code, finding changes is not a failure — the run exits 0.</summary>
+    [Fact]
+    public async Task DiffAsync_WithChangesAndNoExitCodeOption_Succeeds()
+    {
+        var srcFolder = await CreateSolutionRepoAsync();
+        await WriteComponentAsync(srcFolder, "Entities/Account/Entity.xml", "<entity/>");
+        var (command, _) = MakeCommand();
+
+        var exitCode = await command.DiffAsync(_root, from: null, to: null, writeTo: null, verbose: false,
+            exitCodeOnChanges: false, CancellationToken.None);
+
+        exitCode.Should().Be((int)ExitCode.Success);
+    }
+
+    /// <summary>R11/KTD3. With --exit-code, at least one changed file exits ChangesFound.</summary>
+    [Fact]
+    public async Task DiffAsync_WithChangesAndExitCodeOption_ExitsChangesFound()
+    {
+        var srcFolder = await CreateSolutionRepoAsync();
+        await WriteComponentAsync(srcFolder, "Entities/Account/Entity.xml", "<entity/>");
+        var (command, _) = MakeCommand();
+
+        var exitCode = await command.DiffAsync(_root, from: null, to: null, writeTo: null, verbose: false,
+            exitCodeOnChanges: true, CancellationToken.None);
+
+        exitCode.Should().Be((int)ExitCode.ChangesFound);
+    }
+
+    /// <summary>R11. With --exit-code and nothing changed, the run still exits 0.</summary>
+    [Fact]
+    public async Task DiffAsync_WithNoChangesAndExitCodeOption_Succeeds()
+    {
+        await CreateSolutionRepoAsync();
+        var (command, _) = MakeCommand();
+
+        var exitCode = await command.DiffAsync(_root, from: "HEAD", to: "HEAD", writeTo: null, verbose: false,
+            exitCodeOnChanges: true, CancellationToken.None);
+
+        exitCode.Should().Be((int)ExitCode.Success);
+    }
+
+    /// <summary>R11. --exit-code changes the no-changes signal only — a real failure keeps its own code.</summary>
+    [Fact]
+    public async Task DiffAsync_WithExitCodeOptionAndAnUnknownRef_StillFailsAsNotFound()
+    {
+        await CreateSolutionRepoAsync();
+        var (command, _) = MakeCommand();
+
+        var act = () => command.DiffAsync(_root, from: "no-such-ref", to: null, writeTo: null, verbose: false,
+            exitCodeOnChanges: true, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.NotFound);
     }
 }
