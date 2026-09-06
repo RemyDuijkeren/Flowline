@@ -82,6 +82,42 @@ public class SettingsFileLocatorTests : IDisposable
         result.Exists.Should().BeFalse();
     }
 
+    // A pull knows the role, so it creates the role-named file rather than writing captured connection ids
+    // into the shared file every environment reads.
+    [Fact]
+    public void Locate_ForWritingWithRole_TargetsTheRoleNamedFileEvenWhenOnlyTheSharedOneExists()
+    {
+        WriteFile("deploymentSettings.json");
+
+        var result = SettingsFileLocator.Locate(_folder, "test", forWriting: true);
+
+        result.Path.Should().EndWith("deploymentSettings.test.json");
+        result.Source.Should().Be(SettingsFileSource.RoleConvention);
+        result.Exists.Should().BeFalse();
+    }
+
+    // A URL target has no role name to build a filename from, so a pull still lands on the shared file.
+    [Fact]
+    public void Locate_ForWritingWithoutRole_StillUsesTheSharedFile()
+    {
+        var result = SettingsFileLocator.Locate(_folder, role: null, forWriting: true);
+
+        result.Path.Should().EndWith("deploymentSettings.json");
+        result.Source.Should().Be(SettingsFileSource.SharedFallback);
+    }
+
+    // Reads keep the fallback: a hand-authored shared file is the author's own choice.
+    [Fact]
+    public void Locate_ForReadingWithRole_StillFallsBackToTheSharedFile()
+    {
+        WriteFile("deploymentSettings.json");
+
+        var result = SettingsFileLocator.Locate(_folder, "test");
+
+        result.Path.Should().EndWith("deploymentSettings.json");
+        result.Source.Should().Be(SettingsFileSource.SharedFallback);
+    }
+
     [Fact]
     public void Locate_RoleCasingIsNormalised()
     {

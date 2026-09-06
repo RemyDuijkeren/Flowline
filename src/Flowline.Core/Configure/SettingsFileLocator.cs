@@ -44,13 +44,20 @@ public static class SettingsFileLocator
     /// <param name="solutionFolder">The folder holding the <c>.cdsproj</c>, from <c>SolutionFileLayout</c>.</param>
     /// <param name="role">The environment role, or <c>null</c> when the target was a URL.</param>
     /// <param name="explicitPath">A path the caller supplied, which overrides discovery.</param>
+    /// <param name="forWriting">
+    /// True for a pull, which creates the file it names. A write that knows the role always targets the
+    /// role-named file, never the shared one.
+    /// </param>
     /// <remarks>
     /// A URL target has no role name to build a filename from, so it can only reach the shared fallback or an
-    /// explicit path. The role-named file wins when it exists; otherwise the shared file is used, which is
-    /// safe for state declarations but carries environment-local values into the wrong environment if it
-    /// declares connection references or most environment variable values.
+    /// explicit path. For a read, the role-named file wins when it exists; otherwise the shared file is used,
+    /// which is safe for state declarations but carries environment-local values into the wrong environment if
+    /// it declares connection references or most environment variable values. A pull never falls back that way
+    /// — it would write live connection ids into the shared file, which is the hazard the fallback tolerates
+    /// only because a hand-authored shared file is the author's own choice.
     /// </remarks>
-    public static SettingsFileLocation Locate(string solutionFolder, string? role, string? explicitPath = null)
+    public static SettingsFileLocation Locate(
+        string solutionFolder, string? role, string? explicitPath = null, bool forWriting = false)
     {
         if (!string.IsNullOrWhiteSpace(explicitPath))
         {
@@ -61,15 +68,15 @@ public static class SettingsFileLocator
         if (!string.IsNullOrWhiteSpace(role))
         {
             var roleFile = Path.Combine(solutionFolder, FileNameForRole(role));
-            if (File.Exists(roleFile))
-                return new SettingsFileLocation(roleFile, SettingsFileSource.RoleConvention, true);
+            if (forWriting || File.Exists(roleFile))
+                return new SettingsFileLocation(roleFile, SettingsFileSource.RoleConvention, File.Exists(roleFile));
         }
 
         var shared = Path.Combine(solutionFolder, SharedFileName);
         if (File.Exists(shared))
             return new SettingsFileLocation(shared, SettingsFileSource.SharedFallback, true);
 
-        // Nothing on disk yet. A pull needs somewhere to write, and the role-named file is the right target
+        // Nothing on disk yet. A read needs somewhere to point, and the role-named file is the right target
         // when a role is known — a first pull should not create the shared file and quietly make one
         // environment's values look like every environment's.
         return string.IsNullOrWhiteSpace(role)

@@ -163,7 +163,7 @@ public class ConfigureCommand(
 
         var solutionName = await ResolveSolutionNameAsync(settings, standalone, artifactPath, env, cancellationToken);
 
-        var location = await ResolveSettingsFileAsync(settings, role, standalone, artifactPath, cancellationToken);
+        var location = await ResolveSettingsFileAsync(settings, role, standalone, artifactPath, pullRequested, cancellationToken);
         if (!pullRequested && !location.Exists)
             throw new FlowlineException(ExitCode.NotFound,
                 $"No settings file at '{ConsolePath.FormatRelativePath(location.Path, RootFolder)}'. " +
@@ -355,10 +355,12 @@ public class ConfigureCommand(
     /// The anchor is the Dataverse solution folder — resolved from the solution file, never composed —
     /// because that is where <c>pac solution create-settings</c> output naturally lands, beside the
     /// <c>.cdsproj</c>. An explicit path or stand-alone mode has no project to resolve, so it anchors on the
-    /// working directory instead.
+    /// working directory instead. A pull that knows the role writes the role-named file even when a shared
+    /// one is sitting there, so captured connection ids never land in the file every environment reads.
     /// </remarks>
     async Task<SettingsFileLocation> ResolveSettingsFileAsync(
-        Settings settings, EnvironmentRole? role, bool standalone, string? artifactPath, CancellationToken ct)
+        Settings settings, EnvironmentRole? role, bool standalone, string? artifactPath, bool forPull,
+        CancellationToken ct)
     {
         // A pull writes beside the artifact it was given (R12). Anchoring on the project instead would put
         // one solution's captured values in another solution's settings file, since the identity above comes
@@ -367,14 +369,14 @@ public class ConfigureCommand(
         {
             var (path, isZip) = ResolveSolutionInput(artifactPath);
             var anchor = isZip ? Path.GetDirectoryName(path)! : path;
-            return SettingsFileLocator.Locate(anchor, role?.ToString(), settings.SettingsFile);
+            return SettingsFileLocator.Locate(anchor, role?.ToString(), settings.SettingsFile, forPull);
         }
 
         if (!string.IsNullOrWhiteSpace(settings.SettingsFile) || standalone)
-            return SettingsFileLocator.Locate(Directory.GetCurrentDirectory(), role?.ToString(), settings.SettingsFile);
+            return SettingsFileLocator.Locate(Directory.GetCurrentDirectory(), role?.ToString(), settings.SettingsFile, forPull);
 
         var layout = await SolutionFileLayout.LoadAsync(RootFolder, ct);
-        return SettingsFileLocator.Locate(layout.DataverseSolutionFolder, role?.ToString(), settings.SettingsFile);
+        return SettingsFileLocator.Locate(layout.DataverseSolutionFolder, role?.ToString(), settings.SettingsFile, forPull);
     }
 
     /// <summary>
