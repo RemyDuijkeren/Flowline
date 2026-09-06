@@ -416,6 +416,44 @@ public class SolutionChangeSummaryComputeTests : IDisposable
         result.Groups[0].Items[0].FilePaths.Should().HaveCount(2);
     }
 
+    static string SolutionXml(string version) =>
+        $"<ImportExportXml><SolutionManifest><UniqueName>TestSln</UniqueName><Version>{version}</Version></SolutionManifest></ImportExportXml>";
+
+    [Fact]
+    public async Task ComputeAsync_VersionBumped_ReportsVersionTransitionAndCountsChange()
+    {
+        CommitFile("Other/Solution.xml", SolutionXml("1.12.38"));
+        WriteFile("Other/Solution.xml", SolutionXml("1.12.39"));
+
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root);
+
+        result.TotalFiles.Should().Be(1);
+        result.Version.Should().Be(new SolutionChangeSummary.VersionTransition("1.12.38", "1.12.39"));
+    }
+
+    [Fact]
+    public async Task ComputeAsync_SameVersion_ReportsNoVersionTransition()
+    {
+        CommitFile("Other/Solution.xml", SolutionXml("1.12.38"));
+        WriteFile("Other/Solution.xml", SolutionXml("1.12.38") + "<!-- edited -->");
+
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root);
+
+        result.TotalFiles.Should().Be(1);
+        result.Version.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ComputeAsync_SolutionXmlOnlyOnOneSide_ReportsNoVersionTransition()
+    {
+        WriteFile("Other/Solution.xml", SolutionXml("1.0.0.0"));
+
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root);
+
+        result.TotalFiles.Should().Be(1);
+        result.Version.Should().BeNull();
+    }
+
     void WriteFile(string relativePath, string content)
     {
         var full = Path.Combine(_srcFolder, relativePath.Replace('/', Path.DirectorySeparatorChar));
@@ -901,6 +939,19 @@ public class SolutionChangeSummaryChangesFileTests : IDisposable
     }
 
     [Fact]
+    public async Task WritesFile_WithVersionTransition()
+    {
+        var summary = new SolutionChangeSummary(1, 0, 0,
+            [new SolutionChangeSummary.ChangeGroup("Account", [Item("entity metadata", SolutionChangeSummary.ChangeStatus.Modified)], IsEntity: true)],
+            new SolutionChangeSummary.VersionTransition("1.12.38", "1.12.39"));
+
+        await summary.WriteChangesFileAsync(_tempFolder, "TestSln", "Dev");
+
+        var content = await File.ReadAllTextAsync(Path.Combine(_tempFolder, "CHANGES.md"));
+        content.Should().Contain("Version 1.12.38 -> 1.12.39");
+    }
+
+    [Fact]
     public async Task DoesNotWriteFile_WhenNoChanges()
     {
         var summary = new SolutionChangeSummary(0, 0, 0, []);
@@ -1064,6 +1115,29 @@ public class SolutionChangeSummaryWriteTests
         output.Should().Contain("+ New Form");
         output.Should().Contain("~ Changed Form");
         output.Should().Contain("- Old Form");
+    }
+
+    [Fact]
+    public void Write_VersionTransition_PrintedBesideTotals()
+    {
+        var console = new TestConsole();
+        var summary = new SolutionChangeSummary(1, 2, 1, [Group("Account", "entity metadata")],
+            new SolutionChangeSummary.VersionTransition("1.12.38", "1.12.39"));
+
+        summary.WriteTree(console, "Dev", verbose: false);
+
+        console.Output.Should().Contain("Version 1.12.38 -> 1.12.39");
+    }
+
+    [Fact]
+    public void Write_NoVersionTransition_OmitsVersionLine()
+    {
+        var console = new TestConsole();
+        var summary = Build(1, 2, 1, Group("Account", "entity metadata"));
+
+        summary.WriteTree(console, "Dev", verbose: false);
+
+        console.Output.Should().NotContain("Version ");
     }
 
     [Fact]

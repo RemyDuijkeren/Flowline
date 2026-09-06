@@ -27,6 +27,9 @@ public class SolutionChangeSummary
     internal const int SubChangeDisplayThreshold = 5;
     public record ChangeGroup(string Label, IReadOnlyList<ChangeItem> Items, bool IsEntity = false);
 
+    /// <summary>The solution version on each side, present only when the two sides differ.</summary>
+    public record VersionTransition(string From, string To);
+
     internal enum XmlRead { None, FormTitle, ViewTitle, DashboardName, StepName, WorkflowName }
     internal record ParsedPath(string Group, string ComponentKey, string? StaticName, XmlRead XmlRead = XmlRead.None, string? NameSuffix = null, bool IsEntity = false, string? FallbackName = null);
 
@@ -34,13 +37,16 @@ public class SolutionChangeSummary
     public int LinesAdded { get; }
     public int LinesRemoved { get; }
     public IReadOnlyList<ChangeGroup> Groups { get; }
+    public VersionTransition? Version { get; }
 
-    internal SolutionChangeSummary(int totalFiles, int linesAdded, int linesRemoved, IReadOnlyList<ChangeGroup> groups)
+    internal SolutionChangeSummary(int totalFiles, int linesAdded, int linesRemoved, IReadOnlyList<ChangeGroup> groups,
+        VersionTransition? version = null)
     {
         TotalFiles = totalFiles;
         LinesAdded = linesAdded;
         LinesRemoved = linesRemoved;
         Groups = groups;
+        Version = version;
     }
 
     public static Task<SolutionChangeSummary> ComputeAsync(string srcFolder, string workingDirectory, SubprocessCapture? capture = null, CancellationToken ct = default) =>
@@ -141,6 +147,7 @@ public class SolutionChangeSummary
         int fileCount = 0;
         int totalAdded = 0, totalRemoved = 0;
         var customizationsChanged = false;
+        var solutionChanged = false;
 
         foreach (var (status, untracked, absPath) in changedFiles)
         {
@@ -166,6 +173,9 @@ public class SolutionChangeSummary
 
             if (relPath.Equals(CustomizationsRelPath, StringComparison.OrdinalIgnoreCase))
                 customizationsChanged = true;
+
+            if (relPath.Equals(SolutionRelPath, StringComparison.OrdinalIgnoreCase))
+                solutionChanged = true;
 
             var parsed = ParseComponentPath(relPath);
             if (parsed == null) continue;
@@ -206,10 +216,35 @@ public class SolutionChangeSummary
                 resolvedGroups.Add(new ChangeGroup("Connection References", connRefItems));
         }
 
-        return new SolutionChangeSummary(fileCount, totalAdded, totalRemoved, resolvedGroups);
+        VersionTransition? version = null;
+        if (solutionChanged)
+            version = DiffSolutionVersion(
+                await GetSideXmlAsync(from, SolutionRelPath, srcFolder, srcRelPath, workingDirectory, ct),
+                await GetSideXmlAsync(to, SolutionRelPath, srcFolder, srcRelPath, workingDirectory, ct));
+
+        return new SolutionChangeSummary(fileCount, totalAdded, totalRemoved, resolvedGroups, version);
     }
 
     internal const string CustomizationsRelPath = "Other/Customizations.xml";
+    internal const string SolutionRelPath = "Other/Solution.xml";
+
+    /// <summary>The solution version sits in Other/Solution.xml, which has no component representation, so the
+    /// transition is read element-wise from both sides. A version missing on either side means no transition.</summary>
+    internal static VersionTransition? DiffSolutionVersion(string? oldXml, string? newXml)
+    {
+        static string? ReadVersion(string? xml)
+        {
+            if (xml == null) return null;
+            try { return XmlHelpers.Parse(xml).Root?.Element("SolutionManifest")?.Element("Version")?.Value; }
+            catch (XmlException) { return null; }
+        }
+
+        var oldVersion = ReadVersion(oldXml);
+        var newVersion = ReadVersion(newXml);
+        return string.IsNullOrEmpty(oldVersion) || string.IsNullOrEmpty(newVersion) || oldVersion == newVersion
+            ? null
+            : new VersionTransition(oldVersion, newVersion);
+    }
 
     /// <summary>Connection references live inside Other/Customizations.xml, not their own files, so they need an
     /// element-level diff of that one file rather than the per-file component pipeline.</summary>
@@ -253,6 +288,11 @@ public class SolutionChangeSummary
         if (envName != null)
         {
             sb.AppendLine($"Synced from: {envName}");
+            sb.AppendLine();
+        }
+        if (Version is { } version)
+        {
+            sb.AppendLine($"Version {version.From} -> {version.To}");
             sb.AppendLine();
         }
 
@@ -350,6 +390,8 @@ public class SolutionChangeSummary
         }
 
         var headline = $"\nChanges ({TotalFiles} {(TotalFiles == 1 ? "file" : "files")}, +{LinesAdded} -{LinesRemoved})";
+        if (Version is { } version)
+            headline += $"\nVersion {version.From} -> {version.To}";
         var tree = new Tree(headline);
 
         var entityGroups = Groups.Where(g => g.IsEntity).ToList();
