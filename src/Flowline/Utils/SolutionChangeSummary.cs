@@ -13,7 +13,7 @@ namespace Flowline.Utils;
 public class SolutionChangeSummary
 {
     public enum ChangeStatus { Added, Modified, Deleted }
-    public record SubChange(string Description, ChangeStatus Status);
+    public record SubChange(string Description, ChangeStatus Status, IReadOnlyList<SubChange>? Children = null);
     public record ChangeItem(string ComponentName, IReadOnlyList<string> FilePaths, ChangeStatus Status = ChangeStatus.Modified, IReadOnlyList<SubChange>? SubChanges = null);
 
     /// <summary>The right side of a comparison: a git ref, or the working tree when <see cref="GitRef"/> is null.
@@ -235,7 +235,11 @@ public class SolutionChangeSummary
                 // fetched at most once here and handed to both. A fetch is a `git show` per component, so
                 // resolving them independently cost a Form or View up to three subprocesses for two answers.
                 var needsName = c.Parsed.StaticName is null;
-                var needsSubChanges = HasSubChanges(c.Parsed) && status != ChangeStatus.Added;
+                // A deleted form lists its whole layout as removed, which says nothing the form's own line
+                // doesn't. Other component types keep their deleted sub-changes: an entity's columns are
+                // worth naming. Added components never get sub-changes at all.
+                var needsSubChanges = HasSubChanges(c.Parsed) && status != ChangeStatus.Added
+                                      && !(status == ChangeStatus.Deleted && c.Parsed.XmlRead == XmlRead.FormTitle);
 
                 string? newXml = null, oldXml = null;
                 var readFailed = false;
@@ -373,10 +377,14 @@ public class SolutionChangeSummary
             _                    => "`~`"
         };
 
-        static void WriteSubChanges(System.Text.StringBuilder sb, IReadOnlyList<SubChange> subs)
+        static void WriteSubChanges(System.Text.StringBuilder sb, IReadOnlyList<SubChange> subs, string indent = "")
         {
             foreach (var sub in subs)
-                sb.AppendLine($"- {Icon(sub.Status)} {sub.Description}");
+            {
+                sb.AppendLine($"{indent}- {Icon(sub.Status)} {sub.Description}");
+                if (sub.Children is { Count: > 0 })
+                    WriteSubChanges(sb, sub.Children, indent + "  ");
+            }
         }
 
         var entityGroups = Groups.Where(g => g.IsEntity).OrderBy(g => g.Label).ToList();
@@ -614,19 +622,26 @@ public class SolutionChangeSummary
             var itemNode = groupNode.AddNode(label);
 
             if (item.SubChanges is { Count: > 0 })
-            {
-                var shown = item.SubChanges.Take(SubChangeDisplayThreshold).ToList();
-                foreach (var sub in shown)
-                    itemNode.AddNode($"{StatusIcon(sub.Status)} {Markup.Escape(sub.Description)}");
-                var overflow = item.SubChanges.Count - shown.Count;
-                if (overflow > 0)
-                    itemNode.AddNode($"[dim]...and {overflow} more{(overflowHint is null ? "" : $" ({overflowHint})")}[/]");
-            }
+                AddSubChangeNodes(itemNode, item.SubChanges, overflowHint);
 
             if (verbose)
                 foreach (var path in item.FilePaths)
                     itemNode.AddNode($"[dim]{Markup.Escape(path)}[/]");
         }
+    }
+
+    static void AddSubChangeNodes(TreeNode parent, IReadOnlyList<SubChange> subs, string? overflowHint)
+    {
+        var shown = subs.Take(SubChangeDisplayThreshold).ToList();
+        foreach (var sub in shown)
+        {
+            var node = parent.AddNode($"{StatusIcon(sub.Status)} {Markup.Escape(sub.Description)}");
+            if (sub.Children is { Count: > 0 })
+                AddSubChangeNodes(node, sub.Children, overflowHint);
+        }
+        var overflow = subs.Count - shown.Count;
+        if (overflow > 0)
+            parent.AddNode($"[dim]...and {overflow} more{(overflowHint is null ? "" : $" ({overflowHint})")}[/]");
     }
 
     static string StatusIcon(ChangeStatus status) => status switch
@@ -931,10 +946,17 @@ public class SolutionChangeSummary
             ?? (string?)el.Element("labels")?.Elements("label").FirstOrDefault()?.Attribute("description")
             ?? (string?)el.Attribute("name");
 
+        // A section is reported under the tab that contains it, so each section carries its owning tab's name.
+        static Dictionary<string, (XElement El, string? Tab)>? Sections(string? xml) =>
+            ParseXmlElements(xml, "section", e => (string?)e.Attribute("name"))
+                ?.ToDictionary(kv => kv.Key,
+                    kv => (kv.Value, (string?)kv.Value.Ancestors("tab").FirstOrDefault()?.Attribute("name")),
+                    StringComparer.OrdinalIgnoreCase);
+
         var oldFields   = ParseXmlElements(oldXml, "cell", e => (string?)e.Attribute("datafieldname"), skipEmpty: true);
         var newFields   = ParseXmlElements(newXml, "cell", e => (string?)e.Attribute("datafieldname"), skipEmpty: true);
-        var oldSections = ParseXmlElements(oldXml, "section", e => (string?)e.Attribute("name"));
-        var newSections = ParseXmlElements(newXml, "section", e => (string?)e.Attribute("name"));
+        var oldSections = Sections(oldXml);
+        var newSections = Sections(newXml);
         var oldTabs     = ParseXmlElements(oldXml, "tab", e => (string?)e.Attribute("name"));
         var newTabs     = ParseXmlElements(newXml, "tab", e => (string?)e.Attribute("name"));
 
@@ -957,9 +979,31 @@ public class SolutionChangeSummary
         // Fields appearing in multiple sections deduplicate by first-seen — moving a field between sections produces no sub-change.
         DiffElements(oldFields, newFields, el => (string?)el.Attribute("datafieldname") ?? string.Empty);
         DiffElements(oldTabs, newTabs, el => ResolveLabel(el) ?? string.Empty, "tab");
-        DiffElements(oldSections, newSections, el => ResolveLabel(el) ?? string.Empty, "section");
 
-        return [..added, ..removed];
+        // Sections nest under the tab holding them. A section whose tab was itself added or removed is
+        // dropped: the tab line already says the whole tab moved.
+        var byTab = new Dictionary<string, List<SubChange>>(StringComparer.OrdinalIgnoreCase);
+        var tabOrder = new List<string>();
+
+        void Section(string? tab, SubChange change, List<SubChange> flat)
+        {
+            if (tab == null) { flat.Add(change); return; }
+            if (!(oldTabs?.ContainsKey(tab) ?? false) || !(newTabs?.ContainsKey(tab) ?? false)) return;
+            if (!byTab.TryGetValue(tab, out var list)) { byTab[tab] = list = []; tabOrder.Add(tab); }
+            list.Add(change);
+        }
+
+        foreach (var (key, (el, tab)) in newSections ?? [])
+            if (!(oldSections?.ContainsKey(key) ?? false))
+                Section(tab, new SubChange($"section: {ResolveLabel(el)}", ChangeStatus.Added), added);
+        foreach (var (key, (el, tab)) in oldSections ?? [])
+            if (!(newSections?.ContainsKey(key) ?? false))
+                Section(tab, new SubChange($"section: {ResolveLabel(el)}", ChangeStatus.Deleted), removed);
+
+        var tabGroups = tabOrder.Select(t =>
+            new SubChange($"tab: {ResolveLabel(newTabs![t])}", ChangeStatus.Modified, byTab[t]));
+
+        return [..added, ..removed, ..tabGroups];
     }
 
     static Dictionary<string, XElement>? ParseXmlElements(string? xml, string elementName,

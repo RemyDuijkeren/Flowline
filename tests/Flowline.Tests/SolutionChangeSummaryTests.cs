@@ -881,7 +881,7 @@ public class SolutionChangeSummarySubChangesTests : IDisposable
     }
 
     [Fact]
-    public async Task Form_SectionAdded_SubChangeShowsSectionPrefix()
+    public async Task Form_SectionAdded_SubChangeNestsSectionUnderItsTab()
     {
         var guid = Guid.NewGuid().ToString("D");
         CommitFile($"Entities/Account/FormXml/main/{{{guid}}}.xml", FormXml([], ["section1"]));
@@ -889,9 +889,40 @@ public class SolutionChangeSummarySubChangesTests : IDisposable
 
         var item = await GetSingleItemAsync();
 
-        item.SubChanges.Should().ContainSingle(s =>
+        var tab = item.SubChanges.Should().ContainSingle(s => s.Description == "tab: tab1").Subject;
+        tab.Children.Should().ContainSingle(s =>
             s.Status == SolutionChangeSummary.ChangeStatus.Added &&
-            s.Description.StartsWith("section:"));
+            s.Description == "section: section2");
+    }
+
+    [Fact]
+    public async Task Form_TabRemoved_ReportsTabWithoutItsSections()
+    {
+        var guid = Guid.NewGuid().ToString("D");
+        CommitFile($"Entities/Account/FormXml/main/{{{guid}}}.xml", FormXml([], ["section1"], ["tab1", "tab2"]));
+        WriteFile($"Entities/Account/FormXml/main/{{{guid}}}.xml", FormXml([], ["section1"], ["tab1"]));
+
+        var item = await GetSingleItemAsync();
+
+        item.SubChanges.Should().ContainSingle(s =>
+            s.Status == SolutionChangeSummary.ChangeStatus.Deleted &&
+            s.Description == "tab: tab2");
+        item.SubChanges!.Should().NotContain(s => s.Description.StartsWith("section:"));
+    }
+
+    [Fact]
+    public async Task Form_FileDeleted_ReportsFormOnlyWithoutSubChanges()
+    {
+        var guid = Guid.NewGuid().ToString("D");
+        var relPath = $"Entities/Account/FormXml/main/{{{guid}}}.xml";
+        CommitFile(relPath, FormXml(["av_field1"]));
+        File.Delete(Path.Combine(_srcFolder, relPath.Replace('/', Path.DirectorySeparatorChar)));
+
+        var item = await GetSingleItemAsync();
+
+        item.Status.Should().Be(SolutionChangeSummary.ChangeStatus.Deleted);
+        item.ComponentName.Should().Be("Main Form (main form)");
+        item.SubChanges.Should().BeNullOrEmpty();
     }
 
     [Fact]

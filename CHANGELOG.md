@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Form changes in `sync` and `diff` read as a form, not as a flat list**: a section is now nested under the tab that holds it, and a deleted form reports only its name — the layout that went with it is no longer listed line by line.
+
 - **`--dev` is optional in standalone `generate`**: with no URL passed, `generate` targets the environment of the currently active resource-specific PAC auth profile, matching what standalone `push` already did. A universal profile carries no environment URL, so it still can't stand in for one, and an explicit `--dev` always wins.
 
 ## [0.18.0] - 2026-08-24
